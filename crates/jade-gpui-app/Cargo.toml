@@ -17,6 +17,7 @@ jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
 jade-docx-pdf-renderer = { path = "../../jade-core/crates/jade-docx-pdf-renderer" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter" }
 jade-xlsx-native-render = { path = "../../jade-core/crates/jade-xlsx-native-render" }
+jade-pptx-native-render = { path = "../jade-pptx-native-render" }
 # `macos-blade` instead of the default Metal backend, which needs a full Xcode
 # to compile its shaders. `font-kit` is in gpui's default features and has to
 # come back explicitly: without it the text system falls back to a stub with

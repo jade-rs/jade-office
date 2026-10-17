@@ -2943,6 +2943,7 @@ dependencies = [
  "jade-docx-editor",
  "jade-docx-native-render",
  "jade-docx-pdf-renderer",
+ "jade-pptx-native-render",
  "jade-skia-painter",
  "jade-xlsx-native-render",
  "objc2",
@@ -2965,6 +2966,47 @@ dependencies = [
 [[package]]
 name = "jade-painter"
 version = "0.1.0"
+
+[[package]]
+name = "jade-pptx-layout"
+version = "0.1.0"
+dependencies = [
+ "jade-pptx-reader",
+ "jade-text-layout",
+ "serde",
+ "unicode-script",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "jade-pptx-native-render"
+version = "0.1.0"
+dependencies = [
+ "jade-opc",
+ "jade-painter",
+ "jade-pptx-layout",
+ "jade-pptx-reader",
+ "jade-pptx-render",
+ "jade-skia-painter",
+]
+
+[[package]]
+name = "jade-pptx-reader"
+version = "0.1.0"
+dependencies = [
+ "jade-opc",
+ "quick-xml",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "jade-pptx-render"
+version = "0.1.0"
+dependencies = [
+ "jade-painter",
+ "jade-pptx-layout",
+]
 
 [[package]]
 name = "jade-preview-plugin-api"

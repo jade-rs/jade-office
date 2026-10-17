@@ -14,20 +14,17 @@
 //! `render_viewport`.
 
 use gpui::{
-    div, img, point, prelude::*, px, size, App, Application, Bounds, Context, FocusHandle,
-    Focusable, RenderImage, ScrollHandle, SharedString, TitlebarOptions, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowOptions,
+    div, img, point, prelude::*, px, App, Context, Entity, FocusHandle, Focusable, RenderImage,
+    ScrollHandle, SharedString, Window,
 };
 use jade_xlsx_native_render::{aliased_faces, bundled_font_paths, NativeWorkbook};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::theme;
+use crate::{theme, workspace, UI_FONT_FAMILY};
 
-/// Chrome above the sheet: the header row and the sheet tabs.
-const CHROME_HEIGHT: f32 = 92.0;
-/// Padding around the sheet area, matched by the element below.
-const CANVAS_INSET: f32 = 12.0;
+/// The strip of sheet tabs under the grid.
+const SHEET_TABS_HEIGHT: f32 = 30.0;
 
 /// What a painted image was painted for. A frame that matches it needs no new
 /// pixels, which is what keeps scrolling from re-rendering the same view.
@@ -39,7 +36,6 @@ struct PaintedFor {
 }
 
 pub struct WorkbookView {
-    title: SharedString,
     workbook: NativeWorkbook,
     sheet_names: Vec<SharedString>,
     image: Option<Arc<RenderImage>>,
@@ -116,10 +112,11 @@ impl Render for WorkbookView {
             window.drop_image(image).ok();
         }
 
-        let window_size = window.viewport_size();
+        // The part of the workspace this view is given, less the sheet tabs.
+        let (area_width, area_height) = workspace::editor_area(window, cx);
         let viewport = (
-            (f32::from(window_size.width) - CANVAS_INSET * 2.0).max(1.0) as i32,
-            (f32::from(window_size.height) - CHROME_HEIGHT - CANVAS_INSET).max(1.0) as i32,
+            area_width.max(1.0) as i32,
+            (area_height - SHEET_TABS_HEIGHT).max(1.0) as i32,
         );
         self.repaint_if_needed(viewport);
 
@@ -133,17 +130,32 @@ impl Render for WorkbookView {
                 let selected = index == current;
                 div()
                     .id(("sheet-tab", index))
-                    .px_3()
-                    .py_1()
-                    .rounded_md()
-                    .text_sm()
+                    .relative()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .px_4()
+                    .text_xs()
                     .cursor_pointer()
+                    .border_r_1()
+                    .border_color(theme::border())
                     .text_color(if selected {
-                        theme::text()
+                        theme::accent()
                     } else {
                         theme::text_dim()
                     })
-                    .when(selected, |tab| tab.bg(theme::selected()))
+                    .when(selected, |tab| {
+                        tab.bg(theme::window()).child(
+                            div()
+                                .absolute()
+                                .bottom_0()
+                                .left_1()
+                                .right_1()
+                                .h(px(2.0))
+                                .rounded_t_sm()
+                                .bg(theme::accent()),
+                        )
+                    })
                     .hover(|tab| tab.bg(theme::hovered()))
                     .child(name.clone())
                     .on_click(
@@ -154,42 +166,17 @@ impl Render for WorkbookView {
 
         div()
             .key_context("Workbook")
+            .font_family(UI_FONT_FAMILY)
             .track_focus(&self.focus)
             .flex()
             .flex_col()
             .size_full()
-            .bg(theme::window())
+            .bg(theme::canvas())
             .text_color(theme::text())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .px_4()
-                    .pt_8()
-                    .pb_2()
-                    .child(div().text_sm().child(self.title.clone()))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme::text_faint())
-                            .child(format!("{sheet_width:.0} × {sheet_height:.0} px")),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme::accent())
-                            .child(self.status.clone()),
-                    ),
-            )
-            .child(div().flex().gap_1().px_4().pb_2().children(tabs))
             .child(
                 div()
                     .relative()
                     .flex_1()
-                    .mx(px(CANVAS_INSET))
-                    .mb(px(CANVAS_INSET))
-                    .bg(theme::canvas())
                     .child(
                         // The painted window sits under the scroller, which is
                         // transparent and exists only to own the scrollbars.
@@ -215,34 +202,37 @@ impl Render for WorkbookView {
                             ),
                     ),
             )
+            // Excel keeps its sheet tabs along the bottom edge.
+            .child(
+                div()
+                    .h(px(SHEET_TABS_HEIGHT))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .bg(theme::panel())
+                    .border_t_1()
+                    .border_color(theme::border())
+                    .children(tabs)
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .px_3()
+                            .text_xs()
+                            .text_color(theme::text_faint())
+                            .children((!self.status.is_empty()).then(|| self.status.clone())),
+                    ),
+            )
     }
 }
 
-/// Opens `path` in a spreadsheet window.
-pub fn run(path: String) {
-    let bytes = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            eprintln!("{path}: {error}");
-            std::process::exit(1);
-        }
-    };
-    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-    let (regular, bold) = bundled_font_paths(&root);
-    let workbook = match NativeWorkbook::open(&bytes, &aliased_faces(&regular, &bold)) {
-        Ok(workbook) => workbook,
-        Err(error) => {
-            eprintln!("{error}");
-            std::process::exit(1);
-        }
-    };
+/// Opens `path` as a spreadsheet view, for the workspace to show in a tab.
+pub fn new_view(path: &Path, cx: &mut App) -> Result<Entity<WorkbookView>, String> {
+    let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    // The fonts ship with the engine, in the `jade-core` submodule.
+    let core = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../jade-core"));
+    let (regular, bold) = bundled_font_paths(&core);
+    let workbook = NativeWorkbook::open(&bytes, &aliased_faces(&regular, &bold))?;
 
-    let title = SharedString::from(
-        PathBuf::from(&path)
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or(path.clone()),
-    );
     // Owned up front: `SharedString` borrows a `&'static str` or takes a
     // `String`, and these are neither until copied.
     let sheet_names: Vec<SharedString> = workbook
@@ -251,41 +241,14 @@ pub fn run(path: String) {
         .map(|name| SharedString::from(name.to_string()))
         .collect();
 
-    Application::new().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(1320.0), px(900.0)), cx);
-        let window = cx
-            .open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some(SharedString::from("jade")),
-                        appears_transparent: true,
-                        traffic_light_position: Some(point(px(16.0), px(16.0))),
-                    }),
-                    window_background: WindowBackgroundAppearance::Transparent,
-                    ..Default::default()
-                },
-                |_window, cx| {
-                    cx.new(|cx| WorkbookView {
-                        title,
-                        workbook,
-                        sheet_names,
-                        image: None,
-                        retired: Vec::new(),
-                        painted: None,
-                        scroll: ScrollHandle::new(),
-                        focus: cx.focus_handle(),
-                        status: SharedString::from(""),
-                    })
-                },
-            )
-            .expect("open window");
-
-        window
-            .update(cx, |view, window, cx| {
-                window.focus(&view.focus_handle(cx));
-            })
-            .expect("focus the workbook");
-        cx.activate(true);
-    });
+    Ok(cx.new(|cx| WorkbookView {
+        workbook,
+        sheet_names,
+        image: None,
+        retired: Vec::new(),
+        painted: None,
+        scroll: ScrollHandle::new(),
+        focus: cx.focus_handle(),
+        status: SharedString::from(""),
+    }))
 }

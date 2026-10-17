@@ -1,0 +1,26 @@
+[workspace]
+
+[package]
+name = "jade-pptx-native-render"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+
+# The deck counterpart of `jade-docx-native-render` and
+# `jade-xlsx-native-render`: the engine's reader, layout and renderer, drawn
+# through Skia instead of a browser canvas. Its own workspace root for the same
+# reason as theirs — Skia's prebuilt binaries are not something every engine
+# build should pay for.
+
+[lib]
+name = "jade_pptx_native_render"
+path = "src/lib.rs"
+
+[dependencies]
+jade-opc = { path = "../../jade-core/crates/jade-opc" }
+jade-painter = { path = "../../jade-core/crates/jade-painter" }
+jade-pptx-layout = { path = "../../jade-core/crates/jade-pptx-layout" }
+jade-pptx-reader = { path = "../../jade-core/crates/jade-pptx-reader" }
+jade-pptx-render = { path = "../../jade-core/crates/jade-pptx-render" }
+jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter" }
