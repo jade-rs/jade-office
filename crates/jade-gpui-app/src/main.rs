@@ -21,10 +21,14 @@
 //! paint cycle, which is the next step, not this one.
 
 mod deck;
+mod editor;
+mod i18n;
 mod native_print;
 mod shell;
 mod workbook;
 mod workspace;
+
+use editor::Editor;
 
 use gpui::{
     actions, canvas, div, img, point, prelude::*, px, size, AnyElement, App, Application, Bounds,
@@ -92,6 +96,7 @@ actions!(
         ZoomIn,
         ZoomOut,
         ZoomActual,
+        ZoomFit,
     ]
 );
 
@@ -146,9 +151,12 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
-        KeyBinding::new("cmd-=", ZoomIn, CONTEXT),
-        KeyBinding::new("cmd--", ZoomOut, CONTEXT),
-        KeyBinding::new("cmd-0", ZoomActual, CONTEXT),
+        // Zoom belongs to the workspace, which steps whichever editor is in
+        // front, so these work in every kind of tab.
+        KeyBinding::new("cmd-=", ZoomIn, None),
+        KeyBinding::new("cmd--", ZoomOut, None),
+        KeyBinding::new("cmd-0", ZoomActual, None),
+        KeyBinding::new("cmd-9", ZoomFit, None),
     ]
 }
 
@@ -157,90 +165,95 @@ fn key_bindings() -> Vec<KeyBinding> {
 /// Everything the shell can do is here. It was all keyboard-only, which meant a
 /// feature nobody had been told about did not exist.
 fn menus() -> Vec<Menu> {
+    use i18n::text as t;
     vec![
         Menu {
             name: "jade".into(),
-            items: vec![MenuItem::action("Quit jade", Quit)],
+            items: vec![MenuItem::action(t("menu.app.quit"), Quit)],
         },
         Menu {
-            name: "File".into(),
+            name: t("menu.file").into(),
             items: vec![
-                MenuItem::action("Open…", Open),
-                MenuItem::action("Open Folder…", OpenFolder),
-                MenuItem::action("Close Tab", CloseWindow),
+                MenuItem::action(t("menu.file.open"), Open),
+                MenuItem::action(t("menu.file.open_folder"), OpenFolder),
+                MenuItem::action(t("menu.file.close_tab"), CloseWindow),
                 MenuItem::separator(),
-                MenuItem::action("Save", Save),
-                MenuItem::action("Save As…", SaveAs),
+                MenuItem::action(t("menu.file.save"), Save),
+                MenuItem::action(t("menu.file.save_as"), SaveAs),
                 MenuItem::separator(),
-                MenuItem::action("Print…", Print),
+                MenuItem::action(t("menu.file.print"), Print),
             ],
         },
         Menu {
-            name: "Edit".into(),
+            name: t("menu.edit").into(),
             items: vec![
-                MenuItem::action("Undo", Undo),
-                MenuItem::action("Redo", Redo),
+                MenuItem::action(t("menu.edit.undo"), Undo),
+                MenuItem::action(t("menu.edit.redo"), Redo),
                 MenuItem::separator(),
-                MenuItem::action("Cut", Cut),
-                MenuItem::action("Copy", Copy),
-                MenuItem::action("Paste", Paste),
-                MenuItem::action("Select All", SelectAll),
-                MenuItem::action("Select Paragraph", SelectParagraph),
+                MenuItem::action(t("menu.edit.cut"), Cut),
+                MenuItem::action(t("menu.edit.copy"), Copy),
+                MenuItem::action(t("menu.edit.paste"), Paste),
+                MenuItem::action(t("menu.edit.select_all"), SelectAll),
+                MenuItem::action(t("menu.edit.select_paragraph"), SelectParagraph),
                 MenuItem::separator(),
-                MenuItem::action("Find and Replace…", FindAndReplace),
-                MenuItem::action("Find Selection", FindSelection),
-                MenuItem::action("Find Next", FindNext),
-                MenuItem::action("Replace…", Replace),
-                MenuItem::action("Replace All", ReplaceAll),
+                MenuItem::action(t("menu.edit.find_replace"), FindAndReplace),
+                MenuItem::action(t("menu.edit.find_selection"), FindSelection),
+                MenuItem::action(t("menu.edit.find_next"), FindNext),
+                MenuItem::action(t("menu.edit.replace"), Replace),
+                MenuItem::action(t("menu.edit.replace_all"), ReplaceAll),
             ],
         },
         Menu {
-            name: "Format".into(),
+            name: t("menu.format").into(),
             items: vec![
-                MenuItem::action("Bold", Bold),
-                MenuItem::action("Italic", Italic),
-                MenuItem::action("Underline", Underline),
+                MenuItem::action(t("menu.format.bold"), Bold),
+                MenuItem::action(t("menu.format.italic"), Italic),
+                MenuItem::action(t("menu.format.underline"), Underline),
                 MenuItem::separator(),
-                MenuItem::action("Align Left", AlignLeft),
-                MenuItem::action("Center", AlignCenter),
-                MenuItem::action("Align Right", AlignRight),
+                MenuItem::action(t("menu.format.align_left"), AlignLeft),
+                MenuItem::action(t("menu.format.center"), AlignCenter),
+                MenuItem::action(t("menu.format.align_right"), AlignRight),
                 MenuItem::separator(),
-                MenuItem::action("Increase Indent", IndentMore),
-                MenuItem::action("Decrease Indent", IndentLess),
+                MenuItem::action(t("menu.format.indent_more"), IndentMore),
+                MenuItem::action(t("menu.format.indent_less"), IndentLess),
             ],
         },
         Menu {
-            name: "Table".into(),
+            name: t("menu.table").into(),
             items: vec![
-                MenuItem::action("Insert Row Below", InsertTableRow),
-                MenuItem::action("Delete Row", DeleteTableRow),
+                MenuItem::action(t("menu.table.insert_row"), InsertTableRow),
+                MenuItem::action(t("menu.table.delete_row"), DeleteTableRow),
             ],
         },
         Menu {
-            name: "Review".into(),
+            name: t("menu.review").into(),
             items: vec![
-                MenuItem::action("Add Comment", AddComment),
-                MenuItem::action("Track Changes", ToggleChangeTracking),
+                MenuItem::action(t("menu.review.add_comment"), AddComment),
+                MenuItem::action(t("menu.review.track_changes"), ToggleChangeTracking),
             ],
         },
         Menu {
-            name: "View".into(),
+            name: t("menu.view").into(),
             items: vec![
-                MenuItem::action("Explorer", ToggleExplorer),
-                MenuItem::action("Details Panel", ToggleInspector),
-                MenuItem::action("Light / Dark Theme", ToggleTheme),
+                MenuItem::action(t("menu.view.explorer"), ToggleExplorer),
+                MenuItem::action(t("menu.view.details"), ToggleInspector),
+                MenuItem::action(t("menu.view.theme"), ToggleTheme),
                 MenuItem::separator(),
-                MenuItem::action("Next Page", NextPage),
-                MenuItem::action("Previous Page", PreviousPage),
+                MenuItem::action(t("menu.view.next_page"), NextPage),
+                MenuItem::action(t("menu.view.previous_page"), PreviousPage),
                 MenuItem::separator(),
-                MenuItem::action("Zoom In", ZoomIn),
-                MenuItem::action("Zoom Out", ZoomOut),
-                MenuItem::action("Actual Size", ZoomActual),
+                MenuItem::action(t("menu.view.zoom_in"), ZoomIn),
+                MenuItem::action(t("menu.view.zoom_out"), ZoomOut),
+                MenuItem::action(t("menu.view.zoom_actual"), ZoomActual),
+                MenuItem::action(t("menu.view.zoom_fit"), ZoomFit),
             ],
         },
         Menu {
-            name: "Slide Show".into(),
-            items: vec![MenuItem::action("From Beginning", StartSlideshow)],
+            name: t("menu.slideshow").into(),
+            items: vec![MenuItem::action(
+                t("menu.slideshow.from_beginning"),
+                StartSlideshow,
+            )],
         },
     ]
 }
@@ -2282,11 +2295,6 @@ impl DocumentView {
 
     /// Clamped so a stray repeat cannot leave the document unreadably small or
     /// so large that a page no longer fits any sensible window.
-    fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
-        self.zoom = zoom.clamp(0.4, 3.0);
-        cx.notify();
-    }
-
     fn format(&mut self, format: CharacterFormat, cx: &mut Context<Self>) {
         let page = self.caret_page_1idx();
         // An error here means there was no selection, which is the ordinary
@@ -3323,6 +3331,50 @@ impl Focusable for DocumentView {
     }
 }
 
+impl editor::Editor for DocumentView {
+    fn status_items(&self) -> Vec<SharedString> {
+        let mut items = vec![SharedString::from(i18n::format(
+            "doc.position",
+            &[
+                ("current", &(self.current_page + 1)),
+                ("count", &self.images.len()),
+            ],
+        ))];
+        let comments = self.document.comment_count();
+        if comments > 0 {
+            items.push(i18n::format("doc.comments", &[("n", &comments)]).into());
+        }
+        if self.tracking_changes {
+            items.push(i18n::text("doc.tracking").into());
+        }
+        items
+    }
+
+    fn zoom(&self) -> f32 {
+        self.zoom
+    }
+
+    fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
+        self.zoom = editor::clamp_zoom(zoom);
+        cx.notify();
+    }
+
+    /// The page's width fitted to the space beside the page list.
+    fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
+        const PAGE_LIST_WIDTH: f32 = 168.0;
+        const PAGE_GUTTER: f32 = 64.0;
+        let available = cx
+            .try_global::<workspace::EditorArea>()
+            .map(|area| area.0)
+            .unwrap_or(1000.0)
+            - PAGE_LIST_WIDTH
+            - PAGE_GUTTER
+            - if self.show_inspector { 260.0 } else { 0.0 };
+        let (page_width, _) = self.document.layout_page_size();
+        self.set_zoom(available / page_width.max(1.0) as f32, cx);
+    }
+}
+
 impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The one place with a window to hand. Textures replaced since the last
@@ -3395,13 +3447,6 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
             )
-            .on_action(
-                cx.listener(|view, _: &ZoomIn, _window, cx| view.set_zoom(view.zoom * 1.1, cx)),
-            )
-            .on_action(
-                cx.listener(|view, _: &ZoomOut, _window, cx| view.set_zoom(view.zoom / 1.1, cx)),
-            )
-            .on_action(cx.listener(|view, _: &ZoomActual, _window, cx| view.set_zoom(1.0, cx)))
             .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
                 view.show_inspector = !view.show_inspector;
                 cx.notify();
@@ -3436,7 +3481,7 @@ impl Render for DocumentView {
                             .pb_2()
                             .text_xs()
                             .text_color(theme::text_faint())
-                            .child(format!("ページ ({page_count})")),
+                            .child(i18n::format("doc.pages", &[("n", &page_count)])),
                     )
                     .child(
                         div()
@@ -3765,6 +3810,7 @@ fn main() {
         }
     });
 
+    i18n::init();
     application.run(move |cx: &mut App| {
         // A way to ask the text system what it makes of the shell's own labels
         // without a window, which is the only part of this app that can be

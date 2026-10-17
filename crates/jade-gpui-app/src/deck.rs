@@ -22,7 +22,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::{native_print, theme, workspace, Print, StartSlideshow, UI_FONT_FAMILY};
+use crate::editor::{self, Editor};
+use crate::{i18n, native_print, theme, workspace, Print, StartSlideshow, UI_FONT_FAMILY};
 
 /// The thumbnail strip's width, and the width each thumbnail is shown at.
 const SIDEBAR_WIDTH: f32 = 200.0;
@@ -94,6 +95,11 @@ pub struct DeckView {
     /// the only place with a window to hand.
     retired: Vec<Arc<RenderImage>>,
     show_notes: bool,
+    /// `None` fits the slide to the space; `Some` is a zoom the reader chose.
+    zoom: Option<f32>,
+    /// The scale the slide was last shown at, which is what the status bar
+    /// shows while fitting.
+    shown_scale: f32,
     thumbnail_scroll: ScrollHandle,
     focus: FocusHandle,
     status: SharedString,
@@ -126,7 +132,8 @@ impl DeckView {
             .pdf()
             .and_then(|pdf| native_print::show_pdf_print_dialog(&pdf));
         if let Err(error) = result {
-            self.status = SharedString::from(format!("印刷できません: {error}"));
+            self.status =
+                SharedString::from(i18n::format("deck.print_failed", &[("error", &error)]));
             cx.notify();
         }
     }
@@ -225,6 +232,33 @@ fn toolbar_button(
         .child(label)
 }
 
+impl Editor for DeckView {
+    fn status_items(&self) -> Vec<SharedString> {
+        vec![i18n::format(
+            "deck.position",
+            &[
+                ("current", &(self.current + 1)),
+                ("count", &self.deck.slide_count()),
+            ],
+        )
+        .into()]
+    }
+
+    fn zoom(&self) -> f32 {
+        self.zoom.unwrap_or(self.shown_scale)
+    }
+
+    fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
+        self.zoom = Some(editor::clamp_zoom(zoom));
+        cx.notify();
+    }
+
+    fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
+        self.zoom = None;
+        cx.notify();
+    }
+}
+
 impl Focusable for DeckView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus.clone()
@@ -244,7 +278,14 @@ impl Render for DeckView {
             (area_width - SIDEBAR_WIDTH - SLIDE_MARGIN * 2.0).max(40.0),
             (area_height - TOOLBAR_HEIGHT - notes_height - SLIDE_MARGIN * 2.0).max(40.0),
         );
-        let (width, height) = fitted(&self.deck, available);
+        let (width, height) = match self.zoom {
+            None => fitted(&self.deck, available),
+            Some(zoom) => {
+                let (slide_width, slide_height) = self.deck.slide_size();
+                (slide_width as f32 * zoom, slide_height as f32 * zoom)
+            }
+        };
+        self.shown_scale = width / (self.deck.slide_size().0 as f32).max(1.0);
         let device_width = (width * window.scale_factor()).round() as i32;
         if !repaint(
             &self.deck,
@@ -253,8 +294,10 @@ impl Render for DeckView {
             self.current,
             device_width,
         ) {
-            self.status =
-                SharedString::from(format!("スライド {} を描画できません", self.current + 1));
+            self.status = SharedString::from(i18n::format(
+                "deck.paint_failed",
+                &[("n", &(self.current + 1))],
+            ));
         }
 
         let count = self.deck.slide_count();
@@ -296,7 +339,7 @@ impl Render for DeckView {
                             .pb_2()
                             .text_xs()
                             .text_color(theme::text_faint())
-                            .child(format!("スライド ({count})")),
+                            .child(i18n::format("deck.slides", &[("n", &count)])),
                     )
                     .child(
                         div()
@@ -328,13 +371,12 @@ impl Render for DeckView {
                             .bg(theme::panel())
                             .border_b_1()
                             .border_color(theme::border())
-                            .child(
-                                div()
-                                    .px_1()
-                                    .text_xs()
-                                    .text_color(theme::text_dim())
-                                    .child(format!("スライド {} / {}", self.current + 1, count)),
-                            )
+                            .child(div().px_1().text_xs().text_color(theme::text_dim()).child(
+                                i18n::format(
+                                    "deck.position",
+                                    &[("current", &(self.current + 1)), ("count", &count)],
+                                ),
+                            ))
                             .child(
                                 div()
                                     .text_xs()
@@ -343,23 +385,31 @@ impl Render for DeckView {
                             )
                             .child(div().flex_1())
                             .child(
-                                toolbar_button("notes", "icons/file-text.svg", "ノート").on_click(
-                                    cx.listener(|view, _event, _window, cx| {
+                                toolbar_button(
+                                    "notes",
+                                    "icons/file-text.svg",
+                                    i18n::text("deck.notes"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
                                         view.show_notes = !view.show_notes;
                                         cx.notify();
-                                    }),
-                                ),
+                                    },
+                                )),
                             )
                             .child(
-                                toolbar_button("print", "icons/printer.svg", "印刷").on_click(
-                                    cx.listener(|view, _event, _window, cx| view.print(cx)),
-                                ),
+                                toolbar_button(
+                                    "print",
+                                    "icons/printer.svg",
+                                    i18n::text("deck.print"),
+                                )
+                                .on_click(cx.listener(|view, _event, _window, cx| view.print(cx))),
                             )
                             .child(
                                 toolbar_button(
                                     "from-current",
                                     "icons/play.svg",
-                                    "このスライドから",
+                                    i18n::text("deck.from_current"),
                                 )
                                 .on_click(cx.listener(
                                     |view, _event, _window, cx| {
@@ -388,28 +438,43 @@ impl Render for DeckView {
                                             .size_3()
                                             .text_color(gpui::white()),
                                     )
-                                    .child("スライドショー")
+                                    .child(i18n::text("deck.slideshow"))
                                     .on_click(cx.listener(|view, _event, _window, cx| {
                                         view.start_slideshow(0, cx)
                                     })),
                             ),
                     )
                     .child(
+                        // Scrolls once a chosen zoom makes the slide bigger
+                        // than the space; while fitting there is nothing to
+                        // scroll.
                         div()
+                            .id("slide-canvas")
                             .flex_1()
-                            .flex()
-                            .items_center()
-                            .justify_center()
+                            .min_h_0()
+                            .overflow_scroll()
                             .bg(theme::canvas())
                             .child(
                                 div()
-                                    .w(px(width))
-                                    .h(px(height))
-                                    .bg(gpui::white())
-                                    .shadow_lg()
-                                    .children(self.slide.as_ref().map(|painted| {
-                                        img(painted.image.clone()).w(px(width)).h(px(height))
-                                    })),
+                                    .min_w_full()
+                                    .min_h_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .p(px(SLIDE_MARGIN))
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .w(px(width))
+                                            .h(px(height))
+                                            .bg(gpui::white())
+                                            .shadow_lg()
+                                            .children(self.slide.as_ref().map(|painted| {
+                                                img(painted.image.clone())
+                                                    .w(px(width))
+                                                    .h(px(height))
+                                            })),
+                                    ),
                             ),
                     )
                     .when(show_notes, |column| {
@@ -429,7 +494,7 @@ impl Render for DeckView {
                                     Some(notes) => div().child(notes),
                                     None => div()
                                         .text_color(theme::text_faint())
-                                        .child("このスライドにノートはありません"),
+                                        .child(i18n::text("deck.no_notes")),
                                 }),
                         )
                     }),
@@ -444,7 +509,10 @@ pub fn new_view(path: &Path, cx: &mut App) -> Result<Entity<DeckView>, String> {
     let (regular, bold) = bundled_font_paths(&core);
     let deck = NativeDeck::open(&bytes, &aliased_faces(&regular, &bold))?;
     if deck.slide_count() == 0 {
-        return Err(format!("{}: スライドがありません", path.display()));
+        return Err(i18n::format(
+            "deck.empty",
+            &[("name", &crate::shell::file_name(path))],
+        ));
     }
     Ok(cx.new(|cx| DeckView {
         thumbnails: vec![None; deck.slide_count()],
@@ -453,6 +521,8 @@ pub fn new_view(path: &Path, cx: &mut App) -> Result<Entity<DeckView>, String> {
         slide: None,
         retired: Vec::new(),
         show_notes: true,
+        zoom: None,
+        shown_scale: 1.0,
         thumbnail_scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
         status: SharedString::from(""),
@@ -571,9 +641,9 @@ fn open_slideshow(deck: Rc<NativeDeck>, from: usize, cx: &mut App) -> Result<(),
                 })
             },
         )
-        .map_err(|error| format!("スライドショーを開けません: {error}"))?;
+        .map_err(|error| i18n::format("deck.slideshow_failed", &[("error", &error)]))?;
     window
         .update(cx, |view, window, cx| window.focus(&view.focus_handle(cx)))
-        .map_err(|error| format!("スライドショーを開けません: {error}"))?;
+        .map_err(|error| i18n::format("deck.slideshow_failed", &[("error", &error)]))?;
     Ok(())
 }

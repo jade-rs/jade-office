@@ -17,6 +17,11 @@ jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
 jade-docx-pdf-renderer = { path = "../../jade-core/crates/jade-docx-pdf-renderer" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter" }
 jade-xlsx-native-render = { path = "../../jade-core/crates/jade-xlsx-native-render" }
+# The workbook view paints its own viewport (zoomed, at device pixels) with
+# the same renderer `jade-xlsx-native-render` uses.
+jade-painter = { path = "../../jade-core/crates/jade-painter" }
+jade-xlsx-layout = { path = "../../jade-core/crates/jade-xlsx-layout" }
+jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
 jade-pptx-native-render = { path = "../jade-pptx-native-render" }
 # `macos-blade` instead of the default Metal backend, which needs a full Xcode
 # to compile its shaders. `font-kit` is in gpui's default features and has to
@@ -30,5 +35,5 @@ image = "0.25"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSPrintInfo", "NSPrintOperation"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSData"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSData", "NSLocale", "NSString"] }
 objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "objc2-app-kit"] }

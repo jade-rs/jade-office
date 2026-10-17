@@ -1,0 +1,86 @@
+# key	text — {name} placeholders are filled by i18n::format
+kind.document	Word
+kind.workbook	Excel
+kind.deck	PowerPoint
+workspace.explorer	Explorer
+workspace.no_folder	No Folder
+workspace.explorer_hint	Open a folder to list the Word, Excel and PowerPoint files in it.
+workspace.recent	Recent
+workspace.tagline	Word, Excel and PowerPoint in one app
+workspace.open_file	Open File…
+workspace.open_folder	Open Folder…
+workspace.drop_hint	⌘O to open, or drop files here
+workspace.ready	Ready
+workspace.tabs	{n} tabs
+workspace.unsupported	{name}: not a supported format (.docx, .xlsx and .pptx open)
+workspace.prompt_open	Open
+workspace.prompt_folder	Open Folder
+workspace.zoom_out	Zoom Out
+workspace.zoom_in	Zoom In
+workspace.zoom_fit	Fit
+doc.pages	Pages ({n})
+doc.position	Page {current} of {count}
+doc.comments	{n} comments
+doc.tracking	Tracking changes
+sheet.position	Sheet: {name}
+sheet.count	{n} sheets
+sheet.paint_failed	Cannot draw the sheet
+deck.slides	Slides ({n})
+deck.position	Slide {current} of {count}
+deck.notes	Notes
+deck.print	Print
+deck.from_current	From Current Slide
+deck.slideshow	Slide Show
+deck.no_notes	No notes on this slide
+deck.print_failed	Cannot print: {error}
+deck.paint_failed	Cannot draw slide {n}
+deck.empty	{name}: the presentation has no slides
+deck.slideshow_failed	Cannot start the slide show: {error}
+menu.app.quit	Quit jade
+menu.file	File
+menu.file.open	Open…
+menu.file.open_folder	Open Folder…
+menu.file.close_tab	Close Tab
+menu.file.save	Save
+menu.file.save_as	Save As…
+menu.file.print	Print…
+menu.edit	Edit
+menu.edit.undo	Undo
+menu.edit.redo	Redo
+menu.edit.cut	Cut
+menu.edit.copy	Copy
+menu.edit.paste	Paste
+menu.edit.select_all	Select All
+menu.edit.select_paragraph	Select Paragraph
+menu.edit.find_replace	Find and Replace…
+menu.edit.find_selection	Find Selection
+menu.edit.find_next	Find Next
+menu.edit.replace	Replace…
+menu.edit.replace_all	Replace All
+menu.format	Format
+menu.format.bold	Bold
+menu.format.italic	Italic
+menu.format.underline	Underline
+menu.format.align_left	Align Left
+menu.format.center	Center
+menu.format.align_right	Align Right
+menu.format.indent_more	Increase Indent
+menu.format.indent_less	Decrease Indent
+menu.table	Table
+menu.table.insert_row	Insert Row Below
+menu.table.delete_row	Delete Row
+menu.review	Review
+menu.review.add_comment	Add Comment
+menu.review.track_changes	Track Changes
+menu.view	View
+menu.view.explorer	Explorer
+menu.view.details	Details Panel
+menu.view.theme	Light / Dark Theme
+menu.view.next_page	Next Page
+menu.view.previous_page	Previous Page
+menu.view.zoom_in	Zoom In
+menu.view.zoom_out	Zoom Out
+menu.view.zoom_actual	Actual Size
+menu.view.zoom_fit	Zoom to Fit
+menu.slideshow	Slide Show
+menu.slideshow.from_beginning	From Beginning

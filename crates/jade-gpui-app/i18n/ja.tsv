@@ -1,0 +1,86 @@
+# key	text — {name} placeholders are filled by i18n::format
+kind.document	Word
+kind.workbook	Excel
+kind.deck	PowerPoint
+workspace.explorer	エクスプローラー
+workspace.no_folder	フォルダーなし
+workspace.explorer_hint	フォルダーを開くと、中の Word / Excel / PowerPoint がここに並びます。
+workspace.recent	最近使ったファイル
+workspace.tagline	Word・Excel・PowerPoint をひとつのアプリで
+workspace.open_file	ファイルを開く…
+workspace.open_folder	フォルダーを開く…
+workspace.drop_hint	⌘O で開く・ファイルをここへドロップ
+workspace.ready	準備完了
+workspace.tabs	{n} タブ
+workspace.unsupported	{name}: 対応していない形式です（.docx / .xlsx / .pptx を開けます）
+workspace.prompt_open	開く
+workspace.prompt_folder	フォルダーを開く
+workspace.zoom_out	縮小
+workspace.zoom_in	拡大
+workspace.zoom_fit	全体を表示
+doc.pages	ページ ({n})
+doc.position	ページ {current} / {count}
+doc.comments	コメント {n} 件
+doc.tracking	変更履歴の記録中
+sheet.position	シート: {name}
+sheet.count	{n} シート
+sheet.paint_failed	シートを描画できません
+deck.slides	スライド ({n})
+deck.position	スライド {current} / {count}
+deck.notes	ノート
+deck.print	印刷
+deck.from_current	このスライドから
+deck.slideshow	スライドショー
+deck.no_notes	このスライドにノートはありません
+deck.print_failed	印刷できません: {error}
+deck.paint_failed	スライド {n} を描画できません
+deck.empty	{name}: スライドがありません
+deck.slideshow_failed	スライドショーを開けません: {error}
+menu.app.quit	jade を終了
+menu.file	ファイル
+menu.file.open	開く…
+menu.file.open_folder	フォルダーを開く…
+menu.file.close_tab	タブを閉じる
+menu.file.save	保存
+menu.file.save_as	名前を付けて保存…
+menu.file.print	印刷…
+menu.edit	編集
+menu.edit.undo	元に戻す
+menu.edit.redo	やり直し
+menu.edit.cut	切り取り
+menu.edit.copy	コピー
+menu.edit.paste	貼り付け
+menu.edit.select_all	すべてを選択
+menu.edit.select_paragraph	段落を選択
+menu.edit.find_replace	検索と置換…
+menu.edit.find_selection	選択範囲を検索
+menu.edit.find_next	次を検索
+menu.edit.replace	置換…
+menu.edit.replace_all	すべて置換
+menu.format	書式
+menu.format.bold	太字
+menu.format.italic	斜体
+menu.format.underline	下線
+menu.format.align_left	左揃え
+menu.format.center	中央揃え
+menu.format.align_right	右揃え
+menu.format.indent_more	インデントを増やす
+menu.format.indent_less	インデントを減らす
+menu.table	表
+menu.table.insert_row	下に行を挿入
+menu.table.delete_row	行を削除
+menu.review	校閲
+menu.review.add_comment	コメントを追加
+menu.review.track_changes	変更履歴の記録
+menu.view	表示
+menu.view.explorer	エクスプローラー
+menu.view.details	詳細パネル
+menu.view.theme	ライト / ダーク テーマ
+menu.view.next_page	次のページ
+menu.view.previous_page	前のページ
+menu.view.zoom_in	拡大
+menu.view.zoom_out	縮小
+menu.view.zoom_actual	100%
+menu.view.zoom_fit	全体を表示
+menu.slideshow	スライドショー
+menu.slideshow.from_beginning	最初から

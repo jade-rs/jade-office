@@ -19,16 +19,17 @@
 
 use gpui::{
     div, linear_color_stop, linear_gradient, prelude::*, px, svg, AnyView, App, ClickEvent,
-    Context, ExternalPaths, FocusHandle, Focusable, Global, PathPromptOptions, Rgba, SharedString,
-    Window,
+    Context, Entity, ExternalPaths, FocusHandle, Focusable, Global, PathPromptOptions, Rgba,
+    SharedString, Window,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::editor::{self, Editor, EditorHandle};
 use crate::shell::{self, recent, Kind};
 use crate::{
-    deck, theme, workbook, CloseWindow, OpenFolder, ToggleExplorer, ToggleInspector, ToggleTheme,
-    UI_FONT_FAMILY,
+    deck, i18n, theme, workbook, CloseWindow, OpenFolder, ToggleExplorer, ToggleInspector,
+    ToggleTheme, ZoomActual, ZoomFit, ZoomIn, ZoomOut, UI_FONT_FAMILY,
 };
 
 pub const TITLE_BAR_HEIGHT: f32 = 40.0;
@@ -81,6 +82,7 @@ fn kind_icon(kind: Kind) -> &'static str {
 struct Tab {
     path: PathBuf,
     kind: Kind,
+    editor: Box<dyn EditorHandle>,
     view: AnyView,
     focus: FocusHandle,
 }
@@ -194,35 +196,42 @@ impl Workspace {
 
     fn open_new(&mut self, path: &Path, cx: &mut Context<Self>) -> Result<(), String> {
         let kind = Kind::of(path).ok_or_else(|| {
-            format!(
-                "{}: 対応していない形式です（.docx / .xlsx / .pptx を開けます）",
-                shell::file_name(path)
+            i18n::format(
+                "workspace.unsupported",
+                &[("name", &shell::file_name(path))],
             )
         })?;
-        let (view, focus): (AnyView, FocusHandle) = match kind {
-            Kind::Document => {
-                let view = crate::new_document_view(path, cx)?;
-                let focus = view.focus_handle(cx);
-                (view.into(), focus)
-            }
-            Kind::Workbook => {
-                let view = workbook::new_view(path, cx)?;
-                let focus = view.focus_handle(cx);
-                (view.into(), focus)
-            }
-            Kind::Deck => {
-                let view = deck::new_view(path, cx)?;
-                let focus = view.focus_handle(cx);
-                (view.into(), focus)
-            }
+        let editor: Box<dyn EditorHandle> = match kind {
+            Kind::Document => Box::new(self.observed(crate::new_document_view(path, cx)?, cx)),
+            Kind::Workbook => Box::new(self.observed(workbook::new_view(path, cx)?, cx)),
+            Kind::Deck => Box::new(self.observed(deck::new_view(path, cx)?, cx)),
         };
         self.tabs.push(Tab {
             path: path.to_path_buf(),
             kind,
-            view,
-            focus,
+            view: editor.view(),
+            focus: editor.focus_handle(cx),
+            editor,
         });
         Ok(())
+    }
+
+    /// Repaints the workspace whenever `entity` changes, so the status bar
+    /// follows the page, the slide and the zoom.
+    fn observed<T: Editor>(&mut self, entity: Entity<T>, cx: &mut Context<Self>) -> Entity<T> {
+        cx.observe(&entity, |_workspace, _entity, cx| cx.notify())
+            .detach();
+        entity
+    }
+
+    fn zoom_active(&mut self, zoom: impl FnOnce(f32) -> Option<f32>, cx: &mut Context<Self>) {
+        let Some(tab) = self.active.and_then(|index| self.tabs.get(index)) else {
+            return;
+        };
+        match zoom(tab.editor.zoom(cx)) {
+            Some(zoom) => tab.editor.set_zoom(zoom, cx),
+            None => tab.editor.zoom_to_fit(cx),
+        }
     }
 
     pub fn set_root(&mut self, root: PathBuf) {
@@ -283,7 +292,7 @@ impl Workspace {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some(SharedString::from("フォルダーを開く")),
+            prompt: Some(SharedString::from(i18n::text("workspace.prompt_folder"))),
         });
         cx.spawn(async move |workspace, cx| {
             let Ok(Ok(Some(paths))) = paths.await else {
@@ -491,7 +500,7 @@ impl Workspace {
             .as_ref()
             .and_then(|root| root.file_name())
             .map(|name| name.to_string_lossy().to_uppercase())
-            .unwrap_or_else(|| "フォルダーなし".to_string());
+            .unwrap_or_else(|| i18n::text("workspace.no_folder").to_string());
 
         let tree: Vec<_> = rows
             .into_iter()
@@ -641,7 +650,7 @@ impl Workspace {
                             .flex_1()
                             .text_xs()
                             .text_color(theme::text_faint())
-                            .child("エクスプローラー"),
+                            .child(i18n::text("workspace.explorer")),
                     )
                     .child(
                         icon_button("explorer-open-file", "icons/file-plus.svg", false).on_click(
@@ -681,7 +690,7 @@ impl Workspace {
                                 .py_2()
                                 .text_xs()
                                 .text_color(theme::text_faint())
-                                .child("フォルダーを開くと、中の Word / Excel / PowerPoint がここに並びます。"),
+                                .child(i18n::text("workspace.explorer_hint")),
                         )
                     }),
             )
@@ -705,7 +714,7 @@ impl Workspace {
                                     .size_3()
                                     .text_color(theme::text_faint()),
                             )
-                            .child("最近使ったファイル"),
+                            .child(i18n::text("workspace.recent")),
                     )
                     .child(div().flex().flex_col().pb_2().children(recent))
             })
@@ -803,8 +812,18 @@ impl Workspace {
             .children(tabs)
     }
 
-    fn status_bar(&self) -> impl IntoElement {
+    fn status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let tab_count = self.tabs.len();
+        let active = self.active_tab();
+        let items = active
+            .map(|tab| tab.editor.status_items(cx))
+            .unwrap_or_default();
+        let zoom = active.map(|tab| tab.editor.zoom(cx));
+        let kind = active.map(|tab| match tab.kind {
+            Kind::Document => i18n::text("kind.document"),
+            Kind::Workbook => i18n::text("kind.workbook"),
+            Kind::Deck => i18n::text("kind.deck"),
+        });
         div()
             .h(px(STATUS_BAR_HEIGHT))
             .flex_none()
@@ -828,12 +847,9 @@ impl Workspace {
                             .items_center()
                             .gap_1p5()
                             .child(div().size_1p5().rounded_full().bg(theme::ready()))
-                            .child("Ready"),
+                            .child(i18n::text("workspace.ready")),
                     )
-                    .children(
-                        self.active_tab()
-                            .map(|tab| div().child(shell::file_name(&tab.path))),
-                    )
+                    .children(items.into_iter().map(|item| div().child(item)))
                     .children(
                         self.error
                             .clone()
@@ -845,13 +861,42 @@ impl Workspace {
                     .flex()
                     .items_center()
                     .gap_4()
-                    .children(self.active_tab().map(|tab| match tab.kind {
-                        Kind::Document => "Word",
-                        Kind::Workbook => "Excel",
-                        Kind::Deck => "PowerPoint",
-                    }))
-                    .child("jade + Skia")
-                    .child(format!("{tab_count} タブ")),
+                    .children(kind)
+                    .child(i18n::format("workspace.tabs", &[("n", &tab_count)]))
+                    .children(zoom.map(|zoom| self.zoom_controls(zoom, cx))),
+            )
+    }
+
+    /// − 100% + and fit, as Office puts them at the right of its status bar.
+    fn zoom_controls(&self, zoom: f32, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .child(status_button("zoom-out", "−").on_click(cx.listener(
+                |workspace, _event, _w, cx| {
+                    workspace.zoom_active(|zoom| Some(editor::zoom_step(zoom, false)), cx)
+                },
+            )))
+            .child(
+                // The percentage itself goes back to 100%.
+                status_button("zoom-actual", "")
+                    .w(px(44.0))
+                    .justify_center()
+                    .child(format!("{:.0}%", zoom * 100.0))
+                    .on_click(cx.listener(|workspace, _event, _w, cx| {
+                        workspace.zoom_active(|_| Some(1.0), cx)
+                    })),
+            )
+            .child(status_button("zoom-in", "+").on_click(cx.listener(
+                |workspace, _event, _w, cx| {
+                    workspace.zoom_active(|zoom| Some(editor::zoom_step(zoom, true)), cx)
+                },
+            )))
+            .child(
+                status_button("zoom-fit", i18n::text("workspace.zoom_fit")).on_click(
+                    cx.listener(|workspace, _event, _w, cx| workspace.zoom_active(|_| None, cx)),
+                ),
             )
     }
 
@@ -895,7 +940,7 @@ impl Workspace {
                 div()
                     .text_sm()
                     .text_color(theme::text_dim())
-                    .child("Word・Excel・PowerPoint をひとつのアプリで"),
+                    .child(i18n::text("workspace.tagline")),
             )
             .child(
                 div()
@@ -905,7 +950,7 @@ impl Workspace {
                         welcome_button(
                             "welcome-open",
                             "icons/file-plus.svg",
-                            "ファイルを開く…",
+                            i18n::text("workspace.open_file"),
                             true,
                         )
                         .on_click(
@@ -918,7 +963,7 @@ impl Workspace {
                         welcome_button(
                             "welcome-folder",
                             "icons/folder-plus.svg",
-                            "フォルダーを開く…",
+                            i18n::text("workspace.open_folder"),
                             false,
                         )
                         .on_click(cx.listener(
@@ -930,7 +975,7 @@ impl Workspace {
                 div()
                     .text_xs()
                     .text_color(theme::text_faint())
-                    .child("⌘O で開く・ファイルをここへドロップ"),
+                    .child(i18n::text("workspace.drop_hint")),
             )
             .children(
                 self.error
@@ -938,6 +983,19 @@ impl Workspace {
                     .map(|error| div().text_xs().text_color(theme::accent()).child(error)),
             )
     }
+}
+
+fn status_button(id: &'static str, label: &'static str) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .px_1p5()
+        .rounded_sm()
+        .cursor_pointer()
+        .text_color(theme::text_dim())
+        .hover(|button| button.bg(theme::hovered()).text_color(theme::text()))
+        .child(label)
 }
 
 fn icon_button(id: &'static str, icon: &'static str, active: bool) -> gpui::Stateful<gpui::Div> {
@@ -1077,6 +1135,18 @@ impl Render for Workspace {
                     workspace.prompt_for_folder(cx)
                 }),
             )
+            .on_action(cx.listener(|workspace, _: &ZoomIn, _window, cx| {
+                workspace.zoom_active(|zoom| Some(editor::zoom_step(zoom, true)), cx)
+            }))
+            .on_action(cx.listener(|workspace, _: &ZoomOut, _window, cx| {
+                workspace.zoom_active(|zoom| Some(editor::zoom_step(zoom, false)), cx)
+            }))
+            .on_action(cx.listener(|workspace, _: &ZoomActual, _window, cx| {
+                workspace.zoom_active(|_| Some(1.0), cx)
+            }))
+            .on_action(cx.listener(|workspace, _: &ZoomFit, _window, cx| {
+                workspace.zoom_active(|_| None, cx)
+            }))
             .drag_over::<ExternalPaths>(|style, _, _, _| style.bg(theme::selected()))
             .on_drop(cx.listener(|workspace, paths: &ExternalPaths, window, cx| {
                 for path in paths.paths() {
@@ -1112,6 +1182,6 @@ impl Render for Workspace {
                             })),
                     ),
             )
-            .child(self.status_bar())
+            .child(self.status_bar(cx))
     }
 }
