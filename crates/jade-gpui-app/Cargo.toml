@@ -1,0 +1,33 @@
+[workspace]
+
+[package]
+name = "jade-gpui-app"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+
+# Own workspace root, separate from `jade-core`: gpui pulls in a GPU stack that
+# `cargo test --all-features` over the engine crates should not pay for. The
+# engine crates come from the `jade-core` submodule.
+
+[dependencies]
+jade-docx-native-render = { path = "../../jade-core/crates/jade-docx-native-render" }
+jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
+jade-docx-pdf-renderer = { path = "../../jade-core/crates/jade-docx-pdf-renderer" }
+jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter" }
+jade-xlsx-native-render = { path = "../../jade-core/crates/jade-xlsx-native-render" }
+# `macos-blade` instead of the default Metal backend, which needs a full Xcode
+# to compile its shaders. `font-kit` is in gpui's default features and has to
+# come back explicitly: without it the text system falls back to a stub with
+# eleven placeholder font names and one advance width for every character, and
+# the app draws no text at all — boxes, images and borders, and nothing else.
+gpui = { version = "0.2", default-features = false, features = ["macos-blade", "font-kit"] }
+futures = "0.3"
+image = "0.25"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSPrintInfo", "NSPrintOperation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSData"] }
+objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "objc2-app-kit"] }
