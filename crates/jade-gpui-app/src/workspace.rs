@@ -728,6 +728,7 @@ impl Workspace {
             .map(|(index, tab)| {
                 let active = self.active == Some(index);
                 let kind = tab.kind;
+                let dirty = tab.editor.is_dirty(cx);
                 div()
                     .id(("editor-tab", index))
                     .group("editor-tab")
@@ -757,21 +758,41 @@ impl Workspace {
                     }))
                     .child(shell::file_name(&tab.path))
                     .child(
+                        // A dot while there are unsaved edits, turning into
+                        // the close button under the pointer, as in the IDE.
                         div()
                             .id(("editor-tab-close", index))
-                            .p_0p5()
+                            .relative()
+                            .size_4()
+                            .flex()
+                            .items_center()
+                            .justify_center()
                             .rounded_sm()
-                            .when(!active, |close| {
+                            .when(!active && !dirty, |close| {
                                 close
                                     .invisible()
                                     .group_hover("editor-tab", |close| close.visible())
                             })
                             .hover(|close| close.bg(theme::hovered()))
+                            .when(dirty, |close| {
+                                close.child(
+                                    div()
+                                        .size_2()
+                                        .rounded_full()
+                                        .bg(theme::text_dim())
+                                        .group_hover("editor-tab", |dot| dot.invisible()),
+                                )
+                            })
                             .child(
                                 svg()
                                     .path("icons/x.svg")
                                     .size_2p5()
-                                    .text_color(theme::text_dim()),
+                                    .text_color(theme::text_dim())
+                                    .when(dirty, |x| {
+                                        x.absolute()
+                                            .invisible()
+                                            .group_hover("editor-tab", |x| x.visible())
+                                    }),
                             )
                             .on_click(cx.listener(move |workspace, _event, window, cx| {
                                 cx.stop_propagation();
@@ -1183,5 +1204,69 @@ impl Render for Workspace {
                     ),
             )
             .child(self.status_bar(cx))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(name: &str) -> PathBuf {
+        PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../jade-core")).join(name)
+    }
+
+    /// One file of each kind opens as a tab; opening one again brings its
+    /// tab forward instead of adding a second; zoom and ⌘W act on the tab in
+    /// front.
+    #[gpui::test]
+    fn every_format_opens_as_a_tab_and_zoom_follows_the_active_one(cx: &mut gpui::TestAppContext) {
+        let (workspace, cx) = cx.add_window_view(|_window, cx| Workspace::new(cx));
+        let files = [
+            fixture("contract.docx"),
+            fixture("public/fixtures/grid-operations-workbook.xlsx"),
+            fixture("public/fixtures/sample-deck.pptx"),
+        ];
+        cx.update(|window, cx| {
+            workspace.update(cx, |workspace, cx| {
+                for file in &files {
+                    workspace.open(file, window, cx).unwrap();
+                }
+                workspace.open(&files[1], window, cx).unwrap();
+            })
+        });
+        cx.run_until_parked();
+        workspace.read_with(cx, |workspace, _| {
+            assert_eq!(workspace.tabs.len(), 3);
+            assert_eq!(workspace.active, Some(1));
+            assert_eq!(workspace.tabs[1].kind, Kind::Workbook);
+        });
+
+        cx.dispatch_action(ZoomIn);
+        let zoom = workspace.read_with(cx, |workspace, cx| workspace.tabs[1].editor.zoom(cx));
+        assert_eq!(zoom, 1.1);
+        cx.dispatch_action(ZoomActual);
+        let zoom = workspace.read_with(cx, |workspace, cx| workspace.tabs[1].editor.zoom(cx));
+        assert_eq!(zoom, 1.0);
+
+        cx.dispatch_action(CloseWindow);
+        workspace.read_with(cx, |workspace, _| {
+            assert_eq!(workspace.tabs.len(), 2);
+            assert!(workspace.tabs.iter().all(|tab| tab.kind != Kind::Workbook));
+        });
+    }
+
+    #[gpui::test]
+    fn an_unsupported_file_is_refused_with_a_message(cx: &mut gpui::TestAppContext) {
+        let (workspace, cx) = cx.add_window_view(|_window, cx| Workspace::new(cx));
+        let result = cx.update(|window, cx| {
+            workspace.update(cx, |workspace, cx| {
+                workspace.open(&fixture("README.md"), window, cx)
+            })
+        });
+        assert!(result.is_err());
+        workspace.read_with(cx, |workspace, _| {
+            assert!(workspace.tabs.is_empty());
+            assert!(workspace.error.is_some());
+        });
     }
 }

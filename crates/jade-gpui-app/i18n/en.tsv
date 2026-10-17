@@ -84,3 +84,9 @@ menu.view.zoom_actual	Actual Size
 menu.view.zoom_fit	Zoom to Fit
 menu.slideshow	Slide Show
 menu.slideshow.from_beginning	From Beginning
+sheet.edit_failed	Cannot write the cell: {error}
+sheet.saved	Saved to {name}
+sheet.save_failed	Cannot save: {error}
+sheet.average	Average: {value}
+sheet.cell_count	Count: {n}
+sheet.sum	Sum: {value}

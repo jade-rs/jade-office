@@ -116,18 +116,20 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-alt-e", ToggleExplorer, None),
         KeyBinding::new("cmd-alt-i", ToggleInspector, None),
         KeyBinding::new("cmd-alt-t", ToggleTheme, None),
-        KeyBinding::new("cmd-s", Save, CONTEXT),
-        KeyBinding::new("cmd-shift-s", SaveAs, CONTEXT),
+        // Saving, history and the clipboard mean something in more than one
+        // kind of tab; each view that has them answers with its own handler.
+        KeyBinding::new("cmd-s", Save, None),
+        KeyBinding::new("cmd-shift-s", SaveAs, None),
         // Unscoped so each view that can print answers it with its own
         // handler; a view without one leaves it alone.
         KeyBinding::new("cmd-p", Print, None),
         KeyBinding::new("f5", StartSlideshow, Some("Deck")),
-        KeyBinding::new("cmd-z", Undo, CONTEXT),
-        KeyBinding::new("cmd-shift-z", Redo, CONTEXT),
-        KeyBinding::new("cmd-x", Cut, CONTEXT),
-        KeyBinding::new("cmd-c", Copy, CONTEXT),
-        KeyBinding::new("cmd-v", Paste, CONTEXT),
-        KeyBinding::new("cmd-a", SelectAll, CONTEXT),
+        KeyBinding::new("cmd-z", Undo, None),
+        KeyBinding::new("cmd-shift-z", Redo, None),
+        KeyBinding::new("cmd-x", Cut, None),
+        KeyBinding::new("cmd-c", Copy, None),
+        KeyBinding::new("cmd-v", Paste, None),
+        KeyBinding::new("cmd-a", SelectAll, None),
         KeyBinding::new("cmd-alt-a", SelectParagraph, CONTEXT),
         // Page Down / Page Up rather than ⌘↓ / ⌘↑: those two mean "end of
         // document" and "start of document" on macOS, and taking them for
@@ -3049,7 +3051,7 @@ impl DocumentView {
 /// Both are offsets into the *same* paragraph text, so the conversion is a
 /// scan rather than anything structural — but it has to happen at every
 /// boundary, because a Japanese character is one UTF-16 unit and three bytes.
-fn utf16_to_byte(text: &str, utf16_offset: usize) -> usize {
+pub(crate) fn utf16_to_byte(text: &str, utf16_offset: usize) -> usize {
     let mut utf16 = 0;
     for (byte, ch) in text.char_indices() {
         if utf16 >= utf16_offset {
@@ -3060,7 +3062,7 @@ fn utf16_to_byte(text: &str, utf16_offset: usize) -> usize {
     text.len()
 }
 
-fn byte_to_utf16(text: &str, byte_offset: usize) -> usize {
+pub(crate) fn byte_to_utf16(text: &str, byte_offset: usize) -> usize {
     // Clamped to a character boundary rather than trusting the caller. A byte
     // offset that came from a different paragraph lands mid-character here, and
     // slicing on it panics inside a callback the platform cannot unwind

@@ -134,6 +134,10 @@ pub mod recent {
     const LIMIT: usize = 12;
 
     fn store() -> Option<PathBuf> {
+        // Tests open files too, and must not rewrite the user's list.
+        if cfg!(test) {
+            return None;
+        }
         let home = std::env::var_os("HOME")?;
         Some(PathBuf::from(home).join("Library/Application Support/jade-office/recent.txt"))
     }

@@ -84,3 +84,9 @@ menu.view.zoom_actual	100%
 menu.view.zoom_fit	全体を表示
 menu.slideshow	スライドショー
 menu.slideshow.from_beginning	最初から
+sheet.edit_failed	セルに書き込めません: {error}
+sheet.saved	{name} に保存しました
+sheet.save_failed	保存できません: {error}
+sheet.average	平均: {value}
+sheet.cell_count	データの個数: {n}
+sheet.sum	合計: {value}

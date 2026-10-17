@@ -57,6 +57,11 @@ pub trait Editor: Render + Focusable {
 
     fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>);
 
+    /// Whether there are edits not yet saved, which the tab shows as a dot.
+    fn is_dirty(&self) -> bool {
+        false
+    }
+
     /// Zooms so the content fits the space it has. A view with nothing to fit
     /// goes back to 100%.
     fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
@@ -70,6 +75,7 @@ pub trait EditorHandle {
     fn focus_handle(&self, cx: &App) -> FocusHandle;
     fn status_items(&self, cx: &App) -> Vec<SharedString>;
     fn zoom(&self, cx: &App) -> f32;
+    fn is_dirty(&self, cx: &App) -> bool;
     fn set_zoom(&self, zoom: f32, cx: &mut App);
     fn zoom_to_fit(&self, cx: &mut App);
 }
@@ -89,6 +95,10 @@ impl<T: Editor> EditorHandle for Entity<T> {
 
     fn zoom(&self, cx: &App) -> f32 {
         self.read(cx).zoom()
+    }
+
+    fn is_dirty(&self, cx: &App) -> bool {
+        self.read(cx).is_dirty()
     }
 
     fn set_zoom(&self, zoom: f32, cx: &mut App) {
