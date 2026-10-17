@@ -1,0 +1,8 @@
+# gpui-pre (a snapshot of Zed's gpui) uses `std::hint::cold_path`, stable only
+# in newer releases than the repository's pinned toolchain. Pinned here, for
+# this crate alone, so the native app keeps its own.
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

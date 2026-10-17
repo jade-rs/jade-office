@@ -29,6 +29,9 @@ jobs:
           workspaces: |
             crates/jade-gpui-app
             crates/jade-pptx-native-render
+            crates/jade-tiny-skia-painter
+            crates/jade-web
+            crates/jade-gpui-web
 
       - name: Cargo fmt
         run: cargo fmt --manifest-path crates/jade-gpui-app/Cargo.toml -- --check
@@ -44,3 +47,21 @@ jobs:
           cargo fmt --manifest-path crates/jade-pptx-native-render/Cargo.toml -- --check
           cargo clippy --manifest-path crates/jade-pptx-native-render/Cargo.toml --all-targets --locked -- -D warnings
           cargo test --manifest-path crates/jade-pptx-native-render/Cargo.toml --locked
+
+      - name: Pure-Rust painter and web engine (fmt, clippy, test, wasm32 build)
+        run: |
+          for crate in jade-tiny-skia-painter jade-web; do
+            cargo fmt --manifest-path crates/$crate/Cargo.toml -- --check
+            cargo clippy --manifest-path crates/$crate/Cargo.toml --all-targets --locked -- -D warnings
+            cargo test --manifest-path crates/$crate/Cargo.toml --locked
+          done
+          cargo build --manifest-path crates/jade-web/Cargo.toml --lib --release --locked --target wasm32-unknown-unknown
+
+      # gpui-pre needs a newer stable than the app's toolchain; the crate pins
+      # its own in crates/jade-gpui-web/rust-toolchain.toml.
+      - name: gpui web shell (fmt, clippy for wasm32)
+        working-directory: crates/jade-gpui-web
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+          cargo fmt -- --check
+          cargo clippy --target wasm32-unknown-unknown --locked -- -D warnings
