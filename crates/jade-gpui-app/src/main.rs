@@ -25,10 +25,18 @@ mod editor;
 mod i18n;
 mod native_print;
 mod shell;
+mod tooltip;
 mod workbook;
 mod workspace;
 
 use editor::Editor;
+use i18n::text as t;
+use tooltip::Tooltip;
+
+/// "yes"/"no" in the live language, for the details panel.
+fn yes_no(value: bool) -> &'static str {
+    t(if value { "doc.info.yes" } else { "doc.info.no" })
+}
 
 use gpui::{
     actions, canvas, div, img, point, prelude::*, px, size, AnyElement, App, Application, Bounds,
@@ -167,7 +175,6 @@ fn key_bindings() -> Vec<KeyBinding> {
 /// Everything the shell can do is here. It was all keyboard-only, which meant a
 /// feature nobody had been told about did not exist.
 fn menus() -> Vec<Menu> {
-    use i18n::text as t;
     vec![
         Menu {
             name: "jade".into(),
@@ -559,13 +566,13 @@ impl RibbonTab {
 
     fn label(self) -> &'static str {
         match self {
-            RibbonTab::Home => "ホーム",
-            RibbonTab::Insert => "挿入",
-            RibbonTab::Design => "デザイン",
-            RibbonTab::Layout => "レイアウト",
-            RibbonTab::References => "参照設定",
-            RibbonTab::Review => "校閲",
-            RibbonTab::View => "表示",
+            RibbonTab::Home => t("doc.tab.home"),
+            RibbonTab::Insert => t("doc.tab.insert"),
+            RibbonTab::Design => t("doc.tab.design"),
+            RibbonTab::Layout => t("doc.tab.layout"),
+            RibbonTab::References => t("doc.tab.references"),
+            RibbonTab::Review => t("doc.tab.review"),
+            RibbonTab::View => t("doc.tab.view"),
         }
     }
 }
@@ -714,6 +721,8 @@ struct DocumentView {
     current_page: usize,
     /// Whether the details panel on the right is open.
     show_inspector: bool,
+    /// Whether there are edits since the document was opened or saved.
+    dirty: bool,
     scroll: ScrollHandle,
     focus: FocusHandle,
 }
@@ -890,7 +899,7 @@ impl DocumentView {
                 Ok(caret) => {
                     self.insert_at = caret;
                     self.caret = self.document.place_caret(caret.0, caret.1);
-                    self.rebuild_all_images();
+                    self.rebuild_after_edit();
                     cx.notify();
                 }
                 Err(error) => eprintln!("delete failed: {error}"),
@@ -918,7 +927,7 @@ impl DocumentView {
                 // The split re-flows everything below, so the whole document is
                 // repainted rather than the visible page.
                 let result = self.document.insert_paragraph_break(paragraph, offset);
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 self.after_edit(result, (paragraph + 1, 0), cx);
             }
             "left" | "right" | "up" | "down" => {
@@ -955,7 +964,7 @@ impl DocumentView {
         &self,
         id: &'static str,
         glyph: &str,
-        _title: &str,
+        title: &str,
         active: bool,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
@@ -977,6 +986,11 @@ impl DocumentView {
             .text_sm()
             .text_color(theme::text())
             .child(glyph.to_string())
+            // The glyph is often an abbreviation (A+, x₂); the title says
+            // what the button does.
+            .when(title != glyph, |button| {
+                button.tooltip(Tooltip::text(title.to_string()))
+            })
             .on_click(cx.listener(move |view, _event, _window, cx| action(view, cx)))
     }
 
@@ -1066,7 +1080,7 @@ impl DocumentView {
                                 .hover(|button| button.bg(theme::hovered()))
                                 .text_sm()
                                 .text_color(theme::text())
-                                .child("Word 出力")
+                                .child(t("doc.export_word"))
                                 .on_click(cx.listener(|view, _event, _window, cx| view.save(cx))),
                         ),
                     ),
@@ -1094,12 +1108,12 @@ impl DocumentView {
             RibbonTab::Home => self.home_groups(cx),
             RibbonTab::Insert => vec![
                 Self::ribbon_group(
-                    "表",
+                    t("doc.group.table"),
                     vec![Self::ribbon_row(vec![
                         self.ribbon_button(
                             "table-3x3",
-                            "表 3×3",
-                            "3×3 の表",
+                            t("doc.table_3x3"),
+                            t("doc.table_3x3_title"),
                             false,
                             cx,
                             |view, cx| view.insert_table(3, 3, cx),
@@ -1107,8 +1121,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "table-2x2",
-                            "表 2×2",
-                            "2×2 の表",
+                            t("doc.table_2x2"),
+                            t("doc.table_2x2_title"),
                             false,
                             cx,
                             |view, cx| view.insert_table(2, 2, cx),
@@ -1118,12 +1132,12 @@ impl DocumentView {
                 )
                 .into_any_element(),
                 Self::ribbon_group(
-                    "ページ",
+                    t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
                         .ribbon_button(
                             "blank-page",
-                            "空白ページ",
-                            "空白ページ",
+                            t("doc.blank_page"),
+                            t("doc.blank_page"),
                             false,
                             cx,
                             |view, cx| view.insert_blank_page(cx),
@@ -1132,12 +1146,12 @@ impl DocumentView {
                 )
                 .into_any_element(),
                 Self::ribbon_group(
-                    "コメント",
+                    t("doc.comment"),
                     vec![Self::ribbon_row(vec![self
                         .ribbon_button(
                             "comment",
-                            "コメント",
-                            "コメント",
+                            t("doc.comment"),
+                            t("doc.comment"),
                             false,
                             cx,
                             |view, cx| view.add_comment(cx),
@@ -1148,12 +1162,12 @@ impl DocumentView {
             ],
             RibbonTab::Design => vec![
                 Self::ribbon_group(
-                    "ページの色",
+                    t("doc.page_color"),
                     vec![Self::ribbon_row(vec![
                         self.ribbon_button(
                             "page-cream",
-                            "クリーム",
-                            "ページの色",
+                            t("doc.color.cream"),
+                            t("doc.page_color"),
                             false,
                             cx,
                             |view, cx| view.set_page_background(Some("FFF9E6"), cx),
@@ -1161,8 +1175,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "page-grey",
-                            "薄灰",
-                            "ページの色",
+                            t("doc.color.light_gray"),
+                            t("doc.page_color"),
                             false,
                             cx,
                             |view, cx| view.set_page_background(Some("F2F2F2"), cx),
@@ -1170,8 +1184,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "page-white",
-                            "なし",
-                            "ページの色を消す",
+                            t("doc.none"),
+                            t("doc.page_color_none"),
                             false,
                             cx,
                             |view, cx| view.set_page_background(None, cx),
@@ -1181,12 +1195,12 @@ impl DocumentView {
                 )
                 .into_any_element(),
                 Self::ribbon_group(
-                    "ページ罫線",
+                    t("doc.page_borders"),
                     vec![Self::ribbon_row(vec![
                         self.ribbon_button(
                             "page-border",
-                            "囲む",
-                            "ページを罫線で囲む",
+                            t("doc.box"),
+                            t("doc.page_borders_box"),
                             false,
                             cx,
                             |view, cx| view.set_page_borders(true, cx),
@@ -1194,8 +1208,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "page-no-border",
-                            "なし",
-                            "ページの罫線を消す",
+                            t("doc.none"),
+                            t("doc.page_borders_none"),
                             false,
                             cx,
                             |view, cx| view.set_page_borders(false, cx),
@@ -1207,12 +1221,12 @@ impl DocumentView {
             ],
             RibbonTab::Layout => vec![
                 Self::ribbon_group(
-                    "段落",
+                    t("doc.group.paragraph"),
                     vec![Self::ribbon_row(vec![
                         self.ribbon_button(
                             "layout-indent-less",
-                            "字下げ－",
-                            "インデントを減らす",
+                            t("doc.indent_less"),
+                            t("doc.indent_less_title"),
                             false,
                             cx,
                             |view, cx| view.indent(-36.0, cx),
@@ -1220,8 +1234,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "layout-indent-more",
-                            "字下げ＋",
-                            "インデントを増やす",
+                            t("doc.indent_more"),
+                            t("doc.indent_more_title"),
                             false,
                             cx,
                             |view, cx| view.indent(36.0, cx),
@@ -1231,12 +1245,12 @@ impl DocumentView {
                 )
                 .into_any_element(),
                 Self::ribbon_group(
-                    "改ページ",
+                    t("doc.page_break"),
                     vec![Self::ribbon_row(vec![self
                         .ribbon_button(
                             "layout-break",
-                            "改ページ",
-                            "改ページ",
+                            t("doc.page_break"),
+                            t("doc.page_break"),
                             false,
                             cx,
                             |view, cx| view.insert_blank_page(cx),
@@ -1246,11 +1260,16 @@ impl DocumentView {
                 .into_any_element(),
             ],
             RibbonTab::References => vec![Self::ribbon_group(
-                "目次",
+                t("doc.toc"),
                 vec![Self::ribbon_row(vec![self
-                    .ribbon_button("toc", "目次", "目次を挿入", false, cx, |view, cx| {
-                        view.insert_table_of_contents(cx)
-                    })
+                    .ribbon_button(
+                        "toc",
+                        t("doc.toc"),
+                        t("doc.toc_title"),
+                        false,
+                        cx,
+                        |view, cx| view.insert_table_of_contents(cx),
+                    )
                     .into_any_element()])],
             )
             .into_any_element()],
@@ -1258,12 +1277,12 @@ impl DocumentView {
                 let tracking = self.tracking_changes;
                 vec![
                     Self::ribbon_group(
-                        "コメント",
+                        t("doc.comment"),
                         vec![Self::ribbon_row(vec![self
                             .ribbon_button(
                                 "review-comment",
-                                "コメント",
-                                "コメント",
+                                t("doc.comment"),
+                                t("doc.comment"),
                                 false,
                                 cx,
                                 |view, cx| view.add_comment(cx),
@@ -1272,12 +1291,12 @@ impl DocumentView {
                     )
                     .into_any_element(),
                     Self::ribbon_group(
-                        "変更履歴",
+                        t("doc.group.tracking"),
                         vec![Self::ribbon_row(vec![
                             self.ribbon_button(
                                 "track",
-                                "記録",
-                                "変更履歴の記録",
+                                t("doc.track"),
+                                t("doc.track_title"),
                                 tracking,
                                 cx,
                                 |view, cx| view.toggle_tracking(cx),
@@ -1285,8 +1304,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "accept",
-                                "すべて反映",
-                                "すべて反映",
+                                t("doc.accept_all"),
+                                t("doc.accept_all"),
                                 false,
                                 cx,
                                 |view, cx| view.resolve_revisions(true, cx),
@@ -1294,8 +1313,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "reject",
-                                "すべて取消",
-                                "すべて元に戻す",
+                                t("doc.reject_all"),
+                                t("doc.reject_all_title"),
                                 false,
                                 cx,
                                 |view, cx| view.resolve_revisions(false, cx),
@@ -1310,12 +1329,12 @@ impl DocumentView {
                 let marks = self.document.formatting_marks();
                 vec![
                     Self::ribbon_group(
-                        "表示",
+                        t("doc.group.show"),
                         vec![Self::ribbon_row(vec![self
                             .ribbon_button(
                                 "marks",
-                                "編集記号",
-                                "編集記号の表示",
+                                t("doc.marks"),
+                                t("doc.marks_title"),
                                 marks,
                                 cx,
                                 |view, cx| view.toggle_formatting_marks(cx),
@@ -1324,12 +1343,12 @@ impl DocumentView {
                     )
                     .into_any_element(),
                     Self::ribbon_group(
-                        "ズーム",
+                        t("doc.group.zoom"),
                         vec![Self::ribbon_row(vec![
                             self.ribbon_button(
                                 "zoom-out",
-                                "縮小",
-                                "縮小",
+                                t("doc.zoom_out"),
+                                t("doc.zoom_out"),
                                 false,
                                 cx,
                                 |view, cx| {
@@ -1340,8 +1359,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "zoom-reset",
-                                "等倍",
-                                "等倍",
+                                t("doc.zoom_actual"),
+                                t("doc.zoom_actual"),
                                 false,
                                 cx,
                                 |view, cx| view.set_zoom(1.0, cx),
@@ -1349,8 +1368,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "zoom-in",
-                                "拡大",
-                                "拡大",
+                                t("doc.zoom_in"),
+                                t("doc.zoom_in"),
                                 false,
                                 cx,
                                 |view, cx| {
@@ -1363,12 +1382,12 @@ impl DocumentView {
                     )
                     .into_any_element(),
                     Self::ribbon_group(
-                        "ページ",
+                        t("doc.group.pages"),
                         vec![Self::ribbon_row(vec![
                             self.ribbon_button(
                                 "prev-page",
-                                "前へ",
-                                "前のページ",
+                                t("doc.previous"),
+                                t("doc.previous_page"),
                                 false,
                                 cx,
                                 |view, cx| view.go_to_page(-1, cx),
@@ -1376,8 +1395,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "next-page",
-                                "次へ",
-                                "次のページ",
+                                t("doc.next"),
+                                t("doc.next_page"),
                                 false,
                                 cx,
                                 |view, cx| view.go_to_page(1, cx),
@@ -1397,25 +1416,40 @@ impl DocumentView {
         let size = self.font_size_pt;
         vec![
             Self::ribbon_group(
-                "クリップボード",
+                t("doc.group.clipboard"),
                 vec![Self::ribbon_row(vec![
-                    self.ribbon_button("paste", "貼付", "ペースト", false, cx, |view, cx| {
-                        view.paste(cx)
-                    })
+                    self.ribbon_button(
+                        "paste",
+                        t("doc.paste"),
+                        t("doc.paste_title"),
+                        false,
+                        cx,
+                        |view, cx| view.paste(cx),
+                    )
                     .into_any_element(),
-                    self.ribbon_button("cut", "切取", "切り取り", false, cx, |view, cx| {
-                        view.cut(cx)
-                    })
+                    self.ribbon_button(
+                        "cut",
+                        t("doc.cut"),
+                        t("doc.cut_title"),
+                        false,
+                        cx,
+                        |view, cx| view.cut(cx),
+                    )
                     .into_any_element(),
-                    self.ribbon_button("copy", "複写", "コピー", false, cx, |view, cx| {
-                        view.copy(cx)
-                    })
+                    self.ribbon_button(
+                        "copy",
+                        t("doc.copy"),
+                        t("doc.copy_title"),
+                        false,
+                        cx,
+                        |view, cx| view.copy(cx),
+                    )
                     .into_any_element(),
                 ])],
             )
             .into_any_element(),
             Self::ribbon_group(
-                "フォント",
+                t("doc.group.font"),
                 vec![
                     Self::ribbon_row(vec![
                         // The family picker: a button showing the family, and a
@@ -1456,8 +1490,8 @@ impl DocumentView {
                             .into_any_element(),
                         self.ribbon_button(
                             "size-up",
-                            "大",
-                            "フォントサイズの拡大",
+                            t("doc.grow"),
+                            t("doc.grow_title"),
                             false,
                             cx,
                             |view, cx| {
@@ -1468,8 +1502,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "size-down",
-                            "小",
-                            "フォントサイズの縮小",
+                            t("doc.shrink"),
+                            t("doc.shrink_title"),
                             false,
                             cx,
                             |view, cx| {
@@ -1480,39 +1514,64 @@ impl DocumentView {
                         .into_any_element(),
                     ]),
                     Self::ribbon_row(vec![
-                        self.ribbon_button("bold", "B", "太字", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Bold, cx)
-                        })
+                        self.ribbon_button(
+                            "bold",
+                            "B",
+                            t("doc.bold_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Bold, cx),
+                        )
                         .into_any_element(),
-                        self.ribbon_button("italic", "I", "斜体", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Italic, cx)
-                        })
+                        self.ribbon_button(
+                            "italic",
+                            "I",
+                            t("doc.italic_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Italic, cx),
+                        )
                         .into_any_element(),
-                        self.ribbon_button("underline", "U", "下線", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Underline, cx)
-                        })
+                        self.ribbon_button(
+                            "underline",
+                            "U",
+                            t("doc.underline_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Underline, cx),
+                        )
                         .into_any_element(),
                         self.ribbon_button(
                             "strike",
                             "S",
-                            "取り消し線",
+                            t("doc.strike_title"),
                             false,
                             cx,
                             |view, cx| view.format(CharacterFormat::Strikethrough, cx),
                         )
                         .into_any_element(),
-                        self.ribbon_button("sub", "下付", "下付き", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Subscript, cx)
-                        })
+                        self.ribbon_button(
+                            "sub",
+                            t("doc.subscript"),
+                            t("doc.subscript_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Subscript, cx),
+                        )
                         .into_any_element(),
-                        self.ribbon_button("sup", "上付", "上付き", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Superscript, cx)
-                        })
+                        self.ribbon_button(
+                            "sup",
+                            t("doc.superscript"),
+                            t("doc.superscript_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Superscript, cx),
+                        )
                         .into_any_element(),
                         self.ribbon_button(
                             "colour",
-                            "文字色",
-                            "フォントの色",
+                            t("doc.font_color"),
+                            t("doc.font_color_title"),
                             self.popup == Some(RibbonPopup::FontColor),
                             cx,
                             |view, cx| view.toggle_popup(RibbonPopup::FontColor, cx),
@@ -1520,8 +1579,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "highlight",
-                            "蛍光",
-                            "蛍光ペン",
+                            t("doc.highlight"),
+                            t("doc.highlight_title"),
                             self.popup == Some(RibbonPopup::Highlight),
                             cx,
                             |view, cx| view.toggle_popup(RibbonPopup::Highlight, cx),
@@ -1529,8 +1588,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "clear",
-                            "書式解除",
-                            "書式のクリア",
+                            t("doc.clear_format"),
+                            t("doc.clear_format_title"),
                             false,
                             cx,
                             |view, cx| view.format(CharacterFormat::Clear, cx),
@@ -1541,13 +1600,13 @@ impl DocumentView {
             )
             .into_any_element(),
             Self::ribbon_group(
-                "段落",
+                t("doc.group.paragraph"),
                 vec![
                     Self::ribbon_row(vec![
                         self.ribbon_button(
                             "bullets",
-                            "箇条書き",
-                            "箇条書き",
+                            t("doc.bullets"),
+                            t("doc.bullets"),
                             false,
                             cx,
                             |view, cx| view.set_numbering(Some("1"), cx),
@@ -1555,8 +1614,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "numbering",
-                            "段落番号",
-                            "段落番号",
+                            t("doc.numbering"),
+                            t("doc.numbering"),
                             false,
                             cx,
                             |view, cx| view.set_numbering(Some("2"), cx),
@@ -1564,8 +1623,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "no-list",
-                            "解除",
-                            "リストの解除",
+                            t("doc.no_list"),
+                            t("doc.no_list_title"),
                             false,
                             cx,
                             |view, cx| view.set_numbering(None, cx),
@@ -1573,8 +1632,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "indent-less",
-                            "字下げ－",
-                            "インデントを減らす",
+                            t("doc.indent_less"),
+                            t("doc.indent_less_title"),
                             false,
                             cx,
                             |view, cx| view.indent(-36.0, cx),
@@ -1582,8 +1641,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "indent-more",
-                            "字下げ＋",
-                            "インデントを増やす",
+                            t("doc.indent_more"),
+                            t("doc.indent_more_title"),
                             false,
                             cx,
                             |view, cx| view.indent(36.0, cx),
@@ -1593,8 +1652,8 @@ impl DocumentView {
                     Self::ribbon_row(vec![
                         self.ribbon_button(
                             "line-spacing",
-                            "行間",
-                            "行と段落の間隔",
+                            t("doc.line_spacing"),
+                            t("doc.line_spacing_title"),
                             self.popup == Some(RibbonPopup::LineSpacing),
                             cx,
                             |view, cx| view.toggle_popup(RibbonPopup::LineSpacing, cx),
@@ -1602,8 +1661,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "space-after",
-                            "段落後",
-                            "段落の後に間隔を空ける",
+                            t("doc.space_after"),
+                            t("doc.space_after_title"),
                             false,
                             cx,
                             |view, cx| view.set_paragraph_spacing(12.0, cx),
@@ -1611,8 +1670,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "shading",
-                            "網かけ",
-                            "段落の網かけ",
+                            t("doc.shading"),
+                            t("doc.shading_title"),
                             self.popup == Some(RibbonPopup::Shading),
                             cx,
                             |view, cx| view.toggle_popup(RibbonPopup::Shading, cx),
@@ -1620,8 +1679,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "borders",
-                            "罫線",
-                            "段落を罫線で囲む",
+                            t("doc.borders"),
+                            t("doc.borders_title"),
                             false,
                             cx,
                             |view, cx| view.set_paragraph_borders(true, cx),
@@ -1629,8 +1688,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "no-borders",
-                            "罫線なし",
-                            "段落の罫線を消す",
+                            t("doc.no_borders"),
+                            t("doc.no_borders_title"),
                             false,
                             cx,
                             |view, cx| view.set_paragraph_borders(false, cx),
@@ -1640,8 +1699,8 @@ impl DocumentView {
                     Self::ribbon_row(vec![
                         self.ribbon_button(
                             "align-left",
-                            "左",
-                            "左揃え",
+                            t("doc.align_left"),
+                            t("doc.align_left_title"),
                             false,
                             cx,
                             |view, cx| view.align("left", cx),
@@ -1649,8 +1708,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "align-center",
-                            "中央",
-                            "中央揃え",
+                            t("doc.center"),
+                            t("doc.center_title"),
                             false,
                             cx,
                             |view, cx| view.align("center", cx),
@@ -1658,8 +1717,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "align-right",
-                            "右",
-                            "右揃え",
+                            t("doc.align_right"),
+                            t("doc.align_right_title"),
                             false,
                             cx,
                             |view, cx| view.align("right", cx),
@@ -1667,8 +1726,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "align-both",
-                            "両端",
-                            "両端揃え",
+                            t("doc.justify"),
+                            t("doc.justify_title"),
                             false,
                             cx,
                             |view, cx| view.align("both", cx),
@@ -1679,30 +1738,35 @@ impl DocumentView {
             )
             .into_any_element(),
             Self::ribbon_group(
-                "スタイル",
+                t("doc.group.styles"),
                 vec![Self::ribbon_row(vec![
-                    self.style_button("style-normal", "標準", "Normal", cx)
+                    self.style_button("style-normal", t("doc.style.normal"), "Normal", cx)
                         .into_any_element(),
-                    self.style_button("style-h1", "見出し 1", "Heading1", cx)
+                    self.style_button("style-h1", t("doc.style.heading1"), "Heading1", cx)
                         .into_any_element(),
-                    self.style_button("style-h2", "見出し 2", "Heading2", cx)
+                    self.style_button("style-h2", t("doc.style.heading2"), "Heading2", cx)
                         .into_any_element(),
-                    self.style_button("style-h3", "見出し 3", "Heading3", cx)
+                    self.style_button("style-h3", t("doc.style.heading3"), "Heading3", cx)
                         .into_any_element(),
                 ])],
             )
             .into_any_element(),
             Self::ribbon_group(
-                "編集",
+                t("doc.group.editing"),
                 vec![Self::ribbon_row(vec![
-                    self.ribbon_button("undo", "戻す", "元に戻す", false, cx, |view, cx| {
-                        view.step_history(true, cx)
-                    })
+                    self.ribbon_button(
+                        "undo",
+                        t("doc.undo"),
+                        t("doc.undo_title"),
+                        false,
+                        cx,
+                        |view, cx| view.step_history(true, cx),
+                    )
                     .into_any_element(),
                     self.ribbon_button(
                         "redo",
-                        "やり直し",
-                        "やり直し",
+                        t("doc.redo"),
+                        t("doc.redo"),
                         false,
                         cx,
                         |view, cx| view.step_history(false, cx),
@@ -1710,8 +1774,8 @@ impl DocumentView {
                     .into_any_element(),
                     self.ribbon_button(
                         "find",
-                        "検索",
-                        "検索と置換",
+                        t("doc.find"),
+                        t("doc.find_title"),
                         false,
                         cx,
                         |view, cx| view.open_find_bar(cx),
@@ -1770,29 +1834,29 @@ impl DocumentView {
             "Arial",
         ];
         const COLORS: [(&str, &str); 7] = [
-            ("自動", "000000"),
-            ("赤", "C00000"),
-            ("オレンジ", "E36C0A"),
-            ("緑", "00B050"),
-            ("青", "0070C0"),
-            ("紫", "7030A0"),
-            ("灰", "808080"),
+            ("doc.color.auto", "000000"),
+            ("doc.color.red", "C00000"),
+            ("doc.color.orange", "E36C0A"),
+            ("doc.color.green", "00B050"),
+            ("doc.color.blue", "0070C0"),
+            ("doc.color.purple", "7030A0"),
+            ("doc.color.gray", "808080"),
         ];
         const HIGHLIGHTS: [(&str, &str); 5] = [
-            ("なし", "none"),
-            ("黄", "yellow"),
-            ("緑", "green"),
-            ("水色", "cyan"),
-            ("桃", "magenta"),
+            ("doc.none", "none"),
+            ("doc.color.yellow", "yellow"),
+            ("doc.color.green", "green"),
+            ("doc.color.cyan", "cyan"),
+            ("doc.color.pink", "magenta"),
         ];
         const SPACINGS: [(&str, f32); 4] =
             [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)];
         const SHADINGS: [(&str, &str); 5] = [
-            ("なし", ""),
-            ("薄黄", "FFF2CC"),
-            ("薄青", "DEEAF6"),
-            ("薄緑", "E2EFDA"),
-            ("薄灰", "EDEDED"),
+            ("doc.none", ""),
+            ("doc.color.pale_yellow", "FFF2CC"),
+            ("doc.color.pale_blue", "DEEAF6"),
+            ("doc.color.pale_green", "E2EFDA"),
+            ("doc.color.light_gray", "EDEDED"),
         ];
 
         let rows: Vec<AnyElement> = match popup {
@@ -1808,7 +1872,7 @@ impl DocumentView {
             RibbonPopup::FontColor => COLORS
                 .iter()
                 .map(|(label, color)| {
-                    self.popup_row(color, label, cx, move |view, cx| {
+                    self.popup_row(color, t(label), cx, move |view, cx| {
                         view.set_font_color(color, cx)
                     })
                     .into_any_element()
@@ -1817,7 +1881,7 @@ impl DocumentView {
             RibbonPopup::Highlight => HIGHLIGHTS
                 .iter()
                 .map(|(label, color)| {
-                    self.popup_row(color, label, cx, move |view, cx| {
+                    self.popup_row(color, t(label), cx, move |view, cx| {
                         view.set_highlight(color, cx)
                     })
                     .into_any_element()
@@ -1836,7 +1900,7 @@ impl DocumentView {
             RibbonPopup::Shading => SHADINGS
                 .iter()
                 .map(|(label, color)| {
-                    self.popup_row(label, label, cx, move |view, cx| {
+                    self.popup_row(label, t(label), cx, move |view, cx| {
                         view.set_shading((!color.is_empty()).then_some(color), cx)
                     })
                     .into_any_element()
@@ -1937,8 +2001,16 @@ impl DocumentView {
                 .bg(theme::panel())
                 .border_b_1()
                 .border_color(theme::border())
-                .child(field("Find", &bar.query, !bar.editing_replacement))
-                .child(field("Replace", &bar.replacement, bar.editing_replacement))
+                .child(field(
+                    t("doc.find.query"),
+                    &bar.query,
+                    !bar.editing_replacement,
+                ))
+                .child(field(
+                    t("doc.find.replacement"),
+                    &bar.replacement,
+                    bar.editing_replacement,
+                ))
                 .child(
                     div().text_xs().text_color(theme::text_faint()).child(
                         self.find_status
@@ -1951,7 +2023,7 @@ impl DocumentView {
                     div()
                         .text_xs()
                         .text_color(theme::text_faint())
-                        .child("⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · esc close"),
+                        .child(t("doc.find.keys")),
                 ),
         )
     }
@@ -2087,9 +2159,9 @@ impl DocumentView {
         };
         let count = self.document.find(&query, false).len();
         self.find_status = Some(SharedString::from(if count == 0 {
-            format!("{query}: no matches")
+            i18n::format("doc.find.none", &[("query", &query)])
         } else {
-            format!("{query}: {count} matches")
+            i18n::format("doc.find.count", &[("query", &query), ("n", &count)])
         }));
     }
 
@@ -2131,7 +2203,7 @@ impl DocumentView {
                 self.caret = self
                     .document
                     .place_caret(self.insert_at.0, self.insert_at.1);
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 self.find_query = Some(query);
                 self.find_next(cx);
             }
@@ -2160,12 +2232,17 @@ impl DocumentView {
             Ok(replaced) => {
                 // Replacing re-flows text onto other pages, so every page is
                 // rebuilt rather than the one the caret is on.
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 self.caret = self
                     .document
                     .place_caret(self.insert_at.0, self.insert_at.1);
-                self.find_status = Some(SharedString::from(format!(
-                    "{query} → {replacement}: {replaced} replaced"
+                self.find_status = Some(SharedString::from(i18n::format(
+                    "doc.find.replaced",
+                    &[
+                        ("query", &query),
+                        ("replacement", &replacement),
+                        ("n", &replaced),
+                    ],
                 )));
                 cx.notify();
             }
@@ -2190,7 +2267,10 @@ impl DocumentView {
         };
         let hits = self.document.find(&query, false);
         if hits.is_empty() {
-            self.find_status = Some(SharedString::from(format!("{query}: no matches")));
+            self.find_status = Some(SharedString::from(i18n::format(
+                "doc.find.none",
+                &[("query", &query)],
+            )));
             return cx.notify();
         }
         let (paragraph, offset) = self.insert_at;
@@ -2205,10 +2285,13 @@ impl DocumentView {
             .copied()
             .unwrap_or(hits[0]);
         let position = hits.iter().position(|hit| *hit == next).unwrap_or(0);
-        self.find_status = Some(SharedString::from(format!(
-            "{query}: {} of {}",
-            position + 1,
-            hits.len()
+        self.find_status = Some(SharedString::from(i18n::format(
+            "doc.find.position",
+            &[
+                ("query", &query),
+                ("n", &(position + 1)),
+                ("count", &hits.len()),
+            ],
         )));
 
         let page = self.caret_page_1idx();
@@ -2243,7 +2326,7 @@ impl DocumentView {
                 self.caret = self
                     .document
                     .place_caret(self.insert_at.0, self.insert_at.1);
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 cx.notify();
             }
             Err(error) => self.table_status = Some(SharedString::from(error)),
@@ -2256,9 +2339,9 @@ impl DocumentView {
     /// about what this does — a placeholder comment is still a real comment in
     /// the file, and the panel says how many there are.
     fn add_comment(&mut self, cx: &mut Context<Self>) {
-        match self.document.add_comment("Comment", "jade") {
+        match self.document.add_comment(t("doc.comment"), "jade") {
             Ok(()) => {
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 cx.notify();
             }
             Err(error) => eprintln!("comment failed: {error}"),
@@ -2270,7 +2353,7 @@ impl DocumentView {
         match self.document.set_change_tracking(next, "jade") {
             Ok(()) => {
                 self.tracking_changes = next;
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 cx.notify();
             }
             Err(error) => eprintln!("change tracking failed: {error}"),
@@ -2280,7 +2363,7 @@ impl DocumentView {
     fn align(&mut self, alignment: &str, cx: &mut Context<Self>) {
         let page = self.caret_page_1idx();
         if self.document.set_alignment(alignment, page).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2290,7 +2373,7 @@ impl DocumentView {
         let page = self.caret_page_1idx();
         let indent = self.indent_points;
         if self.document.shift_indent(indent, page).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2317,6 +2400,7 @@ impl DocumentView {
         // a caret rather than a failure. The selection survives a command that
         // did apply, so the next ribbon button acts on the same run.
         if applied.is_ok() {
+            self.dirty = true;
             self.refresh_caret_page_image();
             cx.notify();
         }
@@ -2361,7 +2445,7 @@ impl DocumentView {
         let page = self.caret_page_1idx();
         if self.document.set_line_spacing(multiple, page).is_ok() {
             // Line height moves everything below it.
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2373,7 +2457,7 @@ impl DocumentView {
             .set_paragraph_spacing(None, Some(after), page)
             .is_ok()
         {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2396,14 +2480,14 @@ impl DocumentView {
 
     fn set_page_background(&mut self, color: Option<&str>, cx: &mut Context<Self>) {
         if self.document.set_page_background(color).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
 
     fn set_page_borders(&mut self, boxed: bool, cx: &mut Context<Self>) {
         if self.document.set_page_borders(boxed).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2412,7 +2496,7 @@ impl DocumentView {
         let page = self.caret_page_1idx();
         if self.document.set_paragraph_style(style_id, page).is_ok() {
             // A style changes line heights, so everything below can move.
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2420,7 +2504,7 @@ impl DocumentView {
     fn set_numbering(&mut self, num_id: Option<&str>, cx: &mut Context<Self>) {
         let page = self.caret_page_1idx();
         if self.document.set_numbering(num_id, page).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2432,28 +2516,28 @@ impl DocumentView {
             self.document.selection(),
         ));
         if self.document.insert_table(rows, columns).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
 
     fn insert_blank_page(&mut self, cx: &mut Context<Self>) {
         if self.document.insert_blank_page().is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
 
     fn insert_table_of_contents(&mut self, cx: &mut Context<Self>) {
         if self.document.insert_table_of_contents().is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
 
     fn resolve_revisions(&mut self, accept: bool, cx: &mut Context<Self>) {
         if self.document.resolve_revisions(accept).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2569,7 +2653,7 @@ impl DocumentView {
         if let Ok(caret) = self.document.replace_selection("", page) {
             self.insert_at = caret;
             self.caret = self.document.place_caret(caret.0, caret.1);
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2623,7 +2707,7 @@ impl DocumentView {
         self.caret = self
             .document
             .place_caret(self.insert_at.0, self.insert_at.1);
-        self.rebuild_all_images();
+        self.rebuild_after_edit();
         cx.notify();
     }
 
@@ -2639,7 +2723,7 @@ impl DocumentView {
             Ok(Some(caret)) => {
                 self.insert_at = caret;
                 self.caret = self.document.place_caret(caret.0, caret.1);
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 cx.notify();
             }
             // Nothing on the stack: not an error, just nothing to do.
@@ -2682,6 +2766,7 @@ impl DocumentView {
         match self.document.export_docx() {
             Ok(bytes) => match std::fs::write(&target, &bytes) {
                 Ok(()) => {
+                    self.dirty = false;
                     self.saved_to = Some(SharedString::from(
                         target
                             .file_name()
@@ -2777,6 +2862,7 @@ impl DocumentView {
     ) {
         match result {
             Ok(elapsed) => {
+                self.dirty = true;
                 self.last_repaint = Some(elapsed);
                 self.insert_at = caret_at;
                 self.caret = self.document.place_caret(caret_at.0, caret_at.1);
@@ -2785,6 +2871,13 @@ impl DocumentView {
             }
             Err(error) => eprintln!("edit failed: {error}"),
         }
+    }
+
+    /// [`Self::rebuild_all_images`] after a change to the document's content,
+    /// which leaves it unsaved.
+    fn rebuild_after_edit(&mut self) {
+        self.dirty = true;
+        self.rebuild_all_images();
     }
 
     /// Re-reads every page. Needed after a re-flow, where a later page's
@@ -2901,7 +2994,7 @@ impl DocumentView {
         }
         // The object is not bound to one page's bitmap: moving it can uncover
         // text on the page it came from, so every page is rebuilt.
-        self.rebuild_all_images();
+        self.rebuild_after_edit();
         cx.notify();
     }
 
@@ -3113,7 +3206,7 @@ impl DocumentView {
                     self.typed += text.chars().count();
                     // A selection can span paragraphs, and replacing one pulls
                     // the tail up: every page below can move.
-                    self.rebuild_all_images();
+                    self.rebuild_after_edit();
                     cx.notify();
                 }
                 Err(error) => eprintln!("edit failed: {error}"),
@@ -3132,6 +3225,7 @@ impl DocumentView {
         };
         match result {
             Ok(elapsed) => {
+                self.dirty = true;
                 self.last_repaint = Some(elapsed);
                 self.typed += text.chars().count();
                 self.insert_at = (paragraph, range.start + text.len());
@@ -3359,6 +3453,10 @@ impl editor::Editor for DocumentView {
     fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
         self.zoom = editor::clamp_zoom(zoom);
         cx.notify();
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.dirty
     }
 
     /// The page's width fitted to the space beside the page list.
@@ -3624,26 +3722,34 @@ impl Render for DocumentView {
                                 .flex()
                                 .flex_col()
                                 .gap_1()
-                                .child(div().text_sm().text_color(theme::text()).child("Document"))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(theme::text())
+                                        .child(t("doc.info.title")),
+                                )
                                 .child(
                                     div()
                                         .text_xs()
                                         .text_color(theme::text_faint())
-                                        .child("Rendered without a browser"),
+                                        .child(t("doc.info.subtitle")),
                                 ),
                         )
-                        .child(Self::info_row("Pages", page_count.to_string()))
+                        .child(Self::info_row(t("doc.info.pages"), page_count.to_string()))
                         .child(Self::info_row(
-                            "Page size",
+                            t("doc.info.page_size"),
                             format!("{} x {} px", page_width as i32, page_height as i32),
                         ))
                         .child(Self::info_row(
-                            "File size",
+                            t("doc.info.file_size"),
                             format!("{:.1} KB", self.file_size as f64 / 1024.0),
                         ))
-                        .child(Self::info_row("Renderer", "jade + Skia".to_string()))
                         .child(Self::info_row(
-                            "Last repaint",
+                            t("doc.info.renderer"),
+                            "jade + Skia".to_string(),
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.last_repaint"),
                             match self.last_repaint {
                                 Some(elapsed) => {
                                     format!("{:.2} ms", elapsed.as_secs_f64() * 1000.0)
@@ -3651,9 +3757,12 @@ impl Render for DocumentView {
                                 None => "—".to_string(),
                             },
                         ))
-                        .child(Self::info_row("Typed", format!("{} chars", self.typed)))
                         .child(Self::info_row(
-                            "Insertion point",
+                            t("doc.info.typed"),
+                            i18n::format("doc.info.typed_value", &[("n", &self.typed)]),
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.insertion"),
                             match self.document.selection() {
                                 Some((anchor, focus)) => {
                                     format!("¶{}:{} – ¶{}:{}", anchor.0, anchor.1, focus.0, focus.1)
@@ -3664,38 +3773,43 @@ impl Render for DocumentView {
                             },
                         ))
                         .child(Self::info_row(
-                            "History",
-                            format!(
-                                "{} undo · {} redo",
-                                if self.document.can_undo() {
-                                    "can"
-                                } else {
-                                    "no"
-                                },
-                                if self.document.can_redo() {
-                                    "can"
-                                } else {
-                                    "no"
-                                },
+                            t("doc.info.history"),
+                            i18n::format(
+                                "doc.info.history_value",
+                                &[
+                                    ("undo", &yes_no(self.document.can_undo())),
+                                    ("redo", &yes_no(self.document.can_redo())),
+                                ],
                             ),
                         ))
                         .child(Self::info_row(
-                            "Review",
-                            format!(
-                                "{} comments · tracking {}",
-                                self.document.comment_count(),
-                                if self.tracking_changes { "on" } else { "off" }
+                            t("doc.info.review"),
+                            i18n::format(
+                                "doc.info.review_value",
+                                &[
+                                    ("n", &self.document.comment_count()),
+                                    (
+                                        "tracking",
+                                        &t(if self.tracking_changes {
+                                            "doc.info.on"
+                                        } else {
+                                            "doc.info.off"
+                                        }),
+                                    ),
+                                ],
                             ),
                         ))
                         .child(Self::info_row(
-                            "Table",
+                            t("doc.info.table"),
                             match self.document.caret_table_cell() {
-                                Some(cell) => format!(
-                                    "row {} of {} · column {} of {}",
-                                    cell.row + 1,
-                                    cell.rows,
-                                    cell.column + 1,
-                                    cell.columns
+                                Some(cell) => i18n::format(
+                                    "doc.info.table_value",
+                                    &[
+                                        ("row", &(cell.row + 1)),
+                                        ("rows", &cell.rows),
+                                        ("column", &(cell.column + 1)),
+                                        ("columns", &cell.columns),
+                                    ],
                                 ),
                                 None => self
                                     .table_status
@@ -3705,14 +3819,14 @@ impl Render for DocumentView {
                             },
                         ))
                         .child(Self::info_row(
-                            "Find",
+                            t("doc.info.find"),
                             self.find_status
                                 .as_ref()
                                 .map(|status| status.to_string())
                                 .unwrap_or_else(|| "—".to_string()),
                         ))
                         .child(Self::info_row(
-                            "Saved",
+                            t("doc.info.saved"),
                             self.saved_to
                                 .as_ref()
                                 .map(|name| name.to_string())
@@ -3722,11 +3836,7 @@ impl Render for DocumentView {
                             // The commands are in the menu bar now, with their
                             // shortcuts on them. What is left here is what no menu
                             // item can show: the mouse and the find bar's own keys.
-                            "Drag to select · double-click a word · ⇧arrows extend \
-                                 · type over a selection to replace it \
-                                 · drag a picture to move it, its corner to size \
-                                 · in the find bar: ⇥ field · ⏎ next \
-                                 · ⇧⏎ replace · ⌘⏎ all · esc close.",
+                            t("doc.info.help"),
                         ))
                         .child(
                             div()
@@ -3746,6 +3856,12 @@ pub(crate) fn new_document_view(
     path: &std::path::Path,
     cx: &mut App,
 ) -> Result<gpui::Entity<DocumentView>, String> {
+    let view = open_document_view(path, cx)?;
+    Ok(cx.new(|_| view))
+}
+
+/// Reads `path` and paints its pages, ready to be shown.
+fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentView, String> {
     let path_text = path.to_string_lossy().into_owned();
     let mut document = open_document(&path_text)?;
     // Placed before the window opens so the caret is visible from the first
@@ -3756,7 +3872,7 @@ pub(crate) fn new_document_view(
         .collect();
     let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
 
-    Ok(cx.new(|cx| DocumentView {
+    Ok(DocumentView {
         path: SharedString::from(path_text),
         file_size,
         document,
@@ -3787,9 +3903,10 @@ pub(crate) fn new_document_view(
         typed: 0,
         current_page: 0,
         show_inspector: false,
+        dirty: false,
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
-    }))
+    })
 }
 
 fn main() {
@@ -3891,6 +4008,37 @@ fn percent_decode(text: &str) -> String {
 mod tests {
     use super::{key_bindings, menus, percent_decode, Menu, MenuItem};
     use std::collections::{HashMap, HashSet};
+
+    /// Typing into a document edits it and marks its tab unsaved; Undo
+    /// takes the typing back, a character at a time — each insert is its
+    /// own step in the document's history.
+    #[gpui::test]
+    fn typing_into_a_document_marks_it_unsaved(cx: &mut gpui::TestAppContext) {
+        use super::{open_document_view, Editor, Undo};
+        use gpui::Focusable;
+        let path = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../jade-core/contract.docx"
+        ));
+        let (view, cx) = cx.add_window_view(|_window, cx| open_document_view(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        let before = view.read_with(cx, |view, _| {
+            assert!(!view.is_dirty());
+            view.current_paragraph_text()
+        });
+        cx.simulate_input("jade");
+        view.read_with(cx, |view, _| {
+            assert!(view.is_dirty());
+            assert!(view.current_paragraph_text().contains("jade"));
+        });
+        for _ in 0.."jade".len() {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.current_paragraph_text(), before);
+        });
+    }
 
     #[test]
     fn file_urls_decode_to_paths() {

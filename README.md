@@ -20,7 +20,7 @@ Zoom is the workspace's: ⌘= / ⌘- step through Office's zoom stops, ⌘0 is 1
 
 Scenario tests drive the real views headlessly through gpui's test support (`cargo test` in `crates/jade-gpui-app`): typing into cells, moving, typing into and deleting slide shapes, undo/redo, opening every format as a tab, zoom.
 
-The shell speaks Japanese and English (`crates/jade-gpui-app/i18n/{ja,en}.tsv`), picked from the system's preferred language; `JADE_LANG=en` or `JADE_LANG=ja` overrides it. The document ribbon's labels are still Japanese only.
+The shell speaks Japanese and English (`crates/jade-gpui-app/i18n/{ja,en}.tsv`), picked from the system's preferred language; `JADE_LANG=en` or `JADE_LANG=ja` overrides it. That covers the document ribbon and its tooltips too; font family names stay as the fonts are called.
 
 `crates/jade-pptx-native-render` draws slides through Skia (the counterpart of jade-core's `jade-docx-native-render` / `jade-xlsx-native-render`); `cargo run --bin pptx_to_png -- deck.pptx out/` from its directory writes each slide as a PNG.
 

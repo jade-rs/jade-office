@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 
 use crate::editor::{self, Editor, EditorHandle};
 use crate::shell::{self, recent, Kind};
+use crate::tooltip::Tooltip;
 use crate::{
     deck, i18n, theme, workbook, CloseWindow, OpenFolder, ToggleExplorer, ToggleInspector,
     ToggleTheme, ZoomActual, ZoomFit, ZoomIn, ZoomOut, UI_FONT_FAMILY,
@@ -442,6 +443,7 @@ impl Workspace {
                         "icons/moon.svg"
                     },
                     false,
+                    i18n::text("menu.view.theme"),
                 )
                 .on_click(cx.listener(|_workspace, _event, window, cx| {
                     window.dispatch_action(Box::new(ToggleTheme), cx);
@@ -463,27 +465,42 @@ impl Workspace {
             .border_r_1()
             .border_color(theme::border())
             .child(
-                activity_button("activity-explorer", "icons/files.svg", self.explorer_open)
-                    .on_click(cx.listener(|workspace, _event, _window, cx| {
-                        workspace.explorer_open = !workspace.explorer_open;
-                        cx.notify();
-                    })),
+                activity_button(
+                    "activity-explorer",
+                    "icons/files.svg",
+                    self.explorer_open,
+                    i18n::text("workspace.explorer"),
+                )
+                .on_click(cx.listener(|workspace, _event, _window, cx| {
+                    workspace.explorer_open = !workspace.explorer_open;
+                    cx.notify();
+                })),
             )
             .child(div().w_5().h(px(1.0)).my_1().bg(theme::border()))
             .child(
-                activity_button("activity-inspector", "icons/panel-right.svg", false).on_click(
-                    cx.listener(|workspace, _event, window, cx| {
-                        // Sent to the active view, which owns its own panel.
-                        if let Some(tab) = workspace.active_tab() {
-                            window.focus(&tab.focus);
-                        }
-                        window.dispatch_action(Box::new(ToggleInspector), cx);
-                    }),
-                ),
+                activity_button(
+                    "activity-inspector",
+                    "icons/panel-right.svg",
+                    false,
+                    i18n::text("menu.view.details"),
+                )
+                .on_click(cx.listener(|workspace, _event, window, cx| {
+                    // Sent to the active view, which owns its own panel.
+                    if let Some(tab) = workspace.active_tab() {
+                        window.focus(&tab.focus);
+                    }
+                    window.dispatch_action(Box::new(ToggleInspector), cx);
+                })),
             )
             .child(div().flex_1())
             .child(
-                activity_button("activity-open", "icons/file-plus.svg", false).on_click(
+                activity_button(
+                    "activity-open",
+                    "icons/file-plus.svg",
+                    false,
+                    i18n::text("workspace.open_file"),
+                )
+                .on_click(
                     cx.listener(|_workspace, _event, _window, cx| shell::prompt_and_open(cx)),
                 ),
             )
@@ -653,17 +670,28 @@ impl Workspace {
                             .child(i18n::text("workspace.explorer")),
                     )
                     .child(
-                        icon_button("explorer-open-file", "icons/file-plus.svg", false).on_click(
+                        icon_button(
+                            "explorer-open-file",
+                            "icons/file-plus.svg",
+                            false,
+                            i18n::text("workspace.open_file"),
+                        )
+                        .on_click(
                             cx.listener(|_workspace, _event, _window, cx| {
                                 shell::prompt_and_open(cx)
                             }),
                         ),
                     )
                     .child(
-                        icon_button("explorer-open-folder", "icons/folder-plus.svg", false)
-                            .on_click(cx.listener(|workspace, _event, _window, cx| {
-                                workspace.prompt_for_folder(cx)
-                            })),
+                        icon_button(
+                            "explorer-open-folder",
+                            "icons/folder-plus.svg",
+                            false,
+                            i18n::text("workspace.open_folder"),
+                        )
+                        .on_click(cx.listener(
+                            |workspace, _event, _window, cx| workspace.prompt_for_folder(cx),
+                        )),
                     ),
             )
             .child(
@@ -1019,9 +1047,15 @@ fn status_button(id: &'static str, label: &'static str) -> gpui::Stateful<gpui::
         .child(label)
 }
 
-fn icon_button(id: &'static str, icon: &'static str, active: bool) -> gpui::Stateful<gpui::Div> {
+fn icon_button(
+    id: &'static str,
+    icon: &'static str,
+    active: bool,
+    label: &'static str,
+) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
+        .tooltip(Tooltip::text(label))
         .p_1p5()
         .rounded_md()
         .cursor_pointer()
@@ -1038,9 +1072,11 @@ fn activity_button(
     id: &'static str,
     icon: &'static str,
     active: bool,
+    label: &'static str,
 ) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
+        .tooltip(Tooltip::text(label))
         .relative()
         .size_8()
         .flex()

@@ -95,3 +95,155 @@ deck.text_locked	この図形の文字は編集できません
 deck.saved	{name} に保存しました
 deck.save_failed	保存できません: {error}
 deck.selected_shape	選択: {name}
+doc.tab.home	ホーム
+doc.tab.insert	挿入
+doc.tab.design	デザイン
+doc.tab.layout	レイアウト
+doc.tab.references	参照設定
+doc.tab.review	校閲
+doc.tab.view	表示
+doc.export_word	Word 出力
+doc.group.table	表
+doc.table_3x3	表 3×3
+doc.table_3x3_title	3×3 の表
+doc.table_2x2	表 2×2
+doc.table_2x2_title	2×2 の表
+doc.group.pages	ページ
+doc.blank_page	空白ページ
+doc.comment	コメント
+doc.page_color	ページの色
+doc.color.cream	クリーム
+doc.color.light_gray	薄灰
+doc.none	なし
+doc.page_color_none	ページの色を消す
+doc.page_borders	ページ罫線
+doc.box	囲む
+doc.page_borders_box	ページを罫線で囲む
+doc.page_borders_none	ページの罫線を消す
+doc.group.paragraph	段落
+doc.indent_less	字下げ－
+doc.indent_less_title	インデントを減らす
+doc.indent_more	字下げ＋
+doc.indent_more_title	インデントを増やす
+doc.page_break	改ページ
+doc.toc	目次
+doc.toc_title	目次を挿入
+doc.group.tracking	変更履歴
+doc.track	記録
+doc.track_title	変更履歴の記録
+doc.accept_all	すべて反映
+doc.reject_all	すべて取消
+doc.reject_all_title	すべて元に戻す
+doc.marks	編集記号
+doc.marks_title	編集記号の表示
+doc.group.zoom	ズーム
+doc.zoom_out	縮小
+doc.zoom_actual	等倍
+doc.zoom_in	拡大
+doc.previous	前へ
+doc.previous_page	前のページ
+doc.next	次へ
+doc.next_page	次のページ
+doc.group.clipboard	クリップボード
+doc.paste	貼付
+doc.paste_title	ペースト
+doc.cut	切取
+doc.cut_title	切り取り
+doc.copy	複写
+doc.copy_title	コピー
+doc.group.font	フォント
+doc.grow	大
+doc.grow_title	フォントサイズの拡大
+doc.shrink	小
+doc.shrink_title	フォントサイズの縮小
+doc.bold_title	太字
+doc.italic_title	斜体
+doc.underline_title	下線
+doc.strike_title	取り消し線
+doc.subscript	下付
+doc.subscript_title	下付き
+doc.superscript	上付
+doc.superscript_title	上付き
+doc.font_color	文字色
+doc.font_color_title	フォントの色
+doc.highlight	蛍光
+doc.highlight_title	蛍光ペン
+doc.clear_format	書式解除
+doc.clear_format_title	書式のクリア
+doc.bullets	箇条書き
+doc.numbering	段落番号
+doc.no_list	解除
+doc.no_list_title	リストの解除
+doc.line_spacing	行間
+doc.line_spacing_title	行と段落の間隔
+doc.space_after	段落後
+doc.space_after_title	段落の後に間隔を空ける
+doc.shading	網かけ
+doc.shading_title	段落の網かけ
+doc.borders	罫線
+doc.borders_title	段落を罫線で囲む
+doc.no_borders	罫線なし
+doc.no_borders_title	段落の罫線を消す
+doc.align_left	左
+doc.align_left_title	左揃え
+doc.center	中央
+doc.center_title	中央揃え
+doc.align_right	右
+doc.align_right_title	右揃え
+doc.justify	両端
+doc.justify_title	両端揃え
+doc.group.styles	スタイル
+doc.style.normal	標準
+doc.style.heading1	見出し 1
+doc.style.heading2	見出し 2
+doc.style.heading3	見出し 3
+doc.group.editing	編集
+doc.undo	戻す
+doc.undo_title	元に戻す
+doc.redo	やり直し
+doc.find	検索
+doc.find_title	検索と置換
+doc.color.auto	自動
+doc.color.red	赤
+doc.color.orange	オレンジ
+doc.color.green	緑
+doc.color.blue	青
+doc.color.purple	紫
+doc.color.gray	灰
+doc.color.yellow	黄
+doc.color.cyan	水色
+doc.color.pink	桃
+doc.color.pale_yellow	薄黄
+doc.color.pale_blue	薄青
+doc.color.pale_green	薄緑
+doc.group.show	表示
+doc.info.title	文書
+doc.info.subtitle	ブラウザーなしで描画
+doc.info.pages	ページ数
+doc.info.page_size	用紙サイズ
+doc.info.file_size	ファイルサイズ
+doc.info.renderer	描画
+doc.info.last_repaint	直近の再描画
+doc.info.typed	入力
+doc.info.typed_value	{n} 文字
+doc.info.insertion	挿入位置
+doc.info.history	履歴
+doc.info.history_value	元に戻す {undo} · やり直し {redo}
+doc.info.yes	可
+doc.info.no	不可
+doc.info.review	校閲
+doc.info.review_value	コメント {n} 件 · 変更履歴 {tracking}
+doc.info.on	オン
+doc.info.off	オフ
+doc.info.table	表
+doc.info.table_value	{row} / {rows} 行 · {column} / {columns} 列
+doc.info.find	検索
+doc.info.saved	保存先
+doc.info.help	ドラッグで選択 · ダブルクリックで単語 · ⇧+矢印で拡張 · 選択範囲に入力で置換 · 画像はドラッグで移動、角でサイズ変更 · 検索バー: ⇥ 欄の切替 · ⏎ 次へ · ⇧⏎ 置換 · ⌘⏎ すべて · esc 閉じる
+doc.find.query	検索
+doc.find.replacement	置換
+doc.find.keys	⇥ 欄 · ⏎ 次へ · ⇧⏎ 置換 · ⌘⏎ すべて · esc 閉じる
+doc.find.none	{query}: 見つかりません
+doc.find.count	{query}: {n} 件
+doc.find.position	{query}: {n} / {count}
+doc.find.replaced	{query} → {replacement}: {n} 件置換
