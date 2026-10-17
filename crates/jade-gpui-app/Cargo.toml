@@ -28,6 +28,10 @@ jade-xlsx-headless-api = { path = "../../jade-core/crates/jade-xlsx-headless-api
 jade-xlsx-headless-editor = { path = "../../jade-core/crates/jade-xlsx-headless-editor" }
 jade-xlsx-reader = { path = "../../jade-core/crates/jade-xlsx-reader" }
 jade-pptx-native-render = { path = "../jade-pptx-native-render" }
+# The deck view edits through the same session the browser editor uses.
+jade-pptx-layout = { path = "../../jade-core/crates/jade-pptx-layout" }
+jade-pptx-reader = { path = "../../jade-core/crates/jade-pptx-reader" }
+jade-pptx-writer = { path = "../../jade-core/crates/jade-pptx-writer" }
 # `macos-blade` instead of the default Metal backend, which needs a full Xcode
 # to compile its shaders. `font-kit` is in gpui's default features and has to
 # come back explicitly: without it the text system falls back to a stub with

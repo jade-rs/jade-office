@@ -3333,7 +3333,10 @@ dependencies = [
  "jade-docx-native-render",
  "jade-docx-pdf-renderer",
  "jade-painter",
+ "jade-pptx-layout",
  "jade-pptx-native-render",
+ "jade-pptx-reader",
+ "jade-pptx-writer",
  "jade-skia-painter",
  "jade-xlsx-headless-api",
  "jade-xlsx-headless-editor",
@@ -3401,6 +3404,23 @@ version = "0.1.0"
 dependencies = [
  "jade-painter",
  "jade-pptx-layout",
+]
+
+[[package]]
+name = "jade-pptx-writer"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "jade-opc",
+ "jade-pptx-layout",
+ "jade-pptx-reader",
+ "png 0.18.1",
+ "quick-xml 0.39.4",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.20",
+ "unicode-segmentation",
+ "uuid",
 ]
 
 [[package]]

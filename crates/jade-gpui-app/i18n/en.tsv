@@ -90,3 +90,8 @@ sheet.save_failed	Cannot save: {error}
 sheet.average	Average: {value}
 sheet.cell_count	Count: {n}
 sheet.sum	Sum: {value}
+deck.edit_failed	Cannot make the change: {error}
+deck.text_locked	This shape's text cannot be edited
+deck.saved	Saved to {name}
+deck.save_failed	Cannot save: {error}
+deck.selected_shape	Selected: {name}

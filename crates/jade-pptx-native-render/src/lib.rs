@@ -84,10 +84,58 @@ pub fn aliased_faces<'a>(regular: &'a Path, bold: &'a Path) -> Vec<FaceSpec<'a>>
         .collect()
 }
 
-struct RegisteredFace {
-    family: String,
-    weight: u16,
-    bytes: Vec<u8>,
+/// Font faces parsed once and shared by every surface that paints with them.
+///
+/// Registering a face from bytes makes Skia parse and copy the file; the
+/// aliases above point a dozen families at the same two files, so doing that
+/// per family and per surface copied tens of megabytes for every thumbnail.
+/// Here each file is read and parsed once, and a new surface gets refcounted
+/// handles to the parsed faces.
+#[derive(Clone)]
+pub struct FontSet {
+    /// A 1×1 surface that only holds the registrations.
+    template: SkiaPainter,
+}
+
+impl FontSet {
+    pub fn load(faces: &[FaceSpec<'_>]) -> Result<Self, String> {
+        let template =
+            SkiaPainter::new(1, 1).ok_or_else(|| "cannot create a font surface".to_string())?;
+        // The parsed face for each file already registered, by path.
+        let mut parsed: Vec<(&Path, usize)> = Vec::new();
+        for face in faces {
+            match parsed.iter().find(|(path, _)| *path == face.path) {
+                Some((_, index)) => {
+                    let (_, _, typeface) = template.registered_faces().swap_remove(*index);
+                    template.register_face(face.family, face.weight, typeface);
+                }
+                None => {
+                    let bytes = std::fs::read(face.path)
+                        .map_err(|error| format!("{}: {error}", face.path.display()))?;
+                    let index = template.registered_faces().len();
+                    template
+                        .register_font_bytes(face.family, face.weight, &bytes)
+                        .ok_or_else(|| format!("{}: not a font", face.path.display()))?;
+                    parsed.push((face.path, index));
+                }
+            }
+        }
+        Ok(Self { template })
+    }
+
+    /// A raster surface with every face registered.
+    pub fn painter(&self, width: i32, height: i32) -> Option<SkiaPainter> {
+        let painter = SkiaPainter::new(width, height)?;
+        self.register_on(&painter);
+        Some(painter)
+    }
+
+    /// Registers every face on an existing surface, such as a PDF page.
+    pub fn register_on(&self, painter: &SkiaPainter) {
+        for (family, weight, typeface) in self.template.registered_faces() {
+            painter.register_face(family, weight, typeface);
+        }
+    }
 }
 
 /// An open deck: the parsed slides, the package's media, and the faces every
@@ -98,7 +146,7 @@ pub struct NativeDeck {
     /// slide draws most of its pixels from, so it is kept rather than
     /// re-read from the zip per frame.
     parts: HashMap<String, Vec<u8>>,
-    faces: Vec<RegisteredFace>,
+    fonts: FontSet,
     options: RenderOptions,
     layouts: RefCell<HashMap<usize, Rc<SlideLayout>>>,
     /// One surface reused for measuring; layout cannot be done against the
@@ -109,6 +157,12 @@ pub struct NativeDeck {
 impl NativeDeck {
     /// Reads `.pptx` bytes. Slides are laid out lazily, on first paint.
     pub fn open(bytes: &[u8], faces: &[FaceSpec<'_>]) -> Result<Self, String> {
+        Self::with_fonts(bytes, FontSet::load(faces)?)
+    }
+
+    /// [`Self::open`] with fonts already loaded — what reopening a deck after
+    /// an edit wants, since the fonts have not changed.
+    pub fn with_fonts(bytes: &[u8], fonts: FontSet) -> Result<Self, String> {
         let deck = jade_pptx_reader::read_deck(bytes)
             .map_err(|error| format!("cannot read the presentation: {error}"))?;
 
@@ -132,29 +186,24 @@ impl NativeDeck {
             }
         }
 
-        let mut registered = Vec::new();
-        for face in faces {
-            let bytes = std::fs::read(face.path)
-                .map_err(|error| format!("{}: {error}", face.path.display()))?;
-            registered.push(RegisteredFace {
-                family: face.family.to_string(),
-                weight: face.weight,
-                bytes,
-            });
-        }
-
         let options = RenderOptions::default();
-        let measuring = new_painter(&registered, 1, 1)
+        let measuring = fonts
+            .painter(1, 1)
             .ok_or_else(|| "cannot create a measuring surface".to_string())?;
         let measure = PainterMeasure::new(measuring, options.default_font.clone());
         Ok(Self {
             deck,
             parts,
-            faces: registered,
+            fonts,
             options,
             layouts: RefCell::new(HashMap::new()),
             measure,
         })
+    }
+
+    /// The same deck read again from edited bytes, keeping the fonts.
+    pub fn reopen(&self, bytes: &[u8]) -> Result<Self, String> {
+        Self::with_fonts(bytes, self.fonts.clone())
     }
 
     pub fn slide_count(&self) -> usize {
@@ -218,7 +267,7 @@ impl NativeDeck {
         let width = width.max(1);
         let scale = f64::from(width) / slide_width.max(1.0);
         let height = ((slide_height * scale).round() as i32).max(1);
-        let painter = new_painter(&self.faces, width, height)?;
+        let painter = self.fonts.painter(width, height)?;
         self.paint(&painter, index, scale).ok()?;
         painter.read_bgra_premultiplied()
     }
@@ -229,7 +278,7 @@ impl NativeDeck {
         let width = width.max(1);
         let scale = f64::from(width) / slide_width.max(1.0);
         let height = ((slide_height * scale).round() as i32).max(1);
-        let painter = new_painter(&self.faces, width, height)?;
+        let painter = self.fonts.painter(width, height)?;
         self.paint(&painter, index, scale).ok()?;
         painter.encode_png()
     }
@@ -241,8 +290,7 @@ impl NativeDeck {
         for index in 0..self.slide_count() {
             let page = SkiaPainter::new_recording(width, height)
                 .ok_or_else(|| "cannot create a PDF page".to_string())?;
-            register_faces(&page, &self.faces)
-                .ok_or_else(|| "cannot register fonts on a PDF page".to_string())?;
+            self.fonts.register_on(&page);
             self.paint(&page, index, 1.0)
                 .map_err(|_| format!("cannot paint slide {}", index + 1))?;
             pages.push(page);
@@ -285,19 +333,6 @@ impl NativeDeck {
             destination.height,
         )
     }
-}
-
-fn new_painter(faces: &[RegisteredFace], width: i32, height: i32) -> Option<SkiaPainter> {
-    let painter = SkiaPainter::new(width, height)?;
-    register_faces(&painter, faces)?;
-    Some(painter)
-}
-
-fn register_faces(painter: &SkiaPainter, faces: &[RegisteredFace]) -> Option<()> {
-    for face in faces {
-        painter.register_font_bytes(&face.family, face.weight, &face.bytes)?;
-    }
-    Some(())
 }
 
 /// Every `image_part` under `shapes`, depth first, each once.

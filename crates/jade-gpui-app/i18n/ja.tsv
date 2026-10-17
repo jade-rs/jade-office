@@ -90,3 +90,8 @@ sheet.save_failed	保存できません: {error}
 sheet.average	平均: {value}
 sheet.cell_count	データの個数: {n}
 sheet.sum	合計: {value}
+deck.edit_failed	変更できません: {error}
+deck.text_locked	この図形の文字は編集できません
+deck.saved	{name} に保存しました
+deck.save_failed	保存できません: {error}
+deck.selected_shape	選択: {name}

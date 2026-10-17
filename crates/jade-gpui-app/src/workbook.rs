@@ -24,6 +24,7 @@ use gpui::{
     UTF16Selection, Window,
 };
 use jade_painter::Painter;
+use jade_pptx_native_render::{FaceSpec, FontSet};
 use jade_skia_painter::SkiaPainter;
 use jade_xlsx_headless_api::CellInput;
 use jade_xlsx_headless_editor::HeadlessWorkbook;
@@ -103,17 +104,11 @@ fn format_number(value: f64) -> String {
     }
 }
 
-struct Face {
-    family: String,
-    weight: u16,
-    bytes: Vec<u8>,
-}
-
 /// The workbook being edited, the faces every surface gets, and the selected
 /// sheet's layout.
 struct Sheets {
     book: HeadlessWorkbook,
-    faces: Vec<Face>,
+    fonts: FontSet,
     index: usize,
     layout: Rc<SheetLayout>,
     /// How far the laid-out grid reaches; it grows with the selection.
@@ -131,16 +126,15 @@ impl Sheets {
         // The fonts ship with the engine, in the `jade-core` submodule.
         let core = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../jade-core"));
         let (regular, bold) = bundled_font_paths(&core);
-        let mut faces = Vec::new();
-        for face in aliased_faces(&regular, &bold) {
-            let bytes = std::fs::read(face.path)
-                .map_err(|error| format!("{}: {error}", face.path.display()))?;
-            faces.push(Face {
-                family: face.family.to_string(),
+        let faces: Vec<FaceSpec<'_>> = aliased_faces(&regular, &bold)
+            .into_iter()
+            .map(|face| FaceSpec {
+                family: face.family,
                 weight: face.weight,
-                bytes,
-            });
-        }
+                path: face.path,
+            })
+            .collect();
+        let fonts = FontSet::load(&faces)?;
         // The sheet the file says was open, as long as it is one a reader can
         // see; otherwise the first visible one.
         let workbook = book.workbook();
@@ -157,7 +151,7 @@ impl Sheets {
             .unwrap_or(0);
         let mut sheets = Self {
             book,
-            faces,
+            fonts,
             index,
             layout: Rc::new(empty_layout()),
             extent: (MIN_COLUMNS, MIN_ROWS),
@@ -167,11 +161,7 @@ impl Sheets {
     }
 
     fn painter(&self, width: i32, height: i32) -> Option<SkiaPainter> {
-        let painter = SkiaPainter::new(width, height)?;
-        for face in &self.faces {
-            painter.register_font_bytes(&face.family, face.weight, &face.bytes)?;
-        }
-        Some(painter)
+        self.fonts.painter(width, height)
     }
 
     /// Lays the selected sheet out, measuring through a surface with the
