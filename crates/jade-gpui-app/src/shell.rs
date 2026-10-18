@@ -9,10 +9,11 @@
 
 use gpui::{
     point, prelude::*, px, size, App, Bounds, Focusable, PathPromptOptions, SharedString,
-    TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowOptions,
+    TitlebarOptions, Window, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowOptions,
 };
 use std::path::{Path, PathBuf};
 
+use crate::theme;
 use crate::workspace::Workspace;
 
 /// What a file opens as, decided by its extension. The macro-enabled variants
@@ -75,11 +76,26 @@ pub fn workspace(cx: &mut App) -> Result<WindowHandle<Workspace>, String> {
         .map_err(|error| format!("cannot open a window: {error}"))?;
     handle
         .update(cx, |workspace, window, cx| {
+            follow_appearance(window);
             window.focus(&workspace.focus_handle(cx))
         })
         .ok();
     cx.activate(true);
     Ok(handle)
+}
+
+/// Repaints every window in the system's palette when macOS switches
+/// between light and dark, for as long as `window` is open.
+pub fn follow_appearance(window: &mut Window) {
+    window
+        .observe_window_appearance(|window, cx| {
+            let was_dark = theme::is_dark();
+            theme::set_system(window.appearance());
+            if theme::is_dark() != was_dark {
+                cx.refresh_windows();
+            }
+        })
+        .detach();
 }
 
 /// Opens each path as a tab of the workspace, making the workspace if there

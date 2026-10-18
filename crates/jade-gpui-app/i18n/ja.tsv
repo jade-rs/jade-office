@@ -75,6 +75,10 @@ menu.review.track_changes	変更履歴の記録
 menu.view	表示
 menu.view.explorer	エクスプローラー
 menu.view.details	詳細パネル
+menu.view.appearance	外観
+menu.view.appearance.system	システム設定に合わせる
+menu.view.appearance.light	ライト
+menu.view.appearance.dark	ダーク
 menu.view.theme	ライト / ダーク テーマ
 menu.view.next_page	次のページ
 menu.view.previous_page	前のページ
