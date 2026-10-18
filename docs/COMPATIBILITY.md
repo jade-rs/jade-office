@@ -23,7 +23,7 @@ A fix starts as a case that fails.
 | Excel tables | structured references (`Table1[Amount]`, `[#Totals]`) recalculate when the table is edited | 2 tests | jade-core `crates/jade-xlsx-calc/tests/recalculates.rs`, `crates/jade-office-model/tests/tables_like_excel.rs` |
 | Word layout | pages compared against Word's own rendering | per fixture | jade-core CI `layout-compare` |
 | Typing like Excel | text typed into a cell and the value, format and display Excel makes of it; open parentheses closed; a misspelt function | 25 inputs + cases | `crates/jade-office-model/tests/typing_like_excel.rs` |
-| Clipboard like Excel | Excel's clipboard text in and out, quoted multi-line cells, CR LF | 2 tests | `crates/jade-office-model/tests/clipboard_like_excel.rs` |
+| Clipboard like Excel | Excel's clipboard text in and out, quoted multi-line cells, CR LF; a copied formula pastes adjusted, a cut moves the cells on paste and references follow | 5 tests | `crates/jade-office-model/tests/clipboard_like_excel.rs` |
 | Japanese functions | LENB, MIDB, FINDB, REPLACEB, ASC, JIS and the rest, typed into a cell | 11 cases | `crates/jade-office-model/tests/japanese_functions_like_excel.rs` |
 | Files people have | every fixture opens; damaged, protected, macro-enabled and template files say what they are and save as what they are | 3 suites | `crates/jade-office-model/tests/`, `crates/jade-web/tests/` |
 | Editing Word in the browser | caret (on the line clicked, at a wrap too), typing, IME, selection, arrows, Home/End, clipboard, undo, save | 13 tests | `crates/jade-web/tests/edits_documents.rs` |
@@ -46,12 +46,11 @@ painter) and edits through the same cores.
    charts, SmartArt and video are checked on a deck built for the purpose
    (they round-trip and draw); real decks from PowerPoint with them would
    make that evidence stronger.
-2. **Cut clears at once.** Excel moves the cells when they are pasted.
-3. **Functions the engine lacks** keep Excel's cached value in a saved file;
+2. **Functions the engine lacks** keep Excel's cached value in a saved file;
    typed fresh, they show `#NAME?` until Excel recalculates the file.
-4. **The browser clipboard** is checked with dispatched paste events; the
+3. **The browser clipboard** is checked with dispatched paste events; the
    embedded test browser cannot read the system clipboard.
-5. **Formula entry is refused only when certainly malformed** (a trailing
+4. **Formula entry is refused only when certainly malformed** (a trailing
    operator, an open string, an unmatched parenthesis), with the editor
    kept open as in Excel; a formula Excel would refuse for its arguments
    (`=SUM()`) is accepted and shows `#ERROR!`.
