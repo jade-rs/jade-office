@@ -24,7 +24,7 @@
         bytes("fonts/NotoSansJP-Regular.ttf"),
         bytes("fonts/NotoSansJP-Bold.ttf"),
       ]);
-      run(name, file, regular, bold);
+      run(name, file, regular, bold, window.devicePixelRatio || 1);
       document.getElementById("loading").remove();
     } catch (error) {
       document.getElementById("loading").textContent = `起動に失敗: ${error}`;

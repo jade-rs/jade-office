@@ -3,6 +3,7 @@
 
 use std::rc::Rc;
 
+use jade_docx_layout::shaping_measurer::ShapingMeasurer;
 use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 use wasm_bindgen::prelude::*;
 
@@ -11,17 +12,24 @@ pub fn start() {
     console_error_panic_hook::set_once();
 }
 
-/// Font files, fetched by the page and handed over once.
+/// Font files, fetched by the page and handed over once: the painter's faces,
+/// and the shaping measurer documents are laid out with.
 #[wasm_bindgen]
-pub struct WebFonts(Rc<FontBook>);
+pub struct WebFonts {
+    book: Rc<FontBook>,
+    measurer: Rc<ShapingMeasurer>,
+}
 
 #[wasm_bindgen]
 impl WebFonts {
     #[wasm_bindgen(constructor)]
     pub fn new(regular: Vec<u8>, bold: Option<Vec<u8>>) -> Result<WebFonts, JsError> {
-        Ok(Self(
-            crate::font_book(regular, bold).map_err(|e| JsError::new(&e))?,
-        ))
+        let measurer =
+            crate::document::measurer(&regular, bold.as_deref()).map_err(|e| JsError::new(&e))?;
+        Ok(Self {
+            book: crate::font_book(regular, bold).map_err(|e| JsError::new(&e))?,
+            measurer,
+        })
     }
 }
 
@@ -76,7 +84,7 @@ impl WebDeck {
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8], fonts: &WebFonts) -> Result<WebDeck, JsError> {
         Ok(Self(
-            crate::Deck::open(bytes, Rc::clone(&fonts.0)).map_err(|e| JsError::new(&e))?,
+            crate::Deck::open(bytes, Rc::clone(&fonts.book)).map_err(|e| JsError::new(&e))?,
         ))
     }
     #[wasm_bindgen(js_name = slideCount)]
@@ -108,7 +116,7 @@ impl WebWorkbook {
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8], fonts: &WebFonts) -> Result<WebWorkbook, JsError> {
         Ok(Self(
-            crate::Workbook::open(bytes, Rc::clone(&fonts.0)).map_err(|e| JsError::new(&e))?,
+            crate::Workbook::open(bytes, Rc::clone(&fonts.book)).map_err(|e| JsError::new(&e))?,
         ))
     }
     #[wasm_bindgen(js_name = sheetNames)]
@@ -139,5 +147,42 @@ impl WebWorkbook {
         self.0
             .render_viewport((scroll_x, scroll_y), width, height, scale)
             .map(rendered)
+    }
+}
+
+#[wasm_bindgen]
+pub struct WebDocument(crate::document::Document);
+
+#[wasm_bindgen]
+impl WebDocument {
+    /// Reads and paints every page, at `scale` device px per CSS px (the
+    /// page's `devicePixelRatio`).
+    #[wasm_bindgen(constructor)]
+    pub fn new(bytes: &[u8], scale: f64, fonts: &WebFonts) -> Result<WebDocument, JsError> {
+        Ok(Self(
+            crate::document::Document::open(
+                bytes,
+                scale,
+                Rc::clone(&fonts.book),
+                Rc::clone(&fonts.measurer),
+            )
+            .map_err(|e| JsError::new(&e))?,
+        ))
+    }
+    #[wasm_bindgen(js_name = pageCount)]
+    pub fn page_count(&self) -> usize {
+        self.0.page_count()
+    }
+    #[wasm_bindgen(js_name = pageWidth)]
+    pub fn page_width(&self) -> f64 {
+        self.0.page_size().0
+    }
+    #[wasm_bindgen(js_name = pageHeight)]
+    pub fn page_height(&self) -> f64 {
+        self.0.page_size().1
+    }
+    #[wasm_bindgen(js_name = renderPage)]
+    pub fn render_page(&self, index: usize) -> Option<Rendered> {
+        self.0.page(index).map(rendered)
     }
 }

@@ -28,18 +28,18 @@ Use `git submodule update --init` if you cloned without `--recurse-submodules`. 
 
 ## In the browser (prototype)
 
-The engine's slide and sheet renderers also run as WebAssembly, on a pure-Rust painter instead of Skia:
+The engine's renderers — documents, slides and sheets — also run as WebAssembly, on a pure-Rust painter instead of Skia:
 
 - `crates/jade-tiny-skia-painter` implements `jade_painter::Painter` with tiny-skia (paths, fills, strokes, dashes, clips), ttf-parser (text drawn as glyph outlines, measured by advances like the Skia backend) and `image` (pictures). No C++, so it builds for `wasm32-unknown-unknown` as it is. Shadows, blur and SVG pictures are not drawn yet.
-- `crates/jade-web` puts the pptx and xlsx readers, layout and renderers on it, natively and as a wasm-bindgen API. `cargo run --release --bin tiny_vs_skia` compares its slides with the Skia backend's PNGs: within 0.04–2.4% of pixels on the fixtures, 0.2–2 ms a slide.
-- `crates/jade-gpui-web` is a gpui shell for the browser on gpui-pre (a crates.io snapshot of Zed's gpui with a WebGPU/WebGL2 web platform), single-threaded, showing slides and sheets from `jade-web`. It pins a newer stable toolchain of its own; the native app stays on gpui 0.2.
+- `crates/jade-web` puts the readers, layout and renderers of all three formats on it, natively and as a wasm-bindgen API. Word documents go through `jade-docx-editor`'s renderer with a tiny-skia render host (`src/document.rs`, the counterpart of `jade-docx-native-render`'s Skia host), measuring with the same shaping measurer. `cargo run --release --bin tiny_vs_skia` compares its slides and pages with the Skia backend's PNGs: within 0.04–2.4% of pixels on the fixture decks and 0.5–5% on documents.
+- `crates/jade-gpui-web` is a gpui shell for the browser on gpui-pre (a crates.io snapshot of Zed's gpui with a WebGPU/WebGL2 web platform), single-threaded, showing documents, slides and sheets from `jade-web`. It pins a newer stable toolchain of its own; the native app stays on gpui 0.2.
 
 ```sh
 ./scripts/build-web.sh
 python3 -m http.server 8765 --directory crates/jade-web/www
 ```
 
-Then open http://localhost:8765/ (the canvas page) or http://localhost:8765/gpui.html?open=charts-workbook.xlsx (the gpui shell). Documents (.docx) are not in the browser build yet: their renderer needs a port of the Skia render host.
+Then open http://localhost:8765/ (the canvas page) or http://localhost:8765/gpui.html?open=contract.docx (the gpui shell; `sample-deck.pptx` and `charts-workbook.xlsx` work too). The browser build views; editing is still the native app's.
 
 ## License
 

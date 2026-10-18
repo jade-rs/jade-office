@@ -37,6 +37,11 @@ fn image(painter: TinySkiaPainter) -> Option<Arc<RenderImage>> {
 type PaintedViewport = ((f32, f32), (u32, u32), Arc<RenderImage>);
 
 enum Document {
+    /// Word: every page painted at open, shown as a column of pages.
+    Pages {
+        pages: Vec<Arc<RenderImage>>,
+        page_size: (f32, f32),
+    },
     Deck {
         deck: jade_web::Deck,
         current: usize,
@@ -89,6 +94,33 @@ impl Viewer {
                     .text_color(rgb(0x71717a))
                     .child("gpui-pre web · WebGPU · tiny-skia"),
             )
+    }
+
+    fn pages_body(&self) -> gpui::Div {
+        let Document::Pages { pages, page_size } = &self.document else {
+            unreachable!()
+        };
+        let (width, height) = *page_size;
+        div().flex_1().min_h_0().bg(rgb(0x141416)).child(
+            div()
+                .id("pages")
+                .size_full()
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap_6()
+                .py_6()
+                .children(pages.iter().map(|page| {
+                    div()
+                        .flex_none()
+                        .w(px(width))
+                        .h(px(height))
+                        .bg(gpui::white())
+                        .shadow_lg()
+                        .child(img(page.clone()).w(px(width)).h(px(height)))
+                })),
+        )
     }
 
     fn deck_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::Div {
@@ -318,6 +350,7 @@ impl Render for Viewer {
             window.drop_image(image).ok();
         }
         let body = match self.document {
+            Document::Pages { .. } => self.pages_body(),
             Document::Deck { .. } => self.deck_body(window, cx),
             Document::Workbook { .. } => self.workbook_body(window, cx),
         };
@@ -333,17 +366,33 @@ impl Render for Viewer {
     }
 }
 
-/// Opens `file` (a .pptx or .xlsx) in a gpui window on the page.
+/// Opens `file` (a .docx, .pptx or .xlsx) in a gpui window on the page.
+/// `scale` is the page's `devicePixelRatio`, which Word pages are painted at.
 #[wasm_bindgen]
 pub fn run(
     file_name: String,
     file: Vec<u8>,
     regular: Vec<u8>,
     bold: Vec<u8>,
+    scale: f64,
 ) -> Result<(), JsError> {
     console_error_panic_hook::set_once();
-    let fonts = jade_web::font_book(regular.clone(), Some(bold)).map_err(|e| JsError::new(&e))?;
-    let document = if file_name.to_lowercase().ends_with(".pptx") {
+    let fonts =
+        jade_web::font_book(regular.clone(), Some(bold.clone())).map_err(|e| JsError::new(&e))?;
+    let lower = file_name.to_lowercase();
+    let document = if lower.ends_with(".docx") {
+        let measurer =
+            jade_web::document::measurer(&regular, Some(&bold)).map_err(|e| JsError::new(&e))?;
+        let opened = jade_web::document::Document::open(&file, scale, Rc::clone(&fonts), measurer)
+            .map_err(|e| JsError::new(&e))?;
+        let (width, height) = opened.page_size();
+        Document::Pages {
+            pages: (0..opened.page_count())
+                .filter_map(|index| opened.page(index).and_then(image))
+                .collect(),
+            page_size: (width as f32, height as f32),
+        }
+    } else if lower.ends_with(".pptx") {
         let deck = jade_web::Deck::open(&file, Rc::clone(&fonts)).map_err(|e| JsError::new(&e))?;
         Document::Deck {
             thumbnails: vec![None; deck.slide_count()],

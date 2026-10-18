@@ -21,9 +21,10 @@ fi
 mkdir -p "$www/fonts" "$www/samples"
 cp "$root/jade-core/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf" \
    "$root/jade-core/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf" "$www/fonts/"
-for sample in sample-deck.pptx themed-deck.pptx charts-workbook.xlsx grid-operations-workbook.xlsx; do
+for sample in sample-deck.pptx themed-deck.pptx charts-workbook.xlsx grid-operations-workbook.xlsx char-effects.docx; do
   cp "$root/jade-core/public/fixtures/$sample" "$www/samples/"
 done
+cp "$root/jade-core/contract.docx" "$www/samples/"
 ls -la "$www/pkg"
 
 # The gpui shell (gpui-pre's web platform) on the same engine: www/gpui.html.

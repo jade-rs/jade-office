@@ -8,7 +8,11 @@
 //! cargo run --release --bin tiny_vs_skia -- deck.pptx /tmp/skia /tmp/tiny 960
 //! ```
 //!
-//! For each slide: the share of pixels that differ by more than a small
+//! A `.docx` works too: render the Skia pages with jade-docx-native-render's
+//! `docx_to_png <doc> <skia-dir>/page.png` (the width argument is then
+//! unused; pages are 1 px per CSS px).
+//!
+//! For each slide or page: the share of pixels that differ by more than a small
 //! tolerance, and the mean absolute difference per channel. Antialiasing
 //! alone keeps the first above zero; a missing shape or a text run in the
 //! wrong place shows as a jump.
@@ -19,7 +23,7 @@ use std::rc::Rc;
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [deck, skia_dir, out_dir, width] = args.as_slice() else {
-        eprintln!("usage: tiny_vs_skia <deck.pptx> <skia-png-dir> <out-dir> <width>");
+        eprintln!("usage: tiny_vs_skia <deck.pptx|doc.docx> <skia-png-dir> <out-dir> <width>");
         std::process::exit(2);
     };
     let width: u32 = width.parse().expect("a width in px");
@@ -30,14 +34,39 @@ fn main() {
         Some(std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap()),
     )
     .unwrap();
-    let bytes = std::fs::read(deck).expect("the deck");
-    let mut deck = jade_web::Deck::open(&bytes, Rc::clone(&fonts)).expect("a deck");
+    let bytes = std::fs::read(deck).expect("the document");
     std::fs::create_dir_all(out_dir).unwrap();
-    for index in 0..deck.slide_count() {
+    // (file name, painted surface, ms) per slide or page. A document's pages
+    // are named as jade-docx-native-render's docx_to_png names them, given
+    // `<skia-dir>/page.png` as its output.
+    let mut rendered = Vec::new();
+    if deck.to_lowercase().ends_with(".docx") {
+        let regular = std::fs::read(fonts_dir.join("NotoSansJP-Regular.ttf")).unwrap();
+        let bold = std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap();
+        let measurer = jade_web::document::measurer(&regular, Some(&bold)).unwrap();
         let started = std::time::Instant::now();
-        let painter = deck.render_slide(index, width).expect("a painted slide");
-        let elapsed = started.elapsed();
-        let name = format!("slide-{:03}.png", index + 1);
+        let document = jade_web::document::Document::open(&bytes, 1.0, Rc::clone(&fonts), measurer)
+            .expect("a document");
+        let elapsed =
+            started.elapsed().as_secs_f64() * 1000.0 / document.page_count().max(1) as f64;
+        for index in 0..document.page_count() {
+            let name = if index == 0 {
+                "page.png".to_string()
+            } else {
+                format!("page-{}.png", index + 1)
+            };
+            rendered.push((name, document.page(index).unwrap(), elapsed));
+        }
+    } else {
+        let mut deck = jade_web::Deck::open(&bytes, Rc::clone(&fonts)).expect("a deck");
+        for index in 0..deck.slide_count() {
+            let started = std::time::Instant::now();
+            let painter = deck.render_slide(index, width).expect("a painted slide");
+            let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+            rendered.push((format!("slide-{:03}.png", index + 1), painter, elapsed));
+        }
+    }
+    for (name, painter, elapsed) in rendered {
         let png = painter.encode_png().unwrap();
         std::fs::write(PathBuf::from(out_dir).join(&name), &png).unwrap();
         let ours = image::load_from_memory(&png).unwrap().to_rgba8();
@@ -68,7 +97,7 @@ fn main() {
                     "{name}: {:.2}% of pixels differ, mean Δ {:.2}, {:.1} ms",
                     100.0 * differing as f64 / pixels as f64,
                     total as f64 / pixels as f64,
-                    elapsed.as_secs_f64() * 1000.0
+                    elapsed
                 );
             }
             Err(_) => println!("{name}: no Skia render to compare with"),

@@ -2,7 +2,7 @@
 // open a .pptx or .xlsx, and put the pixels the Rust painter returns on
 // canvases. Everything about the document — reading, layout, painting — is
 // the engine in wasm; this file only moves bytes and pixels.
-import init, { WebFonts, WebDeck, WebWorkbook } from "./pkg/jade_web.js";
+import init, { WebFonts, WebDeck, WebWorkbook, WebDocument } from "./pkg/jade_web.js";
 
 const status = document.getElementById("status");
 const stage = document.getElementById("stage");
@@ -62,6 +62,26 @@ function openDeck(bytes, name) {
   cleanup = () => deck.free();
 }
 
+function openDocument(bytes, name) {
+  // Every page is laid out and painted when the document opens, at the
+  // display's pixel density; they are shown as a column of canvases.
+  const ratio = window.devicePixelRatio || 1;
+  const started = performance.now();
+  const document_ = new WebDocument(bytes, ratio, fonts);
+  thumbs.style.display = "none";
+  tabs.style.display = "none";
+  stage.replaceChildren();
+  for (let index = 0; index < document_.pageCount(); index++) {
+    const canvas = document.createElement("canvas");
+    canvas.className = "slide";
+    draw(canvas, document_.renderPage(index));
+    canvas.style.width = `${canvas.width / ratio}px`;
+    stage.append(canvas);
+  }
+  status.textContent = `${name} — ${document_.pageCount()} ページ — ${Math.round(performance.now() - started)} ms`;
+  cleanup = () => document_.free();
+}
+
 function openWorkbook(bytes, name) {
   const book = new WebWorkbook(bytes, fonts);
   const ratio = window.devicePixelRatio || 1;
@@ -117,7 +137,9 @@ function openWorkbook(bytes, name) {
 function open(bytes, name) {
   cleanup();
   try {
-    if (name.toLowerCase().endsWith(".pptx")) openDeck(bytes, name);
+    const lower = name.toLowerCase();
+    if (lower.endsWith(".pptx")) openDeck(bytes, name);
+    else if (lower.endsWith(".docx")) openDocument(bytes, name);
     else openWorkbook(bytes, name);
   } catch (error) {
     status.textContent = `${name}: ${error}`;

@@ -17,6 +17,7 @@ use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 use jade_xlsx_layout::{layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
 use jade_xlsx_render::{render_grid, RenderOptions as SheetOptions};
 
+pub mod document;
 #[cfg(target_arch = "wasm32")]
 mod web;
 

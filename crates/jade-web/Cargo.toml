@@ -18,6 +18,13 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
+# The shaping measurer (rustybuzz) the native docx host measures with.
+jade-docx-layout = { path = "../../jade-core/crates/jade-docx-layout", features = ["native-shaping"] }
+futures = "0.3"
+js-sys = "0.3"
+wasm-bindgen = "=0.2.128"
+web-sys = { version = "0.3", features = ["CanvasRenderingContext2d"] }
 jade-opc = { path = "../../jade-core/crates/jade-opc" }
 jade-painter = { path = "../../jade-core/crates/jade-painter" }
 jade-pptx-layout = { path = "../../jade-core/crates/jade-pptx-layout" }
@@ -29,8 +36,6 @@ jade-xlsx-reader = { path = "../../jade-core/crates/jade-xlsx-reader" }
 jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# Must match the wasm-bindgen CLI that generates the JS glue.
-wasm-bindgen = "=0.2.128"
 console_error_panic_hook = "0.1"
 
 # The comparison bin reads the Skia PNGs back; native only.

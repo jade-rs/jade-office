@@ -92,7 +92,9 @@ impl FontBook {
     }
 
     /// The face for a CSS family list and weight: the first family with a
-    /// registered face wins, at the nearest weight; failing all, face 0.
+    /// registered face wins, at the nearest weight; failing all, the face of
+    /// the nearest weight overall — the docx measurer's fallback, so a bold
+    /// run in an unknown family is measured and drawn bold alike.
     fn resolve(&self, families: &str, weight: u16) -> usize {
         for family in families.split(',') {
             let name = family.trim().trim_matches('\'').trim_matches('"');
@@ -109,7 +111,12 @@ impl FontBook {
                 return index;
             }
         }
-        0
+        self.faces
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, face)| (i32::from(face.weight) - i32::from(weight)).abs())
+            .map(|(index, _)| index)
+            .unwrap_or(0)
     }
 
     /// `font`, unless it lacks `ch` and another face has it.
@@ -213,6 +220,9 @@ struct State {
     dash: Vec<f32>,
     font: usize,
     font_size_px: f32,
+    /// The CSS shorthand last set, as given: hosts that measure with their
+    /// own shaper read it back.
+    font_descriptor: Rc<str>,
     baseline: TextBaseline,
     clip: Option<Rc<Mask>>,
 }
@@ -228,6 +238,7 @@ impl Default for State {
             dash: Vec::new(),
             font: 0,
             font_size_px: 16.0,
+            font_descriptor: Rc::from("16px sans-serif"),
             baseline: TextBaseline::Alphabetic,
             clip: None,
         }
@@ -338,6 +349,11 @@ impl TinySkiaPainter {
                 images: RefCell::new(HashMap::new()),
             }),
         })
+    }
+
+    /// The CSS font shorthand currently set.
+    pub fn font_descriptor(&self) -> Rc<str> {
+        Rc::clone(&self.inner.state.borrow().font_descriptor)
     }
 
     pub fn width(&self) -> u32 {
@@ -775,6 +791,7 @@ impl Painter for TinySkiaPainter {
         let mut state = self.inner.state.borrow_mut();
         state.font = font;
         state.font_size_px = size;
+        state.font_descriptor = Rc::from(value);
     }
 
     fn set_text_baseline(&self, value: &str) {
@@ -857,6 +874,10 @@ impl Painter for TinySkiaPainter {
             .fill_rect(rect, &paint, transform, clip.as_deref());
     }
 
+    /// Paints the rectangle opaque white rather than transparent: the Skia
+    /// backend does, because the renderers clear a page to paper, and a
+    /// canvas only gets away with transparency by having a white page behind
+    /// it in CSS.
     fn clear_rect(&self, x: f64, y: f64, width: f64, height: f64) {
         let Some(rect) = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32) else {
             return;
@@ -866,8 +887,8 @@ impl Painter for TinySkiaPainter {
             (state.transform, state.clip.clone())
         };
         let mut paint = Paint::default();
-        paint.set_color(Color::TRANSPARENT);
-        paint.blend_mode = BlendMode::Clear;
+        paint.set_color(Color::WHITE);
+        paint.blend_mode = BlendMode::Source;
         self.inner
             .pixmap
             .borrow_mut()
