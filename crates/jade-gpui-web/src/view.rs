@@ -101,16 +101,15 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// By extension: the Open XML packages, macro-enabled and template
+    /// forms included, which open and save the same way.
     pub fn of(name: &str) -> Option<Kind> {
-        let lower = name.to_lowercase();
-        if lower.ends_with(".docx") {
-            Some(Kind::Document)
-        } else if lower.ends_with(".xlsx") {
-            Some(Kind::Workbook)
-        } else if lower.ends_with(".pptx") {
-            Some(Kind::Deck)
-        } else {
-            None
+        let extension = name.rsplit_once('.')?.1.to_lowercase();
+        match extension.as_str() {
+            "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
+            "xlsx" | "xlsm" | "xltx" | "xltm" => Some(Kind::Workbook),
+            "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
+            _ => None,
         }
     }
 

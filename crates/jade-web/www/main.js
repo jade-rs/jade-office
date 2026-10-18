@@ -137,9 +137,10 @@ function openWorkbook(bytes, name) {
 function open(bytes, name) {
   cleanup();
   try {
-    const lower = name.toLowerCase();
-    if (lower.endsWith(".pptx")) openDeck(bytes, name);
-    else if (lower.endsWith(".docx")) openDocument(bytes, name);
+    // Macro-enabled and template forms open the same way as the plain ones.
+    const extension = name.toLowerCase().split(".").pop();
+    if (["pptx", "pptm", "potx", "potm", "ppsx", "ppsm"].includes(extension)) openDeck(bytes, name);
+    else if (["docx", "docm", "dotx", "dotm"].includes(extension)) openDocument(bytes, name);
     else openWorkbook(bytes, name);
   } catch (error) {
     status.textContent = `${name}: ${error}`;

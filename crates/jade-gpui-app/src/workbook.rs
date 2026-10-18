@@ -362,15 +362,9 @@ impl WorkbookView {
 
     // ---- saving ----------------------------------------------------------
 
+    /// Saves over the file that was opened, as Excel does.
     fn save(&mut self, cx: &mut Context<Self>) {
-        // Beside the original rather than over it, as the document view does:
-        // this shell is not yet the thing to trust with the only copy.
-        let stem = self
-            .path
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "book".to_string());
-        let target = self.path.with_file_name(format!("{stem}.edited.xlsx"));
+        let target = self.path.clone();
         self.write_to(target, cx);
     }
 
@@ -397,10 +391,9 @@ impl WorkbookView {
 
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
         self.commit_edit(cx);
-        let result = self
-            .book
-            .save_bytes()
-            .and_then(|bytes| std::fs::write(&target, bytes).map_err(|error| error.to_string()));
+        let result = self.book.save_bytes().and_then(|bytes| {
+            crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
+        });
         self.status = SharedString::from(match result {
             Ok(()) => i18n::format(
                 "sheet.saved",
@@ -1051,6 +1044,31 @@ mod tests {
             assert_eq!(view.active(), CellRef::new(1, 3));
             assert!(view.book.is_dirty());
         });
+    }
+
+    /// ⌘S saves over the file that was opened, as Excel does — a macro
+    /// workbook stays one — leaving nothing else beside it.
+    #[gpui::test]
+    fn save_writes_the_file_that_was_opened(cx: &mut gpui::TestAppContext) {
+        let path =
+            crate::shell::scratch_copy(&fixture("grid-operations-workbook.xlsx"), "book.xlsm");
+        let (view, cx) = cx.add_window_view(|_window, cx| WorkbookView::open(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("down down right");
+        cx.simulate_input("4242");
+        cx.simulate_keystrokes("enter");
+        cx.dispatch_action(Save);
+        view.read_with(cx, |view, _| assert!(!view.book.is_dirty()));
+        assert_eq!(crate::shell::siblings(&path), ["book.xlsm"]);
+        let reopened = std::fs::read(&path).unwrap();
+        let book = jade_office_model::sheet::Workbook::open(
+            &reopened,
+            "UTC",
+            crate::skia_backend().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(book.edit_text(CellRef::new(1, 2)), "4242");
     }
 
     /// A formula typed into a cell calculates, and Undo takes it back.
