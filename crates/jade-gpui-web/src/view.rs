@@ -498,6 +498,10 @@ impl DocView {
                 }
             }
             Ok(false) => {}
+            // A formula Excel would refuse: its words, not a write error.
+            Err(error) if error == jade_web::typing::FORMULA_PROBLEM => {
+                self.status = i18n::text("sheet.formula_problem").into();
+            }
             Err(error) => {
                 let key = if self.kind == Kind::Deck {
                     "deck.edit_failed"
