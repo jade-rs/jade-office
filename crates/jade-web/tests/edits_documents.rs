@@ -419,6 +419,95 @@ fn typing_repaints_the_same_pixels_as_opening_the_result() {
     }
 }
 
+/// Pages before the edited paragraph's are not drawn again, which is what
+/// keeps a keystroke as cheap on the last page as on the first; whatever is
+/// typed where — a numbered paragraph the renderer repaints whole, a plain
+/// one it repaints as a band, Enter and Backspace that move what follows —
+/// every page must still be the page opening the result draws.
+#[test]
+fn typing_further_down_repaints_the_same_pixels_as_opening_the_result() {
+    let fonts_dir = core().join("fonts/Noto_Sans_JP/static");
+    let regular = std::fs::read(fonts_dir.join("NotoSansJP-Regular.ttf")).unwrap();
+    let bold = std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap();
+    let fonts = jade_web::backend(regular.clone(), Some(bold.clone()))
+        .unwrap()
+        .fonts();
+    let measurer = jade_web::document::measurer(&regular, Some(&bold)).unwrap();
+    let open = |bytes: &[u8]| {
+        EditableDocument::open(
+            bytes,
+            2.0,
+            std::rc::Rc::clone(&fonts),
+            std::rc::Rc::clone(&measurer),
+        )
+        .unwrap()
+    };
+    let mut document = open(&std::fs::read(core().join("contract.docx")).unwrap());
+    assert!(document.page_count() >= 3);
+    let last = document.paragraph_count() - 1;
+    let before: Vec<Vec<u8>> = (0..document.page_count())
+        .map(|index| page_rgba(&document, index))
+        .collect();
+    // On the last page: nothing before it is drawn, nothing before it changes.
+    let (paragraph, text) = (last - 4..=last)
+        .find_map(|index| {
+            document
+                .paragraph_text(index)
+                .filter(|text| text.chars().count() > 4)
+                .map(|text| (index, text))
+        })
+        .expect("text near the end");
+    document.place_caret(paragraph, char_offset(&text, 2));
+    let page = document
+        .page_and_offset(document.caret_rect().unwrap().document_y)
+        .0;
+    assert!(page > 0);
+    document.take_repainted_pages();
+    document.insert_text("x").unwrap();
+    assert!(document.take_repainted_pages().iter().all(|&at| at >= page));
+    for (index, pixels) in before.iter().enumerate().take(page) {
+        assert!(
+            &page_rgba(&document, index) == pixels,
+            "page {} changed",
+            index + 1
+        );
+    }
+    // Then a run of edits across the document.
+    for paragraph in (1..document.paragraph_count()).step_by(7) {
+        let Some(text) = document
+            .paragraph_text(paragraph)
+            .filter(|text| text.chars().count() > 3)
+        else {
+            continue;
+        };
+        document.place_caret(paragraph, char_offset(&text, 2));
+        for ch in "aあ1".chars() {
+            document.insert_text(&ch.to_string()).unwrap();
+        }
+        document.delete(true).unwrap();
+        if paragraph % 3 == 0 {
+            document.insert_paragraph_break().unwrap();
+            document.delete(true).unwrap();
+        }
+    }
+    let reopened = open(&document.export_docx().unwrap());
+    assert_eq!(document.page_count(), reopened.page_count());
+    for index in 0..document.page_count() {
+        let (typed, fresh) = (page_rgba(&document, index), page_rgba(&reopened, index));
+        let worst = typed
+            .iter()
+            .zip(&fresh)
+            .map(|(a, b)| a.abs_diff(*b))
+            .max()
+            .unwrap_or(0);
+        assert!(
+            worst <= 2,
+            "page {}: a channel is {worst} levels off",
+            index + 1
+        );
+    }
+}
+
 /// A keystroke that keeps its paragraph's height reports the one page it
 /// repainted, which is all a shell keeping page images has to re-read; one
 /// that pushes the text below down reports every page it moved.
