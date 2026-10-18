@@ -63,6 +63,15 @@ const CASES: &[(&str, &str, &str, Option<f64>)] = &[
     ("2024/13/40", "2024/13/40", "2024/13/40", None),
     ("12:75", "12:75", "12:75", None),
     ("abc", "abc", "abc", None),
+    // Excel closes the parentheses a formula leaves open, as it is entered.
+    ("=SUM(1,2", "3", "=SUM(1,2)", Some(3.0)),
+    (
+        "=ROUND(SUM(1.25,1),1",
+        "2.3",
+        "=ROUND(SUM(1.25,1),1)",
+        Some(2.3),
+    ),
+    ("=IF(LEN(\"(\")=1,1", "1", "=IF(LEN(\"(\")=1,1)", Some(1.0)),
 ];
 
 #[test]
