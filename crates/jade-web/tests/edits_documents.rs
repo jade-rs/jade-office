@@ -367,6 +367,88 @@ fn a_highlight_repaints_only_its_pages_and_says_from_where() {
     assert_eq!(document.page_count(), last_page + 1);
 }
 
+/// A keystroke repaints only its paragraph's band of the page and keeps every
+/// other pixel; the page it leaves must be the page a whole repaint draws.
+/// Checked against the same text opened afresh, at 1x and at a Retina 2x. The
+/// band leaves the anti-aliased tails that the lines beside it drop into it
+/// as the clear left them, a level or two off — as the browser editor's band
+/// does; anything more is a band in the wrong place.
+#[test]
+fn typing_repaints_the_same_pixels_as_opening_the_result() {
+    for scale in [1.0, 2.0] {
+        let fonts_dir = core().join("fonts/Noto_Sans_JP/static");
+        let regular = std::fs::read(fonts_dir.join("NotoSansJP-Regular.ttf")).unwrap();
+        let bold = std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap();
+        let fonts = jade_web::backend(regular.clone(), Some(bold.clone()))
+            .unwrap()
+            .fonts();
+        let measurer = jade_web::document::measurer(&regular, Some(&bold)).unwrap();
+        let open = |bytes: &[u8]| {
+            EditableDocument::open(
+                bytes,
+                scale,
+                std::rc::Rc::clone(&fonts),
+                std::rc::Rc::clone(&measurer),
+            )
+            .unwrap()
+        };
+        let mut document = open(&std::fs::read(core().join("contract.docx")).unwrap());
+        let (paragraph, _) = first_text_paragraph(&document);
+        document.place_caret(paragraph, 0);
+        for ch in "abcあいう12345".chars() {
+            document.insert_text(&ch.to_string()).unwrap();
+        }
+        document.delete(true).unwrap();
+        document.delete(true).unwrap();
+        let reopened = open(&document.export_docx().unwrap());
+        assert_eq!(document.page_count(), reopened.page_count());
+        for index in 0..document.page_count() {
+            let (typed, fresh) = (page_rgba(&document, index), page_rgba(&reopened, index));
+            let worst = typed
+                .iter()
+                .zip(&fresh)
+                .map(|(a, b)| a.abs_diff(*b))
+                .max()
+                .unwrap_or(0);
+            assert!(
+                worst <= 2,
+                "page {} at {scale}x: a channel is {worst} levels off",
+                index + 1
+            );
+        }
+    }
+}
+
+/// A keystroke that keeps its paragraph's height reports the one page it
+/// repainted, which is all a shell keeping page images has to re-read; one
+/// that pushes the text below down reports every page it moved.
+#[test]
+fn a_keystroke_reports_the_pages_it_repainted() {
+    let mut document = open("contract.docx");
+    let (paragraph, _) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0);
+    document.take_repainted_pages();
+    let before: Vec<Vec<u8>> = (0..document.page_count())
+        .map(|index| page_rgba(&document, index))
+        .collect();
+
+    document.insert_text("a").unwrap();
+    assert_eq!(document.take_repainted_pages(), vec![0]);
+    for (index, page) in before.iter().enumerate().skip(1) {
+        assert!(
+            &page_rgba(&document, index) == page,
+            "page {} changed",
+            index + 1
+        );
+    }
+
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(
+        document.take_repainted_pages(),
+        (0..document.page_count()).collect::<Vec<_>>()
+    );
+}
+
 /// The first offset in `paragraph` where a soft wrap falls: the caret there
 /// is drawn on one line and the next character's on the line below.
 fn first_wrap(document: &mut EditableDocument, paragraph: usize) -> (usize, f64, f64) {
