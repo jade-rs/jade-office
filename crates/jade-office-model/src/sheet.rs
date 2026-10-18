@@ -16,13 +16,14 @@ use jade_xlsx_headless_editor::{formula_text, ClipboardSnapshot, FormatChange, H
 
 use crate::grid::{self, Direction, Hit, Selection};
 use crate::{clipboard, typing};
-pub use jade_xlsx_headless_api::{AutoFilterOption, AutoFilterOptions};
+pub use jade_xlsx_headless_api::{AutoFilterOption, AutoFilterOptions, BorderLine, BorderStyle};
 pub use jade_xlsx_headless_editor::FormatChange as CellFormat;
 pub use jade_xlsx_layout::filter_button::{FilterButton, FilterButtonTarget};
 pub use jade_xlsx_layout::resize::{ResizeGesture, ResizeHit};
 pub use jade_xlsx_layout::{column_label, HeaderMetrics};
 use jade_xlsx_layout::{layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
 pub use jade_xlsx_reader::Axis;
+pub use jade_xlsx_reader::HorizontalAlignment;
 use jade_xlsx_reader::{translate_formula, CellValue, SheetVisibility};
 pub use jade_xlsx_reader::{CellRange, CellRef};
 use jade_xlsx_render::{render_grid, GridSelection, PainterMeasure, RenderOptions};
@@ -1227,7 +1228,7 @@ impl<B: Backend> Workbook<B> {
             .merge_cells(&name, &range_text_full(range))
             .map_err(|error| error.to_string())?;
         let center = FormatChange {
-            horizontal: Some(jade_xlsx_reader::HorizontalAlignment::Center),
+            horizontal: Some(HorizontalAlignment::Center),
             ..Default::default()
         };
         let steps = if self
@@ -1431,6 +1432,259 @@ impl<B: Backend> Workbook<B> {
         self.restructured()
     }
 
+    /// Several format changes as one edit, one undo.
+    fn format_all(&mut self, changes: &[(CellRange, FormatChange)]) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let mut steps = 0;
+        for (range, change) in changes {
+            let range = if range.end.row == MAX_ROW || range.end.column == MAX_COLUMN {
+                *range
+            } else {
+                self.in_use(*range)
+            };
+            self.book
+                .set_format(&name, &range_text_full(range), change)
+                .map_err(|error| error.to_string())?;
+            steps += 1;
+        }
+        if steps == 0 {
+            return Ok(false);
+        }
+        self.record(steps);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// The Home tab's alignment buttons: left, centre or right — or back to
+    /// General when the active cell is already aligned so.
+    pub fn align(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        horizontal: HorizontalAlignment,
+    ) -> Result<bool, String> {
+        let now = self.format_at(active).horizontal;
+        let horizontal = if now == Some(horizontal) {
+            HorizontalAlignment::General
+        } else {
+            horizontal
+        };
+        self.format(
+            range,
+            &FormatChange {
+                horizontal: Some(horizontal),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Wrap Text, on or off as the active cell decides.
+    pub fn toggle_wrap(&mut self, range: CellRange, active: CellRef) -> Result<bool, String> {
+        let wrap = !self.format_at(active).wrap_text.unwrap_or(false);
+        self.format(
+            range,
+            &FormatChange {
+                wrap_text: Some(wrap),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Increase (or Decrease) Decimal: the active cell's number format with
+    /// one more (or fewer) place after the point, on every cell.
+    pub fn decimals(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        more: bool,
+    ) -> Result<bool, String> {
+        let code = self
+            .format_at(active)
+            .number_format
+            .unwrap_or_else(|| "General".to_string());
+        let shown = self.display_text(active);
+        let next = adjust_decimals(&code, &shown, more);
+        if next == code {
+            return Ok(false);
+        }
+        self.format(
+            range,
+            &FormatChange {
+                number_format: Some(next),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Increase (or Decrease) Font Size, through Excel's list of sizes.
+    pub fn grow_font(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        larger: bool,
+    ) -> Result<bool, String> {
+        const SIZES: &[f32] = &[
+            8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0,
+            72.0,
+        ];
+        let now = self.format_at(active).font_size.unwrap_or(11.0);
+        let next = if larger {
+            SIZES
+                .iter()
+                .copied()
+                .find(|size| *size > now + 0.01)
+                .unwrap_or(now + 10.0)
+        } else {
+            SIZES
+                .iter()
+                .rev()
+                .copied()
+                .find(|size| *size < now - 0.01)
+                .unwrap_or((now - 1.0).max(1.0))
+        };
+        self.format(
+            range,
+            &FormatChange {
+                font_size: Some(next),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// The fill (`RRGGBB`, or `None` for No Fill).
+    pub fn fill_color(&mut self, range: CellRange, color: Option<&str>) -> Result<bool, String> {
+        self.format(
+            range,
+            &FormatChange {
+                fill_color: Some(color.unwrap_or_default().to_string()),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// The font colour (`RRGGBB`).
+    pub fn font_color(&mut self, range: CellRange, color: &str) -> Result<bool, String> {
+        self.format(
+            range,
+            &FormatChange {
+                font_color: Some(color.to_string()),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// The Borders button's choices.
+    pub fn borders(&mut self, range: CellRange, borders: Borders) -> Result<bool, String> {
+        let thin = |thick: bool| BorderLine {
+            style: if thick {
+                BorderStyle::Medium
+            } else {
+                BorderStyle::Thin
+            },
+            color: None,
+        };
+        let edges = |line: BorderLine| FormatChange {
+            border_left: Some(line.clone()),
+            border_right: Some(line.clone()),
+            border_top: Some(line.clone()),
+            border_bottom: Some(line),
+            ..Default::default()
+        };
+        let range = if range.end.row == MAX_ROW || range.end.column == MAX_COLUMN {
+            self.in_use(range)
+        } else {
+            range
+        };
+        let top = CellRange {
+            start: range.start,
+            end: CellRef::new(range.end.column, range.start.row),
+        };
+        let bottom = CellRange {
+            start: CellRef::new(range.start.column, range.end.row),
+            end: range.end,
+        };
+        let left = CellRange {
+            start: range.start,
+            end: CellRef::new(range.start.column, range.end.row),
+        };
+        let right = CellRange {
+            start: CellRef::new(range.end.column, range.start.row),
+            end: range.end,
+        };
+        let outline = |thick: bool| {
+            vec![
+                (
+                    top,
+                    FormatChange {
+                        border_top: Some(thin(thick)),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    bottom,
+                    FormatChange {
+                        border_bottom: Some(thin(thick)),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    left,
+                    FormatChange {
+                        border_left: Some(thin(thick)),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    right,
+                    FormatChange {
+                        border_right: Some(thin(thick)),
+                        ..Default::default()
+                    },
+                ),
+            ]
+        };
+        let changes = match borders {
+            Borders::All => vec![(range, edges(thin(false)))],
+            Borders::None => vec![(range, edges(BorderLine::none()))],
+            Borders::Outline => outline(false),
+            Borders::ThickOutline => outline(true),
+            Borders::Bottom => vec![(
+                bottom,
+                FormatChange {
+                    border_bottom: Some(thin(false)),
+                    ..Default::default()
+                },
+            )],
+        };
+        self.format_all(&changes)
+    }
+
+    // ---- notes ------------------------------------------------------------
+
+    /// Puts a note on `at` (replacing its note), or with empty text takes
+    /// it away.
+    pub fn set_note(&mut self, at: CellRef, text: &str, author: &str) -> Result<bool, String> {
+        let name = self.sheet_name();
+        if text.trim().is_empty() {
+            let deleted = self
+                .book
+                .delete_note(&name, &reference_text(at))
+                .map_err(|error| error.to_string())?;
+            return if deleted {
+                self.restructured()
+            } else {
+                Ok(false)
+            };
+        }
+        if self.note(at) == Some(text) {
+            return Ok(false);
+        }
+        self.book
+            .set_note(&name, &reference_text(at), text, author)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
     // ---- rows, columns and sheets -----------------------------------------
 
     /// Inserts `count` rows above `row` (0-based); what was below moves
@@ -1498,6 +1752,61 @@ impl<B: Backend> Workbook<B> {
             .set_axis_size(&name, axis, first, last, stored)
             .map_err(|error| error.to_string())?;
         self.restructured()
+    }
+
+    /// Hide: the rows or columns down to nothing.
+    pub fn hide(&mut self, axis: Axis, first: u32, last: u32) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .set_axis_size(&name, axis, first, last, 0.0)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    /// Unhide: the hidden rows or columns among `first..=last` back at the
+    /// sheet's standard size.
+    pub fn unhide(&mut self, axis: Axis, first: u32, last: u32) -> Result<bool, String> {
+        let entries = match axis {
+            Axis::Rows => &self.layout.rows,
+            Axis::Columns => &self.layout.columns,
+        };
+        let standard = match axis {
+            Axis::Rows => 15.0,
+            Axis::Columns => 8.43,
+        };
+        let sizes: BTreeMap<u32, f32> = entries
+            .iter()
+            .filter(|entry| entry.index >= first && entry.index <= last)
+            .filter(|entry| entry.hidden || entry.size <= 0.0)
+            .map(|entry| (entry.index, standard))
+            .collect();
+        if sizes.is_empty() {
+            return Ok(false);
+        }
+        let name = self.sheet_name();
+        self.book
+            .set_axis_sizes(&name, axis, &sizes)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    /// Moves the sheet at `index` to `to` in the tab order, keeping it
+    /// selected.
+    pub fn move_sheet(&mut self, index: usize, to: usize) -> Result<bool, String> {
+        let names = self.sheet_names();
+        let Some(name) = names.get(index) else {
+            return Err(format!("no sheet at index {index}"));
+        };
+        if to >= names.len() || to == index {
+            return Ok(false);
+        }
+        self.book
+            .move_sheet(name, to)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.dirty = true;
+        self.select_sheet(to)?;
+        Ok(true)
     }
 
     /// A header edge double-clicked: the columns as wide as what they hold.
@@ -1816,6 +2125,87 @@ fn tiled_over(pasted: CellRange, target: CellRange) -> Option<CellRange> {
             start: pasted.start,
             end: target.end,
         })
+}
+
+/// A number format with one more (or fewer) decimal place, as Excel's
+/// Increase and Decrease Decimal make it: each section's first number gets
+/// a `0` after its point, or loses one. General starts from what the cell
+/// shows.
+fn adjust_decimals(code: &str, shown: &str, more: bool) -> String {
+    if code.eq_ignore_ascii_case("general") || code.is_empty() {
+        let places = shown.rsplit_once('.').map_or(0, |(_, fraction)| {
+            fraction.chars().take_while(char::is_ascii_digit).count()
+        });
+        let places = if more {
+            places + 1
+        } else {
+            places.saturating_sub(1)
+        };
+        return if places == 0 {
+            "0".to_string()
+        } else {
+            format!("0.{}", "0".repeat(places))
+        };
+    }
+    code.split(';')
+        .map(|section| adjust_section(section, more))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+fn adjust_section(section: &str, more: bool) -> String {
+    // Outside quotes and brackets, the last run of digit placeholders.
+    let bytes: Vec<char> = section.chars().collect();
+    let mut quoted = false;
+    let mut bracket = false;
+    let mut last_digit = None;
+    let mut point = None;
+    for (index, ch) in bytes.iter().enumerate() {
+        match ch {
+            '"' => quoted = !quoted,
+            '[' if !quoted => bracket = true,
+            ']' if !quoted => bracket = false,
+            _ if quoted || bracket => {}
+            '0' | '#' | '?' => last_digit = Some(index),
+            '.' if last_digit.is_some() && point.is_none() => point = Some(index),
+            '%' | 'E' | 'e' if point.is_none() && last_digit.is_some() => break,
+            _ => {}
+        }
+        if point.is_some() && !matches!(ch, '0' | '#' | '?' | '.') && last_digit.is_some() {
+            break;
+        }
+    }
+    let Some(last) = last_digit else {
+        return section.to_string();
+    };
+    let mut out: Vec<char> = bytes.clone();
+    match (more, point) {
+        (true, Some(_)) => out.insert(last + 1, '0'),
+        (true, None) => {
+            out.insert(last + 1, '0');
+            out.insert(last + 1, '.');
+        }
+        (false, Some(point)) => {
+            if last > point {
+                out.remove(last);
+                if last == point + 1 {
+                    out.remove(point);
+                }
+            }
+        }
+        (false, None) => {}
+    }
+    out.into_iter().collect()
+}
+
+/// The Borders button's choices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Borders {
+    All,
+    Outline,
+    ThickOutline,
+    Bottom,
+    None,
 }
 
 /// The font styles a shortcut turns on and off.
@@ -2200,5 +2590,102 @@ mod tests {
         assert_eq!(book.display_text(at(0, 1)), "Gamma");
         assert!(book.toggle_filter(span(at(0, 0), at(0, 0))).unwrap());
         assert!(book.layout.filter_buttons.is_empty(), "filters off");
+    }
+
+    #[test]
+    fn decimals_step_as_excel_steps_them() {
+        assert_eq!(adjust_decimals("General", "10", true), "0.0");
+        assert_eq!(adjust_decimals("General", "3.14", false), "0.0");
+        assert_eq!(adjust_decimals("#,##0", "1,000", true), "#,##0.0");
+        assert_eq!(adjust_decimals("#,##0.00", "1,000.00", false), "#,##0.0");
+        assert_eq!(adjust_decimals("0.0", "1.0", false), "0");
+        assert_eq!(adjust_decimals("0%", "10%", true), "0.0%");
+        assert_eq!(
+            adjust_decimals("\"¥\"#,##0;\"¥\"\\-#,##0", "¥1", true),
+            "\"¥\"#,##0.0;\"¥\"\\-#,##0.0"
+        );
+    }
+
+    #[test]
+    fn the_home_tab_formats_cells() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let range = span(at(1, 1), at(2, 3));
+        assert!(book.decimals(range, at(1, 1), true).unwrap());
+        assert_eq!(book.display_text(at(2, 3)), "60.0");
+        assert!(book
+            .align(range, at(1, 1), HorizontalAlignment::Center)
+            .unwrap());
+        assert_eq!(
+            book.format_at(at(2, 2)).horizontal,
+            Some(HorizontalAlignment::Center)
+        );
+        assert!(book
+            .align(range, at(1, 1), HorizontalAlignment::Center)
+            .unwrap());
+        assert_eq!(
+            book.format_at(at(2, 2)).horizontal,
+            Some(HorizontalAlignment::General)
+        );
+        assert!(book.grow_font(range, at(1, 1), true).unwrap());
+        assert_eq!(book.format_at(at(1, 1)).font_size, Some(12.0));
+        assert!(book.fill_color(range, Some("FFFF00")).unwrap());
+        assert_eq!(
+            book.format_at(at(1, 1)).fill_color.as_deref(),
+            Some("FFFF00")
+        );
+        assert!(book.font_color(range, "FF0000").unwrap());
+        assert_eq!(
+            book.format_at(at(1, 1)).font_color.as_deref(),
+            Some("FF0000")
+        );
+        assert!(book.toggle_wrap(range, at(1, 1)).unwrap());
+        assert_eq!(book.format_at(at(1, 1)).wrap_text, Some(true));
+
+        assert!(book.borders(range, Borders::Outline).unwrap());
+        let corner = book.format_at(at(1, 1));
+        assert_eq!(corner.border_top.unwrap().style, BorderStyle::Thin);
+        assert_eq!(corner.border_right.unwrap().style, BorderStyle::None);
+        assert!(book.undo().unwrap());
+        assert_eq!(
+            book.format_at(at(1, 1)).border_top.unwrap().style,
+            BorderStyle::None,
+            "an outline undoes as one"
+        );
+        assert!(book.borders(range, Borders::All).unwrap());
+        assert_eq!(
+            book.format_at(at(2, 2)).border_left.unwrap().style,
+            BorderStyle::Thin
+        );
+        assert!(book.borders(range, Borders::None).unwrap());
+        assert_eq!(
+            book.format_at(at(2, 2)).border_left.unwrap().style,
+            BorderStyle::None
+        );
+    }
+
+    #[test]
+    fn notes_hidden_rows_and_moved_sheets() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        assert!(book.set_note(at(1, 1), "check this", "jade").unwrap());
+        assert_eq!(book.note(at(1, 1)), Some("check this"));
+        assert!(book.set_note(at(1, 1), "", "jade").unwrap());
+        assert_eq!(book.note(at(1, 1)), None);
+
+        assert!(book.hide(Axis::Rows, 1, 2).unwrap());
+        assert_eq!(book.step(at(0, 0), Direction::Down), at(0, 3));
+        assert!(book.unhide(Axis::Rows, 0, 5).unwrap());
+        assert_eq!(book.step(at(0, 0), Direction::Down), at(0, 1));
+        assert!(book.hide(Axis::Columns, 1, 1).unwrap());
+        assert!(
+            book.layout.column(1).unwrap().size <= 0.0 || book.layout.column(1).unwrap().hidden
+        );
+        assert!(book.unhide(Axis::Columns, 0, 2).unwrap());
+        assert!(book.layout.column(1).unwrap().size > 10.0);
+
+        let first = book.sheet_names()[0].clone();
+        book.add_sheet().unwrap();
+        assert!(book.move_sheet(1, 0).unwrap());
+        assert_eq!(book.sheet_index(), 0);
+        assert_eq!(book.sheet_names()[1], first);
     }
 }

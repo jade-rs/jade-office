@@ -16,8 +16,9 @@ use std::time::Duration;
 use gpui::{DispatchPhase, MouseUpEvent, Point};
 use jade_web::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_web::sheet::{
-    column_label, range_text, reference_text, span, AutoFilterOption, Axis, CellFormat, CellRange,
-    Copied, FilterButton, FontToggle, Overlay, ResizeGesture, MAX_COLUMN, MAX_ROW,
+    column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
+    CellRange, Copied, FilterButton, FontToggle, HorizontalAlignment, Overlay, ResizeGesture,
+    MAX_COLUMN, MAX_ROW,
 };
 
 use super::*;
@@ -25,6 +26,14 @@ use super::*;
 /// How far past the grid's edge the pointer has to be for a drag to scroll
 /// it, and how often it scrolls while held there.
 const AUTO_SCROLL_TICK: Duration = Duration::from_millis(40);
+/// The formatting strip over the formula bar: Excel's Home tab, short.
+const SHEET_TOOLBAR_HEIGHT: f32 = 34.0;
+
+/// Excel's standard colours, the ones under its colour buttons.
+const STANDARD_COLORS: &[&str] = &[
+    "C00000", "FF0000", "FFC000", "FFFF00", "92D050", "00B050", "00B0F0", "0070C0", "002060",
+    "7030A0", "000000", "7F7F7F", "D9D9D9", "FFFFFF",
+];
 
 /// A workbook open in the view.
 pub(super) struct Sheet {
@@ -51,12 +60,16 @@ pub(super) struct Sheet {
     pub naming: Option<TextEdit>,
     /// The find bar (⌘F) and what is being looked for.
     pub finding: Option<TextEdit>,
+    /// A note being written on a cell.
+    pub noting: Option<(CellRef, TextEdit)>,
     /// The note under the pointer, and where its cell's top-right corner
     /// is in the grid's px.
     note: Option<(CellRef, (f32, f32))>,
     menu: Option<SheetMenu>,
     /// A filter button's dropdown.
     filter: Option<FilterPanel>,
+    /// A toolbar button's dropdown: colours or borders.
+    popup: Option<Popup>,
     /// What the pointer is over, for its cursor.
     hover: Hover,
 }
@@ -125,6 +138,34 @@ struct PaintedSheet {
     image: Arc<RenderImage>,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Popup {
+    NumberFormat,
+    Fill,
+    Font,
+    Borders,
+}
+
+/// What a toolbar button does.
+#[derive(Clone, Copy)]
+enum Tool {
+    Font(FontToggle),
+    Align(HorizontalAlignment),
+    Wrap,
+    Merge,
+    Currency,
+    Percent,
+    Comma,
+    NumberFormat(&'static str),
+    Decimals(bool),
+    FontSize(bool),
+    Open(Popup),
+    Fill(Option<&'static str>),
+    FontColor(&'static str),
+    Borders(Borders),
+    Filter,
+}
+
 #[derive(Clone, Copy)]
 enum FilterCommand {
     Toggle(usize),
@@ -152,6 +193,11 @@ enum MenuCommand {
     MergeCenter,
     InsertSheet,
     RenameSheet(usize),
+    MoveSheet(usize, usize),
+    EditNote,
+    DeleteNote,
+    Hide,
+    Unhide,
     DeleteSheet(usize),
 }
 
@@ -177,9 +223,11 @@ impl Sheet {
             renaming: None,
             naming: None,
             finding: None,
+            noting: None,
             note: None,
             menu: None,
             filter: None,
+            popup: None,
             hover: Hover::Cells,
         }
     }
@@ -195,6 +243,9 @@ impl Sheet {
         if let Some(text) = self.finding.as_mut() {
             return Some(text);
         }
+        if let Some((_, text)) = self.noting.as_mut() {
+            return Some(text);
+        }
         self.edit.as_mut().map(|edit| &mut edit.text)
     }
 
@@ -206,6 +257,9 @@ impl Sheet {
             return Some(text);
         }
         if let Some(text) = self.finding.as_ref() {
+            return Some(text);
+        }
+        if let Some((_, text)) = self.noting.as_ref() {
             return Some(text);
         }
         self.edit.as_ref().map(|edit| &edit.text)
@@ -513,6 +567,397 @@ impl DocView {
         }
     }
 
+    /// A toolbar button pressed, on the selection.
+    fn tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let range = sheet.selection.range();
+        let active = sheet.selection.active;
+        if let Tool::Open(popup) = tool {
+            sheet.popup = (sheet.popup != Some(popup)).then_some(popup);
+            cx.notify();
+            return;
+        }
+        sheet.popup = None;
+        let result = match tool {
+            Tool::Font(style) => sheet.book.toggle(range, active, style),
+            Tool::Align(horizontal) => sheet.book.align(range, active, horizontal),
+            Tool::Wrap => sheet.book.toggle_wrap(range, active),
+            Tool::Merge => return self.sheet_menu_command(MenuCommand::MergeCenter, false, cx),
+            Tool::Currency => {
+                return self.sheet_number_format(i18n::text("sheet.format.currency"), cx)
+            }
+            Tool::Percent => return self.sheet_number_format("0%", cx),
+            Tool::Comma => return self.sheet_number_format("#,##0", cx),
+            Tool::NumberFormat(key) => return self.sheet_number_format(i18n::text(key), cx),
+            Tool::Decimals(more) => sheet.book.decimals(range, active, more),
+            Tool::FontSize(larger) => sheet.book.grow_font(range, active, larger),
+            Tool::Fill(color) => sheet.book.fill_color(range, color),
+            Tool::FontColor(color) => sheet.book.font_color(range, color),
+            Tool::Borders(borders) => sheet.book.borders(range, borders),
+            Tool::Filter => sheet.book.toggle_filter(range),
+            Tool::Open(_) => unreachable!(),
+        };
+        self.edited(result, cx);
+    }
+
+    /// The formatting strip: font styles, alignment, wrap and merge, number
+    /// formats, decimals, font size, colours, borders and the filter —
+    /// lit where the active cell has them.
+    fn sheet_toolbar(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let Some(sheet) = self.sheet_ref() else {
+            return div();
+        };
+        let look = sheet.book.format_at(sheet.selection.active);
+        let open = sheet.popup;
+        // The open dropdown hangs under its button, painted over the grid.
+        let mut dropdown = self.toolbar_popup(cx).map(gpui::deferred);
+        let mut hang = move |which: Popup, button: gpui::Stateful<gpui::Div>| {
+            let button = button.relative();
+            match dropdown.take().filter(|_| open == Some(which)) {
+                Some(dropdown) => button.child(dropdown),
+                None => button,
+            }
+        };
+        let button = |id: &'static str, on: bool, tool: Tool| {
+            div()
+                .id(id)
+                .min_w(px(24.0))
+                .h(px(24.0))
+                .px_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_sm()
+                .text_xs()
+                .cursor_pointer()
+                .text_color(palette::text())
+                .when(on, |button| button.bg(palette::selected()))
+                .hover(|button| button.bg(palette::hovered()))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, window, cx| {
+                    window.focus(&view.focus, cx);
+                    view.tool(tool, cx);
+                }))
+        };
+        let icon = |name: &'static str| svg().path(name).size_3p5().text_color(palette::text());
+        let separator = || div().w(px(1.0)).h(px(18.0)).mx_1().bg(palette::border());
+        let horizontal = look.horizontal.unwrap_or_default();
+        let fill = look
+            .fill_color
+            .as_deref()
+            .filter(|color| !color.is_empty())
+            .and_then(|color| u32::from_str_radix(color, 16).ok());
+        let ink = look
+            .font_color
+            .as_deref()
+            .and_then(|color| u32::from_str_radix(color, 16).ok());
+        let popup = open;
+        div()
+            .h(px(SHEET_TOOLBAR_HEIGHT))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .px_2()
+            .bg(palette::panel())
+            .border_b_1()
+            .border_color(palette::border())
+            .child(
+                button(
+                    "tool-bold",
+                    look.bold == Some(true),
+                    Tool::Font(FontToggle::Bold),
+                )
+                .child("B")
+                .font_weight(gpui::FontWeight::BOLD),
+            )
+            .child(
+                button(
+                    "tool-italic",
+                    look.italic == Some(true),
+                    Tool::Font(FontToggle::Italic),
+                )
+                .child("I")
+                .italic(),
+            )
+            .child(
+                button(
+                    "tool-underline",
+                    look.underline == Some(true),
+                    Tool::Font(FontToggle::Underline),
+                )
+                .child("U")
+                .underline(),
+            )
+            .child(
+                button(
+                    "tool-strike",
+                    look.strike == Some(true),
+                    Tool::Font(FontToggle::Strike),
+                )
+                .child("S")
+                .line_through(),
+            )
+            .child(separator())
+            .child(button("tool-font-larger", false, Tool::FontSize(true)).child("A+"))
+            .child(button("tool-font-smaller", false, Tool::FontSize(false)).child("A-"))
+            .child(separator())
+            .child(
+                button(
+                    "tool-left",
+                    horizontal == HorizontalAlignment::Left,
+                    Tool::Align(HorizontalAlignment::Left),
+                )
+                .child(icon("icons/align-left.svg")),
+            )
+            .child(
+                button(
+                    "tool-center",
+                    horizontal == HorizontalAlignment::Center,
+                    Tool::Align(HorizontalAlignment::Center),
+                )
+                .child(icon("icons/align-center.svg")),
+            )
+            .child(
+                button(
+                    "tool-right",
+                    horizontal == HorizontalAlignment::Right,
+                    Tool::Align(HorizontalAlignment::Right),
+                )
+                .child(icon("icons/align-right.svg")),
+            )
+            .child(
+                button("tool-wrap", look.wrap_text == Some(true), Tool::Wrap)
+                    .child(icon("icons/wrap-text.svg")),
+            )
+            .child(button("tool-merge", false, Tool::Merge).child(icon("icons/merge.svg")))
+            .child(separator())
+            .child(hang(
+                Popup::NumberFormat,
+                button(
+                    "tool-number-format",
+                    open == Some(Popup::NumberFormat),
+                    Tool::Open(Popup::NumberFormat),
+                )
+                .gap_1()
+                .child(i18n::text("sheet.tool.number_format"))
+                .child(icon("icons/chevron-down.svg").size_3()),
+            ))
+            .child(
+                button("tool-currency", false, Tool::Currency)
+                    .child(i18n::text("sheet.tool.currency_symbol")),
+            )
+            .child(button("tool-percent", false, Tool::Percent).child("%"))
+            .child(button("tool-comma", false, Tool::Comma).child(","))
+            .child(button("tool-more-decimals", false, Tool::Decimals(true)).child(".0→"))
+            .child(button("tool-fewer-decimals", false, Tool::Decimals(false)).child("←.0"))
+            .child(separator())
+            .child(hang(
+                Popup::Fill,
+                // The colour under the bucket and the A is the one last
+                // seen on the active cell, as Excel's buttons show theirs.
+                button(
+                    "tool-fill",
+                    popup == Some(Popup::Fill),
+                    Tool::Open(Popup::Fill),
+                )
+                .flex_col()
+                .child(icon("icons/paint-bucket.svg"))
+                .child(
+                    div()
+                        .w(px(12.0))
+                        .h(px(3.0))
+                        .bg(fill.map_or(palette::dim(), rgb)),
+                ),
+            ))
+            .child(hang(
+                Popup::Font,
+                button(
+                    "tool-font-color",
+                    popup == Some(Popup::Font),
+                    Tool::Open(Popup::Font),
+                )
+                .flex_col()
+                .child("A")
+                .child(
+                    div()
+                        .w(px(12.0))
+                        .h(px(3.0))
+                        .bg(ink.map_or(palette::text(), rgb)),
+                ),
+            ))
+            .child(hang(
+                Popup::Borders,
+                button(
+                    "tool-borders",
+                    popup == Some(Popup::Borders),
+                    Tool::Open(Popup::Borders),
+                )
+                .child(icon("icons/borders.svg")),
+            ))
+            .child(separator())
+            .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
+    }
+
+    /// A colour or borders dropdown under its toolbar button.
+    fn toolbar_popup(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
+        let popup = self.sheet_ref()?.popup?;
+        let swatch = |index: usize, color: &'static str, tool: Tool| {
+            div()
+                .id(("swatch", index))
+                .size(px(18.0))
+                .rounded_sm()
+                .border_1()
+                .border_color(palette::border())
+                .bg(rgb(u32::from_str_radix(color, 16).unwrap_or(0)))
+                .cursor_pointer()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, _window, cx| view.tool(tool, cx)))
+        };
+        let item = |id: &'static str, label: &'static str, tool: Tool| {
+            div()
+                .id(id)
+                .px_3()
+                .py_1()
+                .cursor_pointer()
+                .hover(|item| item.bg(palette::hovered()))
+                .child(i18n::text(label))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, _window, cx| view.tool(tool, cx)))
+        };
+        let body = match popup {
+            Popup::Fill | Popup::Font => {
+                let swatches = STANDARD_COLORS.iter().enumerate().map(|(index, color)| {
+                    swatch(
+                        index,
+                        color,
+                        if popup == Popup::Fill {
+                            Tool::Fill(Some(color))
+                        } else {
+                            Tool::FontColor(color)
+                        },
+                    )
+                });
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .p_2()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .w(px(160.0))
+                            .gap_1()
+                            .children(swatches),
+                    )
+                    .when(popup == Popup::Fill, |body| {
+                        body.child(item("no-fill", "sheet.tool.no_fill", Tool::Fill(None)))
+                    })
+                    .when(popup == Popup::Font, |body| {
+                        body.child(item(
+                            "automatic",
+                            "sheet.tool.automatic",
+                            Tool::FontColor("000000"),
+                        ))
+                    })
+            }
+            Popup::NumberFormat => div().py_1().children(
+                [
+                    (
+                        "nf-general",
+                        "sheet.format.general_name",
+                        "sheet.format.general",
+                    ),
+                    (
+                        "nf-number",
+                        "sheet.format.number_name",
+                        "sheet.format.number",
+                    ),
+                    (
+                        "nf-currency",
+                        "sheet.format.currency_name",
+                        "sheet.format.currency",
+                    ),
+                    ("nf-date", "sheet.format.date_name", "sheet.format.date"),
+                    (
+                        "nf-long-date",
+                        "sheet.format.long_date_name",
+                        "sheet.format.long_date",
+                    ),
+                    ("nf-time", "sheet.format.time_name", "sheet.format.time"),
+                    (
+                        "nf-percent",
+                        "sheet.format.percent_name",
+                        "sheet.format.percent",
+                    ),
+                    (
+                        "nf-fraction",
+                        "sheet.format.fraction_name",
+                        "sheet.format.fraction",
+                    ),
+                    (
+                        "nf-scientific",
+                        "sheet.format.scientific_name",
+                        "sheet.format.scientific",
+                    ),
+                    ("nf-text", "sheet.format.text_name", "sheet.format.text"),
+                ]
+                .into_iter()
+                .map(|(id, label, code)| item(id, label, Tool::NumberFormat(code))),
+            ),
+            Popup::Borders => div()
+                .py_1()
+                .child(item(
+                    "borders-bottom",
+                    "sheet.tool.border_bottom",
+                    Tool::Borders(Borders::Bottom),
+                ))
+                .child(item(
+                    "borders-all",
+                    "sheet.tool.border_all",
+                    Tool::Borders(Borders::All),
+                ))
+                .child(item(
+                    "borders-outline",
+                    "sheet.tool.border_outline",
+                    Tool::Borders(Borders::Outline),
+                ))
+                .child(item(
+                    "borders-thick",
+                    "sheet.tool.border_thick",
+                    Tool::Borders(Borders::ThickOutline),
+                ))
+                .child(item(
+                    "borders-none",
+                    "sheet.tool.border_none",
+                    Tool::Borders(Borders::None),
+                )),
+        };
+        Some(
+            div()
+                .absolute()
+                .top(px(26.0))
+                .left_0()
+                .min_w(px(150.0))
+                .whitespace_nowrap()
+                .rounded_md()
+                .border_1()
+                .border_color(palette::border())
+                .bg(palette::panel())
+                .shadow_lg()
+                .text_xs()
+                .text_color(palette::text())
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(body),
+        )
+    }
+
     /// AutoSum (⌘⇧T, Alt+= elsewhere): `=SUM(` round the numbers above or
     /// beside, typed into the active cell and pointed, for arrows to adjust.
     fn autosum(&mut self, cx: &mut Context<Self>) {
@@ -763,7 +1208,11 @@ impl DocView {
 
         // A tab being renamed, or the name box: Enter takes it, Escape
         // leaves it.
-        if sheet.renaming.is_some() || sheet.naming.is_some() || sheet.finding.is_some() {
+        if sheet.renaming.is_some()
+            || sheet.naming.is_some()
+            || sheet.finding.is_some()
+            || sheet.noting.is_some()
+        {
             if sheet.finding.is_some() && key == "enter" {
                 self.find_next(shift, cx);
                 return true;
@@ -771,7 +1220,7 @@ impl DocView {
             if sheet.finding.is_some() && key == "f" && command {
                 return true;
             }
-            return self.name_key(key, command, cx);
+            return self.name_key(key, modifiers, cx);
         }
 
         let pointable = sheet.pointable();
@@ -1045,7 +1494,8 @@ impl DocView {
     }
 
     /// Keys while a tab is renamed or the name box is typed into.
-    fn name_key(&mut self, key: &str, command: bool, cx: &mut Context<Self>) -> bool {
+    fn name_key(&mut self, key: &str, modifiers: gpui::Modifiers, cx: &mut Context<Self>) -> bool {
+        let command = modifiers.platform || modifiers.control;
         let Some(sheet) = self.sheet_mut() else {
             return false;
         };
@@ -1054,6 +1504,14 @@ impl DocView {
         } else if let Some(text) = sheet.naming.as_mut() {
             text
         } else if let Some(text) = sheet.finding.as_mut() {
+            text
+        } else if let Some((_, text)) = sheet.noting.as_mut() {
+            // A note takes line breaks: Enter on its own ends it.
+            if key == "enter" && (modifiers.alt || modifiers.shift) {
+                text.insert("\n");
+                cx.notify();
+                return true;
+            }
             text
         } else {
             return false;
@@ -1087,6 +1545,11 @@ impl DocView {
             if take && !name.is_empty() {
                 let result = sheet.book.rename_sheet(index, &name);
                 self.sheets_changed(result, cx);
+            }
+        } else if let Some((cell, text)) = sheet.noting.take() {
+            if take {
+                let result = sheet.book.set_note(cell, &text.text, "jade");
+                self.edited(result, cx);
             }
         } else if sheet.finding.take().is_some() {
             // Escape or Tab closes the find bar where the search got to.
@@ -1234,6 +1697,32 @@ impl DocView {
                 sheet.scroll.set_offset(point(px(0.0), px(0.0)));
                 result
             }
+            MenuCommand::MoveSheet(index, to) => {
+                let result = sheet.book.move_sheet(index, to);
+                sheet.selection = Selection::default();
+                result
+            }
+            MenuCommand::EditNote => {
+                let at = selection.active;
+                let text = sheet.book.note(at).unwrap_or_default().to_string();
+                sheet.noting = Some((at, TextEdit::new(text)));
+                cx.notify();
+                return;
+            }
+            MenuCommand::DeleteNote => sheet.book.set_note(selection.active, "", "jade"),
+            MenuCommand::Hide | MenuCommand::Unhide => {
+                let hide = matches!(command, MenuCommand::Hide);
+                let (axis, first, last) = if selection.is_whole_columns() {
+                    (Axis::Columns, range.start.column, range.end.column)
+                } else {
+                    (Axis::Rows, range.start.row, range.end.row)
+                };
+                if hide {
+                    sheet.book.hide(axis, first, last)
+                } else {
+                    sheet.book.unhide(axis, first, last)
+                }
+            }
             MenuCommand::RenameSheet(index) => {
                 let name = sheet.names.get(index).map(|name| name.to_string());
                 sheet.renaming = name.map(|name| (index, TextEdit::selected(name)));
@@ -1277,6 +1766,7 @@ impl DocView {
         };
         sheet.menu = None;
         sheet.filter = None;
+        sheet.popup = None;
         if sheet.renaming.is_some() || sheet.naming.is_some() {
             self.finish_naming(true, cx);
         }
@@ -1687,6 +2177,7 @@ impl DocView {
         let generation = self.generation;
         let zoom = self.zoom.unwrap_or(1.0);
         self.shown_zoom = zoom;
+        let toolbar = self.sheet_toolbar(cx);
         let (area_width, area_height) = editor_area(window, cx);
         let scale = window.scale_factor();
         let Document::Workbook(sheet) = &mut self.document else {
@@ -1694,7 +2185,7 @@ impl DocView {
         };
         let size = (
             area_width.max(1.0),
-            (area_height - FORMULA_BAR_HEIGHT - SHEET_TABS_HEIGHT).max(1.0),
+            (area_height - SHEET_TOOLBAR_HEIGHT - FORMULA_BAR_HEIGHT - SHEET_TABS_HEIGHT).max(1.0),
         );
         sheet.viewport = size;
         let offset = sheet.scroll.offset();
@@ -1879,11 +2370,26 @@ impl DocView {
 
         let menu = sheet.menu.as_ref().map(|menu| {
             let items: Vec<(MenuCommand, &'static str)> = match menu.tab {
-                Some(index) => vec![
-                    (MenuCommand::InsertSheet, "sheet.menu.insert_sheet"),
-                    (MenuCommand::RenameSheet(index), "sheet.menu.rename_sheet"),
-                    (MenuCommand::DeleteSheet(index), "sheet.menu.delete_sheet"),
-                ],
+                Some(index) => {
+                    let mut items = vec![
+                        (MenuCommand::InsertSheet, "sheet.menu.insert_sheet"),
+                        (MenuCommand::RenameSheet(index), "sheet.menu.rename_sheet"),
+                        (MenuCommand::DeleteSheet(index), "sheet.menu.delete_sheet"),
+                    ];
+                    if index > 0 {
+                        items.push((
+                            MenuCommand::MoveSheet(index, index - 1),
+                            "sheet.menu.move_left",
+                        ));
+                    }
+                    if index + 1 < sheet.names.len() {
+                        items.push((
+                            MenuCommand::MoveSheet(index, index + 1),
+                            "sheet.menu.move_right",
+                        ));
+                    }
+                    items
+                }
                 None => {
                     let mut items = vec![
                         (MenuCommand::Cut, "sheet.menu.cut"),
@@ -1911,6 +2417,20 @@ impl DocView {
                             (MenuCommand::InsertColumns, "sheet.menu.insert_columns"),
                             (MenuCommand::DeleteColumns, "sheet.menu.delete_columns"),
                         ]);
+                    }
+                    if sheet.selection.is_whole_rows() || sheet.selection.is_whole_columns() {
+                        items.extend([
+                            (MenuCommand::Hide, "sheet.menu.hide"),
+                            (MenuCommand::Unhide, "sheet.menu.unhide"),
+                        ]);
+                    }
+                    if sheet.book.note(sheet.selection.active).is_some() {
+                        items.extend([
+                            (MenuCommand::EditNote, "sheet.menu.edit_note"),
+                            (MenuCommand::DeleteNote, "sheet.menu.delete_note"),
+                        ]);
+                    } else {
+                        items.push((MenuCommand::EditNote, "sheet.menu.insert_note"));
                     }
                     items
                 }
@@ -1965,6 +2485,27 @@ impl DocView {
                     .text_xs()
                     .text_color(gpui::black())
                     .child(text),
+            )
+        });
+        let note_editor = sheet.noting.as_ref().and_then(|(cell, text)| {
+            let (x, y, w, _) = sheet
+                .book
+                .cell_rect(*cell, (f64::from(at.0 / zoom), f64::from(at.1 / zoom)))?;
+            Some(
+                div()
+                    .absolute()
+                    .left(px((x + w) as f32 * zoom + 6.0))
+                    .top(px(y as f32 * zoom))
+                    .min_w(px(160.0))
+                    .min_h(px(60.0))
+                    .p_2()
+                    .bg(rgb(0xfff9c4))
+                    .border_1()
+                    .border_color(rgb(0x217346))
+                    .shadow_md()
+                    .text_xs()
+                    .text_color(gpui::black())
+                    .child(caret_line(text, gpui::black(), false)),
             )
         });
         let find_bar = sheet.finding.as_ref().map(|text| {
@@ -2140,10 +2681,12 @@ impl DocView {
         let store = Rc::clone(&self.surface);
         let entity = cx.entity();
         div()
+            .relative()
             .size_full()
             .flex()
             .flex_col()
             .bg(palette::canvas())
+            .child(toolbar)
             // The name box and the formula bar.
             .child(
                 div()
@@ -2274,6 +2817,7 @@ impl DocView {
                     )
                     .children(cell_editor)
                     .children(note)
+                    .children(note_editor)
                     .children(find_bar)
                     .children(filter_panel)
                     .children(menu)
