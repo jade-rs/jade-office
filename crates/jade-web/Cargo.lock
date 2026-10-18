@@ -1028,6 +1028,7 @@ dependencies = [
  "jade-docx-editor",
  "jade-docx-layout",
  "jade-office-model",
+ "jade-opc",
  "jade-painter",
  "jade-tiny-skia-painter",
  "js-sys",
