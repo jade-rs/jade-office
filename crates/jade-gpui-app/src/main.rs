@@ -45,7 +45,7 @@ use gpui::{
     MouseUpEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
 use jade_docx_native_render::{
-    CaretRect, CharacterFormat, FaceSpec, NativeDocument, ObjectHit, SearchHit,
+    CaretAffinity, CaretRect, CharacterFormat, FaceSpec, NativeDocument, ObjectHit, SearchHit,
 };
 use std::cell::RefCell;
 use std::ops::Range;
@@ -3044,9 +3044,30 @@ impl DocumentView {
         let probe_y = caret.document_y + caret.height * (0.5 + direction);
         if let Some(position) = self.document.position_at(caret.x, probe_y) {
             self.insert_at = position;
-            self.caret = self.document.place_caret(position.0, position.1);
+            self.caret = self.place_caret_near(position, probe_y);
             cx.notify();
         }
+    }
+
+    /// Places the caret at `position`, drawn on whichever of its lines is
+    /// nearer `document_y`: a wrapped line's first position is also the last
+    /// of the line above, and the point it came from says which is meant.
+    fn place_caret_near(&mut self, position: (usize, usize), document_y: f64) -> Option<CaretRect> {
+        let mut nearest: Option<(CaretAffinity, f64)> = None;
+        for affinity in [CaretAffinity::Upstream, CaretAffinity::Downstream] {
+            if let Some(rect) = self
+                .document
+                .place_caret_with_affinity(position.0, position.1, affinity)
+            {
+                let distance = (rect.document_y + rect.height / 2.0 - document_y).abs();
+                if nearest.is_none_or(|(_, best)| distance < best) {
+                    nearest = Some((affinity, distance));
+                }
+            }
+        }
+        let affinity = nearest.map_or(CaretAffinity::Upstream, |(affinity, _)| affinity);
+        self.document
+            .place_caret_with_affinity(position.0, position.1, affinity)
     }
 
     /// Shared tail of an edit: record the timing, move the caret, refresh the
@@ -3238,7 +3259,7 @@ impl DocumentView {
             // A click starts a new selection; the keyboard anchor from any
             // earlier shift-arrow run is no longer where the user means.
             self.selection_anchor = None;
-            self.caret = self.document.place_caret(position.0, position.1);
+            self.caret = self.place_caret_near(position, document_y);
             self.refresh_caret_page_image();
             cx.notify();
         }
