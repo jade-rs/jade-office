@@ -74,6 +74,7 @@ actions!(
         ThemeSystem,
         ThemeLight,
         ThemeDark,
+        ToggleDarkPages,
         OpenFolder,
         Save,
         SaveAs,
@@ -130,6 +131,7 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-ctrl-alt-s", ThemeSystem, None),
         KeyBinding::new("cmd-ctrl-alt-l", ThemeLight, None),
         KeyBinding::new("cmd-ctrl-alt-d", ThemeDark, None),
+        KeyBinding::new("cmd-ctrl-alt-p", ToggleDarkPages, None),
         // Saving, history and the clipboard mean something in more than one
         // kind of tab; each view that has them answers with its own handler.
         KeyBinding::new("cmd-s", Save, None),
@@ -286,6 +288,19 @@ fn menus() -> Vec<Menu> {
                         MenuItem::action(
                             checked(theme::Mode::Dark, "menu.view.appearance.dark"),
                             ThemeDark,
+                        ),
+                        MenuItem::separator(),
+                        MenuItem::action(
+                            format!(
+                                "{}{}",
+                                if theme::dark_pages_wanted() {
+                                    "✓ "
+                                } else {
+                                    "    "
+                                },
+                                t("menu.view.appearance.dark_pages")
+                            ),
+                            ToggleDarkPages,
                         ),
                         MenuItem::separator(),
                         MenuItem::action(t("menu.view.theme"), ToggleTheme),
@@ -571,13 +586,56 @@ pub(crate) mod theme {
         DARK.store(dark, Ordering::Relaxed);
     }
 
+    /// Whether the dark palette should show documents on dark paper too.
+    /// Wanted by default, as in Word; the light palette always shows paper.
+    static DARK_PAGES: AtomicBool = AtomicBool::new(true);
+
+    /// Whether the pages are shown on dark paper right now.
+    pub fn dark_pages() -> bool {
+        is_dark() && dark_pages_wanted()
+    }
+
+    pub fn dark_pages_wanted() -> bool {
+        DARK_PAGES.load(Ordering::Relaxed)
+    }
+
+    pub fn set_dark_pages_wanted(wanted: bool) {
+        DARK_PAGES.store(wanted, Ordering::Relaxed);
+    }
+
     fn store() -> Option<PathBuf> {
+        settings_file("theme.txt")
+    }
+
+    fn settings_file(name: &str) -> Option<PathBuf> {
         // Tests switch themes too, and must not rewrite the user's choice.
         if cfg!(test) {
             return None;
         }
         let home = std::env::var_os("HOME")?;
-        Some(PathBuf::from(home).join("Library/Application Support/jade-office/theme.txt"))
+        Some(
+            PathBuf::from(home)
+                .join("Library/Application Support/jade-office")
+                .join(name),
+        )
+    }
+
+    /// The dark-pages choice saved last time, or on.
+    pub fn load_dark_pages() -> bool {
+        settings_file("dark-pages.txt")
+            .and_then(|store| std::fs::read_to_string(store).ok())
+            .map(|text| text.trim() != "off")
+            .unwrap_or(true)
+    }
+
+    pub fn save_dark_pages(wanted: bool) {
+        let Some(store) = settings_file("dark-pages.txt") else {
+            return;
+        };
+        if let Some(directory) = store.parent() {
+            std::fs::create_dir_all(directory).ok();
+        }
+        std::fs::write(store, if wanted { "on" } else { "off" }).ok();
     }
 
     /// The mode saved last time, or System.
@@ -653,9 +711,19 @@ pub(crate) mod theme {
     pub fn ready() -> Rgba {
         pick(0x34d399, 0x10b981)
     }
-    /// Solid and dark: it sits on the white page, not on the app chrome.
+    /// Solid, and the opposite of the paper it sits on rather than of the
+    /// app chrome: dark on white pages, light on dark ones.
     pub fn caret() -> Rgba {
-        rgb(0x1b1b1f)
+        rgb(if dark_pages() { 0xe4e4e7 } else { 0x1b1b1f })
+    }
+    /// The page behind a thumbnail, before its image is in.
+    pub fn paper() -> Rgba {
+        if dark_pages() {
+            let [r, g, b] = jade_painter::paper::to_dark_paper_u8([0xff, 0xff, 0xff]);
+            rgb(u32::from_be_bytes([0, r, g, b]))
+        } else {
+            rgb(0xffffff)
+        }
     }
 
     #[cfg(test)]
@@ -686,6 +754,15 @@ pub(crate) mod theme {
             set_mode(Mode::System);
             assert!(is_dark(), "going back to System picks up what it said");
             set_mode(Mode::Dark);
+        }
+
+        #[test]
+        fn dark_pages_need_the_wish_as_well_as_the_dark_palette() {
+            // Only the wish is switched here: the palette is shared with the
+            // test above, which runs alongside.
+            set_dark_pages_wanted(false);
+            assert!(!dark_pages(), "the paper stays white when not wanted");
+            set_dark_pages_wanted(true);
         }
     }
 }
@@ -892,6 +969,13 @@ struct DocumentView {
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
     zoom: f32,
+    /// The window's backing scale the pages were last rasterised at. A page
+    /// painted at 1x and shown on a 2x screen is stretched, and its text goes
+    /// soft; following the window keeps one page pixel per screen pixel.
+    raster_scale: f32,
+    /// Whether the pages were last painted on dark paper. Followed per frame,
+    /// like `raster_scale`, so a theme change from anywhere repaints them.
+    dark_pages: bool,
     /// Where a shift-extended selection is anchored. Separate from
     /// `drag_anchor`: a keyboard selection outlives the mouse being down.
     selection_anchor: Option<(usize, usize)>,
@@ -3299,7 +3383,7 @@ impl DocumentView {
                     .flex_none()
                     .overflow_hidden()
                     .rounded_sm()
-                    .bg(gpui::white())
+                    .bg(theme::paper())
                     .border_2()
                     .border_color(if selected {
                         theme::accent()
@@ -3699,6 +3783,27 @@ impl Render for DocumentView {
         // frame are released here rather than at the edit that replaced them.
         for image in self.retired_images.drain(..) {
             window.drop_image(image).ok();
+        }
+        // Checked per frame because a window can move to a screen of another
+        // density at any time. Only a change costs anything: a full repaint at
+        // the new density, whose old textures are retired on the next frame.
+        let scale_factor = window.scale_factor();
+        if scale_factor != self.raster_scale {
+            self.raster_scale = scale_factor;
+            match self.document.set_raster_scale(f64::from(scale_factor)) {
+                Ok(true) => self.rebuild_all_images(),
+                Ok(false) => {}
+                Err(err) => eprintln!("raster scale {scale_factor}: {err}"),
+            }
+        }
+        let dark_pages = theme::dark_pages();
+        if dark_pages != self.dark_pages {
+            self.dark_pages = dark_pages;
+            match self.document.set_dark_paper(dark_pages) {
+                Ok(true) => self.rebuild_all_images(),
+                Ok(false) => {}
+                Err(err) => eprintln!("dark pages {dark_pages}: {err}"),
+            }
         }
 
         let page_count = self.images.len();
@@ -4104,6 +4209,8 @@ fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentVi
         object_drag: None,
         selection_anchor: None,
         zoom: 1.0,
+        raster_scale: 1.0,
+        dark_pages: false,
         tracking_changes: false,
         table_status: None,
         find_query: None,
@@ -4167,6 +4274,7 @@ fn main() {
                 .and_then(|theme| theme::Mode::parse(&theme))
                 .unwrap_or_else(theme::load),
         );
+        theme::set_dark_pages_wanted(theme::load_dark_pages());
         cx.bind_keys(key_bindings());
         cx.set_menus(menus());
         // The actions no single window owns.
@@ -4183,6 +4291,13 @@ fn main() {
         cx.on_action(|_: &ThemeSystem, cx: &mut App| apply_theme(theme::Mode::System, cx));
         cx.on_action(|_: &ThemeLight, cx: &mut App| apply_theme(theme::Mode::Light, cx));
         cx.on_action(|_: &ThemeDark, cx: &mut App| apply_theme(theme::Mode::Dark, cx));
+        cx.on_action(|_: &ToggleDarkPages, cx: &mut App| {
+            let wanted = !theme::dark_pages_wanted();
+            theme::set_dark_pages_wanted(wanted);
+            theme::save_dark_pages(wanted);
+            cx.set_menus(menus());
+            cx.refresh_windows();
+        });
         cx.on_action(|_: &CloseWindow, cx: &mut App| {
             if let Some(window) = cx.active_window() {
                 window

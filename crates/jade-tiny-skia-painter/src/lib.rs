@@ -22,7 +22,7 @@
 //! Not drawn yet: canvas shadows and the blur filter (Word's shadow, emboss
 //! and glow effects), and SVG pictures. Those calls are accepted and ignored.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::rc::Rc;
@@ -410,6 +410,9 @@ struct Inner {
     /// Parsed SVG pictures by content key, likewise; rasterized per draw at
     /// the size they land at.
     svgs: RefCell<HashMap<String, Option<Rc<resvg::usvg::Tree>>>>,
+    /// Whether colours are mapped onto a dark page as they are drawn. See
+    /// [`TinySkiaPainter::set_dark_paper`].
+    dark_paper: Cell<bool>,
 }
 
 /// A raster surface with a canvas-style painter on it. Cheap to clone: the
@@ -434,8 +437,33 @@ impl TinySkiaPainter {
                 path: RefCell::new(PathBuilder::new()),
                 images: RefCell::new(HashMap::new()),
                 svgs: RefCell::new(HashMap::new()),
+                dark_paper: Cell::new(false),
             }),
         })
+    }
+
+    /// Shows the page dark for reading on screen, or as the document has it.
+    ///
+    /// Every colour drawn from then on goes through
+    /// [`jade_painter::paper::to_dark_paper`], and clearing paints the dark
+    /// paper rather than white; pictures are drawn as they are. The surface is
+    /// cleared to the new paper, so the caller repaints after changing it.
+    pub fn set_dark_paper(&self, on: bool) {
+        if self.inner.dark_paper.replace(on) == on {
+            return;
+        }
+        let paper = self.paper();
+        self.inner.pixmap.borrow_mut().fill(paper);
+    }
+
+    /// The colour a cleared page shows.
+    fn paper(&self) -> Color {
+        if self.inner.dark_paper.get() {
+            let [r, g, b] = jade_painter::paper::dark_paper();
+            Color::from_rgba(r, g, b, 1.0).unwrap_or(Color::BLACK)
+        } else {
+            Color::WHITE
+        }
     }
 
     /// The CSS font shorthand currently set.
@@ -549,7 +577,13 @@ impl TinySkiaPainter {
 
     fn color(&self, color: Color) -> Color {
         let alpha = self.inner.state.borrow().global_alpha;
-        let mut color = color;
+        let mut color = if self.inner.dark_paper.get() {
+            let [r, g, b] =
+                jade_painter::paper::to_dark_paper([color.red(), color.green(), color.blue()]);
+            Color::from_rgba(r, g, b, color.alpha()).unwrap_or(color)
+        } else {
+            color
+        };
         color.apply_opacity(alpha);
         color
     }
@@ -1079,7 +1113,7 @@ impl Painter for TinySkiaPainter {
             .fill_rect(rect, &paint, transform, clip.as_deref());
     }
 
-    /// Paints the rectangle opaque white rather than transparent: the Skia
+    /// Paints the rectangle opaque paper rather than transparent: the Skia
     /// backend does, because the renderers clear a page to paper, and a
     /// canvas only gets away with transparency by having a white page behind
     /// it in CSS.
@@ -1092,7 +1126,7 @@ impl Painter for TinySkiaPainter {
             (state.transform, state.clip.clone())
         };
         let mut paint = Paint::default();
-        paint.set_color(Color::WHITE);
+        paint.set_color(self.paper());
         paint.blend_mode = BlendMode::Source;
         self.inner
             .pixmap
@@ -1433,5 +1467,35 @@ mod tests {
         painter.fill();
         assert_eq!(pixel(&painter, 20, 20), [0, 0, 0, 255]);
         assert_eq!(pixel(&painter, 2, 2), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn dark_paper_maps_colours_and_clears_dark_until_switched_back() {
+        let painter = TinySkiaPainter::new(40, 40, fonts()).unwrap();
+        painter.set_dark_paper(true);
+        let paper = jade_painter::paper::to_dark_paper_u8([255, 255, 255]);
+        let ink = jade_painter::paper::to_dark_paper_u8([0, 0, 0]);
+        let near = |actual: [u8; 4], expected: [u8; 3]| {
+            actual[3] == 255 && (0..3).all(|i| actual[i].abs_diff(expected[i]) <= 1)
+        };
+        assert!(
+            near(pixel(&painter, 2, 2), paper),
+            "{:?}",
+            pixel(&painter, 2, 2)
+        );
+        // Black ink, the canvas default, comes out light.
+        painter.fill_rect(10.0, 10.0, 5.0, 5.0);
+        assert!(
+            near(pixel(&painter, 12, 12), ink),
+            "{:?}",
+            pixel(&painter, 12, 12)
+        );
+        painter.clear_rect(10.0, 10.0, 5.0, 5.0);
+        assert!(near(pixel(&painter, 12, 12), paper));
+
+        painter.set_dark_paper(false);
+        assert_eq!(pixel(&painter, 2, 2), [255, 255, 255, 255]);
+        painter.fill_rect(10.0, 10.0, 5.0, 5.0);
+        assert_eq!(pixel(&painter, 12, 12), [0, 0, 0, 255]);
     }
 }

@@ -4,7 +4,8 @@
 //! `$1,234.50`, `¥1,000`, `(100)`, `2024/1/15`, `12:30` — and gives a
 //! General cell the format the text was written in, so it shows as typed
 //! and still adds up. A leading apostrophe keeps text as text. Anything not
-//! quite one of these stays the text it was.
+//! quite one of these stays the text it was. A formula's open parentheses
+//! are closed, as Excel closes them when the formula is entered.
 
 use jade_xlsx_headless_api::CellInput;
 
@@ -36,7 +37,7 @@ impl Typed {
 /// system, which dates count from.
 pub fn read(text: &str, date1904: bool) -> Typed {
     if let Some(formula) = text.strip_prefix('=').filter(|formula| !formula.is_empty()) {
-        return Typed::plain(CellInput::Formula(formula.to_string()));
+        return Typed::plain(CellInput::Formula(close_parentheses(formula)));
     }
     if let Some(literal) = text.strip_prefix('\'') {
         return Typed::plain(CellInput::Text(literal.to_string()));
@@ -57,6 +58,28 @@ pub fn read(text: &str, date1904: bool) -> Typed {
     }
     read_number(trimmed, date1904)
         .unwrap_or_else(|| Typed::plain(CellInput::Text(text.to_string())))
+}
+
+/// `formula` with the parentheses it leaves open closed at its end — those
+/// inside a string (`"("`) or a quoted sheet name (`'a(b'!A1`) not counted.
+fn close_parentheses(formula: &str) -> String {
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    for c in formula.chars() {
+        match (quote, c) {
+            // A doubled quote inside a quoted run reads as one quote; leaving
+            // and re-entering the run gives the same result.
+            (Some(open), _) if c == open => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(c),
+            (None, '(') => depth += 1,
+            (None, ')') => depth = depth.saturating_sub(1),
+            (None, _) => {}
+        }
+    }
+    let mut closed = formula.to_string();
+    closed.extend(std::iter::repeat_n(')', depth));
+    closed
 }
 
 /// Whether `text`, typed back in, would become something other than text —

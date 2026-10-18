@@ -1976,7 +1976,7 @@ impl DocView {
                             .flex_none()
                             .overflow_hidden()
                             .rounded_sm()
-                            .bg(gpui::white())
+                            .bg(palette::paper())
                             .border_2()
                             .border_color(if selected {
                                 palette::accent()
@@ -2009,7 +2009,7 @@ impl DocView {
                     .flex_none()
                     .w(px(width))
                     .h(px(height))
-                    .bg(gpui::white())
+                    .bg(palette::paper())
                     .shadow_lg()
                     .cursor_text()
                     .on_mouse_down(
@@ -2030,7 +2030,7 @@ impl DocView {
                                 .top(px(y))
                                 .w(px(1.5))
                                 .h(px(caret_height.max(8.0)))
-                                .bg(gpui::black())
+                                .bg(palette::ink())
                         },
                     ))
                     // Records where the page is; registers the input handler
@@ -2497,6 +2497,16 @@ impl Render for DocView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         for image in self.retired.drain(..) {
             window.drop_image(image).ok();
+        }
+        // Word pages follow the palette onto dark paper and back, checked
+        // per frame so the toggle and the system can both change it. A no-op
+        // unless it changed.
+        if let Document::Pages { document, .. } = &mut self.document {
+            match document.set_dark_paper(palette::is_dark()) {
+                Ok(true) => self.refresh_repainted(),
+                Ok(false) => {}
+                Err(error) => self.status = error.into(),
+            }
         }
         let body = if self.slideshow {
             self.slideshow_body(window, cx)
