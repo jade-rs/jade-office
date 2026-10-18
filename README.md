@@ -45,6 +45,8 @@ python3 -m http.server 8765 --directory crates/jade-web/www
 
 Then open http://localhost:8765/ — the gpui shell, laid out like the native app (the same title bar, explorer, tabs, slide and page lists, formula bar and status bar, in the same palette, words and icons: it compiles in `jade-gpui-app`'s i18n tables and icon set). The explorer lists the bundled samples; open your own with the + button, ⌘O or by dropping files on the page; `?open=contract.docx` opens one at start. Word documents edit as in the native app: click to place the caret, drag or Shift-click to select, the arrows, Home and End (Shift extends), ⌘A, type over the selection (IMEs included), Backspace, Delete and Enter, ⌘C/⌘X/⌘V (pasted lines become paragraphs), undo and redo, and save the edited .docx. http://localhost:8765/canvas.html is the plain canvas page over the wasm-bindgen API.
 
+What a keystroke, an open or a paint costs in the browser build is measured by `crates/jade-office-perf`: the same renderers on the tiny-skia painter at 2x, natively, under callgrind. `.github/workflows/perf.yml` runs it on a pull request's base and head and comments the instructions each scenario took, and the functions that moved (`scripts/perf/`, after jade-core's). Run one scenario plainly with `cargo run --profile perf-ci --manifest-path crates/jade-office-perf/Cargo.toml -- docx-keystroke contract.docx`.
+
 ## License
 
 PolyForm Noncommercial 1.0.0. Free for personal, research, educational, and noncommercial use. Commercial use requires a separate license — contact the author.

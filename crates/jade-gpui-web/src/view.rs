@@ -1674,9 +1674,10 @@ impl DocView {
 
     // ---- pages ------------------------------------------------------------
 
-    /// Re-images the pages from `first` on, after an edit repainted them;
-    /// pages before it are as they were.
-    fn refresh_pages(&mut self, first: usize) {
+    /// Re-images the pages the document repainted since it was last asked,
+    /// and only those: a keystroke usually repaints one, and a page's image
+    /// is megabytes to read back and upload.
+    fn refresh_repainted(&mut self) {
         let Document::Pages {
             document, pages, ..
         } = &mut self.document
@@ -1684,31 +1685,23 @@ impl DocView {
             return;
         };
         let count = document.page_count();
-        for index in first..count {
-            if let Some(fresh) = document.page(index).and_then(image) {
-                if index < pages.len() {
-                    let old = std::mem::replace(&mut pages[index], fresh);
-                    self.retired.push(old);
-                } else {
-                    pages.push(fresh);
-                }
+        for index in document.take_repainted_pages() {
+            let Some(fresh) = document.page(index).and_then(image) else {
+                continue;
+            };
+            if index < pages.len() {
+                self.retired
+                    .push(std::mem::replace(&mut pages[index], fresh));
+            } else if index == pages.len() {
+                pages.push(fresh);
             }
         }
+        // A page the document grew into is a page it repainted; one it no
+        // longer has goes.
         while pages.len() > count {
             if let Some(old) = pages.pop() {
                 self.retired.push(old);
             }
-        }
-    }
-
-    /// Re-images the pages the document repainted since it was last asked.
-    fn refresh_repainted(&mut self) {
-        let first = match &mut self.document {
-            Document::Pages { document, .. } => document.take_repainted_from(),
-            _ => None,
-        };
-        if let Some(first) = first {
-            self.refresh_pages(first);
         }
     }
 

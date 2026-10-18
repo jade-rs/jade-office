@@ -47,6 +47,12 @@ pub struct TinySkiaRenderHost {
     /// bounded repaint stops early, and must not shrink the page count to
     /// where it stopped.
     pub(crate) pass_covers_whole_document: Rc<Cell<bool>>,
+    /// The last page (0-based) a bounded repaint may paint. Laying out up to
+    /// its bound, the renderer starts the page after it — clears it and
+    /// draws its first lines — before it stops; that page gets a scratch
+    /// surface instead, and keeps the pixels it had.
+    pub(crate) last_paintable_page: Rc<Cell<usize>>,
+    scratch: RefCell<Option<TinySkiaPainter>>,
     measurer: Rc<ShapingMeasurer>,
     fonts: Rc<FontBook>,
     render_error: RefCell<Option<String>>,
@@ -73,6 +79,8 @@ impl TinySkiaRenderHost {
             current_page: Cell::new(0),
             rendered_pages: Rc::new(Cell::new(1)),
             pass_covers_whole_document: Rc::new(Cell::new(true)),
+            last_paintable_page: Rc::new(Cell::new(usize::MAX)),
+            scratch: RefCell::new(None),
             measurer,
             fonts,
             render_error: RefCell::new(None),
@@ -113,6 +121,24 @@ impl CanvasRenderHost for TinySkiaRenderHost {
     fn painter(&self) -> Self::Painter {
         let pages = self.pages.borrow();
         let index = self.current_page.get().min(pages.len().saturating_sub(1));
+        if index > self.last_paintable_page.get() {
+            let page = &pages[index];
+            let mut scratch = self.scratch.borrow_mut();
+            let fits = scratch
+                .as_ref()
+                .is_some_and(|s| (s.width(), s.height()) == (page.width(), page.height()));
+            if !fits {
+                let (width, height) = self
+                    .page_sizes
+                    .get(index)
+                    .copied()
+                    .unwrap_or((self.page_width, self.page_height));
+                *scratch = surface(&self.fonts, width, height, self.scale);
+            }
+            if let Some(scratch) = scratch.as_ref() {
+                return scratch.clone();
+            }
+        }
         pages[index].clone()
     }
 
