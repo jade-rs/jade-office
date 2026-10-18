@@ -106,12 +106,21 @@ enum SheetDrag {
     },
     Resize(ResizeGesture),
     Point,
+    /// The selection picked up by its border: where the pointer took it
+    /// (offset from its top-left), where it would land, and whether ⌥ copies.
+    Move {
+        source: CellRange,
+        grab: (i64, i64),
+        target: CellRange,
+        copy: bool,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq)]
 enum Hover {
     Cells,
     FillHandle,
+    Border,
     Link,
     ResizeColumn,
     ResizeRow,
@@ -308,7 +317,9 @@ impl Sheet {
 
     fn overlay(&self) -> Overlay {
         let preview = match self.drag {
-            Some(SheetDrag::Fill { target, .. }) => Some(target),
+            Some(SheetDrag::Fill { target, .. }) | Some(SheetDrag::Move { target, .. }) => {
+                Some(target)
+            }
             _ => self
                 .edit
                 .as_ref()
@@ -1896,6 +1907,25 @@ impl DocView {
             cx.notify();
             return;
         }
+        // The selection's border: a drag moves the cells (⌥ copies them).
+        if !event.modifiers.shift
+            && !sheet.selection.is_whole_rows()
+            && !sheet.selection.is_whole_columns()
+            && sheet.book.on_selection_border(x, y, scroll, range)
+        {
+            let at = sheet.book.reach_point(x, y, scroll);
+            sheet.drag = Some(SheetDrag::Move {
+                source: range,
+                grab: (
+                    i64::from(at.column) - i64::from(range.start.column),
+                    i64::from(at.row) - i64::from(range.start.row),
+                ),
+                target: range,
+                copy: event.modifiers.alt,
+            });
+            cx.notify();
+            return;
+        }
         let Some(hit) = hit else {
             return;
         };
@@ -2020,6 +2050,14 @@ impl DocView {
             {
                 Hover::FillHandle
             }
+            None if !sheet.selection.is_whole_rows()
+                && !sheet.selection.is_whole_columns()
+                && sheet
+                    .book
+                    .on_selection_border(x, y, scroll, sheet.selection.range()) =>
+            {
+                Hover::Border
+            }
             None if matches!(
                 sheet.book.hit(x, y, scroll),
                 Some(Hit::Cell(cell)) if sheet.book.link(cell).is_some()
@@ -2095,6 +2133,31 @@ impl DocView {
                 sheet.drag = Some(SheetDrag::Resize(gesture));
                 cx.notify();
             }
+            SheetDrag::Move {
+                source,
+                grab,
+                target,
+                copy,
+            } => {
+                let start = grid::offset(reached, -grab.0, -grab.1);
+                let next = CellRange {
+                    start,
+                    end: CellRef::new(
+                        start.column + (source.end.column - source.start.column),
+                        start.row + (source.end.row - source.start.row),
+                    ),
+                };
+                if next != target {
+                    sheet.drag = Some(SheetDrag::Move {
+                        source,
+                        grab,
+                        target: next,
+                        copy,
+                    });
+                    sheet.book.reach(next.end);
+                    cx.notify();
+                }
+            }
             SheetDrag::Point => {
                 let anchor = sheet
                     .edit
@@ -2165,6 +2228,31 @@ impl DocView {
                     self.follow_link(link, cx);
                 }
                 cx.notify();
+            }
+            SheetDrag::Move {
+                source,
+                target,
+                copy,
+                ..
+            } => {
+                if target == source {
+                    cx.notify();
+                    return;
+                }
+                let result = sheet.book.move_range(source, target.start, copy);
+                if let Ok(moved) = &result {
+                    let active = sheet.selection.active;
+                    sheet.selection = Selection {
+                        active: grid::offset(
+                            moved.start,
+                            i64::from(active.column) - i64::from(source.start.column),
+                            i64::from(active.row) - i64::from(source.start.row),
+                        ),
+                        anchor: moved.start,
+                        focus: moved.end,
+                    };
+                }
+                self.edited(result.map(|_| true), cx);
             }
             SheetDrag::Point => cx.notify(),
         }
@@ -2850,6 +2938,7 @@ impl DocView {
             Hover::ResizeRow => gpui::CursorStyle::ResizeUpDown,
             Hover::FillHandle => gpui::CursorStyle::Crosshair,
             Hover::Link => gpui::CursorStyle::PointingHand,
+            Hover::Border => gpui::CursorStyle::OpenHand,
             Hover::Cells => gpui::CursorStyle::Crosshair,
         };
         let dragging = sheet.drag.is_some();

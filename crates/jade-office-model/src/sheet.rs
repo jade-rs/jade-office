@@ -1198,6 +1198,52 @@ impl<B: Backend> Workbook<B> {
         })
     }
 
+    /// Drag and drop: `source` moved (or with `copy`, copied) so its
+    /// top-left lands on `to`, formulas following as a cut and paste moves
+    /// them. Returns where it went.
+    pub fn move_range(
+        &mut self,
+        source: CellRange,
+        to: CellRef,
+        copy: bool,
+    ) -> Result<CellRange, String> {
+        if to == source.start {
+            return Ok(source);
+        }
+        let copied = self
+            .copy(source, !copy)
+            .ok_or_else(|| "cannot pick the cells up".to_string())?;
+        self.paste_copied(&copied, CellRange { start: to, end: to })
+    }
+
+    /// Whether a viewport point is on the selection's border — where Excel
+    /// lets a drag pick the cells up — rather than inside it.
+    pub fn on_selection_border(
+        &self,
+        x: f64,
+        y: f64,
+        scroll: (f64, f64),
+        range: CellRange,
+    ) -> bool {
+        let last = self.grid_end();
+        let end = CellRef::new(
+            range.end.column.min(last.column),
+            range.end.row.min(last.row),
+        );
+        let (Some((left, top, _, _)), Some((ex, ey, ew, eh))) = (
+            self.cell_rect(range.start, scroll),
+            self.cell_rect(end, scroll),
+        ) else {
+            return false;
+        };
+        let (right, bottom) = (ex + ew, ey + eh);
+        let near = |a: f64, b: f64| (a - b).abs() <= 3.0;
+        let within_x = x >= left - 3.0 && x <= right + 3.0;
+        let within_y = y >= top - 3.0 && y <= bottom + 3.0;
+        ((near(x, left) || near(x, right)) && within_y)
+            || ((near(y, top) || near(y, bottom)) && within_x)
+    }
+
     /// Pastes a copy onto `target`: from its top-left, or tiled over it when
     /// it is a whole multiple of what was copied. A cut moves its cells and
     /// can be pasted once. Returns what was filled.
@@ -2954,5 +3000,34 @@ mod tests {
             "formulas are not checked"
         );
         assert_eq!(book.validation_list(at(0, 0)), None);
+    }
+
+    #[test]
+    fn a_dragged_selection_moves_or_copies() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let moved = book
+            .move_range(span(at(2, 1), at(2, 3)), at(5, 1), false)
+            .unwrap();
+        assert_eq!(moved, span(at(5, 1), at(5, 3)));
+        assert_eq!(
+            book.edit_text(at(5, 3)),
+            "=B4*2",
+            "a moved formula keeps pointing"
+        );
+        assert_eq!(book.edit_text(at(2, 3)), "");
+        assert!(book.undo().unwrap());
+        assert_eq!(book.edit_text(at(2, 3)), "=B4*2");
+        book.move_range(span(at(2, 1), at(2, 1)), at(6, 1), true)
+            .unwrap();
+        assert_eq!(
+            book.edit_text(at(6, 1)),
+            "=F2*2",
+            "a copy moves its references"
+        );
+        assert_eq!(book.edit_text(at(2, 1)), "=B2*2");
+        let (x, y, w, h) = book.cell_rect(at(1, 1), (0.0, 0.0)).unwrap();
+        let range = span(at(1, 1), at(1, 2));
+        assert!(book.on_selection_border(x, y + h / 2.0, (0.0, 0.0), range));
+        assert!(!book.on_selection_border(x + w / 2.0, y + h / 2.0, (0.0, 0.0), range));
     }
 }
