@@ -53,3 +53,51 @@ fn copying_quotes_what_excel_would_split() {
     assert_eq!(book.edit_text(CellRef::new(8, 5)), "two\nlines");
     assert_eq!(book.edit_text(CellRef::new(9, 5)), "say \"hi\"");
 }
+
+fn at(reference: &str) -> CellRef {
+    CellRef::parse(reference).unwrap()
+}
+
+#[test]
+fn copying_a_formula_pastes_it_adjusted_as_in_excel() {
+    let mut book = book();
+    book.set_cell(at("I2"), "3").unwrap();
+    book.set_cell(at("I3"), "4").unwrap();
+    book.set_cell(at("J2"), "=I2*2").unwrap();
+    let text = book.copy(span(at("J2"), at("J2")), false);
+    assert_eq!(text, "6\n");
+    // The clipboard comes back as the system gives it, CR LF and all.
+    let far = book.paste(at("J3"), "6\r\n").unwrap();
+    assert_eq!(far, Some(at("J3")));
+    assert_eq!(book.edit_text(at("J3")), "=I3*2");
+    assert_eq!(book.display_text(at("J3")), "8");
+}
+
+#[test]
+fn a_cut_moves_the_cells_when_pasted_and_references_follow() {
+    let mut book = book();
+    book.set_cell(at("I2"), "5").unwrap();
+    book.set_cell(at("J2"), "=I2+1").unwrap();
+    let text = book.copy(span(at("I2"), at("I2")), true);
+    // Cutting alone changes nothing, as in Excel.
+    assert_eq!(book.display_text(at("I2")), "5");
+    book.paste(at("K5"), &text).unwrap();
+    assert_eq!(book.display_text(at("I2")), "");
+    assert_eq!(book.display_text(at("K5")), "5");
+    assert_eq!(book.edit_text(at("J2")), "=K5+1");
+    assert_eq!(book.display_text(at("J2")), "6");
+    // One undo puts the cells back.
+    assert!(book.undo().unwrap());
+    assert_eq!(book.display_text(at("I2")), "5");
+    assert_eq!(book.edit_text(at("J2")), "=I2+1");
+}
+
+#[test]
+fn text_from_elsewhere_still_pastes_as_text() {
+    let mut book = book();
+    book.set_cell(at("J2"), "=1+1").unwrap();
+    book.copy(span(at("J2"), at("J2")), false);
+    // The clipboard now holds something else: it pastes as typed text.
+    book.paste(at("J3"), "=1+2").unwrap();
+    assert_eq!(book.display_text(at("J3")), "3");
+}

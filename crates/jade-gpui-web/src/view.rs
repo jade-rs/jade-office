@@ -1829,8 +1829,9 @@ impl DocView {
         cx.notify();
     }
 
-    /// The selected cells onto the clipboard as Excel's text; with `cut`,
-    /// cleared too.
+    /// The selected cells onto the clipboard as Excel's text; pasted back
+    /// in this workbook they paste themselves. A cut leaves them where they
+    /// are until the paste moves them, as in Excel.
     fn sheet_copy(&mut self, cut: bool, cx: &mut Context<Self>) {
         let Document::Workbook {
             book,
@@ -1841,12 +1842,8 @@ impl DocView {
         else {
             return;
         };
-        let range = span(*anchor, *focus);
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(book.range_text(range)));
-        if cut {
-            let result = book.clear(range);
-            self.edited(result, cx);
-        }
+        let text = book.copy(span(*anchor, *focus), cut);
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
     }
 
     /// The selected text onto the clipboard; with `cut`, out of the
