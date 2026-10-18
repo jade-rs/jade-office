@@ -104,6 +104,39 @@ sheet.filter.all	(Select All)
 sheet.filter.blank	(Blanks)
 sheet.filter.ok	OK
 sheet.filter.cancel	Cancel
+sheet.tool.currency_symbol	$
+sheet.tool.no_fill	No Fill
+sheet.tool.automatic	Automatic
+sheet.tool.border_bottom	Bottom Border
+sheet.tool.border_all	All Borders
+sheet.tool.border_outline	Outside Borders
+sheet.tool.border_thick	Thick Outside Borders
+sheet.tool.border_none	No Border
+sheet.tool.number_format	General
+sheet.format.general_name	General
+sheet.format.general	General
+sheet.format.number_name	Number
+sheet.format.number	#,##0.00
+sheet.format.currency_name	Currency
+sheet.format.long_date_name	Long Date
+sheet.format.long_date	dddd, mmmm d, yyyy
+sheet.format.date_name	Short Date
+sheet.format.time_name	Time
+sheet.format.percent_name	Percentage
+sheet.format.percent	0.00%
+sheet.format.fraction_name	Fraction
+sheet.format.fraction	# ?/?
+sheet.format.scientific_name	Scientific
+sheet.format.scientific	0.00E+00
+sheet.format.text_name	Text
+sheet.format.text	@
+sheet.menu.insert_note	New Note
+sheet.menu.edit_note	Edit Note
+sheet.menu.delete_note	Delete Note
+sheet.menu.hide	Hide
+sheet.menu.unhide	Unhide
+sheet.menu.move_left	Move Left
+sheet.menu.move_right	Move Right
 sheet.menu.cut	Cut
 sheet.menu.copy	Copy
 sheet.menu.paste	Paste
