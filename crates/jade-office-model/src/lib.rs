@@ -17,6 +17,7 @@ use jade_painter::Painter;
 
 pub mod deck;
 pub mod sheet;
+pub mod typing;
 
 #[cfg(feature = "skia")]
 pub mod skia;

@@ -12,6 +12,8 @@ use std::rc::Rc;
 use jade_painter::Painter;
 use jade_xlsx_headless_api::CellInput;
 use jade_xlsx_headless_editor::{formula_text, HeadlessWorkbook};
+
+use crate::typing;
 pub use jade_xlsx_layout::HeaderMetrics;
 use jade_xlsx_layout::{column_label, layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
 pub use jade_xlsx_reader::{CellRange, CellRef};
@@ -64,6 +66,17 @@ pub fn cell_input(text: &str) -> CellInput {
     }
 }
 
+/// A number as the formula bar shows it: up to fifteen significant
+/// digits, Excel's precision, without trailing zeros.
+fn full_precision(value: f64) -> String {
+    if value.fract() == 0.0 && value.abs() < 1e15 {
+        return format!("{}", value as i64);
+    }
+    let digits = 15 - (value.abs().log10().floor() as i32 + 1);
+    let text = format!("{value:.*}", digits.clamp(0, 15) as usize);
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
 /// A number as a status bar shows it: integers bare, others to a few places.
 pub fn format_number(value: f64) -> String {
     if value.fract() == 0.0 && value.abs() < 1e15 {
@@ -91,6 +104,11 @@ pub struct Workbook<B: Backend> {
     layout: SheetLayout,
     extent: (u32, u32),
     dirty: bool,
+    /// How many of the book's undo steps each edit took, latest last: a
+    /// typed `10%` is a value and a format, and undoes as one.
+    steps: Vec<usize>,
+    /// The same for the edits undone, for redo.
+    undone: Vec<usize>,
     /// The last surface painted on, reused while the size stays the same:
     /// a sheet repaints on every scroll frame.
     surface: RefCell<Option<(B::Painter, u32, u32)>>,
@@ -127,6 +145,8 @@ impl<B: Backend> Workbook<B> {
             layout,
             extent: (MIN_COLUMNS, MIN_ROWS),
             dirty: false,
+            steps: Vec::new(),
+            undone: Vec::new(),
             surface: RefCell::new(None),
         })
     }
@@ -287,10 +307,65 @@ impl<B: Backend> Workbook<B> {
         }
         match &cell.value {
             CellValue::Empty => String::new(),
-            CellValue::Number(number) => format_number(*number),
+            CellValue::Number(number) => self.edit_number(reference, *number),
+            // Text that would read as a value if typed back keeps the
+            // apostrophe that makes it text, as Excel's formula bar shows.
+            CellValue::Text(text) if typing::reads_as_value(text) => format!("'{text}"),
             CellValue::Text(text) => text.clone(),
             CellValue::Bool(flag) => if *flag { "TRUE" } else { "FALSE" }.to_string(),
             CellValue::Error(error) => error.clone(),
+        }
+    }
+
+    /// A number as Excel's formula bar shows it: a percentage as one, a
+    /// date or time as one, anything else at full precision.
+    fn edit_number(&self, reference: CellRef, number: f64) -> String {
+        let format = self.number_format(reference).unwrap_or_default();
+        if format.contains('%') && !format.contains('"') {
+            return format!("{}%", full_precision(number * 100.0));
+        }
+        if !format.is_empty() && jade_xlsx_layout::number_format::is_date_format(&format) {
+            let date1904 = matches!(
+                self.book.workbook().date_system,
+                jade_xlsx_reader::DateSystem::Nineteen04
+            );
+            let code = match (number.trunc() != 0.0, number.fract() != 0.0) {
+                (true, true) => "yyyy/m/d h:mm:ss",
+                (true, false) => "yyyy/m/d",
+                _ => "h:mm:ss",
+            };
+            return jade_xlsx_layout::number_format::format_value(
+                &CellValue::Number(number),
+                Some(code),
+                if date1904 {
+                    jade_xlsx_reader::DateSystem::Nineteen04
+                } else {
+                    jade_xlsx_reader::DateSystem::Nineteen00
+                },
+            )
+            .text;
+        }
+        full_precision(number)
+    }
+
+    /// The cell's number format code, if it has one other than General.
+    fn number_format(&self, reference: CellRef) -> Option<String> {
+        self.book
+            .cell(&self.sheet_name(), &reference_text(reference))
+            .ok()?
+            .number_format
+            .filter(|code| !code.eq_ignore_ascii_case("general"))
+    }
+
+    /// The number a cell holds, if it holds one.
+    pub fn number(&self, reference: CellRef) -> Option<f64> {
+        let range = CellRange {
+            start: reference,
+            end: reference,
+        };
+        match self.cells_in(range).next()?.value {
+            CellValue::Number(number) => Some(number),
+            _ => None,
         }
     }
 
@@ -365,11 +440,40 @@ impl<B: Backend> Workbook<B> {
             return Ok(false);
         }
         let name = self.sheet_name();
+        let at = reference_text(reference);
+        let date1904 = matches!(
+            self.book.workbook().date_system,
+            jade_xlsx_reader::DateSystem::Nineteen04
+        );
+        let typed = typing::read(text, date1904);
+        // Excel gives a General cell the format the value was typed in; a
+        // cell someone formatted keeps its format.
+        let format = typed
+            .format
+            .filter(|_| self.number_format(reference).is_none());
         self.book
-            .set(&name, &reference_text(reference), cell_input(text))
+            .set(&name, &at, typed.input)
             .map_err(|error| error.to_string())?;
+        let mut steps = 1;
+        if let Some(code) = format {
+            let change = jade_xlsx_headless_editor::FormatChange {
+                number_format: Some(code.to_string()),
+                ..Default::default()
+            };
+            if self.book.set_format(&name, &at, &change).is_ok() {
+                steps += 1;
+            }
+        }
+        self.record(steps);
         self.after_write()?;
         Ok(true)
+    }
+
+    /// Notes an edit that took `steps` of the book's undo steps; a new
+    /// edit ends what redo could bring back.
+    fn record(&mut self, steps: usize) {
+        self.steps.push(steps);
+        self.undone.clear();
     }
 
     /// Pastes tab-separated text from `origin` down and right as one write,
@@ -385,7 +489,7 @@ impl<B: Backend> Workbook<B> {
                 );
                 far.column = far.column.max(reference.column);
                 far.row = far.row.max(reference.row);
-                values.push((reference_text(reference), cell_input(value)));
+                values.push((reference_text(reference), typing::read(value, false).input));
             }
         }
         if values.is_empty() {
@@ -395,6 +499,7 @@ impl<B: Backend> Workbook<B> {
         self.book
             .set_cells(&name, &values)
             .map_err(|error| error.to_string())?;
+        self.record(1);
         self.after_write()?;
         Ok(Some(far))
     }
@@ -413,6 +518,7 @@ impl<B: Backend> Workbook<B> {
         self.book
             .set_cells(&name, &values)
             .map_err(|error| error.to_string())?;
+        self.record(1);
         self.after_write()?;
         Ok(true)
     }
@@ -422,20 +528,37 @@ impl<B: Backend> Workbook<B> {
         self.relayout()
     }
 
+    /// Undoes the last edit, however many of the book's steps it took.
     pub fn undo(&mut self) -> Result<bool, String> {
-        let undone = self.book.undo().map_err(|error| error.to_string())?;
-        if undone {
+        let steps = self.steps.pop().unwrap_or(1);
+        let mut undone = 0;
+        for _ in 0..steps {
+            if !self.book.undo().map_err(|error| error.to_string())? {
+                break;
+            }
+            undone += 1;
+        }
+        if undone > 0 {
+            self.undone.push(undone);
             self.after_write()?;
         }
-        Ok(undone)
+        Ok(undone > 0)
     }
 
     pub fn redo(&mut self) -> Result<bool, String> {
-        let redone = self.book.redo().map_err(|error| error.to_string())?;
-        if redone {
+        let steps = self.undone.pop().unwrap_or(1);
+        let mut redone = 0;
+        for _ in 0..steps {
+            if !self.book.redo().map_err(|error| error.to_string())? {
+                break;
+            }
+            redone += 1;
+        }
+        if redone > 0 {
+            self.steps.push(redone);
             self.after_write()?;
         }
-        Ok(redone)
+        Ok(redone > 0)
     }
 
     pub fn is_dirty(&self) -> bool {
