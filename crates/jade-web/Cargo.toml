@@ -19,6 +19,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
+jade-docx-headless-api = { path = "../../jade-core/crates/jade-docx-headless-api" }
+jade-selection = { path = "../../jade-core/crates/jade-selection" }
 # The shaping measurer (rustybuzz) the native docx host measures with.
 jade-docx-layout = { path = "../../jade-core/crates/jade-docx-layout", features = ["native-shaping"] }
 futures = "0.3"

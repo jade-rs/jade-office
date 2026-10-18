@@ -9,7 +9,7 @@
 //! move it with the arrow keys, delete it; undo and redo; and save, which
 //! hands the bytes to the page to download. Word documents are viewed.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -208,12 +208,17 @@ struct PaintedSheet {
 type PaintedSlide = (usize, u32, u64, Arc<RenderImage>);
 
 enum Document {
-    /// Word: every page painted at open, shown as a column of pages.
+    /// Word: the document open for editing, its pages as images, shown as
+    /// a column of pages.
     Pages {
+        document: Box<jade_web::editing::EditableDocument>,
         pages: Vec<Arc<RenderImage>>,
         page_size: (f32, f32),
         scroll: ScrollHandle,
         current: usize,
+        /// Where each page sits in the window, recorded at paint: clicks
+        /// arrive in window coordinates.
+        page_bounds: Rc<RefCell<Vec<Option<Bounds<Pixels>>>>>,
     },
     Deck {
         deck: jade_web::Deck,
@@ -279,7 +284,7 @@ impl DocView {
         }
         let document = match kind {
             Kind::Document => {
-                let opened = jade_web::document::Document::open(
+                let opened = jade_web::editing::EditableDocument::open(
                     bytes,
                     fonts.scale,
                     fonts.backend.fonts(),
@@ -290,9 +295,11 @@ impl DocView {
                     pages: (0..opened.page_count())
                         .filter_map(|index| opened.page(index).and_then(image))
                         .collect(),
+                    document: Box::new(opened),
                     page_size: (width as f32, height as f32),
                     scroll: ScrollHandle::new(),
                     current: 0,
+                    page_bounds: Rc::new(RefCell::new(Vec::new())),
                 }
             }
             Kind::Deck => {
@@ -458,14 +465,14 @@ impl DocView {
 
     pub fn is_dirty(&self) -> bool {
         match &self.document {
-            Document::Pages { .. } => false,
+            Document::Pages { document, .. } => document.is_dirty(),
             Document::Deck { deck, .. } => deck.is_dirty(),
             Document::Workbook { book, .. } => book.is_dirty(),
         }
     }
 
     pub fn is_editable(&self) -> bool {
-        self.kind != Kind::Document
+        true
     }
 
     pub fn in_slideshow(&self) -> bool {
@@ -507,7 +514,7 @@ impl DocView {
         self.commit_cell(cx);
         self.commit_slide_text(cx);
         let bytes = match &mut self.document {
-            Document::Pages { .. } => return,
+            Document::Pages { document, .. } => document.export_docx(),
             Document::Deck { deck, .. } => Ok(deck.save_bytes()),
             Document::Workbook { book, .. } => book.save_bytes(),
         };
@@ -523,7 +530,17 @@ impl DocView {
 
     pub fn step_history(&mut self, undo: bool, cx: &mut Context<Self>) {
         let result = match &mut self.document {
-            Document::Pages { .. } => return,
+            Document::Pages { document, .. } => {
+                let result = if undo {
+                    document.undo()
+                } else {
+                    document.redo()
+                };
+                // History can change any page.
+                self.refresh_pages(0);
+                self.word_result(result.map(|_| ()), cx);
+                return;
+            }
             Document::Deck {
                 deck,
                 edit,
@@ -1657,19 +1674,175 @@ impl DocView {
 
     // ---- pages ------------------------------------------------------------
 
+    /// Re-images the pages from `first` on, after an edit repainted them;
+    /// pages before it are as they were.
+    fn refresh_pages(&mut self, first: usize) {
+        let Document::Pages {
+            document, pages, ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let count = document.page_count();
+        for index in first..count {
+            if let Some(fresh) = document.page(index).and_then(image) {
+                if index < pages.len() {
+                    let old = std::mem::replace(&mut pages[index], fresh);
+                    self.retired.push(old);
+                } else {
+                    pages.push(fresh);
+                }
+            }
+        }
+        while pages.len() > count {
+            if let Some(old) = pages.pop() {
+                self.retired.push(old);
+            }
+        }
+    }
+
+    /// The page the caret is on, where an edit's repaint starts.
+    fn caret_page(&self) -> usize {
+        match &self.document {
+            Document::Pages { document, .. } => document
+                .caret_rect()
+                .map(|caret| document.page_and_offset(caret.document_y).0)
+                .unwrap_or(0),
+            _ => 0,
+        }
+    }
+
+    /// Runs an edit on the Word document and shows its result.
+    fn word_edit(
+        &mut self,
+        cx: &mut Context<Self>,
+        edit: impl FnOnce(&mut jade_web::editing::EditableDocument) -> Result<(), String>,
+    ) {
+        let first = self.caret_page().saturating_sub(1);
+        let Document::Pages { document, .. } = &mut self.document else {
+            return;
+        };
+        let result = edit(document);
+        self.refresh_pages(first);
+        self.word_result(result, cx);
+    }
+
+    fn word_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+        self.generation += 1;
+        self.status = match result {
+            Ok(()) => SharedString::default(),
+            Err(error) => error.into(),
+        };
+        cx.notify();
+    }
+
+    /// A press on page `index`: the caret goes to the text under it.
+    fn page_mouse_down(
+        &mut self,
+        index: usize,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        let zoom = self.shown_zoom.max(0.01);
+        let Document::Pages {
+            document,
+            page_bounds,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(bounds) = page_bounds.borrow().get(index).copied().flatten() else {
+            return;
+        };
+        if let Some((paragraph, _, _)) = document.composition() {
+            let _ = paragraph;
+            return;
+        }
+        let x = f64::from((event.position.x - bounds.origin.x) / zoom);
+        let y = f64::from((event.position.y - bounds.origin.y) / zoom);
+        let document_y = document.document_y(index, y);
+        if let Some((paragraph, offset)) = document.position_at(x, document_y) {
+            document.place_caret(paragraph, offset);
+        }
+        cx.notify();
+    }
+
+    /// Keys the Word view answers: deleting, splitting, moving by a
+    /// character. Mid-composition they are the IME's.
+    fn pages_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let key = event.keystroke.key.as_str();
+        let Document::Pages { document, .. } = &mut self.document else {
+            return false;
+        };
+        if document.composition().is_some() || document.caret().is_none() {
+            return false;
+        }
+        match key {
+            "backspace" => self.word_edit(cx, |document| document.delete(true)),
+            "delete" => self.word_edit(cx, |document| document.delete(false)),
+            "enter" => self.word_edit(cx, |document| document.insert_paragraph_break()),
+            "left" | "right" => {
+                let Some((paragraph, offset)) = document.caret() else {
+                    return false;
+                };
+                let text = document.paragraph_text(paragraph).unwrap_or_default();
+                let target = if key == "left" {
+                    match text[..offset.min(text.len())].chars().next_back() {
+                        Some(c) => (paragraph, offset - c.len_utf8()),
+                        None if paragraph > 0 => (
+                            paragraph - 1,
+                            document
+                                .paragraph_text(paragraph - 1)
+                                .unwrap_or_default()
+                                .len(),
+                        ),
+                        None => (paragraph, offset),
+                    }
+                } else {
+                    match text.get(offset..).and_then(|rest| rest.chars().next()) {
+                        Some(c) => (paragraph, offset + c.len_utf8()),
+                        None if paragraph + 1 < document.paragraph_count() => (paragraph + 1, 0),
+                        None => (paragraph, offset),
+                    }
+                };
+                document.place_caret(target.0, target.1);
+                cx.notify();
+            }
+            _ => return false,
+        }
+        true
+    }
+
     fn pages_body(&mut self, cx: &mut Context<Self>) -> gpui::Div {
         let zoom = self.zoom.unwrap_or(1.0);
         self.shown_zoom = zoom;
         let Document::Pages {
+            document,
             pages,
             page_size,
             scroll,
             current,
+            page_bounds,
         } = &mut self.document
         else {
             unreachable!()
         };
         let (width, height) = (page_size.0 * zoom, page_size.1 * zoom);
+        // The caret, as a page and a rectangle on it.
+        let caret = document.caret_rect().map(|caret| {
+            let (page, y) = document.page_and_offset(caret.document_y);
+            (
+                page,
+                caret.x as f32 * zoom,
+                y as f32 * zoom,
+                caret.height as f32 * zoom,
+            )
+        });
+        page_bounds.borrow_mut().resize(pages.len(), None);
+        let bounds_store = Rc::clone(page_bounds);
         // The page at the top third of the view is the current one.
         let offset = -f32::from(scroll.offset().y);
         let pitch = height + PAGE_GAP;
@@ -1731,16 +1904,65 @@ impl DocView {
                     }))
             })
             .collect();
+        let entity = cx.entity();
         let surfaces: Vec<_> = pages
             .iter()
-            .map(|page| {
+            .enumerate()
+            .map(|(index, page)| {
+                let store = Rc::clone(&bounds_store);
+                let entity = entity.clone();
                 div()
+                    .relative()
                     .flex_none()
                     .w(px(width))
                     .h(px(height))
                     .bg(gpui::white())
                     .shadow_lg()
+                    .cursor_text()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |view, event, window, cx| {
+                            view.page_mouse_down(index, event, window, cx)
+                        }),
+                    )
                     .child(img(page.clone()).w(px(width)).h(px(height)))
+                    .children(caret.filter(|(page, ..)| *page == index).map(
+                        |(_, x, y, caret_height)| {
+                            div()
+                                .absolute()
+                                .left(px(x))
+                                .top(px(y))
+                                .w(px(1.5))
+                                .h(px(caret_height.max(8.0)))
+                                .bg(gpui::black())
+                        },
+                    ))
+                    // Records where the page is; registers the input handler
+                    // so typing — an IME's included — reaches the document.
+                    .child(
+                        canvas(
+                            move |bounds, _window, _cx| {
+                                if let Some(slot) = store.borrow_mut().get_mut(index) {
+                                    *slot = Some(bounds);
+                                }
+                                bounds
+                            },
+                            move |_bounds, page, window, cx| {
+                                if index == 0 {
+                                    let focus = entity.read(cx).focus.clone();
+                                    window.handle_input(
+                                        &focus,
+                                        ElementInputHandler::new(page, entity.clone()),
+                                        cx,
+                                    );
+                                }
+                            },
+                        )
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full(),
+                    )
             })
             .collect();
         div()
@@ -1785,25 +2007,10 @@ impl DocView {
                     .h_full()
                     .flex()
                     .flex_col()
-                    .child(
-                        // The browser build reads documents; it does not
-                        // edit them yet, so there is no ribbon to show.
-                        toolbar(i18n::format(
-                            "doc.position",
-                            &[("current", &(current_index + 1)), ("count", &count)],
-                        ))
-                        .child(
-                            div()
-                                .px_2()
-                                .py_0p5()
-                                .rounded_md()
-                                .border_1()
-                                .border_color(palette::border())
-                                .text_xs()
-                                .text_color(palette::faint())
-                                .child(i18n::text("web.read_only")),
-                        ),
-                    )
+                    .child(toolbar(i18n::format(
+                        "doc.position",
+                        &[("current", &(current_index + 1)), ("count", &count)],
+                    )))
                     .child(
                         div()
                             .id("pages")
@@ -1840,7 +2047,7 @@ impl DocView {
         let handled = match self.document {
             Document::Workbook { .. } => self.sheet_key(event, cx),
             Document::Deck { .. } => self.deck_key(event, cx),
-            Document::Pages { .. } => false,
+            Document::Pages { .. } => self.pages_key(event, cx),
         };
         if handled {
             cx.stop_propagation();
@@ -1946,6 +2153,24 @@ fn toolbar_button(
         .child(label)
 }
 
+impl DocView {
+    /// The Word document's text around the caret — its paragraph — and
+    /// where in it the caret and the composition are, for the input
+    /// handler.
+    fn word_input(&self) -> Option<(String, usize, Option<Range<usize>>)> {
+        let Document::Pages { document, .. } = &self.document else {
+            return None;
+        };
+        let (paragraph, offset) = document.caret()?;
+        let text = document.paragraph_text(paragraph)?;
+        let marked = document
+            .composition()
+            .filter(|(composed, ..)| *composed == paragraph)
+            .map(|(_, start, end)| start..end);
+        Some((text, offset, marked))
+    }
+}
+
 impl EntityInputHandler for DocView {
     fn text_for_range(
         &mut self,
@@ -1954,6 +2179,12 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<String> {
+        if let Some((text, _, _)) = self.word_input() {
+            let start = utf16_to_byte(&text, range.start);
+            let end = utf16_to_byte(&text, range.end).max(start);
+            *adjusted = Some(byte_to_utf16(&text, start)..byte_to_utf16(&text, end));
+            return Some(text.get(start..end)?.to_string());
+        }
         let text = self
             .current_text()
             .map(|edit| edit.text.as_str())
@@ -1970,6 +2201,13 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
+        if let Some((text, offset, _)) = self.word_input() {
+            let caret = byte_to_utf16(&text, offset);
+            return Some(UTF16Selection {
+                range: caret..caret,
+                reversed: false,
+            });
+        }
         // Typing appends: the caret is the end of the text.
         let text = self
             .current_text()
@@ -1987,12 +2225,22 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Range<usize>> {
+        if let Some((text, _, marked)) = self.word_input() {
+            let marked = marked?;
+            return Some(byte_to_utf16(&text, marked.start)..byte_to_utf16(&text, marked.end));
+        }
         let edit = self.current_text()?;
         let marked = edit.marked.clone()?;
         Some(byte_to_utf16(&edit.text, marked.start)..byte_to_utf16(&edit.text, marked.end))
     }
 
-    fn unmark_text(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
+    fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        // The composition stays as it reads, committed.
+        if let Some((text, _, Some(marked))) = self.word_input() {
+            let committed = text[marked].to_string();
+            self.word_edit(cx, |document| document.commit_composition(&committed));
+            return;
+        }
         match &mut self.document {
             Document::Workbook {
                 edit: Some(edit), ..
@@ -2012,6 +2260,20 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if matches!(self.document, Document::Pages { .. }) {
+            let text = text.to_string();
+            let composing = self
+                .word_input()
+                .is_some_and(|(_, _, marked)| marked.is_some());
+            self.word_edit(cx, move |document| {
+                if composing {
+                    document.commit_composition(&text)
+                } else {
+                    document.insert_text(&text)
+                }
+            });
+            return;
+        }
         if let Some(edit) = self.typing_target(cx) {
             edit.replace(range, text, false);
             cx.notify();
@@ -2026,6 +2288,11 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if matches!(self.document, Document::Pages { .. }) {
+            let text = new_text.to_string();
+            self.word_edit(cx, move |document| document.set_composition(&text));
+            return;
+        }
         if let Some(edit) = self.typing_target(cx) {
             edit.replace(range, new_text, true);
             cx.notify();
@@ -2039,6 +2306,27 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
+        // In a Word document, beside the caret.
+        if let Document::Pages {
+            document,
+            page_bounds,
+            ..
+        } = &self.document
+        {
+            if let Some(caret) = document.caret_rect() {
+                let (page, y) = document.page_and_offset(caret.document_y);
+                if let Some(page) = page_bounds.borrow().get(page).copied().flatten() {
+                    let zoom = self.shown_zoom;
+                    return Some(Bounds {
+                        origin: point(
+                            page.origin.x + px(caret.x as f32 * zoom),
+                            page.origin.y + px(y as f32 * zoom),
+                        ),
+                        size: size(px(1.0), px(caret.height as f32 * zoom)),
+                    });
+                }
+            }
+        }
         // The candidate window goes at the editing surface's top-left: never
         // off-screen, if not beside the caret yet.
         Some(Bounds {
