@@ -3334,6 +3334,7 @@ dependencies = [
  "jade-docx-pdf-renderer",
  "jade-office-model",
  "jade-opc",
+ "jade-painter",
  "jade-skia-painter",
  "objc2",
  "objc2-app-kit",
