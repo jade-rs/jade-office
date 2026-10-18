@@ -638,13 +638,49 @@ impl TinySkiaPainter {
         let stride = pixmap.width() as usize * 4;
         let rows = rows.start.min(pixmap.height()) as usize..rows.end.min(pixmap.height()) as usize;
         let bytes = &pixmap.data()[rows.start * stride..rows.end * stride];
-        let mut data = Vec::with_capacity(bytes.len());
-        data.extend(bytes.chunks_exact(4).flat_map(|pixel| {
+        // Written in place, a word at a time: collecting a flat-mapped
+        // iterator was a third of the time an edit took to reach the screen.
+        let mut data = vec![0; bytes.len()];
+        for (out, pixel) in data.chunks_exact_mut(4).zip(bytes.chunks_exact(4)) {
             let rgba = u32::from_le_bytes([pixel[0], pixel[1], pixel[2], pixel[3]]);
             let bgra = (rgba & 0xff00_ff00) | ((rgba >> 16) & 0xff) | ((rgba & 0xff) << 16);
-            bgra.to_le_bytes()
-        }));
+            out.copy_from_slice(&bgra.to_le_bytes());
+        }
         data
+    }
+
+    /// A 64-bit fingerprint of rows `rows`' pixels: equal pixels, equal
+    /// fingerprints. A reader keeping a copy of the surface compares these to
+    /// tell which of the rows drawing touched actually changed — a repaint
+    /// that draws the same pixels again need not be copied anywhere.
+    pub fn rows_fingerprint(&self, rows: std::ops::Range<u32>) -> u64 {
+        let pixmap = self.inner.pixmap.borrow();
+        let stride = pixmap.width() as usize * 4;
+        let rows = rows.start.min(pixmap.height()) as usize..rows.end.min(pixmap.height()) as usize;
+        let bytes = &pixmap.data()[rows.start * stride..rows.end * stride];
+        // FxHash's step over words: not for adversaries, fast for pixels. Four
+        // lanes, so the multiplies overlap rather than wait on each other: a
+        // page that repainted whole is megabytes to go through per keystroke.
+        const K: u64 = 0x517c_c1b7_2722_0a95;
+        let step = |hash: u64, word: &[u8]| {
+            let word = u64::from_le_bytes(word.try_into().unwrap_or([0; 8]));
+            (hash.rotate_left(5) ^ word).wrapping_mul(K)
+        };
+        let mut lanes = [bytes.len() as u64, 1, 2, 3];
+        let mut blocks = bytes.chunks_exact(32);
+        for block in &mut blocks {
+            lanes[0] = step(lanes[0], &block[0..8]);
+            lanes[1] = step(lanes[1], &block[8..16]);
+            lanes[2] = step(lanes[2], &block[16..24]);
+            lanes[3] = step(lanes[3], &block[24..32]);
+        }
+        let mut hash = lanes.iter().fold(0, |hash: u64, &lane| {
+            (hash.rotate_left(5) ^ lane).wrapping_mul(K)
+        });
+        for &byte in blocks.remainder() {
+            hash = (hash.rotate_left(5) ^ u64::from(byte)).wrapping_mul(K);
+        }
+        hash
     }
 
     /// Shows the page dark for reading on screen, or as the document has it.
