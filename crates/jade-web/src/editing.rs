@@ -62,6 +62,8 @@ pub struct EditableDocument {
     pages: Rc<RefCell<Vec<TinySkiaPainter>>>,
     rendered_pages: Rc<Cell<usize>>,
     pass_covers_whole_document: Rc<Cell<bool>>,
+    /// See [`TinySkiaRenderHost::last_paintable_page`].
+    last_paintable_page: Rc<Cell<usize>>,
     /// See [`Self::set_dark_paper`].
     dark_paper: Rc<Cell<bool>>,
     options: Options,
@@ -75,6 +77,9 @@ pub struct EditableDocument {
     affinity: CaretAffinity,
     /// The first page repainted since the shell last asked.
     repainted_from: Option<usize>,
+    /// The pages repainted since the shell last asked, from the renderer's
+    /// dirty regions.
+    repainted_pages: std::collections::BTreeSet<usize>,
 }
 
 impl EditableDocument {
@@ -112,7 +117,14 @@ impl EditableDocument {
         if size != INITIAL_PAGE && size.0 > 1.0 && size.1 > 1.0 {
             opened = Self::render(&word_document, &options, size, scale, &fonts, &measurer)?;
         }
-        let (renderer, pages, rendered_pages, pass_covers_whole_document, dark_paper) = opened;
+        let (
+            renderer,
+            pages,
+            rendered_pages,
+            pass_covers_whole_document,
+            last_paintable_page,
+            dark_paper,
+        ) = opened;
         let page_height = renderer.layout_page_size().1;
         Ok(Self {
             word_document,
@@ -125,6 +137,7 @@ impl EditableDocument {
             pages,
             rendered_pages,
             pass_covers_whole_document,
+            last_paintable_page,
             dark_paper,
             options,
             page_height,
@@ -132,6 +145,7 @@ impl EditableDocument {
             goal_x: None,
             affinity: CaretAffinity::Upstream,
             repainted_from: None,
+            repainted_pages: std::collections::BTreeSet::new(),
         })
     }
 
@@ -149,6 +163,7 @@ impl EditableDocument {
             Rc<RefCell<Vec<TinySkiaPainter>>>,
             Rc<Cell<usize>>,
             Rc<Cell<bool>>,
+            Rc<Cell<usize>>,
             Rc<Cell<bool>>,
         ),
         String,
@@ -159,6 +174,7 @@ impl EditableDocument {
         let pages = Rc::clone(&host.pages);
         let rendered = Rc::clone(&host.rendered_pages);
         let whole = Rc::clone(&host.pass_covers_whole_document);
+        let limit = Rc::clone(&host.last_paintable_page);
         let dark = Rc::clone(&host.dark_paper);
         let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
             .map_err(|_| "renderer setup failed".to_string())?;
@@ -183,7 +199,8 @@ impl EditableDocument {
         if let Some(error) = renderer.take_render_error() {
             return Err(error);
         }
-        Ok((renderer, pages, rendered, whole, dark))
+        renderer.clear_dirty_regions();
+        Ok((renderer, pages, rendered, whole, limit, dark))
     }
 
     // ---- pages --------------------------------------------------------------
@@ -314,6 +331,41 @@ impl EditableDocument {
     /// images of the pages: the ones before it are as they were.
     pub fn take_repainted_from(&mut self) -> Option<usize> {
         self.repainted_from.take()
+    }
+
+    /// The pages repainted since the last call, in order: what a shell that
+    /// keeps images of the pages has to re-read. A keystroke usually repaints
+    /// one; re-reading every page after it was most of what a keystroke cost
+    /// the browser build.
+    pub fn take_repainted_pages(&mut self) -> Vec<usize> {
+        self.repainted_from = None;
+        std::mem::take(&mut self.repainted_pages)
+            .into_iter()
+            .filter(|&page| page < self.page_count())
+            .collect()
+    }
+
+    /// Notes the pages the pass just painted and consumes its dirty regions,
+    /// as the browser editor does after each pass. Left in place, the full
+    /// repaint the document opened with stayed pending forever, and every
+    /// keystroke repainted every page from nothing.
+    ///
+    /// Pages past `last_page` (0-based) were not painted, whatever the
+    /// regions say: see [`TinySkiaRenderHost::last_paintable_page`].
+    fn consume_dirty_regions(&mut self, last_page: usize) {
+        if self.renderer.needs_full_repaint() {
+            self.repainted_pages
+                .extend(0..self.page_count().min(last_page.saturating_add(1)));
+        } else {
+            self.repainted_pages.extend(
+                self.renderer
+                    .dirty_regions()
+                    .iter()
+                    .map(|region| region.page)
+                    .filter(|&page| page <= last_page),
+            );
+        }
+        self.renderer.clear_dirty_regions();
     }
 
     /// Everything, from the first paragraph's start to the last one's end.
@@ -773,7 +825,40 @@ impl EditableDocument {
                 .map_err(|error| format!("edit failed: {error:?}"))?;
         }
         self.dirty = true;
-        self.repaint_from(paragraph)
+        // Most edits leave their paragraph's place and height alone, and then
+        // nothing after it moves: the page it is on is all that changes, and
+        // of that page only the paragraph's band — every other pixel stays on
+        // the surfaces, which this host keeps between passes. So the first
+        // pass stops at the paragraph's page; if the paragraph came out of it
+        // where and as tall as it went in, that is all. Otherwise the rest of
+        // the document is repainted after it. Band redraw is off for the
+        // selection's repaints, whose highlight is not the edit's band.
+        let geometry = |renderer: &CanvasRenderer<TinySkiaPainter>| {
+            (
+                renderer.cached_paragraph_start_page(paragraph),
+                renderer.cached_paragraph_height(paragraph),
+                renderer.paragraph_layout_origin(paragraph),
+            )
+        };
+        let before = geometry(&self.renderer);
+        let pages = self.page_count();
+        let page = self.paragraph_page(paragraph) + 1;
+        self.renderer.set_band_redraw_enabled(true);
+        let first = self.repaint_through(paragraph, page);
+        self.renderer.set_band_redraw_enabled(false);
+        first?;
+        let held_still = before.1.is_some() && geometry(&self.renderer) == before;
+        if held_still && self.page_count() == pages {
+            return Ok(());
+        }
+        // The rest, from the paragraph after it: the first pass cached the
+        // paragraph as it now is, so a pass from it would find it unmoved and
+        // stop at its page, leaving the pages below as they were.
+        if paragraph + 1 < self.paragraph_count() {
+            self.repaint_from(paragraph + 1)
+        } else {
+            self.repaint_from(paragraph)
+        }
     }
 
     /// The renderer's incremental sequence, through every page: an edit can
@@ -801,6 +886,8 @@ impl EditableDocument {
             .set(last_page > self.page_count());
         self.renderer
             .prepare_incremental_repaint(paragraph, last_page);
+        // Pages past the bound keep their pixels: see `last_paintable_page`.
+        self.last_paintable_page.set(last_page.saturating_sub(1));
         let result = self.renderer.render_bounded_to_page_with_parts(
             document,
             &self.options,
@@ -809,6 +896,8 @@ impl EditableDocument {
             self.word_document.footer_lines.as_deref(),
             last_page,
         );
+        self.last_paintable_page.set(usize::MAX);
+        self.consume_dirty_regions(last_page.saturating_sub(1));
         result.map_err(|_| "repaint failed".to_string())?;
         if let Some(error) = self.renderer.take_render_error() {
             return Err(error);
@@ -858,6 +947,7 @@ impl EditableDocument {
                 Some(&self.word_document.comments),
             )
             .map_err(|_| "repaint failed".to_string())?;
+        self.consume_dirty_regions(usize::MAX);
         if let Some(error) = self.renderer.take_render_error() {
             return Err(error);
         }
