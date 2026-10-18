@@ -3535,6 +3535,7 @@ name = "jade-xlsx-writer"
 version = "0.1.0"
 dependencies = [
  "jade-opc",
+ "jade-xlsx-headless-api",
  "jade-xlsx-layout",
  "jade-xlsx-reader",
  "quick-xml 0.39.4",
