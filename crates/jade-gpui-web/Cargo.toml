@@ -18,6 +18,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 jade-web = { path = "../jade-web" }
 jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter" }
+# The dark-paper colour mapping, for what the view draws over the pages.
+jade-painter = { path = "../../jade-core/crates/jade-painter" }
 image = { version = "0.25.1", default-features = false }
 gpui = { package = "gpui-pre", version = "=0.3.9", default-features = false }
 
