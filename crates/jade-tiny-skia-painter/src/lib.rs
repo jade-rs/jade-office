@@ -557,6 +557,10 @@ struct Inner {
     /// Parsed SVG pictures by content key, likewise; rasterized per draw at
     /// the size they land at.
     svgs: RefCell<HashMap<String, Option<Rc<resvg::usvg::Tree>>>>,
+    /// The device-px bounds of everything drawn since the last
+    /// [`TinySkiaPainter::take_damaged_rows`]: what a reader keeping a copy
+    /// of the pixels has to read again.
+    damage: std::cell::Cell<Option<Bounds>>,
 }
 
 /// A raster surface with a canvas-style painter on it. Cheap to clone: the
@@ -581,8 +585,62 @@ impl TinySkiaPainter {
                 path: RefCell::new(PathBuilder::new()),
                 images: RefCell::new(HashMap::new()),
                 svgs: RefCell::new(HashMap::new()),
+                damage: std::cell::Cell::new(None),
             }),
         })
+    }
+
+    /// Notes that drawing may have changed the pixels within `bounds`
+    /// (device px), less whatever the clip hides of them.
+    fn note_damage(&self, bounds: Bounds, clip: Option<&Clip>) {
+        let bounds = match clip {
+            Some(clip) => [
+                bounds[0].max(clip.rect[0]),
+                bounds[1].max(clip.rect[1]),
+                bounds[2].min(clip.rect[2]),
+                bounds[3].min(clip.rect[3]),
+            ],
+            None => bounds,
+        };
+        if !(bounds[2] > bounds[0] && bounds[3] > bounds[1]) {
+            return;
+        }
+        let damage = match self.inner.damage.get() {
+            Some(damage) => [
+                damage[0].min(bounds[0]),
+                damage[1].min(bounds[1]),
+                damage[2].max(bounds[2]),
+                damage[3].max(bounds[3]),
+            ],
+            None => bounds,
+        };
+        self.inner.damage.set(Some(damage));
+    }
+
+    /// The rows drawing has touched since the last call, whole pixels with
+    /// one to spare for anti-aliasing, or `None` if nothing was drawn.
+    pub fn take_damaged_rows(&self) -> Option<std::ops::Range<u32>> {
+        let damage = self.inner.damage.take()?;
+        let height = self.height();
+        let top = (damage[1].floor() - 1.0).max(0.0) as u32;
+        let bottom = ((damage[3].ceil() + 1.0).max(0.0) as u32).min(height);
+        (bottom > top).then_some(top..bottom)
+    }
+
+    /// Rows `rows` of the surface as BGRA with premultiplied alpha, as
+    /// [`Self::bgra_premultiplied`] gives the whole of it.
+    pub fn bgra_premultiplied_rows(&self, rows: std::ops::Range<u32>) -> Vec<u8> {
+        let pixmap = self.inner.pixmap.borrow();
+        let stride = pixmap.width() as usize * 4;
+        let rows = rows.start.min(pixmap.height()) as usize..rows.end.min(pixmap.height()) as usize;
+        let bytes = &pixmap.data()[rows.start * stride..rows.end * stride];
+        let mut data = Vec::with_capacity(bytes.len());
+        data.extend(bytes.chunks_exact(4).flat_map(|pixel| {
+            let rgba = u32::from_le_bytes([pixel[0], pixel[1], pixel[2], pixel[3]]);
+            let bgra = (rgba & 0xff00_ff00) | ((rgba >> 16) & 0xff) | ((rgba & 0xff) << 16);
+            bgra.to_le_bytes()
+        }));
+        data
     }
 
     /// The CSS font shorthand currently set.
@@ -607,14 +665,7 @@ impl TinySkiaPainter {
     pub fn bgra_premultiplied(&self) -> Vec<u8> {
         // One pass, read and written as words: a page at 2x is millions of
         // pixels, read back after every edit that repaints it.
-        let pixmap = self.inner.pixmap.borrow();
-        let mut data = Vec::with_capacity(pixmap.data().len());
-        data.extend(pixmap.data().chunks_exact(4).flat_map(|pixel| {
-            let rgba = u32::from_le_bytes([pixel[0], pixel[1], pixel[2], pixel[3]]);
-            let bgra = (rgba & 0xff00_ff00) | ((rgba >> 16) & 0xff) | ((rgba & 0xff) << 16);
-            bgra.to_le_bytes()
-        }));
-        data
+        self.bgra_premultiplied_rows(0..self.height())
     }
 
     pub fn encode_png(&self) -> Option<Vec<u8>> {
@@ -695,6 +746,10 @@ impl TinySkiaPainter {
             quality: tiny_skia::FilterQuality::Bilinear,
         };
         pixmap.draw_pixmap(0, 0, image.as_ref().as_ref(), &paint, transform, mask);
+        drop(pixmap);
+        if let Some(bounds) = image_bounds {
+            self.note_damage(bounds, clip);
+        }
         true
     }
 
@@ -769,6 +824,7 @@ impl TinySkiaPainter {
         if visible[2] <= visible[0] || visible[3] <= visible[1] {
             return;
         }
+        self.note_damage(visible, None);
         let Some(color) = opaque else {
             if let Some(visible) = Rect::from_ltrb(visible[0], visible[1], visible[2], visible[3]) {
                 pixmap.fill_rect(visible, paint, Transform::identity(), None);
@@ -839,15 +895,18 @@ impl TinySkiaPainter {
         draw: impl FnOnce(&mut Pixmap, Option<&Mask>),
     ) {
         let clip = self.inner.state.borrow().clip.clone();
+        let device = device_bounds(bounds, transform);
         let mut pixmap = self.inner.pixmap.borrow_mut();
         match clip.as_deref() {
             None => draw(&mut pixmap, None),
-            Some(clip) => match clip.coverage(device_bounds(bounds, transform)) {
-                Coverage::Hidden => {}
+            Some(clip) => match clip.coverage(device) {
+                Coverage::Hidden => return,
                 Coverage::Whole => draw(&mut pixmap, None),
                 Coverage::Partial => draw(&mut pixmap, Some(clip.whole_mask())),
             },
         }
+        drop(pixmap);
+        self.note_damage(device, clip.as_deref());
     }
 
     fn fill_path_with(&self, path: &Path, color: Color, transform: Transform) {
@@ -1098,9 +1157,18 @@ impl TinySkiaPainter {
                 *value = scale_u8(source[channel], alpha).saturating_add(scale_u8(*value, keep));
             }
         };
-        if columns.is_empty() {
+        if columns.is_empty() || rows.is_empty() {
             return;
         }
+        self.note_damage(
+            [
+                columns.start as f32,
+                rows.start as f32,
+                columns.end as f32,
+                rows.end as f32,
+            ],
+            None,
+        );
         let data = pixmap.data_mut();
         let span = (columns.start - left) as usize..(columns.end - left) as usize;
         for row in rows {
@@ -2004,6 +2072,27 @@ mod tests {
         assert_eq!(pixel(&painter, 5, 5), [255, 255, 255, 255]);
         // The fill colour was restored to black with the rest of the state.
         assert_eq!(pixel(&painter, 32, 32), [0, 0, 0, 255]);
+    }
+
+    /// What is drawn is reported as damaged rows, once; what the clip hides
+    /// is not.
+    #[test]
+    fn drawing_reports_the_rows_it_touched() {
+        let painter = TinySkiaPainter::new(100, 100, fonts()).unwrap();
+        assert_eq!(painter.take_damaged_rows(), None);
+        painter.fill_rect(10.0, 20.0, 30.0, 10.0);
+        assert_eq!(painter.take_damaged_rows(), Some(19..31));
+        assert_eq!(painter.take_damaged_rows(), None);
+        painter.save();
+        painter.begin_path();
+        painter.rect(0.0, 50.0, 100.0, 10.0);
+        painter.clip();
+        painter.fill_rect(0.0, 0.0, 100.0, 100.0);
+        painter.set_font("12px 'Noto Sans JP'");
+        painter.fill_text("あ", 10.0, 58.0).unwrap();
+        painter.restore();
+        assert_eq!(painter.take_damaged_rows(), Some(49..61));
+        assert_eq!(painter.bgra_premultiplied_rows(49..61).len(), 100 * 12 * 4);
     }
 
     /// A rectangle clipped to, under no transform at all (tiny-skia's
