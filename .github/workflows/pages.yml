@@ -2,19 +2,25 @@ name: Pages
 
 # Builds the browser prototype (scripts/build-web.sh) and publishes
 # crates/jade-web/www to GitHub Pages: the canvas page at / and the gpui
-# shell at /gpui.html.
+# shell at /gpui.html. Pull requests that touch the web build only build it.
 
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - .github/workflows/pages.yml
+      - scripts/build-web.sh
+      - crates/jade-web/**
+      - crates/jade-gpui-web/**
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: pages-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -52,13 +58,16 @@ jobs:
       - name: Build
         run: ./scripts/build-web.sh
 
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: crates/jade-web/www
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:
