@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use jade_painter::Painter;
 use jade_xlsx_headless_api::CellInput;
-use jade_xlsx_headless_editor::{formula_text, HeadlessWorkbook};
+use jade_xlsx_headless_editor::{formula_text, ClipboardSnapshot, HeadlessWorkbook};
 
 use crate::{clipboard, typing};
 pub use jade_xlsx_layout::HeaderMetrics;
@@ -34,6 +34,15 @@ const CLIPBOARD_CELL_LIMIT: u64 = 200_000;
 /// `B3`.
 pub fn reference_text(reference: CellRef) -> String {
     format!("{}{}", column_label(reference.column), reference.row + 1)
+}
+
+/// Clipboard text compared line by line, whatever line ends the system gave
+/// it and however many it left at the end.
+fn clipboard_lines(text: &str) -> Vec<&str> {
+    text.trim_end_matches(['\r', '\n'])
+        .split('\n')
+        .map(|line| line.trim_end_matches('\r'))
+        .collect()
 }
 
 /// `B3`, or `B3:D7` for a range.
@@ -109,6 +118,10 @@ pub struct Workbook<B: Backend> {
     steps: Vec<usize>,
     /// The same for the edits undone, for redo.
     undone: Vec<usize>,
+    /// The last copy or cut: the engine's snapshot of the cells, the text it
+    /// put on the clipboard, and whether it was a cut. A paste of that same
+    /// text pastes the cells themselves, as Excel does within a workbook.
+    clipboard: Option<(ClipboardSnapshot, String, bool)>,
     /// The last surface painted on, reused while the size stays the same:
     /// a sheet repaints on every scroll frame.
     surface: RefCell<Option<(B::Painter, u32, u32)>>,
@@ -147,6 +160,7 @@ impl<B: Backend> Workbook<B> {
             dirty: false,
             steps: Vec::new(),
             undone: Vec::new(),
+            clipboard: None,
             surface: RefCell::new(None),
         })
     }
@@ -488,9 +502,56 @@ impl<B: Backend> Workbook<B> {
         self.undone.clear();
     }
 
+    /// Copies (or, with `cut`, cuts) `range`: returns the text for the
+    /// clipboard, and keeps the cells so that pasting that text pastes them —
+    /// formulas adjusted to where they land, formats with them. A cut leaves
+    /// the cells where they are until the paste moves them, as in Excel.
+    pub fn copy(&mut self, range: CellRange, cut: bool) -> String {
+        let text = self.range_text(range);
+        let name = self.sheet_name();
+        self.clipboard = self
+            .book
+            .copy_snapshot(&name, &range_text(range), cut)
+            .ok()
+            .map(|snapshot| (snapshot, text.clone(), cut));
+        text
+    }
+
+    /// Pastes the clipboard at `origin`, returning the far corner it filled.
+    /// Text this workbook copied pastes its cells; anything else pastes as
+    /// tab-separated text typed in from `origin` down and right.
+    pub fn paste(&mut self, origin: CellRef, text: &str) -> Result<Option<CellRef>, String> {
+        let ours = |copied: &str| clipboard_lines(copied) == clipboard_lines(text);
+        if let Some((snapshot, copied, cut)) = self.clipboard.take() {
+            if ours(&copied) {
+                let name = self.sheet_name();
+                match self
+                    .book
+                    .paste_snapshot(&snapshot, &name, &reference_text(origin), false)
+                {
+                    Ok(range) => {
+                        // A cut moves once; a copy pastes as often as asked.
+                        if !cut {
+                            self.clipboard = Some((snapshot, copied, cut));
+                        }
+                        self.record(1);
+                        self.after_write()?;
+                        return Ok(Some(range.end));
+                    }
+                    // An edit since the cut cancelled it, as in Excel.
+                    Err(error) if cut => return Err(error.to_string()),
+                    Err(_) => {}
+                }
+            } else {
+                self.clipboard = Some((snapshot, copied, cut));
+            }
+        }
+        self.paste_text(origin, text)
+    }
+
     /// Pastes tab-separated text from `origin` down and right as one write,
     /// returning the far corner it filled.
-    pub fn paste(&mut self, origin: CellRef, text: &str) -> Result<Option<CellRef>, String> {
+    fn paste_text(&mut self, origin: CellRef, text: &str) -> Result<Option<CellRef>, String> {
         let mut values = Vec::new();
         let mut far = origin;
         for (row_offset, row) in clipboard::parse(text).iter().enumerate() {

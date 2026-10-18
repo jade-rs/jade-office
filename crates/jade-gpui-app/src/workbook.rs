@@ -341,20 +341,18 @@ impl WorkbookView {
 
     // ---- clipboard -------------------------------------------------------
 
-    /// The selection's displayed text, tab-separated by column and
-    /// newline-separated by row — what Excel puts on the clipboard as text.
-    fn selection_text(&self) -> String {
-        self.book.range_text(self.range())
-    }
-
+    /// Puts the selection on the clipboard as Excel's text; pasting it back
+    /// in this workbook pastes the cells themselves.
     fn copy(&mut self, cx: &mut Context<Self>) {
-        let text = self.selection_text();
+        let text = self.book.copy(self.range(), false);
         cx.write_to_clipboard(ClipboardItem::new_string(text));
     }
 
+    /// As copy, but the paste moves the cells — they stay where they are
+    /// until then, as in Excel.
     fn cut(&mut self, cx: &mut Context<Self>) {
-        self.copy(cx);
-        self.clear_selection(cx);
+        let text = self.book.copy(self.range(), true);
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
     }
 
     /// Pastes tab-separated text from the active cell down and right, and
