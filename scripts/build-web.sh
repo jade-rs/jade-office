@@ -27,7 +27,7 @@ done
 cp "$root/jade-core/contract.docx" "$www/samples/"
 ls -la "$www/pkg"
 
-# The gpui shell (gpui-pre's web platform) on the same engine: www/gpui.html.
+# The gpui shell (gpui-pre's web platform) on the same engine: www/index.html.
 # Its crate pins a newer stable toolchain of its own (crates/jade-gpui-web).
 gpui_web="$root/crates/jade-gpui-web"
 (cd "$gpui_web" && cargo build --lib --release --target wasm32-unknown-unknown)

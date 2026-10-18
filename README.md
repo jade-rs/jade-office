@@ -43,7 +43,7 @@ The engine's renderers — documents, slides and sheets — also run as WebAssem
 python3 -m http.server 8765 --directory crates/jade-web/www
 ```
 
-Then open http://localhost:8765/ (the canvas page) or http://localhost:8765/gpui.html?open=contract.docx (the gpui shell; `sample-deck.pptx` and `charts-workbook.xlsx` work too). Word documents are view-only in the browser so far.
+Then open http://localhost:8765/ — the gpui shell, laid out like the native app (the same title bar, explorer, tabs, slide and page lists, formula bar and status bar, in the same palette, words and icons: it compiles in `jade-gpui-app`'s i18n tables and icon set). The explorer lists the bundled samples; open your own with the + button, ⌘O or by dropping files on the page; `?open=contract.docx` opens one at start. Word documents are view-only in the browser so far. http://localhost:8765/canvas.html is the plain canvas page over the wasm-bindgen API.
 
 ## License
 
