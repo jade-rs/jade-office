@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use jade_painter::Painter;
 
+pub mod clipboard;
 pub mod deck;
 pub mod sheet;
 pub mod typing;
