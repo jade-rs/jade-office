@@ -1743,6 +1743,26 @@ impl DocView {
         cx.notify();
     }
 
+    /// The selected cells onto the clipboard as Excel's text; with `cut`,
+    /// cleared too.
+    fn sheet_copy(&mut self, cut: bool, cx: &mut Context<Self>) {
+        let Document::Workbook {
+            book,
+            anchor,
+            focus,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let range = span(*anchor, *focus);
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(book.range_text(range)));
+        if cut {
+            let result = book.clear(range);
+            self.edited(result, cx);
+        }
+    }
+
     /// The selected text onto the clipboard; with `cut`, out of the
     /// document too.
     fn word_copy(&mut self, cut: bool, cx: &mut Context<Self>) {
@@ -2099,6 +2119,9 @@ impl DocView {
         // ⌘ on a Mac, Ctrl elsewhere.
         if modifiers.platform || modifiers.control {
             let pages = matches!(self.document, Document::Pages { .. });
+            // A sheet copies its selected cells, not the text of a cell
+            // being typed into.
+            let cells = matches!(self.document, Document::Workbook { edit: None, .. });
             match key {
                 "z" => self.step_history(!modifiers.shift, cx),
                 "y" => self.step_history(false, cx),
@@ -2106,6 +2129,8 @@ impl DocView {
                 "a" if pages => self.word_move(cx, |document| document.select_all()),
                 "c" if pages => self.word_copy(false, cx),
                 "x" if pages => self.word_copy(true, cx),
+                "c" if cells => self.sheet_copy(false, cx),
+                "x" if cells => self.sheet_copy(true, cx),
                 // ⌘V is left to the browser, whose paste event brings the
                 // clipboard to the input handler.
                 _ => return,
@@ -2326,12 +2351,35 @@ impl EntityInputHandler for DocView {
         let Some(text) = item.text() else {
             return;
         };
-        if matches!(self.document, Document::Pages { .. }) {
-            // Lines become paragraphs, as they were when copied out.
-            self.word_edit(cx, move |document| document.paste(&text));
-            return;
+        match &mut self.document {
+            Document::Pages { .. } => {
+                // Lines become paragraphs, as they were when copied out.
+                self.word_edit(cx, move |document| document.paste(&text));
+            }
+            Document::Workbook {
+                book,
+                edit: None,
+                anchor,
+                focus,
+                ..
+            } => {
+                // Excel's clipboard text fills cells from the selection's
+                // top-left, and what it filled is selected.
+                let origin = span(*anchor, *focus).start;
+                let result = book.paste(origin, &text);
+                if let Ok(Some(far)) = result {
+                    *anchor = origin;
+                    *focus = far;
+                }
+                self.edited(result.map(|far| far.is_some()), cx);
+            }
+            // Into a cell being typed into, its first line, as in Excel.
+            Document::Workbook { .. } => {
+                let line = text.lines().next().unwrap_or_default().to_string();
+                self.replace_text_in_range(None, &line, window, cx);
+            }
+            Document::Deck { .. } => self.replace_text_in_range(None, &text, window, cx),
         }
-        self.replace_text_in_range(None, &text, window, cx);
     }
 
     fn replace_text_in_range(
