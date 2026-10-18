@@ -1274,10 +1274,18 @@ mod tests {
             })
         });
         cx.run_until_parked();
-        workspace.read_with(cx, |workspace, _| {
+        workspace.read_with(cx, |workspace, cx| {
             assert_eq!(workspace.tabs.len(), 3);
             assert_eq!(workspace.active, Some(1));
             assert_eq!(workspace.tabs[1].kind, Kind::Workbook);
+            // Opening is not editing: no tab asks to be saved.
+            for tab in &workspace.tabs {
+                assert!(
+                    !tab.editor.is_dirty(cx),
+                    "{} opens modified",
+                    tab.path.display()
+                );
+            }
         });
 
         cx.dispatch_action(ZoomIn);
