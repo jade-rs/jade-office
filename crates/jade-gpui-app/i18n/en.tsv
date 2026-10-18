@@ -75,6 +75,10 @@ menu.review.track_changes	Track Changes
 menu.view	View
 menu.view.explorer	Explorer
 menu.view.details	Details Panel
+menu.view.appearance	Appearance
+menu.view.appearance.system	Use System Setting
+menu.view.appearance.light	Light
+menu.view.appearance.dark	Dark
 menu.view.theme	Light / Dark Theme
 menu.view.next_page	Next Page
 menu.view.previous_page	Previous Page
