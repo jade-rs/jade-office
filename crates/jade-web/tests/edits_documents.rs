@@ -279,10 +279,13 @@ fn arrows_home_and_end_move_the_caret_and_shift_extends_the_selection() {
     let (second, _) = next_text_paragraph(&document, first);
     // The last line of the first paragraph, so Down leaves it.
     document.place_caret(first, first_text.len()).unwrap();
+    let last_line = document.caret_rect().unwrap().document_y;
     document.move_caret(Motion::LineStart, false).unwrap();
     let line_start = document.caret().unwrap();
     assert_eq!(line_start.0, first);
     assert!(line_start.1 < first_text.len());
+    // Drawn at the start of that line, not the end of the one above.
+    assert_eq!(document.caret_rect().unwrap().document_y, last_line);
     document.move_caret(Motion::LineEnd, false).unwrap();
     assert_eq!(document.caret(), Some((first, first_text.len())));
 
@@ -362,4 +365,41 @@ fn a_highlight_repaints_only_its_pages_and_says_from_where() {
     document.select((last, end), (last, 0)).unwrap();
     assert_eq!(document.take_repainted_from(), Some(starts_on));
     assert_eq!(document.page_count(), last_page + 1);
+}
+
+/// The first offset in `paragraph` where a soft wrap falls: the caret there
+/// is drawn on one line and the next character's on the line below.
+fn first_wrap(document: &mut EditableDocument, paragraph: usize) -> (usize, f64, f64) {
+    let text = document.paragraph_text(paragraph).unwrap();
+    let offsets: Vec<usize> = text.char_indices().map(|(at, _)| at).collect();
+    for pair in offsets.windows(2) {
+        let here = document.place_caret(paragraph, pair[0]).unwrap();
+        let next = document.place_caret(paragraph, pair[1]).unwrap();
+        if next.document_y > here.document_y + here.height / 2.0 {
+            // The wrap is at pair[0] when the caret before it is still above.
+            let wrap = document.place_caret(paragraph, pair[0]).unwrap();
+            return (pair[0], wrap.document_y, next.document_y);
+        }
+    }
+    panic!("paragraph {paragraph} does not wrap");
+}
+
+#[test]
+fn a_click_at_a_wrapped_lines_start_puts_the_caret_there() {
+    let mut document = open("contract.docx");
+    let (paragraph, _) = first_text_paragraph(&document);
+    let (wrap, above, below) = first_wrap(&mut document, paragraph);
+    let height = document.caret_rect().unwrap().height;
+
+    // Left of the line below: its first position, drawn on that line.
+    let caret = document.place_caret_at(0.0, below + height / 2.0).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, wrap)));
+    assert_eq!(caret.document_y, below);
+    assert_eq!(document.caret_rect().unwrap().document_y, below);
+    // Past the end of the line above: the same offset, drawn at that end.
+    let caret = document
+        .place_caret_at(10_000.0, above + height / 2.0)
+        .unwrap();
+    assert_eq!(document.caret(), Some((paragraph, wrap)));
+    assert_eq!(caret.document_y, above);
 }
