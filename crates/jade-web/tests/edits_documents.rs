@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use jade_web::editing::EditableDocument;
+use jade_web::editing::{EditableDocument, Motion};
 
 fn core() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../jade-core"))
@@ -181,4 +181,185 @@ fn a_composition_replaces_itself_until_committed() {
     // One undo takes the committed word back.
     document.undo().unwrap();
     assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+}
+
+/// The paragraph after `paragraph` that has text.
+fn next_text_paragraph(document: &EditableDocument, paragraph: usize) -> (usize, String) {
+    ((paragraph + 1)..document.paragraph_count())
+        .find_map(|index| {
+            document
+                .paragraph_text(index)
+                .filter(|text| !text.trim().is_empty())
+                .map(|text| (index, text))
+        })
+        .expect("another paragraph with text")
+}
+
+fn char_offset(text: &str, chars: usize) -> usize {
+    text.char_indices()
+        .nth(chars)
+        .map_or(text.len(), |(at, _)| at)
+}
+
+#[test]
+fn a_selection_is_highlighted_copied_and_replaced_by_typing() {
+    let mut document = open("contract.docx");
+    let (paragraph, before) = first_text_paragraph(&document);
+    let page_before = page_rgba(&document, 0);
+    let three = char_offset(&before, 3);
+    document.select((paragraph, 0), (paragraph, three)).unwrap();
+    assert_eq!(
+        document.selection(),
+        Some(((paragraph, 0), (paragraph, three)))
+    );
+    assert_eq!(document.selected_text().unwrap(), before[..three]);
+    assert_ne!(page_rgba(&document, 0), page_before, "no highlight");
+
+    // Typing replaces the selection, in one undoable step.
+    document.insert_text("X").unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("X{}", &before[three..])
+    );
+    assert_eq!(document.selection(), None);
+    assert_eq!(document.caret(), Some((paragraph, 1)));
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+}
+
+#[test]
+fn placing_the_caret_clears_the_highlight() {
+    let mut document = open("contract.docx");
+    let (paragraph, before) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0).unwrap();
+    let page_before = page_rgba(&document, 0);
+    document
+        .select((paragraph, 0), (paragraph, char_offset(&before, 4)))
+        .unwrap();
+    document.place_caret(paragraph, 0).unwrap();
+    assert_eq!(document.selection(), None);
+    assert_eq!(
+        page_rgba(&document, 0),
+        page_before,
+        "highlight left behind"
+    );
+}
+
+#[test]
+fn a_selection_across_paragraphs_deletes_as_one_edit() {
+    let mut document = open("contract.docx");
+    let (first, first_text) = first_text_paragraph(&document);
+    let (second, second_text) = next_text_paragraph(&document, first);
+    let count = document.paragraph_count();
+    let (from, to) = (char_offset(&first_text, 2), char_offset(&second_text, 2));
+    // Dragged upwards: the focus comes before the anchor.
+    document.select((second, to), (first, from)).unwrap();
+    let copied = document.selected_text().unwrap();
+    assert!(copied.starts_with(&first_text[from..]));
+    assert!(copied.ends_with(&second_text[..to]));
+    assert_eq!(copied.matches('\n').count(), second - first);
+
+    document.delete(true).unwrap();
+    assert_eq!(document.paragraph_count(), count - (second - first));
+    assert_eq!(
+        document.paragraph_text(first).unwrap(),
+        format!("{}{}", &first_text[..from], &second_text[to..])
+    );
+    assert_eq!(document.caret(), Some((first, from)));
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_count(), count);
+    assert_eq!(document.paragraph_text(first).unwrap(), first_text);
+    assert_eq!(document.paragraph_text(second).unwrap(), second_text);
+}
+
+#[test]
+fn arrows_home_and_end_move_the_caret_and_shift_extends_the_selection() {
+    let mut document = open("contract.docx");
+    let (first, first_text) = first_text_paragraph(&document);
+    let (second, _) = next_text_paragraph(&document, first);
+    // The last line of the first paragraph, so Down leaves it.
+    document.place_caret(first, first_text.len()).unwrap();
+    document.move_caret(Motion::LineStart, false).unwrap();
+    let line_start = document.caret().unwrap();
+    assert_eq!(line_start.0, first);
+    assert!(line_start.1 < first_text.len());
+    document.move_caret(Motion::LineEnd, false).unwrap();
+    assert_eq!(document.caret(), Some((first, first_text.len())));
+
+    // Home again, then down a line and back up to the same place.
+    document.move_caret(Motion::LineStart, false).unwrap();
+    let top = document.caret_rect().unwrap().document_y;
+    document.move_caret(Motion::Down, false).unwrap();
+    assert_eq!(document.caret().unwrap().0, second);
+    assert!(document.caret_rect().unwrap().document_y > top);
+    document.move_caret(Motion::Up, false).unwrap();
+    assert_eq!(document.caret(), Some((first, line_start.1)));
+
+    document.move_caret(Motion::Right, true).unwrap();
+    document.move_caret(Motion::Right, true).unwrap();
+    let two = char_offset(&first_text[line_start.1..], 2);
+    assert_eq!(
+        document.selection(),
+        Some(((first, line_start.1), (first, line_start.1 + two)))
+    );
+    // An arrow without Shift collapses the selection.
+    document.move_caret(Motion::Left, false).unwrap();
+    assert_eq!(document.selection(), None);
+}
+
+#[test]
+fn select_all_takes_every_paragraph() {
+    let mut document = open("contract.docx");
+    document.select_all().unwrap();
+    let copied = document.selected_text().unwrap();
+    assert_eq!(copied.matches('\n').count(), document.paragraph_count() - 1);
+    let (_, first) = first_text_paragraph(&document);
+    assert!(copied.contains(&first));
+}
+
+#[test]
+fn pasting_lines_makes_paragraphs_and_undoes_in_one_step() {
+    let mut document = open("contract.docx");
+    let (paragraph, before) = first_text_paragraph(&document);
+    let count = document.paragraph_count();
+    let two = char_offset(&before, 2);
+    document.select((paragraph, 0), (paragraph, two)).unwrap();
+    document.paste("一行目\n二行目").unwrap();
+    assert_eq!(document.paragraph_count(), count + 1);
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), "一行目");
+    assert_eq!(
+        document.paragraph_text(paragraph + 1).unwrap(),
+        format!("二行目{}", &before[two..])
+    );
+    assert_eq!(document.caret(), Some((paragraph + 1, "二行目".len())));
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_count(), count);
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+}
+
+#[test]
+fn a_highlight_repaints_only_its_pages_and_says_from_where() {
+    let mut document = open("contract.docx");
+    assert!(document.page_count() >= 2);
+    let last = document.paragraph_count() - 1;
+    let last_page = document.page_count() - 1;
+    let tail = document.page(last_page).unwrap().rgba_premultiplied();
+    let _ = document.take_repainted_from();
+    let (paragraph, text) = first_text_paragraph(&document);
+    document
+        .select((paragraph, 0), (paragraph, char_offset(&text, 2)))
+        .unwrap();
+    assert_eq!(document.take_repainted_from(), Some(0));
+    assert_eq!(document.take_repainted_from(), None);
+    assert_eq!(document.page(last_page).unwrap().rgba_premultiplied(), tail);
+    // A selection further down repaints from the page it starts on.
+    let end = document.paragraph_text(last).unwrap_or_default().len();
+    let start = document.place_caret(last, 0).unwrap();
+    let starts_on = document.page_and_offset(start.document_y).0;
+    assert!(starts_on > 0);
+    document.place_caret(last, end);
+    let _ = document.take_repainted_from();
+    document.select((last, end), (last, 0)).unwrap();
+    assert_eq!(document.take_repainted_from(), Some(starts_on));
+    assert_eq!(document.page_count(), last_page + 1);
 }
