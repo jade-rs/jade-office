@@ -251,3 +251,8 @@ doc.find.none	{query}: 見つかりません
 doc.find.count	{query}: {n} 件
 doc.find.position	{query}: {n} / {count}
 doc.find.replaced	{query} → {replacement}: {n} 件置換
+web.samples	サンプル
+web.read_only	閲覧のみ
+web.download	保存 (ダウンロード)
+web.downloaded	{name} をダウンロードしました
+web.open_failed	{name} を開けません: {error}

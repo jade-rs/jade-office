@@ -251,3 +251,8 @@ doc.find.none	{query}: no matches
 doc.find.count	{query}: {n} matches
 doc.find.position	{query}: {n} of {count}
 doc.find.replaced	{query} → {replacement}: {n} replaced
+web.samples	Samples
+web.read_only	Read-only
+web.download	Save (Download)
+web.downloaded	Downloaded {name}
+web.open_failed	Cannot open {name}: {error}
