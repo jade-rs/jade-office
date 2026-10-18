@@ -17,6 +17,21 @@ jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
 jade-docx-pdf-renderer = { path = "../../jade-core/crates/jade-docx-pdf-renderer" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter" }
 jade-xlsx-native-render = { path = "../../jade-core/crates/jade-xlsx-native-render" }
+# The workbook view paints its own viewport (zoomed, at device pixels) with
+# the same renderer `jade-xlsx-native-render` uses.
+jade-painter = { path = "../../jade-core/crates/jade-painter" }
+jade-xlsx-layout = { path = "../../jade-core/crates/jade-xlsx-layout" }
+jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
+# The workbook view edits through the same core the browser spreadsheet and
+# the headless CLI use.
+jade-xlsx-headless-api = { path = "../../jade-core/crates/jade-xlsx-headless-api" }
+jade-xlsx-headless-editor = { path = "../../jade-core/crates/jade-xlsx-headless-editor" }
+jade-xlsx-reader = { path = "../../jade-core/crates/jade-xlsx-reader" }
+jade-pptx-native-render = { path = "../jade-pptx-native-render" }
+# The deck view edits through the same session the browser editor uses.
+jade-pptx-layout = { path = "../../jade-core/crates/jade-pptx-layout" }
+jade-pptx-reader = { path = "../../jade-core/crates/jade-pptx-reader" }
+jade-pptx-writer = { path = "../../jade-core/crates/jade-pptx-writer" }
 # `macos-blade` instead of the default Metal backend, which needs a full Xcode
 # to compile its shaders. `font-kit` is in gpui's default features and has to
 # come back explicitly: without it the text system falls back to a stub with
@@ -26,8 +41,13 @@ gpui = { version = "0.2", default-features = false, features = ["macos-blade", "
 futures = "0.3"
 image = "0.25"
 
+[dev-dependencies]
+# Headless windows for scenario tests: keystrokes, input and actions driven
+# through the real views.
+gpui = { version = "0.2", default-features = false, features = ["macos-blade", "font-kit", "test-support"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSPrintInfo", "NSPrintOperation"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSData"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSData", "NSLocale", "NSString"] }
 objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "objc2-app-kit"] }

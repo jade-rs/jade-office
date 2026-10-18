@@ -26,10 +26,21 @@ jobs:
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          workspaces: crates/jade-gpui-app
+          workspaces: |
+            crates/jade-gpui-app
+            crates/jade-pptx-native-render
 
       - name: Cargo fmt
         run: cargo fmt --manifest-path crates/jade-gpui-app/Cargo.toml -- --check
 
       - name: Cargo clippy
         run: cargo clippy --manifest-path crates/jade-gpui-app/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Cargo test
+        run: cargo test --manifest-path crates/jade-gpui-app/Cargo.toml --locked
+
+      - name: PPTX native render (fmt, clippy, test)
+        run: |
+          cargo fmt --manifest-path crates/jade-pptx-native-render/Cargo.toml -- --check
+          cargo clippy --manifest-path crates/jade-pptx-native-render/Cargo.toml --all-targets --locked -- -D warnings
+          cargo test --manifest-path crates/jade-pptx-native-render/Cargo.toml --locked

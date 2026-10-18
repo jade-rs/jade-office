@@ -1,6 +1,11 @@
-//! A native jade window: DOCX in, pages on screen, no browser anywhere.
+//! jade office: Word, Excel and PowerPoint files in one native app, no
+//! browser anywhere.
 //!
-//! Usage: `jade-gpui-app <input.docx>`
+//! Usage: `jade-gpui-app [file.docx|file.xlsx|file.pptx ...]`
+//!
+//! Each file opens in the window its format wants (see `shell`); with no
+//! arguments the app shows its start window. The rest of this file is the
+//! document (DOCX) window.
 //!
 //! The pages come from `jade-docx-editor`'s own renderer via `jade-docx-native-render`,
 //! so what is on screen is the same layout the browser produces. gpui's only
@@ -15,15 +20,29 @@
 //! and with it editing and IME — needs the renderer driven from gpui's own
 //! paint cycle, which is the next step, not this one.
 
+mod deck;
+mod editor;
+mod i18n;
 mod native_print;
+mod shell;
+mod tooltip;
 mod workbook;
+mod workspace;
+
+use editor::Editor;
+use i18n::text as t;
+use tooltip::Tooltip;
+
+/// "yes"/"no" in the live language, for the details panel.
+fn yes_no(value: bool) -> &'static str {
+    t(if value { "doc.info.yes" } else { "doc.info.no" })
+}
 
 use gpui::{
     actions, canvas, div, img, point, prelude::*, px, size, AnyElement, App, Application, Bounds,
     ClipboardItem, Context, ElementInputHandler, EntityInputHandler, FocusHandle, Focusable,
     KeyBinding, KeyDownEvent, Menu, MenuItem, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, RenderImage, ScrollHandle, SharedString, TitlebarOptions, UTF16Selection,
-    Window, WindowBackgroundAppearance, WindowBounds, WindowOptions,
+    MouseUpEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
 use jade_docx_native_render::{
     CaretRect, CharacterFormat, FaceSpec, NativeDocument, ObjectHit, SearchHit,
@@ -47,6 +66,12 @@ actions!(
     [
         Quit,
         Open,
+        CloseWindow,
+        StartSlideshow,
+        ToggleInspector,
+        ToggleExplorer,
+        ToggleTheme,
+        OpenFolder,
         Save,
         SaveAs,
         Print,
@@ -79,6 +104,7 @@ actions!(
         ZoomIn,
         ZoomOut,
         ZoomActual,
+        ZoomFit,
     ]
 );
 
@@ -90,16 +116,28 @@ fn key_bindings() -> Vec<KeyBinding> {
     const CONTEXT: Option<&str> = Some("Document");
     vec![
         KeyBinding::new("cmd-q", Quit, None),
-        KeyBinding::new("cmd-o", Open, CONTEXT),
-        KeyBinding::new("cmd-s", Save, CONTEXT),
-        KeyBinding::new("cmd-shift-s", SaveAs, CONTEXT),
-        KeyBinding::new("cmd-p", Print, CONTEXT),
-        KeyBinding::new("cmd-z", Undo, CONTEXT),
-        KeyBinding::new("cmd-shift-z", Redo, CONTEXT),
-        KeyBinding::new("cmd-x", Cut, CONTEXT),
-        KeyBinding::new("cmd-c", Copy, CONTEXT),
-        KeyBinding::new("cmd-v", Paste, CONTEXT),
-        KeyBinding::new("cmd-a", SelectAll, CONTEXT),
+        // Opening and closing belong to the app, not to one kind of window:
+        // they work from the start window and from every view.
+        KeyBinding::new("cmd-o", Open, None),
+        KeyBinding::new("cmd-w", CloseWindow, None),
+        KeyBinding::new("cmd-shift-o", OpenFolder, None),
+        KeyBinding::new("cmd-alt-e", ToggleExplorer, None),
+        KeyBinding::new("cmd-alt-i", ToggleInspector, None),
+        KeyBinding::new("cmd-alt-t", ToggleTheme, None),
+        // Saving, history and the clipboard mean something in more than one
+        // kind of tab; each view that has them answers with its own handler.
+        KeyBinding::new("cmd-s", Save, None),
+        KeyBinding::new("cmd-shift-s", SaveAs, None),
+        // Unscoped so each view that can print answers it with its own
+        // handler; a view without one leaves it alone.
+        KeyBinding::new("cmd-p", Print, None),
+        KeyBinding::new("f5", StartSlideshow, Some("Deck")),
+        KeyBinding::new("cmd-z", Undo, None),
+        KeyBinding::new("cmd-shift-z", Redo, None),
+        KeyBinding::new("cmd-x", Cut, None),
+        KeyBinding::new("cmd-c", Copy, None),
+        KeyBinding::new("cmd-v", Paste, None),
+        KeyBinding::new("cmd-a", SelectAll, None),
         KeyBinding::new("cmd-alt-a", SelectParagraph, CONTEXT),
         // Page Down / Page Up rather than ⌘↓ / ⌘↑: those two mean "end of
         // document" and "start of document" on macOS, and taking them for
@@ -123,9 +161,12 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
-        KeyBinding::new("cmd-=", ZoomIn, CONTEXT),
-        KeyBinding::new("cmd--", ZoomOut, CONTEXT),
-        KeyBinding::new("cmd-0", ZoomActual, CONTEXT),
+        // Zoom belongs to the workspace, which steps whichever editor is in
+        // front, so these work in every kind of tab.
+        KeyBinding::new("cmd-=", ZoomIn, None),
+        KeyBinding::new("cmd--", ZoomOut, None),
+        KeyBinding::new("cmd-0", ZoomActual, None),
+        KeyBinding::new("cmd-9", ZoomFit, None),
     ]
 }
 
@@ -137,77 +178,91 @@ fn menus() -> Vec<Menu> {
     vec![
         Menu {
             name: "jade".into(),
-            items: vec![MenuItem::action("Quit jade", Quit)],
+            items: vec![MenuItem::action(t("menu.app.quit"), Quit)],
         },
         Menu {
-            name: "File".into(),
+            name: t("menu.file").into(),
             items: vec![
-                MenuItem::action("Open…", Open),
+                MenuItem::action(t("menu.file.open"), Open),
+                MenuItem::action(t("menu.file.open_folder"), OpenFolder),
+                MenuItem::action(t("menu.file.close_tab"), CloseWindow),
                 MenuItem::separator(),
-                MenuItem::action("Save", Save),
-                MenuItem::action("Save As…", SaveAs),
+                MenuItem::action(t("menu.file.save"), Save),
+                MenuItem::action(t("menu.file.save_as"), SaveAs),
                 MenuItem::separator(),
-                MenuItem::action("Print…", Print),
+                MenuItem::action(t("menu.file.print"), Print),
             ],
         },
         Menu {
-            name: "Edit".into(),
+            name: t("menu.edit").into(),
             items: vec![
-                MenuItem::action("Undo", Undo),
-                MenuItem::action("Redo", Redo),
+                MenuItem::action(t("menu.edit.undo"), Undo),
+                MenuItem::action(t("menu.edit.redo"), Redo),
                 MenuItem::separator(),
-                MenuItem::action("Cut", Cut),
-                MenuItem::action("Copy", Copy),
-                MenuItem::action("Paste", Paste),
-                MenuItem::action("Select All", SelectAll),
-                MenuItem::action("Select Paragraph", SelectParagraph),
+                MenuItem::action(t("menu.edit.cut"), Cut),
+                MenuItem::action(t("menu.edit.copy"), Copy),
+                MenuItem::action(t("menu.edit.paste"), Paste),
+                MenuItem::action(t("menu.edit.select_all"), SelectAll),
+                MenuItem::action(t("menu.edit.select_paragraph"), SelectParagraph),
                 MenuItem::separator(),
-                MenuItem::action("Find and Replace…", FindAndReplace),
-                MenuItem::action("Find Selection", FindSelection),
-                MenuItem::action("Find Next", FindNext),
-                MenuItem::action("Replace…", Replace),
-                MenuItem::action("Replace All", ReplaceAll),
+                MenuItem::action(t("menu.edit.find_replace"), FindAndReplace),
+                MenuItem::action(t("menu.edit.find_selection"), FindSelection),
+                MenuItem::action(t("menu.edit.find_next"), FindNext),
+                MenuItem::action(t("menu.edit.replace"), Replace),
+                MenuItem::action(t("menu.edit.replace_all"), ReplaceAll),
             ],
         },
         Menu {
-            name: "Format".into(),
+            name: t("menu.format").into(),
             items: vec![
-                MenuItem::action("Bold", Bold),
-                MenuItem::action("Italic", Italic),
-                MenuItem::action("Underline", Underline),
+                MenuItem::action(t("menu.format.bold"), Bold),
+                MenuItem::action(t("menu.format.italic"), Italic),
+                MenuItem::action(t("menu.format.underline"), Underline),
                 MenuItem::separator(),
-                MenuItem::action("Align Left", AlignLeft),
-                MenuItem::action("Center", AlignCenter),
-                MenuItem::action("Align Right", AlignRight),
+                MenuItem::action(t("menu.format.align_left"), AlignLeft),
+                MenuItem::action(t("menu.format.center"), AlignCenter),
+                MenuItem::action(t("menu.format.align_right"), AlignRight),
                 MenuItem::separator(),
-                MenuItem::action("Increase Indent", IndentMore),
-                MenuItem::action("Decrease Indent", IndentLess),
+                MenuItem::action(t("menu.format.indent_more"), IndentMore),
+                MenuItem::action(t("menu.format.indent_less"), IndentLess),
             ],
         },
         Menu {
-            name: "Table".into(),
+            name: t("menu.table").into(),
             items: vec![
-                MenuItem::action("Insert Row Below", InsertTableRow),
-                MenuItem::action("Delete Row", DeleteTableRow),
+                MenuItem::action(t("menu.table.insert_row"), InsertTableRow),
+                MenuItem::action(t("menu.table.delete_row"), DeleteTableRow),
             ],
         },
         Menu {
-            name: "Review".into(),
+            name: t("menu.review").into(),
             items: vec![
-                MenuItem::action("Add Comment", AddComment),
-                MenuItem::action("Track Changes", ToggleChangeTracking),
+                MenuItem::action(t("menu.review.add_comment"), AddComment),
+                MenuItem::action(t("menu.review.track_changes"), ToggleChangeTracking),
             ],
         },
         Menu {
-            name: "View".into(),
+            name: t("menu.view").into(),
             items: vec![
-                MenuItem::action("Next Page", NextPage),
-                MenuItem::action("Previous Page", PreviousPage),
+                MenuItem::action(t("menu.view.explorer"), ToggleExplorer),
+                MenuItem::action(t("menu.view.details"), ToggleInspector),
+                MenuItem::action(t("menu.view.theme"), ToggleTheme),
                 MenuItem::separator(),
-                MenuItem::action("Zoom In", ZoomIn),
-                MenuItem::action("Zoom Out", ZoomOut),
-                MenuItem::action("Actual Size", ZoomActual),
+                MenuItem::action(t("menu.view.next_page"), NextPage),
+                MenuItem::action(t("menu.view.previous_page"), PreviousPage),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.view.zoom_in"), ZoomIn),
+                MenuItem::action(t("menu.view.zoom_out"), ZoomOut),
+                MenuItem::action(t("menu.view.zoom_actual"), ZoomActual),
+                MenuItem::action(t("menu.view.zoom_fit"), ZoomFit),
             ],
+        },
+        Menu {
+            name: t("menu.slideshow").into(),
+            items: vec![MenuItem::action(
+                t("menu.slideshow.from_beginning"),
+                StartSlideshow,
+            )],
         },
     ]
 }
@@ -216,7 +271,7 @@ fn menus() -> Vec<Menu> {
 ///
 /// gpui's default is `.SystemUIFont`, which carries no Japanese: every label
 /// here would be blank. `JADE_FONT_PROBE=1` reports what a family is missing.
-const UI_FONT_FAMILY: &str = "Hiragino Sans";
+pub(crate) const UI_FONT_FAMILY: &str = "Hiragino Sans";
 
 /// The page box to open with. The document's own section properties win — this
 /// is only what `open` starts from before it finds out what the document wants,
@@ -354,51 +409,132 @@ fn page_image(document: &NativeDocument, page_index: usize) -> Option<Arc<Render
     Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
 }
 
-/// One dark palette in one place, so a colour is named by its job rather than
+/// The palette, in one place, so a colour is named by its job rather than
 /// repeated as a literal at each use.
+///
+/// The values are jade-ide's (`packages/jade-ide/src/styles/theme.css` in
+/// jlsi/jade): zinc neutrals with an indigo primary, in a dark and a light
+/// set. Which set is live is a process-wide switch; flipping it and
+/// refreshing the windows repaints every view, since each reads its colours
+/// per frame.
 pub(crate) mod theme {
-    use gpui::{rgb, rgba, Rgba};
+    use gpui::{rgb, Rgba};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    /// The window body. Slightly translucent so the desktop tints through,
-    /// which is what makes the rounded corners read as a floating panel rather
-    /// than a rectangle with clipped edges.
+    static DARK: AtomicBool = AtomicBool::new(true);
+
+    pub fn is_dark() -> bool {
+        DARK.load(Ordering::Relaxed)
+    }
+
+    pub fn set_dark(dark: bool) {
+        DARK.store(dark, Ordering::Relaxed);
+    }
+
+    fn pick(dark: u32, light: u32) -> Rgba {
+        rgb(if is_dark() { dark } else { light })
+    }
+
+    /// `--background`: the window body and the title bar.
     pub fn window() -> Rgba {
-        rgba(0x191320f2)
+        pick(0x09090b, 0xffffff)
     }
+    /// `--sidebar`: the activity bar and the explorer.
     pub fn sidebar() -> Rgba {
-        rgba(0x1f1729f2)
+        pick(0x0a0a0c, 0xf8fafc)
     }
-    /// Darker than the chrome so the white pages sit in a well.
+    /// The well the white pages and slides sit in.
     pub fn canvas() -> Rgba {
-        rgba(0x120e18f7)
+        pick(0x141416, 0xeef0f4)
     }
+    /// `--card`: tab strips, panels, the status bar.
     pub fn panel() -> Rgba {
-        rgba(0x1f1729f2)
+        pick(0x0d0d0f, 0xffffff)
     }
+    /// `--border`.
     pub fn border() -> Rgba {
-        rgba(0xffffff12)
+        pick(0x27272a, 0xe2e8f0)
     }
+    /// `--accent`: what is selected.
     pub fn selected() -> Rgba {
-        rgba(0xffffff16)
+        pick(0x1f1f23, 0xede9fe)
     }
+    /// `--muted`: what the pointer is over.
     pub fn hovered() -> Rgba {
-        rgba(0xffffff0b)
+        pick(0x18181b, 0xf1f5f9)
     }
+    /// `--foreground`.
     pub fn text() -> Rgba {
-        rgb(0xece8f2)
+        pick(0xe4e4e7, 0x1a1a2e)
     }
+    /// `--muted-foreground`.
     pub fn text_dim() -> Rgba {
-        rgb(0xa79fb4)
+        pick(0xa1a1aa, 0x64748b)
     }
     pub fn text_faint() -> Rgba {
-        rgb(0x6f6879)
+        pick(0x71717a, 0x94a3b8)
     }
+    /// `--primary`.
     pub fn accent() -> Rgba {
-        rgb(0xc9a6f5)
+        pick(0x818cf8, 0x6366f1)
+    }
+    /// The second stop of the IDE's gradients (`purple-400` / `purple-500`).
+    pub fn accent_alt() -> Rgba {
+        pick(0xc084fc, 0xa855f7)
+    }
+    /// The "Ready" dot in the status bar (`emerald-400`).
+    pub fn ready() -> Rgba {
+        rgb(0x34d399)
     }
     /// Solid and dark: it sits on the white page, not on the app chrome.
     pub fn caret() -> Rgba {
         rgb(0x1b1b1f)
+    }
+}
+
+/// The shell's icons, compiled in. Each is a 24×24 stroke drawing in the
+/// style of the IDE's icon set, drawn for this app; gpui tints them with the
+/// element's text colour.
+pub(crate) struct Assets;
+
+impl gpui::AssetSource for Assets {
+    fn load(&self, path: &str) -> gpui::Result<Option<std::borrow::Cow<'static, [u8]>>> {
+        macro_rules! icons {
+            ($($name:literal),* $(,)?) => {
+                match path {
+                    $(concat!("icons/", $name, ".svg") => Some(include_bytes!(concat!(
+                        env!("CARGO_MANIFEST_DIR"), "/assets/icons/", $name, ".svg"
+                    )).as_slice()),)*
+                    _ => None,
+                }
+            };
+        }
+        let bytes = icons!(
+            "chevron-down",
+            "chevron-right",
+            "clock",
+            "file",
+            "file-plus",
+            "file-text",
+            "files",
+            "folder",
+            "folder-open",
+            "folder-plus",
+            "moon",
+            "panel-right",
+            "play",
+            "presentation",
+            "printer",
+            "sheet",
+            "sun",
+            "x",
+            "zap",
+        );
+        Ok(bytes.map(std::borrow::Cow::Borrowed))
+    }
+
+    fn list(&self, _path: &str) -> gpui::Result<Vec<SharedString>> {
+        Ok(Vec::new())
     }
 }
 
@@ -430,13 +566,13 @@ impl RibbonTab {
 
     fn label(self) -> &'static str {
         match self {
-            RibbonTab::Home => "ホーム",
-            RibbonTab::Insert => "挿入",
-            RibbonTab::Design => "デザイン",
-            RibbonTab::Layout => "レイアウト",
-            RibbonTab::References => "参照設定",
-            RibbonTab::Review => "校閲",
-            RibbonTab::View => "表示",
+            RibbonTab::Home => t("doc.tab.home"),
+            RibbonTab::Insert => t("doc.tab.insert"),
+            RibbonTab::Design => t("doc.tab.design"),
+            RibbonTab::Layout => t("doc.tab.layout"),
+            RibbonTab::References => t("doc.tab.references"),
+            RibbonTab::Review => t("doc.tab.review"),
+            RibbonTab::View => t("doc.tab.view"),
         }
     }
 }
@@ -504,7 +640,6 @@ struct ObjectDrag {
 }
 
 struct DocumentView {
-    title: SharedString,
     path: SharedString,
     file_size: u64,
     document: NativeDocument,
@@ -584,6 +719,10 @@ struct DocumentView {
     last_repaint: Option<Duration>,
     typed: usize,
     current_page: usize,
+    /// Whether the details panel on the right is open.
+    show_inspector: bool,
+    /// Whether there are edits since the document was opened or saved.
+    dirty: bool,
     scroll: ScrollHandle,
     focus: FocusHandle,
 }
@@ -760,7 +899,7 @@ impl DocumentView {
                 Ok(caret) => {
                     self.insert_at = caret;
                     self.caret = self.document.place_caret(caret.0, caret.1);
-                    self.rebuild_all_images();
+                    self.rebuild_after_edit();
                     cx.notify();
                 }
                 Err(error) => eprintln!("delete failed: {error}"),
@@ -788,7 +927,7 @@ impl DocumentView {
                 // The split re-flows everything below, so the whole document is
                 // repainted rather than the visible page.
                 let result = self.document.insert_paragraph_break(paragraph, offset);
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 self.after_edit(result, (paragraph + 1, 0), cx);
             }
             "left" | "right" | "up" | "down" => {
@@ -825,7 +964,7 @@ impl DocumentView {
         &self,
         id: &'static str,
         glyph: &str,
-        _title: &str,
+        title: &str,
         active: bool,
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
@@ -847,6 +986,11 @@ impl DocumentView {
             .text_sm()
             .text_color(theme::text())
             .child(glyph.to_string())
+            // The glyph is often an abbreviation (A+, x₂); the title says
+            // what the button does.
+            .when(title != glyph, |button| {
+                button.tooltip(Tooltip::text(title.to_string()))
+            })
             .on_click(cx.listener(move |view, _event, _window, cx| action(view, cx)))
     }
 
@@ -936,7 +1080,7 @@ impl DocumentView {
                                 .hover(|button| button.bg(theme::hovered()))
                                 .text_sm()
                                 .text_color(theme::text())
-                                .child("Word 出力")
+                                .child(t("doc.export_word"))
                                 .on_click(cx.listener(|view, _event, _window, cx| view.save(cx))),
                         ),
                     ),
@@ -964,12 +1108,12 @@ impl DocumentView {
             RibbonTab::Home => self.home_groups(cx),
             RibbonTab::Insert => vec![
                 Self::ribbon_group(
-                    "表",
+                    t("doc.group.table"),
                     vec![Self::ribbon_row(vec![
                         self.ribbon_button(
                             "table-3x3",
-                            "表 3×3",
-                            "3×3 の表",
+                            t("doc.table_3x3"),
+                            t("doc.table_3x3_title"),
                             false,
                             cx,
                             |view, cx| view.insert_table(3, 3, cx),
@@ -977,8 +1121,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "table-2x2",
-                            "表 2×2",
-                            "2×2 の表",
+                            t("doc.table_2x2"),
+                            t("doc.table_2x2_title"),
                             false,
                             cx,
                             |view, cx| view.insert_table(2, 2, cx),
@@ -988,12 +1132,12 @@ impl DocumentView {
                 )
                 .into_any_element(),
                 Self::ribbon_group(
-                    "ページ",
+                    t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
                         .ribbon_button(
                             "blank-page",
-                            "空白ページ",
-                            "空白ページ",
+                            t("doc.blank_page"),
+                            t("doc.blank_page"),
                             false,
                             cx,
                             |view, cx| view.insert_blank_page(cx),
@@ -1002,12 +1146,12 @@ impl DocumentView {
                 )
                 .into_any_element(),
                 Self::ribbon_group(
-                    "コメント",
+                    t("doc.comment"),
                     vec![Self::ribbon_row(vec![self
                         .ribbon_button(
                             "comment",
-                            "コメント",
-                            "コメント",
+                            t("doc.comment"),
+                            t("doc.comment"),
                             false,
                             cx,
                             |view, cx| view.add_comment(cx),
@@ -1018,12 +1162,12 @@ impl DocumentView {
             ],
             RibbonTab::Design => vec![
                 Self::ribbon_group(
-                    "ページの色",
+                    t("doc.page_color"),
                     vec![Self::ribbon_row(vec![
                         self.ribbon_button(
                             "page-cream",
-                            "クリーム",
-                            "ページの色",
+                            t("doc.color.cream"),
+                            t("doc.page_color"),
                             false,
                             cx,
                             |view, cx| view.set_page_background(Some("FFF9E6"), cx),
@@ -1031,8 +1175,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "page-grey",
-                            "薄灰",
-                            "ページの色",
+                            t("doc.color.light_gray"),
+                            t("doc.page_color"),
                             false,
                             cx,
                             |view, cx| view.set_page_background(Some("F2F2F2"), cx),
@@ -1040,8 +1184,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "page-white",
-                            "なし",
-                            "ページの色を消す",
+                            t("doc.none"),
+                            t("doc.page_color_none"),
                             false,
                             cx,
                             |view, cx| view.set_page_background(None, cx),
@@ -1051,12 +1195,12 @@ impl DocumentView {
                 )
                 .into_any_element(),
                 Self::ribbon_group(
-                    "ページ罫線",
+                    t("doc.page_borders"),
                     vec![Self::ribbon_row(vec![
                         self.ribbon_button(
                             "page-border",
-                            "囲む",
-                            "ページを罫線で囲む",
+                            t("doc.box"),
+                            t("doc.page_borders_box"),
                             false,
                             cx,
                             |view, cx| view.set_page_borders(true, cx),
@@ -1064,8 +1208,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "page-no-border",
-                            "なし",
-                            "ページの罫線を消す",
+                            t("doc.none"),
+                            t("doc.page_borders_none"),
                             false,
                             cx,
                             |view, cx| view.set_page_borders(false, cx),
@@ -1077,12 +1221,12 @@ impl DocumentView {
             ],
             RibbonTab::Layout => vec![
                 Self::ribbon_group(
-                    "段落",
+                    t("doc.group.paragraph"),
                     vec![Self::ribbon_row(vec![
                         self.ribbon_button(
                             "layout-indent-less",
-                            "字下げ－",
-                            "インデントを減らす",
+                            t("doc.indent_less"),
+                            t("doc.indent_less_title"),
                             false,
                             cx,
                             |view, cx| view.indent(-36.0, cx),
@@ -1090,8 +1234,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "layout-indent-more",
-                            "字下げ＋",
-                            "インデントを増やす",
+                            t("doc.indent_more"),
+                            t("doc.indent_more_title"),
                             false,
                             cx,
                             |view, cx| view.indent(36.0, cx),
@@ -1101,12 +1245,12 @@ impl DocumentView {
                 )
                 .into_any_element(),
                 Self::ribbon_group(
-                    "改ページ",
+                    t("doc.page_break"),
                     vec![Self::ribbon_row(vec![self
                         .ribbon_button(
                             "layout-break",
-                            "改ページ",
-                            "改ページ",
+                            t("doc.page_break"),
+                            t("doc.page_break"),
                             false,
                             cx,
                             |view, cx| view.insert_blank_page(cx),
@@ -1116,11 +1260,16 @@ impl DocumentView {
                 .into_any_element(),
             ],
             RibbonTab::References => vec![Self::ribbon_group(
-                "目次",
+                t("doc.toc"),
                 vec![Self::ribbon_row(vec![self
-                    .ribbon_button("toc", "目次", "目次を挿入", false, cx, |view, cx| {
-                        view.insert_table_of_contents(cx)
-                    })
+                    .ribbon_button(
+                        "toc",
+                        t("doc.toc"),
+                        t("doc.toc_title"),
+                        false,
+                        cx,
+                        |view, cx| view.insert_table_of_contents(cx),
+                    )
                     .into_any_element()])],
             )
             .into_any_element()],
@@ -1128,12 +1277,12 @@ impl DocumentView {
                 let tracking = self.tracking_changes;
                 vec![
                     Self::ribbon_group(
-                        "コメント",
+                        t("doc.comment"),
                         vec![Self::ribbon_row(vec![self
                             .ribbon_button(
                                 "review-comment",
-                                "コメント",
-                                "コメント",
+                                t("doc.comment"),
+                                t("doc.comment"),
                                 false,
                                 cx,
                                 |view, cx| view.add_comment(cx),
@@ -1142,12 +1291,12 @@ impl DocumentView {
                     )
                     .into_any_element(),
                     Self::ribbon_group(
-                        "変更履歴",
+                        t("doc.group.tracking"),
                         vec![Self::ribbon_row(vec![
                             self.ribbon_button(
                                 "track",
-                                "記録",
-                                "変更履歴の記録",
+                                t("doc.track"),
+                                t("doc.track_title"),
                                 tracking,
                                 cx,
                                 |view, cx| view.toggle_tracking(cx),
@@ -1155,8 +1304,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "accept",
-                                "すべて反映",
-                                "すべて反映",
+                                t("doc.accept_all"),
+                                t("doc.accept_all"),
                                 false,
                                 cx,
                                 |view, cx| view.resolve_revisions(true, cx),
@@ -1164,8 +1313,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "reject",
-                                "すべて取消",
-                                "すべて元に戻す",
+                                t("doc.reject_all"),
+                                t("doc.reject_all_title"),
                                 false,
                                 cx,
                                 |view, cx| view.resolve_revisions(false, cx),
@@ -1180,12 +1329,12 @@ impl DocumentView {
                 let marks = self.document.formatting_marks();
                 vec![
                     Self::ribbon_group(
-                        "表示",
+                        t("doc.group.show"),
                         vec![Self::ribbon_row(vec![self
                             .ribbon_button(
                                 "marks",
-                                "編集記号",
-                                "編集記号の表示",
+                                t("doc.marks"),
+                                t("doc.marks_title"),
                                 marks,
                                 cx,
                                 |view, cx| view.toggle_formatting_marks(cx),
@@ -1194,12 +1343,12 @@ impl DocumentView {
                     )
                     .into_any_element(),
                     Self::ribbon_group(
-                        "ズーム",
+                        t("doc.group.zoom"),
                         vec![Self::ribbon_row(vec![
                             self.ribbon_button(
                                 "zoom-out",
-                                "縮小",
-                                "縮小",
+                                t("doc.zoom_out"),
+                                t("doc.zoom_out"),
                                 false,
                                 cx,
                                 |view, cx| {
@@ -1210,8 +1359,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "zoom-reset",
-                                "等倍",
-                                "等倍",
+                                t("doc.zoom_actual"),
+                                t("doc.zoom_actual"),
                                 false,
                                 cx,
                                 |view, cx| view.set_zoom(1.0, cx),
@@ -1219,8 +1368,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "zoom-in",
-                                "拡大",
-                                "拡大",
+                                t("doc.zoom_in"),
+                                t("doc.zoom_in"),
                                 false,
                                 cx,
                                 |view, cx| {
@@ -1233,12 +1382,12 @@ impl DocumentView {
                     )
                     .into_any_element(),
                     Self::ribbon_group(
-                        "ページ",
+                        t("doc.group.pages"),
                         vec![Self::ribbon_row(vec![
                             self.ribbon_button(
                                 "prev-page",
-                                "前へ",
-                                "前のページ",
+                                t("doc.previous"),
+                                t("doc.previous_page"),
                                 false,
                                 cx,
                                 |view, cx| view.go_to_page(-1, cx),
@@ -1246,8 +1395,8 @@ impl DocumentView {
                             .into_any_element(),
                             self.ribbon_button(
                                 "next-page",
-                                "次へ",
-                                "次のページ",
+                                t("doc.next"),
+                                t("doc.next_page"),
                                 false,
                                 cx,
                                 |view, cx| view.go_to_page(1, cx),
@@ -1267,25 +1416,40 @@ impl DocumentView {
         let size = self.font_size_pt;
         vec![
             Self::ribbon_group(
-                "クリップボード",
+                t("doc.group.clipboard"),
                 vec![Self::ribbon_row(vec![
-                    self.ribbon_button("paste", "貼付", "ペースト", false, cx, |view, cx| {
-                        view.paste(cx)
-                    })
+                    self.ribbon_button(
+                        "paste",
+                        t("doc.paste"),
+                        t("doc.paste_title"),
+                        false,
+                        cx,
+                        |view, cx| view.paste(cx),
+                    )
                     .into_any_element(),
-                    self.ribbon_button("cut", "切取", "切り取り", false, cx, |view, cx| {
-                        view.cut(cx)
-                    })
+                    self.ribbon_button(
+                        "cut",
+                        t("doc.cut"),
+                        t("doc.cut_title"),
+                        false,
+                        cx,
+                        |view, cx| view.cut(cx),
+                    )
                     .into_any_element(),
-                    self.ribbon_button("copy", "複写", "コピー", false, cx, |view, cx| {
-                        view.copy(cx)
-                    })
+                    self.ribbon_button(
+                        "copy",
+                        t("doc.copy"),
+                        t("doc.copy_title"),
+                        false,
+                        cx,
+                        |view, cx| view.copy(cx),
+                    )
                     .into_any_element(),
                 ])],
             )
             .into_any_element(),
             Self::ribbon_group(
-                "フォント",
+                t("doc.group.font"),
                 vec![
                     Self::ribbon_row(vec![
                         // The family picker: a button showing the family, and a
@@ -1326,8 +1490,8 @@ impl DocumentView {
                             .into_any_element(),
                         self.ribbon_button(
                             "size-up",
-                            "大",
-                            "フォントサイズの拡大",
+                            t("doc.grow"),
+                            t("doc.grow_title"),
                             false,
                             cx,
                             |view, cx| {
@@ -1338,8 +1502,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "size-down",
-                            "小",
-                            "フォントサイズの縮小",
+                            t("doc.shrink"),
+                            t("doc.shrink_title"),
                             false,
                             cx,
                             |view, cx| {
@@ -1350,39 +1514,64 @@ impl DocumentView {
                         .into_any_element(),
                     ]),
                     Self::ribbon_row(vec![
-                        self.ribbon_button("bold", "B", "太字", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Bold, cx)
-                        })
+                        self.ribbon_button(
+                            "bold",
+                            "B",
+                            t("doc.bold_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Bold, cx),
+                        )
                         .into_any_element(),
-                        self.ribbon_button("italic", "I", "斜体", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Italic, cx)
-                        })
+                        self.ribbon_button(
+                            "italic",
+                            "I",
+                            t("doc.italic_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Italic, cx),
+                        )
                         .into_any_element(),
-                        self.ribbon_button("underline", "U", "下線", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Underline, cx)
-                        })
+                        self.ribbon_button(
+                            "underline",
+                            "U",
+                            t("doc.underline_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Underline, cx),
+                        )
                         .into_any_element(),
                         self.ribbon_button(
                             "strike",
                             "S",
-                            "取り消し線",
+                            t("doc.strike_title"),
                             false,
                             cx,
                             |view, cx| view.format(CharacterFormat::Strikethrough, cx),
                         )
                         .into_any_element(),
-                        self.ribbon_button("sub", "下付", "下付き", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Subscript, cx)
-                        })
+                        self.ribbon_button(
+                            "sub",
+                            t("doc.subscript"),
+                            t("doc.subscript_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Subscript, cx),
+                        )
                         .into_any_element(),
-                        self.ribbon_button("sup", "上付", "上付き", false, cx, |view, cx| {
-                            view.format(CharacterFormat::Superscript, cx)
-                        })
+                        self.ribbon_button(
+                            "sup",
+                            t("doc.superscript"),
+                            t("doc.superscript_title"),
+                            false,
+                            cx,
+                            |view, cx| view.format(CharacterFormat::Superscript, cx),
+                        )
                         .into_any_element(),
                         self.ribbon_button(
                             "colour",
-                            "文字色",
-                            "フォントの色",
+                            t("doc.font_color"),
+                            t("doc.font_color_title"),
                             self.popup == Some(RibbonPopup::FontColor),
                             cx,
                             |view, cx| view.toggle_popup(RibbonPopup::FontColor, cx),
@@ -1390,8 +1579,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "highlight",
-                            "蛍光",
-                            "蛍光ペン",
+                            t("doc.highlight"),
+                            t("doc.highlight_title"),
                             self.popup == Some(RibbonPopup::Highlight),
                             cx,
                             |view, cx| view.toggle_popup(RibbonPopup::Highlight, cx),
@@ -1399,8 +1588,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "clear",
-                            "書式解除",
-                            "書式のクリア",
+                            t("doc.clear_format"),
+                            t("doc.clear_format_title"),
                             false,
                             cx,
                             |view, cx| view.format(CharacterFormat::Clear, cx),
@@ -1411,13 +1600,13 @@ impl DocumentView {
             )
             .into_any_element(),
             Self::ribbon_group(
-                "段落",
+                t("doc.group.paragraph"),
                 vec![
                     Self::ribbon_row(vec![
                         self.ribbon_button(
                             "bullets",
-                            "箇条書き",
-                            "箇条書き",
+                            t("doc.bullets"),
+                            t("doc.bullets"),
                             false,
                             cx,
                             |view, cx| view.set_numbering(Some("1"), cx),
@@ -1425,8 +1614,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "numbering",
-                            "段落番号",
-                            "段落番号",
+                            t("doc.numbering"),
+                            t("doc.numbering"),
                             false,
                             cx,
                             |view, cx| view.set_numbering(Some("2"), cx),
@@ -1434,8 +1623,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "no-list",
-                            "解除",
-                            "リストの解除",
+                            t("doc.no_list"),
+                            t("doc.no_list_title"),
                             false,
                             cx,
                             |view, cx| view.set_numbering(None, cx),
@@ -1443,8 +1632,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "indent-less",
-                            "字下げ－",
-                            "インデントを減らす",
+                            t("doc.indent_less"),
+                            t("doc.indent_less_title"),
                             false,
                             cx,
                             |view, cx| view.indent(-36.0, cx),
@@ -1452,8 +1641,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "indent-more",
-                            "字下げ＋",
-                            "インデントを増やす",
+                            t("doc.indent_more"),
+                            t("doc.indent_more_title"),
                             false,
                             cx,
                             |view, cx| view.indent(36.0, cx),
@@ -1463,8 +1652,8 @@ impl DocumentView {
                     Self::ribbon_row(vec![
                         self.ribbon_button(
                             "line-spacing",
-                            "行間",
-                            "行と段落の間隔",
+                            t("doc.line_spacing"),
+                            t("doc.line_spacing_title"),
                             self.popup == Some(RibbonPopup::LineSpacing),
                             cx,
                             |view, cx| view.toggle_popup(RibbonPopup::LineSpacing, cx),
@@ -1472,8 +1661,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "space-after",
-                            "段落後",
-                            "段落の後に間隔を空ける",
+                            t("doc.space_after"),
+                            t("doc.space_after_title"),
                             false,
                             cx,
                             |view, cx| view.set_paragraph_spacing(12.0, cx),
@@ -1481,8 +1670,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "shading",
-                            "網かけ",
-                            "段落の網かけ",
+                            t("doc.shading"),
+                            t("doc.shading_title"),
                             self.popup == Some(RibbonPopup::Shading),
                             cx,
                             |view, cx| view.toggle_popup(RibbonPopup::Shading, cx),
@@ -1490,8 +1679,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "borders",
-                            "罫線",
-                            "段落を罫線で囲む",
+                            t("doc.borders"),
+                            t("doc.borders_title"),
                             false,
                             cx,
                             |view, cx| view.set_paragraph_borders(true, cx),
@@ -1499,8 +1688,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "no-borders",
-                            "罫線なし",
-                            "段落の罫線を消す",
+                            t("doc.no_borders"),
+                            t("doc.no_borders_title"),
                             false,
                             cx,
                             |view, cx| view.set_paragraph_borders(false, cx),
@@ -1510,8 +1699,8 @@ impl DocumentView {
                     Self::ribbon_row(vec![
                         self.ribbon_button(
                             "align-left",
-                            "左",
-                            "左揃え",
+                            t("doc.align_left"),
+                            t("doc.align_left_title"),
                             false,
                             cx,
                             |view, cx| view.align("left", cx),
@@ -1519,8 +1708,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "align-center",
-                            "中央",
-                            "中央揃え",
+                            t("doc.center"),
+                            t("doc.center_title"),
                             false,
                             cx,
                             |view, cx| view.align("center", cx),
@@ -1528,8 +1717,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "align-right",
-                            "右",
-                            "右揃え",
+                            t("doc.align_right"),
+                            t("doc.align_right_title"),
                             false,
                             cx,
                             |view, cx| view.align("right", cx),
@@ -1537,8 +1726,8 @@ impl DocumentView {
                         .into_any_element(),
                         self.ribbon_button(
                             "align-both",
-                            "両端",
-                            "両端揃え",
+                            t("doc.justify"),
+                            t("doc.justify_title"),
                             false,
                             cx,
                             |view, cx| view.align("both", cx),
@@ -1549,30 +1738,35 @@ impl DocumentView {
             )
             .into_any_element(),
             Self::ribbon_group(
-                "スタイル",
+                t("doc.group.styles"),
                 vec![Self::ribbon_row(vec![
-                    self.style_button("style-normal", "標準", "Normal", cx)
+                    self.style_button("style-normal", t("doc.style.normal"), "Normal", cx)
                         .into_any_element(),
-                    self.style_button("style-h1", "見出し 1", "Heading1", cx)
+                    self.style_button("style-h1", t("doc.style.heading1"), "Heading1", cx)
                         .into_any_element(),
-                    self.style_button("style-h2", "見出し 2", "Heading2", cx)
+                    self.style_button("style-h2", t("doc.style.heading2"), "Heading2", cx)
                         .into_any_element(),
-                    self.style_button("style-h3", "見出し 3", "Heading3", cx)
+                    self.style_button("style-h3", t("doc.style.heading3"), "Heading3", cx)
                         .into_any_element(),
                 ])],
             )
             .into_any_element(),
             Self::ribbon_group(
-                "編集",
+                t("doc.group.editing"),
                 vec![Self::ribbon_row(vec![
-                    self.ribbon_button("undo", "戻す", "元に戻す", false, cx, |view, cx| {
-                        view.step_history(true, cx)
-                    })
+                    self.ribbon_button(
+                        "undo",
+                        t("doc.undo"),
+                        t("doc.undo_title"),
+                        false,
+                        cx,
+                        |view, cx| view.step_history(true, cx),
+                    )
                     .into_any_element(),
                     self.ribbon_button(
                         "redo",
-                        "やり直し",
-                        "やり直し",
+                        t("doc.redo"),
+                        t("doc.redo"),
                         false,
                         cx,
                         |view, cx| view.step_history(false, cx),
@@ -1580,8 +1774,8 @@ impl DocumentView {
                     .into_any_element(),
                     self.ribbon_button(
                         "find",
-                        "検索",
-                        "検索と置換",
+                        t("doc.find"),
+                        t("doc.find_title"),
                         false,
                         cx,
                         |view, cx| view.open_find_bar(cx),
@@ -1640,29 +1834,29 @@ impl DocumentView {
             "Arial",
         ];
         const COLORS: [(&str, &str); 7] = [
-            ("自動", "000000"),
-            ("赤", "C00000"),
-            ("オレンジ", "E36C0A"),
-            ("緑", "00B050"),
-            ("青", "0070C0"),
-            ("紫", "7030A0"),
-            ("灰", "808080"),
+            ("doc.color.auto", "000000"),
+            ("doc.color.red", "C00000"),
+            ("doc.color.orange", "E36C0A"),
+            ("doc.color.green", "00B050"),
+            ("doc.color.blue", "0070C0"),
+            ("doc.color.purple", "7030A0"),
+            ("doc.color.gray", "808080"),
         ];
         const HIGHLIGHTS: [(&str, &str); 5] = [
-            ("なし", "none"),
-            ("黄", "yellow"),
-            ("緑", "green"),
-            ("水色", "cyan"),
-            ("桃", "magenta"),
+            ("doc.none", "none"),
+            ("doc.color.yellow", "yellow"),
+            ("doc.color.green", "green"),
+            ("doc.color.cyan", "cyan"),
+            ("doc.color.pink", "magenta"),
         ];
         const SPACINGS: [(&str, f32); 4] =
             [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)];
         const SHADINGS: [(&str, &str); 5] = [
-            ("なし", ""),
-            ("薄黄", "FFF2CC"),
-            ("薄青", "DEEAF6"),
-            ("薄緑", "E2EFDA"),
-            ("薄灰", "EDEDED"),
+            ("doc.none", ""),
+            ("doc.color.pale_yellow", "FFF2CC"),
+            ("doc.color.pale_blue", "DEEAF6"),
+            ("doc.color.pale_green", "E2EFDA"),
+            ("doc.color.light_gray", "EDEDED"),
         ];
 
         let rows: Vec<AnyElement> = match popup {
@@ -1678,7 +1872,7 @@ impl DocumentView {
             RibbonPopup::FontColor => COLORS
                 .iter()
                 .map(|(label, color)| {
-                    self.popup_row(color, label, cx, move |view, cx| {
+                    self.popup_row(color, t(label), cx, move |view, cx| {
                         view.set_font_color(color, cx)
                     })
                     .into_any_element()
@@ -1687,7 +1881,7 @@ impl DocumentView {
             RibbonPopup::Highlight => HIGHLIGHTS
                 .iter()
                 .map(|(label, color)| {
-                    self.popup_row(color, label, cx, move |view, cx| {
+                    self.popup_row(color, t(label), cx, move |view, cx| {
                         view.set_highlight(color, cx)
                     })
                     .into_any_element()
@@ -1706,7 +1900,7 @@ impl DocumentView {
             RibbonPopup::Shading => SHADINGS
                 .iter()
                 .map(|(label, color)| {
-                    self.popup_row(label, label, cx, move |view, cx| {
+                    self.popup_row(label, t(label), cx, move |view, cx| {
                         view.set_shading((!color.is_empty()).then_some(color), cx)
                     })
                     .into_any_element()
@@ -1807,8 +2001,16 @@ impl DocumentView {
                 .bg(theme::panel())
                 .border_b_1()
                 .border_color(theme::border())
-                .child(field("Find", &bar.query, !bar.editing_replacement))
-                .child(field("Replace", &bar.replacement, bar.editing_replacement))
+                .child(field(
+                    t("doc.find.query"),
+                    &bar.query,
+                    !bar.editing_replacement,
+                ))
+                .child(field(
+                    t("doc.find.replacement"),
+                    &bar.replacement,
+                    bar.editing_replacement,
+                ))
                 .child(
                     div().text_xs().text_color(theme::text_faint()).child(
                         self.find_status
@@ -1821,7 +2023,7 @@ impl DocumentView {
                     div()
                         .text_xs()
                         .text_color(theme::text_faint())
-                        .child("⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · esc close"),
+                        .child(t("doc.find.keys")),
                 ),
         )
     }
@@ -1957,9 +2159,9 @@ impl DocumentView {
         };
         let count = self.document.find(&query, false).len();
         self.find_status = Some(SharedString::from(if count == 0 {
-            format!("{query}: no matches")
+            i18n::format("doc.find.none", &[("query", &query)])
         } else {
-            format!("{query}: {count} matches")
+            i18n::format("doc.find.count", &[("query", &query), ("n", &count)])
         }));
     }
 
@@ -2001,7 +2203,7 @@ impl DocumentView {
                 self.caret = self
                     .document
                     .place_caret(self.insert_at.0, self.insert_at.1);
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 self.find_query = Some(query);
                 self.find_next(cx);
             }
@@ -2030,12 +2232,17 @@ impl DocumentView {
             Ok(replaced) => {
                 // Replacing re-flows text onto other pages, so every page is
                 // rebuilt rather than the one the caret is on.
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 self.caret = self
                     .document
                     .place_caret(self.insert_at.0, self.insert_at.1);
-                self.find_status = Some(SharedString::from(format!(
-                    "{query} → {replacement}: {replaced} replaced"
+                self.find_status = Some(SharedString::from(i18n::format(
+                    "doc.find.replaced",
+                    &[
+                        ("query", &query),
+                        ("replacement", &replacement),
+                        ("n", &replaced),
+                    ],
                 )));
                 cx.notify();
             }
@@ -2060,7 +2267,10 @@ impl DocumentView {
         };
         let hits = self.document.find(&query, false);
         if hits.is_empty() {
-            self.find_status = Some(SharedString::from(format!("{query}: no matches")));
+            self.find_status = Some(SharedString::from(i18n::format(
+                "doc.find.none",
+                &[("query", &query)],
+            )));
             return cx.notify();
         }
         let (paragraph, offset) = self.insert_at;
@@ -2075,10 +2285,13 @@ impl DocumentView {
             .copied()
             .unwrap_or(hits[0]);
         let position = hits.iter().position(|hit| *hit == next).unwrap_or(0);
-        self.find_status = Some(SharedString::from(format!(
-            "{query}: {} of {}",
-            position + 1,
-            hits.len()
+        self.find_status = Some(SharedString::from(i18n::format(
+            "doc.find.position",
+            &[
+                ("query", &query),
+                ("n", &(position + 1)),
+                ("count", &hits.len()),
+            ],
         )));
 
         let page = self.caret_page_1idx();
@@ -2113,7 +2326,7 @@ impl DocumentView {
                 self.caret = self
                     .document
                     .place_caret(self.insert_at.0, self.insert_at.1);
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 cx.notify();
             }
             Err(error) => self.table_status = Some(SharedString::from(error)),
@@ -2126,9 +2339,9 @@ impl DocumentView {
     /// about what this does — a placeholder comment is still a real comment in
     /// the file, and the panel says how many there are.
     fn add_comment(&mut self, cx: &mut Context<Self>) {
-        match self.document.add_comment("Comment", "jade") {
+        match self.document.add_comment(t("doc.comment"), "jade") {
             Ok(()) => {
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 cx.notify();
             }
             Err(error) => eprintln!("comment failed: {error}"),
@@ -2140,7 +2353,7 @@ impl DocumentView {
         match self.document.set_change_tracking(next, "jade") {
             Ok(()) => {
                 self.tracking_changes = next;
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 cx.notify();
             }
             Err(error) => eprintln!("change tracking failed: {error}"),
@@ -2150,7 +2363,7 @@ impl DocumentView {
     fn align(&mut self, alignment: &str, cx: &mut Context<Self>) {
         let page = self.caret_page_1idx();
         if self.document.set_alignment(alignment, page).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2160,18 +2373,13 @@ impl DocumentView {
         let page = self.caret_page_1idx();
         let indent = self.indent_points;
         if self.document.shift_indent(indent, page).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
 
     /// Clamped so a stray repeat cannot leave the document unreadably small or
     /// so large that a page no longer fits any sensible window.
-    fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
-        self.zoom = zoom.clamp(0.4, 3.0);
-        cx.notify();
-    }
-
     fn format(&mut self, format: CharacterFormat, cx: &mut Context<Self>) {
         let page = self.caret_page_1idx();
         // An error here means there was no selection, which is the ordinary
@@ -2192,6 +2400,7 @@ impl DocumentView {
         // a caret rather than a failure. The selection survives a command that
         // did apply, so the next ribbon button acts on the same run.
         if applied.is_ok() {
+            self.dirty = true;
             self.refresh_caret_page_image();
             cx.notify();
         }
@@ -2236,7 +2445,7 @@ impl DocumentView {
         let page = self.caret_page_1idx();
         if self.document.set_line_spacing(multiple, page).is_ok() {
             // Line height moves everything below it.
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2248,7 +2457,7 @@ impl DocumentView {
             .set_paragraph_spacing(None, Some(after), page)
             .is_ok()
         {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2271,14 +2480,14 @@ impl DocumentView {
 
     fn set_page_background(&mut self, color: Option<&str>, cx: &mut Context<Self>) {
         if self.document.set_page_background(color).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
 
     fn set_page_borders(&mut self, boxed: bool, cx: &mut Context<Self>) {
         if self.document.set_page_borders(boxed).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2287,7 +2496,7 @@ impl DocumentView {
         let page = self.caret_page_1idx();
         if self.document.set_paragraph_style(style_id, page).is_ok() {
             // A style changes line heights, so everything below can move.
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2295,7 +2504,7 @@ impl DocumentView {
     fn set_numbering(&mut self, num_id: Option<&str>, cx: &mut Context<Self>) {
         let page = self.caret_page_1idx();
         if self.document.set_numbering(num_id, page).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2307,28 +2516,28 @@ impl DocumentView {
             self.document.selection(),
         ));
         if self.document.insert_table(rows, columns).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
 
     fn insert_blank_page(&mut self, cx: &mut Context<Self>) {
         if self.document.insert_blank_page().is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
 
     fn insert_table_of_contents(&mut self, cx: &mut Context<Self>) {
         if self.document.insert_table_of_contents().is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
 
     fn resolve_revisions(&mut self, accept: bool, cx: &mut Context<Self>) {
         if self.document.resolve_revisions(accept).is_ok() {
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2444,7 +2653,7 @@ impl DocumentView {
         if let Ok(caret) = self.document.replace_selection("", page) {
             self.insert_at = caret;
             self.caret = self.document.place_caret(caret.0, caret.1);
-            self.rebuild_all_images();
+            self.rebuild_after_edit();
             cx.notify();
         }
     }
@@ -2498,7 +2707,7 @@ impl DocumentView {
         self.caret = self
             .document
             .place_caret(self.insert_at.0, self.insert_at.1);
-        self.rebuild_all_images();
+        self.rebuild_after_edit();
         cx.notify();
     }
 
@@ -2514,7 +2723,7 @@ impl DocumentView {
             Ok(Some(caret)) => {
                 self.insert_at = caret;
                 self.caret = self.document.place_caret(caret.0, caret.1);
-                self.rebuild_all_images();
+                self.rebuild_after_edit();
                 cx.notify();
             }
             // Nothing on the stack: not an error, just nothing to do.
@@ -2557,6 +2766,7 @@ impl DocumentView {
         match self.document.export_docx() {
             Ok(bytes) => match std::fs::write(&target, &bytes) {
                 Ok(()) => {
+                    self.dirty = false;
                     self.saved_to = Some(SharedString::from(
                         target
                             .file_name()
@@ -2588,69 +2798,6 @@ impl DocumentView {
         if let Err(error) = result {
             eprintln!("print failed: {error}");
         }
-    }
-
-    /// Asks for a .docx and opens it in this window.
-    ///
-    /// The app took its document from argv and could not be pointed at another
-    /// one without being restarted.
-    fn open_file(&mut self, cx: &mut Context<Self>) {
-        let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: false,
-            prompt: None,
-        });
-        cx.spawn(async move |view, cx| {
-            let Ok(Ok(Some(paths))) = paths.await else {
-                return;
-            };
-            let Some(path) = paths.into_iter().next() else {
-                return;
-            };
-            view.update(cx, |view, cx| view.load(path, cx)).ok();
-        })
-        .detach();
-    }
-
-    /// Replaces the document this window is showing.
-    fn load(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let document = match open_document(&path.to_string_lossy()) {
-            Ok(document) => document,
-            Err(error) => {
-                // The window keeps the document it has: failing to open a
-                // second file is not a reason to lose the first.
-                eprintln!("{error}");
-                return;
-            }
-        };
-        self.document = document;
-        self.title = SharedString::from(
-            path.file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.to_string_lossy().into_owned()),
-        );
-        self.file_size = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
-        self.path = SharedString::from(path.to_string_lossy().into_owned());
-        // Everything below is about the document that is no longer open.
-        self.insert_at = (INSERT_PARAGRAPH, 0);
-        self.caret = self.document.place_caret(INSERT_PARAGRAPH, 0);
-        self.selection_anchor = None;
-        self.drag_anchor = None;
-        self.object_drag = None;
-        self.marked = None;
-        self.find_bar = None;
-        self.find_query = None;
-        self.find_status = None;
-        self.table_status = None;
-        self.saved_to = None;
-        self.indent_points = 0.0;
-        self.typed = 0;
-        self.current_page = 0;
-        self.last_repaint = None;
-        self.page_bounds.borrow_mut().clear();
-        self.rebuild_all_images();
-        cx.notify();
     }
 
     /// Extends the selection to the caret, anchored where it was before the
@@ -2715,6 +2862,7 @@ impl DocumentView {
     ) {
         match result {
             Ok(elapsed) => {
+                self.dirty = true;
                 self.last_repaint = Some(elapsed);
                 self.insert_at = caret_at;
                 self.caret = self.document.place_caret(caret_at.0, caret_at.1);
@@ -2723,6 +2871,13 @@ impl DocumentView {
             }
             Err(error) => eprintln!("edit failed: {error}"),
         }
+    }
+
+    /// [`Self::rebuild_all_images`] after a change to the document's content,
+    /// which leaves it unsaved.
+    fn rebuild_after_edit(&mut self) {
+        self.dirty = true;
+        self.rebuild_all_images();
     }
 
     /// Re-reads every page. Needed after a re-flow, where a later page's
@@ -2839,7 +2994,7 @@ impl DocumentView {
         }
         // The object is not bound to one page's bitmap: moving it can uncover
         // text on the page it came from, so every page is rebuilt.
-        self.rebuild_all_images();
+        self.rebuild_after_edit();
         cx.notify();
     }
 
@@ -2892,44 +3047,54 @@ impl DocumentView {
         }
     }
 
+    /// One page in the page list: a thumbnail of the page itself, the way
+    /// Word's navigation pane shows pages, with its number beside it.
     fn sidebar_row(&self, index: usize, cx: &mut Context<Self>) -> impl IntoElement {
+        const THUMBNAIL_WIDTH: f32 = 112.0;
         let selected = index == self.current_page;
+        let (page_width, page_height) = self.document.layout_page_size();
+        let height = THUMBNAIL_WIDTH * (page_height / page_width.max(1.0)) as f32;
         div()
             .id(("page", index))
             .flex()
-            .items_center()
-            .justify_between()
-            .px_3()
-            .py_2()
+            .gap_2()
+            .px_1()
+            .py_1()
             .rounded_md()
-            .when(selected, |row| row.bg(theme::selected()))
             .hover(|row| row.bg(theme::hovered()))
             .cursor_pointer()
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme::text_faint())
-                            .child(self.title.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(if selected {
-                                theme::text()
-                            } else {
-                                theme::text_dim()
-                            })
-                            .child(format!("Page {}", index + 1)),
+                    .w(px(16.0))
+                    .text_xs()
+                    .text_color(if selected {
+                        theme::accent()
+                    } else {
+                        theme::text_faint()
+                    })
+                    .child(format!("{}", index + 1)),
+            )
+            .child(
+                div()
+                    .w(px(THUMBNAIL_WIDTH))
+                    .h(px(height))
+                    .flex_none()
+                    .overflow_hidden()
+                    .rounded_sm()
+                    .bg(gpui::white())
+                    .border_2()
+                    .border_color(if selected {
+                        theme::accent()
+                    } else {
+                        theme::border()
+                    })
+                    .children(
+                        self.images
+                            .get(index)
+                            .cloned()
+                            .map(|image| img(image).size_full()),
                     ),
             )
-            .when(selected, |row| {
-                row.child(div().size_1p5().rounded_full().bg(theme::accent()))
-            })
             .on_click(cx.listener(move |view, _event, _window, cx| {
                 view.current_page = index;
                 view.scroll.scroll_to_item(index);
@@ -2979,7 +3144,7 @@ impl DocumentView {
 /// Both are offsets into the *same* paragraph text, so the conversion is a
 /// scan rather than anything structural — but it has to happen at every
 /// boundary, because a Japanese character is one UTF-16 unit and three bytes.
-fn utf16_to_byte(text: &str, utf16_offset: usize) -> usize {
+pub(crate) fn utf16_to_byte(text: &str, utf16_offset: usize) -> usize {
     let mut utf16 = 0;
     for (byte, ch) in text.char_indices() {
         if utf16 >= utf16_offset {
@@ -2990,7 +3155,7 @@ fn utf16_to_byte(text: &str, utf16_offset: usize) -> usize {
     text.len()
 }
 
-fn byte_to_utf16(text: &str, byte_offset: usize) -> usize {
+pub(crate) fn byte_to_utf16(text: &str, byte_offset: usize) -> usize {
     // Clamped to a character boundary rather than trusting the caller. A byte
     // offset that came from a different paragraph lands mid-character here, and
     // slicing on it panics inside a callback the platform cannot unwind
@@ -3041,7 +3206,7 @@ impl DocumentView {
                     self.typed += text.chars().count();
                     // A selection can span paragraphs, and replacing one pulls
                     // the tail up: every page below can move.
-                    self.rebuild_all_images();
+                    self.rebuild_after_edit();
                     cx.notify();
                 }
                 Err(error) => eprintln!("edit failed: {error}"),
@@ -3060,6 +3225,7 @@ impl DocumentView {
         };
         match result {
             Ok(elapsed) => {
+                self.dirty = true;
                 self.last_repaint = Some(elapsed);
                 self.typed += text.chars().count();
                 self.insert_at = (paragraph, range.start + text.len());
@@ -3261,6 +3427,54 @@ impl Focusable for DocumentView {
     }
 }
 
+impl editor::Editor for DocumentView {
+    fn status_items(&self) -> Vec<SharedString> {
+        let mut items = vec![SharedString::from(i18n::format(
+            "doc.position",
+            &[
+                ("current", &(self.current_page + 1)),
+                ("count", &self.images.len()),
+            ],
+        ))];
+        let comments = self.document.comment_count();
+        if comments > 0 {
+            items.push(i18n::format("doc.comments", &[("n", &comments)]).into());
+        }
+        if self.tracking_changes {
+            items.push(i18n::text("doc.tracking").into());
+        }
+        items
+    }
+
+    fn zoom(&self) -> f32 {
+        self.zoom
+    }
+
+    fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
+        self.zoom = editor::clamp_zoom(zoom);
+        cx.notify();
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// The page's width fitted to the space beside the page list.
+    fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
+        const PAGE_LIST_WIDTH: f32 = 168.0;
+        const PAGE_GUTTER: f32 = 64.0;
+        let available = cx
+            .try_global::<workspace::EditorArea>()
+            .map(|area| area.0)
+            .unwrap_or(1000.0)
+            - PAGE_LIST_WIDTH
+            - PAGE_GUTTER
+            - if self.show_inspector { 260.0 } else { 0.0 };
+        let (page_width, _) = self.document.layout_page_size();
+        self.set_zoom(available / page_width.max(1.0) as f32, cx);
+    }
+}
+
 impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The one place with a window to hand. Textures replaced since the last
@@ -3282,18 +3496,10 @@ impl Render for DocumentView {
         let zoom = self.zoom;
         div()
             .id("root")
-            // Rounded and clipped so the window reads as a floating panel. The
-            // titlebar is transparent, so without this the corners would be
-            // square regardless of the shape the platform draws.
-            .rounded_xl()
-            .overflow_hidden()
-            .border_1()
-            .border_color(theme::border())
             .track_focus(&self.focus)
             // What the shortcuts in `key_bindings` are scoped to, so they fire
             // only while a document has the keyboard.
             .key_context("Document")
-            .on_action(cx.listener(|view, _: &Open, _window, cx| view.open_file(cx)))
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
             .on_action(cx.listener(|view, _: &SaveAs, _window, cx| view.save_as(cx)))
             .on_action(cx.listener(|view, _: &Print, _window, _cx| view.print()))
@@ -3341,13 +3547,10 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
             )
-            .on_action(
-                cx.listener(|view, _: &ZoomIn, _window, cx| view.set_zoom(view.zoom * 1.1, cx)),
-            )
-            .on_action(
-                cx.listener(|view, _: &ZoomOut, _window, cx| view.set_zoom(view.zoom / 1.1, cx)),
-            )
-            .on_action(cx.listener(|view, _: &ZoomActual, _window, cx| view.set_zoom(1.0, cx)))
+            .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
+                view.show_inspector = !view.show_inspector;
+                cx.notify();
+            }))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
                 view.handle_key(event, cx);
             }))
@@ -3366,33 +3569,19 @@ impl Render for DocumentView {
                     .flex()
                     .flex_col()
                     .flex_none()
-                    .w(px(240.0))
+                    .w(px(168.0))
                     .h_full()
                     .bg(theme::sidebar())
                     .border_r_1()
                     .border_color(theme::border())
                     .child(
-                        // Left clear of the traffic lights, which are drawn
-                        // over the window rather than in a system titlebar.
                         div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .px_4()
-                            .pt(px(44.0))
-                            .pb_3()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(theme::text())
-                                    .child(self.title.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme::text_faint())
-                                    .child(format!("{page_count} pages")),
-                            ),
+                            .px_3()
+                            .pt_3()
+                            .pb_2()
+                            .text_xs()
+                            .text_color(theme::text_faint())
+                            .child(i18n::format("doc.pages", &[("n", &page_count)])),
                     )
                     .child(
                         div()
@@ -3404,46 +3593,6 @@ impl Render for DocumentView {
                             .size_full()
                             .overflow_scroll()
                             .children((0..page_count).map(|index| self.sidebar_row(index, cx))),
-                    )
-                    // Anchored at the bottom, like the account chip in a chat
-                    // shell: what this window is looking at, always in view.
-                    .child(
-                        div()
-                            .flex()
-                            .flex_none()
-                            .items_center()
-                            .gap_3()
-                            .px_4()
-                            .py_3()
-                            .border_t_1()
-                            .border_color(theme::border())
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_none()
-                                    .size_7()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded_md()
-                                    .bg(theme::selected())
-                                    .text_xs()
-                                    .text_color(theme::accent())
-                                    .child("W"),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(theme::text())
-                                            .child(self.title.clone()),
-                                    )
-                                    .child(div().text_xs().text_color(theme::text_faint()).child(
-                                        format!("{:.0} KB", self.file_size as f64 / 1024.0),
-                                    )),
-                            ),
                     ),
             )
             // ---- canvas: the ribbon, the find bar, then the pages ----------
@@ -3452,41 +3601,6 @@ impl Render for DocumentView {
                     .flex()
                     .flex_col()
                     .size_full()
-                    // The document's own tab, above the ribbon, the way the
-                    // browser shell shows which file is open.
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .flex_none()
-                            // Tall enough that the traffic lights, which the
-                            // platform draws over a transparent titlebar at
-                            // (16, 16), sit inside the strip rather than over
-                            // the tab.
-                            .h(px(44.0))
-                            .pt(px(8.0))
-                            .px_4()
-                            .gap_2()
-                            .bg(theme::panel())
-                            .border_b_1()
-                            .border_color(theme::border())
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
-                                    .bg(theme::selected())
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(theme::text())
-                                            .child(self.title.clone()),
-                                    ),
-                            ),
-                    )
                     .child(self.ribbon(cx))
                     .children(self.find_bar_element())
                     .child(
@@ -3587,175 +3701,236 @@ impl Render for DocumentView {
                     ),
             )
             // ---- right panel: what is actually known about the document ----
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_none()
-                    .w(px(240.0))
-                    .h_full()
-                    .gap_5()
-                    .px_4()
-                    .pt(px(44.0))
-                    .bg(theme::panel())
-                    .border_l_1()
-                    .border_color(theme::border())
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(div().text_sm().text_color(theme::text()).child("Document"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme::text_faint())
-                                    .child("Rendered without a browser"),
-                            ),
-                    )
-                    .child(Self::info_row("Pages", page_count.to_string()))
-                    .child(Self::info_row(
-                        "Page size",
-                        format!("{} x {} px", page_width as i32, page_height as i32),
-                    ))
-                    .child(Self::info_row(
-                        "File size",
-                        format!("{:.1} KB", self.file_size as f64 / 1024.0),
-                    ))
-                    .child(Self::info_row("Renderer", "jade + Skia".to_string()))
-                    .child(Self::info_row(
-                        "Last repaint",
-                        match self.last_repaint {
-                            Some(elapsed) => format!("{:.2} ms", elapsed.as_secs_f64() * 1000.0),
-                            None => "—".to_string(),
-                        },
-                    ))
-                    .child(Self::info_row("Typed", format!("{} chars", self.typed)))
-                    .child(Self::info_row(
-                        "Insertion point",
-                        match self.document.selection() {
-                            Some((anchor, focus)) => {
-                                format!("¶{}:{} – ¶{}:{}", anchor.0, anchor.1, focus.0, focus.1)
-                            }
-                            None => format!("¶{} · byte {}", self.insert_at.0, self.insert_at.1),
-                        },
-                    ))
-                    .child(Self::info_row(
-                        "History",
-                        format!(
-                            "{} undo · {} redo",
-                            if self.document.can_undo() {
-                                "can"
-                            } else {
-                                "no"
+            // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
+            // as the IDE's right panel is.
+            .when(self.show_inspector, |root| {
+                root.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_none()
+                        .w(px(260.0))
+                        .h_full()
+                        .gap_5()
+                        .px_4()
+                        .pt_4()
+                        .bg(theme::panel())
+                        .border_l_1()
+                        .border_color(theme::border())
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(theme::text())
+                                        .child(t("doc.info.title")),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme::text_faint())
+                                        .child(t("doc.info.subtitle")),
+                                ),
+                        )
+                        .child(Self::info_row(t("doc.info.pages"), page_count.to_string()))
+                        .child(Self::info_row(
+                            t("doc.info.page_size"),
+                            format!("{} x {} px", page_width as i32, page_height as i32),
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.file_size"),
+                            format!("{:.1} KB", self.file_size as f64 / 1024.0),
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.renderer"),
+                            "jade + Skia".to_string(),
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.last_repaint"),
+                            match self.last_repaint {
+                                Some(elapsed) => {
+                                    format!("{:.2} ms", elapsed.as_secs_f64() * 1000.0)
+                                }
+                                None => "—".to_string(),
                             },
-                            if self.document.can_redo() {
-                                "can"
-                            } else {
-                                "no"
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.typed"),
+                            i18n::format("doc.info.typed_value", &[("n", &self.typed)]),
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.insertion"),
+                            match self.document.selection() {
+                                Some((anchor, focus)) => {
+                                    format!("¶{}:{} – ¶{}:{}", anchor.0, anchor.1, focus.0, focus.1)
+                                }
+                                None => {
+                                    format!("¶{} · byte {}", self.insert_at.0, self.insert_at.1)
+                                }
                             },
-                        ),
-                    ))
-                    .child(Self::info_row(
-                        "Review",
-                        format!(
-                            "{} comments · tracking {}",
-                            self.document.comment_count(),
-                            if self.tracking_changes { "on" } else { "off" }
-                        ),
-                    ))
-                    .child(Self::info_row(
-                        "Table",
-                        match self.document.caret_table_cell() {
-                            Some(cell) => format!(
-                                "row {} of {} · column {} of {}",
-                                cell.row + 1,
-                                cell.rows,
-                                cell.column + 1,
-                                cell.columns
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.history"),
+                            i18n::format(
+                                "doc.info.history_value",
+                                &[
+                                    ("undo", &yes_no(self.document.can_undo())),
+                                    ("redo", &yes_no(self.document.can_redo())),
+                                ],
                             ),
-                            None => self
-                                .table_status
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.review"),
+                            i18n::format(
+                                "doc.info.review_value",
+                                &[
+                                    ("n", &self.document.comment_count()),
+                                    (
+                                        "tracking",
+                                        &t(if self.tracking_changes {
+                                            "doc.info.on"
+                                        } else {
+                                            "doc.info.off"
+                                        }),
+                                    ),
+                                ],
+                            ),
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.table"),
+                            match self.document.caret_table_cell() {
+                                Some(cell) => i18n::format(
+                                    "doc.info.table_value",
+                                    &[
+                                        ("row", &(cell.row + 1)),
+                                        ("rows", &cell.rows),
+                                        ("column", &(cell.column + 1)),
+                                        ("columns", &cell.columns),
+                                    ],
+                                ),
+                                None => self
+                                    .table_status
+                                    .as_ref()
+                                    .map(|status| status.to_string())
+                                    .unwrap_or_else(|| "—".to_string()),
+                            },
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.find"),
+                            self.find_status
                                 .as_ref()
                                 .map(|status| status.to_string())
                                 .unwrap_or_else(|| "—".to_string()),
-                        },
-                    ))
-                    .child(Self::info_row(
-                        "Find",
-                        self.find_status
-                            .as_ref()
-                            .map(|status| status.to_string())
-                            .unwrap_or_else(|| "—".to_string()),
-                    ))
-                    .child(Self::info_row(
-                        "Saved",
-                        self.saved_to
-                            .as_ref()
-                            .map(|name| name.to_string())
-                            .unwrap_or_else(|| "—".to_string()),
-                    ))
-                    .child(div().text_xs().text_color(theme::text_faint()).child(
-                        // The commands are in the menu bar now, with their
-                        // shortcuts on them. What is left here is what no menu
-                        // item can show: the mouse and the find bar's own keys.
-                        "Drag to select · double-click a word · ⇧arrows extend \
-                                 · type over a selection to replace it \
-                                 · drag a picture to move it, its corner to size \
-                                 · in the find bar: ⇥ field · ⏎ next \
-                                 · ⇧⏎ replace · ⌘⏎ all · esc close.",
-                    ))
-                    .child(
-                        div()
-                            .mt_auto()
-                            .pb_4()
-                            .text_xs()
-                            .text_color(theme::text_faint())
-                            .child(self.path.clone()),
-                    ),
-            )
+                        ))
+                        .child(Self::info_row(
+                            t("doc.info.saved"),
+                            self.saved_to
+                                .as_ref()
+                                .map(|name| name.to_string())
+                                .unwrap_or_else(|| "—".to_string()),
+                        ))
+                        .child(div().text_xs().text_color(theme::text_faint()).child(
+                            // The commands are in the menu bar now, with their
+                            // shortcuts on them. What is left here is what no menu
+                            // item can show: the mouse and the find bar's own keys.
+                            t("doc.info.help"),
+                        ))
+                        .child(
+                            div()
+                                .mt_auto()
+                                .pb_4()
+                                .text_xs()
+                                .text_color(theme::text_faint())
+                                .child(self.path.clone()),
+                        ),
+                )
+            })
     }
 }
 
-fn main() {
-    let Some(path) = std::env::args().nth(1) else {
-        eprintln!("usage: jade-gpui-app <input.docx|input.xlsx>");
-        std::process::exit(2);
-    };
+/// Opens `path` as a document (DOCX) view, for the workspace to show in a tab.
+pub(crate) fn new_document_view(
+    path: &std::path::Path,
+    cx: &mut App,
+) -> Result<gpui::Entity<DocumentView>, String> {
+    let view = open_document_view(path, cx)?;
+    Ok(cx.new(|_| view))
+}
 
-    // A workbook is a different window: no pages, no Word ribbon, and a sheet
-    // too tall to rasterise up front. Dispatching here keeps the document view
-    // from growing a second mode it would have to branch on everywhere.
-    if path.to_lowercase().ends_with(".xlsx") {
-        workbook::run(path);
-        return;
-    }
-
-    // Opened before the window exists: a failure here is a plain message on
-    // stderr rather than an empty window with no explanation.
-    let mut document = match open_document(&path) {
-        Ok(document) => document,
-        Err(err) => {
-            eprintln!("{err}");
-            std::process::exit(1);
-        }
-    };
+/// Reads `path` and paints its pages, ready to be shown.
+fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentView, String> {
+    let path_text = path.to_string_lossy().into_owned();
+    let mut document = open_document(&path_text)?;
     // Placed before the window opens so the caret is visible from the first
     // frame rather than only after the first click.
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
     let images: Vec<_> = (0..document.page_count())
         .filter_map(|index| page_image(&document, index))
         .collect();
-    let file_size = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
-    let full_path = SharedString::from(path.clone());
-    let title = SharedString::from(
-        PathBuf::from(&path)
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or(path.clone()),
-    );
+    let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
 
-    Application::new().run(move |cx: &mut App| {
+    Ok(DocumentView {
+        path: SharedString::from(path_text),
+        file_size,
+        document,
+        images,
+        retired_images: Vec::new(),
+        dump_directory: std::env::var_os("JADE_DUMP_PAGE").map(PathBuf::from),
+        call_log: Vec::new(),
+        insert_at: (INSERT_PARAGRAPH, 0),
+        caret,
+        drag_anchor: None,
+        object_drag: None,
+        selection_anchor: None,
+        zoom: 1.0,
+        tracking_changes: false,
+        table_status: None,
+        find_query: None,
+        find_status: None,
+        find_bar: None,
+        ribbon_tab: RibbonTab::Home,
+        popup: None,
+        font_size_pt: 10.5,
+        font_family: SharedString::from("游明朝"),
+        indent_points: 0.0,
+        saved_to: None,
+        marked: None,
+        page_bounds: Rc::new(RefCell::new(Vec::new())),
+        last_repaint: None,
+        typed: 0,
+        current_page: 0,
+        show_inspector: false,
+        dirty: false,
+        scroll: ScrollHandle::new(),
+        focus: cx.focus_handle(),
+    })
+}
+
+fn main() {
+    let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+
+    let application = Application::new().with_assets(Assets);
+    // Files handed over by the platform — Finder's "Open With", a drop on the
+    // Dock icon — arrive here, outside any window, and are opened on the main
+    // thread like any other.
+    let (opened_urls, mut url_queue) = futures::channel::mpsc::unbounded::<Vec<String>>();
+    application.on_open_urls(move |urls| {
+        opened_urls.unbounded_send(urls).ok();
+    });
+
+    // Clicking the Dock icon with every window closed brings the start window
+    // back rather than doing nothing.
+    application.on_reopen(|cx| {
+        if cx.windows().is_empty() {
+            shell::workspace(cx).ok();
+        }
+    });
+
+    i18n::init();
+    application.run(move |cx: &mut App| {
         // A way to ask the text system what it makes of the shell's own labels
         // without a window, which is the only part of this app that can be
         // checked without looking at a screen.
@@ -3766,81 +3941,113 @@ fn main() {
         }
         cx.bind_keys(key_bindings());
         cx.set_menus(menus());
-        // The only action the window does not own: quitting is the app's.
+        // The actions no single window owns.
         cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
+        cx.on_action(|_: &Open, cx: &mut App| shell::prompt_and_open(cx));
+        cx.on_action(|_: &ToggleTheme, cx: &mut App| {
+            theme::set_dark(!theme::is_dark());
+            cx.refresh_windows();
+        });
+        cx.on_action(|_: &CloseWindow, cx: &mut App| {
+            if let Some(window) = cx.active_window() {
+                window
+                    .update(cx, |_, window, _| window.remove_window())
+                    .ok();
+            }
+        });
 
-        let bounds = Bounds::centered(None, size(px(1320.0), px(900.0)), cx);
-        let window = cx
-            .open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some(SharedString::from("jade")),
-                        // Drawn over by the app so the sidebar reaches the top
-                        // edge; the traffic lights are nudged down to match.
-                        appears_transparent: true,
-                        traffic_light_position: Some(point(px(16.0), px(16.0))),
-                    }),
-                    // Transparent rather than blurred: the body paints its own
-                    // translucent colour, and rounded corners need whatever is
-                    // behind the window to show through them.
-                    window_background: WindowBackgroundAppearance::Transparent,
-                    ..Default::default()
-                },
-                |_window, cx| {
-                    cx.new(|cx| DocumentView {
-                        title,
-                        path: full_path,
-                        file_size,
-                        document,
-                        images,
-                        retired_images: Vec::new(),
-                        dump_directory: std::env::var_os("JADE_DUMP_PAGE").map(PathBuf::from),
-                        call_log: Vec::new(),
-                        insert_at: (INSERT_PARAGRAPH, 0),
-                        caret,
-                        drag_anchor: None,
-                        object_drag: None,
-                        selection_anchor: None,
-                        zoom: 1.0,
-                        tracking_changes: false,
-                        table_status: None,
-                        find_query: None,
-                        find_status: None,
-                        find_bar: None,
-                        ribbon_tab: RibbonTab::Home,
-                        popup: None,
-                        font_size_pt: 10.5,
-                        font_family: SharedString::from("游明朝"),
-                        indent_points: 0.0,
-                        saved_to: None,
-                        marked: None,
-                        page_bounds: Rc::new(RefCell::new(Vec::new())),
-                        last_repaint: None,
-                        typed: 0,
-                        current_page: 0,
-                        scroll: ScrollHandle::new(),
-                        focus: cx.focus_handle(),
-                    })
-                },
-            )
-            .expect("open window");
+        cx.spawn(async move |cx| {
+            use futures::StreamExt;
+            while let Some(urls) = url_queue.next().await {
+                let paths: Vec<PathBuf> = urls
+                    .iter()
+                    .filter_map(|url| url.strip_prefix("file://"))
+                    .map(|path| PathBuf::from(percent_decode(path)))
+                    .collect();
+                if cx.update(|cx| shell::open_paths(&paths, cx)).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
 
-        // Focused up front, or the first keystroke goes nowhere and the app
-        // looks broken rather than unfocused.
-        window
-            .update(cx, |view, window, cx| {
-                window.focus(&view.focus_handle(cx));
-            })
-            .expect("focus the document");
+        if paths.is_empty() {
+            shell::workspace(cx).ok();
+        } else {
+            shell::open_paths(&paths, cx);
+        }
+        // `JADE_THEME=light` starts in the light palette.
+        if std::env::var("JADE_THEME").is_ok_and(|theme| theme == "light") {
+            theme::set_dark(false);
+            cx.refresh_windows();
+        }
         cx.activate(true);
     });
 }
 
+/// `%20`-style escapes in a `file://` URL's path, decoded as UTF-8.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&text[index + 1..index + 3], 16) {
+                decoded.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{key_bindings, menus, Menu, MenuItem};
+    use super::{key_bindings, menus, percent_decode, Menu, MenuItem};
     use std::collections::{HashMap, HashSet};
+
+    /// Typing into a document edits it and marks its tab unsaved; Undo
+    /// takes the typing back, a character at a time — each insert is its
+    /// own step in the document's history.
+    #[gpui::test]
+    fn typing_into_a_document_marks_it_unsaved(cx: &mut gpui::TestAppContext) {
+        use super::{open_document_view, Editor, Undo};
+        use gpui::Focusable;
+        let path = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../jade-core/contract.docx"
+        ));
+        let (view, cx) = cx.add_window_view(|_window, cx| open_document_view(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        let before = view.read_with(cx, |view, _| {
+            assert!(!view.is_dirty());
+            view.current_paragraph_text()
+        });
+        cx.simulate_input("jade");
+        view.read_with(cx, |view, _| {
+            assert!(view.is_dirty());
+            assert!(view.current_paragraph_text().contains("jade"));
+        });
+        for _ in 0.."jade".len() {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.current_paragraph_text(), before);
+        });
+    }
+
+    #[test]
+    fn file_urls_decode_to_paths() {
+        assert_eq!(
+            percent_decode("/Users/me/My%20Deck%E8%B3%87%E6%96%99.pptx"),
+            "/Users/me/My Deck資料.pptx"
+        );
+        assert_eq!(percent_decode("/a%2"), "/a%2");
+    }
 
     /// Every action named in a menu, in order.
     fn menu_actions(menus: &[Menu]) -> Vec<&'static str> {
