@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use jade_painter::Painter;
 use jade_xlsx_headless_api::CellInput;
-use jade_xlsx_headless_editor::HeadlessWorkbook;
+use jade_xlsx_headless_editor::{formula_text, HeadlessWorkbook};
 pub use jade_xlsx_layout::HeaderMetrics;
 use jade_xlsx_layout::{column_label, layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
 pub use jade_xlsx_reader::{CellRange, CellRef};
@@ -281,7 +281,9 @@ impl<B: Backend> Workbook<B> {
             return String::new();
         };
         if let Some(formula) = &cell.formula {
-            return format!("={formula}");
+            // As Excel shows it: the file's `_xlfn.` prefixes are not what
+            // anybody typed.
+            return format!("={}", formula_text::to_display_formula(formula));
         }
         match &cell.value {
             CellValue::Empty => String::new(),
@@ -564,6 +566,34 @@ mod tests {
         let backend = TinySkiaBackend::new(&faces()).unwrap();
         let reopened = Workbook::open(&saved, "UTC", backend).unwrap();
         assert_eq!(reopened.edit_text(CellRef::new(4, 1)), "=B2*10");
+    }
+
+    /// The formula bar shows what was typed; the file stores what Excel
+    /// reads (`_xlfn.` before the newer functions) — otherwise Excel opens
+    /// the saved workbook as `#NAME?`.
+    #[test]
+    fn newer_functions_read_as_typed_and_save_as_excel_reads_them() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let at = CellRef::new(6, 1);
+        let typed = "=XLOOKUP(20,B2:B4,C2:C4,\"none\")";
+        assert!(book.set_cell(at, typed).unwrap());
+        assert_eq!(book.edit_text(at), typed);
+        assert_eq!(book.display_text(at), "40");
+        let saved = book.save_bytes().unwrap();
+        let package = jade_opc::OpcPackage::open(&saved).unwrap();
+        let stored = package
+            .part_names()
+            .iter()
+            .filter(|name| name.starts_with("xl/worksheets/"))
+            .filter_map(|name| package.part_str(name).ok().flatten())
+            .any(|xml| xml.contains("_xlfn.XLOOKUP("));
+        assert!(stored, "XLOOKUP is saved without its _xlfn. prefix");
+        let backend = TinySkiaBackend::new(&faces()).unwrap();
+        let reopened = Workbook::open(&saved, "UTC", backend).unwrap();
+        assert_eq!(reopened.edit_text(at), typed);
+        // Typing the same text again is no change.
+        let mut reopened = reopened;
+        assert!(!reopened.set_cell(at, typed).unwrap());
     }
 
     #[test]
