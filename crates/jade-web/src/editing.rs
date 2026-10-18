@@ -205,6 +205,11 @@ impl EditableDocument {
 
     // ---- pages --------------------------------------------------------------
 
+    /// The renderer's band-redraw counters: eligible, used, and why not.
+    pub fn band_redraw_stats(&self) -> (u64, u64, Vec<(&'static str, u64)>) {
+        self.renderer.band_redraw_stats()
+    }
+
     pub fn page_count(&self) -> usize {
         self.rendered_pages.get().min(self.pages.borrow().len())
     }
@@ -515,7 +520,8 @@ impl EditableDocument {
         let last_page = self.rect_at((to, end)).map_or(self.page_count(), |rect| {
             self.page_and_offset(rect.document_y + rect.height).0 + 1
         });
-        self.repaint_through(from, last_page)
+        let first_page = self.paragraph_page(from);
+        self.repaint_through(from, Some(first_page), last_page)
     }
 
     fn set_caret(&mut self, paragraph: usize, offset: usize) {
@@ -844,7 +850,7 @@ impl EditableDocument {
         let pages = self.page_count();
         let page = self.paragraph_page(paragraph) + 1;
         self.renderer.set_band_redraw_enabled(true);
-        let first = self.repaint_through(paragraph, page);
+        let first = self.repaint_through(paragraph, Some(page - 1), page);
         self.renderer.set_band_redraw_enabled(false);
         first?;
         let held_still = before.1.is_some() && geometry(&self.renderer) == before;
@@ -865,12 +871,23 @@ impl EditableDocument {
     /// move content onto any page after it.
     fn repaint_from(&mut self, paragraph: usize) -> Result<(), String> {
         let last_page = self.page_count().max(1) + 1;
-        self.repaint_through(paragraph, last_page)
+        self.repaint_through(paragraph, None, last_page)
     }
 
     /// The incremental sequence from `paragraph` through page `last_page`
     /// (1-based); only a pass through every page may change the page count.
-    fn repaint_through(&mut self, paragraph: usize, last_page: usize) -> Result<(), String> {
+    ///
+    /// With `draw_from` (a 0-based page), the pages before it are laid out
+    /// but not drawn, and keep their pixels. The renderer otherwise repaints
+    /// them whole on every pass, so a keystroke cost more the further down
+    /// the document it was typed; a caller passes it when nothing before
+    /// that page can have changed.
+    fn repaint_through(
+        &mut self,
+        paragraph: usize,
+        draw_from: Option<usize>,
+        last_page: usize,
+    ) -> Result<(), String> {
         let document = self
             .word_document
             .document
@@ -888,6 +905,8 @@ impl EditableDocument {
             .prepare_incremental_repaint(paragraph, last_page);
         // Pages past the bound keep their pixels: see `last_paintable_page`.
         self.last_paintable_page.set(last_page.saturating_sub(1));
+        self.renderer
+            .set_visible_page_range(draw_from.map(|first| (first + 1)..=usize::MAX));
         let result = self.renderer.render_bounded_to_page_with_parts(
             document,
             &self.options,
@@ -897,6 +916,7 @@ impl EditableDocument {
             last_page,
         );
         self.last_paintable_page.set(usize::MAX);
+        self.renderer.clear_visible_page_range();
         self.consume_dirty_regions(last_page.saturating_sub(1));
         result.map_err(|_| "repaint failed".to_string())?;
         if let Some(error) = self.renderer.take_render_error() {
