@@ -38,8 +38,8 @@ use gpui::{
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
-    CellFormat, CellRange, CellRef, Copied, FilterButton, FontToggle, HorizontalAlignment, Overlay,
-    ResizeGesture, Workbook, MAX_COLUMN, MAX_ROW,
+    CellFormat, CellRange, CellRef, Copied, FilterButton, FontToggle, HorizontalAlignment, Link,
+    Overlay, ResizeGesture, Workbook, MAX_COLUMN, MAX_ROW,
 };
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::text::TextEdit;
@@ -176,6 +176,15 @@ enum SheetDrag {
     Resize(ResizeGesture),
     /// A range pointed at for the formula being typed.
     Point,
+    /// The selection picked up by its border: where the pointer took it
+    /// (offset from its top-left), where it would land, and whether ⌥
+    /// copies rather than moves.
+    Move {
+        source: CellRange,
+        grab: (i64, i64),
+        target: CellRange,
+        copy: bool,
+    },
 }
 
 /// What the pointer is over, for its cursor.
@@ -185,6 +194,10 @@ enum Hover {
     FillHandle,
     ResizeColumn,
     ResizeRow,
+    /// A cell with a hyperlink, which a click follows.
+    Link,
+    /// The selection's border, which a drag picks the cells up by.
+    Border,
 }
 
 /// The context menu.
@@ -263,6 +276,14 @@ enum MenuCommand {
     InsertSheet,
     RenameSheet(usize),
     DeleteSheet(usize),
+    /// A sheet tab from one place to another.
+    MoveSheet(usize, usize),
+    /// New Note, or Edit Note on a cell that has one.
+    EditNote,
+    DeleteNote,
+    /// The selected whole rows or columns.
+    Hide,
+    Unhide,
 }
 
 /// What a painted image was painted for. A frame that matches it needs no new
@@ -305,6 +326,13 @@ pub struct WorkbookView {
     naming: Option<TextEdit>,
     /// The find bar (⌘F) and what is typed into it.
     finding: Option<TextEdit>,
+    /// A note being written on a cell.
+    noting: Option<(CellRef, TextEdit)>,
+    /// The active cell's list of choices (its data validation), open.
+    choices: Option<Vec<String>>,
+    /// A hyperlink pressed: followed when the press lets go on it, as in
+    /// Excel (a press held into a drag selects instead).
+    pending_link: Option<(CellRef, Link)>,
     menu: Option<SheetMenu>,
     /// A filter button's dropdown.
     filter: Option<FilterPanel>,
@@ -351,6 +379,9 @@ impl WorkbookView {
         if let Some(text) = self.finding.as_mut() {
             return Some(text);
         }
+        if let Some((_, text)) = self.noting.as_mut() {
+            return Some(text);
+        }
         self.edit.as_mut().map(|edit| &mut edit.text)
     }
 
@@ -362,6 +393,9 @@ impl WorkbookView {
             return Some(text);
         }
         if let Some(text) = self.finding.as_ref() {
+            return Some(text);
+        }
+        if let Some((_, text)) = self.noting.as_ref() {
             return Some(text);
         }
         self.edit.as_ref().map(|edit| &edit.text)
@@ -387,7 +421,9 @@ impl WorkbookView {
     /// reference dashed, the copied cells' outline, a resize's guide.
     fn overlay(&self) -> Overlay {
         let preview = match self.drag {
-            Some(SheetDrag::Fill { target, .. }) => Some(target),
+            Some(SheetDrag::Fill { target, .. }) | Some(SheetDrag::Move { target, .. }) => {
+                Some(target)
+            }
             _ => self
                 .edit
                 .as_ref()
@@ -696,6 +732,17 @@ impl WorkbookView {
             Err(error) if error == jade_office_model::typing::FORMULA_PROBLEM => {
                 self.status = SharedString::from(i18n::text("sheet.formula_problem"))
             }
+            // An entry a data validation refuses: the rule's words, or
+            // Excel's.
+            Err(error) if jade_office_model::sheet::validation_refusal(&error).is_some() => {
+                let message =
+                    jade_office_model::sheet::validation_refusal(&error).unwrap_or_default();
+                self.status = SharedString::from(if message.is_empty() {
+                    i18n::text("sheet.validation_refused").to_string()
+                } else {
+                    message.to_string()
+                });
+            }
             Err(error) => {
                 self.status =
                     SharedString::from(i18n::format("sheet.edit_failed", &[("error", &error)]))
@@ -708,6 +755,8 @@ impl WorkbookView {
         self.edit = None;
         self.renaming = None;
         self.naming = None;
+        self.noting = None;
+        self.choices = None;
         let result = if undo {
             self.book.undo()
         } else {
@@ -925,6 +974,32 @@ impl WorkbookView {
                 self.scroll.set_offset(point(px(0.0), px(0.0)));
                 result
             }
+            MenuCommand::MoveSheet(index, to) => {
+                let result = self.book.move_sheet(index, to);
+                self.selection = Selection::default();
+                result
+            }
+            // The note's editor opens beside the cell, with what it says.
+            MenuCommand::EditNote => {
+                let at = selection.active;
+                let text = self.book.note(at).unwrap_or_default().to_string();
+                self.noting = Some((at, TextEdit::new(text)));
+                cx.notify();
+                return;
+            }
+            MenuCommand::DeleteNote => self.book.set_note(selection.active, "", "jade"),
+            MenuCommand::Hide | MenuCommand::Unhide => {
+                let (axis, first, last) = if selection.is_whole_columns() {
+                    (Axis::Columns, range.start.column, range.end.column)
+                } else {
+                    (Axis::Rows, range.start.row, range.end.row)
+                };
+                if matches!(command, MenuCommand::Hide) {
+                    self.book.hide(axis, first, last)
+                } else {
+                    self.book.unhide(axis, first, last)
+                }
+            }
         };
         // What was copied moved or went with the deleted cells.
         if matches!(
@@ -1135,6 +1210,14 @@ impl WorkbookView {
         if self.menu.take().is_some() {
             cx.notify();
         }
+        // An open list of choices: Escape closes it, any other key too
+        // before doing what it does.
+        if self.choices.take().is_some() {
+            cx.notify();
+            if key == "escape" {
+                return true;
+            }
+        }
         // An open filter dropdown: Enter applies it, Escape closes it.
         if self.filter.is_some() {
             match key {
@@ -1148,7 +1231,11 @@ impl WorkbookView {
 
         // A tab being renamed, the name box or the find bar: Enter takes
         // it (or finds the next), Escape leaves it.
-        if self.renaming.is_some() || self.naming.is_some() || self.finding.is_some() {
+        if self.renaming.is_some()
+            || self.naming.is_some()
+            || self.finding.is_some()
+            || self.noting.is_some()
+        {
             if self.finding.is_some() && key == "enter" {
                 self.find_next(shift, cx);
                 return true;
@@ -1156,7 +1243,7 @@ impl WorkbookView {
             if self.finding.is_some() && key == "f" && command {
                 return true;
             }
-            return self.name_key(key, command, cx);
+            return self.name_key(key, modifiers, cx);
         }
 
         let pointable = self.pointable();
@@ -1273,6 +1360,11 @@ impl WorkbookView {
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
+            // ⌥↓: the active cell's list of choices.
+            "down" if modifiers.alt => {
+                self.choices = self.book.validation_list(self.active());
+                cx.notify();
+            }
             // Shift+Space: the selection's rows, whole.
             "space" if shift => {
                 self.selection.whole_rows();
@@ -1409,11 +1501,20 @@ impl WorkbookView {
         true
     }
 
-    /// Keys while a tab is renamed or the name box is typed into.
-    fn name_key(&mut self, key: &str, command: bool, cx: &mut Context<Self>) -> bool {
+    /// Keys while a tab is renamed, or the name box, the find bar or a
+    /// note is typed into.
+    fn name_key(&mut self, key: &str, modifiers: Modifiers, cx: &mut Context<Self>) -> bool {
+        let command = modifiers.platform || modifiers.control;
+        let noting = self.noting.is_some();
         let Some(text) = self.typing() else {
             return false;
         };
+        // A note takes line breaks: Enter on its own ends it.
+        if noting && key == "enter" && (modifiers.alt || modifiers.shift) {
+            text.insert("\n");
+            cx.notify();
+            return true;
+        }
         if text.marked.is_some() {
             return false;
         }
@@ -1441,6 +1542,11 @@ impl WorkbookView {
                 let result = self.book.rename_sheet(index, &name);
                 self.sheets_changed(result, cx);
             }
+        } else if let Some((cell, text)) = self.noting.take() {
+            if take {
+                let result = self.book.set_note(cell, &text.text, "jade");
+                self.after_write(result, cx);
+            }
         } else if self.finding.take().is_some() {
             // Escape or Tab closes the find bar where the search got to.
         } else if let Some(text) = self.naming.take() {
@@ -1465,6 +1571,7 @@ impl WorkbookView {
         self.menu = None;
         self.filter = None;
         self.popup = None;
+        self.choices = None;
         if self.renaming.is_some() || self.naming.is_some() {
             self.finish_naming(true, cx);
         }
@@ -1546,11 +1653,38 @@ impl WorkbookView {
             cx.notify();
             return;
         }
+        // The selection's border: a drag moves the cells (⌥ copies them),
+        // as Excel's drag and drop.
+        if !event.modifiers.shift
+            && !self.selection.is_whole_rows()
+            && !self.selection.is_whole_columns()
+            && self.book.on_selection_border(x, y, scroll, range)
+        {
+            let at = self.book.reach_point(x, y, scroll);
+            self.drag = Some(SheetDrag::Move {
+                source: range,
+                grab: (
+                    i64::from(at.column) - i64::from(range.start.column),
+                    i64::from(at.row) - i64::from(range.start.row),
+                ),
+                target: range,
+                copy: event.modifiers.alt,
+            });
+            cx.notify();
+            return;
+        }
         let Some(hit) = hit else {
             return;
         };
         let kind = self.selection.press(hit, event.modifiers.shift);
         self.drag = Some(SheetDrag::Select(kind));
+        // A hyperlink is followed when this press lets go on it.
+        self.pending_link = match hit {
+            Hit::Cell(cell) if !event.modifiers.shift && event.click_count == 1 => {
+                self.book.link(cell).map(|link| (cell, link))
+            }
+            _ => None,
+        };
         if let Hit::Cell(cell) = hit {
             self.book.reach(cell);
             if event.click_count >= 2 && !event.modifiers.shift {
@@ -1611,6 +1745,19 @@ impl WorkbookView {
             Some(edge) if edge.axis == Axis::Columns => Hover::ResizeColumn,
             Some(_) => Hover::ResizeRow,
             None if self.book.on_fill_handle(x, y, scroll, self.range()) => Hover::FillHandle,
+            None if !self.selection.is_whole_rows()
+                && !self.selection.is_whole_columns()
+                && self.book.on_selection_border(x, y, scroll, self.range()) =>
+            {
+                Hover::Border
+            }
+            None if matches!(
+                self.book.hit(x, y, scroll),
+                Some(Hit::Cell(cell)) if self.book.link(cell).is_some()
+            ) =>
+            {
+                Hover::Link
+            }
             None => Hover::Cells,
         };
         if hover != self.hover {
@@ -1680,6 +1827,33 @@ impl WorkbookView {
                 self.drag = Some(SheetDrag::Resize(gesture));
                 cx.notify();
             }
+            SheetDrag::Move {
+                source,
+                grab,
+                target,
+                copy,
+            } => {
+                // The range keeps its shape, its top-left where the
+                // pointer's grab puts it.
+                let start = grid::offset(reached, -grab.0, -grab.1);
+                let next = CellRange {
+                    start,
+                    end: CellRef::new(
+                        (start.column + (source.end.column - source.start.column)).min(MAX_COLUMN),
+                        (start.row + (source.end.row - source.start.row)).min(MAX_ROW),
+                    ),
+                };
+                if next != target {
+                    self.drag = Some(SheetDrag::Move {
+                        source,
+                        grab,
+                        target: next,
+                        copy,
+                    });
+                    self.book.reach(next.end);
+                    cx.notify();
+                }
+            }
             SheetDrag::Point => {
                 let anchor = self
                     .edit
@@ -1738,8 +1912,76 @@ impl WorkbookView {
                 };
                 self.after_write(result, cx);
             }
-            SheetDrag::Select(_) | SheetDrag::Point => cx.notify(),
+            // A click — a press let go where it started — on a hyperlink
+            // follows it.
+            SheetDrag::Select(_) => {
+                let link = self.pending_link.take();
+                if let Some((_, link)) = link
+                    .filter(|(cell, _)| self.selection.is_cell() && self.selection.active == *cell)
+                {
+                    self.follow_link(link, cx);
+                }
+                cx.notify();
+            }
+            // The cells land where they were dropped, formulas following as
+            // a cut and paste moves them; the selection goes with them.
+            SheetDrag::Move {
+                source,
+                target,
+                copy,
+                ..
+            } => {
+                if target == source {
+                    cx.notify();
+                    return;
+                }
+                let result = self.book.move_range(source, target.start, copy);
+                if let Ok(moved) = &result {
+                    let active = self.selection.active;
+                    self.selection = Selection {
+                        active: grid::offset(
+                            moved.start,
+                            i64::from(active.column) - i64::from(source.start.column),
+                            i64::from(active.row) - i64::from(source.start.row),
+                        ),
+                        anchor: moved.start,
+                        focus: moved.end,
+                    };
+                }
+                self.after_write(result.map(|_| true), cx);
+            }
+            SheetDrag::Point => cx.notify(),
         }
+    }
+
+    /// Follows a hyperlink: a web address opens in the browser, a place in
+    /// the workbook is selected.
+    fn follow_link(&mut self, link: Link, cx: &mut Context<Self>) {
+        match link {
+            Link::Url(url) => cx.open_url(&url),
+            Link::Place { sheet, range } => {
+                self.select_sheet(sheet, cx);
+                self.selection = Selection::range_from(range.start, range.end);
+                self.reveal(range.start);
+                cx.notify();
+            }
+        }
+    }
+
+    /// A choice from the active cell's list goes into it.
+    fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(choice) = self
+            .choices
+            .take()
+            .and_then(|choices| choices.into_iter().nth(index))
+        else {
+            return;
+        };
+        let result = self.book.set_cell(self.active(), &choice);
+        if matches!(result, Ok(true)) {
+            self.copied = None;
+        }
+        self.after_write(result, cx);
     }
 
     /// While a drag is held past the grid's edge, the grid scrolls that
@@ -1997,11 +2239,26 @@ impl WorkbookView {
     fn context_menu(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let menu = self.menu.as_ref()?;
         let items: Vec<(MenuCommand, &'static str)> = match menu.tab {
-            Some(index) => vec![
-                (MenuCommand::InsertSheet, "sheet.menu.insert_sheet"),
-                (MenuCommand::RenameSheet(index), "sheet.menu.rename_sheet"),
-                (MenuCommand::DeleteSheet(index), "sheet.menu.delete_sheet"),
-            ],
+            Some(index) => {
+                let mut items = vec![
+                    (MenuCommand::InsertSheet, "sheet.menu.insert_sheet"),
+                    (MenuCommand::RenameSheet(index), "sheet.menu.rename_sheet"),
+                    (MenuCommand::DeleteSheet(index), "sheet.menu.delete_sheet"),
+                ];
+                if index > 0 {
+                    items.push((
+                        MenuCommand::MoveSheet(index, index - 1),
+                        "sheet.menu.move_left",
+                    ));
+                }
+                if index + 1 < self.sheet_names.len() {
+                    items.push((
+                        MenuCommand::MoveSheet(index, index + 1),
+                        "sheet.menu.move_right",
+                    ));
+                }
+                items
+            }
             None => {
                 let mut items = vec![
                     (MenuCommand::Cut, "sheet.menu.cut"),
@@ -2029,6 +2286,20 @@ impl WorkbookView {
                         (MenuCommand::InsertColumns, "sheet.menu.insert_columns"),
                         (MenuCommand::DeleteColumns, "sheet.menu.delete_columns"),
                     ]);
+                }
+                if self.selection.is_whole_rows() || self.selection.is_whole_columns() {
+                    items.extend([
+                        (MenuCommand::Hide, "sheet.menu.hide"),
+                        (MenuCommand::Unhide, "sheet.menu.unhide"),
+                    ]);
+                }
+                if self.book.note(self.active()).is_some() {
+                    items.extend([
+                        (MenuCommand::EditNote, "sheet.menu.edit_note"),
+                        (MenuCommand::DeleteNote, "sheet.menu.delete_note"),
+                    ]);
+                } else {
+                    items.push((MenuCommand::EditNote, "sheet.menu.insert_note"));
                 }
                 items
             }
@@ -2347,6 +2618,98 @@ impl WorkbookView {
             )
             .child(separator())
             .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
+    }
+
+    /// Excel's ▼ beside an active cell with a list of choices (its data
+    /// validation), and the list under it when open.
+    fn list_button(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
+        if self.edit.is_some() {
+            return None;
+        }
+        self.book.validation_list(self.active())?;
+        let grid = self.grid_bounds.get()?;
+        let cell = self.cell_bounds(self.active())?;
+        let (x, y) = (cell.origin.x - grid.origin.x, cell.origin.y - grid.origin.y);
+        let (w, h) = (cell.size.width, cell.size.height);
+        let items = self.choices.clone().unwrap_or_default();
+        let open = self.choices.is_some();
+        Some(
+            div()
+                .absolute()
+                .left(x + w + px(1.0))
+                .top(y)
+                .child(
+                    div()
+                        .id("choices-button")
+                        .w(h.max(px(14.0)))
+                        .h(h)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(gpui::rgb(0xf3f3f3))
+                        .border_1()
+                        .border_color(gpui::rgb(0xababab))
+                        .cursor_pointer()
+                        .child(
+                            svg()
+                                .path("icons/chevron-down.svg")
+                                .size_3()
+                                .text_color(gpui::black()),
+                        )
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(|view, _event, window, cx| {
+                            window.focus(&view.focus);
+                            view.choices = if view.choices.is_some() {
+                                None
+                            } else {
+                                view.book.validation_list(view.active())
+                            };
+                            cx.notify();
+                        })),
+                )
+                .when(open, |anchor| {
+                    anchor.child(
+                        div()
+                            .absolute()
+                            .top(h)
+                            .right_0()
+                            .min_w(w.max(px(120.0)))
+                            .max_h(px(220.0))
+                            .bg(gpui::white())
+                            .border_1()
+                            .border_color(gpui::rgb(0x7a7a7a))
+                            .shadow_md()
+                            .text_xs()
+                            .text_color(gpui::black())
+                            .occlude()
+                            .child(
+                                div()
+                                    .id("choices")
+                                    .max_h(px(218.0))
+                                    .overflow_y_scroll()
+                                    .children(items.into_iter().enumerate().map(
+                                        |(index, item)| {
+                                            div()
+                                                .id(("choice", index))
+                                                .px_2()
+                                                .py_0p5()
+                                                .cursor_pointer()
+                                                .hover(|row| row.bg(gpui::rgb(0xcce8ff)))
+                                                .child(item)
+                                                .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                                    cx.stop_propagation()
+                                                })
+                                                .on_click(cx.listener(
+                                                    move |view, _event, _window, cx| {
+                                                        view.choose(index, cx)
+                                                    },
+                                                ))
+                                        },
+                                    )),
+                            ),
+                    )
+                }),
+        )
     }
 
     /// A colour or borders dropdown under its toolbar button.
@@ -2858,6 +3221,27 @@ impl Render for WorkbookView {
                     .child(text),
             )
         });
+        let list_button = self.list_button(cx);
+        let note_editor = self.noting.as_ref().and_then(|(cell, text)| {
+            let grid = self.grid_bounds.get()?;
+            let bounds = self.cell_bounds(*cell)?;
+            Some(
+                div()
+                    .absolute()
+                    .left(bounds.origin.x - grid.origin.x + bounds.size.width + px(6.0))
+                    .top(bounds.origin.y - grid.origin.y)
+                    .min_w(px(160.0))
+                    .min_h(px(60.0))
+                    .p_2()
+                    .bg(gpui::rgb(0xfff9c4))
+                    .border_1()
+                    .border_color(gpui::rgb(0x217346))
+                    .shadow_md()
+                    .text_xs()
+                    .text_color(gpui::black())
+                    .child(caret_line(text, gpui::black(), false)),
+            )
+        });
         let find_bar = self.finding.as_ref().map(|text| {
             div()
                 .absolute()
@@ -2891,6 +3275,8 @@ impl Render for WorkbookView {
             Hover::ResizeColumn => gpui::CursorStyle::ResizeLeftRight,
             Hover::ResizeRow => gpui::CursorStyle::ResizeUpDown,
             Hover::FillHandle | Hover::Cells => gpui::CursorStyle::Crosshair,
+            Hover::Link => gpui::CursorStyle::PointingHand,
+            Hover::Border => gpui::CursorStyle::OpenHand,
         };
         let dragging = self.drag.is_some();
         let toolbar = self.sheet_toolbar(cx);
@@ -2969,6 +3355,8 @@ impl Render for WorkbookView {
                     )
                     .children(editor)
                     .children(note)
+                    .children(note_editor)
+                    .children(list_button)
                     .children(find_bar)
                     .children(filter_panel)
                     .children(menu)
@@ -3059,6 +3447,9 @@ impl WorkbookView {
             renaming: None,
             naming: None,
             finding: None,
+            noting: None,
+            choices: None,
+            pending_link: None,
             menu: None,
             filter: None,
             popup: None,
@@ -3099,10 +3490,16 @@ mod tests {
     fn open_view(
         cx: &mut gpui::TestAppContext,
     ) -> (Entity<WorkbookView>, &mut gpui::VisualTestContext) {
+        open_path(cx, fixture("grid-operations-workbook.xlsx"))
+    }
+
+    fn open_path(
+        cx: &mut gpui::TestAppContext,
+        path: PathBuf,
+    ) -> (Entity<WorkbookView>, &mut gpui::VisualTestContext) {
         // The app's keymap, so ⌘C, ⌘V and the rest arrive as they do in
         // the app: as actions where it binds them, as keys where it does not.
         cx.update(|cx| cx.bind_keys(crate::key_bindings()));
-        let path = fixture("grid-operations-workbook.xlsx");
         let (view, cx) = cx.add_window_view(|_window, cx| WorkbookView::open(&path, cx).unwrap());
         cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
         cx.run_until_parked();
@@ -3527,6 +3924,142 @@ mod tests {
         cx.dispatch_action(Undo);
         view.read_with(cx, |view, _| {
             assert_eq!(view.book.display_text(at(1, 1)), "10")
+        });
+    }
+
+    /// New Note opens an editor beside the cell; ⇧Enter breaks the line,
+    /// Enter saves it on the cell.
+    #[gpui::test]
+    fn a_note_is_written_through_its_editor(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down right");
+        view.update(cx, |view, cx| {
+            assert!(view.book.note(at(1, 1)).is_none());
+            view.menu_command(MenuCommand::EditNote, false, cx);
+        });
+        cx.simulate_input("Checked");
+        cx.simulate_keystrokes("shift-enter");
+        cx.simulate_input("by me");
+        view.read_with(cx, |view, _| {
+            assert!(
+                view.edit.is_none(),
+                "typing goes into the note, not the cell"
+            );
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.noting.is_none());
+            assert_eq!(view.book.note(at(1, 1)), Some("Checked\nby me"));
+            assert_eq!(view.book.edit_text(at(1, 1)), "10");
+        });
+        view.update(cx, |view, cx| {
+            view.menu_command(MenuCommand::DeleteNote, false, cx)
+        });
+        view.read_with(cx, |view, _| assert!(view.book.note(at(1, 1)).is_none()));
+    }
+
+    /// Hide on a selected whole row takes it out of view — the arrows step
+    /// past it — and Unhide brings it back.
+    #[gpui::test]
+    fn hiding_a_selected_row(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down down right shift-space");
+        view.update(cx, |view, cx| {
+            assert!(view.selection.is_whole_rows());
+            view.menu_command(MenuCommand::Hide, false, cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.step(at(1, 1), Direction::Down), at(1, 3))
+        });
+        view.update(cx, |view, cx| {
+            view.menu_command(MenuCommand::Unhide, false, cx)
+        });
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.step(at(1, 1), Direction::Down), at(1, 2))
+        });
+    }
+
+    /// A cell with a list validation: ⌥↓ opens its choices and a choice
+    /// goes into the cell; typing something off the list is refused with
+    /// Excel's words, the editor staying open.
+    #[gpui::test]
+    fn a_list_choice_enters_the_cell(cx: &mut gpui::TestAppContext) {
+        let mut package = jade_opc::OpcPackage::open(
+            &std::fs::read(fixture("grid-operations-workbook.xlsx")).unwrap(),
+        )
+        .unwrap();
+        let sheet = package
+            .part_str("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .unwrap()
+            .replace(
+                "<tableParts",
+                "<dataValidations count=\"1\">\
+                 <dataValidation type=\"list\" allowBlank=\"1\" showErrorMessage=\"1\" sqref=\"D2:D4\"><formula1>\"Yes,No\"</formula1></dataValidation>\
+                 </dataValidations><tableParts",
+            );
+        package.replace("xl/worksheets/sheet1.xml", sheet.into_bytes());
+        let path = crate::shell::scratch_copy(
+            &fixture("grid-operations-workbook.xlsx"),
+            "validation.xlsx",
+        );
+        std::fs::write(&path, package.write().unwrap()).unwrap();
+        let (view, cx) = open_path(cx, path);
+        cx.simulate_keystrokes("down down right right right alt-down");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.active(), at(3, 2));
+            assert_eq!(
+                view.choices,
+                Some(vec!["Yes".to_string(), "No".to_string()])
+            );
+        });
+        view.update(cx, |view, cx| view.choose(1, cx));
+        view.read_with(cx, |view, _| {
+            assert!(view.choices.is_none());
+            assert_eq!(view.book.edit_text(at(3, 2)), "No");
+        });
+        cx.simulate_input("Maybe");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.edit.is_some(), "a refused entry stays in its editor");
+            assert_eq!(view.status.as_ref(), i18n::text("sheet.validation_refused"));
+            assert_eq!(view.book.edit_text(at(3, 2)), "No");
+        });
+    }
+
+    /// A drag by the selection's border moves the cells, and a formula that
+    /// read them follows them to where they landed.
+    #[gpui::test]
+    fn dragging_the_border_moves_cells_and_formulas_follow(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down right right right right");
+        cx.simulate_input("=B2*10");
+        cx.simulate_keystrokes("enter up left left left");
+        view.read_with(cx, |view, _| assert_eq!(view.active(), at(1, 1)));
+        // B2's left edge, just inside: its border.
+        let border = view.read_with(cx, |view, _| {
+            let cell = view.cell_bounds(at(1, 1)).unwrap();
+            let position = gpui::point(cell.origin.x + px(1.0), cell.center().y);
+            let (x, y) = view.grid_point(position).unwrap();
+            assert!(view
+                .book
+                .on_selection_border(x, y, view.sheet_scroll(), view.range()));
+            position
+        });
+        let to = cell_center(&view, cx, at(7, 5));
+        cx.simulate_mouse_down(border, MouseButton::Left, Modifiers::none());
+        cx.simulate_mouse_move(to, Some(MouseButton::Left), Modifiers::none());
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.overlay().preview, Some(span(at(7, 5), at(7, 5))))
+        });
+        cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
+        view.read_with(cx, |view, _| {
+            assert!(view.drag.is_none());
+            assert_eq!(view.book.edit_text(at(7, 5)), "10");
+            assert_eq!(view.book.edit_text(at(1, 1)), "");
+            assert_eq!(view.book.edit_text(at(4, 1)), "=H6*10");
+            assert_eq!(view.book.display_text(at(4, 1)), "100");
+            assert_eq!(view.active(), at(7, 5), "the selection goes with them");
         });
     }
 }
