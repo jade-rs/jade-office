@@ -18,12 +18,14 @@ A fix starts as a case that fails.
 | Word round trip | every fixture opened, edited, saved and reopened with every paragraph and part intact | 165 documents | jade-core `crates/jade-docx-editor/tests/round_trip_corpus.rs` |
 | Excel round trip | the same for every cell's value, formula and style | 29 workbooks | jade-core `crates/jade-xlsx-headless-editor/tests/round_trip_corpus.rs` |
 | PowerPoint round trip | the same for every shape's text and position, notes and media | 87 decks | jade-core `crates/jade-pptx-writer/tests/round_trip_corpus.rs` |
+| Rich slide objects | a table, a chart, SmartArt and a video keep every part through an edit and save, and draw the same | 2 tests | jade-core `crates/jade-pptx-writer/tests/rich_objects_round_trip.rs` |
+| Excel tables | structured references (`Table1[Amount]`, `[#Totals]`) recalculate when the table is edited | 2 tests | jade-core `crates/jade-xlsx-calc/tests/recalculates.rs`, `crates/jade-office-model/tests/tables_like_excel.rs` |
 | Word layout | pages compared against Word's own rendering | per fixture | jade-core CI `layout-compare` |
-| Typing like Excel | text typed into a cell and the value, format and display Excel makes of it; a misspelt function | 22 inputs + cases | `crates/jade-office-model/tests/typing_like_excel.rs` |
+| Typing like Excel | text typed into a cell and the value, format and display Excel makes of it; open parentheses closed; a misspelt function | 25 inputs + cases | `crates/jade-office-model/tests/typing_like_excel.rs` |
 | Clipboard like Excel | Excel's clipboard text in and out, quoted multi-line cells, CR LF | 2 tests | `crates/jade-office-model/tests/clipboard_like_excel.rs` |
 | Japanese functions | LENB, MIDB, FINDB, REPLACEB, ASC, JIS and the rest, typed into a cell | 11 cases | `crates/jade-office-model/tests/japanese_functions_like_excel.rs` |
 | Files people have | every fixture opens; damaged, protected, macro-enabled and template files say what they are and save as what they are | 3 suites | `crates/jade-office-model/tests/`, `crates/jade-web/tests/` |
-| Editing Word in the browser | caret, typing, IME, selection, arrows, clipboard, undo, save | 12 tests | `crates/jade-web/tests/edits_documents.rs` |
+| Editing Word in the browser | caret (on the line clicked, at a wrap too), typing, IME, selection, arrows, Home/End, clipboard, undo, save | 13 tests | `crates/jade-web/tests/edits_documents.rs` |
 
 ## What works
 
@@ -39,23 +41,24 @@ painter) and edits through the same cores.
 
 ## Short of a release
 
-1. **PowerPoint's evidence is narrow.** 87 decks round-trip, but 79 of them
-   are colour-transform variants; a release needs real decks with tables,
-   SmartArt, charts, placeholders and media.
-2. **A caret at a wrapped line's start is drawn at the end of the line
-   above.** Positions carry no affinity in the renderer; keyboard motions
-   keep to the right line, but the caret is drawn on the other one (both
-   shells).
-3. **A formula Excel would refuse is accepted.** `=SUM(` is stored and the
-   cell shows empty; Excel refuses it with a message.
-4. **Cut clears at once.** Excel moves the cells when they are pasted.
-5. **Functions the engine lacks** keep Excel's cached value in a saved file;
+1. **PowerPoint has no real decks with rich objects in its corpus.** Tables,
+   charts, SmartArt and video are checked on a deck built for the purpose
+   (they round-trip and draw); real decks from PowerPoint with them would
+   make that evidence stronger.
+2. **A formula Excel would refuse is accepted.** `=SUM(` or `=1+` is stored
+   and shows `#ERROR!`; Excel refuses it with a message. (Open parentheses
+   are closed as in Excel; the engine's parser accepts anything, so refusal
+   needs a check of its own.)
+3. **Cut clears at once.** Excel moves the cells when they are pasted.
+4. **Functions the engine lacks** keep Excel's cached value in a saved file;
    typed fresh, they show `#NAME?` until Excel recalculates the file.
-6. **The browser clipboard** is checked with dispatched paste events; the
+5. **The browser clipboard** is checked with dispatched paste events; the
    embedded test browser cannot read the system clipboard.
+6. **Implicit intersection and spill references** (`@A1`, `A1#`) typed in a
+   cell read `#ERROR!`.
 
-In flight: jade-core#35 (the round-trip corpus sizes above; on main the
-corpora are 137 documents, 22 workbooks and 4 decks).
+In flight: jade-core#41 (the rich slide objects above), jade-office#20
+(closing parentheses), #21 (the caret at a wrap, tables).
 
 ## Running the oracles
 
