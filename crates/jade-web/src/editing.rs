@@ -64,6 +64,8 @@ pub struct EditableDocument {
     pass_covers_whole_document: Rc<Cell<bool>>,
     /// See [`TinySkiaRenderHost::last_paintable_page`].
     last_paintable_page: Rc<Cell<usize>>,
+    /// See [`Self::set_dark_paper`].
+    dark_paper: Rc<Cell<bool>>,
     options: Options,
     page_height: f64,
     dirty: bool,
@@ -116,8 +118,14 @@ impl EditableDocument {
         if size != INITIAL_PAGE && size.0 > 1.0 && size.1 > 1.0 {
             opened = Self::render(&word_document, &options, size, scale, &fonts, &measurer)?;
         }
-        let (renderer, pages, rendered_pages, pass_covers_whole_document, last_paintable_page) =
-            opened;
+        let (
+            renderer,
+            pages,
+            rendered_pages,
+            pass_covers_whole_document,
+            last_paintable_page,
+            dark_paper,
+        ) = opened;
         let page_height = renderer.layout_page_size().1;
         Ok(Self {
             word_document,
@@ -131,6 +139,7 @@ impl EditableDocument {
             rendered_pages,
             pass_covers_whole_document,
             last_paintable_page,
+            dark_paper,
             options,
             page_height,
             dirty: false,
@@ -156,6 +165,7 @@ impl EditableDocument {
             Rc<Cell<usize>>,
             Rc<Cell<bool>>,
             Rc<Cell<usize>>,
+            Rc<Cell<bool>>,
         ),
         String,
     > {
@@ -166,6 +176,7 @@ impl EditableDocument {
         let rendered = Rc::clone(&host.rendered_pages);
         let whole = Rc::clone(&host.pass_covers_whole_document);
         let limit = Rc::clone(&host.last_paintable_page);
+        let dark = Rc::clone(&host.dark_paper);
         let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
             .map_err(|_| "renderer setup failed".to_string())?;
         renderer.sync_document_header_footer_stories(word_document);
@@ -190,7 +201,7 @@ impl EditableDocument {
             return Err(error);
         }
         renderer.clear_dirty_regions();
-        Ok((renderer, pages, rendered, whole, limit))
+        Ok((renderer, pages, rendered, whole, limit, dark))
     }
 
     // ---- pages --------------------------------------------------------------
@@ -884,6 +895,24 @@ impl EditableDocument {
             return Err(error);
         }
         Ok(())
+    }
+
+    /// Shows the pages on dark paper, or on the document's own, and repaints
+    /// them if that changed anything. Returns whether they were repainted.
+    ///
+    /// Only the pages on screen change: the document keeps its colours, and
+    /// [`Self::export_docx`] writes them.
+    pub fn set_dark_paper(&mut self, on: bool) -> Result<bool, String> {
+        if self.dark_paper.replace(on) == on {
+            return Ok(false);
+        }
+        // The whole pool: a surface reused when the document grows must not
+        // come back on the other paper.
+        for page in self.pages.borrow().iter() {
+            page.set_dark_paper(on);
+        }
+        self.repaint_all()?;
+        Ok(true)
     }
 
     /// Every page from scratch: undo can change content anywhere.
