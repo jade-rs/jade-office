@@ -577,14 +577,9 @@ impl DeckView {
 
     // ---- saving ----------------------------------------------------------
 
+    /// Saves over the file that was opened, as PowerPoint does.
     fn save(&mut self, cx: &mut Context<Self>) {
-        // Beside the original rather than over it, as the other views do.
-        let stem = self
-            .path
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "deck".to_string());
-        let target = self.path.with_file_name(format!("{stem}.edited.pptx"));
+        let target = self.path.clone();
         self.write_to(target, cx);
     }
 
@@ -611,13 +606,15 @@ impl DeckView {
 
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
         self.commit_text(cx);
-        self.status = SharedString::from(match std::fs::write(&target, self.deck.bytes()) {
-            Ok(()) => {
-                self.deck.save_bytes();
-                i18n::format("deck.saved", &[("name", &crate::shell::file_name(&target))])
-            }
-            Err(error) => i18n::format("deck.save_failed", &[("error", &error)]),
-        });
+        self.status = SharedString::from(
+            match crate::shell::write_in_place(&target, self.deck.bytes()) {
+                Ok(()) => {
+                    self.deck.save_bytes();
+                    i18n::format("deck.saved", &[("name", &crate::shell::file_name(&target))])
+                }
+                Err(error) => i18n::format("deck.save_failed", &[("error", &error)]),
+            },
+        );
         cx.notify();
     }
 
@@ -1504,6 +1501,42 @@ mod tests {
 
     /// With a text shape selected, Enter starts typing into it and Escape
     /// keeps what was typed.
+    #[gpui::test]
+    fn save_writes_the_file_that_was_opened(cx: &mut gpui::TestAppContext) {
+        let source = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../jade-core/public/fixtures/sample-deck.pptx"
+        ));
+        let path = crate::shell::scratch_copy(&source, "deck.pptm");
+        let (view, cx) = cx.add_window_view(|_window, cx| DeckView::open(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        let id = view.read_with(cx, |view, _| {
+            view.shapes
+                .iter()
+                .find(|shape| {
+                    view.deck
+                        .shape_text(0, shape.id)
+                        .is_some_and(|text| !text.is_empty())
+                })
+                .map(|shape| shape.id)
+                .expect("the first slide has a text shape")
+        });
+        view.update(cx, |view, cx| view.select(Some(id), cx));
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input(" saved");
+        cx.simulate_keystrokes("escape");
+        cx.dispatch_action(Save);
+        view.read_with(cx, |view, _| assert!(!view.deck.is_dirty()));
+        assert_eq!(crate::shell::siblings(&path), ["deck.pptm"]);
+        let deck = Deck::open(
+            &std::fs::read(&path).unwrap(),
+            crate::skia_backend().unwrap(),
+        )
+        .unwrap();
+        assert!(deck.shape_text(0, id).unwrap().ends_with(" saved"));
+    }
+
     #[gpui::test]
     fn typed_text_lands_in_the_shape(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_view(cx);

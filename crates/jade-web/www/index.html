@@ -47,7 +47,7 @@
       bytes(`samples/${name}`).then((data) => open_file(name, data)).catch(console.error);
     const picker = Object.assign(document.createElement("input"), {
       type: "file",
-      accept: ".docx,.xlsx,.pptx",
+      accept: ".docx,.docm,.dotx,.dotm,.xlsx,.xlsm,.xltx,.xltm,.pptx,.pptm,.potx,.potm,.ppsx,.ppsm",
       multiple: true,
     });
     picker.addEventListener("change", () => {

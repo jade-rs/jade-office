@@ -29,9 +29,9 @@ impl Kind {
     pub fn of(path: &Path) -> Option<Self> {
         let extension = path.extension()?.to_string_lossy().to_lowercase();
         match extension.as_str() {
-            "docx" | "docm" | "dotx" => Some(Kind::Document),
-            "xlsx" | "xlsm" | "xltx" => Some(Kind::Workbook),
-            "pptx" | "pptm" | "potx" | "ppsx" => Some(Kind::Deck),
+            "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
+            "xlsx" | "xlsm" | "xltx" | "xltm" => Some(Kind::Workbook),
+            "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
             _ => None,
         }
     }
@@ -228,6 +228,56 @@ pub mod recent {
             assert_eq!(paths[0], PathBuf::from("/19.docx"));
         }
     }
+}
+
+/// Writes `bytes` over `path` as one step: into a temporary file beside
+/// it, flushed to disk, then renamed over it. A save that fails part-way
+/// leaves the file as it was rather than half-written.
+pub fn write_in_place(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let directory = path.parent().unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let temporary = directory.join(format!(".{name}.jade-saving-{}", std::process::id()));
+    let result = (|| {
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        std::fs::remove_file(&temporary).ok();
+    }
+    result
+}
+
+/// A copy of `source` named `name` in a folder of its own, for a test that
+/// saves over what it opened.
+#[cfg(test)]
+pub fn scratch_copy(source: &Path, name: &str) -> PathBuf {
+    let directory = std::env::temp_dir().join(format!(
+        "jade-save-{}-{}",
+        std::process::id(),
+        name.replace('.', "-")
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join(name);
+    std::fs::copy(source, &path).unwrap();
+    path
+}
+
+/// The files beside `path`, by name.
+#[cfg(test)]
+pub fn siblings(path: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
 }
 
 #[cfg(test)]
