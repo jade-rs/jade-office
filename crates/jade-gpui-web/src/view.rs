@@ -399,6 +399,16 @@ impl DocView {
             Err(error) if error == jade_web::typing::FORMULA_PROBLEM => {
                 self.status = i18n::text("sheet.formula_problem").into();
             }
+            // An entry a data validation refuses: the rule's words, or
+            // Excel's.
+            Err(error) if jade_web::sheet::validation_refusal(&error).is_some() => {
+                let message = jade_web::sheet::validation_refusal(&error).unwrap_or_default();
+                self.status = if message.is_empty() {
+                    i18n::text("sheet.validation_refused").into()
+                } else {
+                    message.to_string().into()
+                };
+            }
             Err(error) => {
                 let key = if self.kind == Kind::Deck {
                     "deck.edit_failed"

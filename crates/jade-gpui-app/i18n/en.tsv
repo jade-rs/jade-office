@@ -137,6 +137,7 @@ sheet.menu.hide	Hide
 sheet.menu.unhide	Unhide
 sheet.menu.move_left	Move Left
 sheet.menu.move_right	Move Right
+sheet.validation_refused	This value doesn't match the data validation restrictions defined for this cell.
 sheet.menu.cut	Cut
 sheet.menu.copy	Copy
 sheet.menu.paste	Paste
