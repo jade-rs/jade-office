@@ -56,6 +56,10 @@ pub struct TinySkiaRenderHost {
     /// painters start pre-scaled, as a browser host scales a canvas backing
     /// and its transform; the renderer only reads it to align clips.
     scale: f64,
+    /// Whether the pages show the document on a dark page. Shared so the
+    /// document can switch it after the renderer has taken the host, and read
+    /// when a page is added so it matches the others.
+    pub(crate) dark_paper: Rc<Cell<bool>>,
 }
 
 impl TinySkiaRenderHost {
@@ -79,6 +83,7 @@ impl TinySkiaRenderHost {
             page_width,
             page_height,
             scale,
+            dark_paper: Rc::new(Cell::new(false)),
         })
     }
 
@@ -87,6 +92,7 @@ impl TinySkiaRenderHost {
             return;
         }
         let page = surface(&self.fonts, width, height, self.scale).expect("a page-sized surface");
+        page.set_dark_paper(self.dark_paper.get());
         if index == self.page_sizes.len() {
             self.pages.borrow_mut().push(page);
             self.page_sizes.push((width, height));
