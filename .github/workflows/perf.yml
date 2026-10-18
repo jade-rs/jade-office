@@ -76,13 +76,13 @@ jobs:
 
       - name: Measure
         run: |
-          head/scripts/perf/run-callgrind.sh head/crates/jade-office-perf/target/perf-ci/jade-office-perf perf/head $FIXTURES
+          bash head/scripts/perf/run-callgrind.sh head/crates/jade-office-perf/target/perf-ci/jade-office-perf perf/head $FIXTURES
           if [ "${{ steps.base.outcome }}" = "success" ]; then
             # The head's script, run from the base checkout so it reads the
             # base's fixtures.
             mkdir -p base/scripts/perf
             cp head/scripts/perf/run-callgrind.sh base/scripts/perf/
-            base/scripts/perf/run-callgrind.sh base/crates/jade-office-perf/target/perf-ci/jade-office-perf perf/base $FIXTURES
+            bash base/scripts/perf/run-callgrind.sh base/crates/jade-office-perf/target/perf-ci/jade-office-perf perf/base $FIXTURES
           fi
 
       - name: Report

@@ -142,6 +142,79 @@ impl Kind {
     }
 }
 
+/// Rows of device px a page image is cut into. An edit repaints a band of
+/// its page, and only the tiles the band crosses are read back and uploaded
+/// again: a whole page at 2x is megabytes, a tile a few hundred kilobytes.
+const TILE_ROWS: u32 = 256;
+
+/// A Word page's pixels, as a column of tiles.
+struct PageImage {
+    tiles: Vec<Arc<RenderImage>>,
+    size: (u32, u32),
+}
+
+impl PageImage {
+    fn tile(painter: &TinySkiaPainter, index: u32) -> Option<Arc<RenderImage>> {
+        let rows = index * TILE_ROWS..((index + 1) * TILE_ROWS).min(painter.height());
+        let height = rows.len() as u32;
+        let buffer = image::ImageBuffer::from_raw(
+            painter.width(),
+            height,
+            painter.bgra_premultiplied_rows(rows),
+        )?;
+        Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+    }
+
+    /// Every tile of `painter`, whose drawing so far is then taken as read.
+    fn new(painter: &TinySkiaPainter) -> Option<Self> {
+        painter.take_damaged_rows();
+        let size = (painter.width(), painter.height());
+        let tiles = (0..size.1.div_ceil(TILE_ROWS))
+            .map(|index| Self::tile(painter, index))
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self { tiles, size })
+    }
+
+    /// Re-reads the tiles drawing has touched since the last read. A page of
+    /// another size is read whole.
+    fn refresh(&mut self, painter: &TinySkiaPainter, retired: &mut Vec<Arc<RenderImage>>) {
+        if (painter.width(), painter.height()) != self.size {
+            if let Some(fresh) = Self::new(painter) {
+                retired.append(&mut self.tiles);
+                *self = fresh;
+            }
+            return;
+        }
+        let Some(rows) = painter.take_damaged_rows() else {
+            return;
+        };
+        for index in rows.start / TILE_ROWS..rows.end.div_ceil(TILE_ROWS) {
+            if let (Some(slot), Some(fresh)) = (
+                self.tiles.get_mut(index as usize),
+                Self::tile(painter, index),
+            ) {
+                retired.push(std::mem::replace(slot, fresh));
+            }
+        }
+    }
+
+    /// The tiles stacked to fill their parent.
+    fn element(&self) -> gpui::Div {
+        let height = self.size.1.max(1) as f32;
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .children(self.tiles.iter().enumerate().map(|(index, tile)| {
+                let rows = (self.size.1 - index as u32 * TILE_ROWS).min(TILE_ROWS);
+                img(tile.clone())
+                    .w_full()
+                    .h(gpui::relative(rows as f32 / height))
+                    .flex_none()
+            }))
+    }
+}
+
 fn image(painter: TinySkiaPainter) -> Option<Arc<RenderImage>> {
     let (width, height) = (painter.width(), painter.height());
     let buffer = image::ImageBuffer::from_raw(width, height, painter.bgra_premultiplied())?;
@@ -213,7 +286,7 @@ enum Document {
     /// a column of pages.
     Pages {
         document: Box<jade_web::editing::EditableDocument>,
-        pages: Vec<Arc<RenderImage>>,
+        pages: Vec<PageImage>,
         page_size: (f32, f32),
         scroll: ScrollHandle,
         current: usize,
@@ -294,7 +367,7 @@ impl DocView {
                 let (width, height) = opened.page_size();
                 Document::Pages {
                     pages: (0..opened.page_count())
-                        .filter_map(|index| opened.page(index).and_then(image))
+                        .filter_map(|index| opened.page(index).as_ref().and_then(PageImage::new))
                         .collect(),
                     document: Box::new(opened),
                     page_size: (width as f32, height as f32),
@@ -1674,9 +1747,9 @@ impl DocView {
 
     // ---- pages ------------------------------------------------------------
 
-    /// Re-images the pages the document repainted since it was last asked,
-    /// and only those: a keystroke usually repaints one, and a page's image
-    /// is megabytes to read back and upload.
+    /// Re-images what the document repainted since it was last asked: the
+    /// tiles of each page its drawing touched, read from the page itself, so
+    /// nothing drawn is missed and nothing undrawn is read.
     fn refresh_repainted(&mut self) {
         let Document::Pages {
             document, pages, ..
@@ -1684,23 +1757,22 @@ impl DocView {
         else {
             return;
         };
+        document.take_repainted_pages();
         let count = document.page_count();
-        for index in document.take_repainted_pages() {
-            let Some(fresh) = document.page(index).and_then(image) else {
+        for index in 0..count {
+            let Some(painter) = document.page(index) else {
                 continue;
             };
-            if index < pages.len() {
-                self.retired
-                    .push(std::mem::replace(&mut pages[index], fresh));
-            } else if index == pages.len() {
-                pages.push(fresh);
+            if let Some(page) = pages.get_mut(index) {
+                page.refresh(&painter, &mut self.retired);
+            } else if let Some(page) = PageImage::new(&painter) {
+                pages.push(page);
             }
         }
-        // A page the document grew into is a page it repainted; one it no
-        // longer has goes.
+        // A page the document no longer has goes.
         while pages.len() > count {
-            if let Some(old) = pages.pop() {
-                self.retired.push(old);
+            if let Some(mut old) = pages.pop() {
+                self.retired.append(&mut old.tiles);
             }
         }
     }
@@ -1943,7 +2015,7 @@ impl DocView {
                             } else {
                                 palette::border()
                             })
-                            .child(img(page.clone()).size_full()),
+                            .child(page.element()),
                     )
                     .on_click(cx.listener(move |view, _event, _window, cx| {
                         if let Document::Pages {
@@ -1981,7 +2053,7 @@ impl DocView {
                     .on_mouse_move(cx.listener(move |view, event, _window, cx| {
                         view.page_mouse_move(index, event, cx)
                     }))
-                    .child(img(page.clone()).w(px(width)).h(px(height)))
+                    .child(div().w(px(width)).h(px(height)).child(page.element()))
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
                             div()
