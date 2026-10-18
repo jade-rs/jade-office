@@ -17,7 +17,8 @@ use std::sync::Arc;
 use gpui::{
     canvas, div, img, point, prelude::*, px, rgb, size, svg, App, Bounds, Context,
     ElementInputHandler, EntityInputHandler, FocusHandle, Global, KeyDownEvent, MouseButton,
-    MouseDownEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
+    MouseDownEvent, MouseMoveEvent, Pixels, RenderImage, ScrollHandle, SharedString,
+    UTF16Selection, Window,
 };
 use jade_tiny_skia_painter::TinySkiaPainter;
 use jade_web::sheet::{format_number, reference_text, span, CellRef, MAX_COLUMN, MAX_ROW};
@@ -536,8 +537,7 @@ impl DocView {
                 } else {
                     document.redo()
                 };
-                // History can change any page.
-                self.refresh_pages(0);
+                self.refresh_repainted();
                 self.word_result(result.map(|_| ()), cx);
                 return;
             }
@@ -1701,14 +1701,14 @@ impl DocView {
         }
     }
 
-    /// The page the caret is on, where an edit's repaint starts.
-    fn caret_page(&self) -> usize {
-        match &self.document {
-            Document::Pages { document, .. } => document
-                .caret_rect()
-                .map(|caret| document.page_and_offset(caret.document_y).0)
-                .unwrap_or(0),
-            _ => 0,
+    /// Re-images the pages the document repainted since it was last asked.
+    fn refresh_repainted(&mut self) {
+        let first = match &mut self.document {
+            Document::Pages { document, .. } => document.take_repainted_from(),
+            _ => None,
+        };
+        if let Some(first) = first {
+            self.refresh_pages(first);
         }
     }
 
@@ -1718,13 +1718,44 @@ impl DocView {
         cx: &mut Context<Self>,
         edit: impl FnOnce(&mut jade_web::editing::EditableDocument) -> Result<(), String>,
     ) {
-        let first = self.caret_page().saturating_sub(1);
         let Document::Pages { document, .. } = &mut self.document else {
             return;
         };
         let result = edit(document);
-        self.refresh_pages(first);
+        self.refresh_repainted();
         self.word_result(result, cx);
+    }
+
+    /// Moves the caret or the selection without changing the text: no
+    /// status, nothing unsaved.
+    fn word_move(
+        &mut self,
+        cx: &mut Context<Self>,
+        motion: impl FnOnce(&mut jade_web::editing::EditableDocument) -> Result<(), String>,
+    ) {
+        let Document::Pages { document, .. } = &mut self.document else {
+            return;
+        };
+        if let Err(error) = motion(document) {
+            self.status = error.into();
+        }
+        self.refresh_repainted();
+        cx.notify();
+    }
+
+    /// The selected text onto the clipboard; with `cut`, out of the
+    /// document too.
+    fn word_copy(&mut self, cut: bool, cx: &mut Context<Self>) {
+        let Document::Pages { document, .. } = &self.document else {
+            return;
+        };
+        let Some(text) = document.selected_text() else {
+            return;
+        };
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        if cut {
+            self.word_edit(cx, |document| document.delete(true));
+        }
     }
 
     fn word_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
@@ -1736,7 +1767,25 @@ impl DocView {
         cx.notify();
     }
 
-    /// A press on page `index`: the caret goes to the text under it.
+    /// The text position under a point on page `index`.
+    fn page_position(&self, index: usize, position: gpui::Point<Pixels>) -> Option<(usize, usize)> {
+        let Document::Pages {
+            document,
+            page_bounds,
+            ..
+        } = &self.document
+        else {
+            return None;
+        };
+        let bounds = page_bounds.borrow().get(index).copied().flatten()?;
+        let zoom = self.shown_zoom.max(0.01);
+        let x = f64::from((position.x - bounds.origin.x) / zoom);
+        let y = f64::from((position.y - bounds.origin.y) / zoom);
+        document.position_at(x, document.document_y(index, y))
+    }
+
+    /// A press on page `index`: the caret goes to the text under it, or with
+    /// Shift the selection reaches there.
     fn page_mouse_down(
         &mut self,
         index: usize,
@@ -1745,74 +1794,85 @@ impl DocView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus, cx);
-        let zoom = self.shown_zoom.max(0.01);
-        let Document::Pages {
-            document,
-            page_bounds,
-            ..
-        } = &mut self.document
-        else {
+        let Some(target) = self.page_position(index, event.position) else {
             return;
         };
-        let Some(bounds) = page_bounds.borrow().get(index).copied().flatten() else {
-            return;
-        };
-        if let Some((paragraph, _, _)) = document.composition() {
-            let _ = paragraph;
-            return;
-        }
-        let x = f64::from((event.position.x - bounds.origin.x) / zoom);
-        let y = f64::from((event.position.y - bounds.origin.y) / zoom);
-        let document_y = document.document_y(index, y);
-        if let Some((paragraph, offset)) = document.position_at(x, document_y) {
-            document.place_caret(paragraph, offset);
-        }
-        cx.notify();
+        let extend = event.modifiers.shift;
+        self.word_move(cx, |document| {
+            // Mid-composition the text under the pointer is the IME's.
+            if document.composition().is_some() {
+                return Ok(());
+            }
+            match (extend, document.selection(), document.caret()) {
+                (true, Some((anchor, _)), _) | (true, None, Some(anchor)) => {
+                    document.select(anchor, target)
+                }
+                _ => {
+                    document.place_caret(target.0, target.1);
+                    Ok(())
+                }
+            }
+        });
     }
 
-    /// Keys the Word view answers: deleting, splitting, moving by a
-    /// character. Mid-composition they are the IME's.
+    /// A drag on page `index` selects from where it was pressed.
+    fn page_mouse_move(&mut self, index: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if event.pressed_button != Some(MouseButton::Left) {
+            return;
+        }
+        let Some(target) = self.page_position(index, event.position) else {
+            return;
+        };
+        let Document::Pages { document, .. } = &self.document else {
+            return;
+        };
+        if document.composition().is_some() {
+            return;
+        }
+        let (anchor, focus) = match (document.selection(), document.caret()) {
+            (Some(selection), _) => selection,
+            (None, Some(caret)) => (caret, caret),
+            _ => return,
+        };
+        if focus != target {
+            self.word_move(cx, |document| document.select(anchor, target));
+        }
+    }
+
+    /// Keys the Word view answers: deleting, splitting, and moving the caret
+    /// — Shift extending the selection. Mid-composition they are the IME's.
     fn pages_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        use jade_web::editing::Motion;
         let key = event.keystroke.key.as_str();
+        let extend = event.keystroke.modifiers.shift;
         let Document::Pages { document, .. } = &mut self.document else {
             return false;
         };
         if document.composition().is_some() || document.caret().is_none() {
             return false;
         }
-        match key {
-            "backspace" => self.word_edit(cx, |document| document.delete(true)),
-            "delete" => self.word_edit(cx, |document| document.delete(false)),
-            "enter" => self.word_edit(cx, |document| document.insert_paragraph_break()),
-            "left" | "right" => {
-                let Some((paragraph, offset)) = document.caret() else {
-                    return false;
-                };
-                let text = document.paragraph_text(paragraph).unwrap_or_default();
-                let target = if key == "left" {
-                    match text[..offset.min(text.len())].chars().next_back() {
-                        Some(c) => (paragraph, offset - c.len_utf8()),
-                        None if paragraph > 0 => (
-                            paragraph - 1,
-                            document
-                                .paragraph_text(paragraph - 1)
-                                .unwrap_or_default()
-                                .len(),
-                        ),
-                        None => (paragraph, offset),
-                    }
-                } else {
-                    match text.get(offset..).and_then(|rest| rest.chars().next()) {
-                        Some(c) => (paragraph, offset + c.len_utf8()),
-                        None if paragraph + 1 < document.paragraph_count() => (paragraph + 1, 0),
-                        None => (paragraph, offset),
-                    }
-                };
-                document.place_caret(target.0, target.1);
-                cx.notify();
+        let motion = match key {
+            "backspace" => {
+                self.word_edit(cx, |document| document.delete(true));
+                return true;
             }
+            "delete" => {
+                self.word_edit(cx, |document| document.delete(false));
+                return true;
+            }
+            "enter" => {
+                self.word_edit(cx, |document| document.insert_paragraph_break());
+                return true;
+            }
+            "left" => Motion::Left,
+            "right" => Motion::Right,
+            "up" => Motion::Up,
+            "down" => Motion::Down,
+            "home" => Motion::LineStart,
+            "end" => Motion::LineEnd,
             _ => return false,
-        }
+        };
+        self.word_move(cx, |document| document.move_caret(motion, extend));
         true
     }
 
@@ -1925,6 +1985,9 @@ impl DocView {
                             view.page_mouse_down(index, event, window, cx)
                         }),
                     )
+                    .on_mouse_move(cx.listener(move |view, event, _window, cx| {
+                        view.page_mouse_move(index, event, cx)
+                    }))
                     .child(img(page.clone()).w(px(width)).h(px(height)))
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
@@ -2035,10 +2098,16 @@ impl DocView {
         let key = event.keystroke.key.as_str();
         // ⌘ on a Mac, Ctrl elsewhere.
         if modifiers.platform || modifiers.control {
+            let pages = matches!(self.document, Document::Pages { .. });
             match key {
                 "z" => self.step_history(!modifiers.shift, cx),
                 "y" => self.step_history(false, cx),
                 "s" => self.save(cx),
+                "a" if pages => self.word_move(cx, |document| document.select_all()),
+                "c" if pages => self.word_copy(false, cx),
+                "x" if pages => self.word_copy(true, cx),
+                // ⌘V is left to the browser, whose paste event brings the
+                // clipboard to the input handler.
                 _ => return,
             }
             cx.stop_propagation();
@@ -2251,6 +2320,18 @@ impl EntityInputHandler for DocView {
             } => edit.marked = None,
             _ => {}
         }
+    }
+
+    fn paste(&mut self, item: gpui::ClipboardItem, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(text) = item.text() else {
+            return;
+        };
+        if matches!(self.document, Document::Pages { .. }) {
+            // Lines become paragraphs, as they were when copied out.
+            self.word_edit(cx, move |document| document.paste(&text));
+            return;
+        }
+        self.replace_text_in_range(None, &text, window, cx);
     }
 
     fn replace_text_in_range(
