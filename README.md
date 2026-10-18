@@ -43,7 +43,7 @@ The engine's renderers — documents, slides and sheets — also run as WebAssem
 python3 -m http.server 8765 --directory crates/jade-web/www
 ```
 
-Then open http://localhost:8765/ — the gpui shell, laid out like the native app (the same title bar, explorer, tabs, slide and page lists, formula bar and status bar, in the same palette, words and icons: it compiles in `jade-gpui-app`'s i18n tables and icon set). The explorer lists the bundled samples; open your own with the + button, ⌘O or by dropping files on the page; `?open=contract.docx` opens one at start. Word documents are view-only in the browser so far. http://localhost:8765/canvas.html is the plain canvas page over the wasm-bindgen API.
+Then open http://localhost:8765/ — the gpui shell, laid out like the native app (the same title bar, explorer, tabs, slide and page lists, formula bar and status bar, in the same palette, words and icons: it compiles in `jade-gpui-app`'s i18n tables and icon set). The explorer lists the bundled samples; open your own with the + button, ⌘O or by dropping files on the page; `?open=contract.docx` opens one at start. Word documents edit as in the native app: click to place the caret, type (IMEs included), Backspace, Delete and Enter, undo and redo, and save the edited .docx. http://localhost:8765/canvas.html is the plain canvas page over the wasm-bindgen API.
 
 ## License
 

@@ -16,6 +16,7 @@ pub use jade_office_model::tiny::TinySkiaBackend;
 pub use jade_office_model::{deck, sheet};
 
 pub mod document;
+pub mod editing;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
