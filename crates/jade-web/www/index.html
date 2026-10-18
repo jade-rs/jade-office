@@ -3,74 +3,86 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>jade web prototype</title>
+  <title>jade office</title>
   <style>
-    :root {
-      color-scheme: dark light;
-      --bg: #09090b; --panel: #0d0d0f; --border: #27272a; --text: #e4e4e7;
-      --dim: #a1a1aa; --accent: #818cf8; --canvas: #141416;
-      --sidebar: #0a0a0c; --hover: #18181b; --shadow: #0008;
-    }
-    /* The native app's light palette; pages, slides and cells stay white. */
+    :root { color-scheme: dark light; }
+    html, body { margin: 0; height: 100%; background: #09090b; color: #a1a1aa;
+      font: 13px -apple-system, "Hiragino Sans", sans-serif; overflow: hidden; }
     @media (prefers-color-scheme: light) {
-      :root {
-        --bg: #ffffff; --panel: #ffffff; --border: #e2e8f0; --text: #1a1a2e;
-        --dim: #64748b; --accent: #6366f1; --canvas: #eef0f4;
-        --sidebar: #f8fafc; --hover: #f1f5f9; --shadow: #0f172a29;
-      }
+      html, body { background: #ffffff; color: #64748b; }
     }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; height: 100vh; display: flex; flex-direction: column;
-      background: var(--bg); color: var(--text);
-      font: 13px -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
-    }
-    header {
-      display: flex; align-items: center; gap: 12px; padding: 8px 14px;
-      background: var(--panel); border-bottom: 1px solid var(--border);
-    }
-    header .logo {
-      width: 22px; height: 22px; border-radius: 6px;
-      background: linear-gradient(135deg, #6366f1, #ec4899);
-    }
-    header button, header label {
-      background: transparent; color: var(--text); border: 1px solid var(--border);
-      border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer;
-    }
-    header button:hover, header label:hover { background: var(--hover); }
-    #status { color: var(--dim); margin-left: auto; }
-    main { flex: 1; display: flex; min-height: 0; }
-    #thumbs {
-      width: 190px; overflow-y: auto; padding: 8px; border-right: 1px solid var(--border);
-      background: var(--sidebar); display: none;
-    }
-    #thumbs canvas { width: 100%; display: block; margin-bottom: 8px; border: 2px solid var(--border); cursor: pointer; }
-    #thumbs canvas.active { border-color: var(--accent); }
-    #stage { flex: 1; overflow: auto; background: var(--canvas); position: relative; }
-    #stage canvas.slide { display: block; margin: 24px auto; box-shadow: 0 8px 24px var(--shadow); }
-    #sheet-spacer { position: absolute; top: 0; left: 0; pointer-events: none; }
-    #sheet { position: sticky; top: 0; left: 0; display: block; }
-    #tabs { display: none; gap: 2px; padding: 0 8px; border-top: 1px solid var(--border); background: var(--panel); }
-    #tabs button { background: none; border: 0; color: var(--dim); padding: 6px 12px; font: inherit; cursor: pointer; }
-    #tabs button.active { color: var(--accent); box-shadow: inset 0 -2px var(--accent); }
+    #loading { position: fixed; inset: 0; display: grid; place-items: center; }
   </style>
 </head>
 <body>
-  <header>
-    <div class="logo"></div>
-    <strong>jade</strong>
-    <label>ファイルを開く…<input id="file" type="file" accept=".docx,.pptx,.xlsx" hidden></label>
-    <button data-sample="contract.docx">contract.docx</button>
-    <button data-sample="sample-deck.pptx">sample-deck.pptx</button>
-    <button data-sample="themed-deck.pptx">themed-deck.pptx</button>
-    <button data-sample="charts-workbook.xlsx">charts-workbook.xlsx</button>
-    <span id="status">wasm を読み込み中…</span>
-  </header>
-  <main>
-    <div id="thumbs"></div>
-    <div id="stage"></div>
-  </main>
-  <div id="tabs"></div>
-  <script type="module" src="main.js"></script>
+  <div id="loading">gpui を起動中…</div>
+  <script type="module">
+    // The gpui app is the whole page. It lists SAMPLES in its explorer and
+    // asks for files through the hooks below; every file comes back to it
+    // through `open_file`. ?open=<sample> opens one at start.
+    import init, { run, open_file } from "./gpui-pkg/jade_gpui_web.js";
+    const SAMPLES = [
+      "contract.docx",
+      "char-effects.docx",
+      "charts-workbook.xlsx",
+      "grid-operations-workbook.xlsx",
+      "sample-deck.pptx",
+      "themed-deck.pptx",
+    ];
+    const bytes = (url) => fetch(url).then((r) => {
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
+      return r.arrayBuffer();
+    }).then((b) => new Uint8Array(b));
+    const openFile = (file) =>
+      file.arrayBuffer().then((buffer) => open_file(file.name, new Uint8Array(buffer)));
+
+    // Save hands the bytes back; the page offers them as a download.
+    const save = (fileName, data) => {
+      const url = URL.createObjectURL(new Blob([data]));
+      const link = Object.assign(document.createElement("a"), { href: url, download: fileName });
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    const load = (name) =>
+      bytes(`samples/${name}`).then((data) => open_file(name, data)).catch(console.error);
+    const picker = Object.assign(document.createElement("input"), {
+      type: "file",
+      accept: ".docx,.xlsx,.pptx",
+      multiple: true,
+    });
+    picker.addEventListener("change", () => {
+      for (const file of picker.files) openFile(file);
+      picker.value = "";
+    });
+    const pick = () => picker.click();
+    // Files dropped anywhere on the page open as tabs.
+    addEventListener("dragover", (event) => event.preventDefault());
+    addEventListener("drop", (event) => {
+      event.preventDefault();
+      for (const file of event.dataTransfer?.files ?? []) openFile(file);
+    });
+
+    try {
+      await init();
+      const [regular, bold] = await Promise.all([
+        bytes("fonts/NotoSansJP-Regular.ttf"),
+        bytes("fonts/NotoSansJP-Bold.ttf"),
+      ]);
+      run(
+        regular, bold,
+        window.devicePixelRatio || 1,
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        navigator.language || "ja",
+        SAMPLES,
+        save, load, pick,
+      );
+      document.getElementById("loading").remove();
+      const name = new URLSearchParams(location.search).get("open");
+      if (name) load(name);
+    } catch (error) {
+      document.getElementById("loading").textContent = `起動に失敗: ${error}`;
+      console.error(error);
+    }
+  </script>
 </body>
 </html>
