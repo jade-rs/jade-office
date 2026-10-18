@@ -157,12 +157,16 @@ impl CanvasRenderHost for TinySkiaRenderHost {
         // Keyed by a hash of the URI: the same picture on every page decodes
         // once per surface rather than per draw.
         let key = format!("docx-image-{:016x}", fnv1a(data_uri.as_bytes()));
-        if !self
-            .painter()
-            .draw_encoded_image_rect(&key, &bytes, source, destination)
-        {
-            self.render_error
-                .replace(Some("could not decode embedded image".to_string()));
+        let painter = self.painter();
+        if !painter.draw_encoded_image_rect(&key, &bytes, source, destination) {
+            // A picture in a format this build cannot draw costs that
+            // picture, not the document: an empty frame where it sits, as
+            // Word shows one it cannot display.
+            painter.save();
+            painter.set_stroke_style_str("#c0c0c0");
+            painter.set_line_width(1.0);
+            painter.stroke_rect(x, y, width, height);
+            painter.restore();
         }
         true
     }

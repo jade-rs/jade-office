@@ -51,10 +51,21 @@ struct Face {
 /// only reads the table directory, and keeping bytes rather than a borrowed
 /// `Face` keeps this `'static` without leaking. Glyph outlines, the expensive
 /// part, are cached here per face and glyph.
+/// A face's bytes as the SVG font database takes them, shared, not copied.
+struct SharedBytes(Arc<Vec<u8>>);
+
+impl AsRef<[u8]> for SharedBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 #[derive(Default)]
 pub struct FontBook {
     faces: Vec<Face>,
     outlines: RefCell<HashMap<(usize, u16), Option<Path>>>,
+    /// The faces as a font database for SVG text, built on first use.
+    svg_fonts: RefCell<Option<Arc<resvg::usvg::fontdb::Database>>>,
 }
 
 impl FontBook {
@@ -83,6 +94,32 @@ impl FontBook {
             descender,
         });
         Ok(())
+    }
+
+    /// The registered faces as SVG text sees them. Every generic family — the
+    /// fallback for a family nobody registered, such as an equation's
+    /// Cambria Math — is the first face.
+    fn svg_fonts(&self) -> Arc<resvg::usvg::fontdb::Database> {
+        if let Some(database) = self.svg_fonts.borrow().as_ref() {
+            return Arc::clone(database);
+        }
+        let mut database = resvg::usvg::fontdb::Database::new();
+        for face in &self.faces {
+            database.load_font_source(resvg::usvg::fontdb::Source::Binary(Arc::new(SharedBytes(
+                Arc::clone(&face.data),
+            ))));
+        }
+        if let Some(first) = self.faces.first() {
+            let family = first.family.clone();
+            database.set_serif_family(family.clone());
+            database.set_sans_serif_family(family.clone());
+            database.set_monospace_family(family.clone());
+            database.set_cursive_family(family.clone());
+            database.set_fantasy_family(family);
+        }
+        let database = Arc::new(database);
+        *self.svg_fonts.borrow_mut() = Some(Arc::clone(&database));
+        database
     }
 
     fn with_face<R>(&self, index: usize, f: impl FnOnce(&ttf_parser::Face<'_>) -> R) -> Option<R> {
@@ -169,6 +206,52 @@ impl ttf_parser::OutlineBuilder for OutlineBuilder {
     }
     fn close(&mut self) {
         self.0.close();
+    }
+}
+
+/// One glyph to draw.
+struct Glyph {
+    id: ttf_parser::GlyphId,
+    advance: f32,
+    bold: bool,
+    italic: bool,
+}
+
+/// A Mathematical Alphanumeric Symbol (U+1D400–U+1D7FF, and ℎ) as its base
+/// Latin letter or digit, with whether its style is bold and italic.
+/// Word's equations write their letters this way; Cambria Math has them, the
+/// faces a page usually brings do not. Greek and the styles with no plain
+/// counterpart (script, fraktur, double-struck) fall back to the plain letter.
+fn math_letter(ch: char) -> Option<(char, bool, bool)> {
+    let code = ch as u32;
+    match code {
+        0x210E => Some(('h', false, true)),
+        0x1D400..=0x1D6A3 => {
+            let offset = code - 0x1D400;
+            let index = offset % 52;
+            let base = if index < 26 {
+                b'A' + index as u8
+            } else {
+                b'a' + (index - 26) as u8
+            };
+            // Bold, italic, bold italic, script, bold script, fraktur,
+            // double-struck, bold fraktur, sans, sans bold, sans italic,
+            // sans bold italic, monospace.
+            let (bold, italic) = match offset / 52 {
+                0 | 4 | 7 | 9 => (true, false),
+                1 | 10 => (false, true),
+                2 | 11 => (true, true),
+                _ => (false, false),
+            };
+            Some((base as char, bold, italic))
+        }
+        0x1D7CE..=0x1D7FF => {
+            let offset = code - 0x1D7CE;
+            // Bold, double-struck, sans, sans bold, monospace.
+            let bold = matches!(offset / 10, 0 | 3);
+            Some(((b'0' + (offset % 10) as u8) as char, bold, false))
+        }
+        _ => None,
     }
 }
 
@@ -324,6 +407,9 @@ struct Inner {
     /// Decoded pictures by the caller's content key; `None` for bytes that
     /// would not decode, so they are not retried every frame.
     images: RefCell<HashMap<String, Option<Rc<Pixmap>>>>,
+    /// Parsed SVG pictures by content key, likewise; rasterized per draw at
+    /// the size they land at.
+    svgs: RefCell<HashMap<String, Option<Rc<resvg::usvg::Tree>>>>,
 }
 
 /// A raster surface with a canvas-style painter on it. Cheap to clone: the
@@ -347,6 +433,7 @@ impl TinySkiaPainter {
                 stack: RefCell::new(Vec::new()),
                 path: RefCell::new(PathBuilder::new()),
                 images: RefCell::new(HashMap::new()),
+                svgs: RefCell::new(HashMap::new()),
             }),
         })
     }
@@ -391,7 +478,9 @@ impl TinySkiaPainter {
         source: Option<[f64; 4]>,
         destination: ImageRect,
     ) -> bool {
-        let image = {
+        let image = if is_svg(bytes) {
+            self.rasterize_svg(key, bytes, source, &destination)
+        } else {
             let mut images = self.inner.images.borrow_mut();
             images
                 .entry(key.to_string())
@@ -521,6 +610,25 @@ impl TinySkiaPainter {
         );
     }
 
+    /// A synthetic bold: the glyph outlined once more, a thirtieth of an em
+    /// wide. `units_per_em` is the outline's em in its own units.
+    fn embolden(&self, path: &Path, color: Color, transform: Transform, units_per_em: f32) {
+        let paint = self.paint(color);
+        let stroke = Stroke {
+            width: units_per_em / 30.0,
+            line_join: LineJoin::Round,
+            ..Stroke::default()
+        };
+        let clip = self.inner.state.borrow().clip.clone();
+        self.inner.pixmap.borrow_mut().stroke_path(
+            path,
+            &paint,
+            &stroke,
+            transform,
+            clip.as_deref(),
+        );
+    }
+
     /// Ascent and descent of `font` at `size` px, both positive.
     fn font_extent(&self, font: usize, size: f32) -> (f32, f32) {
         match self.inner.fonts.faces.get(font) {
@@ -544,6 +652,15 @@ impl TinySkiaPainter {
 
     /// Glyph ids and advances (px) for `text` in `font` at `size`.
     fn glyphs(&self, font: usize, size: f32, text: &str) -> Vec<(ttf_parser::GlyphId, f32)> {
+        self.styled_glyphs(font, size, text)
+            .into_iter()
+            .map(|glyph| (glyph.id, glyph.advance))
+            .collect()
+    }
+
+    /// [`Self::glyphs`], with how each is drawn: a math letter the face
+    /// lacks is its base letter, slanted or emboldened as its style says.
+    fn styled_glyphs(&self, font: usize, size: f32, text: &str) -> Vec<Glyph> {
         let units = self
             .inner
             .fonts
@@ -556,9 +673,24 @@ impl TinySkiaPainter {
             .with_face(font, |face| {
                 text.chars()
                     .map(|ch| {
-                        let glyph = face.glyph_index(ch).unwrap_or(ttf_parser::GlyphId(0));
-                        let advance = f32::from(face.glyph_hor_advance(glyph).unwrap_or(0));
-                        (glyph, advance / units * size)
+                        let (id, bold, italic) = match face.glyph_index(ch) {
+                            Some(id) => (id, false, false),
+                            None => match math_letter(ch) {
+                                Some((base, bold, italic)) => (
+                                    face.glyph_index(base).unwrap_or(ttf_parser::GlyphId(0)),
+                                    bold,
+                                    italic,
+                                ),
+                                None => (ttf_parser::GlyphId(0), false, false),
+                            },
+                        };
+                        let advance = f32::from(face.glyph_hor_advance(id).unwrap_or(0));
+                        Glyph {
+                            id,
+                            advance: advance / units * size,
+                            bold,
+                            italic,
+                        }
                     })
                     .collect()
             })
@@ -590,19 +722,24 @@ impl TinySkiaPainter {
             .unwrap_or(1000.0);
         let scale = size / units;
         let mut pen = x as f32;
-        for (glyph, advance) in self.glyphs(font, size, text) {
-            if let Some(outline) = self.inner.fonts.outline(font, glyph) {
-                // Font units, y up → px at the pen, y down.
+        for glyph in self.styled_glyphs(font, size, text) {
+            if let Some(outline) = self.inner.fonts.outline(font, glyph.id) {
+                // Font units, y up → px at the pen, y down; a synthetic
+                // italic leans 12° as the letter rises.
+                let slant = if glyph.italic { 0.21 * scale } else { 0.0 };
                 let glyph_transform = transform.pre_concat(Transform::from_row(
-                    scale, 0.0, 0.0, -scale, pen, baseline_y,
+                    scale, 0.0, slant, -scale, pen, baseline_y,
                 ));
                 if stroke {
                     self.stroke_path_with(&outline, color, glyph_transform);
                 } else {
                     self.fill_path_with(&outline, color, glyph_transform);
+                    if glyph.bold {
+                        self.embolden(&outline, color, glyph_transform, size / scale);
+                    }
                 }
             }
-            pen += advance;
+            pen += glyph.advance;
         }
     }
 
@@ -694,6 +831,74 @@ fn full_mask(width: u32, height: u32) -> Mask {
 }
 
 /// Decodes PNG, JPEG, GIF or BMP bytes to a premultiplied pixmap.
+/// Whether `bytes` are an SVG document rather than a raster image.
+fn is_svg(bytes: &[u8]) -> bool {
+    let head = &bytes[..bytes.len().min(1024)];
+    let text = String::from_utf8_lossy(head);
+    let text = text.trim_start_matches('\u{feff}').trim_start();
+    (text.starts_with("<?xml") || text.starts_with("<svg") || text.starts_with("<!--"))
+        && text.contains("<svg")
+}
+
+impl TinySkiaPainter {
+    /// The SVG picture under `key` rendered at the device size `destination`
+    /// lands at (so it stays sharp at any zoom), whole, for the raster path
+    /// to crop and place.
+    fn rasterize_svg(
+        &self,
+        key: &str,
+        bytes: &[u8],
+        source: Option<[f64; 4]>,
+        destination: &ImageRect,
+    ) -> Option<Rc<Pixmap>> {
+        let tree = {
+            let mut svgs = self.inner.svgs.borrow_mut();
+            svgs.entry(key.to_string())
+                .or_insert_with(|| {
+                    let mut options = resvg::usvg::Options {
+                        font_family: self
+                            .inner
+                            .fonts
+                            .faces
+                            .first()
+                            .map(|face| face.family.clone())
+                            .unwrap_or_default(),
+                        ..Default::default()
+                    };
+                    options.fontdb = self.inner.fonts.svg_fonts();
+                    resvg::usvg::Tree::from_data(bytes, &options)
+                        .ok()
+                        .map(Rc::new)
+                })
+                .clone()?
+        };
+        let transform = self.inner.state.borrow().transform;
+        let device_x =
+            f64::from((transform.sx * transform.sx + transform.ky * transform.ky).sqrt());
+        let device_y =
+            f64::from((transform.kx * transform.kx + transform.sy * transform.sy).sqrt());
+        let [_, _, sw, sh] = source.unwrap_or([0.0, 0.0, 1.0, 1.0]);
+        const LIMIT: f64 = 8192.0;
+        let width = (destination.width * device_x / sw.max(1e-6))
+            .ceil()
+            .clamp(1.0, LIMIT);
+        let height = (destination.height * device_y / sh.max(1e-6))
+            .ceil()
+            .clamp(1.0, LIMIT);
+        let mut pixmap = Pixmap::new(width as u32, height as u32)?;
+        let size = tree.size();
+        resvg::render(
+            &tree,
+            Transform::from_scale(
+                (width / f64::from(size.width())) as f32,
+                (height / f64::from(size.height())) as f32,
+            ),
+            &mut pixmap.as_mut(),
+        );
+        Some(Rc::new(pixmap))
+    }
+}
+
 fn decode(bytes: &[u8]) -> Option<Pixmap> {
     let image = image::load_from_memory(bytes).ok()?.to_rgba8();
     let (width, height) = image.dimensions();
@@ -1086,6 +1291,79 @@ mod tests {
             data[index + 2],
             data[index + 3],
         ]
+    }
+
+    /// Word converts WMF/EMF pictures (old equations among them) to SVG; the
+    /// painter draws them as vectors at the size they land at, text in a
+    /// font the page does not have falling back to the registered face.
+    #[test]
+    fn svg_pictures_draw_at_their_destination_with_their_text() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50">
+            <rect x="0" y="0" width="50" height="50" fill="#ff0000"/>
+            <text x="55" y="40" font-family="Cambria Math" font-size="40" fill="#000000">x</text>
+        </svg>"##;
+        let painter = TinySkiaPainter::new(240, 120, fonts()).unwrap();
+        painter.clear_rect(0.0, 0.0, 240.0, 120.0);
+        assert!(painter.draw_encoded_image_rect(
+            "svg",
+            svg,
+            None,
+            ImageRect {
+                x: 20.0,
+                y: 10.0,
+                width: 200.0,
+                height: 100.0,
+            },
+        ));
+        // The rectangle is the left half of the destination, scaled 2×.
+        assert_eq!(pixel(&painter, 60, 60), [255, 0, 0, 255]);
+        assert_eq!(pixel(&painter, 10, 60), [255, 255, 255, 255]);
+        // The glyph lands in the right half.
+        let data = painter.rgba_premultiplied();
+        let ink = (120..220)
+            .flat_map(|x| (10..110).map(move |y| (x, y)))
+            .filter(|&(x, y)| data[((y * 240 + x) * 4) as usize] < 128)
+            .count();
+        assert!(ink > 50, "the text drew {ink} dark pixels");
+    }
+
+    fn dark_pixels(painter: &TinySkiaPainter) -> usize {
+        painter
+            .rgba_premultiplied()
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] < 128)
+            .count()
+    }
+
+    /// Word's equations write letters as Mathematical Alphanumeric Symbols
+    /// (𝑃 for an italic P); a face without them draws the base letter,
+    /// slanted for the italic styles, rather than a missing-glyph box.
+    #[test]
+    fn math_letters_a_face_lacks_draw_as_their_base_letters() {
+        let draw = |text: &str| {
+            let painter = TinySkiaPainter::new(200, 60, fonts()).unwrap();
+            painter.clear_rect(0.0, 0.0, 200.0, 60.0);
+            painter.set_font("40px 'Noto Sans JP'");
+            painter.set_fill_style_str("#000000");
+            painter.fill_text(text, 10.0, 45.0).unwrap();
+            painter
+        };
+        let plain = dark_pixels(&draw("Pab"));
+        let italic = draw("\u{1D443}\u{1D44E}\u{1D44F}");
+        let ink = dark_pixels(&italic);
+        assert!(plain > 200);
+        // Same letters, slanted: about the same ink, not three boxes.
+        assert!(
+            (ink as f64 - plain as f64).abs() < plain as f64 * 0.25,
+            "plain {plain}, italic {ink}"
+        );
+        assert_eq!(
+            italic.measure_text_width("\u{1D443}").unwrap(),
+            draw("P").measure_text_width("P").unwrap()
+        );
+        assert_eq!(math_letter('\u{1D7D0}'), Some(('2', true, false)));
+        assert_eq!(math_letter('\u{210E}'), Some(('h', false, true)));
+        assert_eq!(math_letter('P'), None);
     }
 
     #[test]
