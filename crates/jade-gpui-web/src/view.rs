@@ -21,9 +21,12 @@ use gpui::{
     UTF16Selection, Window,
 };
 use jade_tiny_skia_painter::TinySkiaPainter;
-use jade_web::sheet::{format_number, reference_text, span, CellRef, MAX_COLUMN, MAX_ROW};
+use jade_web::sheet::CellRef;
+use jade_web::text::{byte_to_utf16, utf16_to_byte, TextEdit};
 
 use crate::{i18n, palette, Fonts, Host, UI_FONT};
+
+mod sheet;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -148,66 +151,12 @@ fn image(painter: TinySkiaPainter) -> Option<Arc<RenderImage>> {
     Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
 }
 
-/// UTF-16 offset → byte offset in `text`, clamped to its end.
-fn utf16_to_byte(text: &str, offset: usize) -> usize {
-    let mut units = 0;
-    for (byte, ch) in text.char_indices() {
-        if units >= offset {
-            return byte;
-        }
-        units += ch.len_utf16();
-    }
-    text.len()
-}
-
-fn byte_to_utf16(text: &str, byte: usize) -> usize {
-    text[..byte.min(text.len())].encode_utf16().count()
-}
-
-/// Text being typed: into a cell or into a shape.
-struct TextEdit {
-    text: String,
-    /// The IME's composition, as a byte range of `text`.
-    marked: Option<Range<usize>>,
-}
-
-impl TextEdit {
-    fn new(text: String) -> Self {
-        Self { text, marked: None }
-    }
-
-    /// Replaces a UTF-16 range — or the composition, or nothing at the end —
-    /// with `text`, marking it as the composition when `mark` is set.
-    fn replace(&mut self, range: Option<Range<usize>>, text: &str, mark: bool) {
-        let bytes = match range {
-            Some(range) => {
-                utf16_to_byte(&self.text, range.start)..utf16_to_byte(&self.text, range.end)
-            }
-            None => self
-                .marked
-                .clone()
-                .unwrap_or(self.text.len()..self.text.len()),
-        };
-        let start = bytes.start;
-        self.text.replace_range(bytes, text);
-        self.marked = (mark && !text.is_empty()).then(|| start..start + text.len());
-    }
-}
-
-/// A sheet viewport's pixels and what they were painted for.
-struct PaintedSheet {
-    scroll: (f32, f32),
-    device: (u32, u32),
-    zoom: f32,
-    selection: (CellRef, CellRef),
-    generation: u64,
-    image: Arc<RenderImage>,
-}
-
 /// A slide's pixels and what they were painted for: slide, device width,
 /// edit generation.
 type PaintedSlide = (usize, u32, u64, Arc<RenderImage>);
 
+// One per open file, so the variants' sizes do not add up to anything.
+#[allow(clippy::large_enum_variant)]
 enum Document {
     /// Word: the document open for editing, its pages as images, shown as
     /// a column of pages.
@@ -234,16 +183,7 @@ enum Document {
         /// Window px per slide px of the slide on show.
         scale: f32,
     },
-    Workbook {
-        book: jade_web::Workbook,
-        sheets: Vec<SharedString>,
-        anchor: CellRef,
-        focus: CellRef,
-        edit: Option<TextEdit>,
-        scroll: ScrollHandle,
-        painted: Option<PaintedSheet>,
-        viewport: (f32, f32),
-    },
+    Workbook(Box<sheet::Sheet>),
 }
 
 pub struct DocView {
@@ -320,24 +260,9 @@ impl DocView {
                     scale: 1.0,
                 }
             }
-            Kind::Workbook => {
-                let book =
-                    jade_web::Workbook::open(bytes, &fonts.time_zone, fonts.backend.clone())?;
-                Document::Workbook {
-                    sheets: book
-                        .sheet_names()
-                        .into_iter()
-                        .map(SharedString::from)
-                        .collect(),
-                    book,
-                    anchor: CellRef::new(0, 0),
-                    focus: CellRef::new(0, 0),
-                    edit: None,
-                    scroll: ScrollHandle::new(),
-                    painted: None,
-                    viewport: (1.0, 1.0),
-                }
-            }
+            Kind::Workbook => Document::Workbook(Box::new(sheet::Sheet::open(
+                jade_web::Workbook::open(bytes, &fonts.time_zone, fonts.backend.clone())?,
+            ))),
         };
         Ok(Self {
             name,
@@ -386,36 +311,7 @@ impl DocView {
                     items.push(i18n::format("deck.selected_shape", &[("name", name)]).into());
                 }
             }
-            Document::Workbook {
-                book,
-                anchor,
-                focus,
-                ..
-            } => {
-                items.push(i18n::format("sheet.position", &[("name", &book.sheet_name())]).into());
-                items.push(selection_label(*anchor, *focus).into());
-                // Excel's summary of a multi-cell selection.
-                let range = span(*anchor, *focus);
-                if range.start != range.end {
-                    let summary = book.summary(range);
-                    if let (Some(sum), Some(average)) = (summary.sum, summary.average) {
-                        items.push(
-                            i18n::format("sheet.average", &[("value", &format_number(average))])
-                                .into(),
-                        );
-                        items.push(
-                            i18n::format("sheet.cell_count", &[("n", &summary.count)]).into(),
-                        );
-                        items.push(
-                            i18n::format("sheet.sum", &[("value", &format_number(sum))]).into(),
-                        );
-                    } else if summary.count > 0 {
-                        items.push(
-                            i18n::format("sheet.cell_count", &[("n", &summary.count)]).into(),
-                        );
-                    }
-                }
-            }
+            Document::Workbook(sheet) => sheet.status_items(&mut items),
         }
         if !self.status.is_empty() {
             items.push(self.status.clone());
@@ -432,7 +328,8 @@ impl DocView {
 
     pub fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
         let zoom = clamp_zoom(zoom);
-        if let Document::Workbook { scroll, .. } = &self.document {
+        if let Document::Workbook(sheet) = &self.document {
+            let scroll = &sheet.scroll;
             // Keep the same cell at the top left: the offset is in screen
             // px, which a zoom rescales.
             let ratio = zoom / self.zoom().max(0.01);
@@ -460,7 +357,7 @@ impl DocView {
                     (area_width - PAGES_SIDEBAR_WIDTH - PAGES_PADDING * 2.0) / page_size.0.max(1.0);
                 self.set_zoom(fit, cx);
             }
-            Document::Workbook { .. } => self.set_zoom(1.0, cx),
+            Document::Workbook(_) => self.set_zoom(1.0, cx),
         }
     }
 
@@ -468,7 +365,7 @@ impl DocView {
         match &self.document {
             Document::Pages { document, .. } => document.is_dirty(),
             Document::Deck { deck, .. } => deck.is_dirty(),
-            Document::Workbook { book, .. } => book.is_dirty(),
+            Document::Workbook(sheet) => sheet.book.is_dirty(),
         }
     }
 
@@ -521,7 +418,7 @@ impl DocView {
         let bytes = match &mut self.document {
             Document::Pages { document, .. } => document.export_docx(),
             Document::Deck { deck, .. } => Ok(deck.save_bytes()),
-            Document::Workbook { book, .. } => book.save_bytes(),
+            Document::Workbook(sheet) => sheet.book.save_bytes(),
         };
         self.status = match bytes {
             Ok(bytes) => {
@@ -561,493 +458,19 @@ impl DocView {
                     deck.redo()
                 }
             }
-            Document::Workbook { book, edit, .. } => {
-                *edit = None;
-                if undo {
-                    book.undo()
+            Document::Workbook(sheet) => {
+                sheet.edit = None;
+                let result = if undo {
+                    sheet.book.undo()
                 } else {
-                    book.redo()
-                }
+                    sheet.book.redo()
+                };
+                // Undo can bring a sheet back or take one away.
+                self.sheets_changed(result, cx);
+                return;
             }
         };
         self.edited(result, cx);
-    }
-
-    // ---- the workbook -----------------------------------------------------
-
-    /// The scroll position in sheet px (the offset is in screen px).
-    fn sheet_scroll(scroll: &ScrollHandle, zoom: f32) -> (f64, f64) {
-        let offset = scroll.offset();
-        let zoom = f64::from(zoom);
-        (
-            (-f64::from(offset.x) / zoom).max(0.0),
-            (-f64::from(offset.y) / zoom).max(0.0),
-        )
-    }
-
-    fn select_cell(&mut self, to: CellRef, extend: bool, cx: &mut Context<Self>) {
-        let zoom = self.shown_zoom;
-        let Document::Workbook {
-            book,
-            anchor,
-            focus,
-            scroll,
-            viewport,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        if extend {
-            *focus = to;
-        } else {
-            *anchor = to;
-            *focus = to;
-        }
-        book.reach(to);
-        let at = Self::sheet_scroll(scroll, zoom);
-        let zoom = f64::from(zoom);
-        let (x, y) = book.reveal(
-            to,
-            at,
-            (f64::from(viewport.0) / zoom, f64::from(viewport.1) / zoom),
-        );
-        if (x, y) != at {
-            scroll.set_offset(point(px((-x * zoom) as f32), px((-y * zoom) as f32)));
-        }
-        cx.notify();
-    }
-
-    fn step_cell(&mut self, columns: i64, rows: i64, extend: bool, cx: &mut Context<Self>) {
-        let Document::Workbook { anchor, focus, .. } = &self.document else {
-            return;
-        };
-        let from = if extend { *focus } else { *anchor };
-        let to = CellRef::new(
-            (i64::from(from.column) + columns).clamp(0, i64::from(MAX_COLUMN)) as u32,
-            (i64::from(from.row) + rows).clamp(0, i64::from(MAX_ROW)) as u32,
-        );
-        self.select_cell(to, extend, cx);
-    }
-
-    /// Writes the cell being typed into, if any; the write recalculates.
-    fn commit_cell(&mut self, cx: &mut Context<Self>) {
-        let Document::Workbook {
-            book, edit, anchor, ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        let Some(text) = edit.take() else {
-            return;
-        };
-        let result = book.set_cell(*anchor, &text.text);
-        self.edited(result, cx);
-    }
-
-    fn begin_cell_edit(&mut self, text: Option<String>, cx: &mut Context<Self>) {
-        if let Document::Workbook {
-            book, edit, anchor, ..
-        } = &mut self.document
-        {
-            let text = text.unwrap_or_else(|| book.edit_text(*anchor));
-            *edit = Some(TextEdit::new(text));
-            cx.notify();
-        }
-    }
-
-    fn select_sheet(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.commit_cell(cx);
-        if let Document::Workbook {
-            book,
-            anchor,
-            focus,
-            scroll,
-            painted,
-            ..
-        } = &mut self.document
-        {
-            if book.select_sheet(index).is_ok() {
-                *anchor = CellRef::new(0, 0);
-                *focus = *anchor;
-                if let Some(old) = painted.take() {
-                    self.retired.push(old.image);
-                }
-                scroll.set_offset(point(px(0.0), px(0.0)));
-            }
-        }
-        cx.notify();
-    }
-
-    fn sheet_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        let shift = event.keystroke.modifiers.shift;
-        let key = event.keystroke.key.as_str();
-        let Document::Workbook {
-            book,
-            edit,
-            anchor,
-            focus,
-            ..
-        } = &mut self.document
-        else {
-            return false;
-        };
-        if let Some(text) = edit.as_mut() {
-            // Mid-composition the keys are the IME's.
-            if text.marked.is_some() {
-                return false;
-            }
-            match key {
-                "enter" => {
-                    self.commit_cell(cx);
-                    self.step_cell(0, if shift { -1 } else { 1 }, false, cx);
-                }
-                "tab" => {
-                    self.commit_cell(cx);
-                    self.step_cell(if shift { -1 } else { 1 }, 0, false, cx);
-                }
-                "escape" => {
-                    *edit = None;
-                    cx.notify();
-                }
-                "backspace" => {
-                    text.text.pop();
-                    cx.notify();
-                }
-                _ => return false,
-            }
-            return true;
-        }
-        match key {
-            "up" => self.step_cell(0, -1, shift, cx),
-            "down" => self.step_cell(0, 1, shift, cx),
-            "left" => self.step_cell(-1, 0, shift, cx),
-            "right" => self.step_cell(1, 0, shift, cx),
-            "enter" => self.step_cell(0, if shift { -1 } else { 1 }, false, cx),
-            "tab" => self.step_cell(if shift { -1 } else { 1 }, 0, false, cx),
-            "f2" => self.begin_cell_edit(None, cx),
-            "delete" | "backspace" => {
-                let result = book.clear(span(*anchor, *focus));
-                self.edited(result, cx);
-            }
-            // Anything else is text, which arrives through the input handler
-            // and starts an edit there.
-            _ => return false,
-        }
-        true
-    }
-
-    fn sheet_mouse_down(
-        &mut self,
-        event: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        window.focus(&self.focus, cx);
-        self.commit_cell(cx);
-        let Some(bounds) = self.surface.get() else {
-            return;
-        };
-        let zoom = self.shown_zoom;
-        let Document::Workbook {
-            book,
-            anchor,
-            focus,
-            scroll,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        let x = f64::from(event.position.x - bounds.origin.x) / f64::from(zoom);
-        let y = f64::from(event.position.y - bounds.origin.y) / f64::from(zoom);
-        let Some((start, end)) = book.hit(x, y, Self::sheet_scroll(scroll, zoom)) else {
-            return;
-        };
-        if event.modifiers.shift {
-            *focus = end;
-        } else {
-            *anchor = start;
-            *focus = end;
-        }
-        if event.click_count >= 2 && start == end {
-            self.begin_cell_edit(None, cx);
-        }
-        cx.notify();
-    }
-
-    fn workbook_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::Div {
-        let generation = self.generation;
-        let zoom = self.zoom.unwrap_or(1.0);
-        self.shown_zoom = zoom;
-        let (area_width, area_height) = editor_area(window, cx);
-        let Document::Workbook {
-            book,
-            sheets,
-            anchor,
-            focus,
-            edit,
-            scroll,
-            painted,
-            viewport,
-        } = &mut self.document
-        else {
-            unreachable!()
-        };
-        let scale = window.scale_factor();
-        let size = (
-            area_width.max(1.0),
-            (area_height - FORMULA_BAR_HEIGHT - SHEET_TABS_HEIGHT).max(1.0),
-        );
-        *viewport = size;
-        let offset = scroll.offset();
-        let at = (-f32::from(offset.x), -f32::from(offset.y));
-        let device = (
-            (size.0 * scale).round() as u32,
-            (size.1 * scale).round() as u32,
-        );
-        let selection = (*anchor, *focus);
-        let fresh = painted.as_ref().is_some_and(|p| {
-            p.scroll == at
-                && p.device == device
-                && p.zoom == zoom
-                && p.selection == selection
-                && p.generation == generation
-        });
-        if !fresh {
-            let painter = book.render_viewport(
-                (f64::from(at.0 / zoom), f64::from(at.1 / zoom)),
-                device.0,
-                device.1,
-                f64::from(scale * zoom),
-                Some(selection),
-            );
-            match painter.and_then(image) {
-                Some(image) => {
-                    if let Some(old) = painted.replace(PaintedSheet {
-                        scroll: at,
-                        device,
-                        zoom,
-                        selection,
-                        generation,
-                        image,
-                    }) {
-                        self.retired.push(old.image);
-                    }
-                }
-                None => self.status = i18n::text("sheet.paint_failed").into(),
-            }
-        }
-        let (sheet_width, sheet_height) = book.sheet_size();
-        let picture = painted.as_ref().map(|p| p.image.clone());
-        let current = book.sheet_index();
-
-        let content = match edit {
-            Some(text) => text.text.clone(),
-            None => book.edit_text(*anchor),
-        };
-        let editing = edit.is_some();
-        let name_box = selection_label(*anchor, *focus);
-
-        // The editor over the active cell, white like the cell under it.
-        let cell_editor = edit.as_ref().and_then(|text| {
-            let (x, y, w, h) =
-                book.cell_rect(*anchor, (f64::from(at.0 / zoom), f64::from(at.1 / zoom)))?;
-            Some(
-                div()
-                    .absolute()
-                    .left(px(x as f32 * zoom))
-                    .top(px(y as f32 * zoom))
-                    .min_w(px(w as f32 * zoom))
-                    .h(px(h as f32 * zoom))
-                    .flex()
-                    .items_center()
-                    .px(px(3.0 * zoom))
-                    .bg(gpui::white())
-                    .border_2()
-                    .border_color(rgb(0x217346))
-                    .text_color(gpui::black())
-                    .text_size(px(14.0 * zoom))
-                    .whitespace_nowrap()
-                    .child(text.text.clone())
-                    .child(div().w(px(1.0)).h(px(15.0 * zoom)).bg(gpui::black())),
-            )
-        });
-
-        let tabs: Vec<_> = sheets
-            .iter()
-            .enumerate()
-            .map(|(index, name)| {
-                let selected = index == current;
-                div()
-                    .id(("sheet-tab", index))
-                    .relative()
-                    .h_full()
-                    .flex()
-                    .items_center()
-                    .px_4()
-                    .text_xs()
-                    .cursor_pointer()
-                    .border_r_1()
-                    .border_color(palette::border())
-                    .text_color(if selected {
-                        palette::accent()
-                    } else {
-                        palette::dim()
-                    })
-                    .when(selected, |tab| {
-                        tab.bg(palette::window()).child(
-                            div()
-                                .absolute()
-                                .bottom_0()
-                                .left_1()
-                                .right_1()
-                                .h(px(2.0))
-                                .rounded_t_sm()
-                                .bg(palette::accent()),
-                        )
-                    })
-                    .hover(|tab| tab.bg(palette::hovered()))
-                    .child(name.clone())
-                    .on_click(
-                        cx.listener(move |view, _event, _window, cx| view.select_sheet(index, cx)),
-                    )
-            })
-            .collect();
-
-        let store = Rc::clone(&self.surface);
-        let entity = cx.entity();
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(palette::canvas())
-            // The name box and the formula bar.
-            .child(
-                div()
-                    .h(px(FORMULA_BAR_HEIGHT))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_2()
-                    .bg(palette::panel())
-                    .border_b_1()
-                    .border_color(palette::border())
-                    .text_xs()
-                    .child(
-                        div()
-                            .w(px(96.0))
-                            .px_2()
-                            .py_0p5()
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(palette::border())
-                            .bg(palette::window())
-                            .text_color(palette::text())
-                            .child(name_box),
-                    )
-                    .child(
-                        div()
-                            .px_1()
-                            .italic()
-                            .text_color(palette::faint())
-                            .child("fx"),
-                    )
-                    .child(
-                        div()
-                            .id("formula-bar")
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .flex()
-                            .items_center()
-                            .px_2()
-                            .cursor_text()
-                            .text_color(palette::text())
-                            .truncate()
-                            .child(content)
-                            .when(editing, |bar| {
-                                bar.child(div().w(px(1.0)).h(px(14.0)).bg(palette::accent()))
-                            })
-                            .on_click(cx.listener(|view, _event, window, cx| {
-                                window.focus(&view.focus, cx);
-                                if !matches!(
-                                    view.document,
-                                    Document::Workbook { edit: Some(_), .. }
-                                ) {
-                                    view.begin_cell_edit(None, cx);
-                                }
-                            })),
-                    ),
-            )
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .overflow_hidden()
-                    .child(
-                        // The painted window sits under the scroller, which
-                        // is transparent and owns the scrollbars and the
-                        // mouse.
-                        div()
-                            .absolute()
-                            .inset_0()
-                            .children(picture.map(|image| img(image).w(px(size.0)).h(px(size.1)))),
-                    )
-                    .child(
-                        div()
-                            .id("sheet-scroll")
-                            .absolute()
-                            .inset_0()
-                            .overflow_scroll()
-                            .track_scroll(scroll)
-                            .cursor(gpui::CursorStyle::Crosshair)
-                            .on_mouse_down(MouseButton::Left, cx.listener(Self::sheet_mouse_down))
-                            .child(
-                                div()
-                                    .w(px(sheet_width as f32 * zoom))
-                                    .h(px(sheet_height as f32 * zoom))
-                                    .flex_none(),
-                            ),
-                    )
-                    .children(cell_editor)
-                    // Records where the grid is, and registers the input
-                    // handler so typing — an IME's included — reaches the
-                    // cell.
-                    .child(
-                        canvas(
-                            move |bounds, _window, _cx| {
-                                store.set(Some(bounds));
-                                bounds
-                            },
-                            move |_bounds, grid, window, cx| {
-                                let focus = entity.read(cx).focus.clone();
-                                window.handle_input(
-                                    &focus,
-                                    ElementInputHandler::new(grid, entity.clone()),
-                                    cx,
-                                );
-                            },
-                        )
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .size_full(),
-                    ),
-            )
-            // Excel keeps its sheet tabs along the bottom edge.
-            .child(
-                div()
-                    .h(px(SHEET_TABS_HEIGHT))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .bg(palette::panel())
-                    .border_t_1()
-                    .border_color(palette::border())
-                    .children(tabs),
-            )
     }
 
     // ---- the deck ---------------------------------------------------------
@@ -1173,16 +596,16 @@ impl DocView {
             match key {
                 // As in PowerPoint, Escape leaves the text, keeping it.
                 "escape" => self.commit_slide_text(cx),
-                "enter" => {
-                    text.text.push('\n');
-                    cx.notify();
-                }
-                "backspace" => {
-                    text.text.pop();
-                    cx.notify();
-                }
+                "enter" => text.insert("\n"),
+                "backspace" => text.backspace(),
+                "delete" => text.delete(),
+                "left" => text.step(false),
+                "right" => text.step(true),
+                "home" => text.to_end(false),
+                "end" => text.to_end(true),
                 _ => return false,
             }
+            cx.notify();
             return true;
         }
         let slide = *current;
@@ -1461,13 +884,14 @@ impl DocView {
                             .flex()
                             .flex_wrap()
                             .items_end()
-                            .child(text.text.clone())
+                            .child(text.split().0.to_string())
                             .child(
                                 div()
                                     .w(px(1.5))
                                     .h(px((20.0 * zoom).max(12.0)))
                                     .bg(gpui::black()),
-                            ),
+                            )
+                            .child(text.split().1.to_string()),
                     ),
                 None => div()
                     .absolute()
@@ -1745,26 +1169,6 @@ impl DocView {
         }
         self.refresh_repainted();
         cx.notify();
-    }
-
-    /// The selected cells onto the clipboard as Excel's text; with `cut`,
-    /// cleared too.
-    fn sheet_copy(&mut self, cut: bool, cx: &mut Context<Self>) {
-        let Document::Workbook {
-            book,
-            anchor,
-            focus,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        let range = span(*anchor, *focus);
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(book.range_text(range)));
-        if cut {
-            let result = book.clear(range);
-            self.edited(result, cx);
-        }
     }
 
     /// The selected text onto the clipboard; with `cut`, out of the
@@ -2133,12 +1537,18 @@ impl DocView {
     fn handle_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        // A sheet takes its own keys first: Excel's shortcuts, ⌘-arrows,
+        // and the keys of a cell being typed into.
+        if matches!(self.document, Document::Workbook(_))
+            && !self.slideshow
+            && self.sheet_key(event, cx)
+        {
+            cx.stop_propagation();
+            return;
+        }
         // ⌘ on a Mac, Ctrl elsewhere.
         if modifiers.platform || modifiers.control {
             let pages = matches!(self.document, Document::Pages { .. });
-            // A sheet copies its selected cells, not the text of a cell
-            // being typed into.
-            let cells = matches!(self.document, Document::Workbook { edit: None, .. });
             match key {
                 "z" => self.step_history(!modifiers.shift, cx),
                 "y" => self.step_history(false, cx),
@@ -2146,8 +1556,6 @@ impl DocView {
                 "a" if pages => self.word_move(cx, |document| document.select_all()),
                 "c" if pages => self.word_copy(false, cx),
                 "x" if pages => self.word_copy(true, cx),
-                "c" if cells => self.sheet_copy(false, cx),
-                "x" if cells => self.sheet_copy(true, cx),
                 // ⌘V is left to the browser, whose paste event brings the
                 // clipboard to the input handler.
                 _ => return,
@@ -2156,7 +1564,7 @@ impl DocView {
             return;
         }
         let handled = match self.document {
-            Document::Workbook { .. } => self.sheet_key(event, cx),
+            Document::Workbook(_) => false,
             Document::Deck { .. } => self.deck_key(event, cx),
             Document::Pages { .. } => self.pages_key(event, cx),
         };
@@ -2172,7 +1580,10 @@ impl DocView {
             return None;
         }
         match &self.document {
-            Document::Workbook { edit: None, .. } => self.begin_cell_edit(Some(String::new()), cx),
+            // Typing into a selected cell replaces it, as in Excel.
+            Document::Workbook(sheet) if sheet.typed().is_none() => {
+                self.begin_cell_edit(Some(String::new()), false, cx)
+            }
             Document::Deck {
                 edit: None,
                 selected: Some(_),
@@ -2181,7 +1592,7 @@ impl DocView {
             _ => {}
         }
         match &mut self.document {
-            Document::Workbook { edit, .. } => edit.as_mut(),
+            Document::Workbook(sheet) => sheet.typing(),
             Document::Deck { edit, .. } => edit.as_mut().map(|(_, text)| text),
             Document::Pages { .. } => None,
         }
@@ -2189,7 +1600,7 @@ impl DocView {
 
     fn current_text(&self) -> Option<&TextEdit> {
         match &self.document {
-            Document::Workbook { edit, .. } => edit.as_ref(),
+            Document::Workbook(sheet) => sheet.typed(),
             Document::Deck { edit, .. } => edit.as_ref().map(|(_, text)| text),
             Document::Pages { .. } => None,
         }
@@ -2204,20 +1615,6 @@ fn deck_fit(slide: (f64, f64), area: (f32, f32)) -> f32 {
         (area.1 - TOOLBAR_HEIGHT - SLIDE_MARGIN * 2.0).max(40.0),
     );
     (available.0 / slide.0.max(1.0) as f32).min(available.1 / slide.1.max(1.0) as f32)
-}
-
-/// The name box's text: the active cell, or the selected range.
-fn selection_label(anchor: CellRef, focus: CellRef) -> String {
-    let range = span(anchor, focus);
-    if range.start == range.end {
-        reference_text(range.start)
-    } else {
-        format!(
-            "{}:{}",
-            reference_text(range.start),
-            reference_text(range.end)
-        )
-    }
 }
 
 /// The strip over the slide or the pages: where you are on the left, the
@@ -2319,12 +1716,17 @@ impl EntityInputHandler for DocView {
                 reversed: false,
             });
         }
-        // Typing appends: the caret is the end of the text.
-        let text = self
+        let (text, caret, whole) = self
             .current_text()
-            .map(|edit| edit.text.as_str())
-            .unwrap_or("");
-        let caret = byte_to_utf16(text, text.len());
+            .map(|edit| (edit.text.as_str(), edit.caret(), edit.whole))
+            .unwrap_or(("", 0, false));
+        if whole {
+            return Some(UTF16Selection {
+                range: 0..byte_to_utf16(text, text.len()),
+                reversed: false,
+            });
+        }
+        let caret = byte_to_utf16(text, caret);
         Some(UTF16Selection {
             range: caret..caret,
             reversed: false,
@@ -2353,9 +1755,11 @@ impl EntityInputHandler for DocView {
             return;
         }
         match &mut self.document {
-            Document::Workbook {
-                edit: Some(edit), ..
-            } => edit.marked = None,
+            Document::Workbook(sheet) => {
+                if let Some(edit) = sheet.typing() {
+                    edit.marked = None;
+                }
+            }
             Document::Deck {
                 edit: Some((_, edit)),
                 ..
@@ -2373,25 +1777,14 @@ impl EntityInputHandler for DocView {
                 // Lines become paragraphs, as they were when copied out.
                 self.word_edit(cx, move |document| document.paste(&text));
             }
-            Document::Workbook {
-                book,
-                edit: None,
-                anchor,
-                focus,
-                ..
-            } => {
-                // Excel's clipboard text fills cells from the selection's
-                // top-left, and what it filled is selected.
-                let origin = span(*anchor, *focus).start;
-                let result = book.paste(origin, &text);
-                if let Ok(Some(far)) = result {
-                    *anchor = origin;
-                    *focus = far;
-                }
-                self.edited(result.map(|far| far.is_some()), cx);
+            // Excel's clipboard text fills cells from the selection's
+            // top-left, or tiles over it; a copy made here pastes its
+            // formulas and formats.
+            Document::Workbook(sheet) if sheet.typed().is_none() => {
+                self.sheet_paste(Some(&text), cx);
             }
             // Into a cell being typed into, its first line, as in Excel.
-            Document::Workbook { .. } => {
+            Document::Workbook(_) => {
                 let line = text.lines().next().unwrap_or_default().to_string();
                 self.replace_text_in_range(None, &line, window, cx);
             }
@@ -2424,6 +1817,9 @@ impl EntityInputHandler for DocView {
             edit.replace(range, text, false);
             cx.notify();
         }
+        if let Document::Workbook(sheet) = &mut self.document {
+            sheet.typed_into();
+        }
     }
 
     fn replace_and_mark_text_in_range(
@@ -2442,6 +1838,9 @@ impl EntityInputHandler for DocView {
         if let Some(edit) = self.typing_target(cx) {
             edit.replace(range, new_text, true);
             cx.notify();
+        }
+        if let Document::Workbook(sheet) = &mut self.document {
+            sheet.typed_into();
         }
     }
 
@@ -2518,7 +1917,7 @@ impl Render for DocView {
             match self.document {
                 Document::Pages { .. } => self.pages_body(cx),
                 Document::Deck { .. } => self.deck_body(window, cx),
-                Document::Workbook { .. } => self.workbook_body(window, cx),
+                Document::Workbook(_) => self.workbook_body(window, cx),
             }
         };
         div()

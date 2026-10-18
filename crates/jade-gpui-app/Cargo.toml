@@ -28,6 +28,8 @@ jade-office-model = { path = "../jade-office-model", features = ["skia"] }
 # the app draws no text at all — boxes, images and borders, and nothing else.
 gpui = { version = "0.2", default-features = false, features = ["macos-blade", "font-kit"] }
 futures = "0.3"
+# `localtime_r`, for the date and time ⌃; and ⌘; type into a cell.
+libc = "0.2"
 image = "0.25"
 
 [dev-dependencies]
