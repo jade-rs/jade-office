@@ -309,6 +309,33 @@ fn bundled_font(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// The Skia backend the shared editing models (`jade-office-model`) paint
+/// with: the bundled faces under every alias, parsed once per process and
+/// shared by every workbook and deck view.
+pub(crate) fn skia_backend() -> Result<jade_office_model::skia::SkiaBackend, String> {
+    thread_local! {
+        static BACKEND: RefCell<Option<jade_office_model::skia::SkiaBackend>> =
+            const { RefCell::new(None) };
+    }
+    BACKEND.with(|backend| {
+        if let Some(backend) = backend.borrow().as_ref() {
+            return Ok(backend.clone());
+        }
+        let read = |name: &str| {
+            std::fs::read(bundled_font(name))
+                .map(Arc::new)
+                .map_err(|error| format!("{name}: {error}"))
+        };
+        let faces = jade_office_model::aliased_faces(
+            read("NotoSansJP-Regular.ttf")?,
+            Some(read("NotoSansJP-Bold.ttf")?),
+        );
+        let made = jade_office_model::skia::SkiaBackend::new(&faces)?;
+        *backend.borrow_mut() = Some(made.clone());
+        Ok(made)
+    })
+}
+
 /// Opens `path` and paints it, ready to be edited.
 fn open_document(path: &str) -> Result<NativeDocument, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("{path}: {err}"))?;

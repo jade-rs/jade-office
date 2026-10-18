@@ -1,0 +1,37 @@
+[workspace]
+
+[package]
+name = "jade-web"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+
+# The engine's slide and sheet renderers on the pure-Rust tiny-skia painter:
+# the same pixels natively and in `wasm32-unknown-unknown`. Natively it is a
+# library plus a comparison bin; in the browser it is the wasm-bindgen API in
+# `src/web.rs`, built with `scripts/build-web.sh`.
+
+[lib]
+name = "jade_web"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
+# The shaping measurer (rustybuzz) the native docx host measures with.
+jade-docx-layout = { path = "../../jade-core/crates/jade-docx-layout", features = ["native-shaping"] }
+futures = "0.3"
+js-sys = "0.3"
+wasm-bindgen = "=0.2.128"
+web-sys = { version = "0.3", features = ["CanvasRenderingContext2d"] }
+jade-painter = { path = "../../jade-core/crates/jade-painter" }
+jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter" }
+jade-office-model = { path = "../jade-office-model", features = ["tiny-skia"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1"
+
+# The comparison bin reads the Skia PNGs back; native only.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }

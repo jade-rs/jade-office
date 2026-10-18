@@ -1,3 +1,6 @@
 .DS_Store
 target/
 **/target/
+
+# macOS AppleDouble metadata, written next to every file on non-HFS volumes.
+._*

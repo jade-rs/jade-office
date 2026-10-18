@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jade on gpui web</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #09090b; color: #a1a1aa;
+      font: 13px -apple-system, "Hiragino Sans", sans-serif; overflow: hidden; }
+    #loading { position: fixed; inset: 0; display: grid; place-items: center; }
+  </style>
+</head>
+<body>
+  <div id="loading">gpui を起動中…</div>
+  <script type="module">
+    // ?open=<sample> picks the document; the gpui app takes it from there.
+    import init, { run } from "./gpui-pkg/jade_gpui_web.js";
+    const name = new URLSearchParams(location.search).get("open") ?? "sample-deck.pptx";
+    const bytes = (url) => fetch(url).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b));
+    try {
+      await init();
+      const [file, regular, bold] = await Promise.all([
+        bytes(`samples/${name}`),
+        bytes("fonts/NotoSansJP-Regular.ttf"),
+        bytes("fonts/NotoSansJP-Bold.ttf"),
+      ]);
+      // Save hands the bytes back; the page offers them as a download.
+      const download = (fileName, bytes) => {
+        const url = URL.createObjectURL(new Blob([bytes]));
+        const link = Object.assign(document.createElement("a"), { href: url, download: fileName });
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      };
+      run(
+        name, file, regular, bold,
+        window.devicePixelRatio || 1,
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        download,
+      );
+      document.getElementById("loading").remove();
+    } catch (error) {
+      document.getElementById("loading").textContent = `起動に失敗: ${error}`;
+      console.error(error);
+    }
+  </script>
+</body>
+</html>

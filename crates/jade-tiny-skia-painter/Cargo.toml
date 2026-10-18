@@ -1,0 +1,23 @@
+[workspace]
+
+[package]
+name = "jade-tiny-skia-painter"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+
+# A `jade_painter::Painter` in pure Rust: tiny-skia for the rasteriser,
+# ttf-parser for glyph outlines, `image` for pictures. Nothing here links C++,
+# so it builds for `wasm32-unknown-unknown` as it is — which is the point: the
+# Skia backend is what keeps the engine's renderers out of the browser build.
+
+[lib]
+name = "jade_tiny_skia_painter"
+path = "src/lib.rs"
+
+[dependencies]
+jade-painter = { path = "../../jade-core/crates/jade-painter" }
+tiny-skia = { version = "0.11.4", default-features = false, features = ["std", "simd", "png-format"] }
+ttf-parser = "0.25.1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }

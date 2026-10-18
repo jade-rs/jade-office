@@ -1,7 +1,8 @@
 //! The spreadsheet (XLSX) view: a sheet you can select in, type into, and
 //! save.
 //!
-//! The model is jade-core's `HeadlessWorkbook` — the same editing core the
+//! The model is `jade-office-model`'s `Workbook` — jade-core's
+//! `HeadlessWorkbook`, shared with the browser build — the same editing core the
 //! browser's spreadsheet and the headless CLI use: a write patches the
 //! workbook's bytes, recalculates, and keeps an undo history. This view lays
 //! the selected sheet out with `jade-xlsx-layout` and paints it with
@@ -23,15 +24,11 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, RenderImage, ScrollHandle, SharedString,
     UTF16Selection, Window,
 };
-use jade_painter::Painter;
-use jade_pptx_native_render::{FaceSpec, FontSet};
-use jade_skia_painter::SkiaPainter;
-use jade_xlsx_headless_api::CellInput;
-use jade_xlsx_headless_editor::HeadlessWorkbook;
-use jade_xlsx_layout::{column_label, layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
-use jade_xlsx_native_render::{aliased_faces, bundled_font_paths};
-use jade_xlsx_reader::{CellRange, CellRef, CellValue};
-use jade_xlsx_render::{render_grid, GridSelection, PainterMeasure, RenderOptions};
+use jade_office_model::sheet::{
+    format_number, range_text, span, CellRange, CellRef, Workbook, MAX_COLUMN, MAX_ROW,
+};
+use jade_office_model::skia::SkiaBackend;
+use jade_office_model::Backend;
 use std::cell::Cell;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -44,19 +41,10 @@ use crate::{
     SelectAll, Undo, UI_FONT_FAMILY,
 };
 
-/// The grid drawn past the last used cell, so a small sheet still reads as a
-/// grid; it grows as the selection moves past it.
-const MIN_COLUMNS: u32 = 12;
-const MIN_ROWS: u32 = 30;
-/// Excel's limits.
-const MAX_COLUMN: u32 = 16_383;
-const MAX_ROW: u32 = 1_048_575;
 /// The name box and formula bar above the grid.
 const FORMULA_BAR_HEIGHT: f32 = 32.0;
 /// The strip of sheet tabs under the grid.
 const SHEET_TABS_HEIGHT: f32 = 30.0;
-/// The most cells a copy writes to the clipboard.
-const CLIPBOARD_CELL_LIMIT: u64 = 200_000;
 
 /// The zone formulas like `NOW()` calculate in: the system's, as the browser
 /// editor uses the browser's.
@@ -70,224 +58,6 @@ fn system_time_zone() -> String {
                 .map(|(_, zone)| zone.to_string())
         })
         .unwrap_or_else(|| "UTC".to_string())
-}
-
-/// `B3`.
-fn reference_text(reference: CellRef) -> String {
-    format!("{}{}", column_label(reference.column), reference.row + 1)
-}
-
-/// The rectangle two corners span, top-left first.
-fn span(a: CellRef, b: CellRef) -> CellRange {
-    CellRange {
-        start: CellRef::new(a.column.min(b.column), a.row.min(b.row)),
-        end: CellRef::new(a.column.max(b.column), a.row.max(b.row)),
-    }
-}
-
-/// What typed text becomes: `=` starts a formula, otherwise it is read the
-/// way a spreadsheet reads what you type.
-fn cell_input(text: &str) -> CellInput {
-    match text.strip_prefix('=') {
-        Some(formula) if !formula.is_empty() => CellInput::Formula(formula.to_string()),
-        _ => CellInput::parse(text),
-    }
-}
-
-/// A number as a status bar shows it: integers bare, others to a few places.
-fn format_number(value: f64) -> String {
-    if value.fract() == 0.0 && value.abs() < 1e15 {
-        format!("{}", value as i64)
-    } else {
-        let text = format!("{value:.4}");
-        text.trim_end_matches('0').trim_end_matches('.').to_string()
-    }
-}
-
-/// The workbook being edited, the faces every surface gets, and the selected
-/// sheet's layout.
-struct Sheets {
-    book: HeadlessWorkbook,
-    fonts: FontSet,
-    index: usize,
-    layout: Rc<SheetLayout>,
-    /// How far the laid-out grid reaches; it grows with the selection.
-    extent: (u32, u32),
-}
-
-impl Sheets {
-    fn open(bytes: &[u8]) -> Result<Self, String> {
-        let book = HeadlessWorkbook::open_for_editing_in_time_zone(bytes, &system_time_zone())
-            .or_else(|_| HeadlessWorkbook::open_for_editing(bytes))
-            .map_err(|error| format!("cannot read the workbook: {error}"))?;
-        if book.workbook().sheets.is_empty() {
-            return Err("the workbook has no sheets".to_string());
-        }
-        // The fonts ship with the engine, in the `jade-core` submodule.
-        let core = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../jade-core"));
-        let (regular, bold) = bundled_font_paths(&core);
-        let faces: Vec<FaceSpec<'_>> = aliased_faces(&regular, &bold)
-            .into_iter()
-            .map(|face| FaceSpec {
-                family: face.family,
-                weight: face.weight,
-                path: face.path,
-            })
-            .collect();
-        let fonts = FontSet::load(&faces)?;
-        // The sheet the file says was open, as long as it is one a reader can
-        // see; otherwise the first visible one.
-        let workbook = book.workbook();
-        let visible = |index: &usize| {
-            workbook
-                .sheets
-                .get(*index)
-                .is_some_and(|sheet| sheet.visibility == jade_xlsx_reader::SheetVisibility::Visible)
-        };
-        let index = workbook
-            .active_sheet_index
-            .filter(visible)
-            .or_else(|| (0..workbook.sheets.len()).find(visible))
-            .unwrap_or(0);
-        let mut sheets = Self {
-            book,
-            fonts,
-            index,
-            layout: Rc::new(empty_layout()),
-            extent: (MIN_COLUMNS, MIN_ROWS),
-        };
-        sheets.lay_out()?;
-        Ok(sheets)
-    }
-
-    fn painter(&self, width: i32, height: i32) -> Option<SkiaPainter> {
-        self.fonts.painter(width, height)
-    }
-
-    /// Lays the selected sheet out, measuring through a surface with the
-    /// same faces registered — wrapping has to happen against the font that
-    /// will draw.
-    fn lay_out(&mut self) -> Result<(), String> {
-        let measuring = self
-            .painter(1, 1)
-            .ok_or_else(|| "cannot create a measuring surface".to_string())?;
-        let workbook = self.book.workbook();
-        let layout = layout_workbook_sheet(
-            workbook,
-            self.index,
-            &LayoutOptions {
-                min_column_count: self.extent.0,
-                min_row_count: self.extent.1,
-                date_system: workbook.date_system,
-                measure: Rc::new(PainterMeasure::new(measuring)),
-                ..LayoutOptions::default()
-            }
-            .with_normal_font_metrics(&workbook.styles),
-        )
-        .ok_or_else(|| "the sheet does not exist".to_string())?;
-        self.layout = Rc::new(layout);
-        Ok(())
-    }
-
-    /// Grows the laid-out grid so `reference` and a margin past it exist.
-    fn reach(&mut self, reference: CellRef) {
-        let wanted = (
-            self.extent.0.max(reference.column + 8),
-            self.extent.1.max(reference.row + 20),
-        );
-        if wanted != self.extent {
-            self.extent = wanted;
-            self.lay_out().ok();
-        }
-    }
-
-    fn names(&self) -> Vec<SharedString> {
-        self.book
-            .workbook()
-            .sheets
-            .iter()
-            .map(|sheet| SharedString::from(sheet.name.clone()))
-            .collect()
-    }
-
-    fn name(&self) -> String {
-        self.book.workbook().sheets[self.index].name.clone()
-    }
-
-    fn sheet(&self) -> &jade_xlsx_reader::Sheet {
-        &self.book.workbook().sheets[self.index]
-    }
-
-    /// The stored cells inside `range`.
-    fn cells_in(&self, range: CellRange) -> impl Iterator<Item = &jade_xlsx_reader::Cell> {
-        self.sheet()
-            .rows
-            .iter()
-            .filter(move |row| row.index >= range.start.row && row.index <= range.end.row)
-            .flat_map(|row| row.cells.iter())
-            .filter(move |cell| {
-                cell.reference.column >= range.start.column
-                    && cell.reference.column <= range.end.column
-            })
-    }
-
-    /// The last row and column holding a cell, so a whole-column copy does
-    /// not walk a million rows.
-    fn used_end(&self) -> CellRef {
-        let mut end = CellRef::new(0, 0);
-        for row in &self.sheet().rows {
-            for cell in &row.cells {
-                end.column = end.column.max(cell.reference.column);
-                end.row = end.row.max(cell.reference.row);
-            }
-        }
-        end
-    }
-
-    /// What a cell shows in the formula bar, and what an edit of it starts
-    /// from: the formula with its `=`, or the stored value.
-    fn edit_text(&self, reference: CellRef) -> String {
-        let Some(cell) = self
-            .sheet()
-            .rows
-            .iter()
-            .find(|row| row.index == reference.row)
-            .and_then(|row| row.cells.iter().find(|cell| cell.reference == reference))
-        else {
-            return String::new();
-        };
-        if let Some(formula) = &cell.formula {
-            return format!("={formula}");
-        }
-        match &cell.value {
-            CellValue::Empty => String::new(),
-            CellValue::Number(number) => format_number(*number),
-            CellValue::Text(text) => text.clone(),
-            CellValue::Bool(flag) => if *flag { "TRUE" } else { "FALSE" }.to_string(),
-            CellValue::Error(error) => error.clone(),
-        }
-    }
-}
-
-fn empty_layout() -> SheetLayout {
-    SheetLayout {
-        columns: Vec::new(),
-        rows: Vec::new(),
-        cells: Vec::new(),
-        filter_buttons: Vec::new(),
-        blank_conditional_rules: Vec::new(),
-        blank_row_styles: Default::default(),
-        blank_column_styles: Vec::new(),
-        shapes: Vec::new(),
-        notes: Vec::new(),
-        show_grid_lines: true,
-        content_width: 0.0,
-        max_digit_width_px: jade_xlsx_layout::units::DEFAULT_MAX_DIGIT_WIDTH_PX,
-        content_height: 0.0,
-        frozen_columns: 0,
-        frozen_rows: 0,
-        cell_padding_px: 0.0,
-    }
 }
 
 /// What a painted image was painted for. A frame that matches it needs no new
@@ -318,7 +88,8 @@ struct CellEdit {
 
 pub struct WorkbookView {
     path: PathBuf,
-    sheets: Sheets,
+    /// The shared editing model (jade-office-model), painted with Skia.
+    book: Workbook<SkiaBackend>,
     sheet_names: Vec<SharedString>,
     /// Where the selection started; also the active cell.
     anchor: CellRef,
@@ -326,15 +97,12 @@ pub struct WorkbookView {
     focus_cell: CellRef,
     edit: Option<CellEdit>,
     dragging: bool,
-    dirty: bool,
     generation: u64,
     image: Option<Arc<RenderImage>>,
     /// Textures replaced since the last frame. gpui wants them released with a
     /// window to hand, which only `render` has.
     retired: Vec<Arc<RenderImage>>,
     painted: Option<PaintedFor>,
-    /// Reused between frames while the device size stays the same.
-    surface: Option<(SkiaPainter, i32, i32)>,
     zoom: f32,
     /// The grid's size in window px, from the last frame.
     viewport: (f32, f32),
@@ -356,26 +124,15 @@ impl WorkbookView {
     }
 
     fn selection_label(&self) -> String {
-        let range = self.range();
-        if range.start == range.end {
-            reference_text(range.start)
-        } else {
-            format!(
-                "{}:{}",
-                reference_text(range.start),
-                reference_text(range.end)
-            )
-        }
+        range_text(self.range())
     }
 
     fn select_sheet(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index == self.sheets.index || index >= self.sheet_names.len() {
+        if index == self.book.sheet_index() || index >= self.sheet_names.len() {
             return;
         }
         self.commit_edit(cx);
-        self.sheets.index = index;
-        self.sheets.extent = (MIN_COLUMNS, MIN_ROWS);
-        if let Err(error) = self.sheets.lay_out() {
+        if let Err(error) = self.book.select_sheet(index) {
             self.status = SharedString::from(error);
         }
         self.anchor = CellRef::new(0, 0);
@@ -402,67 +159,40 @@ impl WorkbookView {
     fn hit(&self, position: gpui::Point<Pixels>) -> Option<(CellRef, CellRef)> {
         let bounds = self.grid_bounds.get()?;
         let zoom = f64::from(self.zoom);
-        let local_x = f64::from(position.x - bounds.origin.x) / zoom;
-        let local_y = f64::from(position.y - bounds.origin.y) / zoom;
-        let layout = &self.sheets.layout;
-        let metrics = layout.header_metrics();
-        let (scroll_x, scroll_y) = self.sheet_scroll();
-        let (sheet_x, sheet_y) = layout.sheet_point_in_viewport(
-            (local_x - metrics.row_width).max(0.0),
-            (local_y - metrics.column_height).max(0.0),
-            scroll_x,
-            scroll_y,
-        );
-        let last_row = (layout.rows.len() as u32).saturating_sub(1);
-        let last_column = (layout.columns.len() as u32).saturating_sub(1);
-        match (local_x < metrics.row_width, local_y < metrics.column_height) {
-            (true, true) => Some((CellRef::new(0, 0), CellRef::new(last_column, last_row))),
-            (true, false) => {
-                let row = layout.cell_at(0.0, sheet_y)?.row;
-                Some((CellRef::new(0, row), CellRef::new(last_column, row)))
-            }
-            (false, true) => {
-                let column = layout.cell_at(sheet_x, 0.0)?.column;
-                Some((CellRef::new(column, 0), CellRef::new(column, last_row)))
-            }
-            (false, false) => {
-                let cell = layout.cell_at(sheet_x, sheet_y)?;
-                Some((cell, cell))
-            }
-        }
+        self.book.hit(
+            f64::from(position.x - bounds.origin.x) / zoom,
+            f64::from(position.y - bounds.origin.y) / zoom,
+            self.sheet_scroll(),
+        )
     }
 
     /// The cell's rectangle in the window, for the cell editor and the IME.
     fn cell_bounds(&self, reference: CellRef) -> Option<Bounds<Pixels>> {
         let grid = self.grid_bounds.get()?;
-        let layout = &self.sheets.layout;
-        let metrics = layout.header_metrics();
-        let (scroll_x, scroll_y) = self.sheet_scroll();
-        let rect = layout.cell_rect_in_viewport(reference, scroll_x, scroll_y)?;
+        let (x, y, width, height) = self.book.cell_rect(reference, self.sheet_scroll())?;
         let zoom = self.zoom;
         Some(Bounds {
             origin: point(
-                grid.origin.x + px((rect.x + metrics.row_width) as f32 * zoom),
-                grid.origin.y + px((rect.y + metrics.column_height) as f32 * zoom),
+                grid.origin.x + px(x as f32 * zoom),
+                grid.origin.y + px(y as f32 * zoom),
             ),
-            size: size(px(rect.width as f32 * zoom), px(rect.height as f32 * zoom)),
+            size: size(px(width as f32 * zoom), px(height as f32 * zoom)),
         })
     }
 
     /// Scrolls just enough to show `reference`.
     fn reveal(&mut self, reference: CellRef) {
-        let layout = &self.sheets.layout;
-        let metrics = layout.header_metrics();
         let zoom = f64::from(self.zoom);
-        let (scroll_x, scroll_y) = self.sheet_scroll();
-        let viewport = Rect {
-            x: scroll_x,
-            y: scroll_y,
-            width: (f64::from(self.viewport.0) / zoom - metrics.row_width).max(1.0),
-            height: (f64::from(self.viewport.1) / zoom - metrics.column_height).max(1.0),
-        };
-        let (x, y) = layout.scroll_to_reveal(reference, viewport);
-        if (x, y) != (scroll_x, scroll_y) {
+        let at = self.sheet_scroll();
+        let (x, y) = self.book.reveal(
+            reference,
+            at,
+            (
+                f64::from(self.viewport.0) / zoom,
+                f64::from(self.viewport.1) / zoom,
+            ),
+        );
+        if (x, y) != at {
             self.scroll
                 .set_offset(point(px(-(x * zoom) as f32), px(-(y * zoom) as f32)));
         }
@@ -471,7 +201,7 @@ impl WorkbookView {
     fn select(&mut self, anchor: CellRef, focus: CellRef, cx: &mut Context<Self>) {
         self.anchor = anchor;
         self.focus_cell = focus;
-        self.sheets.reach(focus);
+        self.book.reach(focus);
         self.reveal(focus);
         cx.notify();
     }
@@ -525,7 +255,7 @@ impl WorkbookView {
     // ---- editing ---------------------------------------------------------
 
     fn begin_edit(&mut self, text: Option<String>, in_place: bool, cx: &mut Context<Self>) {
-        let text = text.unwrap_or_else(|| self.sheets.edit_text(self.active()));
+        let text = text.unwrap_or_else(|| self.book.edit_text(self.active()));
         self.edit = Some(CellEdit {
             text,
             marked: None,
@@ -547,23 +277,16 @@ impl WorkbookView {
         let Some(edit) = self.edit.take() else {
             return;
         };
-        if edit.text == self.sheets.edit_text(self.active()) {
-            cx.notify();
-            return;
-        }
-        let sheet = self.sheets.name();
-        let reference = reference_text(self.active());
-        let result = self
-            .sheets
-            .book
-            .set(&sheet, &reference, cell_input(&edit.text));
-        self.after_write(result.map_err(|error| error.to_string()), cx);
+        let result = self.book.set_cell(self.active(), &edit.text);
+        self.after_write(result, cx);
+        cx.notify();
     }
 
-    fn after_write(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
-        match result.and_then(|()| self.sheets.lay_out()) {
-            Ok(()) => {
-                self.dirty = true;
+    /// After a write: repaint, or say why it failed.
+    fn after_write(&mut self, result: Result<bool, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(false) => {}
+            Ok(true) => {
                 self.generation += 1;
                 self.status = SharedString::from("");
             }
@@ -583,33 +306,18 @@ impl WorkbookView {
     /// Delete: empties the selected cells that hold anything, keeping their
     /// formats.
     fn clear_selection(&mut self, cx: &mut Context<Self>) {
-        let range = self.range();
-        let values: Vec<(String, CellInput)> = self
-            .sheets
-            .cells_in(range)
-            .filter(|cell| cell.formula.is_some() || !matches!(cell.value, CellValue::Empty))
-            .map(|cell| (reference_text(cell.reference), CellInput::Blank))
-            .collect();
-        if values.is_empty() {
-            return;
-        }
-        let sheet = self.sheets.name();
-        let result = self.sheets.book.set_cells(&sheet, &values);
-        self.after_write(result.map_err(|error| error.to_string()), cx);
+        let result = self.book.clear(self.range());
+        self.after_write(result, cx);
     }
 
     fn step_history(&mut self, undo: bool, cx: &mut Context<Self>) {
         self.edit = None;
         let result = if undo {
-            self.sheets.book.undo()
+            self.book.undo()
         } else {
-            self.sheets.book.redo()
+            self.book.redo()
         };
-        match result {
-            Ok(true) => self.after_write(Ok(()), cx),
-            Ok(false) => {}
-            Err(error) => self.after_write(Err(error.to_string()), cx),
-        }
+        self.after_write(result, cx);
     }
 
     // ---- clipboard -------------------------------------------------------
@@ -617,36 +325,7 @@ impl WorkbookView {
     /// The selection's displayed text, tab-separated by column and
     /// newline-separated by row — what Excel puts on the clipboard as text.
     fn selection_text(&self) -> String {
-        let range = self.range();
-        let used = self.sheets.used_end();
-        let end = CellRef::new(
-            range.end.column.min(used.column),
-            range.end.row.min(used.row),
-        );
-        if end.column < range.start.column || end.row < range.start.row {
-            return String::new();
-        }
-        let cells = u64::from(end.column - range.start.column + 1)
-            * u64::from(end.row - range.start.row + 1);
-        if cells > CLIPBOARD_CELL_LIMIT {
-            return String::new();
-        }
-        let sheet = self.sheets.name();
-        let mut out = String::new();
-        for row in range.start.row..=end.row {
-            let line: Vec<String> = (range.start.column..=end.column)
-                .map(|column| {
-                    self.sheets
-                        .book
-                        .cell(&sheet, &reference_text(CellRef::new(column, row)))
-                        .map(|cell| cell.display)
-                        .unwrap_or_default()
-                })
-                .collect();
-            out.push_str(&line.join("\t"));
-            out.push('\n');
-        }
-        out
+        self.book.range_text(self.range())
     }
 
     fn copy(&mut self, cx: &mut Context<Self>) {
@@ -671,27 +350,14 @@ impl WorkbookView {
             return;
         }
         let origin = self.active();
-        let rows: Vec<&str> = text.trim_end_matches(['\n', '\r']).split('\n').collect();
-        let mut values = Vec::new();
-        let mut far = origin;
-        for (row_offset, row) in rows.iter().enumerate() {
-            for (column_offset, value) in row.trim_end_matches('\r').split('\t').enumerate() {
-                let reference = CellRef::new(
-                    origin.column + column_offset as u32,
-                    origin.row + row_offset as u32,
-                );
-                far.column = far.column.max(reference.column);
-                far.row = far.row.max(reference.row);
-                values.push((reference_text(reference), cell_input(value)));
+        match self.book.paste(origin, &text) {
+            Ok(Some(far)) => {
+                self.after_write(Ok(true), cx);
+                self.select(origin, far, cx);
             }
+            Ok(None) => {}
+            Err(error) => self.after_write(Err(error), cx),
         }
-        if values.is_empty() {
-            return;
-        }
-        let sheet = self.sheets.name();
-        let result = self.sheets.book.set_cells(&sheet, &values);
-        self.after_write(result.map_err(|error| error.to_string()), cx);
-        self.select(origin, far, cx);
     }
 
     // ---- saving ----------------------------------------------------------
@@ -732,19 +398,14 @@ impl WorkbookView {
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
         self.commit_edit(cx);
         let result = self
-            .sheets
             .book
             .save_bytes()
-            .map_err(|error| error.to_string())
             .and_then(|bytes| std::fs::write(&target, bytes).map_err(|error| error.to_string()));
         self.status = SharedString::from(match result {
-            Ok(()) => {
-                self.dirty = false;
-                i18n::format(
-                    "sheet.saved",
-                    &[("name", &crate::shell::file_name(&target))],
-                )
-            }
+            Ok(()) => i18n::format(
+                "sheet.saved",
+                &[("name", &crate::shell::file_name(&target))],
+            ),
             Err(error) => i18n::format("sheet.save_failed", &[("error", &error)]),
         });
         cx.notify();
@@ -808,13 +469,8 @@ impl WorkbookView {
     }
 
     fn select_all(&mut self, cx: &mut Context<Self>) {
-        let layout = &self.sheets.layout;
-        let end = CellRef::new(
-            (layout.columns.len() as u32).saturating_sub(1),
-            (layout.rows.len() as u32).saturating_sub(1),
-        );
         self.anchor = CellRef::new(0, 0);
-        self.focus_cell = end;
+        self.focus_cell = self.book.grid_end();
         cx.notify();
     }
 
@@ -830,7 +486,7 @@ impl WorkbookView {
         let offset = self.scroll.offset();
         let scale = scale_factor * self.zoom;
         let wanted = PaintedFor {
-            sheet: self.sheets.index,
+            sheet: self.book.sheet_index(),
             // The scroll offset is negative going down; the sheet's
             // coordinates are not.
             scroll: (-f32::from(offset.x), -f32::from(offset.y)),
@@ -857,43 +513,19 @@ impl WorkbookView {
     }
 
     fn paint(&mut self, wanted: PaintedFor) -> Option<Arc<RenderImage>> {
-        let (width, height) = wanted.size;
-        let reusable = matches!(self.surface, Some((_, w, h)) if w == width && h == height);
-        if !reusable {
-            self.surface = Some((self.sheets.painter(width, height)?, width, height));
-        }
-        let (painter, _, _) = self.surface.as_ref()?;
-        let scale = f64::from(wanted.scale);
-        // The surface holds the header bands as well as the sheet, so the part
-        // of the sheet on show is smaller than it by exactly the bands — in
-        // sheet px, which is what the painter draws in under the scale.
-        let layout = &self.sheets.layout;
-        let metrics = layout.header_metrics();
-        let viewport = Rect {
-            x: (f64::from(wanted.scroll.0) / f64::from(self.zoom)).max(0.0),
-            y: (f64::from(wanted.scroll.1) / f64::from(self.zoom)).max(0.0),
-            width: (f64::from(width) / scale - metrics.row_width).max(0.0),
-            height: (f64::from(height) / scale - metrics.column_height).max(0.0),
-        };
-        let selection = GridSelection {
-            range: span(self.anchor, self.focus_cell),
-            active: self.anchor,
-            fill_preview: None,
-            fill_handle: false,
-        };
-        painter.save();
-        painter.scale(scale, scale).ok()?;
-        let painted = render_grid(
-            painter,
-            layout,
-            viewport,
-            Some(selection),
-            &RenderOptions::default(),
-        );
-        painter.restore();
-        painted.ok()?;
-        let (bgra, width, height) = painter.read_bgra_premultiplied()?;
-        let buffer = image::ImageBuffer::from_raw(width as u32, height as u32, bgra)?;
+        let zoom = f64::from(self.zoom);
+        let painter = self.book.render_viewport(
+            (
+                f64::from(wanted.scroll.0) / zoom,
+                f64::from(wanted.scroll.1) / zoom,
+            ),
+            wanted.size.0 as u32,
+            wanted.size.1 as u32,
+            f64::from(wanted.scale),
+            Some((self.anchor, self.focus_cell)),
+        )?;
+        let (bgra, width, height) = SkiaBackend::bgra(&painter)?;
+        let buffer = image::ImageBuffer::from_raw(width, height, bgra)?;
         Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
     }
 
@@ -901,7 +533,7 @@ impl WorkbookView {
         let editing = self.edit.as_ref().map(|edit| edit.text.clone());
         let content = editing
             .clone()
-            .unwrap_or_else(|| self.sheets.edit_text(self.active()));
+            .unwrap_or_else(|| self.book.edit_text(self.active()));
         div()
             .h(px(FORMULA_BAR_HEIGHT))
             .flex_none()
@@ -999,37 +631,21 @@ impl WorkbookView {
 impl Editor for WorkbookView {
     fn status_items(&self) -> Vec<SharedString> {
         let mut items: Vec<SharedString> = vec![
-            i18n::format("sheet.position", &[("name", &self.sheets.name())]).into(),
+            i18n::format("sheet.position", &[("name", &self.book.sheet_name())]).into(),
             self.selection_label().into(),
         ];
         // Excel's summary of a multi-cell selection: average, count, sum.
         let range = self.range();
         if range.start != range.end {
-            let mut count = 0usize;
-            let mut numbers = Vec::new();
-            for cell in self.sheets.cells_in(range) {
-                match cell.value {
-                    CellValue::Empty => {}
-                    CellValue::Number(number) => {
-                        count += 1;
-                        numbers.push(number);
-                    }
-                    _ => count += 1,
-                }
-            }
-            if !numbers.is_empty() {
-                let sum: f64 = numbers.iter().sum();
+            let summary = self.book.summary(range);
+            if let (Some(sum), Some(average)) = (summary.sum, summary.average) {
                 items.push(
-                    i18n::format(
-                        "sheet.average",
-                        &[("value", &format_number(sum / numbers.len() as f64))],
-                    )
-                    .into(),
+                    i18n::format("sheet.average", &[("value", &format_number(average))]).into(),
                 );
-                items.push(i18n::format("sheet.cell_count", &[("n", &count)]).into());
+                items.push(i18n::format("sheet.cell_count", &[("n", &summary.count)]).into());
                 items.push(i18n::format("sheet.sum", &[("value", &format_number(sum))]).into());
-            } else if count > 0 {
-                items.push(i18n::format("sheet.cell_count", &[("n", &count)]).into());
+            } else if summary.count > 0 {
+                items.push(i18n::format("sheet.cell_count", &[("n", &summary.count)]).into());
             }
         }
         if !self.status.is_empty() {
@@ -1055,7 +671,7 @@ impl Editor for WorkbookView {
     }
 
     fn is_dirty(&self) -> bool {
-        self.dirty
+        self.book.is_dirty()
     }
 }
 
@@ -1213,13 +829,12 @@ impl Render for WorkbookView {
         self.viewport = viewport;
         self.repaint_if_needed(viewport, window.scale_factor());
 
-        let layout = &self.sheets.layout;
-        let metrics = layout.header_metrics();
+        let (sheet_width, sheet_height) = self.book.sheet_size();
         let (sheet_width, sheet_height) = (
-            (layout.content_width + metrics.row_width) as f32 * self.zoom,
-            (layout.content_height + metrics.column_height) as f32 * self.zoom,
+            sheet_width as f32 * self.zoom,
+            sheet_height as f32 * self.zoom,
         );
-        let current = self.sheets.index;
+        let current = self.book.sheet_index();
         let tabs: Vec<_> = self
             .sheet_names
             .iter()
@@ -1360,22 +975,24 @@ impl Render for WorkbookView {
 impl WorkbookView {
     fn open(path: &Path, cx: &mut App) -> Result<Self, String> {
         let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-        let sheets = Sheets::open(&bytes)?;
-        let sheet_names = sheets.names();
+        let book = Workbook::open(&bytes, &system_time_zone(), crate::skia_backend()?)?;
+        let sheet_names = book
+            .sheet_names()
+            .into_iter()
+            .map(SharedString::from)
+            .collect();
         Ok(WorkbookView {
             path: path.to_path_buf(),
-            sheets,
+            book,
             sheet_names,
             anchor: CellRef::new(0, 0),
             focus_cell: CellRef::new(0, 0),
             edit: None,
             dragging: false,
-            dirty: false,
             generation: 0,
             image: None,
             retired: Vec::new(),
             painted: None,
-            surface: None,
             zoom: 1.0,
             viewport: (1.0, 1.0),
             grid_bounds: Rc::new(Cell::new(None)),
@@ -1395,48 +1012,6 @@ pub fn new_view(path: &Path, cx: &mut App) -> Result<Entity<WorkbookView>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn typed_text_becomes_the_right_kind_of_input() {
-        assert!(matches!(cell_input("=SUM(A1:A3)"), CellInput::Formula(f) if f == "SUM(A1:A3)"));
-        assert!(matches!(cell_input("42"), CellInput::Number(n) if n == 42.0));
-        assert!(matches!(cell_input(""), CellInput::Blank));
-        assert!(matches!(cell_input("名前"), CellInput::Text(t) if t == "名前"));
-        // A lone `=` is text, not an empty formula.
-        assert!(matches!(cell_input("="), CellInput::Text(_)));
-    }
-
-    #[test]
-    fn a_span_is_normalised_whichever_corner_came_first() {
-        let range = span(CellRef::new(3, 5), CellRef::new(1, 2));
-        assert_eq!(range.start, CellRef::new(1, 2));
-        assert_eq!(range.end, CellRef::new(3, 5));
-    }
-
-    #[test]
-    fn numbers_format_for_the_status_bar() {
-        assert_eq!(format_number(60.0), "60");
-        assert_eq!(format_number(2.5), "2.5");
-        assert_eq!(format_number(1.0 / 3.0), "0.3333");
-        assert_eq!(reference_text(CellRef::new(27, 9)), "AB10");
-    }
-
-    #[test]
-    fn an_edit_writes_recalculates_and_undoes() {
-        let bytes =
-            include_bytes!("../../../jade-core/public/fixtures/grid-operations-workbook.xlsx");
-        let mut sheets = Sheets::open(bytes).unwrap();
-        let name = sheets.name();
-        sheets.book.set(&name, "B2", cell_input("100")).unwrap();
-        assert_eq!(sheets.edit_text(CellRef::new(1, 1)), "100");
-        sheets.book.set(&name, "E2", cell_input("=B2*2")).unwrap();
-        assert_eq!(sheets.edit_text(CellRef::new(4, 1)), "=B2*2");
-        assert_eq!(sheets.book.cell(&name, "E2").unwrap().display, "200");
-        assert!(sheets.book.undo().unwrap());
-        assert!(sheets.book.undo().unwrap());
-        assert_ne!(sheets.edit_text(CellRef::new(1, 1)), "100");
-        sheets.lay_out().unwrap();
-    }
 
     fn fixture(name: &str) -> PathBuf {
         PathBuf::from(concat!(
@@ -1472,9 +1047,9 @@ mod tests {
         cx.simulate_keystrokes("enter");
         view.read_with(cx, |view, _| {
             assert!(view.edit.is_none());
-            assert_eq!(view.sheets.edit_text(CellRef::new(1, 2)), "123");
+            assert_eq!(view.book.edit_text(CellRef::new(1, 2)), "123");
             assert_eq!(view.active(), CellRef::new(1, 3));
-            assert!(view.dirty);
+            assert!(view.book.is_dirty());
         });
     }
 
@@ -1486,16 +1061,15 @@ mod tests {
         cx.simulate_input("=B2*10");
         cx.simulate_keystrokes("enter");
         view.read_with(cx, |view, _| {
-            let sheet = view.sheets.name();
-            assert_eq!(view.sheets.book.cell(&sheet, "E2").unwrap().display, "100");
+            assert_eq!(view.book.display_text(CellRef::new(4, 1)), "100");
         });
         cx.dispatch_action(Undo);
         view.read_with(cx, |view, _| {
-            assert_eq!(view.sheets.edit_text(CellRef::new(4, 1)), "");
+            assert_eq!(view.book.edit_text(CellRef::new(4, 1)), "");
         });
         cx.dispatch_action(Redo);
         view.read_with(cx, |view, _| {
-            assert_eq!(view.sheets.edit_text(CellRef::new(4, 1)), "=B2*10");
+            assert_eq!(view.book.edit_text(CellRef::new(4, 1)), "=B2*10");
         });
     }
 
@@ -1504,18 +1078,18 @@ mod tests {
     fn escape_cancels_and_delete_clears(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_view(cx);
         cx.simulate_keystrokes("down");
-        let before = view.read_with(cx, |view, _| view.sheets.edit_text(CellRef::new(0, 1)));
+        let before = view.read_with(cx, |view, _| view.book.edit_text(CellRef::new(0, 1)));
         assert!(!before.is_empty());
         cx.simulate_input("xyz");
         cx.simulate_keystrokes("escape");
         view.read_with(cx, |view, _| {
             assert!(view.edit.is_none());
-            assert_eq!(view.sheets.edit_text(CellRef::new(0, 1)), before);
+            assert_eq!(view.book.edit_text(CellRef::new(0, 1)), before);
         });
         cx.simulate_keystrokes("shift-down delete");
         view.read_with(cx, |view, _| {
-            assert_eq!(view.sheets.edit_text(CellRef::new(0, 1)), "");
-            assert_eq!(view.sheets.edit_text(CellRef::new(0, 2)), "");
+            assert_eq!(view.book.edit_text(CellRef::new(0, 1)), "");
+            assert_eq!(view.book.edit_text(CellRef::new(0, 2)), "");
         });
     }
 }

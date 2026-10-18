@@ -1,0 +1,39 @@
+[workspace]
+
+[package]
+name = "jade-office-model"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+
+# The editing models both shells share: a workbook over jade-core's
+# HeadlessWorkbook and a deck over the pptx EditSession, laid out and painted
+# through whichever painter the shell brings. UI-free, so the native gpui app
+# and the browser build run the same code; the backend is a feature:
+#   skia       the native app's (jade-skia-painter; links Skia's C++)
+#   tiny-skia  the browser build's (jade-tiny-skia-painter; pure Rust)
+
+[lib]
+name = "jade_office_model"
+path = "src/lib.rs"
+
+[features]
+default = []
+skia = ["dep:jade-skia-painter"]
+tiny-skia = ["dep:jade-tiny-skia-painter"]
+
+[dependencies]
+jade-opc = { path = "../../jade-core/crates/jade-opc" }
+jade-painter = { path = "../../jade-core/crates/jade-painter" }
+jade-pptx-layout = { path = "../../jade-core/crates/jade-pptx-layout" }
+jade-pptx-reader = { path = "../../jade-core/crates/jade-pptx-reader" }
+jade-pptx-render = { path = "../../jade-core/crates/jade-pptx-render" }
+jade-pptx-writer = { path = "../../jade-core/crates/jade-pptx-writer" }
+jade-xlsx-headless-api = { path = "../../jade-core/crates/jade-xlsx-headless-api" }
+jade-xlsx-headless-editor = { path = "../../jade-core/crates/jade-xlsx-headless-editor" }
+jade-xlsx-layout = { path = "../../jade-core/crates/jade-xlsx-layout" }
+jade-xlsx-reader = { path = "../../jade-core/crates/jade-xlsx-reader" }
+jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
+jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter", optional = true }
+jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter", optional = true }
