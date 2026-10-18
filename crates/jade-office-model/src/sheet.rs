@@ -11,7 +11,9 @@ use std::rc::Rc;
 
 use jade_painter::Painter;
 use jade_xlsx_headless_api::CellInput;
-use jade_xlsx_headless_editor::HeadlessWorkbook;
+use jade_xlsx_headless_editor::{formula_text, HeadlessWorkbook};
+
+use crate::{clipboard, typing};
 pub use jade_xlsx_layout::HeaderMetrics;
 use jade_xlsx_layout::{column_label, layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
 pub use jade_xlsx_reader::{CellRange, CellRef};
@@ -64,6 +66,17 @@ pub fn cell_input(text: &str) -> CellInput {
     }
 }
 
+/// A number as the formula bar shows it: up to fifteen significant
+/// digits, Excel's precision, without trailing zeros.
+fn full_precision(value: f64) -> String {
+    if value.fract() == 0.0 && value.abs() < 1e15 {
+        return format!("{}", value as i64);
+    }
+    let digits = 15 - (value.abs().log10().floor() as i32 + 1);
+    let text = format!("{value:.*}", digits.clamp(0, 15) as usize);
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
 /// A number as a status bar shows it: integers bare, others to a few places.
 pub fn format_number(value: f64) -> String {
     if value.fract() == 0.0 && value.abs() < 1e15 {
@@ -91,6 +104,11 @@ pub struct Workbook<B: Backend> {
     layout: SheetLayout,
     extent: (u32, u32),
     dirty: bool,
+    /// How many of the book's undo steps each edit took, latest last: a
+    /// typed `10%` is a value and a format, and undoes as one.
+    steps: Vec<usize>,
+    /// The same for the edits undone, for redo.
+    undone: Vec<usize>,
     /// The last surface painted on, reused while the size stays the same:
     /// a sheet repaints on every scroll frame.
     surface: RefCell<Option<(B::Painter, u32, u32)>>,
@@ -127,6 +145,8 @@ impl<B: Backend> Workbook<B> {
             layout,
             extent: (MIN_COLUMNS, MIN_ROWS),
             dirty: false,
+            steps: Vec::new(),
+            undone: Vec::new(),
             surface: RefCell::new(None),
         })
     }
@@ -281,14 +301,71 @@ impl<B: Backend> Workbook<B> {
             return String::new();
         };
         if let Some(formula) = &cell.formula {
-            return format!("={formula}");
+            // As Excel shows it: the file's `_xlfn.` prefixes are not what
+            // anybody typed.
+            return format!("={}", formula_text::to_display_formula(formula));
         }
         match &cell.value {
             CellValue::Empty => String::new(),
-            CellValue::Number(number) => format_number(*number),
+            CellValue::Number(number) => self.edit_number(reference, *number),
+            // Text that would read as a value if typed back keeps the
+            // apostrophe that makes it text, as Excel's formula bar shows.
+            CellValue::Text(text) if typing::reads_as_value(text) => format!("'{text}"),
             CellValue::Text(text) => text.clone(),
             CellValue::Bool(flag) => if *flag { "TRUE" } else { "FALSE" }.to_string(),
             CellValue::Error(error) => error.clone(),
+        }
+    }
+
+    /// A number as Excel's formula bar shows it: a percentage as one, a
+    /// date or time as one, anything else at full precision.
+    fn edit_number(&self, reference: CellRef, number: f64) -> String {
+        let format = self.number_format(reference).unwrap_or_default();
+        if format.contains('%') && !format.contains('"') {
+            return format!("{}%", full_precision(number * 100.0));
+        }
+        if !format.is_empty() && jade_xlsx_layout::number_format::is_date_format(&format) {
+            let date1904 = matches!(
+                self.book.workbook().date_system,
+                jade_xlsx_reader::DateSystem::Nineteen04
+            );
+            let code = match (number.trunc() != 0.0, number.fract() != 0.0) {
+                (true, true) => "yyyy/m/d h:mm:ss",
+                (true, false) => "yyyy/m/d",
+                _ => "h:mm:ss",
+            };
+            return jade_xlsx_layout::number_format::format_value(
+                &CellValue::Number(number),
+                Some(code),
+                if date1904 {
+                    jade_xlsx_reader::DateSystem::Nineteen04
+                } else {
+                    jade_xlsx_reader::DateSystem::Nineteen00
+                },
+            )
+            .text;
+        }
+        full_precision(number)
+    }
+
+    /// The cell's number format code, if it has one other than General.
+    fn number_format(&self, reference: CellRef) -> Option<String> {
+        self.book
+            .cell(&self.sheet_name(), &reference_text(reference))
+            .ok()?
+            .number_format
+            .filter(|code| !code.eq_ignore_ascii_case("general"))
+    }
+
+    /// The number a cell holds, if it holds one.
+    pub fn number(&self, reference: CellRef) -> Option<f64> {
+        let range = CellRange {
+            start: reference,
+            end: reference,
+        };
+        match self.cells_in(range).next()?.value {
+            CellValue::Number(number) => Some(number),
+            _ => None,
         }
     }
 
@@ -348,7 +425,7 @@ impl<B: Backend> Workbook<B> {
         let mut out = String::new();
         for row in range.start.row..=end.row {
             let line: Vec<String> = (range.start.column..=end.column)
-                .map(|column| self.display_text(CellRef::new(column, row)))
+                .map(|column| clipboard::field(&self.display_text(CellRef::new(column, row))))
                 .collect();
             out.push_str(&line.join("\t"));
             out.push('\n');
@@ -363,11 +440,40 @@ impl<B: Backend> Workbook<B> {
             return Ok(false);
         }
         let name = self.sheet_name();
+        let at = reference_text(reference);
+        let date1904 = matches!(
+            self.book.workbook().date_system,
+            jade_xlsx_reader::DateSystem::Nineteen04
+        );
+        let typed = typing::read(text, date1904);
+        // Excel gives a General cell the format the value was typed in; a
+        // cell someone formatted keeps its format.
+        let format = typed
+            .format
+            .filter(|_| self.number_format(reference).is_none());
         self.book
-            .set(&name, &reference_text(reference), cell_input(text))
+            .set(&name, &at, typed.input)
             .map_err(|error| error.to_string())?;
+        let mut steps = 1;
+        if let Some(code) = format {
+            let change = jade_xlsx_headless_editor::FormatChange {
+                number_format: Some(code.to_string()),
+                ..Default::default()
+            };
+            if self.book.set_format(&name, &at, &change).is_ok() {
+                steps += 1;
+            }
+        }
+        self.record(steps);
         self.after_write()?;
         Ok(true)
+    }
+
+    /// Notes an edit that took `steps` of the book's undo steps; a new
+    /// edit ends what redo could bring back.
+    fn record(&mut self, steps: usize) {
+        self.steps.push(steps);
+        self.undone.clear();
     }
 
     /// Pastes tab-separated text from `origin` down and right as one write,
@@ -375,15 +481,15 @@ impl<B: Backend> Workbook<B> {
     pub fn paste(&mut self, origin: CellRef, text: &str) -> Result<Option<CellRef>, String> {
         let mut values = Vec::new();
         let mut far = origin;
-        for (row_offset, row) in text.trim_end_matches(['\n', '\r']).split('\n').enumerate() {
-            for (column_offset, value) in row.trim_end_matches('\r').split('\t').enumerate() {
+        for (row_offset, row) in clipboard::parse(text).iter().enumerate() {
+            for (column_offset, value) in row.iter().enumerate() {
                 let reference = CellRef::new(
                     origin.column + column_offset as u32,
                     origin.row + row_offset as u32,
                 );
                 far.column = far.column.max(reference.column);
                 far.row = far.row.max(reference.row);
-                values.push((reference_text(reference), cell_input(value)));
+                values.push((reference_text(reference), typing::read(value, false).input));
             }
         }
         if values.is_empty() {
@@ -393,6 +499,7 @@ impl<B: Backend> Workbook<B> {
         self.book
             .set_cells(&name, &values)
             .map_err(|error| error.to_string())?;
+        self.record(1);
         self.after_write()?;
         Ok(Some(far))
     }
@@ -411,6 +518,7 @@ impl<B: Backend> Workbook<B> {
         self.book
             .set_cells(&name, &values)
             .map_err(|error| error.to_string())?;
+        self.record(1);
         self.after_write()?;
         Ok(true)
     }
@@ -420,20 +528,37 @@ impl<B: Backend> Workbook<B> {
         self.relayout()
     }
 
+    /// Undoes the last edit, however many of the book's steps it took.
     pub fn undo(&mut self) -> Result<bool, String> {
-        let undone = self.book.undo().map_err(|error| error.to_string())?;
-        if undone {
+        let steps = self.steps.pop().unwrap_or(1);
+        let mut undone = 0;
+        for _ in 0..steps {
+            if !self.book.undo().map_err(|error| error.to_string())? {
+                break;
+            }
+            undone += 1;
+        }
+        if undone > 0 {
+            self.undone.push(undone);
             self.after_write()?;
         }
-        Ok(undone)
+        Ok(undone > 0)
     }
 
     pub fn redo(&mut self) -> Result<bool, String> {
-        let redone = self.book.redo().map_err(|error| error.to_string())?;
-        if redone {
+        let steps = self.undone.pop().unwrap_or(1);
+        let mut redone = 0;
+        for _ in 0..steps {
+            if !self.book.redo().map_err(|error| error.to_string())? {
+                break;
+            }
+            redone += 1;
+        }
+        if redone > 0 {
+            self.steps.push(redone);
             self.after_write()?;
         }
-        Ok(redone)
+        Ok(redone > 0)
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -564,6 +689,34 @@ mod tests {
         let backend = TinySkiaBackend::new(&faces()).unwrap();
         let reopened = Workbook::open(&saved, "UTC", backend).unwrap();
         assert_eq!(reopened.edit_text(CellRef::new(4, 1)), "=B2*10");
+    }
+
+    /// The formula bar shows what was typed; the file stores what Excel
+    /// reads (`_xlfn.` before the newer functions) — otherwise Excel opens
+    /// the saved workbook as `#NAME?`.
+    #[test]
+    fn newer_functions_read_as_typed_and_save_as_excel_reads_them() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let at = CellRef::new(6, 1);
+        let typed = "=XLOOKUP(20,B2:B4,C2:C4,\"none\")";
+        assert!(book.set_cell(at, typed).unwrap());
+        assert_eq!(book.edit_text(at), typed);
+        assert_eq!(book.display_text(at), "40");
+        let saved = book.save_bytes().unwrap();
+        let package = jade_opc::OpcPackage::open(&saved).unwrap();
+        let stored = package
+            .part_names()
+            .iter()
+            .filter(|name| name.starts_with("xl/worksheets/"))
+            .filter_map(|name| package.part_str(name).ok().flatten())
+            .any(|xml| xml.contains("_xlfn.XLOOKUP("));
+        assert!(stored, "XLOOKUP is saved without its _xlfn. prefix");
+        let backend = TinySkiaBackend::new(&faces()).unwrap();
+        let reopened = Workbook::open(&saved, "UTC", backend).unwrap();
+        assert_eq!(reopened.edit_text(at), typed);
+        // Typing the same text again is no change.
+        let mut reopened = reopened;
+        assert!(!reopened.set_cell(at, typed).unwrap());
     }
 
     #[test]

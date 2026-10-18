@@ -29,6 +29,7 @@ futures = "0.3"
 image = "0.25"
 
 [dev-dependencies]
+jade-opc = { path = "../../jade-core/crates/jade-opc" }
 # Headless windows for scenario tests: keystrokes, input and actions driven
 # through the real views.
 gpui = { version = "0.2", default-features = false, features = ["macos-blade", "font-kit", "test-support"] }

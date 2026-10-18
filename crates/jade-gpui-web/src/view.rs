@@ -101,16 +101,15 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// By extension: the Open XML packages, macro-enabled and template
+    /// forms included, which open and save the same way.
     pub fn of(name: &str) -> Option<Kind> {
-        let lower = name.to_lowercase();
-        if lower.ends_with(".docx") {
-            Some(Kind::Document)
-        } else if lower.ends_with(".xlsx") {
-            Some(Kind::Workbook)
-        } else if lower.ends_with(".pptx") {
-            Some(Kind::Deck)
-        } else {
-            None
+        let extension = name.rsplit_once('.')?.1.to_lowercase();
+        match extension.as_str() {
+            "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
+            "xlsx" | "xlsm" | "xltx" | "xltm" => Some(Kind::Workbook),
+            "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
+            _ => None,
         }
     }
 
@@ -273,6 +272,11 @@ impl DocView {
     ) -> Result<Self, String> {
         let kind = Kind::of(&name)
             .ok_or_else(|| i18n::format("workspace.unsupported", &[("name", &name)]))?;
+        // An OLE compound file, not a package: password-protected, or one
+        // of the old binary formats.
+        if bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
+            return Err(i18n::format("workspace.protected", &[("name", &name)]));
+        }
         let document = match kind {
             Kind::Document => {
                 let opened = jade_web::document::Document::open(
