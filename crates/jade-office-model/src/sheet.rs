@@ -451,6 +451,13 @@ impl<B: Backend> Workbook<B> {
             }
         }
         let typed = typing::read(text, date1904);
+        // Its parentheses closed, a function given the wrong number of
+        // arguments is refused too, as Excel refuses it.
+        if let CellInput::Formula(formula) = &typed.input {
+            if formula_text::wrong_argument_count(formula) {
+                return Err(typing::FORMULA_PROBLEM.to_string());
+            }
+        }
         // Excel gives a General cell the format the value was typed in; a
         // cell someone formatted keeps its format.
         let format = typed
