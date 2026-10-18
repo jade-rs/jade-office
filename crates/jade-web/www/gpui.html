@@ -24,7 +24,19 @@
         bytes("fonts/NotoSansJP-Regular.ttf"),
         bytes("fonts/NotoSansJP-Bold.ttf"),
       ]);
-      run(name, file, regular, bold, window.devicePixelRatio || 1);
+      // Save hands the bytes back; the page offers them as a download.
+      const download = (fileName, bytes) => {
+        const url = URL.createObjectURL(new Blob([bytes]));
+        const link = Object.assign(document.createElement("a"), { href: url, download: fileName });
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      };
+      run(
+        name, file, regular, bold,
+        window.devicePixelRatio || 1,
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        download,
+      );
       document.getElementById("loading").remove();
     } catch (error) {
       document.getElementById("loading").textContent = `起動に失敗: ${error}`;

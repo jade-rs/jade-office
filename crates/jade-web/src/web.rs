@@ -116,7 +116,8 @@ impl WebWorkbook {
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8], fonts: &WebFonts) -> Result<WebWorkbook, JsError> {
         Ok(Self(
-            crate::Workbook::open(bytes, Rc::clone(&fonts.book)).map_err(|e| JsError::new(&e))?,
+            crate::Workbook::open(bytes, "UTC", Rc::clone(&fonts.book))
+                .map_err(|e| JsError::new(&e))?,
         ))
     }
     #[wasm_bindgen(js_name = sheetNames)]
@@ -145,7 +146,7 @@ impl WebWorkbook {
         scale: f64,
     ) -> Option<Rendered> {
         self.0
-            .render_viewport((scroll_x, scroll_y), width, height, scale)
+            .render_viewport((scroll_x, scroll_y), width, height, scale, None)
             .map(rendered)
     }
 }

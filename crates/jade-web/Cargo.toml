@@ -34,6 +34,11 @@ jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter" }
 jade-xlsx-layout = { path = "../../jade-core/crates/jade-xlsx-layout" }
 jade-xlsx-reader = { path = "../../jade-core/crates/jade-xlsx-reader" }
 jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
+# The editing cores the native app uses: cell writes with recalculation and
+# undo, and slide edits as an undoable session over the package bytes.
+jade-xlsx-headless-api = { path = "../../jade-core/crates/jade-xlsx-headless-api" }
+jade-xlsx-headless-editor = { path = "../../jade-core/crates/jade-xlsx-headless-editor" }
+jade-pptx-writer = { path = "../../jade-core/crates/jade-pptx-writer" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
