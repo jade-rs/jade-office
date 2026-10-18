@@ -33,6 +33,17 @@ use crate::Backend;
 /// The grid drawn past the last used cell; it grows as the selection moves.
 const MIN_COLUMNS: u32 = 12;
 const MIN_ROWS: u32 = 30;
+/// What an entry a data validation refuses is reported as: this, then the
+/// rule's own message (empty for Excel's standard one). See
+/// [`validation_refusal`].
+pub const VALIDATION_REFUSED: &str = "\u{1}validation:";
+
+/// The message of an entry a data validation refused — the rule's own, or
+/// an empty one for the shell's standard words — when `error` is one.
+pub fn validation_refusal(error: &str) -> Option<&str> {
+    error.strip_prefix(VALIDATION_REFUSED)
+}
+
 /// Excel's limits.
 pub const MAX_COLUMN: u32 = 16_383;
 pub const MAX_ROW: u32 = 1_048_575;
@@ -531,6 +542,167 @@ impl<B: Backend> Workbook<B> {
         }
     }
 
+    /// The hyperlink on `at`, if it has one: a web address, or a place in
+    /// the workbook.
+    pub fn link(&self, at: CellRef) -> Option<Link> {
+        let workbook = self.book.workbook();
+        let link = workbook.sheets[self.index].hyperlink_at(at)?;
+        if let Some(target) = link.target.as_ref().filter(|target| !target.is_empty()) {
+            let mut url = target.clone();
+            if let Some(location) = link
+                .location
+                .as_ref()
+                .filter(|location| !location.is_empty())
+            {
+                url = format!("{url}#{location}");
+            }
+            return Some(Link::Url(url));
+        }
+        let location = link.location.as_ref()?;
+        let (sheet, reference) = match location.rsplit_once('!') {
+            Some((sheet, reference)) => (sheet.trim_matches('\'').replace("''", "'"), reference),
+            None => (self.sheet_name(), location.as_str()),
+        };
+        let index = workbook
+            .sheets
+            .iter()
+            .position(|candidate| candidate.name.eq_ignore_ascii_case(&sheet))?;
+        let range = parse_range(&reference.replace('$', ""))?;
+        Some(Link::Place {
+            sheet: index,
+            range,
+        })
+    }
+
+    /// The data validation that applies to `at`.
+    fn validation(&self, at: CellRef) -> Option<&jade_xlsx_reader::DataValidation> {
+        self.book.workbook().sheets[self.index]
+            .data_validations
+            .iter()
+            .find(|validation| validation.ranges.iter().any(|range| range.contains(at)))
+    }
+
+    /// The choices of a list validation on `at` — what Excel's in-cell
+    /// dropdown offers — from the list typed into the rule or the cells it
+    /// names.
+    pub fn validation_list(&self, at: CellRef) -> Option<Vec<String>> {
+        let validation = self.validation(at)?;
+        if validation.validation_type.as_deref() != Some("list") {
+            return None;
+        }
+        let source = validation.formula1.as_deref()?.trim();
+        if let Some(list) = source
+            .strip_prefix('"')
+            .and_then(|rest| rest.strip_suffix('"'))
+        {
+            return Some(
+                list.split(',')
+                    .map(|item| item.trim().to_string())
+                    .collect(),
+            );
+        }
+        let source = source.trim_start_matches('=');
+        let (sheet, reference) = match source.rsplit_once('!') {
+            Some((sheet, reference)) => (sheet.trim_matches('\'').replace("''", "'"), reference),
+            None => (self.sheet_name(), source),
+        };
+        let range = parse_range(&reference.replace('$', ""))?;
+        let cells = u64::from(range.end.column - range.start.column + 1)
+            * u64::from(range.end.row - range.start.row + 1);
+        if cells > 10_000 {
+            return None;
+        }
+        let mut items = Vec::new();
+        for row in range.start.row..=range.end.row {
+            for column in range.start.column..=range.end.column {
+                let text = self
+                    .book
+                    .cell(&sheet, &reference_text(CellRef::new(column, row)))
+                    .map(|cell| cell.display)
+                    .unwrap_or_default();
+                if !text.is_empty() {
+                    items.push(text);
+                }
+            }
+        }
+        Some(items)
+    }
+
+    /// Whether `text` may go into `at` under its data validation: `Err`
+    /// with the rule's own error message (or `None` for Excel's) when a
+    /// Stop rule refuses it.
+    fn check_validation(&self, at: CellRef, text: &str) -> Result<(), Option<String>> {
+        let Some(validation) = self.validation(at) else {
+            return Ok(());
+        };
+        if !validation.show_error_message || text.starts_with('=') {
+            return Ok(());
+        }
+        if text.is_empty() {
+            return if validation.allow_blank {
+                Ok(())
+            } else {
+                Err(validation.error.clone())
+            };
+        }
+        let refuse = || Err(validation.error.clone());
+        let kind = validation.validation_type.as_deref().unwrap_or("none");
+        if kind == "list" {
+            return match self.validation_list(at) {
+                Some(items)
+                    if !items
+                        .iter()
+                        .any(|item| item.eq_ignore_ascii_case(text.trim())) =>
+                {
+                    refuse()
+                }
+                _ => Ok(()),
+            };
+        }
+        let value = match kind {
+            "whole" | "decimal" => {
+                let date1904 = matches!(
+                    self.book.workbook().date_system,
+                    jade_xlsx_reader::DateSystem::Nineteen04
+                );
+                match typing::read(text, date1904).input {
+                    CellInput::Number(number) => number,
+                    _ => return refuse(),
+                }
+            }
+            "textLength" => text.chars().count() as f64,
+            _ => return Ok(()),
+        };
+        if kind == "whole" && value.fract() != 0.0 {
+            return refuse();
+        }
+        let bound = |formula: Option<&String>| {
+            formula.and_then(|formula| formula.trim_start_matches('=').trim().parse::<f64>().ok())
+        };
+        let (Some(first), second) = (
+            bound(validation.formula1.as_ref()),
+            bound(validation.formula2.as_ref()),
+        ) else {
+            return Ok(());
+        };
+        let ok = match validation.operator.as_deref().unwrap_or("between") {
+            "between" => value >= first && second.is_none_or(|second| value <= second),
+            "notBetween" => !(value >= first && second.is_none_or(|second| value <= second)),
+            "equal" => value == first,
+            "notEqual" => value != first,
+            "greaterThan" => value > first,
+            "lessThan" => value < first,
+            "greaterThanOrEqual" => value >= first,
+            "lessThanOrEqual" => value <= first,
+            _ => true,
+        };
+        if ok {
+            Ok(())
+        } else {
+            refuse()
+        }
+    }
+
     /// The bottom-right corner of what the sheet uses — where ⌘End goes.
     pub fn used_end(&self) -> CellRef {
         let mut end = CellRef::new(0, 0);
@@ -741,6 +913,12 @@ impl<B: Backend> Workbook<B> {
     fn write_cell(&mut self, reference: CellRef, text: &str) -> Result<Option<usize>, String> {
         if text == self.edit_text(reference) {
             return Ok(None);
+        }
+        if let Err(message) = self.check_validation(reference, text) {
+            return Err(format!(
+                "{VALIDATION_REFUSED}{}",
+                message.unwrap_or_default()
+            ));
         }
         let name = self.sheet_name();
         let at = reference_text(reference);
@@ -2208,6 +2386,17 @@ pub enum Borders {
     None,
 }
 
+/// Where a hyperlink goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Link {
+    Url(String),
+    /// A sheet (by index) and the cells to select there.
+    Place {
+        sheet: usize,
+        range: CellRange,
+    },
+}
+
 /// The font styles a shortcut turns on and off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FontToggle {
@@ -2687,5 +2876,83 @@ mod tests {
         assert!(book.move_sheet(1, 0).unwrap());
         assert_eq!(book.sheet_index(), 0);
         assert_eq!(book.sheet_names()[1], first);
+    }
+
+    /// A link to the web opens it; one into the workbook goes there.
+    #[test]
+    fn hyperlinks_lead_to_the_web_or_a_place_in_the_workbook() {
+        let mut package =
+            jade_opc::OpcPackage::open(&fixture("grid-operations-workbook.xlsx")).unwrap();
+        let sheet = package
+            .part_str("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .unwrap()
+            .replace(
+                "<tableParts",
+                "<hyperlinks><hyperlink ref=\"A2\" r:id=\"link\"/>\
+             <hyperlink ref=\"A3\" location=\"'Operations'!$C$4\"/></hyperlinks><tableParts",
+            );
+        package.replace("xl/worksheets/sheet1.xml", sheet.into_bytes());
+        let rels = package
+            .part_str("xl/worksheets/_rels/sheet1.xml.rels")
+            .unwrap()
+            .unwrap()
+            .replace(
+                "</Relationships>",
+                "<Relationship Id=\"link\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/\" TargetMode=\"External\"/></Relationships>",
+            );
+        package.replace("xl/worksheets/_rels/sheet1.xml.rels", rels.into_bytes());
+        let bytes = package.write().unwrap();
+        let book = Workbook::open(&bytes, "UTC", TinySkiaBackend::new(&faces()).unwrap()).unwrap();
+        assert_eq!(
+            book.link(at(0, 1)),
+            Some(Link::Url("https://example.com/".into()))
+        );
+        assert_eq!(
+            book.link(at(0, 2)),
+            Some(Link::Place {
+                sheet: 0,
+                range: span(at(2, 3), at(2, 3))
+            })
+        );
+        assert_eq!(book.link(at(0, 3)), None);
+    }
+
+    /// A list rule offers its choices and refuses anything else; a number
+    /// rule refuses what is out of bounds, with the rule's message.
+    #[test]
+    fn data_validation_lists_and_refuses_as_excel_does() {
+        let mut package =
+            jade_opc::OpcPackage::open(&fixture("grid-operations-workbook.xlsx")).unwrap();
+        let sheet = package
+            .part_str("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .unwrap()
+            .replace(
+                "<tableParts",
+                "<dataValidations count=\"2\">\
+                 <dataValidation type=\"list\" allowBlank=\"1\" showErrorMessage=\"1\" sqref=\"D2:D4\"><formula1>\"Yes,No\"</formula1></dataValidation>\
+                 <dataValidation type=\"whole\" operator=\"between\" showErrorMessage=\"1\" error=\"1 to 10\" sqref=\"E2\"><formula1>1</formula1><formula2>10</formula2></dataValidation>\
+                 </dataValidations><tableParts",
+            );
+        package.replace("xl/worksheets/sheet1.xml", sheet.into_bytes());
+        let bytes = package.write().unwrap();
+        let mut book =
+            Workbook::open(&bytes, "UTC", TinySkiaBackend::new(&faces()).unwrap()).unwrap();
+        assert_eq!(
+            book.validation_list(at(3, 2)),
+            Some(vec!["Yes".to_string(), "No".to_string()])
+        );
+        assert!(book.set_cell(at(3, 2), "yes").unwrap());
+        let refused = book.set_cell(at(3, 2), "Maybe").unwrap_err();
+        assert_eq!(validation_refusal(&refused), Some(""));
+        assert!(book.set_cell(at(4, 1), "7").unwrap());
+        let refused = book.set_cell(at(4, 1), "70").unwrap_err();
+        assert_eq!(validation_refusal(&refused), Some("1 to 10"));
+        assert!(
+            book.set_cell(at(4, 1), "=B2").unwrap(),
+            "formulas are not checked"
+        );
+        assert_eq!(book.validation_list(at(0, 0)), None);
     }
 }

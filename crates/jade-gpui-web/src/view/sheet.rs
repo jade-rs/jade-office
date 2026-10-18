@@ -17,7 +17,7 @@ use gpui::{DispatchPhase, MouseUpEvent, Point};
 use jade_web::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_web::sheet::{
     column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
-    CellRange, Copied, FilterButton, FontToggle, HorizontalAlignment, Overlay, ResizeGesture,
+    CellRange, Copied, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay, ResizeGesture,
     MAX_COLUMN, MAX_ROW,
 };
 
@@ -68,10 +68,15 @@ pub(super) struct Sheet {
     menu: Option<SheetMenu>,
     /// A filter button's dropdown.
     filter: Option<FilterPanel>,
+    /// The active cell's list of choices (its data validation), open.
+    choices: Option<Vec<String>>,
     /// A toolbar button's dropdown: colours or borders.
     popup: Option<Popup>,
     /// What the pointer is over, for its cursor.
     hover: Hover,
+    /// A hyperlink pressed: followed when the press lets go on it, as in
+    /// Excel (a press held into a drag selects instead).
+    pending_link: Option<(CellRef, Link)>,
 }
 
 /// A cell being typed into.
@@ -107,6 +112,7 @@ enum SheetDrag {
 enum Hover {
     Cells,
     FillHandle,
+    Link,
     ResizeColumn,
     ResizeRow,
 }
@@ -227,8 +233,10 @@ impl Sheet {
             note: None,
             menu: None,
             filter: None,
+            choices: None,
             popup: None,
             hover: Hover::Cells,
+            pending_link: None,
         }
     }
 
@@ -1196,6 +1204,14 @@ impl DocView {
             return false;
         };
         sheet.menu = None;
+        if sheet.choices.is_some() {
+            if key == "escape" {
+                sheet.choices = None;
+                cx.notify();
+                return true;
+            }
+            sheet.choices = None;
+        }
         if sheet.filter.is_some() {
             match key {
                 "escape" => sheet.filter = None,
@@ -1375,6 +1391,12 @@ impl DocView {
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
+            // ⌥↓: the active cell's list of choices.
+            "down" if modifiers.alt => {
+                let list = sheet.book.validation_list(sheet.selection.active);
+                sheet.choices = list;
+                cx.notify();
+            }
             // Shift+Space: the selection's rows, whole.
             "space" if shift => {
                 sheet.selection.whole_rows();
@@ -1767,6 +1789,7 @@ impl DocView {
         sheet.menu = None;
         sheet.filter = None;
         sheet.popup = None;
+        sheet.choices = None;
         if sheet.renaming.is_some() || sheet.naming.is_some() {
             self.finish_naming(true, cx);
         }
@@ -1878,6 +1901,12 @@ impl DocView {
         };
         let kind = sheet.selection.press(hit, event.modifiers.shift);
         sheet.drag = Some(SheetDrag::Select(kind));
+        sheet.pending_link = match hit {
+            Hit::Cell(cell) if !event.modifiers.shift && event.click_count == 1 => {
+                sheet.book.link(cell).map(|link| (cell, link))
+            }
+            _ => None,
+        };
         if let Hit::Cell(cell) = hit {
             sheet.book.reach(cell);
             if event.click_count >= 2 && !event.modifiers.shift {
@@ -1886,6 +1915,39 @@ impl DocView {
             }
         }
         cx.notify();
+    }
+
+    /// A choice from the active cell's list goes into it.
+    fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some(choice) = sheet
+            .choices
+            .take()
+            .and_then(|choices| choices.into_iter().nth(index))
+        else {
+            return;
+        };
+        let active = sheet.selection.active;
+        let result = sheet.book.set_cell(active, &choice);
+        self.edited(result, cx);
+    }
+
+    /// Follows a hyperlink: a web address opens in the browser, a place in
+    /// the workbook is selected.
+    fn follow_link(&mut self, link: Link, cx: &mut Context<Self>) {
+        match link {
+            Link::Url(url) => cx.open_url(&url),
+            Link::Place { sheet, range } => {
+                self.select_sheet(sheet, cx);
+                if let Some(state) = self.sheet_mut() {
+                    state.selection = Selection::range_from(range.start, range.end);
+                }
+                self.reveal_cell(range.start);
+                cx.notify();
+            }
+        }
     }
 
     /// A right-click: the cell (or header) under it is selected unless it
@@ -1957,6 +2019,13 @@ impl DocView {
                 .on_fill_handle(x, y, scroll, sheet.selection.range()) =>
             {
                 Hover::FillHandle
+            }
+            None if matches!(
+                sheet.book.hit(x, y, scroll),
+                Some(Hit::Cell(cell)) if sheet.book.link(cell).is_some()
+            ) =>
+            {
+                Hover::Link
             }
             None => Hover::Cells,
         };
@@ -2088,7 +2157,16 @@ impl DocView {
                 };
                 self.edited(result, cx);
             }
-            SheetDrag::Select(_) | SheetDrag::Point => cx.notify(),
+            SheetDrag::Select(_) => {
+                let link = sheet.pending_link.take();
+                if let Some((_, link)) = link.filter(|(cell, _)| {
+                    sheet.selection.is_cell() && sheet.selection.active == *cell
+                }) {
+                    self.follow_link(link, cx);
+                }
+                cx.notify();
+            }
+            SheetDrag::Point => cx.notify(),
         }
     }
 
@@ -2487,6 +2565,103 @@ impl DocView {
                     .child(text),
             )
         });
+        // A cell with a list of choices shows Excel's ▼ beside it, and the
+        // list under it when open.
+        let list_button = (sheet.edit.is_none())
+            .then(|| sheet.book.validation_list(active))
+            .flatten()
+            .and_then(|_| {
+                let (x, y, w, h) = sheet
+                    .book
+                    .cell_rect(active, (f64::from(at.0 / zoom), f64::from(at.1 / zoom)))?;
+                let (x, y, w, h) = (
+                    x as f32 * zoom,
+                    y as f32 * zoom,
+                    w as f32 * zoom,
+                    h as f32 * zoom,
+                );
+                let items = sheet.choices.clone().unwrap_or_default();
+                let open = sheet.choices.is_some();
+                Some(
+                    div()
+                        .absolute()
+                        .left(px(x + w + 1.0))
+                        .top(px(y))
+                        .child(
+                            div()
+                                .id("choices-button")
+                                .w(px(h.max(14.0)))
+                                .h(px(h))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .bg(rgb(0xf3f3f3))
+                                .border_1()
+                                .border_color(rgb(0xababab))
+                                .cursor_pointer()
+                                .child(
+                                    svg()
+                                        .path("icons/chevron-down.svg")
+                                        .size_3()
+                                        .text_color(gpui::black()),
+                                )
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .on_click(cx.listener(move |view, _event, window, cx| {
+                                    window.focus(&view.focus, cx);
+                                    if let Some(sheet) = view.sheet_mut() {
+                                        sheet.choices = if sheet.choices.is_some() {
+                                            None
+                                        } else {
+                                            sheet.book.validation_list(sheet.selection.active)
+                                        };
+                                    }
+                                    cx.notify();
+                                })),
+                        )
+                        .when(open, |anchor| {
+                            anchor.child(
+                                div()
+                                    .absolute()
+                                    .top(px(h))
+                                    .right_0()
+                                    .min_w(px(w.max(120.0)))
+                                    .max_h(px(220.0))
+                                    .bg(gpui::white())
+                                    .border_1()
+                                    .border_color(rgb(0x7a7a7a))
+                                    .shadow_md()
+                                    .text_xs()
+                                    .text_color(gpui::black())
+                                    .child(
+                                        div()
+                                            .id("choices")
+                                            .max_h(px(218.0))
+                                            .overflow_y_scroll()
+                                            .children(items.into_iter().enumerate().map(
+                                                |(index, item)| {
+                                                    div()
+                                                        .id(("choice", index))
+                                                        .px_2()
+                                                        .py_0p5()
+                                                        .cursor_pointer()
+                                                        .hover(|row| row.bg(rgb(0xcce8ff)))
+                                                        .child(item)
+                                                        .on_mouse_down(
+                                                            MouseButton::Left,
+                                                            |_, _, cx| cx.stop_propagation(),
+                                                        )
+                                                        .on_click(cx.listener(
+                                                            move |view, _event, _window, cx| {
+                                                                view.choose(index, cx)
+                                                            },
+                                                        ))
+                                                },
+                                            )),
+                                    ),
+                            )
+                        }),
+                )
+            });
         let note_editor = sheet.noting.as_ref().and_then(|(cell, text)| {
             let (x, y, w, _) = sheet
                 .book
@@ -2674,6 +2849,7 @@ impl DocView {
             Hover::ResizeColumn => gpui::CursorStyle::ResizeLeftRight,
             Hover::ResizeRow => gpui::CursorStyle::ResizeUpDown,
             Hover::FillHandle => gpui::CursorStyle::Crosshair,
+            Hover::Link => gpui::CursorStyle::PointingHand,
             Hover::Cells => gpui::CursorStyle::Crosshair,
         };
         let dragging = sheet.drag.is_some();
@@ -2818,6 +2994,7 @@ impl DocView {
                     .children(cell_editor)
                     .children(note)
                     .children(note_editor)
+                    .children(list_button)
                     .children(find_bar)
                     .children(filter_panel)
                     .children(menu)

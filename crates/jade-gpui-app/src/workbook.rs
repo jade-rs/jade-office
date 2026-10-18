@@ -30,15 +30,16 @@
 //! zoom — with the selection drawn by the same renderer.
 
 use gpui::{
-    canvas, div, img, point, prelude::*, px, size, App, Bounds, ClickEvent, ClipboardItem, Context,
-    DispatchPhase, ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable,
-    KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
-    RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
+    canvas, div, img, point, prelude::*, px, size, svg, App, Bounds, ClickEvent, ClipboardItem,
+    Context, DispatchPhase, ElementInputHandler, Entity, EntityInputHandler, FocusHandle,
+    Focusable, KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::sheet::{
-    column_label, format_number, range_text, reference_text, span, Axis, CellFormat, CellRange,
-    CellRef, Copied, FontToggle, Overlay, ResizeGesture, Workbook, MAX_COLUMN, MAX_ROW,
+    column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
+    CellFormat, CellRange, CellRef, Copied, FilterButton, FontToggle, HorizontalAlignment, Overlay,
+    ResizeGesture, Workbook, MAX_COLUMN, MAX_ROW,
 };
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::text::TextEdit;
@@ -56,12 +57,20 @@ use crate::{
     SelectAll, Undo, UI_FONT_FAMILY,
 };
 
+/// The formatting strip over the formula bar: Excel's Home tab, short.
+const SHEET_TOOLBAR_HEIGHT: f32 = 34.0;
 /// The name box and formula bar above the grid.
 const FORMULA_BAR_HEIGHT: f32 = 32.0;
 /// The strip of sheet tabs under the grid.
 const SHEET_TABS_HEIGHT: f32 = 30.0;
 /// How often a drag held past the grid's edge scrolls it.
 const AUTO_SCROLL_TICK: Duration = Duration::from_millis(40);
+/// Excel's row of standard colours, under its theme colours in the fill and
+/// font colour dropdowns.
+const STANDARD_COLORS: &[&str] = &[
+    "C00000", "FF0000", "FFC000", "FFFF00", "92D050", "00B050", "00B0F0", "0070C0", "002060",
+    "7030A0", "000000", "7F7F7F", "D9D9D9", "FFFFFF",
+];
 
 /// The zone formulas like `NOW()` calculate in: the system's, as the browser
 /// editor uses the browser's.
@@ -186,6 +195,56 @@ struct SheetMenu {
     tab: Option<usize>,
 }
 
+/// The dropdown a filter button opens: sorts, a clear, and the column's
+/// values to tick, as Excel's AutoFilter menu.
+struct FilterPanel {
+    button: FilterButton,
+    options: Vec<AutoFilterOption>,
+    checked: Vec<bool>,
+    /// Under the button, in the grid's window px.
+    at: (f32, f32),
+}
+
+#[derive(Clone, Copy)]
+enum FilterCommand {
+    Toggle(usize),
+    All,
+    Apply,
+    Cancel,
+    Sort(bool),
+    Clear,
+}
+
+/// A toolbar button's dropdown.
+#[derive(Clone, Copy, PartialEq)]
+enum Popup {
+    Fill,
+    Font,
+    Borders,
+}
+
+/// What a toolbar button does to the selection.
+#[derive(Clone, Copy)]
+enum Tool {
+    Font(FontToggle),
+    Align(HorizontalAlignment),
+    Wrap,
+    Merge,
+    Currency,
+    Percent,
+    Comma,
+    /// More decimals (true) or fewer.
+    Decimals(bool),
+    /// A size larger (true) or smaller.
+    FontSize(bool),
+    Open(Popup),
+    /// `RRGGBB`, or no fill.
+    Fill(Option<&'static str>),
+    FontColor(&'static str),
+    Borders(Borders),
+    Filter,
+}
+
 #[derive(Clone, Copy)]
 enum MenuCommand {
     Cut,
@@ -247,6 +306,10 @@ pub struct WorkbookView {
     /// The find bar (⌘F) and what is typed into it.
     finding: Option<TextEdit>,
     menu: Option<SheetMenu>,
+    /// A filter button's dropdown.
+    filter: Option<FilterPanel>,
+    /// A toolbar button's dropdown: colours or borders.
+    popup: Option<Popup>,
     hover: Hover,
     /// The note under the pointer, and where its cell's top-right corner is
     /// in the grid's window px.
@@ -873,6 +936,138 @@ impl WorkbookView {
         self.sheets_changed(result, cx);
     }
 
+    // ---- filters ---------------------------------------------------------
+
+    /// A press on a filter button (▼) opens its dropdown under it.
+    fn open_filter(&mut self, button: FilterButton, scroll: (f64, f64), cx: &mut Context<Self>) {
+        match self.book.filter_options(&button) {
+            Ok(options) => {
+                let checked = options
+                    .options
+                    .iter()
+                    .map(|option| option.selected.unwrap_or(true))
+                    .collect();
+                let metrics = self.book.header_metrics();
+                let zoom = f64::from(self.zoom);
+                let left = button.rect.x + metrics.row_width - scroll.0;
+                let top = button.rect.y + button.rect.height + metrics.column_height - scroll.1;
+                self.filter = Some(FilterPanel {
+                    button,
+                    options: options.options,
+                    checked,
+                    at: ((left * zoom) as f32, (top * zoom) as f32),
+                });
+            }
+            Err(error) => {
+                self.status =
+                    SharedString::from(i18n::format("sheet.edit_failed", &[("error", &error)]))
+            }
+        }
+        cx.notify();
+    }
+
+    /// The filter dropdown's OK: only the ticked values show — or, all
+    /// ticked, the column is not filtered.
+    fn apply_filter(&mut self, cx: &mut Context<Self>) {
+        let Some(panel) = self.filter.take() else {
+            return;
+        };
+        let result = if panel.checked.iter().all(|checked| *checked) {
+            self.book.clear_filter(&panel.button)
+        } else {
+            let mut values = Vec::new();
+            let mut blank = false;
+            for (option, checked) in panel.options.iter().zip(&panel.checked) {
+                if !checked {
+                    continue;
+                }
+                if option.blank {
+                    blank = true;
+                } else {
+                    values.extend(option.values.iter().cloned());
+                }
+            }
+            self.book.filter_values(&panel.button, values, blank)
+        };
+        self.after_write(result, cx);
+    }
+
+    fn filter_command(&mut self, command: FilterCommand, cx: &mut Context<Self>) {
+        match command {
+            FilterCommand::Toggle(index) => {
+                if let Some(checked) = self
+                    .filter
+                    .as_mut()
+                    .and_then(|panel| panel.checked.get_mut(index))
+                {
+                    *checked = !*checked;
+                }
+                cx.notify();
+            }
+            // (Select All): everything ticked, or — all ticked — nothing.
+            FilterCommand::All => {
+                if let Some(panel) = self.filter.as_mut() {
+                    let all = panel.checked.iter().all(|checked| *checked);
+                    panel.checked.iter_mut().for_each(|checked| *checked = !all);
+                }
+                cx.notify();
+            }
+            FilterCommand::Apply => self.apply_filter(cx),
+            FilterCommand::Cancel => {
+                self.filter = None;
+                cx.notify();
+            }
+            FilterCommand::Sort(descending) => {
+                if let Some(panel) = self.filter.take() {
+                    let result = self.book.sort_filter(&panel.button, descending);
+                    self.after_write(result, cx);
+                }
+            }
+            FilterCommand::Clear => {
+                if let Some(panel) = self.filter.take() {
+                    let result = self.book.clear_filter(&panel.button);
+                    self.after_write(result, cx);
+                }
+            }
+        }
+    }
+
+    // ---- the toolbar -------------------------------------------------------
+
+    /// A toolbar button pressed, on the selection.
+    fn tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        if let Tool::Open(popup) = tool {
+            self.popup = (self.popup != Some(popup)).then_some(popup);
+            cx.notify();
+            return;
+        }
+        self.popup = None;
+        let range = self.range();
+        let active = self.active();
+        let result = match tool {
+            Tool::Font(style) => self.book.toggle(range, active, style),
+            Tool::Align(horizontal) => self.book.align(range, active, horizontal),
+            Tool::Wrap => self.book.toggle_wrap(range, active),
+            Tool::Merge => return self.menu_command(MenuCommand::MergeCenter, false, cx),
+            Tool::Currency => {
+                return self.number_format(i18n::text("sheet.format.currency"), cx);
+            }
+            Tool::Percent => return self.number_format("0%", cx),
+            Tool::Comma => return self.number_format("#,##0", cx),
+            Tool::Decimals(more) => self.book.decimals(range, active, more),
+            Tool::FontSize(larger) => self.book.grow_font(range, active, larger),
+            Tool::Fill(color) => self.book.fill_color(range, color),
+            Tool::FontColor(color) => self.book.font_color(range, color),
+            Tool::Borders(borders) => self.book.borders(range, borders),
+            Tool::Filter => self.book.toggle_filter(range),
+            Tool::Open(_) => return,
+        };
+        self.after_write(result, cx);
+    }
+
     // ---- saving ----------------------------------------------------------
 
     /// Saves over the file that was opened, as Excel does.
@@ -939,6 +1134,16 @@ impl WorkbookView {
         let shift = modifiers.shift;
         if self.menu.take().is_some() {
             cx.notify();
+        }
+        // An open filter dropdown: Enter applies it, Escape closes it.
+        if self.filter.is_some() {
+            match key {
+                "escape" => self.filter = None,
+                "enter" => self.apply_filter(cx),
+                _ => {}
+            }
+            cx.notify();
+            return true;
         }
 
         // A tab being renamed, the name box or the find bar: Enter takes
@@ -1146,6 +1351,12 @@ impl WorkbookView {
         match key {
             "home" => self.select_cell(CellRef::new(0, 0), shift, cx),
             "t" if shift && modifiers.platform => self.autosum(cx),
+            // ⌘⇧F (Ctrl+Shift+L, as Excel for Windows): the filter
+            // buttons on the data round the selection, or off again.
+            "f" | "l" if shift => {
+                let result = self.book.toggle_filter(range);
+                self.after_write(result, cx);
+            }
             "f" => {
                 self.finding = Some(TextEdit::new(String::new()));
                 cx.notify();
@@ -1252,6 +1463,8 @@ impl WorkbookView {
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
         self.menu = None;
+        self.filter = None;
+        self.popup = None;
         if self.renaming.is_some() || self.naming.is_some() {
             self.finish_naming(true, cx);
         }
@@ -1284,6 +1497,11 @@ impl WorkbookView {
         }
         self.tab_start = None;
 
+        // A filter button opens its dropdown.
+        if let Some(button) = self.book.filter_button_at(x, y, scroll) {
+            self.open_filter(button, scroll, cx);
+            return;
+        }
         // A header edge: a drag resizes, a double-click fits the content.
         if let Some(edge) = self.book.resize_hit(x, y, scroll) {
             if event.click_count >= 2 && edge.axis == Axis::Columns {
@@ -1957,6 +2175,434 @@ impl WorkbookView {
     }
 }
 
+/// The toolbar and the dropdowns over the grid.
+impl WorkbookView {
+    /// The formatting strip: font styles, alignment, wrap and merge, number
+    /// formats, decimals, font size, colours, borders and the filter — lit
+    /// where the active cell has them.
+    fn sheet_toolbar(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let look = self.book.format_at(self.active());
+        let button = |id: &'static str, on: bool, tool: Tool| {
+            div()
+                .id(id)
+                .min_w(px(24.0))
+                .h(px(24.0))
+                .px_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_sm()
+                .text_xs()
+                .cursor_pointer()
+                .text_color(theme::text())
+                .when(on, |button| button.bg(theme::selected()))
+                .hover(|button| button.bg(theme::hovered()))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, window, cx| {
+                    window.focus(&view.focus);
+                    view.tool(tool, cx);
+                }))
+        };
+        let icon = |name: &'static str| svg().path(name).size_3p5().text_color(theme::text());
+        let separator = || div().w(px(1.0)).h(px(18.0)).mx_1().bg(theme::border());
+        let horizontal = look.horizontal.unwrap_or_default();
+        let fill = look
+            .fill_color
+            .as_deref()
+            .filter(|color| !color.is_empty())
+            .and_then(|color| u32::from_str_radix(color, 16).ok());
+        let ink = look
+            .font_color
+            .as_deref()
+            .and_then(|color| u32::from_str_radix(color, 16).ok());
+        let popup = self.popup;
+        div()
+            .h(px(SHEET_TOOLBAR_HEIGHT))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .px_2()
+            .bg(theme::panel())
+            .border_b_1()
+            .border_color(theme::border())
+            .child(
+                button(
+                    "tool-bold",
+                    look.bold == Some(true),
+                    Tool::Font(FontToggle::Bold),
+                )
+                .child("B")
+                .font_weight(gpui::FontWeight::BOLD),
+            )
+            .child(
+                button(
+                    "tool-italic",
+                    look.italic == Some(true),
+                    Tool::Font(FontToggle::Italic),
+                )
+                .child("I")
+                .italic(),
+            )
+            .child(
+                button(
+                    "tool-underline",
+                    look.underline == Some(true),
+                    Tool::Font(FontToggle::Underline),
+                )
+                .child("U")
+                .underline(),
+            )
+            .child(
+                button(
+                    "tool-strike",
+                    look.strike == Some(true),
+                    Tool::Font(FontToggle::Strike),
+                )
+                .child("S")
+                .line_through(),
+            )
+            .child(separator())
+            .child(button("tool-font-larger", false, Tool::FontSize(true)).child("A+"))
+            .child(button("tool-font-smaller", false, Tool::FontSize(false)).child("A-"))
+            .child(separator())
+            .child(
+                button(
+                    "tool-left",
+                    horizontal == HorizontalAlignment::Left,
+                    Tool::Align(HorizontalAlignment::Left),
+                )
+                .child(icon("icons/align-left.svg")),
+            )
+            .child(
+                button(
+                    "tool-center",
+                    horizontal == HorizontalAlignment::Center,
+                    Tool::Align(HorizontalAlignment::Center),
+                )
+                .child(icon("icons/align-center.svg")),
+            )
+            .child(
+                button(
+                    "tool-right",
+                    horizontal == HorizontalAlignment::Right,
+                    Tool::Align(HorizontalAlignment::Right),
+                )
+                .child(icon("icons/align-right.svg")),
+            )
+            .child(
+                button("tool-wrap", look.wrap_text == Some(true), Tool::Wrap)
+                    .child(icon("icons/wrap-text.svg")),
+            )
+            .child(button("tool-merge", false, Tool::Merge).child(icon("icons/merge.svg")))
+            .child(separator())
+            .child(
+                button("tool-currency", false, Tool::Currency)
+                    .child(i18n::text("sheet.tool.currency_symbol")),
+            )
+            .child(button("tool-percent", false, Tool::Percent).child("%"))
+            .child(button("tool-comma", false, Tool::Comma).child(","))
+            .child(button("tool-more-decimals", false, Tool::Decimals(true)).child(".0→"))
+            .child(button("tool-fewer-decimals", false, Tool::Decimals(false)).child("←.0"))
+            .child(separator())
+            .child(
+                // The colour under the bucket and the A is the active
+                // cell's, as Excel's buttons show theirs.
+                button(
+                    "tool-fill",
+                    popup == Some(Popup::Fill),
+                    Tool::Open(Popup::Fill),
+                )
+                .flex_col()
+                .child(icon("icons/paint-bucket.svg"))
+                .child(
+                    div()
+                        .w(px(12.0))
+                        .h(px(3.0))
+                        .bg(fill.map_or(theme::text_dim(), gpui::rgb)),
+                ),
+            )
+            .child(
+                button(
+                    "tool-font-color",
+                    popup == Some(Popup::Font),
+                    Tool::Open(Popup::Font),
+                )
+                .flex_col()
+                .child("A")
+                .child(
+                    div()
+                        .w(px(12.0))
+                        .h(px(3.0))
+                        .bg(ink.map_or(theme::text(), gpui::rgb)),
+                ),
+            )
+            .child(
+                button(
+                    "tool-borders",
+                    popup == Some(Popup::Borders),
+                    Tool::Open(Popup::Borders),
+                )
+                .child(icon("icons/borders.svg")),
+            )
+            .child(separator())
+            .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
+    }
+
+    /// A colour or borders dropdown under its toolbar button.
+    fn toolbar_popup(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
+        let popup = self.popup?;
+        let swatch = |index: usize, color: &'static str, tool: Tool| {
+            div()
+                .id(("swatch", index))
+                .size(px(18.0))
+                .rounded_sm()
+                .border_1()
+                .border_color(theme::border())
+                .bg(gpui::rgb(u32::from_str_radix(color, 16).unwrap_or(0)))
+                .cursor_pointer()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, _window, cx| view.tool(tool, cx)))
+        };
+        let item = |id: &'static str, label: &'static str, tool: Tool| {
+            div()
+                .id(id)
+                .px_3()
+                .py_1()
+                .cursor_pointer()
+                .hover(|item| item.bg(theme::hovered()))
+                .child(i18n::text(label))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, _window, cx| view.tool(tool, cx)))
+        };
+        let body = match popup {
+            Popup::Fill | Popup::Font => {
+                let swatches = STANDARD_COLORS.iter().enumerate().map(|(index, color)| {
+                    swatch(
+                        index,
+                        color,
+                        if popup == Popup::Fill {
+                            Tool::Fill(Some(color))
+                        } else {
+                            Tool::FontColor(color)
+                        },
+                    )
+                });
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .p_2()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .w(px(160.0))
+                            .gap_1()
+                            .children(swatches),
+                    )
+                    .when(popup == Popup::Fill, |body| {
+                        body.child(item("no-fill", "sheet.tool.no_fill", Tool::Fill(None)))
+                    })
+                    .when(popup == Popup::Font, |body| {
+                        body.child(item(
+                            "automatic",
+                            "sheet.tool.automatic",
+                            Tool::FontColor("000000"),
+                        ))
+                    })
+            }
+            Popup::Borders => div()
+                .py_1()
+                .child(item(
+                    "borders-bottom",
+                    "sheet.tool.border_bottom",
+                    Tool::Borders(Borders::Bottom),
+                ))
+                .child(item(
+                    "borders-all",
+                    "sheet.tool.border_all",
+                    Tool::Borders(Borders::All),
+                ))
+                .child(item(
+                    "borders-outline",
+                    "sheet.tool.border_outline",
+                    Tool::Borders(Borders::Outline),
+                ))
+                .child(item(
+                    "borders-thick",
+                    "sheet.tool.border_thick",
+                    Tool::Borders(Borders::ThickOutline),
+                ))
+                .child(item(
+                    "borders-none",
+                    "sheet.tool.border_none",
+                    Tool::Borders(Borders::None),
+                )),
+        };
+        // Under its button: the strip's buttons are laid out in a row.
+        let left = match popup {
+            Popup::Fill => 430.0,
+            Popup::Font => 456.0,
+            Popup::Borders => 482.0,
+        };
+        Some(
+            div()
+                .absolute()
+                .top(px(SHEET_TOOLBAR_HEIGHT))
+                .left(px(left))
+                .rounded_md()
+                .border_1()
+                .border_color(theme::border())
+                .bg(theme::panel())
+                .shadow_lg()
+                .text_xs()
+                .text_color(theme::text())
+                .occlude()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(body),
+        )
+    }
+
+    /// A filter button's dropdown: Sort A to Z and Z to A, Clear Filter,
+    /// (Select All) and the column's values to tick, OK and Cancel.
+    fn filter_panel(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
+        let panel = self.filter.as_ref()?;
+        let action = |id: &'static str, label: &'static str, command: FilterCommand| {
+            div()
+                .id(id)
+                .px_3()
+                .py_1()
+                .cursor_pointer()
+                .hover(|item| item.bg(theme::hovered()))
+                .child(i18n::text(label))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(
+                    cx.listener(move |view, _event, _window, cx| view.filter_command(command, cx)),
+                )
+        };
+        let tick = |checked: bool| if checked { "☑" } else { "☐" };
+        let all = panel.checked.iter().all(|checked| *checked);
+        let rows = panel.options.iter().zip(&panel.checked).enumerate().map(
+            |(index, (option, checked))| {
+                let label = if option.blank {
+                    i18n::text("sheet.filter.blank").to_string()
+                } else {
+                    option.label.clone()
+                };
+                div()
+                    .id(("filter-value", index))
+                    .flex()
+                    .gap_2()
+                    .px_3()
+                    .py_0p5()
+                    .cursor_pointer()
+                    .hover(|item| item.bg(theme::hovered()))
+                    .child(tick(*checked))
+                    .child(label)
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                        view.filter_command(FilterCommand::Toggle(index), cx)
+                    }))
+            },
+        );
+        Some(
+            div()
+                .absolute()
+                .left(px(panel.at.0.max(0.0)))
+                .top(px(panel.at.1.max(0.0)))
+                .w(px(220.0))
+                .py_1()
+                .rounded_md()
+                .border_1()
+                .border_color(theme::border())
+                .bg(theme::panel())
+                .shadow_lg()
+                .text_xs()
+                .text_color(theme::text())
+                .occlude()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(action(
+                    "filter-asc",
+                    "sheet.menu.sort_ascending",
+                    FilterCommand::Sort(false),
+                ))
+                .child(action(
+                    "filter-desc",
+                    "sheet.menu.sort_descending",
+                    FilterCommand::Sort(true),
+                ))
+                .child(action(
+                    "filter-clear",
+                    "sheet.filter.clear",
+                    FilterCommand::Clear,
+                ))
+                .child(div().my_1().h(px(1.0)).bg(theme::border()))
+                .child(
+                    div()
+                        .id("filter-all")
+                        .flex()
+                        .gap_2()
+                        .px_3()
+                        .py_0p5()
+                        .cursor_pointer()
+                        .hover(|item| item.bg(theme::hovered()))
+                        .child(tick(all))
+                        .child(i18n::text("sheet.filter.all"))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(|view, _event, _window, cx| {
+                            view.filter_command(FilterCommand::All, cx)
+                        })),
+                )
+                .child(
+                    div()
+                        .id("filter-values")
+                        .max_h(px(200.0))
+                        .overflow_y_scroll()
+                        .children(rows),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap_2()
+                        .px_3()
+                        .pt_2()
+                        .child(
+                            div()
+                                .id("filter-ok")
+                                .px_3()
+                                .py_0p5()
+                                .rounded_sm()
+                                .cursor_pointer()
+                                .bg(theme::accent())
+                                .text_color(gpui::white())
+                                .child(i18n::text("sheet.filter.ok"))
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .on_click(cx.listener(|view, _event, _window, cx| {
+                                    view.filter_command(FilterCommand::Apply, cx)
+                                })),
+                        )
+                        .child(
+                            div()
+                                .id("filter-cancel")
+                                .px_3()
+                                .py_0p5()
+                                .rounded_sm()
+                                .cursor_pointer()
+                                .border_1()
+                                .border_color(theme::border())
+                                .child(i18n::text("sheet.filter.cancel"))
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .on_click(cx.listener(|view, _event, _window, cx| {
+                                    view.filter_command(FilterCommand::Cancel, cx)
+                                })),
+                        ),
+                ),
+        )
+    }
+}
+
 /// Text being typed, with its caret drawn where it is and its lines kept.
 fn caret_line(text: &TextEdit, caret_color: gpui::Hsla, tall: bool) -> gpui::Div {
     if text.whole {
@@ -2176,7 +2822,7 @@ impl Render for WorkbookView {
         let (area_width, area_height) = workspace::editor_area(window, cx);
         let viewport = (
             area_width.max(1.0),
-            (area_height - FORMULA_BAR_HEIGHT - SHEET_TABS_HEIGHT).max(1.0),
+            (area_height - SHEET_TOOLBAR_HEIGHT - FORMULA_BAR_HEIGHT - SHEET_TABS_HEIGHT).max(1.0),
         );
         self.viewport = viewport;
         self.repaint_if_needed(viewport, window.scale_factor());
@@ -2247,6 +2893,9 @@ impl Render for WorkbookView {
             Hover::FillHandle | Hover::Cells => gpui::CursorStyle::Crosshair,
         };
         let dragging = self.drag.is_some();
+        let toolbar = self.sheet_toolbar(cx);
+        let toolbar_popup = self.toolbar_popup(cx);
+        let filter_panel = self.filter_panel(cx);
 
         div()
             .key_context("Workbook")
@@ -2261,11 +2910,13 @@ impl Render for WorkbookView {
             .on_action(cx.listener(|view, _: &SelectAll, _window, cx| view.select_all(cx)))
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
             .on_action(cx.listener(|view, _: &SaveAs, _window, cx| view.save_as(cx)))
+            .relative()
             .flex()
             .flex_col()
             .size_full()
             .bg(theme::canvas())
             .text_color(theme::text())
+            .child(toolbar)
             .child(self.formula_bar(cx))
             .child(
                 div()
@@ -2319,6 +2970,7 @@ impl Render for WorkbookView {
                     .children(editor)
                     .children(note)
                     .children(find_bar)
+                    .children(filter_panel)
                     .children(menu)
                     // Records where the grid is, registers the input handler
                     // so typing — an IME's included — reaches the cell, and
@@ -2380,6 +3032,7 @@ impl Render for WorkbookView {
                     .border_color(theme::border())
                     .children(tabs),
             )
+            .children(toolbar_popup)
     }
 }
 
@@ -2407,6 +3060,8 @@ impl WorkbookView {
             naming: None,
             finding: None,
             menu: None,
+            filter: None,
+            popup: None,
             hover: Hover::Cells,
             note: None,
             generation: 0,
@@ -2796,6 +3451,82 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.range(), span(at(1, 1), at(3, 1)));
             assert_eq!(view.active(), at(1, 1));
+        });
+    }
+
+    /// A press on a filter button (▼) opens its dropdown; a value unticked
+    /// there and Enter hides its row. ⌘⇧F takes the buttons off again.
+    #[gpui::test]
+    fn a_filter_applied_through_its_dropdown_hides_a_row(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        // The fixture's data has a filter on it: the ▼ in A1's header cell.
+        let filter_button = |view: &WorkbookView| {
+            let cell = view.cell_bounds(at(0, 0)).unwrap();
+            let y = cell.center().y;
+            let mut x = cell.origin.x + cell.size.width - px(1.0);
+            while x > cell.origin.x {
+                let position = gpui::point(x, y);
+                let (left, top) = view.grid_point(position).unwrap();
+                if view
+                    .book
+                    .filter_button_at(left, top, view.sheet_scroll())
+                    .is_some()
+                {
+                    return Some(position);
+                }
+                x -= px(1.0);
+            }
+            None
+        };
+        let button = view
+            .read_with(cx, |view, _| filter_button(view))
+            .expect("a filter button on A1");
+        cx.simulate_click(button, Modifiers::none());
+        let alpha = view.read_with(cx, |view, _| {
+            let panel = view.filter.as_ref().expect("the dropdown is open");
+            assert!(panel.checked.iter().all(|checked| *checked));
+            panel
+                .options
+                .iter()
+                .position(|option| option.label == "Alpha")
+                .expect("Alpha is one of the column's values")
+        });
+        view.update(cx, |view, cx| {
+            view.filter_command(FilterCommand::Toggle(alpha), cx)
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.filter.is_none());
+            // Alpha's row (2) is hidden: an arrow down from A1 skips it.
+            assert_eq!(view.book.step(at(0, 0), Direction::Down), at(0, 2));
+        });
+        cx.simulate_keystrokes("cmd-shift-f");
+        view.read_with(cx, |view, _| assert!(filter_button(view).is_none()));
+    }
+
+    /// The toolbar's Center, All Borders and Increase Decimal change the
+    /// selected cell's format.
+    #[gpui::test]
+    fn toolbar_buttons_format_the_selection(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down right");
+        view.update(cx, |view, cx| {
+            view.tool(Tool::Align(HorizontalAlignment::Center), cx);
+            view.tool(Tool::Open(Popup::Borders), cx);
+            assert!(view.popup == Some(Popup::Borders));
+            view.tool(Tool::Borders(Borders::All), cx);
+            view.tool(Tool::Decimals(true), cx);
+        });
+        view.read_with(cx, |view, _| {
+            let look = view.book.format_at(at(1, 1));
+            assert_eq!(look.horizontal, Some(HorizontalAlignment::Center));
+            assert!(look.border_bottom.is_some() && look.border_left.is_some());
+            assert!(view.popup.is_none(), "a choice closes the dropdown");
+            assert_eq!(view.book.display_text(at(1, 1)), "10.0");
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at(1, 1)), "10")
         });
     }
 }
