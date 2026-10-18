@@ -131,7 +131,9 @@ impl WorkbookView {
         if index == self.book.sheet_index() || index >= self.sheet_names.len() {
             return;
         }
-        self.commit_edit(cx);
+        if !self.commit_edit(cx) {
+            return;
+        }
         if let Err(error) = self.book.select_sheet(index) {
             self.status = SharedString::from(error);
         }
@@ -222,7 +224,9 @@ impl WorkbookView {
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
-        self.commit_edit(cx);
+        if !self.commit_edit(cx) {
+            return;
+        }
         let Some((start, end)) = self.hit(event.position) else {
             return;
         };
@@ -273,13 +277,23 @@ impl WorkbookView {
 
     /// Writes the cell being edited, if any. The write recalculates, so
     /// dependent formulas have moved before the next paint.
-    fn commit_edit(&mut self, cx: &mut Context<Self>) {
+    ///
+    /// Returns whether the edit is done. A formula Excel would refuse keeps
+    /// its editor open with what was typed, as Excel does, so the caller
+    /// stays where it is rather than moving on without it.
+    fn commit_edit(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(edit) = self.edit.take() else {
-            return;
+            return true;
         };
         let result = self.book.set_cell(self.active(), &edit.text);
+        let refused =
+            matches!(&result, Err(error) if error == jade_office_model::typing::FORMULA_PROBLEM);
         self.after_write(result, cx);
+        if refused {
+            self.edit = Some(edit);
+        }
         cx.notify();
+        !refused
     }
 
     /// After a write: repaint, or say why it failed.
@@ -303,8 +317,9 @@ impl WorkbookView {
     }
 
     fn commit_and_step(&mut self, columns: i64, rows: i64, cx: &mut Context<Self>) {
-        self.commit_edit(cx);
-        self.step(columns, rows, false, cx);
+        if self.commit_edit(cx) {
+            self.step(columns, rows, false, cx);
+        }
     }
 
     /// Delete: empties the selected cells that hold anything, keeping their
@@ -394,7 +409,9 @@ impl WorkbookView {
     }
 
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
-        self.commit_edit(cx);
+        if !self.commit_edit(cx) {
+            return;
+        }
         let result = self.book.save_bytes().and_then(|bytes| {
             crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
         });

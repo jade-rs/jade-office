@@ -589,7 +589,9 @@ impl DocView {
 
     /// Commits any edit in progress and hands the file's bytes to the page.
     pub fn save(&mut self, cx: &mut Context<Self>) {
-        self.commit_cell(cx);
+        if !self.commit_cell(cx) {
+            return;
+        }
         self.commit_slide_text(cx);
         let bytes = match &mut self.document {
             Document::Pages { document, .. } => document.export_docx(),
@@ -704,18 +706,27 @@ impl DocView {
     }
 
     /// Writes the cell being typed into, if any; the write recalculates.
-    fn commit_cell(&mut self, cx: &mut Context<Self>) {
+    ///
+    /// Returns whether the edit is done. A formula Excel would refuse keeps
+    /// its editor open with what was typed, as Excel does, so the caller
+    /// stays where it is rather than moving on without it.
+    fn commit_cell(&mut self, cx: &mut Context<Self>) -> bool {
         let Document::Workbook {
             book, edit, anchor, ..
         } = &mut self.document
         else {
-            return;
+            return true;
         };
         let Some(text) = edit.take() else {
-            return;
+            return true;
         };
         let result = book.set_cell(*anchor, &text.text);
+        let refused = matches!(&result, Err(error) if error == jade_web::typing::FORMULA_PROBLEM);
+        if refused {
+            *edit = Some(text);
+        }
         self.edited(result, cx);
+        !refused
     }
 
     fn begin_cell_edit(&mut self, text: Option<String>, cx: &mut Context<Self>) {
@@ -730,7 +741,9 @@ impl DocView {
     }
 
     fn select_sheet(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.commit_cell(cx);
+        if !self.commit_cell(cx) {
+            return;
+        }
         if let Document::Workbook {
             book,
             anchor,
@@ -772,12 +785,14 @@ impl DocView {
             }
             match key {
                 "enter" => {
-                    self.commit_cell(cx);
-                    self.step_cell(0, if shift { -1 } else { 1 }, false, cx);
+                    if self.commit_cell(cx) {
+                        self.step_cell(0, if shift { -1 } else { 1 }, false, cx);
+                    }
                 }
                 "tab" => {
-                    self.commit_cell(cx);
-                    self.step_cell(if shift { -1 } else { 1 }, 0, false, cx);
+                    if self.commit_cell(cx) {
+                        self.step_cell(if shift { -1 } else { 1 }, 0, false, cx);
+                    }
                 }
                 "escape" => {
                     *edit = None;
@@ -817,7 +832,9 @@ impl DocView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus, cx);
-        self.commit_cell(cx);
+        if !self.commit_cell(cx) {
+            return;
+        }
         let Some(bounds) = self.surface.get() else {
             return;
         };
