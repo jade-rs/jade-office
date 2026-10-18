@@ -51,10 +51,10 @@ painter) and edits through the same cores.
    typed fresh, they show `#NAME?` until Excel recalculates the file.
 4. **The browser clipboard** is checked with dispatched paste events; the
    embedded test browser cannot read the system clipboard.
-5. **Formula entry is refused only when certainly malformed** (a trailing
-   operator, an open string, an unmatched parenthesis), with the editor
-   kept open as in Excel; a formula Excel would refuse for its arguments
-   (`=SUM()`) is accepted and shows `#ERROR!`.
+5. **Formula entry is refused as Excel refuses it** — a trailing operator,
+   an open string, an unmatched parenthesis, or a function given the wrong
+   number of arguments — with the editor kept open; `TODAY(1)` is accepted,
+   since the engine reads a time zone there.
 
 ## Running the oracles
 
