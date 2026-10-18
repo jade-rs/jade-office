@@ -290,6 +290,10 @@ impl WorkbookView {
                 self.generation += 1;
                 self.status = SharedString::from("");
             }
+            // A formula Excel would refuse: its words, not a write error.
+            Err(error) if error == jade_office_model::typing::FORMULA_PROBLEM => {
+                self.status = SharedString::from(i18n::text("sheet.formula_problem"))
+            }
             Err(error) => {
                 self.status =
                     SharedString::from(i18n::format("sheet.edit_failed", &[("error", &error)]))

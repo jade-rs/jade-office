@@ -136,3 +136,36 @@ fn a_misspelt_function_shows_name_error_and_so_do_its_dependents() {
     assert_eq!(book.number(b), Some(4.0));
     assert_eq!(book.number(total), Some(7.0));
 }
+
+#[test]
+fn a_formula_excel_would_refuse_is_refused_and_the_cell_kept() {
+    let mut book = book();
+    let at = CellRef::new(8, 1);
+    book.set_cell(at, "5").unwrap();
+    // Ending on an operator, a string left open, a parenthesis that closes
+    // nothing: Excel says there is a problem with the formula and writes
+    // nothing.
+    for typed in [
+        "=1+",
+        "=SUM(1,2)*",
+        "=A1&",
+        "=+",
+        "=\"abc",
+        "=1)",
+        "=(1+2))",
+    ] {
+        let error = book.set_cell(at, typed).unwrap_err();
+        assert_eq!(error, jade_office_model::typing::FORMULA_PROBLEM, "{typed}");
+        assert_eq!(book.edit_text(at), "5", "{typed}");
+    }
+    // A trailing percent, a sign, quotes doubled inside a string: fine.
+    for (typed, number) in [
+        ("=50%", 0.5),
+        ("=-1", -1.0),
+        ("=1+-2", -1.0),
+        ("=LEN(\"a\"\"b\")", 3.0),
+    ] {
+        book.set_cell(at, typed).unwrap();
+        assert_eq!(book.number(at), Some(number), "{typed}");
+    }
+}
