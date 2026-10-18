@@ -106,3 +106,24 @@ fn typed_numbers_count_and_one_typing_undoes_in_one_step() {
     assert!(book.redo().unwrap());
     assert_eq!(book.display_text(b), "10%");
 }
+
+#[test]
+fn a_misspelt_function_shows_name_error_and_so_do_its_dependents() {
+    let mut book = book();
+    let (a, b, total) = (CellRef::new(8, 1), CellRef::new(8, 2), CellRef::new(8, 3));
+    book.set_cell(a, "5").unwrap();
+    book.set_cell(b, "=I2+1").unwrap();
+    book.set_cell(total, "=SUM(I2:I3)").unwrap();
+    assert_eq!(book.number(total), Some(11.0));
+    // A typo where a number was: Excel shows #NAME? there and in every cell
+    // that reads it, not an empty cell and stale totals.
+    book.set_cell(a, "=SUMM(1,2)").unwrap();
+    assert_eq!(book.display_text(a), "#NAME?");
+    assert_eq!(book.display_text(b), "#NAME?");
+    assert_eq!(book.display_text(total), "#NAME?");
+    assert_eq!(book.display_text(CellRef::new(8, 4)), "");
+    // Fixing it brings the numbers back.
+    book.set_cell(a, "=SUM(1,2)").unwrap();
+    assert_eq!(book.number(b), Some(4.0));
+    assert_eq!(book.number(total), Some(7.0));
+}
