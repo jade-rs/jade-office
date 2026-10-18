@@ -12,7 +12,8 @@ workspace.open_folder	フォルダーを開く…
 workspace.drop_hint	⌘O で開く・ファイルをここへドロップ
 workspace.ready	準備完了
 workspace.tabs	{n} タブ
-workspace.unsupported	{name}: 対応していない形式です（.docx / .xlsx / .pptx を開けます）
+workspace.unsupported	{name}: 対応していない形式です（.docx / .xlsx / .pptx と、そのマクロ有効・テンプレート形式を開けます）
+workspace.protected	{name}: パスワードで保護されているか、古い形式（.doc / .xls / .ppt）のファイルです。保護を解除するか、Office で .docx / .xlsx / .pptx として保存してから開いてください
 workspace.prompt_open	開く
 workspace.prompt_folder	フォルダーを開く
 workspace.zoom_out	縮小

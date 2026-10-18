@@ -2930,11 +2930,9 @@ impl DocumentView {
         }
     }
 
-    /// Writes the document back to a .docx beside the one that was opened.
+    /// Saves over the document that was opened, as Word does.
     fn save(&mut self, cx: &mut Context<Self>) {
-        // Beside the original rather than over it: this shell is not yet the
-        // thing to trust with the only copy of a document.
-        let target = PathBuf::from(self.path.to_string()).with_extension("edited.docx");
+        let target = PathBuf::from(self.path.to_string());
         self.write_to(target, cx);
     }
 
@@ -2945,9 +2943,10 @@ impl DocumentView {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
+        // The name it has, extension and all: a .docm stays macro-enabled.
         let suggested = source
-            .file_stem()
-            .map(|stem| format!("{}.docx", stem.to_string_lossy()))
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| "document.docx".to_string());
         let prompt = cx.prompt_for_new_path(&directory, Some(&suggested));
         cx.spawn(async move |view, cx| {
@@ -2962,7 +2961,7 @@ impl DocumentView {
 
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
         match self.document.export_docx() {
-            Ok(bytes) => match std::fs::write(&target, &bytes) {
+            Ok(bytes) => match crate::shell::write_in_place(&target, &bytes) {
                 Ok(()) => {
                     self.dirty = false;
                     self.saved_to = Some(SharedString::from(
@@ -4248,6 +4247,29 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.current_paragraph_text(), before);
         });
+    }
+
+    /// ⌘S saves over the document that was opened, as Word does, leaving
+    /// nothing else beside it.
+    #[gpui::test]
+    fn save_writes_the_document_that_was_opened(cx: &mut gpui::TestAppContext) {
+        use super::{open_document_view, Editor, Save};
+        use gpui::Focusable;
+        let source = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../jade-core/contract.docx"
+        ));
+        let path = crate::shell::scratch_copy(&source, "contract.docm");
+        let (view, cx) = cx.add_window_view(|_window, cx| open_document_view(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        cx.simulate_input("jadesaved");
+        cx.dispatch_action(Save);
+        view.read_with(cx, |view, _| assert!(!view.is_dirty()));
+        assert_eq!(crate::shell::siblings(&path), ["contract.docm"]);
+        let saved = jade_opc::OpcPackage::open(&std::fs::read(&path).unwrap()).unwrap();
+        let xml = saved.part_str("word/document.xml").unwrap().unwrap();
+        assert!(xml.contains("jadesaved"));
     }
 
     #[test]

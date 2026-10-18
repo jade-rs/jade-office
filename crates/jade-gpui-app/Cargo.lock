@@ -3333,6 +3333,7 @@ dependencies = [
  "jade-docx-native-render",
  "jade-docx-pdf-renderer",
  "jade-office-model",
+ "jade-opc",
  "jade-skia-painter",
  "objc2",
  "objc2-app-kit",
@@ -3535,6 +3536,7 @@ name = "jade-xlsx-writer"
 version = "0.1.0"
 dependencies = [
  "jade-opc",
+ "jade-xlsx-headless-api",
  "jade-xlsx-layout",
  "jade-xlsx-reader",
  "quick-xml 0.39.4",

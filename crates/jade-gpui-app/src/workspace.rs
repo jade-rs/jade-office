@@ -205,6 +205,12 @@ impl Workspace {
                 &[("name", &shell::file_name(path))],
             )
         })?;
+        if shell::is_compound_file(path) {
+            return Err(i18n::format(
+                "workspace.protected",
+                &[("name", &shell::file_name(path))],
+            ));
+        }
         let editor: Box<dyn EditorHandle> = match kind {
             Kind::Document => Box::new(self.observed(crate::new_document_view(path, cx)?, cx)),
             Kind::Workbook => Box::new(self.observed(workbook::new_view(path, cx)?, cx)),
@@ -1274,10 +1280,18 @@ mod tests {
             })
         });
         cx.run_until_parked();
-        workspace.read_with(cx, |workspace, _| {
+        workspace.read_with(cx, |workspace, cx| {
             assert_eq!(workspace.tabs.len(), 3);
             assert_eq!(workspace.active, Some(1));
             assert_eq!(workspace.tabs[1].kind, Kind::Workbook);
+            // Opening is not editing: no tab asks to be saved.
+            for tab in &workspace.tabs {
+                assert!(
+                    !tab.editor.is_dirty(cx),
+                    "{} opens modified",
+                    tab.path.display()
+                );
+            }
         });
 
         cx.dispatch_action(ZoomIn);
@@ -1292,6 +1306,30 @@ mod tests {
             assert_eq!(workspace.tabs.len(), 2);
             assert!(workspace.tabs.iter().all(|tab| tab.kind != Kind::Workbook));
         });
+    }
+
+    /// A password-protected file is an OLE container, not a zip: the app
+    /// says so instead of reporting a parse error.
+    #[gpui::test]
+    fn a_protected_file_says_it_is_protected(cx: &mut gpui::TestAppContext) {
+        let (workspace, cx) = cx.add_window_view(|_window, cx| Workspace::new(cx));
+        for name in ["locked.xlsx", "locked.docx", "locked.pptx"] {
+            let path = std::env::temp_dir()
+                .join(format!("jade-protected-{}", std::process::id()))
+                .join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut bytes = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+            bytes.resize(4096, 0);
+            std::fs::write(&path, bytes).unwrap();
+            let result = cx.update(|window, cx| {
+                workspace.update(cx, |workspace, cx| workspace.open(&path, window, cx))
+            });
+            let message = result.expect_err(name);
+            assert_eq!(
+                message,
+                i18n::format("workspace.protected", &[("name", &name)])
+            );
+        }
     }
 
     #[gpui::test]
