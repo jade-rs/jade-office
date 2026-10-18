@@ -33,16 +33,20 @@ use wasm_bindgen::JsValue;
 
 /// Letter, the box a render starts from before the document's own section
 /// properties say otherwise.
-const INITIAL_PAGE: (f64, f64) = (816.0, 1056.0);
+pub(crate) const INITIAL_PAGE: (f64, f64) = (816.0, 1056.0);
 
 pub struct TinySkiaRenderHost {
     /// A surface per page, in document order, shared so they stay readable
     /// after the renderer has taken the host.
-    pages: Rc<RefCell<Vec<TinySkiaPainter>>>,
+    pub(crate) pages: Rc<RefCell<Vec<TinySkiaPainter>>>,
     page_sizes: Vec<(f64, f64)>,
     current_page: Cell<usize>,
     /// How many pages the last render produced; surfaces past it are a pool.
-    rendered_pages: Rc<Cell<usize>>,
+    pub(crate) rendered_pages: Rc<Cell<usize>>,
+    /// Whether the render in progress paginates the whole document: a
+    /// bounded repaint stops early, and must not shrink the page count to
+    /// where it stopped.
+    pub(crate) pass_covers_whole_document: Rc<Cell<bool>>,
     measurer: Rc<ShapingMeasurer>,
     fonts: Rc<FontBook>,
     render_error: RefCell<Option<String>>,
@@ -68,6 +72,7 @@ impl TinySkiaRenderHost {
             page_sizes: vec![(page_width, page_height)],
             current_page: Cell::new(0),
             rendered_pages: Rc::new(Cell::new(1)),
+            pass_covers_whole_document: Rc::new(Cell::new(true)),
             measurer,
             fonts,
             render_error: RefCell::new(None),
@@ -230,7 +235,10 @@ impl CanvasRenderHost for TinySkiaRenderHost {
     fn reset_pages(&mut self) -> Result<(), JsValue> {
         self.render_error.borrow_mut().take();
         self.current_page.set(0);
-        self.rendered_pages.set(1);
+        if self.pass_covers_whole_document.get() {
+            // Only a render that paginates everything may shrink the count.
+            self.rendered_pages.set(1);
+        }
         Ok(())
     }
 
