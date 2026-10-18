@@ -5,7 +5,8 @@
 //! General cell the format the text was written in, so it shows as typed
 //! and still adds up. A leading apostrophe keeps text as text. Anything not
 //! quite one of these stays the text it was. A formula's open parentheses
-//! are closed, as Excel closes them when the formula is entered.
+//! are closed, as Excel closes them when the formula is entered; one Excel
+//! would refuse is refused ([`formula_problem`]).
 
 use jade_xlsx_headless_api::CellInput;
 
@@ -58,6 +59,34 @@ pub fn read(text: &str, date1904: bool) -> Typed {
     }
     read_number(trimmed, date1904)
         .unwrap_or_else(|| Typed::plain(CellInput::Text(text.to_string())))
+}
+
+/// What a write says when it refuses a formula, as Excel's message does.
+pub const FORMULA_PROBLEM: &str = "There's a problem with this formula";
+
+/// Whether Excel would refuse `formula` (without its `=`) as it is entered:
+/// it ends on an operator, leaves a string or a quoted sheet name open, or
+/// closes a parenthesis nothing opened. Nothing less certain is refused —
+/// the engine reads a formula it cannot evaluate as an error value, and
+/// Excel may well know what it means.
+pub fn formula_problem(formula: &str) -> bool {
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    for c in formula.chars() {
+        match (quote, c) {
+            (Some(open), _) if c == open => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(c),
+            (None, '(') => depth += 1,
+            (None, ')') if depth == 0 => return true,
+            (None, ')') => depth -= 1,
+            (None, _) => {}
+        }
+    }
+    quote.is_some()
+        || formula
+            .trim_end()
+            .ends_with(['+', '-', '*', '/', '^', '&', '=', '<', '>'])
 }
 
 /// `formula` with the parentheses it leaves open closed at its end — those

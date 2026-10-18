@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 pub use jade_office_model::tiny::TinySkiaBackend;
-pub use jade_office_model::{deck, sheet};
+pub use jade_office_model::{deck, sheet, typing};
 
 pub mod document;
 pub mod editing;

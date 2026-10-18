@@ -91,6 +91,7 @@ menu.view.zoom_fit	Zoom to Fit
 menu.slideshow	Slide Show
 menu.slideshow.from_beginning	From Beginning
 sheet.edit_failed	Cannot write the cell: {error}
+sheet.formula_problem	There's a problem with this formula. Text that starts with = is read as a formula
 sheet.saved	Saved to {name}
 sheet.save_failed	Cannot save: {error}
 sheet.average	Average: {value}
