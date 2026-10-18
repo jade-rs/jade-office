@@ -63,13 +63,16 @@ pub fn editor_area(window: &Window, cx: &App) -> (f32, f32) {
     }
 }
 
-/// A colour per format, so a tab or a tree row says what it is at a glance.
+/// A colour per format, so a tab or a tree row says what it is at a glance:
+/// the 400 shades on the dark chrome, a step deeper on the light one, where
+/// the 400s wash out against white.
 fn kind_color(kind: Kind) -> Rgba {
-    match kind {
-        Kind::Document => gpui::rgb(0x60a5fa),
-        Kind::Workbook => gpui::rgb(0x34d399),
-        Kind::Deck => gpui::rgb(0xfb923c),
-    }
+    let (dark, light) = match kind {
+        Kind::Document => (0x60a5fa, 0x3b82f6),
+        Kind::Workbook => (0x34d399, 0x059669),
+        Kind::Deck => (0xfb923c, 0xea580c),
+    };
+    gpui::rgb(if theme::is_dark() { dark } else { light })
 }
 
 fn kind_icon(kind: Kind) -> &'static str {

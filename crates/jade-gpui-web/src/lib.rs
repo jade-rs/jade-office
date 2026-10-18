@@ -40,11 +40,61 @@ const TABS_HEIGHT: f32 = 30.0;
 /// How far an arrow key moves a shape, in slide px; ⌥ moves one.
 const NUDGE_PX: f64 = 6.0;
 
-const ACCENT: u32 = 0x818cf8;
-const BORDER: u32 = 0x27272a;
-const PANEL: u32 = 0x0d0d0f;
-const TEXT: u32 = 0xe4e4e7;
-const DIM: u32 = 0xa1a1aa;
+/// The native app's two palettes, picked by the page's
+/// `prefers-color-scheme`. The documents themselves — pages, slides, cells —
+/// stay white in both, as they do in Office.
+mod palette {
+    use gpui::{rgb, Rgba, WindowAppearance};
+    use std::cell::Cell;
+
+    thread_local! {
+        static DARK: Cell<bool> = const { Cell::new(true) };
+    }
+
+    /// Takes up the page's appearance; true when that changed the palette.
+    pub fn follow(appearance: WindowAppearance) -> bool {
+        let dark = matches!(
+            appearance,
+            WindowAppearance::Dark | WindowAppearance::VibrantDark
+        );
+        DARK.with(|cell| cell.replace(dark) != dark)
+    }
+
+    fn pick(dark: u32, light: u32) -> Rgba {
+        rgb(if DARK.with(Cell::get) { dark } else { light })
+    }
+
+    pub fn window() -> Rgba {
+        pick(0x09090b, 0xffffff)
+    }
+    pub fn sidebar() -> Rgba {
+        pick(0x0a0a0c, 0xf8fafc)
+    }
+    pub fn canvas() -> Rgba {
+        pick(0x141416, 0xeef0f4)
+    }
+    pub fn panel() -> Rgba {
+        pick(0x0d0d0f, 0xffffff)
+    }
+    pub fn border() -> Rgba {
+        pick(0x27272a, 0xe2e8f0)
+    }
+    pub fn hovered() -> Rgba {
+        pick(0x18181b, 0xf1f5f9)
+    }
+    pub fn text() -> Rgba {
+        pick(0xe4e4e7, 0x1a1a2e)
+    }
+    pub fn dim() -> Rgba {
+        pick(0xa1a1aa, 0x64748b)
+    }
+    pub fn faint() -> Rgba {
+        pick(0x71717a, 0x94a3b8)
+    }
+    pub fn accent() -> Rgba {
+        pick(0x818cf8, 0x6366f1)
+    }
+}
 
 fn image(painter: TinySkiaPainter) -> Option<Arc<RenderImage>> {
     let (width, height) = (painter.width(), painter.height());
@@ -513,9 +563,9 @@ impl Viewer {
                     .text_xs()
                     .cursor_pointer()
                     .text_color(if index == current {
-                        rgb(ACCENT)
+                        palette::accent()
                     } else {
-                        rgb(DIM)
+                        palette::dim()
                     })
                     .child(name.clone())
                     .on_click(cx.listener(move |viewer, _event, _window, cx| {
@@ -556,26 +606,26 @@ impl Viewer {
                     .items_center()
                     .gap_2()
                     .px_2()
-                    .bg(rgb(PANEL))
+                    .bg(palette::panel())
                     .border_b_1()
-                    .border_color(rgb(BORDER))
+                    .border_color(palette::border())
                     .text_xs()
                     .child(
                         div()
                             .w(px(90.0))
                             .px_2()
                             .border_1()
-                            .border_color(rgb(BORDER))
+                            .border_color(palette::border())
                             .child(name_box),
                     )
-                    .child(div().text_color(rgb(DIM)).child("fx"))
+                    .child(div().text_color(palette::dim()).child("fx"))
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .child(content)
                             .when(editing, |bar| {
-                                bar.child(div().w(px(1.0)).h(px(13.0)).bg(rgb(ACCENT)))
+                                bar.child(div().w(px(1.0)).h(px(13.0)).bg(palette::accent()))
                             }),
                     ),
             )
@@ -635,9 +685,9 @@ impl Viewer {
                     .h(px(TABS_HEIGHT))
                     .flex_none()
                     .flex()
-                    .bg(rgb(PANEL))
+                    .bg(palette::panel())
                     .border_t_1()
-                    .border_color(rgb(BORDER))
+                    .border_color(palette::border())
                     .children(tabs),
             )
     }
@@ -858,9 +908,9 @@ impl Viewer {
                     .bg(gpui::white())
                     .border_2()
                     .border_color(if index == current_index {
-                        rgb(ACCENT)
+                        palette::accent()
                     } else {
-                        rgb(BORDER)
+                        palette::border()
                     })
                     .cursor_pointer()
                     .children(thumbnail.clone().map(|image| img(image).size_full()))
@@ -899,7 +949,7 @@ impl Viewer {
                     .p(px(6.0))
                     .bg(gpui::rgba(0xffffffee))
                     .border_1()
-                    .border_color(rgb(ACCENT))
+                    .border_color(palette::accent())
                     .text_color(gpui::black())
                     .text_size(px((18.0 * fit).max(11.0)))
                     .child(
@@ -922,7 +972,7 @@ impl Viewer {
                     .w(px(w))
                     .h(px(h))
                     .border_1()
-                    .border_color(rgb(ACCENT)),
+                    .border_color(palette::accent()),
             })
         });
 
@@ -943,9 +993,9 @@ impl Viewer {
                     .items_center()
                     .gap_2()
                     .py_2()
-                    .bg(rgb(0x0a0a0c))
+                    .bg(palette::sidebar())
                     .border_r_1()
-                    .border_color(rgb(BORDER))
+                    .border_color(palette::border())
                     .children(rows),
             )
             .child(
@@ -954,7 +1004,7 @@ impl Viewer {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .bg(rgb(0x141416))
+                    .bg(palette::canvas())
                     // A click off the slide clears the selection.
                     .on_mouse_down(
                         MouseButton::Left,
@@ -1010,7 +1060,7 @@ impl Viewer {
             unreachable!()
         };
         let (width, height) = *page_size;
-        div().flex_1().min_h_0().bg(rgb(0x141416)).child(
+        div().flex_1().min_h_0().bg(palette::canvas()).child(
             div()
                 .id("pages")
                 .size_full()
@@ -1044,8 +1094,8 @@ impl Viewer {
                 .text_xs()
                 .cursor_pointer()
                 .border_1()
-                .border_color(rgb(BORDER))
-                .hover(|button| button.bg(rgb(0x18181b)))
+                .border_color(palette::border())
+                .hover(|button| button.bg(palette::hovered()))
                 .child(label)
         };
         div()
@@ -1055,9 +1105,9 @@ impl Viewer {
             .items_center()
             .gap_2()
             .px_3()
-            .bg(rgb(PANEL))
+            .bg(palette::panel())
             .border_b_1()
-            .border_color(rgb(BORDER))
+            .border_color(palette::border())
             .child(div().size(px(20.0)).rounded_md().bg(gpui::linear_gradient(
                 135.0,
                 gpui::linear_color_stop(rgb(0x6366f1), 0.0),
@@ -1067,16 +1117,16 @@ impl Viewer {
             .child(
                 div()
                     .text_sm()
-                    .text_color(rgb(DIM))
+                    .text_color(palette::dim())
                     .child(self.name.clone()),
             )
             .when(dirty, |header| {
-                header.child(div().size(px(7.0)).rounded_full().bg(rgb(DIM)))
+                header.child(div().size(px(7.0)).rounded_full().bg(palette::dim()))
             })
             .child(
                 div()
                     .text_xs()
-                    .text_color(rgb(ACCENT))
+                    .text_color(palette::accent())
                     .child(self.status.clone()),
             )
             .child(div().flex_1())
@@ -1096,7 +1146,7 @@ impl Viewer {
             .child(
                 div()
                     .text_xs()
-                    .text_color(rgb(0x71717a))
+                    .text_color(palette::faint())
                     .child("gpui-pre web · WebGPU · tiny-skia"),
             )
     }
@@ -1275,6 +1325,7 @@ impl Render for Viewer {
         for image in self.retired.drain(..) {
             window.drop_image(image).ok();
         }
+        palette::follow(window.appearance());
         let body = match self.document {
             Document::Pages { .. } => self.pages_body(),
             Document::Deck { .. } => self.deck_body(window, cx),
@@ -1284,8 +1335,8 @@ impl Render for Viewer {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(0x09090b))
-            .text_color(rgb(TEXT))
+            .bg(palette::window())
+            .text_color(palette::text())
             .font_family(UI_FONT)
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::handle_key))
@@ -1377,7 +1428,16 @@ pub fn run(
         });
         if let Ok(window) = window {
             window
-                .update(cx, |viewer, window, cx| window.focus(&viewer.focus, cx))
+                .update(cx, |viewer, window, cx| {
+                    // Repaint when the page flips `prefers-color-scheme`.
+                    cx.observe_window_appearance(window, |_, window, cx| {
+                        if palette::follow(window.appearance()) {
+                            cx.notify();
+                        }
+                    })
+                    .detach();
+                    window.focus(&viewer.focus, cx)
+                })
                 .ok();
         }
     });
