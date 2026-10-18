@@ -12,7 +12,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use jade_docx_editor::canvas_renderer::CanvasRenderer;
+use jade_docx_editor::canvas_renderer::{CanvasRenderer, CaretAffinity};
 use jade_docx_editor::commands::{CommandContext, CommandExecutor};
 use jade_docx_editor::headless_api::{
     apply_headless_commands_to_document, apply_headless_commands_with_executor_to_document,
@@ -72,10 +72,9 @@ pub struct EditableDocument {
     /// The x a run of Up and Down keeps to, so passing a short line does
     /// not pull the caret to its end for good.
     goal_x: Option<f64>,
-    /// The line the caret is on when that is not where it is drawn: a
-    /// wrapped line's first position is drawn at the end of the line above,
-    /// and Home there means this line.
-    line_y: Option<f64>,
+    /// Which line a caret on a soft wrap is drawn on — the offset that ends
+    /// one line starts the next — as the point it was placed at says.
+    affinity: CaretAffinity,
     /// The first page repainted since the shell last asked.
     repainted_from: Option<usize>,
     /// The pages repainted since the shell last asked, from the renderer's
@@ -144,7 +143,7 @@ impl EditableDocument {
             page_height,
             dirty: false,
             goal_x: None,
-            line_y: None,
+            affinity: CaretAffinity::Upstream,
             repainted_from: None,
             repainted_pages: std::collections::BTreeSet::new(),
         })
@@ -267,7 +266,8 @@ impl EditableDocument {
     pub fn place_caret(&mut self, paragraph: usize, offset: usize) -> Option<CaretRect> {
         self.composition = None;
         self.goal_x = None;
-        self.line_y = None;
+        self.affinity = CaretAffinity::Upstream;
+        self.renderer.set_caret_affinity(self.affinity);
         let highlighted = self.highlighted_span();
         self.set_caret(paragraph, offset);
         if let Some((from, to)) = highlighted {
@@ -278,6 +278,33 @@ impl EditableDocument {
         self.caret_rect()
     }
 
+    /// Moves the caret to the text under a point, drawn on the line the
+    /// point is on: a wrapped line's first position is also the last one of
+    /// the line above, so a click at a line's start and one past the end of
+    /// the line above land on the same offset, drawn where each was.
+    pub fn place_caret_at(&mut self, x: f64, document_y: f64) -> Option<CaretRect> {
+        let (paragraph, offset) = self.position_at(x, document_y)?;
+        self.place_caret(paragraph, offset);
+        self.lean_towards(document_y);
+        self.caret_rect()
+    }
+
+    /// Draws the caret on whichever of its possible lines is nearer `y`.
+    fn lean_towards(&mut self, y: f64) {
+        let mut nearest = (CaretAffinity::Upstream, f64::INFINITY);
+        for affinity in [CaretAffinity::Upstream, CaretAffinity::Downstream] {
+            self.renderer.set_caret_affinity(affinity);
+            if let Some(rect) = self.caret_rect() {
+                let distance = (rect.document_y + rect.height / 2.0 - y).abs();
+                if distance < nearest.1 {
+                    nearest = (affinity, distance);
+                }
+            }
+        }
+        self.affinity = nearest.0;
+        self.renderer.set_caret_affinity(self.affinity);
+    }
+
     /// Selects from `anchor` to `focus` and repaints so the highlight shows.
     pub fn select(&mut self, anchor: (usize, usize), focus: (usize, usize)) -> Result<(), String> {
         if anchor == focus {
@@ -286,7 +313,6 @@ impl EditableDocument {
         }
         self.composition = None;
         self.goal_x = None;
-        self.line_y = None;
         let highlighted = self.highlighted_span();
         let range = SelectionRange::new(
             TextPosition::new(anchor.0, anchor.1),
@@ -396,8 +422,9 @@ impl EditableDocument {
             Motion::Right if !extend && !range.is_collapsed() => (end.paragraph, end.offset),
             Motion::Left | Motion::Right => self.step_character(focus, motion == Motion::Right),
             Motion::Up | Motion::Down | Motion::LineStart | Motion::LineEnd => {
+                // The line the caret is drawn on, wrap or not.
                 let rect = self.rect_at(focus).ok_or("the caret has no position")?;
-                let line = self.line_y.unwrap_or(rect.document_y + rect.height / 2.0);
+                let line = rect.document_y + rect.height / 2.0;
                 let (x, y) = match motion {
                     Motion::Up => (goal_x.unwrap_or(rect.x), line - rect.height),
                     Motion::Down => (goal_x.unwrap_or(rect.x), line + rect.height),
@@ -409,9 +436,9 @@ impl EditableDocument {
                     self.select(anchor, target)?;
                 } else {
                     self.place_caret(target.0, target.1);
+                    self.lean_towards(y);
                 }
                 self.goal_x = Some(x);
-                self.line_y = self.line_after_wrap(target, y);
                 return Ok(());
             }
         };
@@ -463,24 +490,6 @@ impl EditableDocument {
         let rect = self.caret_rect();
         self.renderer.set_selection_range(selection);
         rect
-    }
-
-    /// The middle of the line `position` starts, when it is a wrapped
-    /// line's first position — drawn at the end of the line above — and
-    /// `aimed_at` was nearer that line than the one above.
-    fn line_after_wrap(&mut self, position: (usize, usize), aimed_at: f64) -> Option<f64> {
-        let next = self.step_character(position, true);
-        if next.0 != position.0 || next == position {
-            return None;
-        }
-        let here = self.rect_at(position)?;
-        let after = self.rect_at(next)?;
-        let (above, below) = (
-            here.document_y + here.height / 2.0,
-            after.document_y + after.height / 2.0,
-        );
-        (below > above + here.height / 2.0 && (below - aimed_at).abs() < (above - aimed_at).abs())
-            .then_some(below)
     }
 
     /// The paragraphs a painted highlight covers, if there is one.
@@ -798,7 +807,6 @@ impl EditableDocument {
         command: HeadlessCommand,
         recorded: bool,
     ) -> Result<(), String> {
-        self.line_y = None;
         let request = HeadlessEditRequest {
             commands: vec![command],
         };

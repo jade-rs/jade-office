@@ -445,6 +445,11 @@ impl<B: Backend> Workbook<B> {
             self.book.workbook().date_system,
             jade_xlsx_reader::DateSystem::Nineteen04
         );
+        if let Some(formula) = text.strip_prefix('=').filter(|formula| !formula.is_empty()) {
+            if typing::formula_problem(formula) {
+                return Err(typing::FORMULA_PROBLEM.to_string());
+            }
+        }
         let typed = typing::read(text, date1904);
         // Excel gives a General cell the format the value was typed in; a
         // cell someone formatted keeps its format.
