@@ -5,8 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>jade on gpui web</title>
   <style>
+    :root { color-scheme: dark light; }
     html, body { margin: 0; height: 100%; background: #09090b; color: #a1a1aa;
       font: 13px -apple-system, "Hiragino Sans", sans-serif; overflow: hidden; }
+    @media (prefers-color-scheme: light) {
+      html, body { background: #ffffff; color: #64748b; }
+    }
     #loading { position: fixed; inset: 0; display: grid; place-items: center; }
   </style>
 </head>

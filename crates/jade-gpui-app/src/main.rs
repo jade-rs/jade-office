@@ -71,6 +71,9 @@ actions!(
         ToggleInspector,
         ToggleExplorer,
         ToggleTheme,
+        ThemeSystem,
+        ThemeLight,
+        ThemeDark,
         OpenFolder,
         Save,
         SaveAs,
@@ -124,6 +127,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-alt-e", ToggleExplorer, None),
         KeyBinding::new("cmd-alt-i", ToggleInspector, None),
         KeyBinding::new("cmd-alt-t", ToggleTheme, None),
+        KeyBinding::new("cmd-ctrl-alt-s", ThemeSystem, None),
+        KeyBinding::new("cmd-ctrl-alt-l", ThemeLight, None),
+        KeyBinding::new("cmd-ctrl-alt-d", ThemeDark, None),
         // Saving, history and the clipboard mean something in more than one
         // kind of tab; each view that has them answers with its own handler.
         KeyBinding::new("cmd-s", Save, None),
@@ -174,6 +180,26 @@ fn key_bindings() -> Vec<KeyBinding> {
 ///
 /// Everything the shell can do is here. It was all keyboard-only, which meant a
 /// feature nobody had been told about did not exist.
+/// A menu label with a check in front when `mode` is the one in use: gpui's
+/// menus have no checked state of their own, so the menus are rebuilt when
+/// the mode changes.
+fn checked(mode: theme::Mode, key: &'static str) -> String {
+    let mark = if theme::mode() == mode {
+        "✓ "
+    } else {
+        "    "
+    };
+    format!("{mark}{}", t(key))
+}
+
+/// Switches to `mode`, remembers it for next time, and repaints.
+fn apply_theme(mode: theme::Mode, cx: &mut App) {
+    theme::set_mode(mode);
+    theme::save(mode);
+    cx.set_menus(menus());
+    cx.refresh_windows();
+}
+
 fn menus() -> Vec<Menu> {
     vec![
         Menu {
@@ -246,7 +272,25 @@ fn menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action(t("menu.view.explorer"), ToggleExplorer),
                 MenuItem::action(t("menu.view.details"), ToggleInspector),
-                MenuItem::action(t("menu.view.theme"), ToggleTheme),
+                MenuItem::submenu(Menu {
+                    name: t("menu.view.appearance").into(),
+                    items: vec![
+                        MenuItem::action(
+                            checked(theme::Mode::System, "menu.view.appearance.system"),
+                            ThemeSystem,
+                        ),
+                        MenuItem::action(
+                            checked(theme::Mode::Light, "menu.view.appearance.light"),
+                            ThemeLight,
+                        ),
+                        MenuItem::action(
+                            checked(theme::Mode::Dark, "menu.view.appearance.dark"),
+                            ThemeDark,
+                        ),
+                        MenuItem::separator(),
+                        MenuItem::action(t("menu.view.theme"), ToggleTheme),
+                    ],
+                }),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.view.next_page"), NextPage),
                 MenuItem::action(t("menu.view.previous_page"), PreviousPage),
@@ -445,17 +489,113 @@ fn page_image(document: &NativeDocument, page_index: usize) -> Option<Arc<Render
 /// refreshing the windows repaints every view, since each reads its colours
 /// per frame.
 pub(crate) mod theme {
-    use gpui::{rgb, Rgba};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use gpui::{rgb, Rgba, WindowAppearance};
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
+    /// What the user picked: follow macOS, or keep one palette regardless.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Mode {
+        System,
+        Light,
+        Dark,
+    }
+
+    impl Mode {
+        fn name(self) -> &'static str {
+            match self {
+                Mode::System => "system",
+                Mode::Light => "light",
+                Mode::Dark => "dark",
+            }
+        }
+
+        pub fn parse(text: &str) -> Option<Mode> {
+            match text.trim() {
+                "system" => Some(Mode::System),
+                "light" => Some(Mode::Light),
+                "dark" => Some(Mode::Dark),
+                _ => None,
+            }
+        }
+
+        fn to_u8(self) -> u8 {
+            self as u8
+        }
+
+        fn from_u8(value: u8) -> Mode {
+            match value {
+                1 => Mode::Light,
+                2 => Mode::Dark,
+                _ => Mode::System,
+            }
+        }
+    }
+
+    static MODE: AtomicU8 = AtomicU8::new(0);
+    /// The palette in use: the mode's, or the system's while following it.
     static DARK: AtomicBool = AtomicBool::new(true);
+    /// What macOS last said, kept so that going back to System needs no
+    /// window to ask.
+    static SYSTEM_DARK: AtomicBool = AtomicBool::new(true);
 
     pub fn is_dark() -> bool {
         DARK.load(Ordering::Relaxed)
     }
 
-    pub fn set_dark(dark: bool) {
+    pub fn mode() -> Mode {
+        Mode::from_u8(MODE.load(Ordering::Relaxed))
+    }
+
+    pub fn set_mode(mode: Mode) {
+        MODE.store(mode.to_u8(), Ordering::Relaxed);
+        resolve();
+    }
+
+    /// Records the system appearance; the palette follows it in System mode.
+    pub fn set_system(appearance: WindowAppearance) {
+        let dark = matches!(
+            appearance,
+            WindowAppearance::Dark | WindowAppearance::VibrantDark
+        );
+        SYSTEM_DARK.store(dark, Ordering::Relaxed);
+        resolve();
+    }
+
+    fn resolve() {
+        let dark = match mode() {
+            Mode::System => SYSTEM_DARK.load(Ordering::Relaxed),
+            Mode::Light => false,
+            Mode::Dark => true,
+        };
         DARK.store(dark, Ordering::Relaxed);
+    }
+
+    fn store() -> Option<PathBuf> {
+        // Tests switch themes too, and must not rewrite the user's choice.
+        if cfg!(test) {
+            return None;
+        }
+        let home = std::env::var_os("HOME")?;
+        Some(PathBuf::from(home).join("Library/Application Support/jade-office/theme.txt"))
+    }
+
+    /// The mode saved last time, or System.
+    pub fn load() -> Mode {
+        store()
+            .and_then(|store| std::fs::read_to_string(store).ok())
+            .and_then(|text| Mode::parse(&text))
+            .unwrap_or(Mode::System)
+    }
+
+    pub fn save(mode: Mode) {
+        let Some(store) = store() else {
+            return;
+        };
+        if let Some(directory) = store.parent() {
+            std::fs::create_dir_all(directory).ok();
+        }
+        std::fs::write(store, mode.name()).ok();
     }
 
     fn pick(dark: u32, light: u32) -> Rgba {
@@ -509,13 +649,44 @@ pub(crate) mod theme {
     pub fn accent_alt() -> Rgba {
         pick(0xc084fc, 0xa855f7)
     }
-    /// The "Ready" dot in the status bar (`emerald-400`).
+    /// The "Ready" dot in the status bar (`emerald-400` / `emerald-500`).
     pub fn ready() -> Rgba {
-        rgb(0x34d399)
+        pick(0x34d399, 0x10b981)
     }
     /// Solid and dark: it sits on the white page, not on the app chrome.
     pub fn caret() -> Rgba {
         rgb(0x1b1b1f)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn modes_round_trip_through_their_names() {
+            for mode in [Mode::System, Mode::Light, Mode::Dark] {
+                assert_eq!(Mode::parse(mode.name()), Some(mode));
+                assert_eq!(Mode::from_u8(mode.to_u8()), mode);
+            }
+            assert_eq!(Mode::parse(" dark\n"), Some(Mode::Dark));
+            assert_eq!(Mode::parse("sepia"), None);
+        }
+
+        #[test]
+        fn system_mode_follows_the_appearance_and_the_others_do_not() {
+            set_mode(Mode::System);
+            set_system(WindowAppearance::Light);
+            assert!(!is_dark());
+            set_system(WindowAppearance::VibrantDark);
+            assert!(is_dark());
+            set_mode(Mode::Light);
+            assert!(!is_dark());
+            set_system(WindowAppearance::Dark);
+            assert!(!is_dark(), "an explicit choice outlasts the system's");
+            set_mode(Mode::System);
+            assert!(is_dark(), "going back to System picks up what it said");
+            set_mode(Mode::Dark);
+        }
     }
 }
 
@@ -3966,15 +4137,32 @@ fn main() {
             cx.quit();
             return;
         }
+        // The saved appearance, or `JADE_THEME=light|dark|system` for this
+        // run only; the system's own is read now and followed from each
+        // window (see `shell::follow_appearance`).
+        theme::set_system(cx.window_appearance());
+        theme::set_mode(
+            std::env::var("JADE_THEME")
+                .ok()
+                .and_then(|theme| theme::Mode::parse(&theme))
+                .unwrap_or_else(theme::load),
+        );
         cx.bind_keys(key_bindings());
         cx.set_menus(menus());
         // The actions no single window owns.
         cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
         cx.on_action(|_: &Open, cx: &mut App| shell::prompt_and_open(cx));
         cx.on_action(|_: &ToggleTheme, cx: &mut App| {
-            theme::set_dark(!theme::is_dark());
-            cx.refresh_windows();
+            let mode = if theme::is_dark() {
+                theme::Mode::Light
+            } else {
+                theme::Mode::Dark
+            };
+            apply_theme(mode, cx);
         });
+        cx.on_action(|_: &ThemeSystem, cx: &mut App| apply_theme(theme::Mode::System, cx));
+        cx.on_action(|_: &ThemeLight, cx: &mut App| apply_theme(theme::Mode::Light, cx));
+        cx.on_action(|_: &ThemeDark, cx: &mut App| apply_theme(theme::Mode::Dark, cx));
         cx.on_action(|_: &CloseWindow, cx: &mut App| {
             if let Some(window) = cx.active_window() {
                 window
@@ -4002,11 +4190,6 @@ fn main() {
             shell::workspace(cx).ok();
         } else {
             shell::open_paths(&paths, cx);
-        }
-        // `JADE_THEME=light` starts in the light palette.
-        if std::env::var("JADE_THEME").is_ok_and(|theme| theme == "light") {
-            theme::set_dark(false);
-            cx.refresh_windows();
         }
         cx.activate(true);
     });
