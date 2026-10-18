@@ -1,0 +1,249 @@
+# key	text — {name} placeholders are filled by i18n::format
+kind.document	Word
+kind.workbook	Excel
+kind.deck	PowerPoint
+workspace.explorer	Explorer
+workspace.no_folder	No Folder
+workspace.explorer_hint	Open a folder to list the Word, Excel and PowerPoint files in it.
+workspace.recent	Recent
+workspace.tagline	Word, Excel and PowerPoint in one app
+workspace.open_file	Open File…
+workspace.open_folder	Open Folder…
+workspace.drop_hint	⌘O to open, or drop files here
+workspace.ready	Ready
+workspace.tabs	Tabs: {n}
+workspace.unsupported	{name}: not a supported format (.docx, .xlsx and .pptx open)
+workspace.prompt_open	Open
+workspace.prompt_folder	Open Folder
+workspace.zoom_out	Zoom Out
+workspace.zoom_in	Zoom In
+workspace.zoom_fit	Fit
+doc.pages	Pages ({n})
+doc.position	Page {current} of {count}
+doc.comments	Comments: {n}
+doc.tracking	Tracking changes
+sheet.position	Sheet: {name}
+sheet.count	Sheets: {n}
+sheet.paint_failed	Cannot draw the sheet
+deck.slides	Slides ({n})
+deck.position	Slide {current} of {count}
+deck.notes	Notes
+deck.print	Print
+deck.from_current	From Current Slide
+deck.slideshow	Slide Show
+deck.no_notes	No notes on this slide
+deck.print_failed	Cannot print: {error}
+deck.paint_failed	Cannot draw slide {n}
+deck.empty	{name}: the presentation has no slides
+deck.slideshow_failed	Cannot start the slide show: {error}
+menu.app.quit	Quit jade
+menu.file	File
+menu.file.open	Open…
+menu.file.open_folder	Open Folder…
+menu.file.close_tab	Close Tab
+menu.file.save	Save
+menu.file.save_as	Save As…
+menu.file.print	Print…
+menu.edit	Edit
+menu.edit.undo	Undo
+menu.edit.redo	Redo
+menu.edit.cut	Cut
+menu.edit.copy	Copy
+menu.edit.paste	Paste
+menu.edit.select_all	Select All
+menu.edit.select_paragraph	Select Paragraph
+menu.edit.find_replace	Find and Replace…
+menu.edit.find_selection	Find Selection
+menu.edit.find_next	Find Next
+menu.edit.replace	Replace…
+menu.edit.replace_all	Replace All
+menu.format	Format
+menu.format.bold	Bold
+menu.format.italic	Italic
+menu.format.underline	Underline
+menu.format.align_left	Align Left
+menu.format.center	Center
+menu.format.align_right	Align Right
+menu.format.indent_more	Increase Indent
+menu.format.indent_less	Decrease Indent
+menu.table	Table
+menu.table.insert_row	Insert Row Below
+menu.table.delete_row	Delete Row
+menu.review	Review
+menu.review.add_comment	Add Comment
+menu.review.track_changes	Track Changes
+menu.view	View
+menu.view.explorer	Explorer
+menu.view.details	Details Panel
+menu.view.theme	Light / Dark Theme
+menu.view.next_page	Next Page
+menu.view.previous_page	Previous Page
+menu.view.zoom_in	Zoom In
+menu.view.zoom_out	Zoom Out
+menu.view.zoom_actual	Actual Size
+menu.view.zoom_fit	Zoom to Fit
+menu.slideshow	Slide Show
+menu.slideshow.from_beginning	From Beginning
+sheet.edit_failed	Cannot write the cell: {error}
+sheet.saved	Saved to {name}
+sheet.save_failed	Cannot save: {error}
+sheet.average	Average: {value}
+sheet.cell_count	Count: {n}
+sheet.sum	Sum: {value}
+deck.edit_failed	Cannot make the change: {error}
+deck.text_locked	This shape's text cannot be edited
+deck.saved	Saved to {name}
+deck.save_failed	Cannot save: {error}
+deck.selected_shape	Selected: {name}
+doc.tab.home	Home
+doc.tab.insert	Insert
+doc.tab.design	Design
+doc.tab.layout	Layout
+doc.tab.references	References
+doc.tab.review	Review
+doc.tab.view	View
+doc.export_word	Export Word
+doc.group.table	Table
+doc.table_3x3	Table 3×3
+doc.table_3x3_title	A 3×3 table
+doc.table_2x2	Table 2×2
+doc.table_2x2_title	A 2×2 table
+doc.group.pages	Pages
+doc.blank_page	Blank Page
+doc.comment	Comment
+doc.page_color	Page Color
+doc.color.cream	Cream
+doc.color.light_gray	Light Gray
+doc.none	None
+doc.page_color_none	Remove the page color
+doc.page_borders	Page Borders
+doc.box	Box
+doc.page_borders_box	Put a border round the page
+doc.page_borders_none	Remove the page border
+doc.group.paragraph	Paragraph
+doc.indent_less	Indent −
+doc.indent_less_title	Decrease Indent
+doc.indent_more	Indent +
+doc.indent_more_title	Increase Indent
+doc.page_break	Page Break
+doc.toc	Contents
+doc.toc_title	Insert a table of contents
+doc.group.tracking	Tracking
+doc.track	Track
+doc.track_title	Track Changes
+doc.accept_all	Accept All
+doc.reject_all	Reject All
+doc.reject_all_title	Reject all changes
+doc.marks	Marks
+doc.marks_title	Show formatting marks
+doc.group.zoom	Zoom
+doc.zoom_out	Zoom Out
+doc.zoom_actual	100%
+doc.zoom_in	Zoom In
+doc.previous	Previous
+doc.previous_page	Previous Page
+doc.next	Next
+doc.next_page	Next Page
+doc.group.clipboard	Clipboard
+doc.paste	Paste
+doc.paste_title	Paste
+doc.cut	Cut
+doc.cut_title	Cut
+doc.copy	Copy
+doc.copy_title	Copy
+doc.group.font	Font
+doc.grow	A+
+doc.grow_title	Increase Font Size
+doc.shrink	A−
+doc.shrink_title	Decrease Font Size
+doc.bold_title	Bold
+doc.italic_title	Italic
+doc.underline_title	Underline
+doc.strike_title	Strikethrough
+doc.subscript	x₂
+doc.subscript_title	Subscript
+doc.superscript	x²
+doc.superscript_title	Superscript
+doc.font_color	Color
+doc.font_color_title	Font Color
+doc.highlight	Highlight
+doc.highlight_title	Text Highlight Color
+doc.clear_format	Clear
+doc.clear_format_title	Clear Formatting
+doc.bullets	Bullets
+doc.numbering	Numbering
+doc.no_list	No List
+doc.no_list_title	Remove the list
+doc.line_spacing	Spacing
+doc.line_spacing_title	Line and Paragraph Spacing
+doc.space_after	After
+doc.space_after_title	Add space after the paragraph
+doc.shading	Shading
+doc.shading_title	Paragraph shading
+doc.borders	Borders
+doc.borders_title	Put a border round the paragraph
+doc.no_borders	No Border
+doc.no_borders_title	Remove the paragraph border
+doc.align_left	Left
+doc.align_left_title	Align Left
+doc.center	Center
+doc.center_title	Center
+doc.align_right	Right
+doc.align_right_title	Align Right
+doc.justify	Justify
+doc.justify_title	Justify
+doc.group.styles	Styles
+doc.style.normal	Normal
+doc.style.heading1	Heading 1
+doc.style.heading2	Heading 2
+doc.style.heading3	Heading 3
+doc.group.editing	Editing
+doc.undo	Undo
+doc.undo_title	Undo
+doc.redo	Redo
+doc.find	Find
+doc.find_title	Find and Replace
+doc.color.auto	Automatic
+doc.color.red	Red
+doc.color.orange	Orange
+doc.color.green	Green
+doc.color.blue	Blue
+doc.color.purple	Purple
+doc.color.gray	Gray
+doc.color.yellow	Yellow
+doc.color.cyan	Turquoise
+doc.color.pink	Pink
+doc.color.pale_yellow	Pale Yellow
+doc.color.pale_blue	Pale Blue
+doc.color.pale_green	Pale Green
+doc.group.show	Show
+doc.info.title	Document
+doc.info.subtitle	Rendered without a browser
+doc.info.pages	Pages
+doc.info.page_size	Page size
+doc.info.file_size	File size
+doc.info.renderer	Renderer
+doc.info.last_repaint	Last repaint
+doc.info.typed	Typed
+doc.info.typed_value	{n} chars
+doc.info.insertion	Insertion point
+doc.info.history	History
+doc.info.history_value	undo {undo} · redo {redo}
+doc.info.yes	yes
+doc.info.no	no
+doc.info.review	Review
+doc.info.review_value	{n} comments · tracking {tracking}
+doc.info.on	on
+doc.info.off	off
+doc.info.table	Table
+doc.info.table_value	row {row} of {rows} · column {column} of {columns}
+doc.info.find	Find
+doc.info.saved	Saved
+doc.info.help	Drag to select · double-click a word · ⇧arrows extend · type over a selection to replace it · drag a picture to move it, its corner to size · in the find bar: ⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · esc close.
+doc.find.query	Find
+doc.find.replacement	Replace
+doc.find.keys	⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · esc close
+doc.find.none	{query}: no matches
+doc.find.count	{query}: {n} matches
+doc.find.position	{query}: {n} of {count}
+doc.find.replaced	{query} → {replacement}: {n} replaced
