@@ -1791,8 +1791,8 @@ impl DocView {
         cx.notify();
     }
 
-    /// The text position under a point on page `index`.
-    fn page_position(&self, index: usize, position: gpui::Point<Pixels>) -> Option<(usize, usize)> {
+    /// A point on page `index` in the document's coordinates.
+    fn page_point(&self, index: usize, position: gpui::Point<Pixels>) -> Option<(f64, f64)> {
         let Document::Pages {
             document,
             page_bounds,
@@ -1805,7 +1805,16 @@ impl DocView {
         let zoom = self.shown_zoom.max(0.01);
         let x = f64::from((position.x - bounds.origin.x) / zoom);
         let y = f64::from((position.y - bounds.origin.y) / zoom);
-        document.position_at(x, document.document_y(index, y))
+        Some((x, document.document_y(index, y)))
+    }
+
+    /// The text position under a point on page `index`.
+    fn page_position(&self, index: usize, position: gpui::Point<Pixels>) -> Option<(usize, usize)> {
+        let (x, y) = self.page_point(index, position)?;
+        let Document::Pages { document, .. } = &self.document else {
+            return None;
+        };
+        document.position_at(x, y)
     }
 
     /// A press on page `index`: the caret goes to the text under it, or with
@@ -1818,7 +1827,10 @@ impl DocView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus, cx);
-        let Some(target) = self.page_position(index, event.position) else {
+        let (Some((x, y)), Some(target)) = (
+            self.page_point(index, event.position),
+            self.page_position(index, event.position),
+        ) else {
             return;
         };
         let extend = event.modifiers.shift;
@@ -1831,8 +1843,9 @@ impl DocView {
                 (true, Some((anchor, _)), _) | (true, None, Some(anchor)) => {
                     document.select(anchor, target)
                 }
+                // On the line clicked, at a wrap too.
                 _ => {
-                    document.place_caret(target.0, target.1);
+                    document.place_caret_at(x, y);
                     Ok(())
                 }
             }
