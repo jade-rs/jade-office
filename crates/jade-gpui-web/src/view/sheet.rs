@@ -1,0 +1,2385 @@
+//! A workbook in the browser, worked as Excel is worked: click, drag or
+//! Shift-click a range, a header for whole rows or columns, the corner for
+//! the sheet; ⌘-arrows to the ends of the data; Enter and Tab round a
+//! range; type, with arrows that leave the cell — or point at one while a
+//! formula is being typed — and F2 to edit in place; the fill handle, ⌘D,
+//! ⌘R and ⌘Enter; copies that paste formulas and formats and cuts that
+//! move; bold and the number-format shortcuts; rows and columns inserted,
+//! deleted and resized; sheets added, renamed and deleted.
+//!
+//! What each of those does to the workbook is `jade-office-model`'s
+//! (`sheet::Workbook`, `grid::Selection`), the same code the native app
+//! runs; this is the gpui around it.
+
+use std::time::Duration;
+
+use gpui::{DispatchPhase, MouseUpEvent, Point};
+use jade_web::grid::{self, Direction, DragKind, Hit, Selection};
+use jade_web::sheet::{
+    column_label, range_text, reference_text, span, AutoFilterOption, Axis, CellFormat, CellRange,
+    Copied, FilterButton, FontToggle, Overlay, ResizeGesture, MAX_COLUMN, MAX_ROW,
+};
+
+use super::*;
+
+/// How far past the grid's edge the pointer has to be for a drag to scroll
+/// it, and how often it scrolls while held there.
+const AUTO_SCROLL_TICK: Duration = Duration::from_millis(40);
+
+/// A workbook open in the view.
+pub(super) struct Sheet {
+    pub book: jade_web::Workbook,
+    pub names: Vec<SharedString>,
+    pub selection: Selection,
+    pub edit: Option<CellEdit>,
+    pub scroll: ScrollHandle,
+    painted: Option<PaintedSheet>,
+    /// The grid's size in window px, from the last frame.
+    viewport: (f32, f32),
+    drag: Option<SheetDrag>,
+    /// The pointer during a drag, in window px, for scrolling while it is
+    /// held past the grid's edge.
+    pointer: Option<Point<Pixels>>,
+    auto_scrolling: bool,
+    /// Copied or cut cells, outlined until pasted or let go.
+    copied: Option<Copied>,
+    /// The column Tab started from, where Enter goes back to.
+    tab_start: Option<u32>,
+    /// A sheet tab being renamed, with what has been typed.
+    pub renaming: Option<(usize, TextEdit)>,
+    /// The name box being typed into: a cell or range to go to.
+    pub naming: Option<TextEdit>,
+    /// The find bar (⌘F) and what is being looked for.
+    pub finding: Option<TextEdit>,
+    /// The note under the pointer, and where its cell's top-right corner
+    /// is in the grid's px.
+    note: Option<(CellRef, (f32, f32))>,
+    menu: Option<SheetMenu>,
+    /// A filter button's dropdown.
+    filter: Option<FilterPanel>,
+    /// What the pointer is over, for its cursor.
+    hover: Hover,
+}
+
+/// A cell being typed into.
+pub(super) struct CellEdit {
+    pub text: TextEdit,
+    /// Started with F2, a double-click or the formula bar: the arrow keys
+    /// move in the text rather than leaving the cell.
+    in_place: bool,
+    /// A reference the arrow keys or the mouse are pointing at, as a byte
+    /// range of the text and the cells it names.
+    point: Option<Pointing>,
+}
+
+#[derive(Clone)]
+struct Pointing {
+    bytes: Range<usize>,
+    anchor: CellRef,
+    focus: CellRef,
+}
+
+#[derive(Clone, Copy)]
+enum SheetDrag {
+    Select(DragKind),
+    Fill {
+        source: CellRange,
+        target: CellRange,
+    },
+    Resize(ResizeGesture),
+    Point,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Hover {
+    Cells,
+    FillHandle,
+    ResizeColumn,
+    ResizeRow,
+}
+
+struct SheetMenu {
+    /// Where it opened, in the grid's px.
+    at: (f32, f32),
+    /// Opened on a sheet tab: its index.
+    tab: Option<usize>,
+}
+
+/// The dropdown a filter button opens: sorts, a clear, and the column's
+/// values to tick.
+struct FilterPanel {
+    button: FilterButton,
+    options: Vec<AutoFilterOption>,
+    checked: Vec<bool>,
+    /// Under the button, in the grid's px.
+    at: (f32, f32),
+}
+
+/// A sheet viewport's pixels and what they were painted for.
+struct PaintedSheet {
+    scroll: (f32, f32),
+    device: (u32, u32),
+    zoom: f32,
+    overlay: Overlay,
+    generation: u64,
+    image: Arc<RenderImage>,
+}
+
+#[derive(Clone, Copy)]
+enum FilterCommand {
+    Toggle(usize),
+    All,
+    Apply,
+    Cancel,
+    Sort(bool),
+    Clear,
+}
+
+#[derive(Clone, Copy)]
+enum MenuCommand {
+    Cut,
+    Copy,
+    Paste,
+    Clear,
+    InsertRows,
+    DeleteRows,
+    InsertColumns,
+    DeleteColumns,
+    FillDown,
+    FillRight,
+    SortAscending,
+    SortDescending,
+    MergeCenter,
+    InsertSheet,
+    RenameSheet(usize),
+    DeleteSheet(usize),
+}
+
+impl Sheet {
+    pub fn open(book: jade_web::Workbook) -> Self {
+        Self {
+            names: book
+                .sheet_names()
+                .into_iter()
+                .map(SharedString::from)
+                .collect(),
+            book,
+            selection: Selection::default(),
+            edit: None,
+            scroll: ScrollHandle::new(),
+            painted: None,
+            viewport: (1.0, 1.0),
+            drag: None,
+            pointer: None,
+            auto_scrolling: false,
+            copied: None,
+            tab_start: None,
+            renaming: None,
+            naming: None,
+            finding: None,
+            note: None,
+            menu: None,
+            filter: None,
+            hover: Hover::Cells,
+        }
+    }
+
+    /// The text being typed into: a tab's new name, the name box, or a cell.
+    pub fn typing(&mut self) -> Option<&mut TextEdit> {
+        if let Some((_, text)) = self.renaming.as_mut() {
+            return Some(text);
+        }
+        if let Some(text) = self.naming.as_mut() {
+            return Some(text);
+        }
+        if let Some(text) = self.finding.as_mut() {
+            return Some(text);
+        }
+        self.edit.as_mut().map(|edit| &mut edit.text)
+    }
+
+    pub fn typed(&self) -> Option<&TextEdit> {
+        if let Some((_, text)) = self.renaming.as_ref() {
+            return Some(text);
+        }
+        if let Some(text) = self.naming.as_ref() {
+            return Some(text);
+        }
+        if let Some(text) = self.finding.as_ref() {
+            return Some(text);
+        }
+        self.edit.as_ref().map(|edit| &edit.text)
+    }
+
+    /// Something typed that is not a pointed reference ends pointing.
+    pub fn typed_into(&mut self) {
+        if let Some(edit) = self.edit.as_mut() {
+            edit.point = None;
+        }
+    }
+
+    /// The status bar's words: the sheet, the range, Excel's summary.
+    pub fn status_items(&self, items: &mut Vec<SharedString>) {
+        items.push(i18n::format("sheet.position", &[("name", &self.book.sheet_name())]).into());
+        let range = self.selection.range();
+        items.push(range_label(range).into());
+        if range.start != range.end {
+            let summary = self.book.summary(range);
+            if let (Some(sum), Some(average)) = (summary.sum, summary.average) {
+                items.push(
+                    i18n::format("sheet.average", &[("value", &format_number(average))]).into(),
+                );
+                items.push(i18n::format("sheet.cell_count", &[("n", &summary.count)]).into());
+                items.push(i18n::format("sheet.sum", &[("value", &format_number(sum))]).into());
+            } else if summary.count > 0 {
+                items.push(i18n::format("sheet.cell_count", &[("n", &summary.count)]).into());
+            }
+        }
+    }
+
+    fn pointable(&self) -> bool {
+        self.edit.as_ref().is_some_and(|edit| {
+            edit.point.is_some()
+                || (!edit.in_place && grid::can_point(&edit.text.text, edit.text.caret()))
+        })
+    }
+
+    fn overlay(&self) -> Overlay {
+        let preview = match self.drag {
+            Some(SheetDrag::Fill { target, .. }) => Some(target),
+            _ => self
+                .edit
+                .as_ref()
+                .and_then(|edit| edit.point.as_ref())
+                .map(|point| span(point.anchor, point.focus)),
+        };
+        Overlay {
+            selection: Some(self.selection),
+            preview,
+            marquee: self
+                .copied
+                .as_ref()
+                .filter(|copied| copied.sheet == self.book.sheet_index())
+                .map(|copied| copied.range),
+            resize: match self.drag {
+                Some(SheetDrag::Resize(gesture)) => Some(gesture),
+                _ => None,
+            },
+        }
+    }
+}
+
+/// `B3`, `B3:D7`, or Excel's `1:3` and `A:C` for whole rows and columns.
+fn range_label(range: CellRange) -> String {
+    let rows = range.start.column == 0 && range.end.column == MAX_COLUMN;
+    let columns = range.start.row == 0 && range.end.row == MAX_ROW;
+    match (rows, columns) {
+        (true, true) => format!("1:{}", MAX_ROW + 1),
+        (true, false) => format!("{}:{}", range.start.row + 1, range.end.row + 1),
+        (false, true) => format!(
+            "{}:{}",
+            column_label(range.start.column),
+            column_label(range.end.column)
+        ),
+        (false, false) => range_text(range),
+    }
+}
+
+/// `B3` or `B3:D7` typed into the name box.
+fn parse_reference(text: &str) -> Option<CellRange> {
+    let text = text.trim().replace('$', "").to_uppercase();
+    let (start, end) = text.split_once(':').unwrap_or((&text, &text));
+    let start = CellRef::parse(start).ok()?;
+    let end = CellRef::parse(end).ok()?;
+    (start.column <= MAX_COLUMN
+        && end.column <= MAX_COLUMN
+        && start.row <= MAX_ROW
+        && end.row <= MAX_ROW)
+        .then(|| span(start, end))
+}
+
+/// Today's date, or the time now, as typed into a cell (`2026/10/19`,
+/// `9:41`), for ⌃; and ⌘;.
+fn now_text(time: bool) -> String {
+    let now = js_sys::Date::new_0();
+    if time {
+        format!("{}:{:02}", now.get_hours(), now.get_minutes())
+    } else {
+        format!(
+            "{}/{}/{}",
+            now.get_full_year(),
+            now.get_month() + 1,
+            now.get_date()
+        )
+    }
+}
+
+impl DocView {
+    fn sheet_mut(&mut self) -> Option<&mut Sheet> {
+        match &mut self.document {
+            Document::Workbook(sheet) => Some(sheet),
+            _ => None,
+        }
+    }
+
+    fn sheet_ref(&self) -> Option<&Sheet> {
+        match &self.document {
+            Document::Workbook(sheet) => Some(sheet),
+            _ => None,
+        }
+    }
+
+    /// The scroll position in sheet px (the offset is in screen px).
+    fn sheet_scroll(scroll: &ScrollHandle, zoom: f32) -> (f64, f64) {
+        let offset = scroll.offset();
+        let zoom = f64::from(zoom);
+        (
+            (-f64::from(offset.x) / zoom).max(0.0),
+            (-f64::from(offset.y) / zoom).max(0.0),
+        )
+    }
+
+    /// A window point in the grid's sheet px (headers included).
+    fn grid_point(&self, position: Point<Pixels>) -> Option<(f64, f64)> {
+        let bounds = self.surface.get()?;
+        let zoom = f64::from(self.shown_zoom);
+        Some((
+            f64::from(position.x - bounds.origin.x) / zoom,
+            f64::from(position.y - bounds.origin.y) / zoom,
+        ))
+    }
+
+    /// Scrolls just enough to show `to`, growing the grid to reach it.
+    fn reveal_cell(&mut self, to: CellRef) {
+        let zoom = self.shown_zoom;
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        sheet.book.reach(to);
+        let at = Self::sheet_scroll(&sheet.scroll, zoom);
+        let zoom = f64::from(zoom);
+        let (x, y) = sheet.book.reveal(
+            to,
+            at,
+            (
+                f64::from(sheet.viewport.0) / zoom,
+                f64::from(sheet.viewport.1) / zoom,
+            ),
+        );
+        if (x, y) != at {
+            sheet
+                .scroll
+                .set_offset(point(px((-x * zoom) as f32), px((-y * zoom) as f32)));
+        }
+    }
+
+    /// The selection becomes `to` — a single cell — or, extending, keeps
+    /// its anchor and active cell and reaches `to`.
+    fn select_cell(&mut self, to: CellRef, extend: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        if extend {
+            sheet.selection.extend_to(to);
+        } else {
+            sheet.selection = Selection::cell(to);
+        }
+        sheet.tab_start = None;
+        self.reveal_cell(to);
+        cx.notify();
+    }
+
+    /// An arrow: the active cell, or with Shift the far corner, one step.
+    fn step_cell(&mut self, columns: i64, rows: i64, extend: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_ref() else {
+            return;
+        };
+        let from = if extend {
+            sheet.selection.focus
+        } else {
+            sheet.selection.active
+        };
+        self.select_cell(grid::offset(from, columns, rows), extend, cx);
+    }
+
+    /// An arrow: one cell that way, over merged cells and past hidden rows
+    /// and columns; with Shift the far corner moves.
+    fn arrow_cell(&mut self, direction: Direction, extend: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_ref() else {
+            return;
+        };
+        let from = if extend {
+            sheet.selection.focus
+        } else {
+            sheet.selection.active
+        };
+        let to = sheet.book.step(from, direction);
+        self.select_cell(to, extend, cx);
+    }
+
+    /// Find Next (Enter in the find bar; Shift+Enter goes back): the next
+    /// cell showing what is typed, on this sheet or the next.
+    fn find_next(&mut self, back: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some(needle) = sheet.finding.as_ref().map(|text| text.text.clone()) else {
+            return;
+        };
+        let from = (sheet.book.sheet_index(), sheet.selection.active);
+        match sheet.book.find_next(&needle, from, back) {
+            Some((index, cell)) => {
+                if index != sheet.book.sheet_index() {
+                    let finding = sheet.finding.take();
+                    self.select_sheet(index, cx);
+                    if let Some(sheet) = self.sheet_mut() {
+                        sheet.finding = finding;
+                    }
+                }
+                self.select_cell(cell, false, cx);
+                self.status = SharedString::default();
+            }
+            None => self.status = i18n::text("sheet.not_found").into(),
+        }
+        cx.notify();
+    }
+
+    /// The filter dropdown's OK: only the ticked values show — or, all
+    /// ticked, the column is not filtered.
+    fn apply_filter(&mut self, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some(panel) = sheet.filter.take() else {
+            return;
+        };
+        let result = if panel.checked.iter().all(|checked| *checked) {
+            sheet.book.clear_filter(&panel.button)
+        } else {
+            let mut values = Vec::new();
+            let mut blank = false;
+            for (option, checked) in panel.options.iter().zip(&panel.checked) {
+                if !checked {
+                    continue;
+                }
+                if option.blank {
+                    blank = true;
+                } else {
+                    values.extend(option.values.iter().cloned());
+                }
+            }
+            sheet.book.filter_values(&panel.button, values, blank)
+        };
+        self.edited(result, cx);
+    }
+
+    fn filter_command(&mut self, command: FilterCommand, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        match command {
+            FilterCommand::Toggle(index) => {
+                if let Some(panel) = sheet.filter.as_mut() {
+                    if let Some(checked) = panel.checked.get_mut(index) {
+                        *checked = !*checked;
+                    }
+                }
+                cx.notify();
+            }
+            FilterCommand::All => {
+                if let Some(panel) = sheet.filter.as_mut() {
+                    let all = panel.checked.iter().all(|checked| *checked);
+                    panel.checked.iter_mut().for_each(|checked| *checked = !all);
+                }
+                cx.notify();
+            }
+            FilterCommand::Apply => self.apply_filter(cx),
+            FilterCommand::Cancel => {
+                sheet.filter = None;
+                cx.notify();
+            }
+            FilterCommand::Sort(descending) => {
+                if let Some(panel) = sheet.filter.take() {
+                    let result = sheet.book.sort_filter(&panel.button, descending);
+                    self.edited(result, cx);
+                }
+            }
+            FilterCommand::Clear => {
+                if let Some(panel) = sheet.filter.take() {
+                    let result = sheet.book.clear_filter(&panel.button);
+                    self.edited(result, cx);
+                }
+            }
+        }
+    }
+
+    /// AutoSum (⌘⇧T, Alt+= elsewhere): `=SUM(` round the numbers above or
+    /// beside, typed into the active cell and pointed, for arrows to adjust.
+    fn autosum(&mut self, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let active = sheet.selection.active;
+        let range = sheet.book.autosum_range(active);
+        let mut text = TextEdit::new("=SUM(".to_string());
+        let point = range.map(|range| {
+            let reference = range_text(range);
+            let start = text.text.len();
+            text.insert(&reference);
+            Pointing {
+                bytes: start..start + reference.len(),
+                anchor: range.start,
+                focus: range.end,
+            }
+        });
+        text.insert(")");
+        if let Some(point) = &point {
+            text.caret = point.bytes.end;
+        }
+        sheet.edit = Some(CellEdit {
+            text,
+            in_place: false,
+            point,
+        });
+        cx.notify();
+    }
+
+    /// ⌘-arrow: to the end of the data that way.
+    fn jump_cell(&mut self, direction: Direction, extend: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_ref() else {
+            return;
+        };
+        let from = if extend {
+            sheet.selection.focus
+        } else {
+            sheet.selection.active
+        };
+        let to = sheet.book.jump(from, direction);
+        self.select_cell(to, extend, cx);
+    }
+
+    /// Enter or Tab outside an edit: round the range, or on to the next
+    /// cell — Enter after Tabs going back to the column the Tabs started
+    /// from, as in Excel.
+    fn advance_cell(&mut self, by_row: bool, back: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        if sheet.selection.is_cell() {
+            match (by_row, sheet.tab_start) {
+                (true, None) if !back => sheet.tab_start = Some(sheet.selection.active.column),
+                (false, Some(column)) if !back => {
+                    let to = CellRef::new(column, sheet.selection.active.row + 1);
+                    self.select_cell(to, false, cx);
+                    return;
+                }
+                (false, _) => sheet.tab_start = None,
+                _ => {}
+            }
+            let tab_start = sheet.tab_start;
+            sheet.selection.advance(by_row, back);
+            let to = sheet.selection.active;
+            self.reveal_cell(to);
+            if let Some(sheet) = self.sheet_mut() {
+                sheet.tab_start = tab_start;
+            }
+        } else {
+            sheet.selection.advance(by_row, back);
+            let to = sheet.selection.active;
+            self.reveal_cell(to);
+        }
+        cx.notify();
+    }
+
+    /// Writes the cell being typed into, if any; the write recalculates.
+    /// A formula Excel would refuse keeps the editor open and returns false.
+    pub(super) fn commit_cell(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(sheet) = self.sheet_mut() else {
+            return true;
+        };
+        let Some(edit) = sheet.edit.take() else {
+            return true;
+        };
+        let result = sheet.book.set_cell(sheet.selection.active, &edit.text.text);
+        let refused = result.is_err();
+        if let Some(sheet) = self.sheet_mut() {
+            if refused {
+                sheet.edit = Some(CellEdit {
+                    point: None,
+                    ..edit
+                });
+            } else if matches!(result, Ok(true)) {
+                // Typing into a cell lets go of what was copied, as in Excel.
+                sheet.copied = None;
+            }
+        }
+        self.edited(result, cx);
+        !refused
+    }
+
+    pub(super) fn begin_cell_edit(
+        &mut self,
+        text: Option<String>,
+        in_place: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let text = text.unwrap_or_else(|| sheet.book.edit_text(sheet.selection.active));
+        sheet.edit = Some(CellEdit {
+            text: TextEdit::new(text),
+            in_place,
+            point: None,
+        });
+        let active = sheet.selection.active;
+        self.reveal_cell(active);
+        cx.notify();
+    }
+
+    fn select_sheet(&mut self, index: usize, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        if index != sheet.book.sheet_index() && sheet.book.select_sheet(index).is_ok() {
+            sheet.selection = Selection::default();
+            sheet.tab_start = None;
+            if let Some(old) = sheet.painted.take() {
+                self.retired.push(old.image);
+            }
+            if let Some(sheet) = self.sheet_mut() {
+                sheet.scroll.set_offset(point(px(0.0), px(0.0)));
+            }
+        }
+        cx.notify();
+    }
+
+    /// After a write that may have changed the sheets: their names again,
+    /// and the selection kept on the sheet.
+    pub(super) fn sheets_changed(&mut self, result: Result<bool, String>, cx: &mut Context<Self>) {
+        if let Some(sheet) = self.sheet_mut() {
+            sheet.names = sheet
+                .book
+                .sheet_names()
+                .into_iter()
+                .map(SharedString::from)
+                .collect();
+            if let Some(old) = sheet.painted.take() {
+                self.retired.push(old.image);
+            }
+        }
+        self.edited(result, cx);
+    }
+
+    // ---- pointing at cells in a formula -------------------------------------
+
+    /// Points the formula being typed at `anchor`..`focus`: the reference
+    /// goes in at the caret, or replaces the one being pointed with.
+    fn point_at(&mut self, anchor: CellRef, focus: CellRef, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some(edit) = sheet.edit.as_mut() else {
+            return;
+        };
+        let reference = range_text(span(anchor, focus));
+        let bytes = match &edit.point {
+            Some(point) => point.bytes.clone(),
+            None => {
+                let caret = edit.text.caret();
+                caret..caret
+            }
+        };
+        edit.text.text.replace_range(bytes.clone(), &reference);
+        edit.text.caret = bytes.start + reference.len();
+        edit.point = Some(Pointing {
+            bytes: bytes.start..bytes.start + reference.len(),
+            anchor,
+            focus,
+        });
+        self.reveal_cell(focus);
+        cx.notify();
+    }
+
+    /// An arrow while a formula can point: the pointed cell moves (or with
+    /// Shift the pointed range grows), starting from the cell being typed
+    /// into.
+    fn point_step(
+        &mut self,
+        direction: Direction,
+        extend: bool,
+        jump: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(sheet) = self.sheet_ref() else {
+            return;
+        };
+        let Some(edit) = sheet.edit.as_ref() else {
+            return;
+        };
+        let (anchor, focus) = match &edit.point {
+            Some(point) => (point.anchor, point.focus),
+            None => (sheet.selection.active, sheet.selection.active),
+        };
+        let from = if extend { focus } else { anchor };
+        let to = if jump {
+            sheet.book.jump(from, direction)
+        } else {
+            let (columns, rows) = direction.delta();
+            grid::offset(from, columns, rows)
+        };
+        if extend {
+            self.point_at(anchor, to, cx);
+        } else {
+            self.point_at(to, to, cx);
+        }
+    }
+
+    // ---- keys -----------------------------------------------------------
+
+    /// A key on a workbook; true when it was the sheet's.
+    pub(super) fn sheet_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let modifiers = event.keystroke.modifiers;
+        let key = event.keystroke.key.as_str();
+        let command = modifiers.platform || modifiers.control;
+        let shift = modifiers.shift;
+        let zoom = self.shown_zoom.max(0.01);
+        let Some(sheet) = self.sheet_mut() else {
+            return false;
+        };
+        sheet.menu = None;
+        if sheet.filter.is_some() {
+            match key {
+                "escape" => sheet.filter = None,
+                "enter" => self.apply_filter(cx),
+                _ => {}
+            }
+            cx.notify();
+            return true;
+        }
+
+        // A tab being renamed, or the name box: Enter takes it, Escape
+        // leaves it.
+        if sheet.renaming.is_some() || sheet.naming.is_some() || sheet.finding.is_some() {
+            if sheet.finding.is_some() && key == "enter" {
+                self.find_next(shift, cx);
+                return true;
+            }
+            if sheet.finding.is_some() && key == "f" && command {
+                return true;
+            }
+            return self.name_key(key, command, cx);
+        }
+
+        let pointable = sheet.pointable();
+        if let Some(edit) = sheet.edit.as_mut() {
+            // Mid-composition the keys are the IME's.
+            if edit.text.marked.is_some() {
+                return false;
+            }
+            match key {
+                // A line break in the cell: ⌥Enter (Alt+Enter elsewhere).
+                "enter" if modifiers.alt => {
+                    edit.text.insert("\n");
+                    edit.point = None;
+                }
+                // ⌘Enter: what was typed into every selected cell.
+                "enter" if command => {
+                    let text = edit.text.text.clone();
+                    sheet.edit = None;
+                    let range = sheet.selection.range();
+                    let active = sheet.selection.active;
+                    let result = sheet.book.fill_with(range, active, &text);
+                    self.edited(result, cx);
+                }
+                "enter" => {
+                    if self.commit_cell(cx) {
+                        self.advance_cell(false, shift, cx);
+                    }
+                }
+                "tab" => {
+                    if self.commit_cell(cx) {
+                        self.advance_cell(true, shift, cx);
+                    }
+                }
+                "escape" => sheet.edit = None,
+                "backspace" => {
+                    edit.text.backspace();
+                    edit.point = None;
+                }
+                "delete" => {
+                    edit.text.delete();
+                    edit.point = None;
+                }
+                "f2" => {
+                    edit.in_place = !edit.in_place;
+                    edit.point = None;
+                }
+                "f4" => {
+                    if let Some((text, caret)) =
+                        grid::cycle_reference(&edit.text.text, edit.text.caret())
+                    {
+                        edit.text.text = text;
+                        edit.text.caret = caret;
+                        edit.point = None;
+                    }
+                }
+                "home" if edit.in_place || !command => edit.text.to_end(false),
+                "end" if edit.in_place || !command => edit.text.to_end(true),
+                ";" if modifiers.control || (modifiers.platform && !shift) => {
+                    let time = modifiers.platform || shift;
+                    edit.text.insert(&now_text(time));
+                    edit.point = None;
+                }
+                _ => {
+                    let Some(direction) = Direction::of_key(key) else {
+                        return false;
+                    };
+                    if pointable {
+                        self.point_step(direction, shift, command, cx);
+                    } else if edit.in_place {
+                        match direction {
+                            Direction::Left => edit.text.step(false),
+                            Direction::Right => edit.text.step(true),
+                            Direction::Up => edit.text.to_end(false),
+                            Direction::Down => edit.text.to_end(true),
+                        }
+                    } else if self.commit_cell(cx) {
+                        // Enter mode: the arrow leaves the cell, as in Excel.
+                        self.arrow_cell(direction, false, cx);
+                    }
+                }
+            }
+            cx.notify();
+            return true;
+        }
+
+        if command {
+            return self.sheet_command(key, modifiers, cx);
+        }
+        let viewport_height = f64::from(sheet.viewport.1) / f64::from(zoom);
+        match key {
+            "pageup" | "pagedown" => {
+                let Some(sheet) = self.sheet_ref() else {
+                    return false;
+                };
+                let from = if shift {
+                    sheet.selection.focus
+                } else {
+                    sheet.selection.active
+                };
+                let rows = i64::from(sheet.book.page_rows(from.row, viewport_height));
+                if modifiers.alt {
+                    let columns = 8;
+                    let columns = if key == "pageup" { -columns } else { columns };
+                    self.step_cell(columns, 0, shift, cx);
+                } else {
+                    // The view moves by the page too, keeping the active
+                    // cell where it was on the screen.
+                    let zoom = self.shown_zoom;
+                    if let Some(sheet) = self.sheet_mut() {
+                        let at = Self::sheet_scroll(&sheet.scroll, zoom);
+                        let to = grid::offset(from, 0, if key == "pageup" { -rows } else { rows });
+                        let moved = sheet
+                            .book
+                            .cell_rect(to, (0.0, 0.0))
+                            .zip(sheet.book.cell_rect(from, (0.0, 0.0)))
+                            .map(|(to, from)| to.1 - from.1)
+                            .unwrap_or(0.0);
+                        let y = (at.1 + moved).max(0.0);
+                        sheet.book.reach(to);
+                        sheet.scroll.set_offset(point(
+                            px((-at.0 * f64::from(zoom)) as f32),
+                            px((-y * f64::from(zoom)) as f32),
+                        ));
+                    }
+                    self.step_cell(0, if key == "pageup" { -rows } else { rows }, shift, cx);
+                }
+            }
+            "home" => {
+                let Some(sheet) = self.sheet_ref() else {
+                    return false;
+                };
+                let row = if shift {
+                    sheet.selection.focus.row
+                } else {
+                    sheet.selection.active.row
+                };
+                self.select_cell(CellRef::new(0, row), shift, cx);
+            }
+            "enter" => self.advance_cell(false, shift, cx),
+            "tab" => self.advance_cell(true, shift, cx),
+            "f2" => self.begin_cell_edit(None, true, cx),
+            "delete" | "backspace" => {
+                let Some(sheet) = self.sheet_mut() else {
+                    return false;
+                };
+                let range = sheet.selection.range();
+                let result = sheet.book.clear(range);
+                self.edited(result, cx);
+            }
+            "escape" => {
+                sheet.copied = None;
+                cx.notify();
+            }
+            "=" if modifiers.alt => self.autosum(cx),
+            // Shift+Space: the selection's rows, whole.
+            "space" if shift => {
+                sheet.selection.whole_rows();
+                cx.notify();
+            }
+            _ => {
+                let Some(direction) = Direction::of_key(key) else {
+                    // Anything else is text, which arrives through the input
+                    // handler and starts an edit there.
+                    return false;
+                };
+                self.arrow_cell(direction, shift, cx);
+            }
+        }
+        true
+    }
+
+    /// ⌘ (Ctrl elsewhere) with a key, on a sheet not being typed into.
+    fn sheet_command(
+        &mut self,
+        key: &str,
+        modifiers: gpui::Modifiers,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let shift = modifiers.shift;
+        // Ctrl+Shift with a digit row key: its shifted character, as the
+        // number-format shortcuts are named.
+        let key = match (shift, key) {
+            (true, "1") => "!",
+            (true, "2") => "@",
+            (true, "3") => "#",
+            (true, "4") => "$",
+            (true, "5") => "%",
+            (true, "6") => "^",
+            (true, "`") => "~",
+            (true, "=") => "+",
+            _ => key,
+        };
+        if let Some(direction) = Direction::of_key(key) {
+            self.jump_cell(direction, shift, cx);
+            return true;
+        }
+        let Some(sheet) = self.sheet_mut() else {
+            return false;
+        };
+        let range = sheet.selection.range();
+        let active = sheet.selection.active;
+        match key {
+            "home" => self.select_cell(CellRef::new(0, 0), shift, cx),
+            "t" if shift && modifiers.platform => self.autosum(cx),
+            "end" => {
+                let end = sheet.book.used_end();
+                self.select_cell(end, shift, cx);
+            }
+            "c" => self.sheet_copy(false, cx),
+            // ⌘⇧F (Ctrl+Shift+L elsewhere): filter buttons on or off.
+            "f" | "l" if shift => {
+                let range = sheet.selection.range();
+                let result = sheet.book.toggle_filter(range);
+                self.edited(result, cx);
+            }
+            "f" => {
+                sheet.finding = Some(TextEdit::new(String::new()));
+                cx.notify();
+            }
+            "x" if !shift => self.sheet_copy(true, cx),
+            // ⌘A: the block of data round the active cell, then the sheet.
+            "a" => {
+                let region = sheet.book.current_region(active);
+                sheet.selection = match region {
+                    Some(region) if region != range => Selection {
+                        active,
+                        anchor: region.start,
+                        focus: region.end,
+                    },
+                    _ => Selection {
+                        active,
+                        ..Selection::all()
+                    },
+                };
+                cx.notify();
+            }
+            "d" => {
+                let result = sheet.book.fill_down(range);
+                self.edited(result, cx);
+            }
+            "r" => {
+                let result = sheet.book.fill_right(range);
+                self.edited(result, cx);
+            }
+            "b" | "2" => self.sheet_toggle(FontToggle::Bold, cx),
+            "i" | "3" => self.sheet_toggle(FontToggle::Italic, cx),
+            "u" | "4" => self.sheet_toggle(FontToggle::Underline, cx),
+            "x" | "5" => self.sheet_toggle(FontToggle::Strike, cx),
+            "!" => self.sheet_number_format("#,##0.00", cx),
+            "$" => self.sheet_number_format(i18n::text("sheet.format.currency"), cx),
+            "%" => self.sheet_number_format("0%", cx),
+            "#" => self.sheet_number_format(i18n::text("sheet.format.date"), cx),
+            "@" => self.sheet_number_format(i18n::text("sheet.format.time"), cx),
+            "^" => self.sheet_number_format("0.00E+00", cx),
+            "~" => self.sheet_number_format("General", cx),
+            // ⌃; today, ⌘; (or Ctrl+Shift+;) the time, into the active cell.
+            ";" => {
+                let time = modifiers.platform || shift;
+                let result = sheet.book.set_cell(active, &now_text(time));
+                self.edited(result, cx);
+            }
+            "+" => self.sheet_menu_command(MenuCommand::InsertRows, true, cx),
+            "-" => self.sheet_menu_command(MenuCommand::DeleteRows, true, cx),
+            "space" => {
+                sheet.selection.whole_columns();
+                cx.notify();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Keys while a tab is renamed or the name box is typed into.
+    fn name_key(&mut self, key: &str, command: bool, cx: &mut Context<Self>) -> bool {
+        let Some(sheet) = self.sheet_mut() else {
+            return false;
+        };
+        let text = if let Some((_, text)) = sheet.renaming.as_mut() {
+            text
+        } else if let Some(text) = sheet.naming.as_mut() {
+            text
+        } else if let Some(text) = sheet.finding.as_mut() {
+            text
+        } else {
+            return false;
+        };
+        if text.marked.is_some() {
+            return false;
+        }
+        match key {
+            "enter" | "tab" => self.finish_naming(true, cx),
+            "escape" => self.finish_naming(false, cx),
+            "backspace" => text.backspace(),
+            "delete" => text.delete(),
+            "left" => text.step(false),
+            "right" => text.step(true),
+            "home" => text.to_end(false),
+            "end" => text.to_end(true),
+            "a" if command => text.whole = true,
+            _ => return command,
+        }
+        cx.notify();
+        true
+    }
+
+    /// Ends a tab rename or a name-box entry, taking it or not.
+    fn finish_naming(&mut self, take: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        if let Some((index, text)) = sheet.renaming.take() {
+            let name = text.text.trim().to_string();
+            if take && !name.is_empty() {
+                let result = sheet.book.rename_sheet(index, &name);
+                self.sheets_changed(result, cx);
+            }
+        } else if sheet.finding.take().is_some() {
+            // Escape or Tab closes the find bar where the search got to.
+        } else if let Some(text) = sheet.naming.take() {
+            if take {
+                match parse_reference(&text.text) {
+                    Some(range) => {
+                        sheet.selection = Selection::range_from(range.start, range.end);
+                        self.reveal_cell(range.start);
+                    }
+                    None => self.status = i18n::text("sheet.no_reference").into(),
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    // ---- commands ---------------------------------------------------------
+
+    fn sheet_toggle(&mut self, style: FontToggle, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let range = sheet.selection.range();
+        let result = sheet.book.toggle(range, sheet.selection.active, style);
+        self.edited(result, cx);
+    }
+
+    fn sheet_number_format(&mut self, code: &str, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let change = CellFormat {
+            number_format: Some(code.to_string()),
+            ..Default::default()
+        };
+        let range = sheet.selection.range();
+        let result = sheet.book.format(range, &change);
+        self.edited(result, cx);
+    }
+
+    /// The selected cells onto the clipboard as Excel's text, kept for a
+    /// paste here that moves formulas and carries formats; a cut moves them
+    /// when pasted.
+    pub(super) fn sheet_copy(&mut self, cut: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let range = sheet.selection.range();
+        let copied = sheet.book.copy(range, cut);
+        let text = copied
+            .as_ref()
+            .map(|copied| copied.text.clone())
+            .unwrap_or_else(|| sheet.book.range_text(range));
+        sheet.copied = copied;
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        cx.notify();
+    }
+
+    /// A paste onto the selection: this workbook's own copy when the
+    /// clipboard still holds it, otherwise the clipboard's text, from the
+    /// selection's top-left or tiled over it.
+    pub(super) fn sheet_paste(&mut self, text: Option<&str>, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let target = sheet.selection.range();
+        let own = sheet
+            .copied
+            .clone()
+            .filter(|copied| text.is_none_or(|text| text.replace("\r\n", "\n") == copied.text));
+        let result = match (own, text) {
+            (Some(copied), _) => {
+                let result = sheet.book.paste_copied(&copied, target);
+                if copied.cut && result.is_ok() {
+                    sheet.copied = None;
+                }
+                result.map(Some)
+            }
+            (None, Some(text)) => sheet.book.paste_over(target, text),
+            (None, None) => return,
+        };
+        if let Ok(Some(filled)) = &result {
+            let active = sheet.selection.active;
+            sheet.selection = Selection {
+                active: if filled.contains(active) {
+                    active
+                } else {
+                    filled.start
+                },
+                anchor: filled.start,
+                focus: filled.end,
+            };
+        }
+        self.sheets_changed(result.map(|filled| filled.is_some()), cx);
+    }
+
+    fn sheet_menu_command(
+        &mut self,
+        command: MenuCommand,
+        from_keys: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        sheet.menu = None;
+        let selection = sheet.selection;
+        let range = selection.range();
+        let rows = range.end.row.saturating_sub(range.start.row) + 1;
+        let columns = range.end.column.saturating_sub(range.start.column) + 1;
+        // ⌘+ and ⌘- insert and delete whole columns when whole columns are
+        // selected, rows otherwise.
+        let command = match command {
+            MenuCommand::InsertRows if from_keys && selection.is_whole_columns() => {
+                MenuCommand::InsertColumns
+            }
+            MenuCommand::DeleteRows if from_keys && selection.is_whole_columns() => {
+                MenuCommand::DeleteColumns
+            }
+            command => command,
+        };
+        let result = match command {
+            MenuCommand::Cut => return self.sheet_copy(true, cx),
+            MenuCommand::Copy => return self.sheet_copy(false, cx),
+            MenuCommand::Paste => return self.sheet_paste(None, cx),
+            MenuCommand::Clear => sheet.book.clear(range),
+            MenuCommand::InsertRows => sheet.book.insert_rows(range.start.row, rows),
+            MenuCommand::DeleteRows => sheet.book.delete_rows(range.start.row, rows),
+            MenuCommand::InsertColumns => sheet.book.insert_columns(range.start.column, columns),
+            MenuCommand::DeleteColumns => sheet.book.delete_columns(range.start.column, columns),
+            MenuCommand::FillDown => sheet.book.fill_down(range),
+            MenuCommand::FillRight => sheet.book.fill_right(range),
+            MenuCommand::SortAscending => sheet.book.sort(range, selection.active, false),
+            MenuCommand::SortDescending => sheet.book.sort(range, selection.active, true),
+            MenuCommand::MergeCenter => {
+                let range = sheet.book.with_merges(range);
+                let result = sheet.book.merge_and_center(range);
+                sheet.selection = Selection::range_from(range.start, range.end);
+                result
+            }
+            MenuCommand::InsertSheet => {
+                let result = sheet.book.add_sheet().map(|_| true);
+                sheet.selection = Selection::default();
+                sheet.scroll.set_offset(point(px(0.0), px(0.0)));
+                result
+            }
+            MenuCommand::RenameSheet(index) => {
+                let name = sheet.names.get(index).map(|name| name.to_string());
+                sheet.renaming = name.map(|name| (index, TextEdit::selected(name)));
+                cx.notify();
+                return;
+            }
+            MenuCommand::DeleteSheet(index) => {
+                let result = sheet.book.delete_sheet(index);
+                sheet.selection = Selection::default();
+                sheet.scroll.set_offset(point(px(0.0), px(0.0)));
+                result
+            }
+        };
+        // What moved under the selection keeps it in place, as Excel does.
+        if matches!(
+            command,
+            MenuCommand::DeleteRows | MenuCommand::DeleteColumns
+        ) {
+            if let Some(sheet) = self.sheet_mut() {
+                sheet.copied = None;
+            }
+        }
+        self.sheets_changed(result, cx);
+    }
+
+    // ---- the mouse --------------------------------------------------------
+
+    pub(super) fn sheet_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        let Some((x, y)) = self.grid_point(event.position) else {
+            return;
+        };
+        let zoom = self.shown_zoom;
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        sheet.menu = None;
+        sheet.filter = None;
+        if sheet.renaming.is_some() || sheet.naming.is_some() {
+            self.finish_naming(true, cx);
+        }
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        let hit = sheet.book.hit(x, y, scroll);
+
+        // While a formula can take a reference, a click points at the cell.
+        if sheet.pointable() {
+            if let Some(Hit::Cell(cell)) = hit {
+                sheet.drag = Some(SheetDrag::Point);
+                let anchor = match (&sheet.edit, event.modifiers.shift) {
+                    (
+                        Some(CellEdit {
+                            point: Some(point), ..
+                        }),
+                        true,
+                    ) => point.anchor,
+                    _ => cell,
+                };
+                self.point_at(anchor, cell, cx);
+                return;
+            }
+        }
+        if !self.commit_cell(cx) {
+            return;
+        }
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        sheet.tab_start = None;
+
+        // A filter button opens its dropdown.
+        if let Some(button) = sheet.book.filter_button_at(x, y, scroll) {
+            match sheet.book.filter_options(&button) {
+                Ok(options) => {
+                    let checked = options
+                        .options
+                        .iter()
+                        .map(|option| option.selected.unwrap_or(true))
+                        .collect();
+                    let metrics = sheet.book.header_metrics();
+                    let left = button.rect.x + metrics.row_width - scroll.0;
+                    let top = button.rect.y + button.rect.height + metrics.column_height - scroll.1;
+                    sheet.filter = Some(FilterPanel {
+                        button,
+                        options: options.options,
+                        checked,
+                        at: (
+                            (left * f64::from(zoom)) as f32,
+                            (top * f64::from(zoom)) as f32,
+                        ),
+                    });
+                    cx.notify();
+                }
+                Err(error) => {
+                    self.status = i18n::format("sheet.edit_failed", &[("error", &error)]).into();
+                    cx.notify();
+                }
+            }
+            return;
+        }
+        // A header edge: a drag resizes, a double-click fits the content.
+        if let Some(edge) = sheet.book.resize_hit(x, y, scroll) {
+            if event.click_count >= 2 && edge.axis == Axis::Columns {
+                let range = sheet.selection.range();
+                let (first, last) = if sheet.selection.is_whole_columns()
+                    && (range.start.column..=range.end.column).contains(&edge.index)
+                {
+                    (range.start.column, range.end.column)
+                } else {
+                    (edge.index, edge.index)
+                };
+                let result = sheet.book.auto_fit_columns(first, last);
+                self.edited(result, cx);
+                return;
+            }
+            sheet.drag = Some(SheetDrag::Resize(ResizeGesture {
+                hit: edge,
+                pointer_start: if edge.axis == Axis::Columns { x } else { y },
+                size_px: edge.size_px,
+            }));
+            cx.notify();
+            return;
+        }
+        // The fill handle.
+        let range = sheet.selection.range();
+        if !event.modifiers.shift && sheet.book.on_fill_handle(x, y, scroll, range) {
+            if event.click_count >= 2 {
+                if let Some(target) = sheet.book.fill_handle_extent(range) {
+                    let result = sheet.book.fill_series(range, target);
+                    sheet.selection.focus = target.end;
+                    sheet.selection.anchor = target.start;
+                    self.edited(result, cx);
+                }
+                return;
+            }
+            sheet.drag = Some(SheetDrag::Fill {
+                source: range,
+                target: range,
+            });
+            cx.notify();
+            return;
+        }
+        let Some(hit) = hit else {
+            return;
+        };
+        let kind = sheet.selection.press(hit, event.modifiers.shift);
+        sheet.drag = Some(SheetDrag::Select(kind));
+        if let Hit::Cell(cell) = hit {
+            sheet.book.reach(cell);
+            if event.click_count >= 2 && !event.modifiers.shift {
+                sheet.drag = None;
+                self.begin_cell_edit(None, true, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// A right-click: the cell (or header) under it is selected unless it
+    /// is in the selection already, and the menu opens there.
+    pub(super) fn sheet_right_click(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        if !self.commit_cell(cx) {
+            return;
+        }
+        let Some((x, y)) = self.grid_point(event.position) else {
+            return;
+        };
+        let zoom = self.shown_zoom;
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        if let Some(hit) = sheet.book.hit(x, y, scroll) {
+            let inside = match hit {
+                Hit::Cell(cell) => sheet.selection.range().contains(cell),
+                Hit::Row(row) => {
+                    sheet.selection.is_whole_rows()
+                        && (sheet.selection.range().start.row..=sheet.selection.range().end.row)
+                            .contains(&row)
+                }
+                Hit::Column(column) => {
+                    sheet.selection.is_whole_columns()
+                        && (sheet.selection.range().start.column
+                            ..=sheet.selection.range().end.column)
+                            .contains(&column)
+                }
+                Hit::All => false,
+            };
+            if !inside {
+                sheet.selection.press(hit, false);
+            }
+        }
+        sheet.menu = Some(SheetMenu {
+            at: ((x * f64::from(zoom)) as f32, (y * f64::from(zoom)) as f32),
+            tab: None,
+        });
+        cx.notify();
+    }
+
+    /// The pointer moving with no button held: what it is over, for the
+    /// cursor.
+    fn sheet_hover(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some((x, y)) = self.grid_point(position) else {
+            return;
+        };
+        let zoom = self.shown_zoom;
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        if sheet.drag.is_some() {
+            return;
+        }
+        let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        let hover = match sheet.book.resize_hit(x, y, scroll) {
+            Some(edge) if edge.axis == Axis::Columns => Hover::ResizeColumn,
+            Some(_) => Hover::ResizeRow,
+            None if sheet
+                .book
+                .on_fill_handle(x, y, scroll, sheet.selection.range()) =>
+            {
+                Hover::FillHandle
+            }
+            None => Hover::Cells,
+        };
+        if hover != sheet.hover {
+            sheet.hover = hover;
+            cx.notify();
+        }
+        let note = match sheet.book.hit(x, y, scroll) {
+            Some(Hit::Cell(cell)) if sheet.book.note(cell).is_some() => sheet
+                .book
+                .cell_rect(cell, scroll)
+                .map(|(cx_, cy, w, _)| (cell, (((cx_ + w) as f32) * zoom, cy as f32 * zoom))),
+            _ => None,
+        };
+        if note.map(|(cell, _)| cell) != sheet.note.map(|(cell, _)| cell) {
+            sheet.note = note;
+            cx.notify();
+        }
+    }
+
+    /// A drag reaching `position` (window px), wherever it is.
+    fn sheet_drag_to(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some((x, y)) = self.grid_point(position) else {
+            return;
+        };
+        let zoom = self.shown_zoom;
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some(drag) = sheet.drag else {
+            return;
+        };
+        sheet.pointer = Some(position);
+        let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        let reached = sheet.book.reach_point(x, y, scroll);
+        match drag {
+            SheetDrag::Select(kind) => {
+                let hit = sheet.book.hit(x, y, scroll).unwrap_or(Hit::Cell(reached));
+                let hit = match (kind, hit) {
+                    // Over a header mid-drag, a cell drag reaches the cell
+                    // beside it.
+                    (DragKind::Cells, Hit::Row(_) | Hit::Column(_) | Hit::All) => {
+                        Hit::Cell(reached)
+                    }
+                    (_, hit) => hit,
+                };
+                let before = sheet.selection;
+                sheet.selection.drag(kind, hit);
+                if sheet.selection != before {
+                    sheet.book.reach(reached);
+                    cx.notify();
+                }
+            }
+            SheetDrag::Fill { source, target } => {
+                let next = jade_web::Workbook::fill_target(source, reached);
+                if next != target {
+                    sheet.drag = Some(SheetDrag::Fill {
+                        source,
+                        target: next,
+                    });
+                    sheet.book.reach(reached);
+                    cx.notify();
+                }
+            }
+            SheetDrag::Resize(mut gesture) => {
+                gesture.update(x, y);
+                sheet.drag = Some(SheetDrag::Resize(gesture));
+                cx.notify();
+            }
+            SheetDrag::Point => {
+                let anchor = sheet
+                    .edit
+                    .as_ref()
+                    .and_then(|edit| edit.point.as_ref())
+                    .map_or(reached, |point| point.anchor);
+                self.point_at(anchor, reached, cx);
+            }
+        }
+        self.start_auto_scroll(cx);
+    }
+
+    /// The button let go: a fill lands, a resize sets the size.
+    fn sheet_drag_end(&mut self, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some(drag) = sheet.drag.take() else {
+            return;
+        };
+        sheet.pointer = None;
+        match drag {
+            SheetDrag::Fill { source, target } => {
+                let result = sheet.book.fill_series(source, target);
+                if matches!(result, Ok(true)) {
+                    sheet.selection.anchor = target.start;
+                    sheet.selection.focus = target.end;
+                    if !target.contains(sheet.selection.active) {
+                        sheet.selection.active = target.start;
+                    }
+                }
+                self.edited(result, cx);
+            }
+            SheetDrag::Resize(gesture) => {
+                let range = sheet.selection.range();
+                let index = gesture.hit.index;
+                // Every selected column (or row) takes the size when the
+                // dragged edge is one of them.
+                let (first, last) = match gesture.hit.axis {
+                    Axis::Columns
+                        if sheet.selection.is_whole_columns()
+                            && (range.start.column..=range.end.column).contains(&index) =>
+                    {
+                        (range.start.column, range.end.column)
+                    }
+                    Axis::Rows
+                        if sheet.selection.is_whole_rows()
+                            && (range.start.row..=range.end.row).contains(&index) =>
+                    {
+                        (range.start.row, range.end.row)
+                    }
+                    _ => (index, index),
+                };
+                let result = if (gesture.size_px - gesture.hit.size_px).abs() < 0.5 {
+                    Ok(false)
+                } else {
+                    sheet
+                        .book
+                        .resize(gesture.hit.axis, first, last, gesture.size_px)
+                };
+                self.edited(result, cx);
+            }
+            SheetDrag::Select(_) | SheetDrag::Point => cx.notify(),
+        }
+    }
+
+    /// While a drag is held past the grid's edge, the grid scrolls that
+    /// way and the drag follows.
+    fn start_auto_scroll(&mut self, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        if sheet.auto_scrolling || self.auto_scroll_step().is_none() {
+            return;
+        }
+        if let Some(sheet) = self.sheet_mut() {
+            sheet.auto_scrolling = true;
+        }
+        let executor = cx.background_executor().clone();
+        cx.spawn(async move |view, cx| loop {
+            executor.timer(AUTO_SCROLL_TICK).await;
+            let going = view
+                .update(cx, |view, cx| {
+                    let Some(step) = view.auto_scroll_step() else {
+                        if let Some(sheet) = view.sheet_mut() {
+                            sheet.auto_scrolling = false;
+                        }
+                        return false;
+                    };
+                    let Some(sheet) = view.sheet_mut() else {
+                        return false;
+                    };
+                    let offset = sheet.scroll.offset();
+                    let max = sheet.scroll.max_offset();
+                    let x = (offset.x - px(step.0)).clamp(-max.x, px(0.0));
+                    let y = (offset.y - px(step.1)).clamp(-max.y, px(0.0));
+                    sheet.scroll.set_offset(point(x, y));
+                    if let Some(pointer) = sheet.pointer {
+                        view.sheet_drag_to(pointer, cx);
+                    }
+                    cx.notify();
+                    true
+                })
+                .unwrap_or(false);
+            if !going {
+                break;
+            }
+        })
+        .detach();
+    }
+
+    /// How far a held drag scrolls per tick (window px), or `None` when the
+    /// pointer is inside the grid.
+    fn auto_scroll_step(&self) -> Option<(f32, f32)> {
+        let sheet = self.sheet_ref()?;
+        sheet.drag?;
+        let pointer = sheet.pointer?;
+        let bounds = self.surface.get()?;
+        let past = |value: Pixels, start: Pixels, end: Pixels| -> f32 {
+            if value < start {
+                f32::from(value - start)
+            } else if value > end {
+                f32::from(value - end)
+            } else {
+                0.0
+            }
+        };
+        let header = px(20.0);
+        let dx = past(
+            pointer.x,
+            bounds.origin.x + header * 2.0,
+            bounds.origin.x + bounds.size.width,
+        );
+        let dy = past(
+            pointer.y,
+            bounds.origin.y + header,
+            bounds.origin.y + bounds.size.height,
+        );
+        (dx != 0.0 || dy != 0.0).then(|| (dx.clamp(-60.0, 60.0), dy.clamp(-60.0, 60.0)))
+    }
+
+    // ---- drawing ----------------------------------------------------------
+
+    pub(super) fn workbook_body(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let generation = self.generation;
+        let zoom = self.zoom.unwrap_or(1.0);
+        self.shown_zoom = zoom;
+        let (area_width, area_height) = editor_area(window, cx);
+        let scale = window.scale_factor();
+        let Document::Workbook(sheet) = &mut self.document else {
+            unreachable!()
+        };
+        let size = (
+            area_width.max(1.0),
+            (area_height - FORMULA_BAR_HEIGHT - SHEET_TABS_HEIGHT).max(1.0),
+        );
+        sheet.viewport = size;
+        let offset = sheet.scroll.offset();
+        let at = (-f32::from(offset.x), -f32::from(offset.y));
+        let device = (
+            (size.0 * scale).round() as u32,
+            (size.1 * scale).round() as u32,
+        );
+        let overlay = sheet.overlay();
+        let fresh = sheet.painted.as_ref().is_some_and(|p| {
+            p.scroll == at
+                && p.device == device
+                && p.zoom == zoom
+                && p.overlay == overlay
+                && p.generation == generation
+        });
+        if !fresh {
+            let painter = sheet.book.render_viewport(
+                (f64::from(at.0 / zoom), f64::from(at.1 / zoom)),
+                device.0,
+                device.1,
+                f64::from(scale * zoom),
+                &overlay,
+            );
+            match painter.and_then(image) {
+                Some(image) => {
+                    if let Some(old) = sheet.painted.replace(PaintedSheet {
+                        scroll: at,
+                        device,
+                        zoom,
+                        overlay,
+                        generation,
+                        image,
+                    }) {
+                        self.retired.push(old.image);
+                    }
+                }
+                None => self.status = i18n::text("sheet.paint_failed").into(),
+            }
+        }
+        let Document::Workbook(sheet) = &mut self.document else {
+            unreachable!()
+        };
+        let (sheet_width, sheet_height) = sheet.book.sheet_size();
+        let picture = sheet.painted.as_ref().map(|p| p.image.clone());
+        let current = sheet.book.sheet_index();
+        let active = sheet.selection.active;
+
+        let editing = sheet.edit.is_some();
+        let formula = match &sheet.edit {
+            Some(edit) => caret_line(&edit.text, palette::accent().into(), true),
+            None => div().child(sheet.book.edit_text(active)),
+        };
+        // The name box: the active cell, the size of a range being dragged,
+        // or what is being typed into it.
+        let name_box = match (&sheet.naming, sheet.drag) {
+            (Some(text), _) => caret_line(text, palette::accent().into(), false),
+            (None, Some(SheetDrag::Select(_))) if !sheet.selection.is_cell() => {
+                div().child(grid::size_label(sheet.selection.range()))
+            }
+            _ => div().child(reference_text(active)),
+        };
+
+        // The editor over the active cell, white like the cell under it.
+        let cell_editor = sheet.edit.as_ref().and_then(|edit| {
+            let (x, y, w, h) = sheet
+                .book
+                .cell_rect(active, (f64::from(at.0 / zoom), f64::from(at.1 / zoom)))?;
+            let lines = edit.text.text.matches('\n').count() as f32 + 1.0;
+            Some(
+                div()
+                    .absolute()
+                    .left(px(x as f32 * zoom))
+                    .top(px(y as f32 * zoom))
+                    .min_w(px(w as f32 * zoom))
+                    .min_h(px((h as f32 * zoom).max(lines * 17.0 * zoom)))
+                    .flex()
+                    .items_center()
+                    .px(px(3.0 * zoom))
+                    .bg(gpui::white())
+                    .border_2()
+                    .border_color(rgb(0x217346))
+                    .text_color(gpui::black())
+                    .text_size(px(14.0 * zoom))
+                    .child(caret_line(&edit.text, gpui::black(), true)),
+            )
+        });
+
+        let renaming = sheet.renaming.as_ref().map(|(index, text)| (*index, text));
+        let mut tabs: Vec<gpui::AnyElement> = sheet
+            .names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                let selected = index == current;
+                let label = match renaming {
+                    Some((renamed, text)) if renamed == index => {
+                        caret_line(text, palette::accent().into(), false)
+                    }
+                    _ => div().child(name.clone()),
+                };
+                div()
+                    .id(("sheet-tab", index))
+                    .relative()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .px_4()
+                    .text_xs()
+                    .cursor_pointer()
+                    .border_r_1()
+                    .border_color(palette::border())
+                    .text_color(if selected {
+                        palette::accent()
+                    } else {
+                        palette::dim()
+                    })
+                    .when(selected, |tab| {
+                        tab.bg(palette::window()).child(
+                            div()
+                                .absolute()
+                                .bottom_0()
+                                .left_1()
+                                .right_1()
+                                .h(px(2.0))
+                                .rounded_t_sm()
+                                .bg(palette::accent()),
+                        )
+                    })
+                    .hover(|tab| tab.bg(palette::hovered()))
+                    .child(label)
+                    .on_click(
+                        cx.listener(move |view, event: &gpui::ClickEvent, window, cx| {
+                            window.focus(&view.focus, cx);
+                            if event.click_count() >= 2 {
+                                view.sheet_menu_command(MenuCommand::RenameSheet(index), false, cx);
+                            } else {
+                                view.select_sheet(index, cx);
+                            }
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |view, event: &MouseDownEvent, window, cx| {
+                            window.focus(&view.focus, cx);
+                            view.select_sheet(index, cx);
+                            let origin = view.surface.get().map(|b| b.origin).unwrap_or_default();
+                            if let Some(sheet) = view.sheet_mut() {
+                                sheet.menu = Some(SheetMenu {
+                                    at: (
+                                        f32::from(event.position.x - origin.x),
+                                        f32::from(event.position.y - origin.y) - 150.0,
+                                    ),
+                                    tab: Some(index),
+                                });
+                            }
+                            cx.notify();
+                        }),
+                    )
+                    .into_any_element()
+            })
+            .collect();
+        // Excel's ⊕ after the tabs: a new sheet.
+        tabs.push(
+            div()
+                .id("sheet-add")
+                .h_full()
+                .flex()
+                .items_center()
+                .px_3()
+                .text_sm()
+                .cursor_pointer()
+                .text_color(palette::dim())
+                .hover(|tab| tab.bg(palette::hovered()).text_color(palette::text()))
+                .child("+")
+                .on_click(cx.listener(|view, _event, window, cx| {
+                    window.focus(&view.focus, cx);
+                    view.sheet_menu_command(MenuCommand::InsertSheet, false, cx);
+                }))
+                .into_any_element(),
+        );
+
+        let menu = sheet.menu.as_ref().map(|menu| {
+            let items: Vec<(MenuCommand, &'static str)> = match menu.tab {
+                Some(index) => vec![
+                    (MenuCommand::InsertSheet, "sheet.menu.insert_sheet"),
+                    (MenuCommand::RenameSheet(index), "sheet.menu.rename_sheet"),
+                    (MenuCommand::DeleteSheet(index), "sheet.menu.delete_sheet"),
+                ],
+                None => {
+                    let mut items = vec![
+                        (MenuCommand::Cut, "sheet.menu.cut"),
+                        (MenuCommand::Copy, "sheet.menu.copy"),
+                    ];
+                    if sheet.copied.is_some() {
+                        items.push((MenuCommand::Paste, "sheet.menu.paste"));
+                    }
+                    items.extend([
+                        (MenuCommand::Clear, "sheet.menu.clear"),
+                        (MenuCommand::FillDown, "sheet.menu.fill_down"),
+                        (MenuCommand::FillRight, "sheet.menu.fill_right"),
+                        (MenuCommand::SortAscending, "sheet.menu.sort_ascending"),
+                        (MenuCommand::SortDescending, "sheet.menu.sort_descending"),
+                        (MenuCommand::MergeCenter, "sheet.menu.merge_center"),
+                    ]);
+                    if !sheet.selection.is_whole_columns() {
+                        items.extend([
+                            (MenuCommand::InsertRows, "sheet.menu.insert_rows"),
+                            (MenuCommand::DeleteRows, "sheet.menu.delete_rows"),
+                        ]);
+                    }
+                    if !sheet.selection.is_whole_rows() {
+                        items.extend([
+                            (MenuCommand::InsertColumns, "sheet.menu.insert_columns"),
+                            (MenuCommand::DeleteColumns, "sheet.menu.delete_columns"),
+                        ]);
+                    }
+                    items
+                }
+            };
+            div()
+                .absolute()
+                .left(px(menu.at.0))
+                .top(px(menu.at.1.max(0.0)))
+                .min_w(px(180.0))
+                .py_1()
+                .rounded_md()
+                .border_1()
+                .border_color(palette::border())
+                .bg(palette::panel())
+                .shadow_lg()
+                .text_xs()
+                .text_color(palette::text())
+                .children(
+                    items
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, (command, label))| {
+                            div()
+                                .id(("sheet-menu", index))
+                                .px_3()
+                                .py_1()
+                                .cursor_pointer()
+                                .hover(|item| item.bg(palette::hovered()))
+                                .child(i18n::text(label))
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .on_click(cx.listener(move |view, _event, window, cx| {
+                                    window.focus(&view.focus, cx);
+                                    view.sheet_menu_command(command, false, cx);
+                                }))
+                        }),
+                )
+        });
+
+        let note = sheet.note.and_then(|(cell, (x, y))| {
+            let text = sheet.book.note(cell)?.to_string();
+            Some(
+                div()
+                    .absolute()
+                    .left(px(x + 6.0))
+                    .top(px(y))
+                    .max_w(px(240.0))
+                    .p_2()
+                    .bg(rgb(0xfff9c4))
+                    .border_1()
+                    .border_color(rgb(0x9e9e9e))
+                    .shadow_md()
+                    .text_xs()
+                    .text_color(gpui::black())
+                    .child(text),
+            )
+        });
+        let find_bar = sheet.finding.as_ref().map(|text| {
+            div()
+                .absolute()
+                .top_2()
+                .right_4()
+                .w(px(260.0))
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .py_1()
+                .rounded_md()
+                .border_1()
+                .border_color(palette::accent())
+                .bg(palette::panel())
+                .shadow_lg()
+                .text_xs()
+                .text_color(palette::text())
+                .child(
+                    div()
+                        .text_color(palette::dim())
+                        .child(i18n::text("sheet.find")),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .child(caret_line(text, palette::accent().into(), false)),
+                )
+        });
+
+        let filter_panel = sheet.filter.as_ref().map(|panel| {
+            let action = |id: &'static str, label: &'static str, command: FilterCommand| {
+                div()
+                    .id(id)
+                    .px_3()
+                    .py_1()
+                    .cursor_pointer()
+                    .hover(|item| item.bg(palette::hovered()))
+                    .child(i18n::text(label))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                        view.filter_command(command, cx)
+                    }))
+            };
+            let tick = |checked: bool| if checked { "☑" } else { "☐" };
+            let all = panel.checked.iter().all(|checked| *checked);
+            let rows = panel.options.iter().zip(&panel.checked).enumerate().map(
+                |(index, (option, checked))| {
+                    let label = if option.blank {
+                        i18n::text("sheet.filter.blank").to_string()
+                    } else {
+                        option.label.clone()
+                    };
+                    div()
+                        .id(("filter-value", index))
+                        .flex()
+                        .gap_2()
+                        .px_3()
+                        .py_0p5()
+                        .cursor_pointer()
+                        .hover(|item| item.bg(palette::hovered()))
+                        .child(tick(*checked))
+                        .child(label)
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(move |view, _event, _window, cx| {
+                            view.filter_command(FilterCommand::Toggle(index), cx)
+                        }))
+                },
+            );
+            div()
+                .absolute()
+                .left(px(panel.at.0.max(0.0)))
+                .top(px(panel.at.1.max(0.0)))
+                .w(px(220.0))
+                .py_1()
+                .rounded_md()
+                .border_1()
+                .border_color(palette::border())
+                .bg(palette::panel())
+                .shadow_lg()
+                .text_xs()
+                .text_color(palette::text())
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(action(
+                    "filter-asc",
+                    "sheet.menu.sort_ascending",
+                    FilterCommand::Sort(false),
+                ))
+                .child(action(
+                    "filter-desc",
+                    "sheet.menu.sort_descending",
+                    FilterCommand::Sort(true),
+                ))
+                .child(action(
+                    "filter-clear",
+                    "sheet.filter.clear",
+                    FilterCommand::Clear,
+                ))
+                .child(div().my_1().h(px(1.0)).bg(palette::border()))
+                .child(
+                    div()
+                        .id("filter-all")
+                        .flex()
+                        .gap_2()
+                        .px_3()
+                        .py_0p5()
+                        .cursor_pointer()
+                        .hover(|item| item.bg(palette::hovered()))
+                        .child(tick(all))
+                        .child(i18n::text("sheet.filter.all"))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(|view, _event, _window, cx| {
+                            view.filter_command(FilterCommand::All, cx)
+                        })),
+                )
+                .child(
+                    div()
+                        .id("filter-values")
+                        .max_h(px(200.0))
+                        .overflow_y_scroll()
+                        .children(rows),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap_2()
+                        .px_3()
+                        .pt_2()
+                        .child(
+                            div()
+                                .id("filter-ok")
+                                .px_3()
+                                .py_0p5()
+                                .rounded_sm()
+                                .cursor_pointer()
+                                .bg(palette::accent())
+                                .text_color(gpui::white())
+                                .child(i18n::text("sheet.filter.ok"))
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .on_click(cx.listener(|view, _event, _window, cx| {
+                                    view.filter_command(FilterCommand::Apply, cx)
+                                })),
+                        )
+                        .child(
+                            div()
+                                .id("filter-cancel")
+                                .px_3()
+                                .py_0p5()
+                                .rounded_sm()
+                                .cursor_pointer()
+                                .border_1()
+                                .border_color(palette::border())
+                                .child(i18n::text("sheet.filter.cancel"))
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .on_click(cx.listener(|view, _event, _window, cx| {
+                                    view.filter_command(FilterCommand::Cancel, cx)
+                                })),
+                        ),
+                )
+        });
+
+        let cursor = match sheet.hover {
+            Hover::ResizeColumn => gpui::CursorStyle::ResizeLeftRight,
+            Hover::ResizeRow => gpui::CursorStyle::ResizeUpDown,
+            Hover::FillHandle => gpui::CursorStyle::Crosshair,
+            Hover::Cells => gpui::CursorStyle::Crosshair,
+        };
+        let dragging = sheet.drag.is_some();
+
+        let store = Rc::clone(&self.surface);
+        let entity = cx.entity();
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(palette::canvas())
+            // The name box and the formula bar.
+            .child(
+                div()
+                    .h(px(FORMULA_BAR_HEIGHT))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .bg(palette::panel())
+                    .border_b_1()
+                    .border_color(palette::border())
+                    .text_xs()
+                    .child(
+                        div()
+                            .id("name-box")
+                            .w(px(96.0))
+                            .px_2()
+                            .py_0p5()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(palette::border())
+                            .bg(palette::window())
+                            .text_color(palette::text())
+                            .cursor_text()
+                            .child(name_box)
+                            .on_click(cx.listener(|view, _event, window, cx| {
+                                window.focus(&view.focus, cx);
+                                if !view.commit_cell(cx) {
+                                    return;
+                                }
+                                if let Some(sheet) = view.sheet_mut() {
+                                    if sheet.naming.is_none() {
+                                        sheet.naming = Some(TextEdit::selected(reference_text(
+                                            sheet.selection.active,
+                                        )));
+                                    }
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .px_1()
+                            .italic()
+                            .text_color(palette::faint())
+                            .child("fx"),
+                    )
+                    .child(
+                        div()
+                            .id("formula-bar")
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .px_2()
+                            .cursor_text()
+                            .text_color(palette::text())
+                            .overflow_hidden()
+                            .child(formula)
+                            .on_click(cx.listener(move |view, _event, window, cx| {
+                                window.focus(&view.focus, cx);
+                                if !editing {
+                                    view.begin_cell_edit(None, true, cx);
+                                } else if let Some(sheet) = view.sheet_mut() {
+                                    if let Some(edit) = sheet.edit.as_mut() {
+                                        edit.in_place = true;
+                                        edit.point = None;
+                                    }
+                                    cx.notify();
+                                }
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(
+                        // The painted window sits under the scroller, which
+                        // is transparent and owns the scrollbars and the
+                        // mouse.
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .children(picture.map(|image| img(image).w(px(size.0)).h(px(size.1)))),
+                    )
+                    .child(
+                        div()
+                            .id("sheet-scroll")
+                            .absolute()
+                            .inset_0()
+                            .overflow_scroll()
+                            .track_scroll(&sheet.scroll)
+                            .cursor(cursor)
+                            .on_mouse_down(MouseButton::Left, cx.listener(Self::sheet_mouse_down))
+                            .on_mouse_down(MouseButton::Right, cx.listener(Self::sheet_right_click))
+                            .on_mouse_move(cx.listener(
+                                |view, event: &MouseMoveEvent, _window, cx| {
+                                    // A release the window missed — a click
+                                    // quicker than a frame — still ends the drag.
+                                    if !event.dragging() {
+                                        view.sheet_drag_end(cx);
+                                    }
+                                    view.sheet_hover(event.position, cx);
+                                },
+                            ))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
+                                    view.sheet_drag_end(cx)
+                                }),
+                            )
+                            .on_mouse_up_out(
+                                MouseButton::Left,
+                                cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
+                                    view.sheet_drag_end(cx)
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .w(px(sheet_width as f32 * zoom))
+                                    .h(px(sheet_height as f32 * zoom))
+                                    .flex_none(),
+                            ),
+                    )
+                    .children(cell_editor)
+                    .children(note)
+                    .children(find_bar)
+                    .children(filter_panel)
+                    .children(menu)
+                    // Records where the grid is, registers the input handler
+                    // so typing — an IME's included — reaches the cell, and
+                    // while a drag is on follows the pointer anywhere in the
+                    // window.
+                    .child(
+                        canvas(
+                            move |bounds, _window, _cx| {
+                                store.set(Some(bounds));
+                                bounds
+                            },
+                            move |_bounds, grid, window, cx| {
+                                let focus = entity.read(cx).focus.clone();
+                                window.handle_input(
+                                    &focus,
+                                    ElementInputHandler::new(grid, entity.clone()),
+                                    cx,
+                                );
+                                if dragging {
+                                    let moving = entity.clone();
+                                    window.on_mouse_event(
+                                        move |event: &MouseMoveEvent, phase, _window, cx| {
+                                            if phase == DispatchPhase::Bubble && event.dragging() {
+                                                moving.update(cx, |view, cx| {
+                                                    view.sheet_drag_to(event.position, cx)
+                                                });
+                                            }
+                                        },
+                                    );
+                                    let releasing = entity.clone();
+                                    window.on_mouse_event(
+                                        move |event: &MouseUpEvent, phase, _window, cx| {
+                                            if phase == DispatchPhase::Bubble
+                                                && event.button == MouseButton::Left
+                                            {
+                                                releasing
+                                                    .update(cx, |view, cx| view.sheet_drag_end(cx));
+                                            }
+                                        },
+                                    );
+                                }
+                            },
+                        )
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full(),
+                    ),
+            )
+            // Excel keeps its sheet tabs along the bottom edge.
+            .child(
+                div()
+                    .id("sheet-tabs")
+                    .h(px(SHEET_TABS_HEIGHT))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .overflow_x_scroll()
+                    .bg(palette::panel())
+                    .border_t_1()
+                    .border_color(palette::border())
+                    .children(tabs),
+            )
+    }
+}
+
+/// Text being typed, with its caret drawn where it is and its lines kept.
+fn caret_line(text: &TextEdit, caret_color: gpui::Hsla, tall: bool) -> gpui::Div {
+    if text.whole {
+        let mut selected = caret_color;
+        selected.a = 0.3;
+        return div().flex().child(
+            div()
+                .whitespace_nowrap()
+                .bg(selected)
+                .child(text.text.clone()),
+        );
+    }
+    let (before, after) = text.split();
+    let height = if tall { 15.0 } else { 12.0 };
+    let caret = div().flex_none().w(px(1.0)).h(px(height)).bg(caret_color);
+    let line = |text: &str| div().whitespace_nowrap().child(text.to_string());
+    let mut lines = div().flex().flex_col();
+    let mut caret = Some(caret);
+    let before_lines: Vec<&str> = before.split('\n').collect();
+    let after_lines: Vec<&str> = after.split('\n').collect();
+    for (index, part) in before_lines.iter().enumerate() {
+        if index + 1 < before_lines.len() {
+            lines = lines.child(line(part));
+            continue;
+        }
+        let mut row = div().flex().items_center().child(line(part));
+        if let Some(caret) = caret.take() {
+            row = row.child(caret);
+        }
+        row = row.child(line(after_lines[0]));
+        lines = lines.child(row);
+    }
+    for part in after_lines.iter().skip(1) {
+        lines = lines.child(line(part));
+    }
+    lines
+}
+
+fn format_number(value: f64) -> String {
+    jade_web::sheet::format_number(value)
+}

@@ -3336,6 +3336,7 @@ dependencies = [
  "jade-opc",
  "jade-painter",
  "jade-skia-painter",
+ "libc",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",

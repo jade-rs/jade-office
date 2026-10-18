@@ -24,6 +24,7 @@ A fix starts as a case that fails.
 | Word layout | pages compared against Word's own rendering | per fixture | jade-core CI `layout-compare` |
 | Typing like Excel | text typed into a cell and the value, format and display Excel makes of it; open parentheses closed; a misspelt function | 25 inputs + cases | `crates/jade-office-model/tests/typing_like_excel.rs` |
 | Clipboard like Excel | Excel's clipboard text in and out, quoted multi-line cells, CR LF | 2 tests | `crates/jade-office-model/tests/clipboard_like_excel.rs` |
+| Working a sheet like Excel | selection (cells, headers, Shift, merges, hidden rows), ⌘-arrows, Enter/Tab round a range, ⌘D/⌘R/⌘Enter, the fill handle and its double-click, copies that move formulas, tiled pastes, cuts that move, bold and the rest, Merge & Center, sorts with a header, rows and columns inserted, deleted and resized, sheets added, renamed and deleted, AutoSum, Find, F4 | 12 + 4 tests | `crates/jade-office-model/src/sheet.rs`, `src/grid.rs` |
 | Japanese functions | LENB, MIDB, FINDB, REPLACEB, ASC, JIS and the rest, typed into a cell | 11 cases | `crates/jade-office-model/tests/japanese_functions_like_excel.rs` |
 | Files people have | every fixture opens; damaged, protected, macro-enabled and template files say what they are and save as what they are | 3 suites | `crates/jade-office-model/tests/`, `crates/jade-web/tests/` |
 | Editing Word in the browser | caret (on the line clicked, at a wrap too), typing, IME, selection, arrows, Home/End, clipboard, undo, save | 13 tests | `crates/jade-web/tests/edits_documents.rs` |
@@ -33,7 +34,7 @@ A fix starts as a case that fails.
 | | Word | Excel | PowerPoint |
 |---|---|---|---|
 | Open and show | pages as laid out by the engine; headers, footers, tables, pictures, text boxes, comments, tracked changes | cells, number formats (incl. Japanese eras), merged cells, conditional formats, charts, filters, frozen panes | slides, shapes, pictures, charts, notes, slide show |
-| Edit | caret, typing (IMEs included), Backspace/Delete/Enter, selection by drag, Shift-click, Shift+arrows, ⌘A; Home/End/arrows; copy, cut, paste (lines become paragraphs); undo/redo | type as in Excel (`10%`, `1,234`, `¥1,000`, `2024/1/15`, `'0123`), formulas over 498 functions, errors as Excel shows them (`#NAME?` for a misspelt function, in its dependents too); copy, cut, paste in Excel's clipboard text; clear; undo/redo | select a shape (click or Tab), type into it, move it, delete it; undo/redo |
+| Edit | caret, typing (IMEs included), Backspace/Delete/Enter, selection by drag, Shift-click, Shift+arrows, ⌘A; Home/End/arrows; copy, cut, paste (lines become paragraphs); undo/redo | select by click, drag (scrolling past the edge), Shift-click, row and column headers and the corner, ⌘A (the data, then the sheet), Shift/Ctrl+Space; ⌘-arrows to the ends of the data, ⌘Home/⌘End, Page Up/Down, Home; arrows over merged cells and past hidden rows; Enter and Tab round a range, Enter back to where Tab started; the name box shows the active cell and goes to a typed reference; type as in Excel (`10%`, `1,234`, `¥1,000`, `2024/1/15`, `'0123`), arrows leaving the cell, F2 to edit in place, ⌥Enter for a line break, arrows and clicks pointing at cells while a formula is typed, F4 for `$`, AutoSum (⌘⇧T); formulas over 498 functions, errors as Excel shows them (`#NAME?` for a misspelt function, in its dependents too); ⌘Enter, ⌘D, ⌘R and the fill handle (series, and double-click down the data); copy and paste with formulas moved and formats carried, tiled over a larger selection, cut moving the cells, Excel's clipboard text in and out; clear; ⌘B/⌘I/⌘U/⌘⇧X, Ctrl+Shift+1–6 number formats, ⌃; and ⌘; for the date and time; Merge & Center; sort A–Z/Z–A keeping a header; insert and delete rows and columns (⌘+/⌘-, menu), resize them by their header edges and fit by double-click; add, rename and delete sheets; Find (⌘F); notes on hover; a right-click menu; undo/redo | select a shape (click or Tab), type into it, move it, delete it; undo/redo |
 | Native only | ribbon formatting, find and replace, tables, comments, change tracking, PDF export, print | | |
 | Save | the file that was opened, in place and atomically; `.docm`/`.dotx`/`.xlsm`/`.pptm` stay what they are | the same; a formula jade cannot evaluate keeps Excel's value and asks Excel to recalculate on open | the same |
 
@@ -46,12 +47,11 @@ painter) and edits through the same cores.
    charts, SmartArt and video are checked on a deck built for the purpose
    (they round-trip and draw); real decks from PowerPoint with them would
    make that evidence stronger.
-2. **Cut clears at once.** Excel moves the cells when they are pasted.
-3. **Functions the engine lacks** keep Excel's cached value in a saved file;
+2. **Functions the engine lacks** keep Excel's cached value in a saved file;
    typed fresh, they show `#NAME?` until Excel recalculates the file.
-4. **The browser clipboard** is checked with dispatched paste events; the
+3. **The browser clipboard** is checked with dispatched paste events; the
    embedded test browser cannot read the system clipboard.
-5. **Formula entry is refused only when certainly malformed** (a trailing
+4. **Formula entry is refused only when certainly malformed** (a trailing
    operator, an open string, an unmatched parenthesis), with the editor
    kept open as in Excel; a formula Excel would refuse for its arguments
    (`=SUM()`) is accepted and shows `#ERROR!`.

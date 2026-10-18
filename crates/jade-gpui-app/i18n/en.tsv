@@ -97,6 +97,33 @@ sheet.save_failed	Cannot save: {error}
 sheet.average	Average: {value}
 sheet.cell_count	Count: {n}
 sheet.sum	Sum: {value}
+sheet.find	Find
+sheet.not_found	No matches found
+sheet.filter.clear	Clear Filter
+sheet.filter.all	(Select All)
+sheet.filter.blank	(Blanks)
+sheet.filter.ok	OK
+sheet.filter.cancel	Cancel
+sheet.menu.cut	Cut
+sheet.menu.copy	Copy
+sheet.menu.paste	Paste
+sheet.menu.clear	Clear Contents
+sheet.menu.fill_down	Fill Down
+sheet.menu.fill_right	Fill Right
+sheet.menu.sort_ascending	Sort A to Z
+sheet.menu.sort_descending	Sort Z to A
+sheet.menu.merge_center	Merge & Center
+sheet.menu.insert_rows	Insert Rows
+sheet.menu.delete_rows	Delete Rows
+sheet.menu.insert_columns	Insert Columns
+sheet.menu.delete_columns	Delete Columns
+sheet.menu.insert_sheet	Insert Sheet
+sheet.menu.rename_sheet	Rename
+sheet.menu.delete_sheet	Delete
+sheet.no_reference	That reference isn't valid
+sheet.format.currency	"$"#,##0.00_);("$"#,##0.00)
+sheet.format.date	d-mmm-yy
+sheet.format.time	h:mm AM/PM
 deck.edit_failed	Cannot make the change: {error}
 deck.text_locked	This shape's text cannot be edited
 deck.saved	Saved to {name}
