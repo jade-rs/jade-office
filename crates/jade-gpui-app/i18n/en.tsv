@@ -12,7 +12,8 @@ workspace.open_folder	Open Folder…
 workspace.drop_hint	⌘O to open, or drop files here
 workspace.ready	Ready
 workspace.tabs	Tabs: {n}
-workspace.unsupported	{name}: not a supported format (.docx, .xlsx and .pptx open)
+workspace.unsupported	{name}: not a supported format (.docx, .xlsx and .pptx open, macro-enabled and template forms included)
+workspace.protected	{name}: this file is password-protected or in an old binary format (.doc, .xls, .ppt). Remove the password, or save it as .docx, .xlsx or .pptx in Office, then open it again.
 workspace.prompt_open	Open
 workspace.prompt_folder	Open Folder
 workspace.zoom_out	Zoom Out

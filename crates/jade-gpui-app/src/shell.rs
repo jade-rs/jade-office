@@ -230,6 +230,18 @@ pub mod recent {
     }
 }
 
+/// Whether `path` is an OLE compound file rather than an Open XML package:
+/// what Office writes for a password-protected file (the package encrypted
+/// inside), and what the old .doc, .xls and .ppt formats are.
+pub fn is_compound_file(path: &Path) -> bool {
+    use std::io::Read;
+    const SIGNATURE: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+    let mut head = [0u8; 8];
+    std::fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut head))
+        .is_ok_and(|()| head == SIGNATURE)
+}
+
 /// Writes `bytes` over `path` as one step: into a temporary file beside
 /// it, flushed to disk, then renamed over it. A save that fails part-way
 /// leaves the file as it was rather than half-written.
