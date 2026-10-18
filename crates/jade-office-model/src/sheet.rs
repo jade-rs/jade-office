@@ -13,7 +13,7 @@ use jade_painter::Painter;
 use jade_xlsx_headless_api::CellInput;
 use jade_xlsx_headless_editor::{formula_text, HeadlessWorkbook};
 
-use crate::typing;
+use crate::{clipboard, typing};
 pub use jade_xlsx_layout::HeaderMetrics;
 use jade_xlsx_layout::{column_label, layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
 pub use jade_xlsx_reader::{CellRange, CellRef};
@@ -425,7 +425,7 @@ impl<B: Backend> Workbook<B> {
         let mut out = String::new();
         for row in range.start.row..=end.row {
             let line: Vec<String> = (range.start.column..=end.column)
-                .map(|column| self.display_text(CellRef::new(column, row)))
+                .map(|column| clipboard::field(&self.display_text(CellRef::new(column, row))))
                 .collect();
             out.push_str(&line.join("\t"));
             out.push('\n');
@@ -481,8 +481,8 @@ impl<B: Backend> Workbook<B> {
     pub fn paste(&mut self, origin: CellRef, text: &str) -> Result<Option<CellRef>, String> {
         let mut values = Vec::new();
         let mut far = origin;
-        for (row_offset, row) in text.trim_end_matches(['\n', '\r']).split('\n').enumerate() {
-            for (column_offset, value) in row.trim_end_matches('\r').split('\t').enumerate() {
+        for (row_offset, row) in clipboard::parse(text).iter().enumerate() {
+            for (column_offset, value) in row.iter().enumerate() {
                 let reference = CellRef::new(
                     origin.column + column_offset as u32,
                     origin.row + row_offset as u32,
