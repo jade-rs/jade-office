@@ -892,6 +892,10 @@ struct DocumentView {
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
     zoom: f32,
+    /// The window's backing scale the pages were last rasterised at. A page
+    /// painted at 1x and shown on a 2x screen is stretched, and its text goes
+    /// soft; following the window keeps one page pixel per screen pixel.
+    raster_scale: f32,
     /// Where a shift-extended selection is anchored. Separate from
     /// `drag_anchor`: a keyboard selection outlives the mouse being down.
     selection_anchor: Option<(usize, usize)>,
@@ -3679,6 +3683,18 @@ impl Render for DocumentView {
         for image in self.retired_images.drain(..) {
             window.drop_image(image).ok();
         }
+        // Checked per frame because a window can move to a screen of another
+        // density at any time. Only a change costs anything: a full repaint at
+        // the new density, whose old textures are retired on the next frame.
+        let scale_factor = window.scale_factor();
+        if scale_factor != self.raster_scale {
+            self.raster_scale = scale_factor;
+            match self.document.set_raster_scale(f64::from(scale_factor)) {
+                Ok(true) => self.rebuild_all_images(),
+                Ok(false) => {}
+                Err(err) => eprintln!("raster scale {scale_factor}: {err}"),
+            }
+        }
 
         let page_count = self.images.len();
         // Recomputed each frame: gpui does not notify on scroll, and this is
@@ -4083,6 +4099,7 @@ fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentVi
         object_drag: None,
         selection_anchor: None,
         zoom: 1.0,
+        raster_scale: 1.0,
         tracking_changes: false,
         table_status: None,
         find_query: None,
