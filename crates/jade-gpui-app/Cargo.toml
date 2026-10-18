@@ -16,6 +16,8 @@ jade-docx-native-render = { path = "../../jade-core/crates/jade-docx-native-rend
 jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
 jade-docx-pdf-renderer = { path = "../../jade-core/crates/jade-docx-pdf-renderer" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter" }
+# The dark-paper colour mapping, for the chrome drawn over the pages.
+jade-painter = { path = "../../jade-core/crates/jade-painter" }
 # The workbook and deck editing models, shared with the browser build, on the
 # Skia backend.
 jade-office-model = { path = "../jade-office-model", features = ["skia"] }

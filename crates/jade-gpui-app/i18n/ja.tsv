@@ -80,6 +80,7 @@ menu.view.appearance	外観
 menu.view.appearance.system	システム設定に合わせる
 menu.view.appearance.light	ライト
 menu.view.appearance.dark	ダーク
+menu.view.appearance.dark_pages	ダークモードで用紙も暗くする
 menu.view.theme	ライト / ダーク テーマ
 menu.view.next_page	次のページ
 menu.view.previous_page	前のページ

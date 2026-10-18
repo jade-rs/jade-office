@@ -363,3 +363,43 @@ fn a_highlight_repaints_only_its_pages_and_says_from_where() {
     assert_eq!(document.take_repainted_from(), Some(starts_on));
     assert_eq!(document.page_count(), last_page + 1);
 }
+
+/// Dark paper turns every page over — dark ground, light ink — for the
+/// screen only: switching back gives the same pixels, and the saved file is
+/// the one a light-paper session saves.
+#[test]
+fn dark_paper_turns_the_pages_over_and_back() {
+    let mut document = open("contract.docx");
+    let light: Vec<Vec<u8>> = (0..document.page_count())
+        .map(|index| page_rgba(&document, index))
+        .collect();
+    let saved = document.export_docx().unwrap();
+
+    assert!(document.set_dark_paper(true).unwrap());
+    assert!(!document.set_dark_paper(true).unwrap(), "already dark");
+    assert_eq!(document.take_repainted_from(), Some(0));
+    for index in 0..document.page_count() {
+        let pixels = page_rgba(&document, index);
+        assert!(
+            pixels[..3].iter().all(|&channel| channel < 60),
+            "page {} corner {:?}",
+            index + 1,
+            &pixels[..4]
+        );
+        let lit = pixels
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] > 150)
+            .count();
+        assert!(lit > 2000, "page {} has {lit} light pixels", index + 1);
+    }
+    assert_eq!(document.export_docx().unwrap(), saved);
+
+    assert!(document.set_dark_paper(false).unwrap());
+    for (index, before) in light.iter().enumerate() {
+        assert!(
+            &page_rgba(&document, index) == before,
+            "page {} differs after switching back",
+            index + 1
+        );
+    }
+}

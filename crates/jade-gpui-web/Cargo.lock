@@ -1934,6 +1934,7 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-web",
  "image",
+ "jade-painter",
  "jade-tiny-skia-painter",
  "jade-web",
  "js-sys",
