@@ -19,6 +19,7 @@ A fix starts as a case that fails.
 | Excel round trip | the same for every cell's value, formula and style | 29 workbooks | jade-core `crates/jade-xlsx-headless-editor/tests/round_trip_corpus.rs` |
 | PowerPoint round trip | the same for every shape's text and position, notes and media | 87 decks | jade-core `crates/jade-pptx-writer/tests/round_trip_corpus.rs` |
 | Rich slide objects | a table, a chart, SmartArt and a video keep every part through an edit and save, and draw the same | 2 tests | jade-core `crates/jade-pptx-writer/tests/rich_objects_round_trip.rs` |
+| Dynamic arrays | a spilling formula fills its cells, saves as Excel saves one (`t="array" ref`, `cm`, `xl/metadata.xml`), grows and shrinks with its inputs, reads `#SPILL!` when blocked; a file's spills survive recalculation | 6 tests | jade-core `crates/jade-xlsx-calc/tests/recalculates.rs`, `crates/jade-xlsx-writer/tests/writes_spills.rs`, `crates/jade-xlsx-headless-editor/tests/dynamic_arrays.rs`, `crates/jade-office-model/tests/dynamic_arrays_like_excel.rs` |
 | Excel tables | structured references (`Table1[Amount]`, `[#Totals]`) recalculate when the table is edited | 2 tests | jade-core `crates/jade-xlsx-calc/tests/recalculates.rs`, `crates/jade-office-model/tests/tables_like_excel.rs` |
 | Word layout | pages compared against Word's own rendering | per fixture | jade-core CI `layout-compare` |
 | Typing like Excel | text typed into a cell and the value, format and display Excel makes of it; open parentheses closed; a misspelt function | 25 inputs + cases | `crates/jade-office-model/tests/typing_like_excel.rs` |
@@ -45,20 +46,15 @@ painter) and edits through the same cores.
    charts, SmartArt and video are checked on a deck built for the purpose
    (they round-trip and draw); real decks from PowerPoint with them would
    make that evidence stronger.
-2. **A formula Excel would refuse is accepted.** `=SUM(` or `=1+` is stored
-   and shows `#ERROR!`; Excel refuses it with a message. (Open parentheses
-   are closed as in Excel; the engine's parser accepts anything, so refusal
-   needs a check of its own.)
-3. **Cut clears at once.** Excel moves the cells when they are pasted.
-4. **Functions the engine lacks** keep Excel's cached value in a saved file;
+2. **Cut clears at once.** Excel moves the cells when they are pasted.
+3. **Functions the engine lacks** keep Excel's cached value in a saved file;
    typed fresh, they show `#NAME?` until Excel recalculates the file.
-5. **The browser clipboard** is checked with dispatched paste events; the
+4. **The browser clipboard** is checked with dispatched paste events; the
    embedded test browser cannot read the system clipboard.
-6. **Implicit intersection and spill references** (`@A1`, `A1#`) typed in a
-   cell read `#ERROR!`.
-
-In flight: jade-core#41 (the rich slide objects above), jade-office#20
-(closing parentheses), #21 (the caret at a wrap, tables).
+5. **Formula entry is refused only when certainly malformed** (a trailing
+   operator, an open string, an unmatched parenthesis), with the editor
+   kept open as in Excel; a formula Excel would refuse for its arguments
+   (`=SUM()`) is accepted and shows `#ERROR!`.
 
 ## Running the oracles
 
