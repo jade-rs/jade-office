@@ -1924,6 +1924,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "jade-office-model"
+version = "0.1.0"
+dependencies = [
+ "jade-opc",
+ "jade-painter",
+ "jade-pptx-layout",
+ "jade-pptx-reader",
+ "jade-pptx-render",
+ "jade-pptx-writer",
+ "jade-tiny-skia-painter",
+ "jade-xlsx-headless-api",
+ "jade-xlsx-headless-editor",
+ "jade-xlsx-layout",
+ "jade-xlsx-reader",
+ "jade-xlsx-render",
+]
+
+[[package]]
 name = "jade-opc"
 version = "0.1.0"
 dependencies = [
@@ -2025,18 +2043,9 @@ dependencies = [
  "image",
  "jade-docx-editor",
  "jade-docx-layout",
- "jade-opc",
+ "jade-office-model",
  "jade-painter",
- "jade-pptx-layout",
- "jade-pptx-reader",
- "jade-pptx-render",
- "jade-pptx-writer",
  "jade-tiny-skia-painter",
- "jade-xlsx-headless-api",
- "jade-xlsx-headless-editor",
- "jade-xlsx-layout",
- "jade-xlsx-reader",
- "jade-xlsx-render",
  "js-sys",
  "wasm-bindgen",
  "web-sys",

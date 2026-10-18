@@ -4,7 +4,7 @@
 use std::rc::Rc;
 
 use jade_docx_layout::shaping_measurer::ShapingMeasurer;
-use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
+use jade_tiny_skia_painter::TinySkiaPainter;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -16,7 +16,7 @@ pub fn start() {
 /// and the shaping measurer documents are laid out with.
 #[wasm_bindgen]
 pub struct WebFonts {
-    book: Rc<FontBook>,
+    backend: crate::TinySkiaBackend,
     measurer: Rc<ShapingMeasurer>,
 }
 
@@ -27,7 +27,7 @@ impl WebFonts {
         let measurer =
             crate::document::measurer(&regular, bold.as_deref()).map_err(|e| JsError::new(&e))?;
         Ok(Self {
-            book: crate::font_book(regular, bold).map_err(|e| JsError::new(&e))?,
+            backend: crate::backend(regular, bold).map_err(|e| JsError::new(&e))?,
             measurer,
         })
     }
@@ -84,7 +84,7 @@ impl WebDeck {
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8], fonts: &WebFonts) -> Result<WebDeck, JsError> {
         Ok(Self(
-            crate::Deck::open(bytes, Rc::clone(&fonts.book)).map_err(|e| JsError::new(&e))?,
+            crate::Deck::open(bytes, fonts.backend.clone()).map_err(|e| JsError::new(&e))?,
         ))
     }
     #[wasm_bindgen(js_name = slideCount)]
@@ -116,7 +116,7 @@ impl WebWorkbook {
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8], fonts: &WebFonts) -> Result<WebWorkbook, JsError> {
         Ok(Self(
-            crate::Workbook::open(bytes, "UTC", Rc::clone(&fonts.book))
+            crate::Workbook::open(bytes, "UTC", fonts.backend.clone())
                 .map_err(|e| JsError::new(&e))?,
         ))
     }
@@ -164,7 +164,7 @@ impl WebDocument {
             crate::document::Document::open(
                 bytes,
                 scale,
-                Rc::clone(&fonts.book),
+                fonts.backend.fonts(),
                 Rc::clone(&fonts.measurer),
             )
             .map_err(|e| JsError::new(&e))?,

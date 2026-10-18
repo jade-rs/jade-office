@@ -26,6 +26,10 @@ The shell speaks Japanese and English (`crates/jade-gpui-app/i18n/{ja,en}.tsv`),
 
 Use `git submodule update --init` if you cloned without `--recurse-submodules`. The app reads its bundled fonts from `jade-core/fonts/Noto_Sans_JP`.
 
+## Shared editing models
+
+`crates/jade-office-model` holds the workbook and deck editing models both shells use: a workbook over jade-core's `HeadlessWorkbook` (typed text, recalculation, clear, paste, copy text, the selection summary, undo/redo, save) and a deck over the pptx `EditSession` (shape hit-testing and Tab order, text, moves, resizes, deletes, undo/redo, save). They are UI-free and generic over a painter `Backend`: `skia` for the native app, `tiny-skia` for the browser build. So typing into a cell or a slide runs the same code natively and in wasm; the shells only draw the chrome round it.
+
 ## In the browser (prototype)
 
 The engine's renderers — documents, slides and sheets — also run as WebAssembly, on a pure-Rust painter instead of Skia:

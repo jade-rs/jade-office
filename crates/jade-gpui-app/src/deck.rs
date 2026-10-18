@@ -24,10 +24,9 @@ use gpui::{
     MouseMoveEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
     WindowBounds, WindowOptions,
 };
-use jade_pptx_layout::PlacedOrigin;
-use jade_pptx_native_render::{aliased_faces, bundled_font_paths, NativeDeck};
-use jade_pptx_reader::{emu_to_px, Transform};
-use jade_pptx_writer::{EditSession, ShapeTransformInfo};
+use jade_office_model::deck::{Deck, ShapeRect as SlideRect, ShapeTransformInfo};
+use jade_office_model::skia::SkiaBackend;
+use jade_office_model::Backend;
 use std::cell::Cell;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -49,8 +48,6 @@ const TOOLBAR_HEIGHT: f32 = 40.0;
 const NOTES_HEIGHT: f32 = 110.0;
 /// Space left round the slide inside its canvas.
 const SLIDE_MARGIN: f32 = 28.0;
-/// EMU per px at 96 dpi.
-const EMU_PER_PX: f64 = 9525.0;
 /// How far an arrow key moves a shape, in slide px; ⌥ moves one px.
 const NUDGE_PX: f64 = 6.0;
 /// The smallest a resize leaves a shape, in slide px.
@@ -66,14 +63,19 @@ struct Painted {
 }
 
 /// Paints slide `index` of `deck` `device_width` px wide, for gpui.
-fn slide_image(deck: &NativeDeck, index: usize, device_width: i32) -> Option<Arc<RenderImage>> {
-    let (bgra, width, height) = deck.slide_pixels(index, device_width)?;
-    let buffer = image::ImageBuffer::from_raw(width as u32, height as u32, bgra)?;
+fn slide_image(
+    deck: &mut Deck<SkiaBackend>,
+    index: usize,
+    device_width: i32,
+) -> Option<Arc<RenderImage>> {
+    let painter = deck.render_slide(index, device_width.max(1) as u32)?;
+    let (bgra, width, height) = SkiaBackend::bgra(&painter)?;
+    let buffer = image::ImageBuffer::from_raw(width, height, bgra)?;
     Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
 }
 
 /// The slide's on-screen size to fit `available`, keeping its aspect.
-fn fitted(deck: &NativeDeck, available: (f32, f32)) -> (f32, f32) {
+fn fitted(deck: &Deck<SkiaBackend>, available: (f32, f32)) -> (f32, f32) {
     let (slide_width, slide_height) = deck.slide_size();
     let (slide_width, slide_height) = (slide_width as f32, slide_height as f32);
     let scale = (available.0 / slide_width.max(1.0))
@@ -85,7 +87,7 @@ fn fitted(deck: &NativeDeck, available: (f32, f32)) -> (f32, f32) {
 /// Repaints `painted` unless it already shows slide `index` at `device_width`,
 /// queueing the texture it replaces for release.
 fn repaint(
-    deck: &NativeDeck,
+    deck: &mut Deck<SkiaBackend>,
     painted: &mut Option<Painted>,
     retired: &mut Vec<Arc<RenderImage>>,
     index: usize,
@@ -105,30 +107,6 @@ fn repaint(
         retired.push(previous.image);
     }
     true
-}
-
-/// A rectangle in slide px.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct SlideRect {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-}
-
-impl SlideRect {
-    fn of(transform: &Transform) -> Self {
-        Self {
-            x: emu_to_px(transform.offset_emu.0),
-            y: emu_to_px(transform.offset_emu.1),
-            width: emu_to_px(transform.extent_emu.0),
-            height: emu_to_px(transform.extent_emu.1),
-        }
-    }
-
-    fn contains(&self, x: f64, y: f64) -> bool {
-        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
-    }
 }
 
 /// What a drag on the slide does.
@@ -173,21 +151,6 @@ fn dragged(rect: SlideRect, mode: DragMode, dx: f64, dy: f64) -> SlideRect {
     }
 }
 
-/// `transform` moved and sized to `rect`, its rotation and flips kept.
-fn transform_for(transform: Transform, rect: SlideRect) -> Transform {
-    Transform {
-        offset_emu: (
-            (rect.x * EMU_PER_PX).round() as i64,
-            (rect.y * EMU_PER_PX).round() as i64,
-        ),
-        extent_emu: (
-            (rect.width * EMU_PER_PX).round() as i64,
-            (rect.height * EMU_PER_PX).round() as i64,
-        ),
-        ..transform
-    }
-}
-
 struct ShapeDrag {
     id: u32,
     mode: DragMode,
@@ -207,8 +170,8 @@ struct TextEdit {
 
 pub struct DeckView {
     path: PathBuf,
-    session: EditSession,
-    deck: Rc<NativeDeck>,
+    /// The shared editing model (jade-office-model), painted with Skia.
+    deck: Deck<SkiaBackend>,
     current: usize,
     /// The current slide's shapes as the writer sees them: what can be
     /// selected, moved, resized.
@@ -255,7 +218,7 @@ impl DeckView {
 
     fn start_slideshow(&mut self, from: usize, cx: &mut Context<Self>) {
         self.commit_text(cx);
-        if let Err(error) = open_slideshow(self.deck.clone(), from, cx) {
+        if let Err(error) = open_slideshow(self.deck.bytes().to_vec(), from, cx) {
             self.status = SharedString::from(error);
             cx.notify();
         }
@@ -276,8 +239,7 @@ impl DeckView {
     // ---- the model -------------------------------------------------------
 
     fn refresh_shapes(&mut self) {
-        self.shapes = jade_pptx_writer::editable_shapes(self.session.bytes(), self.current)
-            .unwrap_or_default();
+        self.shapes = self.deck.shapes(self.current).to_vec();
         if let Some(id) = self.selected {
             if !self.shapes.iter().any(|shape| shape.id == id) {
                 self.selected = None;
@@ -289,42 +251,36 @@ impl DeckView {
         self.shapes.iter().find(|shape| shape.id == id)
     }
 
-    /// Reads the deck back from the session's bytes after a change, and
-    /// throws away the pixels that showed the old one. `all_slides` is for
-    /// undo and redo, which may have changed a slide other than this one.
+    /// Throws away the pixels that showed the deck before a change — the
+    /// model has already read itself back. `all_slides` is for undo and
+    /// redo, which may have changed a slide other than this one.
     fn reload(&mut self, all_slides: bool, cx: &mut Context<Self>) {
-        match self.deck.reopen(self.session.bytes()) {
-            Ok(deck) => {
-                self.deck = Rc::new(deck);
-                if let Some(painted) = self.slide.take() {
-                    self.retired.push(painted.image);
-                }
-                let count = self.deck.slide_count();
-                self.thumbnails.resize(count, None);
-                for (index, thumbnail) in self.thumbnails.iter_mut().enumerate() {
-                    if all_slides || index == self.current {
-                        if let Some(image) = thumbnail.take() {
-                            self.retired.push(image);
-                        }
-                    }
-                }
-                self.current = self.current.min(count.saturating_sub(1));
-                self.refresh_shapes();
-                self.status = SharedString::from("");
-            }
-            Err(error) => self.status = SharedString::from(error),
+        if let Some(painted) = self.slide.take() {
+            self.retired.push(painted.image);
         }
+        let count = self.deck.slide_count();
+        self.thumbnails.resize(count, None);
+        for (index, thumbnail) in self.thumbnails.iter_mut().enumerate() {
+            if all_slides || index == self.current {
+                if let Some(image) = thumbnail.take() {
+                    self.retired.push(image);
+                }
+            }
+        }
+        self.current = self.current.min(count.saturating_sub(1));
+        self.refresh_shapes();
+        self.status = SharedString::from("");
         cx.notify();
     }
 
-    /// Runs a write against the session and, when it changed something,
+    /// Runs a change against the model and, when it changed something,
     /// repaints from the result.
     fn write(
         &mut self,
         cx: &mut Context<Self>,
-        change: impl FnOnce(&mut EditSession, usize) -> jade_pptx_writer::Result<bool>,
+        change: impl FnOnce(&mut Deck<SkiaBackend>, usize) -> Result<bool, String>,
     ) {
-        match change(&mut self.session, self.current) {
+        match change(&mut self.deck, self.current) {
             Ok(true) => self.reload(false, cx),
             Ok(false) => {}
             Err(error) => {
@@ -337,13 +293,18 @@ impl DeckView {
 
     fn step_history(&mut self, undo: bool, cx: &mut Context<Self>) {
         self.commit_text(cx);
-        let changed = if undo {
-            self.session.undo()
+        let result = if undo {
+            self.deck.undo()
         } else {
-            self.session.redo()
+            self.deck.redo()
         };
-        if changed {
-            self.reload(true, cx);
+        match result {
+            Ok(true) => self.reload(true, cx),
+            Ok(false) => {}
+            Err(error) => {
+                self.status = SharedString::from(error);
+                cx.notify();
+            }
         }
     }
 
@@ -362,31 +323,8 @@ impl DeckView {
     /// The selectable shape at a slide point: the top-most of the slide's
     /// own shapes there, or the group it belongs to — the thing PowerPoint
     /// selects on a first click.
-    fn shape_at(&self, x: f64, y: f64) -> Option<u32> {
-        let layout = self.deck.layout(self.current)?;
-        for placed in layout.shapes.iter().rev() {
-            if placed.origin != PlacedOrigin::Slide {
-                continue;
-            }
-            let rect = placed.rect;
-            if !(x >= rect.x
-                && x <= rect.x + rect.width
-                && y >= rect.y
-                && y <= rect.y + rect.height)
-            {
-                continue;
-            }
-            let candidates = placed.group_ids.iter().copied().chain(placed.source_id);
-            for id in candidates {
-                if self
-                    .shape(id)
-                    .is_some_and(|shape| shape.can_select && shape.transform.is_some())
-                {
-                    return Some(id);
-                }
-            }
-        }
-        None
+    fn shape_at(&mut self, x: f64, y: f64) -> Option<u32> {
+        self.deck.shape_at(self.current, x, y)
     }
 
     fn select(&mut self, id: Option<u32>, cx: &mut Context<Self>) {
@@ -422,16 +360,7 @@ impl DeckView {
 
     /// Moves or sizes shape `id` to `rect`, as one undoable change.
     fn place(&mut self, id: u32, rect: SlideRect, cx: &mut Context<Self>) {
-        let Some(transform) = self.shape(id).and_then(|shape| shape.transform) else {
-            return;
-        };
-        let next = transform_for(transform, rect);
-        if next == transform {
-            return;
-        }
-        self.write(cx, |session, slide| {
-            session.set_shape_transform(slide, id, next)
-        });
+        self.write(cx, |deck, slide| deck.set_shape_rect(slide, id, rect));
     }
 
     fn nudge(&mut self, dx: f64, dy: f64, cx: &mut Context<Self>) {
@@ -457,7 +386,7 @@ impl DeckView {
         }
         let id = shape.id;
         self.selected = None;
-        self.write(cx, |session, slide| session.delete_shape(slide, id));
+        self.write(cx, |deck, slide| deck.delete_shape(slide, id));
     }
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -556,20 +485,12 @@ impl DeckView {
 
     /// Starts typing into shape `id`, from its text plus `typed`.
     fn begin_text(&mut self, id: u32, typed: Option<&str>, cx: &mut Context<Self>) {
-        let snapshot = match jade_pptx_writer::shape_text(self.session.bytes(), self.current, id) {
-            Ok(snapshot) => snapshot,
-            Err(_) => {
-                self.status = SharedString::from(i18n::text("deck.text_locked"));
-                cx.notify();
-                return;
-            }
-        };
-        if !snapshot.can_edit || snapshot.locked {
+        let Some(text) = self.deck.shape_text(self.current, id) else {
             self.status = SharedString::from(i18n::text("deck.text_locked"));
             cx.notify();
             return;
-        }
-        let mut text = snapshot.text;
+        };
+        let mut text = text;
         if let Some(typed) = typed {
             text.push_str(typed);
         }
@@ -588,9 +509,7 @@ impl DeckView {
             return;
         };
         let (id, text) = (edit.id, edit.text);
-        self.write(cx, |session, slide| {
-            session.set_shape_text(slide, id, &text, false)
-        });
+        self.write(cx, |deck, slide| deck.set_shape_text(slide, id, &text));
         cx.notify();
     }
 
@@ -692,9 +611,9 @@ impl DeckView {
 
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
         self.commit_text(cx);
-        self.status = SharedString::from(match std::fs::write(&target, self.session.bytes()) {
+        self.status = SharedString::from(match std::fs::write(&target, self.deck.bytes()) {
             Ok(()) => {
-                self.session.mark_saved();
+                self.deck.save_bytes();
                 i18n::format("deck.saved", &[("name", &crate::shell::file_name(&target))])
             }
             Err(error) => i18n::format("deck.save_failed", &[("error", &error)]),
@@ -708,7 +627,7 @@ impl DeckView {
         let device_width = (THUMBNAIL_WIDTH * scale_factor).round() as i32;
         for index in 0..self.thumbnails.len() {
             if self.thumbnails[index].is_none() {
-                self.thumbnails[index] = slide_image(&self.deck, index, device_width);
+                self.thumbnails[index] = slide_image(&mut self.deck, index, device_width);
             }
         }
     }
@@ -933,7 +852,7 @@ impl Editor for DeckView {
     }
 
     fn is_dirty(&self) -> bool {
-        self.session.is_dirty()
+        self.deck.is_dirty()
     }
 }
 
@@ -1116,7 +1035,7 @@ impl Render for DeckView {
         self.shown_scale = width / (self.deck.slide_size().0 as f32).max(1.0);
         let device_width = (width * window.scale_factor()).round() as i32;
         if !repaint(
-            &self.deck,
+            &mut self.deck,
             &mut self.slide,
             &mut self.retired,
             self.current,
@@ -1386,22 +1305,12 @@ impl Render for DeckView {
 impl DeckView {
     fn open(path: &Path, cx: &mut App) -> Result<Self, String> {
         let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-        let core = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../jade-core"));
-        let (regular, bold) = bundled_font_paths(&core);
-        let deck = NativeDeck::open(&bytes, &aliased_faces(&regular, &bold))?;
-        if deck.slide_count() == 0 {
-            return Err(i18n::format(
-                "deck.empty",
-                &[("name", &crate::shell::file_name(path))],
-            ));
-        }
-        let session = EditSession::open(&bytes)
-            .map_err(|error| format!("cannot open the presentation for editing: {error}"))?;
+        let deck = Deck::open(&bytes, crate::skia_backend()?)
+            .map_err(|_| i18n::format("deck.empty", &[("name", &crate::shell::file_name(path))]))?;
         let mut view = DeckView {
             path: path.to_path_buf(),
-            session,
             thumbnails: vec![None; deck.slide_count()],
-            deck: Rc::new(deck),
+            deck,
             current: 0,
             shapes: Vec::new(),
             selected: None,
@@ -1434,7 +1343,8 @@ pub fn new_view(path: &Path, cx: &mut App) -> Result<Entity<DeckView>, String> {
 /// explorer, tabs, status bar — stays as it was behind it, and ending the show
 /// is closing a window.
 struct SlideshowView {
-    deck: Rc<NativeDeck>,
+    /// Its own copy, opened from the deck's bytes when the show started.
+    deck: Deck<SkiaBackend>,
     current: usize,
     slide: Option<Painted>,
     retired: Vec<Arc<RenderImage>>,
@@ -1490,7 +1400,7 @@ impl Render for SlideshowView {
         );
         let device_width = (width * window.scale_factor()).round() as i32;
         repaint(
-            &self.deck,
+            &mut self.deck,
             &mut self.slide,
             &mut self.retired,
             self.current,
@@ -1521,7 +1431,8 @@ impl Render for SlideshowView {
     }
 }
 
-fn open_slideshow(deck: Rc<NativeDeck>, from: usize, cx: &mut App) -> Result<(), String> {
+fn open_slideshow(bytes: Vec<u8>, from: usize, cx: &mut App) -> Result<(), String> {
+    let deck = Deck::open(&bytes, crate::skia_backend()?)?;
     let bounds = Bounds::maximized(None, cx);
     let window = cx
         .open_window(
@@ -1564,12 +1475,10 @@ mod tests {
         (view, cx)
     }
 
-    fn transform_of(
-        view: &Entity<DeckView>,
-        cx: &mut gpui::VisualTestContext,
-        id: u32,
-    ) -> Transform {
-        view.read_with(cx, |view, _| view.shape(id).unwrap().transform.unwrap())
+    fn rect_of(view: &Entity<DeckView>, cx: &mut gpui::VisualTestContext, id: u32) -> SlideRect {
+        view.read_with(cx, |view, _| {
+            SlideRect::of(&view.shape(id).unwrap().transform.unwrap())
+        })
     }
 
     /// Tab selects a shape; the arrows move it, each one undoable step.
@@ -1578,19 +1487,18 @@ mod tests {
         let (view, cx) = open_view(cx);
         cx.simulate_keystrokes("tab");
         let id = view.read_with(cx, |view, _| view.selected.expect("Tab selects a shape"));
-        let before = transform_of(&view, cx, id);
+        let before = rect_of(&view, cx, id);
         cx.simulate_keystrokes("right right down");
-        let after = transform_of(&view, cx, id);
-        let step = (NUDGE_PX * EMU_PER_PX) as i64;
-        assert!((after.offset_emu.0 - before.offset_emu.0 - 2 * step).abs() <= 2);
-        assert!((after.offset_emu.1 - before.offset_emu.1 - step).abs() <= 2);
-        assert_eq!(after.extent_emu, before.extent_emu);
+        let after = rect_of(&view, cx, id);
+        assert!((after.x - before.x - 2.0 * NUDGE_PX).abs() < 0.01);
+        assert!((after.y - before.y - NUDGE_PX).abs() < 0.01);
+        assert_eq!(after.width, before.width);
         assert!(view.read_with(cx, |view, _| view.is_dirty()));
 
         cx.dispatch_action(Undo);
         cx.dispatch_action(Undo);
         cx.dispatch_action(Undo);
-        assert_eq!(transform_of(&view, cx, id), before);
+        assert_eq!(rect_of(&view, cx, id), before);
         assert!(!view.read_with(cx, |view, _| view.is_dirty()));
     }
 
@@ -1603,8 +1511,9 @@ mod tests {
             view.shapes
                 .iter()
                 .find(|shape| {
-                    jade_pptx_writer::shape_text(view.session.bytes(), 0, shape.id)
-                        .is_ok_and(|text| text.can_edit && !text.locked && !text.text.is_empty())
+                    view.deck
+                        .shape_text(0, shape.id)
+                        .is_some_and(|text| !text.is_empty())
                 })
                 .map(|shape| shape.id)
                 .expect("the first slide has a text shape")
@@ -1615,9 +1524,7 @@ mod tests {
         cx.simulate_keystrokes("escape");
         let text = view.read_with(cx, |view, _| {
             assert!(view.text_edit.is_none());
-            jade_pptx_writer::shape_text(view.session.bytes(), 0, id)
-                .unwrap()
-                .text
+            view.deck.shape_text(0, id).unwrap()
         });
         assert!(text.ends_with(" 2026"), "{text:?}");
     }

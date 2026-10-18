@@ -25,20 +25,9 @@ futures = "0.3"
 js-sys = "0.3"
 wasm-bindgen = "=0.2.128"
 web-sys = { version = "0.3", features = ["CanvasRenderingContext2d"] }
-jade-opc = { path = "../../jade-core/crates/jade-opc" }
 jade-painter = { path = "../../jade-core/crates/jade-painter" }
-jade-pptx-layout = { path = "../../jade-core/crates/jade-pptx-layout" }
-jade-pptx-reader = { path = "../../jade-core/crates/jade-pptx-reader" }
-jade-pptx-render = { path = "../../jade-core/crates/jade-pptx-render" }
 jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter" }
-jade-xlsx-layout = { path = "../../jade-core/crates/jade-xlsx-layout" }
-jade-xlsx-reader = { path = "../../jade-core/crates/jade-xlsx-reader" }
-jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
-# The editing cores the native app uses: cell writes with recalculation and
-# undo, and slide edits as an undoable session over the package bytes.
-jade-xlsx-headless-api = { path = "../../jade-core/crates/jade-xlsx-headless-api" }
-jade-xlsx-headless-editor = { path = "../../jade-core/crates/jade-xlsx-headless-editor" }
-jade-pptx-writer = { path = "../../jade-core/crates/jade-pptx-writer" }
+jade-office-model = { path = "../jade-office-model", features = ["tiny-skia"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"

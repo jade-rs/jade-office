@@ -785,7 +785,7 @@ impl Viewer {
         if let Some((id, _)) = edit {
             let inside = deck
                 .shape_rect(*current, *id)
-                .is_some_and(|(sx, sy, w, h)| x >= sx && x <= sx + w && y >= sy && y <= sy + h);
+                .is_some_and(|rect| rect.contains(x, y));
             if inside {
                 return;
             }
@@ -881,7 +881,8 @@ impl Viewer {
 
         // The selection outline, or the text editor, over the slide.
         let overlay = selected.and_then(|id| {
-            let (x, y, w, h) = deck.shape_rect(current_index, id)?;
+            let rect = deck.shape_rect(current_index, id)?;
+            let (x, y, w, h) = (rect.x, rect.y, rect.width, rect.height);
             let (x, y, w, h) = (
                 x as f32 * fit,
                 y as f32 * fit,
@@ -1308,13 +1309,13 @@ pub fn run(
     on_save: js_sys::Function,
 ) -> Result<(), JsError> {
     console_error_panic_hook::set_once();
-    let fonts =
-        jade_web::font_book(regular.clone(), Some(bold.clone())).map_err(|e| JsError::new(&e))?;
+    let backend =
+        jade_web::backend(regular.clone(), Some(bold.clone())).map_err(|e| JsError::new(&e))?;
     let lower = file_name.to_lowercase();
     let document = if lower.ends_with(".docx") {
         let measurer =
             jade_web::document::measurer(&regular, Some(&bold)).map_err(|e| JsError::new(&e))?;
-        let opened = jade_web::document::Document::open(&file, scale, Rc::clone(&fonts), measurer)
+        let opened = jade_web::document::Document::open(&file, scale, backend.fonts(), measurer)
             .map_err(|e| JsError::new(&e))?;
         let (width, height) = opened.page_size();
         Document::Pages {
@@ -1324,7 +1325,7 @@ pub fn run(
             page_size: (width as f32, height as f32),
         }
     } else if lower.ends_with(".pptx") {
-        let deck = jade_web::Deck::open(&file, Rc::clone(&fonts)).map_err(|e| JsError::new(&e))?;
+        let deck = jade_web::Deck::open(&file, backend.clone()).map_err(|e| JsError::new(&e))?;
         Document::Deck {
             thumbnails: vec![None; deck.slide_count()],
             deck,
@@ -1336,7 +1337,7 @@ pub fn run(
         }
     } else {
         let book =
-            jade_web::Workbook::open(&file, &time_zone, fonts).map_err(|e| JsError::new(&e))?;
+            jade_web::Workbook::open(&file, &time_zone, backend).map_err(|e| JsError::new(&e))?;
         Document::Workbook {
             sheets: book
                 .sheet_names()

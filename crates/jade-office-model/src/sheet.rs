@@ -1,23 +1,24 @@
 //! An editable workbook: jade-core's `HeadlessWorkbook` with the selected
-//! sheet laid out and painted on the pure-Rust painter.
+//! sheet laid out and painted through a [`Backend`].
 //!
-//! The same editing core the native app and the browser spreadsheet use: a
+//! The editing core the browser spreadsheet and the headless CLI also use: a
 //! write patches the workbook's bytes, recalculates, and keeps undo history.
-//! Everything here is UI-free; a shell hit-tests through [`Workbook::hit`],
-//! types through [`Workbook::set_cell`], and paints with
-//! [`Workbook::render_viewport`].
+//! A shell hit-tests through [`Workbook::hit`], types through
+//! [`Workbook::set_cell`], and paints with [`Workbook::render_viewport`].
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use jade_painter::Painter;
-use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 use jade_xlsx_headless_api::CellInput;
 use jade_xlsx_headless_editor::HeadlessWorkbook;
 pub use jade_xlsx_layout::HeaderMetrics;
 use jade_xlsx_layout::{column_label, layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
 pub use jade_xlsx_reader::{CellRange, CellRef};
 use jade_xlsx_reader::{CellValue, SheetVisibility};
-use jade_xlsx_render::{render_grid, GridSelection, RenderOptions};
+use jade_xlsx_render::{render_grid, GridSelection, PainterMeasure, RenderOptions};
+
+use crate::Backend;
 
 /// The grid drawn past the last used cell; it grows as the selection moves.
 const MIN_COLUMNS: u32 = 12;
@@ -25,10 +26,25 @@ const MIN_ROWS: u32 = 30;
 /// Excel's limits.
 pub const MAX_COLUMN: u32 = 16_383;
 pub const MAX_ROW: u32 = 1_048_575;
+/// The most cells a copy puts on the clipboard.
+const CLIPBOARD_CELL_LIMIT: u64 = 200_000;
 
 /// `B3`.
 pub fn reference_text(reference: CellRef) -> String {
     format!("{}{}", column_label(reference.column), reference.row + 1)
+}
+
+/// `B3`, or `B3:D7` for a range.
+pub fn range_text(range: CellRange) -> String {
+    if range.start == range.end {
+        reference_text(range.start)
+    } else {
+        format!(
+            "{}:{}",
+            reference_text(range.start),
+            reference_text(range.end)
+        )
+    }
 }
 
 /// The rectangle two corners span, top-left first.
@@ -48,7 +64,8 @@ pub fn cell_input(text: &str) -> CellInput {
     }
 }
 
-fn format_number(value: f64) -> String {
+/// A number as a status bar shows it: integers bare, others to a few places.
+pub fn format_number(value: f64) -> String {
     if value.fract() == 0.0 && value.abs() < 1e15 {
         format!("{}", value as i64)
     } else {
@@ -57,19 +74,32 @@ fn format_number(value: f64) -> String {
     }
 }
 
-pub struct Workbook {
+/// Excel's status-bar summary of a selection.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Summary {
+    /// Cells holding anything.
+    pub count: usize,
+    /// Sum and average of the numbers, when there are any.
+    pub sum: Option<f64>,
+    pub average: Option<f64>,
+}
+
+pub struct Workbook<B: Backend> {
     book: HeadlessWorkbook,
-    fonts: Rc<FontBook>,
+    backend: B,
     index: usize,
     layout: SheetLayout,
     extent: (u32, u32),
     dirty: bool,
+    /// The last surface painted on, reused while the size stays the same:
+    /// a sheet repaints on every scroll frame.
+    surface: RefCell<Option<(B::Painter, u32, u32)>>,
 }
 
-impl Workbook {
+impl<B: Backend> Workbook<B> {
     /// Opens `.xlsx` bytes for editing, recalculating in `time_zone` (an IANA
-    /// name such as `Asia/Tokyo`; `UTC` when it is not one the engine knows).
-    pub fn open(bytes: &[u8], time_zone: &str, fonts: Rc<FontBook>) -> Result<Self, String> {
+    /// name such as `Asia/Tokyo`; UTC when the engine does not know it).
+    pub fn open(bytes: &[u8], time_zone: &str, backend: B) -> Result<Self, String> {
         let book = HeadlessWorkbook::open_for_editing_in_time_zone(bytes, time_zone)
             .or_else(|_| HeadlessWorkbook::open_for_editing(bytes))
             .map_err(|error| format!("cannot read the workbook: {error}"))?;
@@ -89,14 +119,15 @@ impl Workbook {
             .filter(visible)
             .or_else(|| (0..workbook.sheets.len()).find(visible))
             .unwrap_or(0);
-        let layout = lay_out(&book, index, (MIN_COLUMNS, MIN_ROWS), &fonts)?;
+        let layout = lay_out(&book, index, (MIN_COLUMNS, MIN_ROWS), &backend)?;
         Ok(Self {
             book,
-            fonts,
+            backend,
             index,
             layout,
             extent: (MIN_COLUMNS, MIN_ROWS),
             dirty: false,
+            surface: RefCell::new(None),
         })
     }
 
@@ -113,6 +144,11 @@ impl Workbook {
         self.index
     }
 
+    /// The selected sheet's name.
+    pub fn sheet_name(&self) -> String {
+        self.book.workbook().sheets[self.index].name.clone()
+    }
+
     pub fn select_sheet(&mut self, index: usize) -> Result<(), String> {
         if index >= self.book.workbook().sheets.len() {
             return Err(format!("no sheet at index {index}"));
@@ -123,12 +159,8 @@ impl Workbook {
     }
 
     fn relayout(&mut self) -> Result<(), String> {
-        self.layout = lay_out(&self.book, self.index, self.extent, &self.fonts)?;
+        self.layout = lay_out(&self.book, self.index, self.extent, &self.backend)?;
         Ok(())
-    }
-
-    fn name(&self) -> String {
-        self.book.workbook().sheets[self.index].name.clone()
     }
 
     /// The laid-out sheet's size in px, headers included.
@@ -142,6 +174,14 @@ impl Workbook {
 
     pub fn header_metrics(&self) -> HeaderMetrics {
         self.layout.header_metrics()
+    }
+
+    /// The far corner of the laid-out grid, for select-all.
+    pub fn grid_end(&self) -> CellRef {
+        CellRef::new(
+            (self.layout.columns.len() as u32).saturating_sub(1),
+            (self.layout.rows.len() as u32).saturating_sub(1),
+        )
     }
 
     /// Grows the laid-out grid so `reference`, and a margin past it, exist.
@@ -168,17 +208,16 @@ impl Workbook {
             scroll.0,
             scroll.1,
         );
-        let last_row = (layout.rows.len() as u32).saturating_sub(1);
-        let last_column = (layout.columns.len() as u32).saturating_sub(1);
+        let end = self.grid_end();
         match (x < metrics.row_width, y < metrics.column_height) {
-            (true, true) => Some((CellRef::new(0, 0), CellRef::new(last_column, last_row))),
+            (true, true) => Some((CellRef::new(0, 0), end)),
             (true, false) => {
                 let row = layout.cell_at(0.0, sheet_y)?.row;
-                Some((CellRef::new(0, row), CellRef::new(last_column, row)))
+                Some((CellRef::new(0, row), CellRef::new(end.column, row)))
             }
             (false, true) => {
                 let column = layout.cell_at(sheet_x, 0.0)?.column;
-                Some((CellRef::new(column, 0), CellRef::new(column, last_row)))
+                Some((CellRef::new(column, 0), CellRef::new(column, end.row)))
             }
             (false, false) => {
                 let cell = layout.cell_at(sheet_x, sheet_y)?;
@@ -219,16 +258,26 @@ impl Workbook {
         self.layout.scroll_to_reveal(reference, viewport)
     }
 
+    fn cells_in(&self, range: CellRange) -> impl Iterator<Item = &jade_xlsx_reader::Cell> {
+        self.book.workbook().sheets[self.index]
+            .rows
+            .iter()
+            .filter(move |row| row.index >= range.start.row && row.index <= range.end.row)
+            .flat_map(|row| row.cells.iter())
+            .filter(move |cell| {
+                cell.reference.column >= range.start.column
+                    && cell.reference.column <= range.end.column
+            })
+    }
+
     /// The formula with its `=`, or the stored value: what the formula bar
     /// shows and what an edit starts from.
     pub fn edit_text(&self, reference: CellRef) -> String {
-        let sheet = &self.book.workbook().sheets[self.index];
-        let Some(cell) = sheet
-            .rows
-            .iter()
-            .find(|row| row.index == reference.row)
-            .and_then(|row| row.cells.iter().find(|cell| cell.reference == reference))
-        else {
+        let range = CellRange {
+            start: reference,
+            end: reference,
+        };
+        let Some(cell) = self.cells_in(range).next() else {
             return String::new();
         };
         if let Some(formula) = &cell.formula {
@@ -246,9 +295,65 @@ impl Workbook {
     /// What a cell shows, through its number format.
     pub fn display_text(&self, reference: CellRef) -> String {
         self.book
-            .cell(&self.name(), &reference_text(reference))
+            .cell(&self.sheet_name(), &reference_text(reference))
             .map(|cell| cell.display)
             .unwrap_or_default()
+    }
+
+    /// Count, sum and average over the cells in `range`.
+    pub fn summary(&self, range: CellRange) -> Summary {
+        let mut count = 0;
+        let mut numbers = Vec::new();
+        for cell in self.cells_in(range) {
+            match cell.value {
+                CellValue::Empty => {}
+                CellValue::Number(number) => {
+                    count += 1;
+                    numbers.push(number);
+                }
+                _ => count += 1,
+            }
+        }
+        let sum = (!numbers.is_empty()).then(|| numbers.iter().sum::<f64>());
+        Summary {
+            count,
+            sum,
+            average: sum.map(|sum| sum / numbers.len() as f64),
+        }
+    }
+
+    /// The range's displayed text, tab-separated by column and
+    /// newline-separated by row — what Excel copies as text. Empty past the
+    /// last used cell, or when the range is too large to copy.
+    pub fn range_text(&self, range: CellRange) -> String {
+        let mut used = CellRef::new(0, 0);
+        for row in &self.book.workbook().sheets[self.index].rows {
+            for cell in &row.cells {
+                used.column = used.column.max(cell.reference.column);
+                used.row = used.row.max(cell.reference.row);
+            }
+        }
+        let end = CellRef::new(
+            range.end.column.min(used.column),
+            range.end.row.min(used.row),
+        );
+        if end.column < range.start.column || end.row < range.start.row {
+            return String::new();
+        }
+        let cells = u64::from(end.column - range.start.column + 1)
+            * u64::from(end.row - range.start.row + 1);
+        if cells > CLIPBOARD_CELL_LIMIT {
+            return String::new();
+        }
+        let mut out = String::new();
+        for row in range.start.row..=end.row {
+            let line: Vec<String> = (range.start.column..=end.column)
+                .map(|column| self.display_text(CellRef::new(column, row)))
+                .collect();
+            out.push_str(&line.join("\t"));
+            out.push('\n');
+        }
+        out
     }
 
     /// Writes typed text into a cell, recalculating. Returns whether the
@@ -257,7 +362,7 @@ impl Workbook {
         if text == self.edit_text(reference) {
             return Ok(false);
         }
-        let name = self.name();
+        let name = self.sheet_name();
         self.book
             .set(&name, &reference_text(reference), cell_input(text))
             .map_err(|error| error.to_string())?;
@@ -265,25 +370,44 @@ impl Workbook {
         Ok(true)
     }
 
+    /// Pastes tab-separated text from `origin` down and right as one write,
+    /// returning the far corner it filled.
+    pub fn paste(&mut self, origin: CellRef, text: &str) -> Result<Option<CellRef>, String> {
+        let mut values = Vec::new();
+        let mut far = origin;
+        for (row_offset, row) in text.trim_end_matches(['\n', '\r']).split('\n').enumerate() {
+            for (column_offset, value) in row.trim_end_matches('\r').split('\t').enumerate() {
+                let reference = CellRef::new(
+                    origin.column + column_offset as u32,
+                    origin.row + row_offset as u32,
+                );
+                far.column = far.column.max(reference.column);
+                far.row = far.row.max(reference.row);
+                values.push((reference_text(reference), cell_input(value)));
+            }
+        }
+        if values.is_empty() {
+            return Ok(None);
+        }
+        let name = self.sheet_name();
+        self.book
+            .set_cells(&name, &values)
+            .map_err(|error| error.to_string())?;
+        self.after_write()?;
+        Ok(Some(far))
+    }
+
     /// Empties the cells in `range` that hold anything, keeping formats.
     pub fn clear(&mut self, range: CellRange) -> Result<bool, String> {
-        let sheet = &self.book.workbook().sheets[self.index];
-        let values: Vec<(String, CellInput)> = sheet
-            .rows
-            .iter()
-            .filter(|row| row.index >= range.start.row && row.index <= range.end.row)
-            .flat_map(|row| row.cells.iter())
-            .filter(|cell| {
-                cell.reference.column >= range.start.column
-                    && cell.reference.column <= range.end.column
-                    && (cell.formula.is_some() || !matches!(cell.value, CellValue::Empty))
-            })
+        let values: Vec<(String, CellInput)> = self
+            .cells_in(range)
+            .filter(|cell| cell.formula.is_some() || !matches!(cell.value, CellValue::Empty))
             .map(|cell| (reference_text(cell.reference), CellInput::Blank))
             .collect();
         if values.is_empty() {
             return Ok(false);
         }
-        let name = self.name();
+        let name = self.sheet_name();
         self.book
             .set_cells(&name, &values)
             .map_err(|error| error.to_string())?;
@@ -316,7 +440,7 @@ impl Workbook {
         self.dirty
     }
 
-    /// The workbook as `.xlsx` bytes, as saving writes it.
+    /// The workbook as `.xlsx` bytes, as saving writes it; marks it saved.
     pub fn save_bytes(&mut self) -> Result<Vec<u8>, String> {
         let bytes = self.book.save_bytes().map_err(|error| error.to_string())?;
         self.dirty = false;
@@ -325,7 +449,7 @@ impl Workbook {
 
     /// Paints the part of the sheet under `scroll` (sheet px) onto a
     /// `width` × `height` surface at `scale` device px per sheet px, with the
-    /// selection from `anchor` (the active cell) to `focus`.
+    /// selection from `anchor` (the active cell) to its far corner.
     pub fn render_viewport(
         &self,
         scroll: (f64, f64),
@@ -333,8 +457,13 @@ impl Workbook {
         height: u32,
         scale: f64,
         selection: Option<(CellRef, CellRef)>,
-    ) -> Option<TinySkiaPainter> {
-        let painter = TinySkiaPainter::new(width.max(1), height.max(1), Rc::clone(&self.fonts))?;
+    ) -> Option<B::Painter> {
+        let (width, height) = (width.max(1), height.max(1));
+        let mut surface = self.surface.borrow_mut();
+        if !matches!(&*surface, Some((_, w, h)) if *w == width && *h == height) {
+            *surface = Some((self.backend.surface(width, height)?, width, height));
+        }
+        let (painter, _, _) = surface.as_ref()?;
         let metrics = self.layout.header_metrics();
         let viewport = Rect {
             x: scroll.0.max(0.0),
@@ -349,28 +478,29 @@ impl Workbook {
             fill_handle: false,
         });
         painter.save();
-        painter.scale(scale, scale).ok()?;
-        render_grid(
-            &painter,
-            &self.layout,
-            viewport,
-            selection,
-            &RenderOptions::default(),
-        )
-        .ok()?;
+        let painted = painter.scale(scale, scale).is_ok()
+            && render_grid(
+                painter,
+                &self.layout,
+                viewport,
+                selection,
+                &RenderOptions::default(),
+            )
+            .is_ok();
         painter.restore();
-        Some(painter)
+        painted.then(|| painter.clone())
     }
 }
 
-fn lay_out(
+fn lay_out<B: Backend>(
     book: &HeadlessWorkbook,
     index: usize,
     extent: (u32, u32),
-    fonts: &Rc<FontBook>,
+    backend: &B,
 ) -> Result<SheetLayout, String> {
     let workbook = book.workbook();
-    let measuring = TinySkiaPainter::new(1, 1, Rc::clone(fonts))
+    let measuring = backend
+        .surface(1, 1)
         .ok_or_else(|| "cannot create a measuring surface".to_string())?;
     layout_workbook_sheet(
         workbook,
@@ -379,7 +509,7 @@ fn lay_out(
             min_column_count: extent.0,
             min_row_count: extent.1,
             date_system: workbook.date_system,
-            measure: Rc::new(jade_xlsx_render::PainterMeasure::new(measuring)),
+            measure: Rc::new(PainterMeasure::new(measuring)),
             ..LayoutOptions::default()
         }
         .with_normal_font_metrics(&workbook.styles),
@@ -387,9 +517,20 @@ fn lay_out(
     .ok_or_else(|| "the sheet does not exist".to_string())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tiny-skia"))]
 mod tests {
     use super::*;
+    use crate::test_support::{faces, fixture};
+    use crate::tiny::TinySkiaBackend;
+
+    fn open(name: &str) -> Workbook<TinySkiaBackend> {
+        Workbook::open(
+            &fixture(name),
+            "Asia/Tokyo",
+            TinySkiaBackend::new(&faces()).unwrap(),
+        )
+        .unwrap()
+    }
 
     #[test]
     fn typed_text_becomes_the_right_kind_of_input() {
@@ -397,20 +538,19 @@ mod tests {
         assert!(matches!(cell_input("42"), CellInput::Number(n) if n == 42.0));
         assert!(matches!(cell_input("="), CellInput::Text(_)));
         assert_eq!(reference_text(CellRef::new(27, 9)), "AB10");
+        assert_eq!(
+            range_text(span(CellRef::new(3, 4), CellRef::new(1, 1))),
+            "B2:D5"
+        );
+        assert_eq!(format_number(1.0 / 3.0), "0.3333");
     }
 
     #[test]
     fn a_typed_formula_recalculates_undoes_and_saves() {
-        let core =
-            std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../jade-core"));
-        let fonts = crate::tests::fonts();
-        let bytes =
-            std::fs::read(core.join("public/fixtures/grid-operations-workbook.xlsx")).unwrap();
-        let mut book = Workbook::open(&bytes, "Asia/Tokyo", fonts).unwrap();
+        let mut book = open("grid-operations-workbook.xlsx");
         assert!(book.set_cell(CellRef::new(4, 1), "=B2*10").unwrap());
         assert_eq!(book.display_text(CellRef::new(4, 1)), "100");
         assert!(book.is_dirty());
-        // A click in the body finds the cell under it.
         let (x, y, w, h) = book.cell_rect(CellRef::new(4, 1), (0.0, 0.0)).unwrap();
         assert_eq!(
             book.hit(x + w / 2.0, y + h / 2.0, (0.0, 0.0)),
@@ -420,16 +560,38 @@ mod tests {
         assert_eq!(book.edit_text(CellRef::new(4, 1)), "");
         assert!(book.redo().unwrap());
         let saved = book.save_bytes().unwrap();
-        let reopened = Workbook::open(&saved, "UTC", crate::tests::fonts()).unwrap();
+        assert!(!book.is_dirty());
+        let backend = TinySkiaBackend::new(&faces()).unwrap();
+        let reopened = Workbook::open(&saved, "UTC", backend).unwrap();
         assert_eq!(reopened.edit_text(CellRef::new(4, 1)), "=B2*10");
+    }
+
+    #[test]
+    fn copy_paste_and_the_summary_follow_excel() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let range = span(CellRef::new(1, 1), CellRef::new(2, 3));
+        let summary = book.summary(range);
+        assert_eq!(summary.count, 6);
+        assert_eq!(summary.sum, Some(180.0));
+        assert_eq!(summary.average, Some(30.0));
+        let text = book.range_text(range);
+        assert_eq!(text, "10\t20\n20\t40\n30\t60\n");
+        let far = book.paste(CellRef::new(5, 10), &text).unwrap();
+        assert_eq!(far, Some(CellRef::new(6, 12)));
+        assert_eq!(book.edit_text(CellRef::new(6, 12)), "60");
         assert!(book
+            .clear(span(CellRef::new(5, 10), CellRef::new(6, 12)))
+            .unwrap());
+        assert_eq!(book.edit_text(CellRef::new(6, 12)), "");
+        let painter = book
             .render_viewport(
                 (0.0, 0.0),
                 320,
                 200,
                 1.0,
-                Some((CellRef::new(4, 1), CellRef::new(4, 1)))
+                Some((CellRef::new(1, 1), CellRef::new(2, 3))),
             )
-            .is_some());
+            .unwrap();
+        assert!(TinySkiaBackend::png(&painter).is_some());
     }
 }

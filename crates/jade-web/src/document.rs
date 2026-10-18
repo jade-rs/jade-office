@@ -458,7 +458,9 @@ mod tests {
         let fonts_dir = core.join("fonts/Noto_Sans_JP/static");
         let regular = std::fs::read(fonts_dir.join("NotoSansJP-Regular.ttf")).unwrap();
         let bold = std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap();
-        let fonts = crate::font_book(regular.clone(), Some(bold.clone())).unwrap();
+        let fonts = crate::backend(regular.clone(), Some(bold.clone()))
+            .unwrap()
+            .fonts();
         let measurer = measurer(&regular, Some(&bold)).unwrap();
         let bytes = std::fs::read(core.join("contract.docx")).unwrap();
         let document = Document::open(&bytes, 1.0, fonts, measurer).unwrap();

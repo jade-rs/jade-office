@@ -18,7 +18,6 @@
 //! wrong place shows as a jump.
 
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -29,7 +28,7 @@ fn main() {
     let width: u32 = width.parse().expect("a width in px");
     let core = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../jade-core");
     let fonts_dir = core.join("fonts/Noto_Sans_JP/static");
-    let fonts = jade_web::font_book(
+    let backend = jade_web::backend(
         std::fs::read(fonts_dir.join("NotoSansJP-Regular.ttf")).unwrap(),
         Some(std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap()),
     )
@@ -45,7 +44,7 @@ fn main() {
         let bold = std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap();
         let measurer = jade_web::document::measurer(&regular, Some(&bold)).unwrap();
         let started = std::time::Instant::now();
-        let document = jade_web::document::Document::open(&bytes, 1.0, Rc::clone(&fonts), measurer)
+        let document = jade_web::document::Document::open(&bytes, 1.0, backend.fonts(), measurer)
             .expect("a document");
         let elapsed =
             started.elapsed().as_secs_f64() * 1000.0 / document.page_count().max(1) as f64;
@@ -58,7 +57,7 @@ fn main() {
             rendered.push((name, document.page(index).unwrap(), elapsed));
         }
     } else {
-        let mut deck = jade_web::Deck::open(&bytes, Rc::clone(&fonts)).expect("a deck");
+        let mut deck = jade_web::Deck::open(&bytes, backend.clone()).expect("a deck");
         for index in 0..deck.slide_count() {
             let started = std::time::Instant::now();
             let painter = deck.render_slide(index, width).expect("a painted slide");

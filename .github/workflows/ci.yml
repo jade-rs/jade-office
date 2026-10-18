@@ -30,6 +30,7 @@ jobs:
             crates/jade-gpui-app
             crates/jade-pptx-native-render
             crates/jade-tiny-skia-painter
+            crates/jade-office-model
             crates/jade-web
             crates/jade-gpui-web
 
@@ -47,6 +48,13 @@ jobs:
           cargo fmt --manifest-path crates/jade-pptx-native-render/Cargo.toml -- --check
           cargo clippy --manifest-path crates/jade-pptx-native-render/Cargo.toml --all-targets --locked -- -D warnings
           cargo test --manifest-path crates/jade-pptx-native-render/Cargo.toml --locked
+
+      - name: Shared editing models (fmt, clippy, test on both backends, wasm32 build)
+        run: |
+          cargo fmt --manifest-path crates/jade-office-model/Cargo.toml -- --check
+          cargo clippy --manifest-path crates/jade-office-model/Cargo.toml --all-targets --features skia,tiny-skia --locked -- -D warnings
+          cargo test --manifest-path crates/jade-office-model/Cargo.toml --features skia,tiny-skia --locked
+          cargo build --manifest-path crates/jade-office-model/Cargo.toml --features tiny-skia --release --locked --target wasm32-unknown-unknown
 
       - name: Pure-Rust painter and web engine (fmt, clippy, test, wasm32 build)
         run: |
