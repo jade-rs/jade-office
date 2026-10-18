@@ -1,7 +1,8 @@
 //! The native app's two palettes (`jade-gpui-app`'s `theme`), picked by the
 //! page's `prefers-color-scheme` until the title bar's toggle overrides it.
-//! The documents themselves — pages, slides, cells — stay white in both, as
-//! they do in Office.
+//! A Word document's pages go dark with the dark palette, as in Word's dark
+//! page mode (see `jade_painter::paper`); slides and cells keep their own
+//! colours, which are the content.
 
 use gpui::{rgb, Rgba, WindowAppearance};
 use std::cell::Cell;
@@ -69,6 +70,25 @@ pub fn hovered() -> Rgba {
 }
 pub fn text() -> Rgba {
     pick(0xe4e4e7, 0x1a1a2e)
+}
+/// A Word page, behind its picture: white, or the dark paper.
+pub fn paper() -> Rgba {
+    let [r, g, b] = if is_dark() {
+        jade_painter::paper::to_dark_paper_u8([0xff, 0xff, 0xff])
+    } else {
+        [0xff, 0xff, 0xff]
+    };
+    rgb(u32::from_be_bytes([0, r, g, b]))
+}
+/// What the view draws on a Word page — the caret, a composition — in the
+/// colour the page's own black ink is shown in.
+pub fn ink() -> Rgba {
+    let [r, g, b] = if is_dark() {
+        jade_painter::paper::to_dark_paper_u8([0, 0, 0])
+    } else {
+        [0, 0, 0]
+    };
+    rgb(u32::from_be_bytes([0, r, g, b]))
 }
 pub fn dim() -> Rgba {
     pick(0xa1a1aa, 0x64748b)
