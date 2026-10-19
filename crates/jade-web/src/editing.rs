@@ -379,6 +379,63 @@ impl EditableDocument {
         self.select((paragraph, start), (paragraph, end))
     }
 
+    /// Tab and ⇧Tab in a table, as in Word: to the next or the previous
+    /// cell, its text selected so typing replaces it; Tab in the last cell
+    /// adds a row below and goes into it. `Ok(false)` when the caret is not
+    /// in a table, where Tab types a tab.
+    pub fn step_cell(&mut self, forwards: bool) -> Result<bool, String> {
+        use formatting::{TableCommand, WordFormatting, WordSession};
+        let Some((paragraph, _)) = self.caret() else {
+            return Ok(false);
+        };
+        let Some(current) = self
+            .cell_id_for_paragraph(paragraph)
+            .and_then(|id| self.cell_layout(id))
+            .map(|cell| (cell.table_id, cell.row, cell.column))
+        else {
+            return Ok(false);
+        };
+        // The table's cells in reading order, each with its first and last
+        // paragraph: a cell split over two pages is laid out as two pieces.
+        let mut cells = std::collections::BTreeMap::<(usize, usize), (usize, usize)>::new();
+        for cell in self.cell_layouts() {
+            let (Some(&first), Some(&last)) = (cell.paragraphs.first(), cell.paragraphs.last())
+            else {
+                continue;
+            };
+            if cell.table_id != current.0 {
+                continue;
+            }
+            cells
+                .entry((cell.row, cell.column))
+                .and_modify(|(from, to)| {
+                    *from = (*from).min(first);
+                    *to = (*to).max(last);
+                })
+                .or_insert((first, last));
+        }
+        let here = (current.1, current.2);
+        let target = if forwards {
+            cells
+                .range((std::ops::Bound::Excluded(here), std::ops::Bound::Unbounded))
+                .next()
+        } else {
+            cells.range(..here).next_back()
+        };
+        match target {
+            Some((_, &(first, last))) => {
+                let end = self.paragraph_text(last).map_or(0, |text| text.len());
+                self.select((first, 0), (last, end))?;
+            }
+            None if forwards => {
+                self.table_command(TableCommand::InsertRowBelow)?;
+                return self.step_cell(true);
+            }
+            None => {}
+        }
+        Ok(true)
+    }
+
     /// The whole of `paragraph` selected, as a triple click selects in Word.
     pub fn select_paragraph(&mut self, paragraph: usize) -> Result<(), String> {
         let end = self.paragraph_text(paragraph).map_or(0, |text| text.len());

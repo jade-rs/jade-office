@@ -1902,6 +1902,19 @@ impl DocView {
                 self.word_edit(cx, |document| document.insert_paragraph_break());
                 return true;
             }
+            // In a table, to the next or the previous cell; elsewhere a tab
+            // typed, as in Word.
+            "tab" => {
+                let backwards = extend;
+                self.word_edit(cx, |document| {
+                    if document.step_cell(!backwards)? || backwards {
+                        Ok(())
+                    } else {
+                        document.insert_text("\t")
+                    }
+                });
+                return true;
+            }
             "left" => Motion::Left,
             "right" => Motion::Right,
             "up" => Motion::Up,
