@@ -24,7 +24,9 @@ use gpui::{
     MouseMoveEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
     WindowBounds, WindowOptions,
 };
-use jade_office_model::deck::{Deck, ShapeRect as SlideRect, ShapeTransformInfo, TextTarget};
+use jade_office_model::deck::{
+    Deck, DragMode, ShapeDrag, ShapeRect as SlideRect, ShapeTransformInfo, TextTarget,
+};
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::Backend;
 use std::cell::Cell;
@@ -50,8 +52,6 @@ const NOTES_HEIGHT: f32 = 110.0;
 const SLIDE_MARGIN: f32 = 28.0;
 /// How far an arrow key moves a shape, in slide px; ⌥ moves one px.
 const NUDGE_PX: f64 = 6.0;
-/// The smallest a resize leaves a shape, in slide px.
-const MIN_SHAPE_PX: f64 = 4.0;
 /// The size of a selection's corner handles, in window px.
 const HANDLE_SIZE: f32 = 9.0;
 
@@ -107,57 +107,6 @@ fn repaint(
         retired.push(previous.image);
     }
     true
-}
-
-/// What a drag on the slide does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DragMode {
-    Move,
-    /// A corner handle: which edges it moves, as (left?, top?).
-    Resize {
-        left: bool,
-        top: bool,
-    },
-}
-
-/// `rect` after dragging by `(dx, dy)` slide px in `mode`.
-fn dragged(rect: SlideRect, mode: DragMode, dx: f64, dy: f64) -> SlideRect {
-    match mode {
-        DragMode::Move => SlideRect {
-            x: rect.x + dx,
-            y: rect.y + dy,
-            ..rect
-        },
-        DragMode::Resize { left, top } => {
-            let (x, width) = if left {
-                let width = (rect.width - dx).max(MIN_SHAPE_PX);
-                (rect.x + rect.width - width, width)
-            } else {
-                (rect.x, (rect.width + dx).max(MIN_SHAPE_PX))
-            };
-            let (y, height) = if top {
-                let height = (rect.height - dy).max(MIN_SHAPE_PX);
-                (rect.y + rect.height - height, height)
-            } else {
-                (rect.y, (rect.height + dy).max(MIN_SHAPE_PX))
-            };
-            SlideRect {
-                x,
-                y,
-                width,
-                height,
-            }
-        }
-    }
-}
-
-struct ShapeDrag {
-    id: u32,
-    mode: DragMode,
-    /// Where the drag started, in slide px.
-    from: (f64, f64),
-    /// How far it has gone, in slide px.
-    delta: (f64, f64),
 }
 
 /// Text being typed into a shape, or a cell of a table.
@@ -375,7 +324,7 @@ impl DeckView {
         let (id, Some(transform)) = (shape.id, shape.transform) else {
             return;
         };
-        let rect = dragged(SlideRect::of(&transform), DragMode::Move, dx, dy);
+        let rect = SlideRect::of(&transform).dragged(DragMode::Move, dx, dy);
         self.place(id, rect, cx);
     }
 
@@ -413,12 +362,7 @@ impl DeckView {
             return;
         }
         if self.shape(id).is_some_and(|shape| shape.can_move) {
-            self.drag = Some(ShapeDrag {
-                id,
-                mode: DragMode::Move,
-                from: (x, y),
-                delta: (0.0, 0.0),
-            });
+            self.drag = Some(ShapeDrag::new(id, DragMode::Move, (x, y)));
         }
     }
 
@@ -440,12 +384,7 @@ impl DeckView {
             return;
         };
         self.commit_text(cx);
-        self.drag = Some(ShapeDrag {
-            id,
-            mode: DragMode::Resize { left, top },
-            from,
-            delta: (0.0, 0.0),
-        });
+        self.drag = Some(ShapeDrag::new(id, DragMode::Resize { left, top }, from));
     }
 
     fn mouse_move(&mut self, event: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
@@ -456,7 +395,7 @@ impl DeckView {
             return;
         };
         if let Some(drag) = self.drag.as_mut() {
-            drag.delta = (x - drag.from.0, y - drag.from.1);
+            drag.drag_to(x, y);
             cx.notify();
         }
     }
@@ -465,20 +404,11 @@ impl DeckView {
         let Some(drag) = self.drag.take() else {
             return;
         };
-        if drag.delta.0.abs() < 0.5 && drag.delta.1.abs() < 0.5 {
+        if !drag.moved() {
             cx.notify();
             return;
         }
-        let Some(transform) = self.shape(drag.id).and_then(|shape| shape.transform) else {
-            return;
-        };
-        let rect = dragged(
-            SlideRect::of(&transform),
-            drag.mode,
-            drag.delta.0,
-            drag.delta.1,
-        );
-        self.place(drag.id, rect, cx);
+        self.write(cx, |deck, slide| deck.drag_shape(slide, &drag));
     }
 
     // ---- text ------------------------------------------------------------
@@ -694,7 +624,7 @@ impl DeckView {
         };
         let mut rect = SlideRect::of(&transform);
         if let Some(drag) = self.drag.as_ref().filter(|drag| drag.id == id) {
-            rect = dragged(rect, drag.mode, drag.delta.0, drag.delta.1);
+            rect = drag.rect(rect);
         }
         let (left, top, width, height) = (
             rect.x as f32 * scale,
@@ -1626,40 +1556,5 @@ mod tests {
         });
         cx.dispatch_action(Undo);
         view.read_with(cx, |view, _| assert!(view.shape(id).is_some()));
-    }
-
-    #[test]
-    fn a_corner_drag_resizes_from_the_opposite_corner() {
-        let rect = SlideRect {
-            x: 10.0,
-            y: 20.0,
-            width: 100.0,
-            height: 50.0,
-        };
-        let grown = dragged(
-            rect,
-            DragMode::Resize {
-                left: true,
-                top: true,
-            },
-            -5.0,
-            -10.0,
-        );
-        assert_eq!(grown.x + grown.width, rect.x + rect.width);
-        assert_eq!(grown.y + grown.height, rect.y + rect.height);
-        assert_eq!((grown.width, grown.height), (105.0, 60.0));
-        // A drag past the far edge stops at the minimum size.
-        let squashed = dragged(
-            rect,
-            DragMode::Resize {
-                left: false,
-                top: false,
-            },
-            -500.0,
-            0.0,
-        );
-        assert_eq!(squashed.width, MIN_SHAPE_PX);
-        let moved = dragged(rect, DragMode::Move, 3.0, 4.0);
-        assert_eq!((moved.x, moved.y, moved.width), (13.0, 24.0, 100.0));
     }
 }
