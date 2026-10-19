@@ -216,7 +216,16 @@ fn a_selection_is_highlighted_copied_and_replaced_by_typing() {
         Some(((paragraph, 0), (paragraph, three)))
     );
     assert_eq!(document.selected_text().unwrap(), before[..three]);
-    assert_ne!(page_rgba(&document, 0), page_before, "no highlight");
+    // Highlighted over the page, which is not repainted.
+    assert_eq!(
+        page_rgba(&document, 0),
+        page_before,
+        "the page was repainted"
+    );
+    let rects = document.selection_rects();
+    assert_eq!(rects.len(), 1, "{rects:?}");
+    assert_eq!(rects[0].page, 0);
+    assert!(rects[0].width > 10.0, "{rects:?}");
 
     // Typing replaces the selection, in one undoable step.
     document.insert_text("X").unwrap();
@@ -344,30 +353,45 @@ fn pasting_lines_makes_paragraphs_and_undoes_in_one_step() {
 }
 
 #[test]
-fn a_highlight_repaints_only_its_pages_and_says_from_where() {
+fn a_selection_repaints_nothing_and_is_highlighted_on_its_page() {
     let mut document = open("contract.docx");
     assert!(document.page_count() >= 2);
     let last = document.paragraph_count() - 1;
-    let last_page = document.page_count() - 1;
-    let tail = document.page(last_page).unwrap().rgba_premultiplied();
-    let _ = document.take_repainted_from();
-    let (paragraph, text) = first_text_paragraph(&document);
-    document
-        .select((paragraph, 0), (paragraph, char_offset(&text, 2)))
-        .unwrap();
-    assert_eq!(document.take_repainted_from(), Some(0));
-    assert_eq!(document.take_repainted_from(), None);
-    assert_eq!(document.page(last_page).unwrap().rgba_premultiplied(), tail);
-    // A selection further down repaints from the page it starts on.
     let end = document.paragraph_text(last).unwrap_or_default().len();
     let start = document.place_caret(last, 0).unwrap();
-    let starts_on = document.page_and_offset(start.document_y).0;
-    assert!(starts_on > 0);
-    document.place_caret(last, end);
-    let _ = document.take_repainted_from();
+    let (page, top) = document.page_and_offset(start.document_y);
+    assert!(page > 0);
+    let _ = document.take_repainted_pages();
     document.select((last, end), (last, 0)).unwrap();
-    assert_eq!(document.take_repainted_from(), Some(starts_on));
-    assert_eq!(document.page_count(), last_page + 1);
+    assert_eq!(document.take_repainted_pages(), Vec::<usize>::new());
+    let rects = document.selection_rects();
+    assert!(!rects.is_empty());
+    for rect in &rects {
+        // In the page's own px, on the line the paragraph starts on or below.
+        assert_eq!(rect.page, page, "{rect:?}");
+        assert!(rect.y + rect.height > top - 1.0, "{rect:?} above {top}");
+        assert!(rect.y < document.page_size().1, "{rect:?}");
+    }
+    // The focus is where a caret at it would be drawn.
+    assert_eq!(document.focus_rect(), Some(start));
+    document.place_caret(last, 0);
+    assert!(document.selection_rects().is_empty());
+}
+
+#[test]
+fn a_double_click_selects_a_word_and_a_triple_click_the_paragraph() {
+    let mut document = open("contract.docx");
+    let (paragraph, text) = first_text_paragraph(&document);
+    let inside = char_offset(&text, 1);
+    document.select_word((paragraph, inside)).unwrap();
+    let ((_, from), (_, to)) = document.selection().expect("a word selected");
+    assert!(
+        from <= inside && inside < to,
+        "{from}..{to} around {inside}"
+    );
+    assert!(text[from..to].chars().all(char::is_alphanumeric));
+    document.select_paragraph(paragraph).unwrap();
+    assert_eq!(document.selected_text().unwrap(), text);
 }
 
 /// A keystroke repaints only its paragraph's band of the page and keeps every
