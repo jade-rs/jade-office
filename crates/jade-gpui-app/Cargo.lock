@@ -3348,12 +3348,17 @@ dependencies = [
 name = "jade-office-model"
 version = "0.1.0"
 dependencies = [
+ "jade-docx-editor",
+ "jade-docx-headless-api",
+ "jade-docx-layout",
+ "jade-docx-native-render",
  "jade-opc",
  "jade-painter",
  "jade-pptx-layout",
  "jade-pptx-reader",
  "jade-pptx-render",
  "jade-pptx-writer",
+ "jade-selection",
  "jade-skia-painter",
  "jade-xlsx-headless-api",
  "jade-xlsx-headless-editor",
