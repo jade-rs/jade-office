@@ -17,7 +17,7 @@ use gpui::{DispatchPhase, MouseUpEvent, Point};
 use jade_web::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_web::sheet::{
     column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
-    CellRange, Copied, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay, ResizeGesture,
+    CellRange, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay, ResizeGesture,
     MAX_COLUMN, MAX_ROW,
 };
 
@@ -50,8 +50,6 @@ pub(super) struct Sheet {
     /// held past the grid's edge.
     pointer: Option<Point<Pixels>>,
     auto_scrolling: bool,
-    /// Copied or cut cells, outlined until pasted or let go.
-    copied: Option<Copied>,
     /// The column Tab started from, where Enter goes back to.
     tab_start: Option<u32>,
     /// A sheet tab being renamed, with what has been typed.
@@ -233,7 +231,6 @@ impl Sheet {
             drag: None,
             pointer: None,
             auto_scrolling: false,
-            copied: None,
             tab_start: None,
             renaming: None,
             naming: None,
@@ -330,10 +327,10 @@ impl Sheet {
             selection: Some(self.selection),
             preview,
             marquee: self
-                .copied
-                .as_ref()
-                .filter(|copied| copied.sheet == self.book.sheet_index())
-                .map(|copied| copied.range),
+                .book
+                .copied()
+                .filter(|(sheet, _)| *sheet == self.book.sheet_index())
+                .map(|(_, range)| range),
             resize: match self.drag {
                 Some(SheetDrag::Resize(gesture)) => Some(gesture),
                 _ => None,
@@ -1074,7 +1071,7 @@ impl DocView {
                 });
             } else if matches!(result, Ok(true)) {
                 // Typing into a cell lets go of what was copied, as in Excel.
-                sheet.copied = None;
+                sheet.book.forget_copy();
             }
         }
         self.edited(result, cx);
@@ -1398,7 +1395,7 @@ impl DocView {
                 self.edited(result, cx);
             }
             "escape" => {
-                sheet.copied = None;
+                sheet.book.forget_copy();
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
@@ -1632,12 +1629,7 @@ impl DocView {
             return;
         };
         let range = sheet.selection.range();
-        let copied = sheet.book.copy(range, cut);
-        let text = copied
-            .as_ref()
-            .map(|copied| copied.text.clone())
-            .unwrap_or_else(|| sheet.book.range_text(range));
-        sheet.copied = copied;
+        let text = sheet.book.copy(range, cut);
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
         cx.notify();
     }
@@ -1650,21 +1642,14 @@ impl DocView {
             return;
         };
         let target = sheet.selection.range();
-        let own = sheet
-            .copied
-            .clone()
-            .filter(|copied| text.is_none_or(|text| text.replace("\r\n", "\n") == copied.text));
-        let result = match (own, text) {
-            (Some(copied), _) => {
-                let result = sheet.book.paste_copied(&copied, target);
-                if copied.cut && result.is_ok() {
-                    sheet.copied = None;
-                }
-                result.map(Some)
-            }
-            (None, Some(text)) => sheet.book.paste_over(target, text),
-            (None, None) => return,
+        // From a menu there is no clipboard text: the copy made here.
+        let Some(text) = text
+            .map(str::to_string)
+            .or_else(|| sheet.book.copied_text())
+        else {
+            return;
         };
+        let result = sheet.book.paste_over(target, &text);
         if let Ok(Some(filled)) = &result {
             let active = sheet.selection.active;
             sheet.selection = Selection {
@@ -1769,13 +1754,13 @@ impl DocView {
                 result
             }
         };
-        // What moved under the selection keeps it in place, as Excel does.
+        // Rows or columns gone from under a copy let go of it, as in Excel.
         if matches!(
             command,
             MenuCommand::DeleteRows | MenuCommand::DeleteColumns
         ) {
             if let Some(sheet) = self.sheet_mut() {
-                sheet.copied = None;
+                sheet.book.forget_copy();
             }
         }
         self.sheets_changed(result, cx);
@@ -2561,7 +2546,7 @@ impl DocView {
                         (MenuCommand::Cut, "sheet.menu.cut"),
                         (MenuCommand::Copy, "sheet.menu.copy"),
                     ];
-                    if sheet.copied.is_some() {
+                    if sheet.book.copied().is_some() {
                         items.push((MenuCommand::Paste, "sheet.menu.paste"));
                     }
                     items.extend([

@@ -1,0 +1,26 @@
+[workspace]
+
+[package]
+name = "jade-office-perf"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+
+# Cost scenarios for what the browser build runs — the engine's renderers on
+# the tiny-skia painter, at a Retina page's 2x — counted by callgrind in
+# `.github/workflows/perf.yml`. jade-core's own perf harness paints into a
+# painter that draws nothing, so rasterising is counted here or nowhere.
+
+[dependencies]
+jade-web = { path = "../jade-web" }
+
+# Optimised as a release build, with line tables so callgrind can name
+# functions, and unwinding kept so a panic in a scenario reports itself.
+[profile.perf-ci]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+panic = "unwind"
+strip = "none"
+debug = "line-tables-only"

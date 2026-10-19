@@ -55,6 +55,15 @@ pub fn reference_text(reference: CellRef) -> String {
     format!("{}{}", column_label(reference.column), reference.row + 1)
 }
 
+/// Clipboard text compared line by line, whatever line ends the system gave
+/// it and however many it left at the end.
+fn clipboard_lines(text: &str) -> Vec<&str> {
+    text.trim_end_matches(['\r', '\n'])
+        .split('\n')
+        .map(|line| line.trim_end_matches('\r'))
+        .collect()
+}
+
 /// `B3`, or `B3:D7` for a range.
 pub fn range_text(range: CellRange) -> String {
     if range.start == range.end {
@@ -128,6 +137,10 @@ pub struct Workbook<B: Backend> {
     steps: Vec<usize>,
     /// The same for the edits undone, for redo.
     undone: Vec<usize>,
+    /// The last copy or cut: the engine's snapshot of the cells, the text it
+    /// put on the clipboard, and whether it was a cut. A paste of that same
+    /// text pastes the cells themselves, as Excel does within a workbook.
+    clipboard: Option<Clip>,
     /// The last surface painted on, reused while the size stays the same:
     /// a sheet repaints on every scroll frame.
     surface: RefCell<Option<(B::Painter, u32, u32)>>,
@@ -166,6 +179,7 @@ impl<B: Backend> Workbook<B> {
             dirty: false,
             steps: Vec::new(),
             undone: Vec::new(),
+            clipboard: None,
             surface: RefCell::new(None),
         })
     }
@@ -932,6 +946,13 @@ impl<B: Backend> Workbook<B> {
             }
         }
         let typed = typing::read(text, date1904);
+        // Its parentheses closed, a function given the wrong number of
+        // arguments is refused too, as Excel refuses it.
+        if let CellInput::Formula(formula) = &typed.input {
+            if formula_text::wrong_argument_count(formula) {
+                return Err(typing::FORMULA_PROBLEM.to_string());
+            }
+        }
         // Excel gives a General cell the format the value was typed in; a
         // cell someone formatted keeps its format.
         let format = typed
@@ -1179,28 +1200,48 @@ impl<B: Backend> Workbook<B> {
 
     // ---- the clipboard ----------------------------------------------------
 
-    /// Copies (or cuts) `range` for a paste inside this workbook, which
-    /// moves formulas and carries formats as Excel's does. The text is
-    /// what goes on the system clipboard beside it; a paste whose clipboard
-    /// still reads it is this copy's.
-    pub fn copy(&self, range: CellRange, cut: bool) -> Option<Copied> {
+    /// Copies (or, with `cut`, cuts) `range`: returns the text for the
+    /// clipboard, and keeps the cells so that pasting that text pastes them —
+    /// formulas adjusted to where they land, formats with them. A cut leaves
+    /// the cells where they are until the paste moves them, as in Excel.
+    pub fn copy(&mut self, range: CellRange, cut: bool) -> String {
         let range = self.in_use(range);
-        let snapshot = self
+        let text = self.range_text(range);
+        let name = self.sheet_name();
+        self.clipboard = self
             .book
-            .copy_snapshot(&self.sheet_name(), &range_text_full(range), cut)
-            .ok()?;
-        Some(Copied {
-            snapshot,
-            range,
-            sheet: self.index,
-            text: self.range_text(range),
-            cut,
-        })
+            .copy_snapshot(&name, &range_text_full(range), cut)
+            .ok()
+            .map(|snapshot| Clip {
+                snapshot,
+                text: text.clone(),
+                cut,
+                range,
+                sheet: self.index,
+            });
+        text
+    }
+
+    /// What was last copied or cut, while a paste would still paste it: its
+    /// sheet and range, which Excel outlines.
+    pub fn copied(&self) -> Option<(usize, CellRange)> {
+        self.clipboard.as_ref().map(|clip| (clip.sheet, clip.range))
+    }
+
+    /// The text the last copy put on the clipboard, for a paste from a menu.
+    pub fn copied_text(&self) -> Option<String> {
+        self.clipboard.as_ref().map(|clip| clip.text.clone())
+    }
+
+    /// Lets go of what was copied — Escape, or typing into a cell — as
+    /// Excel does.
+    pub fn forget_copy(&mut self) {
+        self.clipboard = None;
     }
 
     /// Drag and drop: `source` moved (or with `copy`, copied) so its
     /// top-left lands on `to`, formulas following as a cut and paste moves
-    /// them. Returns where it went.
+    /// them. Returns where it went. What is on the clipboard stays.
     pub fn move_range(
         &mut self,
         source: CellRange,
@@ -1210,10 +1251,18 @@ impl<B: Backend> Workbook<B> {
         if to == source.start {
             return Ok(source);
         }
-        let copied = self
-            .copy(source, !copy)
-            .ok_or_else(|| "cannot pick the cells up".to_string())?;
-        self.paste_copied(&copied, CellRange { start: to, end: to })
+        let name = self.sheet_name();
+        let snapshot = self
+            .book
+            .copy_snapshot(&name, &range_text_full(source), !copy)
+            .map_err(|error| error.to_string())?;
+        let moved = self
+            .book
+            .paste_snapshot(&snapshot, &name, &reference_text(to), false)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(moved)
     }
 
     /// Whether a viewport point is on the selection's border — where Excel
@@ -1244,38 +1293,6 @@ impl<B: Backend> Workbook<B> {
             || ((near(y, top) || near(y, bottom)) && within_x)
     }
 
-    /// Pastes a copy onto `target`: from its top-left, or tiled over it when
-    /// it is a whole multiple of what was copied. A cut moves its cells and
-    /// can be pasted once. Returns what was filled.
-    pub fn paste_copied(
-        &mut self,
-        copied: &Copied,
-        target: CellRange,
-    ) -> Result<CellRange, String> {
-        let name = self.sheet_name();
-        let pasted = self
-            .book
-            .paste_snapshot(
-                &copied.snapshot,
-                &name,
-                &reference_text(target.start),
-                false,
-            )
-            .map_err(|error| error.to_string())?;
-        let tiled = (!copied.cut).then(|| tiled_over(pasted, target)).flatten();
-        match tiled {
-            Some(whole) => {
-                self.tile(pasted, whole, 1)?;
-                Ok(whole)
-            }
-            None => {
-                self.record(1);
-                self.after_write()?;
-                Ok(pasted)
-            }
-        }
-    }
-
     /// Notes an edit that took `steps` of the book's undo steps; a new
     /// edit ends what redo could bring back.
     fn record(&mut self, steps: usize) {
@@ -1283,8 +1300,9 @@ impl<B: Backend> Workbook<B> {
         self.undone.clear();
     }
 
-    /// Pastes tab-separated text from `origin` down and right as one write,
-    /// returning the far corner it filled.
+    /// Pastes the clipboard at `origin`, returning the far corner it filled.
+    /// Text this workbook copied pastes its cells; anything else pastes as
+    /// tab-separated text typed in from `origin` down and right.
     pub fn paste(&mut self, origin: CellRef, text: &str) -> Result<Option<CellRef>, String> {
         Ok(self
             .paste_over(
@@ -1297,14 +1315,59 @@ impl<B: Backend> Workbook<B> {
             .map(|range| range.end))
     }
 
-    /// Pastes text onto `target`: from its top-left, or tiled over it when
-    /// it is a whole multiple of the text's rows and columns, as Excel
-    /// does. Returns what was filled.
+    /// Pastes the clipboard onto `target`: from its top-left, or tiled over
+    /// it when it is a whole multiple of what is pasted, as Excel does.
+    /// Text this workbook copied pastes its cells, and a cut moves them
+    /// once; anything else pastes as text. Returns what was filled.
     pub fn paste_over(
         &mut self,
         target: CellRange,
         text: &str,
     ) -> Result<Option<CellRange>, String> {
+        let ours = |copied: &str| clipboard_lines(copied) == clipboard_lines(text);
+        if let Some(clip) = self.clipboard.take() {
+            if !ours(&clip.text) {
+                self.clipboard = Some(clip);
+            } else {
+                let name = self.sheet_name();
+                let pasted = self.book.paste_snapshot(
+                    &clip.snapshot,
+                    &name,
+                    &reference_text(target.start),
+                    false,
+                );
+                let cut = clip.cut;
+                match pasted {
+                    Ok(pasted) => {
+                        // A cut moves once; a copy pastes as often as asked.
+                        if !cut {
+                            self.clipboard = Some(clip);
+                        }
+                        let tiled = (!cut).then(|| tiled_over(pasted, target)).flatten();
+                        return match tiled {
+                            Some(whole) => {
+                                self.tile(pasted, whole, 1)?;
+                                Ok(Some(whole))
+                            }
+                            None => {
+                                self.record(1);
+                                self.after_write()?;
+                                Ok(Some(pasted))
+                            }
+                        };
+                    }
+                    // An edit since the cut cancelled it, as in Excel.
+                    Err(error) if cut => return Err(error.to_string()),
+                    Err(_) => {}
+                }
+            }
+        }
+        self.paste_text(target, text)
+    }
+
+    /// Pastes tab-separated text from `target`'s top-left down and right as
+    /// one write, tiled over `target` when it is a whole multiple of it.
+    fn paste_text(&mut self, target: CellRange, text: &str) -> Result<Option<CellRange>, String> {
         let origin = target.start;
         let mut values = Vec::new();
         let mut far = origin;
@@ -2452,16 +2515,14 @@ pub enum FontToggle {
     Strike,
 }
 
-/// Cells copied or cut for a paste in the same workbook.
-#[derive(Clone)]
-pub struct Copied {
+/// The last copy or cut: the engine's snapshot of the cells, the text it
+/// put on the clipboard, whether it was a cut, and where it came from.
+struct Clip {
     snapshot: ClipboardSnapshot,
-    /// What was copied, on the sheet at `sheet`.
-    pub range: CellRange,
-    pub sheet: usize,
-    /// What went on the system clipboard with it.
-    pub text: String,
-    pub cut: bool,
+    text: String,
+    cut: bool,
+    range: CellRange,
+    sheet: usize,
 }
 
 #[cfg(all(test, feature = "tiny-skia"))]
@@ -2643,12 +2704,14 @@ mod tests {
     fn copies_paste_formulas_and_cuts_move() {
         let mut book = open("grid-operations-workbook.xlsx");
         assert!(book.set_cell(at(3, 1), "=B2*10").unwrap());
-        let copied = book.copy(span(at(3, 1), at(3, 1)), false).unwrap();
-        assert_eq!(copied.text, "100\n");
-        let filled = book
-            .paste_copied(&copied, span(at(4, 1), at(4, 3)))
-            .unwrap();
-        assert_eq!(filled, span(at(4, 1), at(4, 3)));
+        let copied = book.copy(span(at(3, 1), at(3, 1)), false);
+        assert_eq!(copied, "100\n");
+        assert_eq!(
+            book.copied(),
+            Some((book.sheet_index(), span(at(3, 1), at(3, 1))))
+        );
+        let filled = book.paste_over(span(at(4, 1), at(4, 3)), &copied).unwrap();
+        assert_eq!(filled, Some(span(at(4, 1), at(4, 3))));
         assert_eq!(book.edit_text(at(4, 3)), "=C4*10");
         assert!(book.undo().unwrap());
         assert_eq!(book.edit_text(at(4, 1)), "", "a tiled paste undoes as one");
@@ -2658,13 +2721,14 @@ mod tests {
         assert_eq!(filled, Some(span(at(5, 1), at(5, 3))));
         assert_eq!(book.display_text(at(5, 3)), "7");
 
-        let cut = book.copy(span(at(3, 1), at(3, 1)), true).unwrap();
-        book.paste_copied(&cut, span(at(3, 6), at(3, 6))).unwrap();
+        let cut = book.copy(span(at(3, 1), at(3, 1)), true);
+        book.paste_over(span(at(3, 6), at(3, 6)), &cut).unwrap();
         assert_eq!(
             book.edit_text(at(3, 6)),
             "=B2*10",
             "a moved formula keeps pointing"
         );
+        assert_eq!(book.copied(), None, "a cut moves once");
         assert_eq!(book.edit_text(at(3, 1)), "");
     }
 

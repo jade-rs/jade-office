@@ -38,8 +38,8 @@ use gpui::{
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
-    CellFormat, CellRange, CellRef, Copied, FilterButton, FontToggle, HorizontalAlignment, Link,
-    Overlay, ResizeGesture, Workbook, MAX_COLUMN, MAX_ROW,
+    CellFormat, CellRange, CellRef, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay,
+    ResizeGesture, Workbook, MAX_COLUMN, MAX_ROW,
 };
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::text::TextEdit;
@@ -316,8 +316,6 @@ pub struct WorkbookView {
     /// held past the grid's edge.
     pointer: Option<gpui::Point<Pixels>>,
     auto_scrolling: bool,
-    /// Copied or cut cells, outlined until pasted or let go.
-    copied: Option<Copied>,
     /// The column Tab started from, where Enter goes back to.
     tab_start: Option<u32>,
     /// A sheet tab being renamed, with what has been typed.
@@ -434,10 +432,10 @@ impl WorkbookView {
             selection: Some(self.selection),
             preview,
             marquee: self
-                .copied
-                .as_ref()
-                .filter(|copied| copied.sheet == self.book.sheet_index())
-                .map(|copied| copied.range),
+                .book
+                .copied()
+                .filter(|(sheet, _)| *sheet == self.book.sheet_index())
+                .map(|(_, range)| range),
             resize: match self.drag {
                 Some(SheetDrag::Resize(gesture)) => Some(gesture),
                 _ => None,
@@ -714,7 +712,7 @@ impl WorkbookView {
             });
         } else if matches!(result, Ok(true)) {
             // Typing into a cell lets go of what was copied, as in Excel.
-            self.copied = None;
+            self.book.forget_copy();
         }
         self.after_write(result, cx);
         !refused
@@ -834,12 +832,7 @@ impl WorkbookView {
     /// moves formulas and carries formats; a cut moves them when pasted.
     fn sheet_copy(&mut self, cut: bool, cx: &mut Context<Self>) {
         let range = self.range();
-        let copied = self.book.copy(range, cut);
-        let text = copied
-            .as_ref()
-            .map(|copied| copied.text.clone())
-            .unwrap_or_else(|| self.book.range_text(range));
-        self.copied = copied;
+        let text = self.book.copy(range, cut);
         cx.write_to_clipboard(ClipboardItem::new_string(text));
         cx.notify();
     }
@@ -872,21 +865,11 @@ impl WorkbookView {
     /// selection's top-left or tiled over it.
     fn sheet_paste(&mut self, text: Option<&str>, cx: &mut Context<Self>) {
         let target = self.range();
-        let own = self
-            .copied
-            .clone()
-            .filter(|copied| text.is_none_or(|text| text.replace("\r\n", "\n") == copied.text));
-        let result = match (own, text) {
-            (Some(copied), _) => {
-                let result = self.book.paste_copied(&copied, target);
-                if copied.cut && result.is_ok() {
-                    self.copied = None;
-                }
-                result.map(Some)
-            }
-            (None, Some(text)) => self.book.paste_over(target, text),
-            (None, None) => return,
+        // From a menu there is no clipboard text: the copy made here.
+        let Some(text) = text.map(str::to_string).or_else(|| self.book.copied_text()) else {
+            return;
         };
+        let result = self.book.paste_over(target, &text);
         if let Ok(Some(filled)) = &result {
             let active = self.selection.active;
             self.selection = Selection {
@@ -1006,7 +989,7 @@ impl WorkbookView {
             command,
             MenuCommand::DeleteRows | MenuCommand::DeleteColumns | MenuCommand::DeleteSheet(_)
         ) {
-            self.copied = None;
+            self.book.forget_copy();
         }
         self.sheets_changed(result, cx);
     }
@@ -1173,9 +1156,11 @@ impl WorkbookView {
     }
 
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
-        // A formula Excel would refuse stays in its editor, unsaved; the
-        // rest of the workbook is saved.
-        self.commit_cell(cx);
+        // A formula Excel would refuse stays in its editor, and the save
+        // waits for it to be fixed.
+        if !self.commit_cell(cx) {
+            return;
+        }
         let result = self.book.save_bytes().and_then(|bytes| {
             crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
         });
@@ -1264,7 +1249,7 @@ impl WorkbookView {
                     self.edit = None;
                     let result = self.book.fill_with(self.range(), self.active(), &text);
                     if matches!(result, Ok(true)) {
-                        self.copied = None;
+                        self.book.forget_copy();
                     }
                     self.after_write(result, cx);
                 }
@@ -1356,7 +1341,7 @@ impl WorkbookView {
             }
             // Escape lets go of what was copied.
             "escape" => {
-                self.copied = None;
+                self.book.forget_copy();
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
@@ -1979,7 +1964,7 @@ impl WorkbookView {
         };
         let result = self.book.set_cell(self.active(), &choice);
         if matches!(result, Ok(true)) {
-            self.copied = None;
+            self.book.forget_copy();
         }
         self.after_write(result, cx);
     }
@@ -2264,7 +2249,7 @@ impl WorkbookView {
                     (MenuCommand::Cut, "sheet.menu.cut"),
                     (MenuCommand::Copy, "sheet.menu.copy"),
                 ];
-                if self.copied.is_some() {
+                if self.book.copied().is_some() {
                     items.push((MenuCommand::Paste, "sheet.menu.paste"));
                 }
                 items.extend([
@@ -3442,7 +3427,6 @@ impl WorkbookView {
             drag: None,
             pointer: None,
             auto_scrolling: false,
-            copied: None,
             tab_start: None,
             renaming: None,
             naming: None,
@@ -3743,10 +3727,10 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.book.edit_text(at(5, 2)), "=C3*10");
             assert_eq!(view.book.display_text(at(5, 2)), "400");
-            assert!(view.copied.is_some());
+            assert!(view.book.copied().is_some());
         });
         cx.simulate_keystrokes("escape");
-        view.read_with(cx, |view, _| assert!(view.copied.is_none()));
+        view.read_with(cx, |view, _| assert!(view.book.copied().is_none()));
     }
 
     /// ⌘X then ⌘V moves the cells: they leave where they were.
@@ -3763,7 +3747,7 @@ mod tests {
             assert_eq!(view.book.display_text(at(8, 4)), "20");
             assert_eq!(view.book.edit_text(at(1, 1)), "");
             assert_eq!(view.book.edit_text(at(2, 1)), "");
-            assert!(view.copied.is_none(), "a cut pastes once");
+            assert!(view.book.copied().is_none(), "a cut pastes once");
             assert_eq!(view.range(), span(at(7, 4), at(8, 4)));
         });
     }

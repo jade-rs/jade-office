@@ -7,7 +7,11 @@
 //!
 //! - tiny-skia rasterises paths, fills, strokes, dashes and clips;
 //! - ttf-parser supplies glyph outlines and advances, so text is drawn as
-//!   paths — there is no font rasteriser to port;
+//!   paths — there is no font rasteriser to port. Each glyph is rasterised
+//!   once per size, slant and quarter-pixel position and blended after that,
+//!   as Skia and the browsers cache theirs;
+//! - a rectangular clip — nearly every clip the renderers make — is kept as
+//!   a rectangle, not a mask the size of the page.
 //! - `image` decodes pictures.
 //!
 //! ## Matching the Skia backend
@@ -22,16 +26,17 @@
 //! Not drawn yet: canvas shadows and the blur filter (Word's shadow, emboss
 //! and glow effects), and SVG pictures. Those calls are accepted and ignored.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use jade_painter::{ImageRect, ImageSource, Painter, TextMetrics};
 use tiny_skia::{
-    BlendMode, Color, FillRule, LineCap, LineJoin, Mask, Paint, Path, PathBuilder, Pixmap,
-    PixmapPaint, Rect, Stroke, StrokeDash, Transform,
+    BlendMode, Color, FillRule, LineCap, LineJoin, Mask, Paint, Path, PathBuilder, PathSegment,
+    Pixmap, PixmapPaint, Rect, Stroke, StrokeDash, Transform,
 };
 
 // ---- fonts ------------------------------------------------------------------
@@ -64,6 +69,13 @@ impl AsRef<[u8]> for SharedBytes {
 pub struct FontBook {
     faces: Vec<Face>,
     outlines: RefCell<HashMap<(usize, u16), Option<Path>>>,
+    /// Glyphs rasterised once, shared by every page: see [`GlyphCoverage`].
+    glyphs: RefCell<HashMap<GlyphKey, Option<Rc<GlyphCoverage>>>>,
+    /// Each character's glyph and advance per face, and the face a run
+    /// starting with it falls back to. Asking the face means parsing its
+    /// table directory, which per character was a tenth of a repaint.
+    characters: RefCell<HashMap<(usize, char), CharGlyph>>,
+    covering: RefCell<HashMap<(usize, char), usize>>,
     /// The faces as a font database for SVG text, built on first use.
     svg_fonts: RefCell<Option<Arc<resvg::usvg::fontdb::Database>>>,
 }
@@ -158,6 +170,15 @@ impl FontBook {
 
     /// `font`, unless it lacks `ch` and another face has it.
     fn covering(&self, font: usize, ch: char) -> usize {
+        if let Some(&cached) = self.covering.borrow().get(&(font, ch)) {
+            return cached;
+        }
+        let covering = self.find_covering(font, ch);
+        self.covering.borrow_mut().insert((font, ch), covering);
+        covering
+    }
+
+    fn find_covering(&self, font: usize, ch: char) -> usize {
         let has = |index: usize| {
             self.with_face(index, |face| face.glyph_index(ch).is_some())
                 .unwrap_or(false)
@@ -210,6 +231,132 @@ impl ttf_parser::OutlineBuilder for OutlineBuilder {
 }
 
 /// One glyph to draw.
+/// A glyph as coverage at one size, slant and quarter-pixel position.
+///
+/// A page of text is thousands of glyphs and a few dozen distinct ones.
+/// Scan-converting each outline wherever it is drawn made text nearly all of
+/// a repaint — a keystroke repaints its page — where a browser or Skia
+/// blends a cached mask. So does this: a glyph is rasterised the first time
+/// it is drawn at a size, slant and sub-pixel phase, and blended after that.
+/// A quarter pixel is as fine as the phase goes, so a glyph lands within an
+/// eighth of a pixel of where its outline would.
+struct GlyphCoverage {
+    /// The coverage's top-left, from the pixel the pen's phase is counted in.
+    left: i32,
+    top: i32,
+    width: u32,
+    height: u32,
+    alpha: Vec<u8>,
+}
+
+/// What a [`GlyphCoverage`] depends on: the face and glyph, the outline's
+/// scale and slant in device px (as bits, so it hashes), synthetic bold, and
+/// the quarter-pixel phase of the pen.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct GlyphKey {
+    font: usize,
+    glyph: u16,
+    matrix: [u32; 3],
+    bold: bool,
+    phase: (u8, u8),
+}
+
+/// The cache is dropped whole when it grows past this, which only a document
+/// at many sizes and zooms reaches.
+const GLYPH_CACHE_LIMIT: usize = 16_384;
+
+/// The quarter-pixel phase of a device coordinate, and the pixel it is
+/// counted from.
+fn phase(value: f32) -> (i32, u8) {
+    let quarters = (value * 4.0).round();
+    let pixel = (quarters / 4.0).floor();
+    (pixel as i32, (quarters - pixel * 4.0) as u8)
+}
+
+/// `a × b / 255`, rounded.
+fn scale_u8(a: u8, b: u8) -> u8 {
+    let product = u32::from(a) * u32::from(b) + 128;
+    ((product + (product >> 8)) >> 8) as u8
+}
+
+/// Rasterises `outline` under `transform` (device px, the phase included)
+/// as the painter draws a glyph: filled, and stroked as well for a
+/// synthetic bold of `bold_width` font units.
+fn rasterize_glyph(
+    outline: &Path,
+    transform: Transform,
+    bold_width: Option<f32>,
+) -> Option<GlyphCoverage> {
+    let bounds = device_bounds(outline.bounds(), transform);
+    let grow = bold_width.map_or(0.0, |width| {
+        width * transform.sx.abs().max(transform.sy.abs()) * 2.0
+    }) + 2.0;
+    let left = (bounds[0] - grow).floor() as i32;
+    let top = (bounds[1] - grow).floor() as i32;
+    let width = ((bounds[2] + grow).ceil() as i32 - left).max(1) as u32;
+    let height = ((bounds[3] + grow).ceil() as i32 - top).max(1) as u32;
+    let mut pixmap = Pixmap::new(width, height)?;
+    let local = transform.post_translate(-left as f32, -top as f32);
+    let mut paint = Paint::default();
+    paint.set_color(Color::BLACK);
+    paint.anti_alias = true;
+    pixmap.fill_path(outline, &paint, FillRule::Winding, local, None);
+    if let Some(width) = bold_width {
+        let stroke = Stroke {
+            width,
+            line_join: LineJoin::Round,
+            ..Stroke::default()
+        };
+        pixmap.stroke_path(outline, &paint, &stroke, local, None);
+    }
+    // Trimmed to its ink: the margin left for anti-aliasing is mostly
+    // empty, and every empty pixel kept is one more visited per draw.
+    let alpha: Vec<u8> = pixmap
+        .data()
+        .chunks_exact(4)
+        .map(|pixel| pixel[3])
+        .collect();
+    let (columns, rows) = (width as usize, height as usize);
+    let inked = |column: usize, row: usize| alpha[row * columns + column] != 0;
+    let row_inked = |row: usize| (0..columns).any(|column| inked(column, row));
+    let empty = GlyphCoverage {
+        left,
+        top,
+        width: 0,
+        height: 0,
+        alpha: Vec::new(),
+    };
+    let Some(first_row) = (0..rows).find(|&row| row_inked(row)) else {
+        return Some(empty);
+    };
+    let last_row = (0..rows).rev().find(|&row| row_inked(row))?;
+    let column_inked = |column: usize| (first_row..=last_row).any(|row| inked(column, row));
+    let first_column = (0..columns).find(|&column| column_inked(column))?;
+    let last_column = (0..columns).rev().find(|&column| column_inked(column))?;
+    let mut trimmed = Vec::new();
+    for row in first_row..=last_row {
+        trimmed
+            .extend_from_slice(&alpha[row * columns + first_column..=row * columns + last_column]);
+    }
+    Some(GlyphCoverage {
+        left: left + first_column as i32,
+        top: top + first_row as i32,
+        width: (last_column - first_column + 1) as u32,
+        height: (last_row - first_row + 1) as u32,
+        alpha: trimmed,
+    })
+}
+
+/// A character's glyph in a face, its advance in font units, and the
+/// synthetic styles a Mathematical Alphanumeric Symbol stands for.
+#[derive(Clone, Copy)]
+struct CharGlyph {
+    id: u16,
+    advance: u16,
+    bold: bool,
+    italic: bool,
+}
+
 struct Glyph {
     id: ttf_parser::GlyphId,
     advance: f32,
@@ -307,7 +454,7 @@ struct State {
     /// own shaper read it back.
     font_descriptor: Rc<str>,
     baseline: TextBaseline,
-    clip: Option<Rc<Mask>>,
+    clip: Option<Rc<Clip>>,
 }
 
 impl Default for State {
@@ -410,6 +557,10 @@ struct Inner {
     /// Parsed SVG pictures by content key, likewise; rasterized per draw at
     /// the size they land at.
     svgs: RefCell<HashMap<String, Option<Rc<resvg::usvg::Tree>>>>,
+    /// The device-px bounds of everything drawn since the last
+    /// [`TinySkiaPainter::take_damaged_rows`]: what a reader keeping a copy
+    /// of the pixels has to read again.
+    damage: Cell<Option<Bounds>>,
     /// Whether colours are mapped onto a dark page as they are drawn. See
     /// [`TinySkiaPainter::set_dark_paper`].
     dark_paper: Cell<bool>,
@@ -437,9 +588,63 @@ impl TinySkiaPainter {
                 path: RefCell::new(PathBuilder::new()),
                 images: RefCell::new(HashMap::new()),
                 svgs: RefCell::new(HashMap::new()),
+                damage: Cell::new(None),
                 dark_paper: Cell::new(false),
             }),
         })
+    }
+
+    /// Notes that drawing may have changed the pixels within `bounds`
+    /// (device px), less whatever the clip hides of them.
+    fn note_damage(&self, bounds: Bounds, clip: Option<&Clip>) {
+        let bounds = match clip {
+            Some(clip) => [
+                bounds[0].max(clip.rect[0]),
+                bounds[1].max(clip.rect[1]),
+                bounds[2].min(clip.rect[2]),
+                bounds[3].min(clip.rect[3]),
+            ],
+            None => bounds,
+        };
+        if !(bounds[2] > bounds[0] && bounds[3] > bounds[1]) {
+            return;
+        }
+        let damage = match self.inner.damage.get() {
+            Some(damage) => [
+                damage[0].min(bounds[0]),
+                damage[1].min(bounds[1]),
+                damage[2].max(bounds[2]),
+                damage[3].max(bounds[3]),
+            ],
+            None => bounds,
+        };
+        self.inner.damage.set(Some(damage));
+    }
+
+    /// The rows drawing has touched since the last call, whole pixels with
+    /// one to spare for anti-aliasing, or `None` if nothing was drawn.
+    pub fn take_damaged_rows(&self) -> Option<std::ops::Range<u32>> {
+        let damage = self.inner.damage.take()?;
+        let height = self.height();
+        let top = (damage[1].floor() - 1.0).max(0.0) as u32;
+        let bottom = ((damage[3].ceil() + 1.0).max(0.0) as u32).min(height);
+        (bottom > top).then_some(top..bottom)
+    }
+
+    /// Rows `rows` of the surface as BGRA with premultiplied alpha, as
+    /// [`Self::bgra_premultiplied`] gives the whole of it.
+    pub fn bgra_premultiplied_rows(&self, rows: std::ops::Range<u32>) -> Vec<u8> {
+        let pixmap = self.inner.pixmap.borrow();
+        let stride = pixmap.width() as usize * 4;
+        let rows = rows.start.min(pixmap.height()) as usize..rows.end.min(pixmap.height()) as usize;
+        let bytes = &pixmap.data()[rows.start * stride..rows.end * stride];
+        let mut data = Vec::with_capacity(bytes.len());
+        data.extend(bytes.chunks_exact(4).flat_map(|pixel| {
+            let rgba = u32::from_le_bytes([pixel[0], pixel[1], pixel[2], pixel[3]]);
+            let bgra = (rgba & 0xff00_ff00) | ((rgba >> 16) & 0xff) | ((rgba & 0xff) << 16);
+            bgra.to_le_bytes()
+        }));
+        data
     }
 
     /// Shows the page dark for reading on screen, or as the document has it.
@@ -453,7 +658,11 @@ impl TinySkiaPainter {
             return;
         }
         let paper = self.paper();
-        self.inner.pixmap.borrow_mut().fill(paper);
+        let mut pixmap = self.inner.pixmap.borrow_mut();
+        pixmap.fill(paper);
+        let whole = [0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32];
+        drop(pixmap);
+        self.note_damage(whole, None);
     }
 
     /// The colour a cleared page shows.
@@ -486,11 +695,9 @@ impl TinySkiaPainter {
 
     /// The pixels as BGRA, premultiplied: what gpui's `RenderImage` holds.
     pub fn bgra_premultiplied(&self) -> Vec<u8> {
-        let mut data = self.rgba_premultiplied();
-        for pixel in data.chunks_exact_mut(4) {
-            pixel.swap(0, 2);
-        }
-        data
+        // One pass, read and written as words: a page at 2x is millions of
+        // pixels, read back after every edit that repaints it.
+        self.bgra_premultiplied_rows(0..self.height())
     }
 
     pub fn encode_png(&self) -> Option<Vec<u8>> {
@@ -548,30 +755,33 @@ impl TinySkiaPainter {
         )
         .map(PathBuilder::from_rect);
         let mut pixmap = self.inner.pixmap.borrow_mut();
-        let mask = match (&crop, &state.clip) {
-            (Some(crop), clip) => {
-                let mut mask = match clip {
-                    Some(clip) => (**clip).clone(),
-                    None => full_mask(pixmap.width(), pixmap.height()),
-                };
-                mask.intersect_path(crop, FillRule::Winding, true, state.transform);
-                Some(mask)
-            }
-            (None, clip) => clip.as_deref().cloned(),
+        let size = (pixmap.width(), pixmap.height());
+        // The crop is one more clip, in force for this picture alone.
+        let cropped = crop
+            .as_ref()
+            .map(|crop| Clip::new(state.clip.as_deref(), Some(crop), state.transform, size));
+        let clip = cropped.as_ref().or(state.clip.as_deref());
+        let image_bounds = Rect::from_xywh(0.0, 0.0, image.width() as f32, image.height() as f32)
+            .map(|rect| device_bounds(rect, transform));
+        let mask = match (clip, image_bounds) {
+            (None, _) => None,
+            (Some(clip), Some(bounds)) => match clip.coverage(bounds) {
+                Coverage::Hidden => return true,
+                Coverage::Whole => None,
+                Coverage::Partial => Some(clip.whole_mask()),
+            },
+            (Some(clip), None) => Some(clip.whole_mask()),
         };
         let paint = PixmapPaint {
             opacity: state.global_alpha,
             blend_mode: BlendMode::SourceOver,
             quality: tiny_skia::FilterQuality::Bilinear,
         };
-        pixmap.draw_pixmap(
-            0,
-            0,
-            image.as_ref().as_ref(),
-            &paint,
-            transform,
-            mask.as_ref(),
-        );
+        pixmap.draw_pixmap(0, 0, image.as_ref().as_ref(), &paint, transform, mask);
+        drop(pixmap);
+        if let Some(bounds) = image_bounds {
+            self.note_damage(bounds, clip);
+        }
         true
     }
 
@@ -619,29 +829,152 @@ impl TinySkiaPainter {
         self.inner.path.borrow().clone().finish()
     }
 
+    /// Fills `rect` (local, placed by `transform`) with `paint` under the
+    /// clip. A rectangle under a rectangular clip is their intersection,
+    /// filled without a mask; and when `opaque` is the colour `paint` lays
+    /// down whole, whole pixels of it are written straight in — a page clear
+    /// is one, every repaint, and through the raster pipeline it was a fifth
+    /// of the repaint.
+    fn fill_rect_clipped(
+        &self,
+        rect: Rect,
+        paint: &Paint<'_>,
+        transform: Transform,
+        opaque: Option<Color>,
+    ) {
+        let clip = self.inner.state.borrow().clip.clone();
+        let rectangular = clip.as_deref().is_none_or(|clip| clip.path.is_none());
+        if !rectangular || transform.has_skew() {
+            return self.clipped(rect, transform, |pixmap, mask| {
+                pixmap.fill_rect(rect, paint, transform, mask);
+            });
+        }
+        let mut pixmap = self.inner.pixmap.borrow_mut();
+        let surface = [0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32];
+        let [left, top, right, bottom] = clip.as_deref().map_or(surface, |clip| clip.rect);
+        let device = device_bounds(rect, transform);
+        let visible = [
+            device[0].max(left).max(0.0),
+            device[1].max(top).max(0.0),
+            device[2].min(right).min(surface[2]),
+            device[3].min(bottom).min(surface[3]),
+        ];
+        if visible[2] <= visible[0] || visible[3] <= visible[1] {
+            return;
+        }
+        self.note_damage(visible, None);
+        let Some(color) = opaque else {
+            if let Some(visible) = Rect::from_ltrb(visible[0], visible[1], visible[2], visible[3]) {
+                pixmap.fill_rect(visible, paint, Transform::identity(), None);
+            }
+            return;
+        };
+        // Whole pixels are written straight in, a row at a time; the pixels
+        // its fractional edges cross are blended by how much of each it
+        // covers, as anti-aliasing would.
+        let color = color.premultiply().to_color_u8();
+        let value = [color.red(), color.green(), color.blue(), color.alpha()];
+        let overlap = |index: usize, from: f32, to: f32| -> u8 {
+            let (start, end) = (index as f32, index as f32 + 1.0);
+            ((end.min(to) - start.max(from)).clamp(0.0, 1.0) * 255.0).round() as u8
+        };
+        let lerp = |pixel: &mut [u8], cover: u8| {
+            for (channel, slot) in pixel.iter_mut().enumerate() {
+                *slot =
+                    scale_u8(value[channel], cover).saturating_add(scale_u8(*slot, 255 - cover));
+            }
+        };
+        let [x0, y0, x1, y1] = visible;
+        let columns = x0.floor() as usize..(x1.ceil() as usize).min(pixmap.width() as usize);
+        let rows = y0.floor() as usize..(y1.ceil() as usize).min(pixmap.height() as usize);
+        let width = pixmap.width() as usize;
+        // The columns every row covers whole, between the part-covered edge
+        // columns (if any) at either end.
+        let whole = {
+            let first = columns.start + usize::from(overlap(columns.start, x0, x1) != 255);
+            let last = columns.end - usize::from(overlap(columns.end - 1, x0, x1) != 255);
+            first..last.max(first)
+        };
+        let edges: Vec<(usize, u8)> = columns
+            .clone()
+            .filter(|column| !whole.contains(column))
+            .map(|column| (column, overlap(column, x0, x1)))
+            .collect();
+        let row_of_value: Vec<u8> = value.repeat(whole.len());
+        let data = pixmap.data_mut();
+        for row in rows {
+            let row_cover = overlap(row, y0, y1);
+            let at = |column: usize| (row * width + column) * 4;
+            if row_cover == 255 {
+                data[at(whole.start)..at(whole.end)].copy_from_slice(&row_of_value);
+            } else {
+                for pixel in data[at(whole.start)..at(whole.end)].chunks_exact_mut(4) {
+                    lerp(pixel, row_cover);
+                }
+            }
+            for &(column, column_cover) in &edges {
+                let cover = scale_u8(row_cover, column_cover);
+                let pixel = &mut data[at(column)..at(column) + 4];
+                if cover == 255 {
+                    pixel.copy_from_slice(&value);
+                } else if cover != 0 {
+                    lerp(pixel, cover);
+                }
+            }
+        }
+    }
+
+    /// Runs `draw` with the mask the clip needs for drawing within `bounds`
+    /// (local, placed by `transform`), or not at all when the clip hides it.
+    fn clipped(
+        &self,
+        bounds: Rect,
+        transform: Transform,
+        draw: impl FnOnce(&mut Pixmap, Option<&Mask>),
+    ) {
+        let clip = self.inner.state.borrow().clip.clone();
+        let device = device_bounds(bounds, transform);
+        let mut pixmap = self.inner.pixmap.borrow_mut();
+        match clip.as_deref() {
+            None => draw(&mut pixmap, None),
+            Some(clip) => match clip.coverage(device) {
+                Coverage::Hidden => return,
+                Coverage::Whole => draw(&mut pixmap, None),
+                Coverage::Partial => draw(&mut pixmap, Some(clip.whole_mask())),
+            },
+        }
+        drop(pixmap);
+        self.note_damage(device, clip.as_deref());
+    }
+
     fn fill_path_with(&self, path: &Path, color: Color, transform: Transform) {
         let paint = self.paint(color);
-        let clip = self.inner.state.borrow().clip.clone();
-        self.inner.pixmap.borrow_mut().fill_path(
-            path,
-            &paint,
-            FillRule::Winding,
-            transform,
-            clip.as_deref(),
-        );
+        self.clipped(path.bounds(), transform, |pixmap, mask| {
+            pixmap.fill_path(path, &paint, FillRule::Winding, transform, mask);
+        });
+    }
+
+    /// `path`'s bounds grown by what a stroke of `width` can add: half the
+    /// width, or up to twice it at a mitred corner.
+    fn stroke_bounds(path: &Path, width: f32) -> Rect {
+        let bounds = path.bounds();
+        let grow = width.max(1.0) * 2.0;
+        Rect::from_ltrb(
+            bounds.left() - grow,
+            bounds.top() - grow,
+            bounds.right() + grow,
+            bounds.bottom() + grow,
+        )
+        .unwrap_or(bounds)
     }
 
     fn stroke_path_with(&self, path: &Path, color: Color, transform: Transform) {
         let paint = self.paint(color);
         let stroke = self.stroke_style();
-        let clip = self.inner.state.borrow().clip.clone();
-        self.inner.pixmap.borrow_mut().stroke_path(
-            path,
-            &paint,
-            &stroke,
-            transform,
-            clip.as_deref(),
-        );
+        let bounds = Self::stroke_bounds(path, stroke.width);
+        self.clipped(bounds, transform, |pixmap, mask| {
+            pixmap.stroke_path(path, &paint, &stroke, transform, mask);
+        });
     }
 
     /// A synthetic bold: the glyph outlined once more, a thirtieth of an em
@@ -653,14 +986,10 @@ impl TinySkiaPainter {
             line_join: LineJoin::Round,
             ..Stroke::default()
         };
-        let clip = self.inner.state.borrow().clip.clone();
-        self.inner.pixmap.borrow_mut().stroke_path(
-            path,
-            &paint,
-            &stroke,
-            transform,
-            clip.as_deref(),
-        );
+        let bounds = Self::stroke_bounds(path, stroke.width);
+        self.clipped(bounds, transform, |pixmap, mask| {
+            pixmap.stroke_path(path, &paint, &stroke, transform, mask);
+        });
     }
 
     /// Ascent and descent of `font` at `size` px, both positive.
@@ -695,40 +1024,229 @@ impl TinySkiaPainter {
     /// [`Self::glyphs`], with how each is drawn: a math letter the face
     /// lacks is its base letter, slanted or emboldened as its style says.
     fn styled_glyphs(&self, font: usize, size: f32, text: &str) -> Vec<Glyph> {
-        let units = self
-            .inner
-            .fonts
+        let fonts = &self.inner.fonts;
+        let units = fonts
             .faces
             .get(font)
             .map(|face| face.units_per_em)
             .unwrap_or(1000.0);
-        self.inner
-            .fonts
-            .with_face(font, |face| {
-                text.chars()
-                    .map(|ch| {
-                        let (id, bold, italic) = match face.glyph_index(ch) {
-                            Some(id) => (id, false, false),
-                            None => match math_letter(ch) {
-                                Some((base, bold, italic)) => (
-                                    face.glyph_index(base).unwrap_or(ttf_parser::GlyphId(0)),
+        let missing = {
+            let characters = fonts.characters.borrow();
+            text.chars().any(|ch| !characters.contains_key(&(font, ch)))
+        };
+        if missing {
+            let found: Vec<(char, CharGlyph)> = fonts
+                .with_face(font, |face| {
+                    text.chars()
+                        .map(|ch| {
+                            let (id, bold, italic) = match face.glyph_index(ch) {
+                                Some(id) => (id, false, false),
+                                None => match math_letter(ch) {
+                                    Some((base, bold, italic)) => (
+                                        face.glyph_index(base).unwrap_or(ttf_parser::GlyphId(0)),
+                                        bold,
+                                        italic,
+                                    ),
+                                    None => (ttf_parser::GlyphId(0), false, false),
+                                },
+                            };
+                            let advance = face.glyph_hor_advance(id).unwrap_or(0);
+                            (
+                                ch,
+                                CharGlyph {
+                                    id: id.0,
+                                    advance,
                                     bold,
                                     italic,
-                                ),
-                                None => (ttf_parser::GlyphId(0), false, false),
-                            },
-                        };
-                        let advance = f32::from(face.glyph_hor_advance(id).unwrap_or(0));
-                        Glyph {
-                            id,
-                            advance: advance / units * size,
-                            bold,
-                            italic,
-                        }
-                    })
-                    .collect()
+                                },
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut characters = fonts.characters.borrow_mut();
+            for (ch, glyph) in found {
+                characters.insert((font, ch), glyph);
+            }
+        }
+        let characters = fonts.characters.borrow();
+        text.chars()
+            .filter_map(|ch| characters.get(&(font, ch)))
+            .map(|glyph| Glyph {
+                id: ttf_parser::GlyphId(glyph.id),
+                advance: f32::from(glyph.advance) / units * size,
+                bold: glyph.bold,
+                italic: glyph.italic,
             })
-            .unwrap_or_default()
+            .collect()
+    }
+
+    /// Draws a filled glyph from the cache, rasterising it on first use.
+    /// `false` when the glyph is turned or skewed vertically, which the
+    /// cache does not key: the caller draws the outline instead.
+    fn blit_glyph(
+        &self,
+        font: usize,
+        glyph: ttf_parser::GlyphId,
+        transform: Transform,
+        bold_width: Option<f32>,
+        color: Color,
+    ) -> bool {
+        if transform.ky != 0.0 || !transform.tx.is_finite() || !transform.ty.is_finite() {
+            return false;
+        }
+        let (x, phase_x) = phase(transform.tx);
+        let (y, phase_y) = phase(transform.ty);
+        let key = GlyphKey {
+            font,
+            glyph: glyph.0,
+            matrix: [
+                transform.sx.to_bits(),
+                transform.kx.to_bits(),
+                transform.sy.to_bits(),
+            ],
+            bold: bold_width.is_some(),
+            phase: (phase_x, phase_y),
+        };
+        let fonts = &self.inner.fonts;
+        let cached = fonts.glyphs.borrow().get(&key).cloned();
+        let coverage = match cached {
+            Some(coverage) => coverage,
+            None => {
+                let placed = Transform::from_row(
+                    transform.sx,
+                    0.0,
+                    transform.kx,
+                    transform.sy,
+                    f32::from(phase_x) / 4.0,
+                    f32::from(phase_y) / 4.0,
+                );
+                let coverage = fonts
+                    .outline(font, glyph)
+                    .and_then(|outline| rasterize_glyph(&outline, placed, bold_width))
+                    .map(Rc::new);
+                let mut glyphs = fonts.glyphs.borrow_mut();
+                if glyphs.len() >= GLYPH_CACHE_LIMIT {
+                    glyphs.clear();
+                }
+                glyphs.insert(key, coverage.clone());
+                coverage
+            }
+        };
+        if let Some(coverage) = coverage {
+            self.blend_coverage(&coverage, x, y, self.color(color));
+        }
+        true
+    }
+
+    /// Blends `color` through `coverage` placed at pixel (`x`, `y`), under
+    /// the clip: source-over, as the path fill it stands in for.
+    fn blend_coverage(&self, coverage: &GlyphCoverage, x: i32, y: i32, color: Color) {
+        if coverage.alpha.is_empty() {
+            return;
+        }
+        let (left, top) = (x + coverage.left, y + coverage.top);
+        let (width, height) = (coverage.width as i32, coverage.height as i32);
+        let clip = self.inner.state.borrow().clip.clone();
+        let mut pixmap = self.inner.pixmap.borrow_mut();
+        let (surface_width, surface_height) = (pixmap.width() as i32, pixmap.height() as i32);
+        let mut columns = left.max(0)..(left + width).min(surface_width);
+        let mut rows = top.max(0)..(top + height).min(surface_height);
+        // A rectangle's coverage of each column and row, for the clip's
+        // fractional edges; a path's coverage of each pixel.
+        let mut edges: Option<(Bounds, Range<i32>, Range<i32>)> = None;
+        let mut mask: Option<&[u8]> = None;
+        if let Some(clip) = clip.as_deref() {
+            let bounds = [
+                left as f32,
+                top as f32,
+                (left + width) as f32,
+                (top + height) as f32,
+            ];
+            match clip.coverage(bounds) {
+                Coverage::Hidden => return,
+                Coverage::Whole => {}
+                Coverage::Partial if clip.path.is_none() => {
+                    let rect = clip.rect;
+                    columns = columns.start.max(rect[0].floor() as i32)
+                        ..columns.end.min(rect[2].ceil() as i32);
+                    rows =
+                        rows.start.max(rect[1].floor() as i32)..rows.end.min(rect[3].ceil() as i32);
+                    edges = Some((rect, columns.clone(), rows.clone()));
+                }
+                Coverage::Partial => mask = Some(clip.whole_mask().data()),
+            }
+        }
+        // How much of pixel `index` along an axis lies within `from..to`.
+        let overlap = |index: i32, from: f32, to: f32| -> u8 {
+            let (start, end) = (index as f32, index as f32 + 1.0);
+            ((end.min(to) - start.max(from)).clamp(0.0, 1.0) * 255.0).round() as u8
+        };
+        let source = color.premultiply().to_color_u8();
+        let source = [source.red(), source.green(), source.blue(), source.alpha()];
+        let opaque = source[3] == 255;
+        let blend = |pixel: &mut [u8], alpha: u8| {
+            if alpha == 255 && opaque {
+                pixel.copy_from_slice(&source);
+                return;
+            }
+            let keep = 255 - scale_u8(source[3], alpha);
+            for (channel, value) in pixel.iter_mut().enumerate() {
+                *value = scale_u8(source[channel], alpha).saturating_add(scale_u8(*value, keep));
+            }
+        };
+        if columns.is_empty() || rows.is_empty() {
+            return;
+        }
+        self.note_damage(
+            [
+                columns.start as f32,
+                rows.start as f32,
+                columns.end as f32,
+                rows.end as f32,
+            ],
+            None,
+        );
+        let data = pixmap.data_mut();
+        let span = (columns.start - left) as usize..(columns.end - left) as usize;
+        for row in rows {
+            let glyph_row = ((row - top) * width) as usize;
+            let surface_row = (row * surface_width) as usize;
+            let alphas = &coverage.alpha[glyph_row + span.start..glyph_row + span.end];
+            let first = surface_row + columns.start as usize;
+            let pixels = &mut data[first * 4..(surface_row + columns.end as usize) * 4];
+            match (&edges, mask) {
+                // The usual case, kept free of per-pixel checks.
+                (None, None) => {
+                    for (&alpha, pixel) in alphas.iter().zip(pixels.chunks_exact_mut(4)) {
+                        if alpha != 0 {
+                            blend(pixel, alpha);
+                        }
+                    }
+                }
+                (Some((rect, _, _)), _) => {
+                    let row_cover = overlap(row, rect[1], rect[3]);
+                    for ((column, &alpha), pixel) in
+                        columns.clone().zip(alphas).zip(pixels.chunks_exact_mut(4))
+                    {
+                        if alpha != 0 {
+                            let cover = scale_u8(row_cover, overlap(column, rect[0], rect[2]));
+                            blend(pixel, scale_u8(alpha, cover));
+                        }
+                    }
+                }
+                (None, Some(mask)) => {
+                    let mask = &mask[first..first + alphas.len()];
+                    for ((&alpha, &clip), pixel) in
+                        alphas.iter().zip(mask).zip(pixels.chunks_exact_mut(4))
+                    {
+                        if alpha != 0 {
+                            blend(pixel, scale_u8(alpha, clip));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn draw_text(&self, text: &str, x: f64, y: f64, stroke: bool) {
@@ -757,13 +1275,18 @@ impl TinySkiaPainter {
         let scale = size / units;
         let mut pen = x as f32;
         for glyph in self.styled_glyphs(font, size, text) {
+            // Font units, y up → px at the pen, y down; a synthetic italic
+            // leans 12° as the letter rises.
+            let slant = if glyph.italic { 0.21 * scale } else { 0.0 };
+            let glyph_transform = transform.pre_concat(Transform::from_row(
+                scale, 0.0, slant, -scale, pen, baseline_y,
+            ));
+            let bold_width = glyph.bold.then_some(size / scale / 30.0);
+            if !stroke && self.blit_glyph(font, glyph.id, glyph_transform, bold_width, color) {
+                pen += glyph.advance;
+                continue;
+            }
             if let Some(outline) = self.inner.fonts.outline(font, glyph.id) {
-                // Font units, y up → px at the pen, y down; a synthetic
-                // italic leans 12° as the letter rises.
-                let slant = if glyph.italic { 0.21 * scale } else { 0.0 };
-                let glyph_transform = transform.pre_concat(Transform::from_row(
-                    scale, 0.0, slant, -scale, pen, baseline_y,
-                ));
                 if stroke {
                     self.stroke_path_with(&outline, color, glyph_transform);
                 } else {
@@ -851,17 +1374,205 @@ impl TinySkiaPainter {
     }
 }
 
-fn full_mask(width: u32, height: u32) -> Mask {
-    let mut mask = Mask::new(width, height).expect("a mask the size of the surface");
-    if let Some(rect) = Rect::from_xywh(0.0, 0.0, width as f32, height as f32) {
-        mask.fill_path(
-            &PathBuilder::from_rect(rect),
-            FillRule::Winding,
-            false,
-            Transform::identity(),
-        );
+/// Device-px bounds as `[left, top, right, bottom]`.
+type Bounds = [f32; 4];
+
+/// The bounds of `rect` once `transform` has placed it, in device px.
+fn device_bounds(rect: Rect, transform: Transform) -> Bounds {
+    let corners = [
+        (rect.left(), rect.top()),
+        (rect.right(), rect.top()),
+        (rect.right(), rect.bottom()),
+        (rect.left(), rect.bottom()),
+    ];
+    let mut bounds = [
+        f32::INFINITY,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NEG_INFINITY,
+    ];
+    for (x, y) in corners {
+        let dx = transform.sx * x + transform.kx * y + transform.tx;
+        let dy = transform.ky * x + transform.sy * y + transform.ty;
+        bounds = [
+            bounds[0].min(dx),
+            bounds[1].min(dy),
+            bounds[2].max(dx),
+            bounds[3].max(dy),
+        ];
     }
-    mask
+    bounds
+}
+
+/// The device rectangle `path` is, if it is exactly one axis-aligned
+/// rectangle under `transform` — what `rect()` then `clip()` makes.
+fn rect_of(path: &Path, transform: Transform) -> Option<Bounds> {
+    use PathSegment::{Close, LineTo, MoveTo};
+    if transform.has_skew() {
+        return None;
+    }
+    let mut segments = path.segments();
+    let (Some(MoveTo(a)), Some(LineTo(b)), Some(LineTo(c)), Some(LineTo(d)), Some(Close), None) = (
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+    ) else {
+        return None;
+    };
+    let axis_aligned = (a.y == b.y && b.x == c.x && c.y == d.y && d.x == a.x)
+        || (a.x == b.x && b.y == c.y && c.x == d.x && d.y == a.y);
+    axis_aligned.then(|| device_bounds(path.bounds(), transform))
+}
+
+/// `a`'s coverage, multiplied by `b`'s: two clips in force at once.
+fn multiply(a: &mut Mask, b: &Mask) {
+    for (a, b) in a.data_mut().iter_mut().zip(b.data()) {
+        *a = ((u16::from(*a) * u16::from(*b) + 127) / 255) as u8;
+    }
+}
+
+/// The clip in force.
+///
+/// Nearly everything the renderers clip to is a rectangle — a page band, a
+/// table cell, a line — and a coverage mask the size of the surface per clip
+/// cost more than the drawing it bounded: every clip went over every pixel of
+/// the page, twice, millions of them at 2x. So a rectangle stays a rectangle.
+/// Drawing that lies where the rectangle covers whole pixels needs no mask,
+/// drawing wholly outside it is skipped, and only drawing across its edge
+/// takes a mask, made once per clip the first time one does.
+struct Clip {
+    /// Device px; everything the clip lets through lies within it.
+    rect: Bounds,
+    /// Exact coverage, once some clip in force was not a rectangle.
+    path: Option<Mask>,
+    /// `rect` as coverage, made on first use.
+    rect_mask: OnceCell<Mask>,
+    size: (u32, u32),
+}
+
+/// What drawing has to go through under the clip.
+enum Coverage {
+    /// Nothing: the clip hides it.
+    Hidden,
+    /// Nothing: the clip covers every pixel it can touch.
+    Whole,
+    /// The clip's edge crosses it: [`Clip::whole_mask`], or for a
+    /// rectangle the coverage of the pixels its edge is in.
+    Partial,
+}
+
+impl Clip {
+    /// The clip after clipping `previous` (if any) to `path` under
+    /// `transform`, on a surface of `size`. No path clips everything away.
+    fn new(
+        previous: Option<&Clip>,
+        path: Option<&Path>,
+        transform: Transform,
+        size: (u32, u32),
+    ) -> Self {
+        let (width, height) = size;
+        let surface = [0.0, 0.0, width as f32, height as f32];
+        let outer = previous.map_or(surface, |clip| clip.rect);
+        let Some(path) = path else {
+            return Self {
+                rect: [0.0; 4],
+                path: None,
+                rect_mask: OnceCell::new(),
+                size,
+            };
+        };
+        let intersect = |a: Bounds, b: Bounds| -> Bounds {
+            let rect = [
+                a[0].max(b[0]),
+                a[1].max(b[1]),
+                a[2].min(b[2]),
+                a[3].min(b[3]),
+            ];
+            // An empty intersection stays empty rather than inside out.
+            [rect[0], rect[1], rect[2].max(rect[0]), rect[3].max(rect[1])]
+        };
+        if let Some(rect) = rect_of(path, transform) {
+            let mut mask = previous.and_then(|clip| clip.path.as_ref()).cloned();
+            if let Some(mask) = &mut mask {
+                mask.intersect_path(path, FillRule::Winding, true, transform);
+            }
+            return Self {
+                rect: intersect(outer, rect),
+                path: mask,
+                rect_mask: OnceCell::new(),
+                size,
+            };
+        }
+        let mut mask = Mask::new(width, height).expect("a mask the size of the surface");
+        mask.fill_path(path, FillRule::Winding, true, transform);
+        if let Some(previous) = previous {
+            multiply(&mut mask, previous.whole_mask());
+        }
+        Self {
+            rect: intersect(outer, device_bounds(path.bounds(), transform)),
+            path: Some(mask),
+            rect_mask: OnceCell::new(),
+            size,
+        }
+    }
+
+    /// The clip's exact coverage over the whole surface.
+    fn whole_mask(&self) -> &Mask {
+        if let Some(mask) = &self.path {
+            return mask;
+        }
+        self.rect_mask.get_or_init(|| {
+            let (width, height) = self.size;
+            let mut mask = Mask::new(width, height).expect("a mask the size of the surface");
+            let [left, top, right, bottom] = self.rect;
+            if let Some(rect) = Rect::from_ltrb(left, top, right, bottom) {
+                mask.fill_path(
+                    &PathBuilder::from_rect(rect),
+                    FillRule::Winding,
+                    true,
+                    Transform::identity(),
+                );
+            }
+            mask
+        })
+    }
+
+    /// What drawing within `bounds` (device px) goes through. A pixel's
+    /// coverage reaches it only from the pixel a fractional edge is in, so
+    /// the comparison is on whole pixels, with one to spare for
+    /// anti-aliasing.
+    fn coverage(&self, bounds: Bounds) -> Coverage {
+        let [left, top, right, bottom] = self.rect;
+        let touched = [
+            bounds[0].floor() - 1.0,
+            bounds[1].floor() - 1.0,
+            bounds[2].ceil() + 1.0,
+            bounds[3].ceil() + 1.0,
+        ];
+        if !touched.iter().all(|edge| edge.is_finite()) {
+            return Coverage::Partial;
+        }
+        let hidden = touched[2] <= left.floor()
+            || touched[0] >= right.ceil()
+            || touched[3] <= top.floor()
+            || touched[1] >= bottom.ceil();
+        if hidden {
+            return Coverage::Hidden;
+        }
+        let whole = self.path.is_none()
+            && touched[0] >= left.ceil()
+            && touched[1] >= top.ceil()
+            && touched[2] <= right.floor()
+            && touched[3] <= bottom.floor();
+        if whole {
+            Coverage::Whole
+        } else {
+            Coverage::Partial
+        }
+    }
 }
 
 /// Decodes PNG, JPEG, GIF or BMP bytes to a premultiplied pixmap.
@@ -1102,15 +1813,14 @@ impl Painter for TinySkiaPainter {
         let Some(rect) = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32) else {
             return;
         };
-        let (color, transform, clip) = {
+        let (color, transform) = {
             let state = self.inner.state.borrow();
-            (state.fill, state.transform, state.clip.clone())
+            (state.fill, state.transform)
         };
         let paint = self.paint(color);
-        self.inner
-            .pixmap
-            .borrow_mut()
-            .fill_rect(rect, &paint, transform, clip.as_deref());
+        let color = self.color(color);
+        let opaque = (color.alpha() >= 1.0).then_some(color);
+        self.fill_rect_clipped(rect, &paint, transform, opaque);
     }
 
     /// Paints the rectangle opaque paper rather than transparent: the Skia
@@ -1121,17 +1831,12 @@ impl Painter for TinySkiaPainter {
         let Some(rect) = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32) else {
             return;
         };
-        let (transform, clip) = {
-            let state = self.inner.state.borrow();
-            (state.transform, state.clip.clone())
-        };
+        let transform = self.inner.state.borrow().transform;
         let mut paint = Paint::default();
-        paint.set_color(self.paper());
+        let paper = self.paper();
+        paint.set_color(paper);
         paint.blend_mode = BlendMode::Source;
-        self.inner
-            .pixmap
-            .borrow_mut()
-            .fill_rect(rect, &paint, transform, clip.as_deref());
+        self.fill_rect_clipped(rect, &paint, transform, Some(paper));
     }
 
     fn stroke_rect(&self, x: f64, y: f64, width: f64, height: f64) {
@@ -1277,22 +1982,15 @@ impl Painter for TinySkiaPainter {
     }
 
     fn clip(&self) {
-        let (width, height) = {
+        let size = {
             let pixmap = self.inner.pixmap.borrow();
             (pixmap.width(), pixmap.height())
         };
         let path = self.current_path();
         let mut state = self.inner.state.borrow_mut();
-        let mut mask = match &state.clip {
-            Some(clip) => (**clip).clone(),
-            None => full_mask(width, height),
-        };
-        match path {
-            Some(path) => mask.intersect_path(&path, FillRule::Winding, true, state.transform),
-            // Clipping to an empty path clips everything away.
-            None => mask = Mask::new(width, height).expect("a mask the size of the surface"),
-        }
-        state.clip = Some(Rc::new(mask));
+        // Clipping to an empty path clips everything away.
+        let clip = Clip::new(state.clip.as_deref(), path.as_ref(), state.transform, size);
+        state.clip = Some(Rc::new(clip));
     }
 
     fn use_fill_style_for_stroke(&self) {
@@ -1413,6 +2111,48 @@ mod tests {
         assert_eq!(pixel(&painter, 5, 5), [255, 255, 255, 255]);
         // The fill colour was restored to black with the rest of the state.
         assert_eq!(pixel(&painter, 32, 32), [0, 0, 0, 255]);
+    }
+
+    /// What is drawn is reported as damaged rows, once; what the clip hides
+    /// is not.
+    #[test]
+    fn drawing_reports_the_rows_it_touched() {
+        let painter = TinySkiaPainter::new(100, 100, fonts()).unwrap();
+        assert_eq!(painter.take_damaged_rows(), None);
+        painter.fill_rect(10.0, 20.0, 30.0, 10.0);
+        assert_eq!(painter.take_damaged_rows(), Some(19..31));
+        assert_eq!(painter.take_damaged_rows(), None);
+        painter.save();
+        painter.begin_path();
+        painter.rect(0.0, 50.0, 100.0, 10.0);
+        painter.clip();
+        painter.fill_rect(0.0, 0.0, 100.0, 100.0);
+        painter.set_font("12px 'Noto Sans JP'");
+        painter.fill_text("あ", 10.0, 58.0).unwrap();
+        painter.restore();
+        assert_eq!(painter.take_damaged_rows(), Some(49..61));
+        assert_eq!(painter.bgra_premultiplied_rows(49..61).len(), 100 * 12 * 4);
+    }
+
+    /// A rectangle clipped to, under no transform at all (tiny-skia's
+    /// `is_scale_translate` says no to the identity), is kept as a rectangle.
+    #[test]
+    fn a_rectangle_clip_is_kept_as_a_rectangle() {
+        let mut builder = PathBuilder::new();
+        builder.push_rect(Rect::from_ltrb(0.0, 130.0, 793.6, 231.0).unwrap());
+        let path = builder.finish().unwrap();
+        assert_eq!(
+            rect_of(&path, Transform::identity()),
+            Some([0.0, 130.0, 793.6, 231.0])
+        );
+        assert_eq!(
+            rect_of(&path, Transform::from_scale(2.0, 2.0)),
+            Some([0.0, 260.0, 1587.2, 462.0])
+        );
+        assert_eq!(
+            rect_of(&path, Transform::from_row(1.0, 0.1, 0.0, 1.0, 0.0, 0.0)),
+            None
+        );
     }
 
     #[test]
