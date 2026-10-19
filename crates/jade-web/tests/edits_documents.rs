@@ -662,3 +662,34 @@ fn enter_at_the_end_of_a_paragraph_repaints_the_pages() {
     let fresh = open_bytes(&document.export_docx().unwrap());
     assert_eq!(page_rgba(&document, 0), page_rgba(&fresh, 0));
 }
+
+/// A paste of many lines is repainted once, from its first paragraph, and
+/// leaves the pages a whole repaint would draw.
+#[test]
+fn pasting_many_lines_repaints_what_a_whole_repaint_draws() {
+    let mut document = open("contract.docx");
+    let (paragraph, _) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0);
+    let text: String = (0..40)
+        .map(|line| format!("貼り付けた行 {line}\n"))
+        .collect();
+    let count = document.paragraph_count();
+    document.paste(&text).unwrap();
+    assert_eq!(document.paragraph_count(), count + 40);
+    assert_eq!(document.caret(), Some((paragraph + 40, 0)));
+    let pasted: Vec<Vec<u8>> = (0..document.page_count())
+        .map(|index| page_rgba(&document, index))
+        .collect();
+    // Undo and redo repaint every page from nothing.
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_count(), count);
+    document.redo().unwrap();
+    assert_eq!(document.page_count(), pasted.len());
+    for (index, pixels) in pasted.iter().enumerate() {
+        assert!(
+            &page_rgba(&document, index) == pixels,
+            "page {} differs from a whole repaint",
+            index + 1
+        );
+    }
+}
