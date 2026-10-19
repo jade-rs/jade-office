@@ -99,6 +99,9 @@ pub struct EditableDocument {
     /// The pages repainted since the shell last asked, from the renderer's
     /// dirty regions.
     repainted_pages: std::collections::BTreeSet<usize>,
+    /// While edits are batched (see [`Self::paste`]): the first paragraph
+    /// any of them touched, repainted from once they are all in.
+    deferred_repaint: Option<usize>,
 }
 
 impl EditableDocument {
@@ -164,6 +167,7 @@ impl EditableDocument {
             goal_x: None,
             affinity: CaretAffinity::Upstream,
             repainted_from: None,
+            deferred_repaint: None,
             repainted_pages: std::collections::BTreeSet::new(),
         })
     }
@@ -730,6 +734,12 @@ impl EditableDocument {
         let text = text.replace("\r\n", "\n").replace('\r', "\n");
         let since = self.history.len();
         let mut lines = text.split('\n');
+        // Every line is a split and an insert, and each of those repainted
+        // the document from its paragraph down: pasting n lines cost n
+        // repaints of the rest of the document. They are all made first and
+        // the document is repainted from the first paragraph they touched,
+        // once.
+        self.deferred_repaint = Some(usize::MAX);
         let result = (|| {
             self.insert_text(lines.next().unwrap_or_default())?;
             for line in lines {
@@ -738,8 +748,16 @@ impl EditableDocument {
             }
             Ok(())
         })();
+        let from = self
+            .deferred_repaint
+            .take()
+            .filter(|&from| from != usize::MAX);
         self.group_history(since);
-        result
+        let repainted = match from {
+            Some(from) => self.repaint_from(from),
+            None => Ok(()),
+        };
+        result.and(repainted)
     }
 
     /// Replaces the selection with `text`; the caret follows the text.
@@ -909,6 +927,10 @@ impl EditableDocument {
                 .map_err(|error| format!("edit failed: {error:?}"))?;
         }
         self.dirty = true;
+        if let Some(from) = &mut self.deferred_repaint {
+            *from = (*from).min(paragraph);
+            return Ok(());
+        }
         // Most edits leave their paragraph's place and height alone, and then
         // nothing after it moves: the page it is on is all that changes, and
         // of that page only the paragraph's band — every other pixel stays on
