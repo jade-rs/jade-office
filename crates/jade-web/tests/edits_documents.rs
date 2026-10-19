@@ -762,3 +762,29 @@ fn word_and_document_moves_go_where_a_mac_takes_them() {
     document.move_caret(Motion::DocumentStart, true).unwrap();
     assert_eq!(document.selection(), Some(((last, offset), (0, 0))));
 }
+
+/// A document opens painted as a whole repaint paints it — on a page box
+/// other than Letter (contract.docx) and on Letter (hello.docx), where the
+/// pass that finds the box is the one kept.
+#[test]
+fn a_document_opens_painted_as_a_whole_repaint_paints_it() {
+    for name in ["contract.docx", "public/fixtures/hello.docx"] {
+        let mut document = open(name);
+        let opened: Vec<Vec<u8>> = (0..document.page_count())
+            .map(|index| page_rgba(&document, index))
+            .collect();
+        let (paragraph, _) = first_text_paragraph(&document);
+        document.place_caret(paragraph, 0);
+        document.insert_text("x").unwrap();
+        // Undo repaints every page from nothing.
+        document.undo().unwrap();
+        assert_eq!(document.page_count(), opened.len(), "{name}");
+        for (index, pixels) in opened.iter().enumerate() {
+            assert!(
+                &page_rgba(&document, index) == pixels,
+                "{name}: page {} differs",
+                index + 1
+            );
+        }
+    }
+}
