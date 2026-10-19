@@ -65,6 +65,15 @@ pub enum Motion {
     Down,
     LineStart,
     LineEnd,
+    /// To the start of the word before the caret (⌥← on a Mac, Ctrl+←
+    /// elsewhere), across a paragraph's start.
+    WordLeft,
+    /// To the end of the word after the caret, across a paragraph's end.
+    WordRight,
+    /// The start and the end of the document's body (⌘↑ and ⌘↓, or
+    /// Ctrl+Home and Ctrl+End).
+    DocumentStart,
+    DocumentEnd,
 }
 
 pub struct EditableDocument {
@@ -126,7 +135,10 @@ impl EditableDocument {
             return Err("the document has no main part".to_string());
         }
         // The section properties decide the page box: a first pass finds it,
-        // and the renderer kept is the one built to it.
+        // and the renderer kept is the one built to it. The first pass only
+        // lays the document out — painting every page of it was most of what
+        // opening a document that is not Letter cost, thrown away — and when
+        // the box is Letter after all, its layout is painted as it stands.
         let mut opened = Self::render(
             &word_document,
             &options,
@@ -134,10 +146,21 @@ impl EditableDocument {
             scale,
             &fonts,
             &measurer,
+            false,
         )?;
         let size = opened.0.layout_page_size();
         if size != INITIAL_PAGE && size.0 > 1.0 && size.1 > 1.0 {
-            opened = Self::render(&word_document, &options, size, scale, &fonts, &measurer)?;
+            opened = Self::render(
+                &word_document,
+                &options,
+                size,
+                scale,
+                &fonts,
+                &measurer,
+                true,
+            )?;
+        } else {
+            Self::paint_every_page(&mut opened.0, &word_document, &options)?;
         }
         let (
             renderer,
@@ -180,6 +203,7 @@ impl EditableDocument {
         scale: f64,
         fonts: &Rc<FontBook>,
         measurer: &Rc<ShapingMeasurer>,
+        paint: bool,
     ) -> Result<
         (
             CanvasRenderer<TinySkiaPainter>,
@@ -204,6 +228,22 @@ impl EditableDocument {
         renderer.sync_document_header_footer_stories(word_document);
         // The shell draws the selection over the pages.
         renderer.set_use_selection_overlay(true);
+        if !paint {
+            // Laid out, every page, but drawn on none.
+            renderer.set_visible_page_range(Some(usize::MAX..=usize::MAX));
+        }
+        let painted = Self::paint_every_page(&mut renderer, word_document, options);
+        renderer.clear_visible_page_range();
+        painted?;
+        Ok((renderer, pages, rendered, whole, limit, dark))
+    }
+
+    /// A whole-document pass: every page laid out and painted.
+    fn paint_every_page(
+        renderer: &mut CanvasRenderer<TinySkiaPainter>,
+        word_document: &WordDocument,
+        options: &Options,
+    ) -> Result<(), String> {
         renderer.mark_full_repaint();
         let document = word_document
             .document
@@ -224,7 +264,7 @@ impl EditableDocument {
             return Err(error);
         }
         renderer.clear_dirty_regions();
-        Ok((renderer, pages, rendered, whole, limit, dark))
+        Ok(())
     }
 
     // ---- pages --------------------------------------------------------------
@@ -567,6 +607,22 @@ impl EditableDocument {
             Motion::Left if !extend && !range.is_collapsed() => (start.paragraph, start.offset),
             Motion::Right if !extend && !range.is_collapsed() => (end.paragraph, end.offset),
             Motion::Left | Motion::Right => self.step_character(focus, motion == Motion::Right),
+            Motion::WordLeft | Motion::WordRight => {
+                self.step_word(focus, motion == Motion::WordRight)
+            }
+            Motion::DocumentStart => {
+                let first = (0..self.paragraph_count())
+                    .find(|&index| self.is_body_paragraph(index))
+                    .unwrap_or(0);
+                (first, 0)
+            }
+            Motion::DocumentEnd => {
+                let last = (0..self.paragraph_count())
+                    .rev()
+                    .find(|&index| self.is_body_paragraph(index))
+                    .unwrap_or(0);
+                (last, self.paragraph_text(last).map_or(0, |text| text.len()))
+            }
             Motion::Up | Motion::Down | Motion::LineStart | Motion::LineEnd => {
                 // The line the caret is drawn on, wrap or not.
                 let rect = self.rect_at(focus).ok_or("the caret has no position")?;
@@ -632,6 +688,45 @@ impl EditableDocument {
                 ),
                 None => (paragraph, offset),
             }
+        }
+    }
+
+    /// One word along from `position`, as ⌥← and ⌥→ go: past any spaces and
+    /// punctuation, then over a run of letters and digits (Japanese runs as
+    /// a whole). At a paragraph's edge, into the next paragraph.
+    fn step_word(&self, (paragraph, offset): (usize, usize), forwards: bool) -> (usize, usize) {
+        let text = self.paragraph_text(paragraph).unwrap_or_default();
+        let offset = offset.min(text.len());
+        if forwards {
+            let rest = &text[offset..];
+            if rest.is_empty() {
+                return self.step_character((paragraph, offset), true);
+            }
+            let skipped = rest
+                .char_indices()
+                .find(|(_, ch)| ch.is_alphanumeric())
+                .map_or(rest.len(), |(at, _)| at);
+            let word = rest[skipped..]
+                .char_indices()
+                .find(|(_, ch)| !ch.is_alphanumeric())
+                .map_or(rest.len() - skipped, |(at, _)| at);
+            (paragraph, offset + skipped + word)
+        } else {
+            let before = &text[..offset];
+            if before.is_empty() {
+                return self.step_character((paragraph, offset), false);
+            }
+            let skipped = before
+                .char_indices()
+                .rev()
+                .find(|(_, ch)| ch.is_alphanumeric())
+                .map_or(0, |(at, ch)| at + ch.len_utf8());
+            let word = before[..skipped]
+                .char_indices()
+                .rev()
+                .find(|(_, ch)| !ch.is_alphanumeric())
+                .map_or(0, |(at, ch)| at + ch.len_utf8());
+            (paragraph, word)
         }
     }
 
