@@ -49,8 +49,6 @@ impl WordSession for EditableDocument {
                 return Err(format!("edit failed: {error:?}"));
             }
         };
-        self.history.push(1);
-        self.redo_history.clear();
         self.composition = None;
         self.dirty = true;
         self.selection = if keep_selection {
