@@ -135,9 +135,15 @@ fn run(scenario: &str, fixture: &Path) -> Result<Duration, String> {
         "xlsx-paint" => {
             let book = jade_web::Workbook::open(&bytes, "UTC", fonts.backend.clone())?;
             measure(|| {
-                book.render_viewport((0.0, 0.0), VIEWPORT.0, VIEWPORT.1, SCALE, None)
-                    .map(drop)
-                    .ok_or_else(|| "no viewport".to_string())
+                book.render_viewport(
+                    (0.0, 0.0),
+                    VIEWPORT.0,
+                    VIEWPORT.1,
+                    SCALE,
+                    &jade_web::sheet::Overlay::default(),
+                )
+                .map(drop)
+                .ok_or_else(|| "no viewport".to_string())
             })
         }
         "pptx-paint" => {
