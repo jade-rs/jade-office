@@ -720,3 +720,42 @@ fn home_and_end_in_a_table_cell_stay_in_the_cell() {
         Some(((second.0, 3), (second.0, "middle".len())))
     );
 }
+
+#[test]
+fn tab_goes_from_cell_to_cell_and_adds_a_row_at_the_end() {
+    use jade_web::editing::WordFormatting;
+    let mut document = open("contract.docx");
+    let (paragraph, before) = first_text_paragraph(&document);
+    // Outside a table it is not a cell move.
+    document.place_caret(paragraph, 0);
+    assert!(!document.step_cell(true).unwrap());
+    document.insert_text("\t").unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("\t{before}")
+    );
+
+    document.place_caret(0, 0);
+    let first = document.insert_table(1, 2).unwrap();
+    document.place_caret(first.0, first.1);
+    document.insert_text("one").unwrap();
+    // Tab: the next cell, its text selected, so typing replaces it.
+    assert!(document.step_cell(true).unwrap());
+    let second = document.caret().unwrap().0;
+    assert_ne!(second, first.0);
+    document.insert_text("two").unwrap();
+    // ⇧Tab: back to the first cell, all of it selected.
+    document.step_cell(false).unwrap();
+    assert_eq!(document.selection(), Some(((first.0, 0), (first.0, 3))));
+    document.insert_text("ONE").unwrap();
+    assert_eq!(document.paragraph_text(first.0).unwrap(), "ONE");
+
+    // Tab in the last cell adds a row and goes into its first cell.
+    document.place_caret(second, 0);
+    assert_eq!(document.caret_table_cell().unwrap().rows, 1);
+    document.step_cell(true).unwrap();
+    let cell = document.caret_table_cell().unwrap();
+    assert_eq!(cell.rows, 2);
+    assert_eq!((cell.row, cell.column), (1, 0));
+    assert_eq!(document.paragraph_text(second).unwrap(), "two");
+}
