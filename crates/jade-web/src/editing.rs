@@ -65,6 +65,15 @@ pub enum Motion {
     Down,
     LineStart,
     LineEnd,
+    /// To the start of the word before the caret (⌥← on a Mac, Ctrl+←
+    /// elsewhere), across a paragraph's start.
+    WordLeft,
+    /// To the end of the word after the caret, across a paragraph's end.
+    WordRight,
+    /// The start and the end of the document's body (⌘↑ and ⌘↓, or
+    /// Ctrl+Home and Ctrl+End).
+    DocumentStart,
+    DocumentEnd,
 }
 
 pub struct EditableDocument {
@@ -506,6 +515,22 @@ impl EditableDocument {
             Motion::Left if !extend && !range.is_collapsed() => (start.paragraph, start.offset),
             Motion::Right if !extend && !range.is_collapsed() => (end.paragraph, end.offset),
             Motion::Left | Motion::Right => self.step_character(focus, motion == Motion::Right),
+            Motion::WordLeft | Motion::WordRight => {
+                self.step_word(focus, motion == Motion::WordRight)
+            }
+            Motion::DocumentStart => {
+                let first = (0..self.paragraph_count())
+                    .find(|&index| self.is_body_paragraph(index))
+                    .unwrap_or(0);
+                (first, 0)
+            }
+            Motion::DocumentEnd => {
+                let last = (0..self.paragraph_count())
+                    .rev()
+                    .find(|&index| self.is_body_paragraph(index))
+                    .unwrap_or(0);
+                (last, self.paragraph_text(last).map_or(0, |text| text.len()))
+            }
             Motion::Up | Motion::Down | Motion::LineStart | Motion::LineEnd => {
                 // The line the caret is drawn on, wrap or not.
                 let rect = self.rect_at(focus).ok_or("the caret has no position")?;
@@ -571,6 +596,45 @@ impl EditableDocument {
                 ),
                 None => (paragraph, offset),
             }
+        }
+    }
+
+    /// One word along from `position`, as ⌥← and ⌥→ go: past any spaces and
+    /// punctuation, then over a run of letters and digits (Japanese runs as
+    /// a whole). At a paragraph's edge, into the next paragraph.
+    fn step_word(&self, (paragraph, offset): (usize, usize), forwards: bool) -> (usize, usize) {
+        let text = self.paragraph_text(paragraph).unwrap_or_default();
+        let offset = offset.min(text.len());
+        if forwards {
+            let rest = &text[offset..];
+            if rest.is_empty() {
+                return self.step_character((paragraph, offset), true);
+            }
+            let skipped = rest
+                .char_indices()
+                .find(|(_, ch)| ch.is_alphanumeric())
+                .map_or(rest.len(), |(at, _)| at);
+            let word = rest[skipped..]
+                .char_indices()
+                .find(|(_, ch)| !ch.is_alphanumeric())
+                .map_or(rest.len() - skipped, |(at, _)| at);
+            (paragraph, offset + skipped + word)
+        } else {
+            let before = &text[..offset];
+            if before.is_empty() {
+                return self.step_character((paragraph, offset), false);
+            }
+            let skipped = before
+                .char_indices()
+                .rev()
+                .find(|(_, ch)| ch.is_alphanumeric())
+                .map_or(0, |(at, ch)| at + ch.len_utf8());
+            let word = before[..skipped]
+                .char_indices()
+                .rev()
+                .find(|(_, ch)| !ch.is_alphanumeric())
+                .map_or(0, |(at, ch)| at + ch.len_utf8());
+            (paragraph, word)
         }
     }
 

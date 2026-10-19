@@ -689,3 +689,45 @@ fn home_and_end_in_a_table_cell_stay_in_the_cell() {
         Some(((second.0, 3), (second.0, "middle".len())))
     );
 }
+
+#[test]
+fn word_and_document_moves_go_where_a_mac_takes_them() {
+    let mut document = open("contract.docx");
+    let (paragraph, _) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0);
+    document.insert_text("one two, three ").unwrap();
+    let typed = document.paragraph_text(paragraph).unwrap();
+
+    // ⌥→ goes to the end of the next word, past spaces and punctuation.
+    document.place_caret(paragraph, 0);
+    document.move_caret(Motion::WordRight, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, 3)));
+    document.move_caret(Motion::WordRight, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, 7)));
+    // ⌥← back to the start of the word before it; ⇧ extends.
+    document.move_caret(Motion::WordLeft, true).unwrap();
+    assert_eq!(document.selection(), Some(((paragraph, 7), (paragraph, 4))));
+    document.place_caret(paragraph, 9);
+    document.move_caret(Motion::WordLeft, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, 4)));
+    // A Japanese run is one word.
+    document.place_caret(paragraph, "one two, three ".len());
+    document.move_caret(Motion::WordRight, false).unwrap();
+    let (_, end) = document.caret().unwrap();
+    assert!(end > "one two, three ".len());
+    assert!(typed["one two, three ".len()..end]
+        .chars()
+        .all(char::is_alphanumeric));
+    // At a paragraph's start, into the one before.
+    document.place_caret(paragraph + 1, 0);
+    document.move_caret(Motion::WordLeft, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, typed.len())));
+
+    // ⌘↓ and ⌘↑: the body's last and first positions.
+    document.move_caret(Motion::DocumentEnd, false).unwrap();
+    let (last, offset) = document.caret().unwrap();
+    assert!(last > paragraph);
+    assert_eq!(offset, document.paragraph_text(last).unwrap().len());
+    document.move_caret(Motion::DocumentStart, true).unwrap();
+    assert_eq!(document.selection(), Some(((last, offset), (0, 0))));
+}
