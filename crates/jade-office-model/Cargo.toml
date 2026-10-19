@@ -20,10 +20,14 @@ path = "src/lib.rs"
 
 [features]
 default = []
-skia = ["dep:jade-skia-painter"]
+skia = ["dep:jade-skia-painter", "dep:jade-docx-native-render"]
 tiny-skia = ["dep:jade-tiny-skia-painter"]
 
 [dependencies]
+jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
+jade-docx-headless-api = { path = "../../jade-core/crates/jade-docx-headless-api" }
+jade-docx-layout = { path = "../../jade-core/crates/jade-docx-layout" }
+jade-selection = { path = "../../jade-core/crates/jade-selection" }
 jade-opc = { path = "../../jade-core/crates/jade-opc" }
 jade-painter = { path = "../../jade-core/crates/jade-painter" }
 jade-pptx-layout = { path = "../../jade-core/crates/jade-pptx-layout" }
@@ -36,6 +40,7 @@ jade-xlsx-layout = { path = "../../jade-core/crates/jade-xlsx-layout" }
 jade-xlsx-reader = { path = "../../jade-core/crates/jade-xlsx-reader" }
 jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter", optional = true }
+jade-docx-native-render = { path = "../../jade-core/crates/jade-docx-native-render", optional = true }
 jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter", optional = true }
 
 [dev-dependencies]

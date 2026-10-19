@@ -320,3 +320,49 @@ web.read_only	閲覧のみ
 web.download	保存 (ダウンロード)
 web.downloaded	{name} をダウンロードしました
 web.open_failed	{name} を開けません: {error}
+ribbon.font_family	フォント
+ribbon.font_size	フォント サイズ
+ribbon.paragraph_borders	罫線
+ribbon.border.bottom	下罫線
+ribbon.border.top	上罫線
+ribbon.border.box	外枠
+ribbon.border.none	枠なし
+ribbon.styles_more	スタイルの一覧
+ribbon.insert_table	表
+ribbon.insert_table_title	表の挿入
+ribbon.table_size	{columns} × {rows} 表
+ribbon.needs_table	表の中にカーソルを置くと使えます
+ribbon.group.rows	行
+ribbon.group.columns	列
+ribbon.group.merge	結合
+ribbon.group.table_format	表の書式
+ribbon.row_above	上に行を挿入
+ribbon.row_below	下に行を挿入
+ribbon.row_delete	行の削除
+ribbon.column_left	左に列を挿入
+ribbon.column_right	右に列を挿入
+ribbon.column_delete	列の削除
+ribbon.table_delete	表の削除
+ribbon.table_split	表の分割
+ribbon.merge	セルの結合
+ribbon.unmerge	セル分割
+ribbon.table_style	表スタイル
+ribbon.cell_format	セルの書式
+ribbon.preset.plain	標準
+ribbon.preset.grid	格子
+ribbon.preset.light_blue	水色
+ribbon.preset.blue_bands	青縞
+ribbon.preset.gray_bands	灰縞
+ribbon.table_align	表の配置
+ribbon.cell_align	セル内の配置
+ribbon.top	上
+ribbon.bottom	下
+ribbon.shading	網かけ
+ribbon.borders_all	すべての罫線
+ribbon.borders_none	罫線なし
+ribbon.size	サイズ
+ribbon.distribute_rows	行の高さを揃える
+ribbon.distribute_columns	列の幅を揃える
+ribbon.split_cell	セルの分割
+ribbon.split_size	{columns} 列 × {rows} 行
+ribbon.repeat_header	タイトル行の繰り返し

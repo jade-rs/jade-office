@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use jade_docx_native_render::document::NativeDocument;
 use jade_skia_painter::SkiaPainter;
 
 use crate::{Backend, Face};
@@ -68,5 +69,44 @@ impl Backend for SkiaBackend {
 
     fn png(painter: &SkiaPainter) -> Option<Vec<u8>> {
         painter.encode_png()
+    }
+}
+
+/// The native app's Word document drives the shared ribbon commands.
+impl crate::word::WordSession for jade_docx_native_render::document::NativeDocument {
+    fn word_document(&self) -> &jade_docx_editor::word_document::WordDocument {
+        NativeDocument::word_document(self)
+    }
+
+    fn selection_range(&self) -> Option<jade_selection::SelectionRange> {
+        NativeDocument::selection_range(self)
+    }
+
+    fn set_selection_range(&mut self, range: Option<jade_selection::SelectionRange>) {
+        NativeDocument::set_selection_range(self, range)
+    }
+
+    fn apply_command(
+        &mut self,
+        command: jade_docx_headless_api::HeadlessCommand,
+        keep_selection: bool,
+    ) -> Result<(), String> {
+        NativeDocument::apply_command(self, command, keep_selection)
+    }
+
+    fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize> {
+        self.renderer().cell_id_for_paragraph(paragraph)
+    }
+
+    fn cell_layout(&self, cell_id: usize) -> Option<&crate::word::CellLayout> {
+        self.renderer().cell_layout(cell_id)
+    }
+
+    fn cell_layouts(&self) -> &[crate::word::CellLayout] {
+        self.renderer().cell_layouts_debug_ref()
+    }
+
+    fn table_order_for(&self, table_id: usize) -> Option<usize> {
+        self.renderer().table_order_for(table_id)
     }
 }
