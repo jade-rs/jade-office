@@ -169,7 +169,14 @@ struct PageImage {
     /// Each tile's [`TinySkiaPainter::rows_fingerprint`] when it was read.
     fingerprints: Vec<u64>,
     size: (u32, u32),
+    /// The page as it was when it stopped being kept as pixels, an eighth
+    /// its size: what the page list shows of a page off screen.
+    thumbnail: Option<Arc<RenderImage>>,
 }
+
+/// How many times smaller, across and down, a kept thumbnail is than its
+/// page: an A4 page at 2x keeps 200 × 280 px, about 220 KB.
+const THUMBNAIL_STEP: usize = 8;
 
 impl PageImage {
     /// A page kept as no pixels — off screen in a long document: the paper
@@ -179,7 +186,58 @@ impl PageImage {
             tiles: Vec::new(),
             fingerprints: Vec::new(),
             size: (0, 0),
+            thumbnail: None,
         }
+    }
+
+    /// Lets the page's pixels go, keeping a thumbnail of them.
+    fn release(&mut self, retired: &mut Vec<Arc<RenderImage>>) {
+        if self.tiles.is_empty() {
+            return;
+        }
+        let thumbnail = self.shrink();
+        retired.append(&mut self.tiles);
+        retired.extend(self.thumbnail.take());
+        *self = Self {
+            thumbnail,
+            ..Self::blank()
+        };
+    }
+
+    /// Drops a kept thumbnail that no longer shows the page.
+    fn forget_thumbnail(&mut self, retired: &mut Vec<Arc<RenderImage>>) {
+        retired.extend(self.thumbnail.take());
+    }
+
+    /// The tiles averaged down by [`THUMBNAIL_STEP`] into one picture.
+    fn shrink(&self) -> Option<Arc<RenderImage>> {
+        let (width, height) = (self.size.0 as usize, self.size.1 as usize);
+        let (across, down) = (width / THUMBNAIL_STEP, height / THUMBNAIL_STEP);
+        if across == 0 || down == 0 {
+            return None;
+        }
+        let mut sums = vec![0u32; across * down * 4];
+        for (index, tile) in self.tiles.iter().enumerate() {
+            let bytes = tile.as_bytes(0)?;
+            let first = index * TILE_ROWS as usize;
+            for (row, line) in bytes.chunks_exact(width * 4).enumerate() {
+                let y = (first + row) / THUMBNAIL_STEP;
+                if y >= down {
+                    break;
+                }
+                let (pixels, _) = line.as_chunks::<4>();
+                for (x, pixel) in pixels.iter().take(across * THUMBNAIL_STEP).enumerate() {
+                    let at = (y * across + x / THUMBNAIL_STEP) * 4;
+                    for (sum, value) in sums[at..at + 4].iter_mut().zip(pixel) {
+                        *sum += u32::from(*value);
+                    }
+                }
+            }
+        }
+        let cells = (THUMBNAIL_STEP * THUMBNAIL_STEP) as u32;
+        let pixels = sums.into_iter().map(|sum| (sum / cells) as u8).collect();
+        let buffer = image::ImageBuffer::from_raw(across as u32, down as u32, pixels)?;
+        Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
     }
 
     fn rows(painter: &TinySkiaPainter, index: u32) -> Range<u32> {
@@ -212,6 +270,7 @@ impl PageImage {
             tiles,
             fingerprints,
             size,
+            thumbnail: None,
         })
     }
 
@@ -222,6 +281,7 @@ impl PageImage {
         if (painter.width(), painter.height()) != self.size {
             if let Some(fresh) = Self::new(painter) {
                 retired.append(&mut self.tiles);
+                retired.extend(self.thumbnail.take());
                 *self = fresh;
             }
             return;
@@ -249,6 +309,9 @@ impl PageImage {
 
     /// The tiles stacked to fill their parent.
     fn element(&self) -> gpui::Div {
+        if let (true, Some(thumbnail)) = (self.tiles.is_empty(), &self.thumbnail) {
+            return div().size_full().child(img(thumbnail.clone()).size_full());
+        }
         let height = self.size.1.max(1) as f32;
         div()
             .size_full()
@@ -1615,15 +1678,20 @@ impl DocView {
         else {
             return;
         };
+        // An edit from this page on can have moved what any later page
+        // shows: a thumbnail kept of one is out of date.
+        let changed_from = document.take_repainted_from();
         document.take_repainted_pages();
         let count = document.page_count();
         for index in 0..count {
             let Some(painter) = document.page(index) else {
-                // Not kept as pixels: its tiles go too.
+                // Not kept as pixels: its tiles go, a thumbnail stays.
                 match pages.get_mut(index) {
                     Some(page) => {
-                        self.retired.append(&mut page.tiles);
-                        *page = PageImage::blank();
+                        page.release(&mut self.retired);
+                        if changed_from.is_some_and(|from| index >= from) {
+                            page.forget_thumbnail(&mut self.retired);
+                        }
                     }
                     None => pages.push(PageImage::blank()),
                 }
@@ -1639,6 +1707,7 @@ impl DocView {
         while pages.len() > count {
             if let Some(mut old) = pages.pop() {
                 self.retired.append(&mut old.tiles);
+                self.retired.extend(old.thumbnail.take());
             }
         }
     }
