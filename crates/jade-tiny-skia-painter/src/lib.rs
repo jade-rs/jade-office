@@ -1071,14 +1071,35 @@ impl TinySkiaPainter {
         }
     }
 
-    /// The face a run is drawn and measured in: the styled one, or the first
-    /// that has the run's first character — the Skia backend's rule.
-    fn run_font(&self, text: &str) -> usize {
+    /// `text` split where the face drawing it changes: each character in
+    /// the styled face, or the first face that has it — the Skia backend's
+    /// rule, and a browser's.
+    fn segments<'t>(&self, text: &'t str) -> Vec<(usize, &'t str)> {
         let font = self.inner.state.borrow().font;
-        match text.chars().next() {
-            Some(first) => self.inner.fonts.covering(font, first),
-            None => font,
+        let mut segments: Vec<(usize, &'t str)> = Vec::new();
+        let mut start = 0;
+        let mut current = None;
+        for (at, ch) in text.char_indices() {
+            let covering = self.inner.fonts.covering(font, ch);
+            if current.is_some_and(|face| face != covering) {
+                segments.push((current.unwrap_or(font), &text[start..at]));
+                start = at;
+            }
+            current = Some(covering);
         }
+        if let Some(face) = current {
+            segments.push((face, &text[start..]));
+        }
+        segments
+    }
+
+    /// The width of `text` at `size` px, each segment in its face.
+    fn text_width(&self, size: f32, text: &str) -> f32 {
+        self.segments(text)
+            .into_iter()
+            .flat_map(|(font, run)| self.glyphs(font, size, run))
+            .map(|(_, advance)| advance)
+            .sum()
     }
 
     /// Glyph ids and advances (px) for `text` in `font` at `size`.
@@ -1318,10 +1339,10 @@ impl TinySkiaPainter {
     }
 
     fn draw_text(&self, text: &str, x: f64, y: f64, stroke: bool) {
-        if text.is_empty() {
+        let segments = self.segments(text);
+        let Some(&(first, _)) = segments.first() else {
             return;
-        }
-        let font = self.run_font(text);
+        };
         let (size, baseline, transform, color) = {
             let state = self.inner.state.borrow();
             (
@@ -1331,8 +1352,25 @@ impl TinySkiaPainter {
                 if stroke { state.stroke } else { state.fill },
             )
         };
-        let (ascent, descent) = self.font_extent(font, size);
+        // One baseline for the whole text: the first segment's face's.
+        let (ascent, descent) = self.font_extent(first, size);
         let baseline_y = y as f32 + baseline.offset(ascent, descent);
+        let mut pen = x as f32;
+        for (font, run) in segments {
+            pen = self.draw_run(font, run, pen, baseline_y, (size, transform, color), stroke);
+        }
+    }
+
+    /// One face's run of [`Self::draw_text`], from `pen`; the pen after it.
+    fn draw_run(
+        &self,
+        font: usize,
+        text: &str,
+        mut pen: f32,
+        baseline_y: f32,
+        (size, transform, color): (f32, Transform, Color),
+        stroke: bool,
+    ) -> f32 {
         let units = self
             .inner
             .fonts
@@ -1341,7 +1379,6 @@ impl TinySkiaPainter {
             .map(|face| face.units_per_em)
             .unwrap_or(1000.0);
         let scale = size / units;
-        let mut pen = x as f32;
         for glyph in self.styled_glyphs(font, size, text) {
             // Font units, y up → px at the pen, y down; a synthetic italic
             // leans 12° as the letter rises.
@@ -1366,6 +1403,7 @@ impl TinySkiaPainter {
             }
             pen += glyph.advance;
         }
+        pen
     }
 
     /// Appends an elliptical arc as cubic Béziers, joining it to the current
@@ -1827,15 +1865,8 @@ impl Painter for TinySkiaPainter {
     }
 
     fn measure_text_width(&self, text: &str) -> Result<f64, Self::Error> {
-        let (font, size) = {
-            let state = self.inner.state.borrow();
-            (state.font, state.font_size_px)
-        };
-        Ok(self
-            .glyphs(font, size, text)
-            .iter()
-            .map(|(_, advance)| f64::from(*advance))
-            .sum())
+        let size = self.inner.state.borrow().font_size_px;
+        Ok(f64::from(self.text_width(size, text)))
     }
 
     fn measure_text_metrics(&self, text: &str) -> Result<TextMetrics, Self::Error> {
@@ -1843,30 +1874,33 @@ impl Painter for TinySkiaPainter {
             let state = self.inner.state.borrow();
             (state.font, state.font_size_px)
         };
-        let glyphs = self.glyphs(font, size, text);
-        let width: f32 = glyphs.iter().map(|(_, advance)| *advance).sum();
+        let width = self.text_width(size, text);
         let (ascent, descent) = self.font_extent(font, size);
-        let units = self
-            .inner
-            .fonts
-            .faces
-            .get(font)
-            .map(|face| face.units_per_em)
-            .unwrap_or(1000.0);
-        let scale = size / units;
-        // The ink box: each glyph's bounding box, at its pen position.
+        // The ink box: each glyph's bounding box, at its pen position, in
+        // the face that draws it.
         let (mut top, mut bottom, mut right) = (0.0_f32, 0.0_f32, 0.0_f32);
         let mut pen = 0.0_f32;
-        self.inner.fonts.with_face(font, |face| {
-            for (glyph, advance) in &glyphs {
-                if let Some(rect) = face.glyph_bounding_box(*glyph) {
-                    top = top.max(f32::from(rect.y_max) * scale);
-                    bottom = bottom.max(-f32::from(rect.y_min) * scale);
-                    right = right.max(pen + f32::from(rect.x_max) * scale);
+        for (run_font, run) in self.segments(text) {
+            let glyphs = self.glyphs(run_font, size, run);
+            let units = self
+                .inner
+                .fonts
+                .faces
+                .get(run_font)
+                .map(|face| face.units_per_em)
+                .unwrap_or(1000.0);
+            let scale = size / units;
+            self.inner.fonts.with_face(run_font, |face| {
+                for (glyph, advance) in &glyphs {
+                    if let Some(rect) = face.glyph_bounding_box(*glyph) {
+                        top = top.max(f32::from(rect.y_max) * scale);
+                        bottom = bottom.max(-f32::from(rect.y_min) * scale);
+                        right = right.max(pen + f32::from(rect.x_max) * scale);
+                    }
+                    pen += advance;
                 }
-                pen += advance;
-            }
-        });
+            });
+        }
         Ok(TextMetrics {
             width: f64::from(width),
             font_bounding_box_ascent: f64::from(ascent.round()),
@@ -2091,6 +2125,61 @@ mod tests {
             data[index + 2],
             data[index + 3],
         ]
+    }
+
+    fn thai() -> Arc<Vec<u8>> {
+        Arc::new(
+            std::fs::read(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../jade-core/fonts/Noto_Sans_Thai/NotoSansThai-VariableFont_wdth,wght.ttf"
+            ))
+            .unwrap(),
+        )
+    }
+
+    fn width(fonts: Rc<FontBook>, font: &str, text: &str) -> f64 {
+        let painter = TinySkiaPainter::new(1, 1, fonts).unwrap();
+        painter.set_font(font);
+        painter.measure_text_width(text).unwrap()
+    }
+
+    /// Each character falls back to a face that has it, as a browser's
+    /// text does: Thai after Latin in one run is measured — and drawn — in
+    /// the Thai face, not as the styled face's missing-glyph boxes.
+    #[test]
+    fn a_character_the_face_lacks_falls_back_on_its_own() {
+        let mut book = FontBook::new();
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../jade-core/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf"
+        );
+        book.register("Noto Sans JP", 400, Arc::new(std::fs::read(path).unwrap()))
+            .unwrap();
+        book.register("Noto Sans Thai", 400, thai()).unwrap();
+        let both = Rc::new(book);
+        let mut thai_only = FontBook::new();
+        thai_only.register("Noto Sans Thai", 400, thai()).unwrap();
+        let thai_only = Rc::new(thai_only);
+
+        let latin = width(Rc::clone(&both), "16px Noto Sans JP", "Total ");
+        let baht = width(thai_only, "16px Noto Sans Thai", "บาท");
+        let mixed = width(Rc::clone(&both), "16px Noto Sans JP", "Total บาท");
+        assert!(
+            (mixed - (latin + baht)).abs() < 0.01,
+            "{mixed} vs {latin} + {baht}"
+        );
+
+        // And it draws: ink where the Thai is.
+        let painter = TinySkiaPainter::new(120, 24, both).unwrap();
+        painter.set_font("16px Noto Sans JP");
+        painter.set_fill_style_str("#000");
+        painter.fill_text("Total บาท", 0.0, 18.0).unwrap();
+        let start = latin.ceil() as u32;
+        let inked = (start..start + baht.floor() as u32)
+            .flat_map(|x| (0..24).map(move |y| (x, y)))
+            .filter(|&(x, y)| pixel(&painter, x, y)[0] < 128)
+            .count();
+        assert!(inked > 20, "{inked}");
     }
 
     /// A one-colour 4 × 4 PNG.

@@ -371,6 +371,13 @@ fn bundled_font(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// The bundled Noto Sans Thai, which Thai text falls back to.
+fn thai_font() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../jade-core/fonts")
+        .join(jade_office_model::THAI_FONT)
+}
+
 /// The Skia backend the shared editing models (`jade-office-model`) paint
 /// with: the bundled faces under every alias, parsed once per process and
 /// shared by every workbook and deck view.
@@ -388,10 +395,15 @@ pub(crate) fn skia_backend() -> Result<jade_office_model::skia::SkiaBackend, Str
                 .map(Arc::new)
                 .map_err(|error| format!("{name}: {error}"))
         };
-        let faces = jade_office_model::aliased_faces(
+        let mut faces = jade_office_model::aliased_faces(
             read("NotoSansJP-Regular.ttf")?,
             Some(read("NotoSansJP-Bold.ttf")?),
         );
+        // Thai — BAHTTEXT's words among it — falls back to Noto Sans Thai.
+        let thai = thai_font();
+        faces.push(jade_office_model::thai_face(Arc::new(
+            std::fs::read(&thai).map_err(|error| format!("{}: {error}", thai.display()))?,
+        )));
         let made = jade_office_model::skia::SkiaBackend::new(&faces)?;
         *backend.borrow_mut() = Some(made.clone());
         Ok(made)
@@ -428,6 +440,12 @@ fn open_document(path: &str) -> Result<NativeDocument, String> {
             path: &symbols,
         });
     }
+    let thai = thai_font();
+    faces.push(FaceSpec {
+        family: "Noto Sans Thai",
+        weight: 400,
+        path: &thai,
+    });
     NativeDocument::open(
         &bytes,
         INITIAL_PAGE_WIDTH_PX,
