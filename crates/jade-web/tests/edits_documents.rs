@@ -16,6 +16,22 @@ fn open(name: &str) -> EditableDocument {
     open_bytes(&std::fs::read(core().join(name)).unwrap())
 }
 
+fn fonts() -> (
+    std::rc::Rc<jade_tiny_skia_painter::FontBook>,
+    std::rc::Rc<jade_web::document::ShapingMeasurer>,
+) {
+    let fonts_dir = core().join("fonts/Noto_Sans_JP/static");
+    let regular = std::fs::read(fonts_dir.join("NotoSansJP-Regular.ttf")).unwrap();
+    let bold = std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap();
+    let fonts = jade_web::backend(regular.clone(), Some(bold.clone()))
+        .unwrap()
+        .fonts();
+    (
+        fonts,
+        jade_web::document::measurer(&regular, Some(&bold)).unwrap(),
+    )
+}
+
 fn open_bytes(bytes: &[u8]) -> EditableDocument {
     let fonts_dir = core().join("fonts/Noto_Sans_JP/static");
     let regular = std::fs::read(fonts_dir.join("NotoSansJP-Regular.ttf")).unwrap();
@@ -786,5 +802,57 @@ fn a_document_opens_painted_as_a_whole_repaint_paints_it() {
                 index + 1
             );
         }
+    }
+}
+
+/// A shell showing a long document keeps only some pages as pixels: the rest
+/// have none, a page coming into view is painted as a whole repaint paints
+/// it, and an edit made while it was away shows when it comes back.
+#[test]
+fn only_resident_pages_are_kept_as_pixels() {
+    let bytes = std::fs::read(core().join("contract.docx")).unwrap();
+    let mut whole = open_bytes(&bytes);
+    let (fonts, measurer) = fonts();
+    let mut part = EditableDocument::open_resident(&bytes, 1.0, fonts, measurer, 0..1).unwrap();
+    assert_eq!(part.page_count(), whole.page_count());
+    assert!(part.page_count() >= 3);
+    assert!(part.page(0).is_some());
+    assert!(part.page(1).is_none() && part.page(2).is_none());
+    assert_eq!(page_rgba(&part, 0), page_rgba(&whole, 0));
+
+    // Scrolled on: the first page goes, the next two come.
+    assert!(part.set_resident_pages(1..3).unwrap());
+    assert!(part.page(0).is_none());
+    assert_eq!(part.take_repainted_pages(), vec![1, 2]);
+    for index in 1..3 {
+        assert!(
+            page_rgba(&part, index) == page_rgba(&whole, index),
+            "page {} differs",
+            index + 1
+        );
+    }
+    assert!(!part.set_resident_pages(1..3).unwrap());
+    // A paragraph before the resident pages still says what page it is on,
+    // for a shell scrolling to it, though its lines were not kept.
+    let (first, _) = first_text_paragraph(&part);
+    assert_eq!(part.paragraph_start_page(first), Some(0));
+    let last = part.paragraph_count() - 1;
+    let last_page = part.page_count() - 1;
+    assert_eq!(part.paragraph_start_page(last), Some(last_page));
+
+    // Typed into while away, the first page shows it when it comes back.
+    let (paragraph, _) = first_text_paragraph(&part);
+    for document in [&mut part, &mut whole] {
+        document.place_caret(paragraph, 0);
+        document.insert_text("見えない間の入力").unwrap();
+    }
+    assert!(part.page(0).is_none());
+    part.set_resident_pages(0..3).unwrap();
+    for index in 0..3 {
+        assert!(
+            page_rgba(&part, index) == page_rgba(&whole, index),
+            "page {} differs after the edit",
+            index + 1
+        );
     }
 }

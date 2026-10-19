@@ -157,6 +157,12 @@ impl Kind {
 /// again: a whole page at 2x is megabytes, a tile a few hundred kilobytes.
 const TILE_ROWS: u32 = 128;
 
+/// How many of a Word document's pages are kept as pixels at least: the ones
+/// on screen and those round them, up to this many — every page of a short
+/// document, so its page list stays drawn. About 30 MB a page at 2x, with
+/// its tiles.
+const RESIDENT_PAGES: usize = 8;
+
 /// A Word page's pixels, as a column of tiles.
 struct PageImage {
     tiles: Vec<Arc<RenderImage>>,
@@ -166,6 +172,16 @@ struct PageImage {
 }
 
 impl PageImage {
+    /// A page kept as no pixels — off screen in a long document: the paper
+    /// is drawn round it, and nothing else.
+    fn blank() -> Self {
+        Self {
+            tiles: Vec::new(),
+            fingerprints: Vec::new(),
+            size: (0, 0),
+        }
+    }
+
     fn rows(painter: &TinySkiaPainter, index: u32) -> Range<u32> {
         index * TILE_ROWS..((index + 1) * TILE_ROWS).min(painter.height())
     }
@@ -291,6 +307,9 @@ enum Document {
         /// Whether a press on a page is being dragged, extending the
         /// selection wherever the pointer goes.
         dragging: bool,
+        /// Whether the caret is to be scrolled to once its page is painted:
+        /// see `reveal_caret`.
+        reveal_pending: bool,
     },
     Deck {
         deck: jade_web::Deck,
@@ -352,11 +371,14 @@ impl DocView {
         }
         let document = match kind {
             Kind::Document => {
-                let opened = jade_web::editing::EditableDocument::open(
+                // The first pages only, as pixels: the view keeps the ones on
+                // screen as it scrolls (see `follow_scroll`).
+                let opened = jade_web::editing::EditableDocument::open_resident(
                     bytes,
                     fonts.scale,
                     fonts.backend.fonts(),
                     Rc::clone(&fonts.measurer),
+                    0..RESIDENT_PAGES,
                 )?;
                 let (width, height) = opened.page_size();
                 let mut ribbon = Box::<ribbon::Ribbon>::default();
@@ -366,8 +388,15 @@ impl DocView {
                     format: None,
                     highlight: None,
                     dragging: false,
+                    reveal_pending: false,
                     pages: (0..opened.page_count())
-                        .filter_map(|index| opened.page(index).as_ref().and_then(PageImage::new))
+                        .map(|index| {
+                            opened
+                                .page(index)
+                                .as_ref()
+                                .and_then(PageImage::new)
+                                .unwrap_or_else(PageImage::blank)
+                        })
                         .collect(),
                     document: Box::new(opened),
                     page_size: (width as f32, height as f32),
@@ -1590,6 +1619,14 @@ impl DocView {
         let count = document.page_count();
         for index in 0..count {
             let Some(painter) = document.page(index) else {
+                // Not kept as pixels: its tiles go too.
+                match pages.get_mut(index) {
+                    Some(page) => {
+                        self.retired.append(&mut page.tiles);
+                        *page = PageImage::blank();
+                    }
+                    None => pages.push(PageImage::blank()),
+                }
                 continue;
             };
             if let Some(page) = pages.get_mut(index) {
@@ -1633,16 +1670,29 @@ impl DocView {
             document,
             page_size,
             scroll,
+            reveal_pending,
             ..
         } = &mut self.document
         else {
             return;
         };
+        let pitch = page_size.1 * zoom + PAGE_GAP;
         let Some(caret) = document.focus_rect() else {
+            // A caret on a page not kept as pixels, before the ones that
+            // are, has no lines to place it by: to the top of its page,
+            // and once that page is painted, to the caret itself.
+            let page = document
+                .caret()
+                .and_then(|(paragraph, _)| document.paragraph_start_page(paragraph));
+            if let Some(page) = page {
+                let target = (PAGES_PADDING + page as f32 * pitch - MARGIN)
+                    .clamp(0.0, f32::from(scroll.max_offset().y).max(0.0));
+                scroll.set_offset(point(scroll.offset().x, px(-target)));
+                *reveal_pending = true;
+            }
             return;
         };
         let (page, y) = document.page_and_offset(caret.document_y);
-        let pitch = page_size.1 * zoom + PAGE_GAP;
         let top = PAGES_PADDING + page as f32 * pitch + y as f32 * zoom;
         let bottom = top + caret.height as f32 * zoom;
         let view = f32::from(scroll.bounds().size.height);
@@ -2082,9 +2132,54 @@ impl DocView {
         ribbon::ribbon(ribbon, &state, position, document.is_dirty(), viewport, cx)
     }
 
+    /// Keeps the pages on screen, one either side and as many more round
+    /// them as make [`RESIDENT_PAGES`], as pixels, and lets the rest go: a
+    /// long document's pages at 2x ran the browser out of memory when all of
+    /// them were kept.
+    fn follow_scroll(&mut self, viewport: gpui::Size<Pixels>) {
+        let zoom = self.zoom.unwrap_or(1.0);
+        let Document::Pages {
+            document,
+            page_size,
+            scroll,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let pitch = (page_size.1 * zoom + PAGE_GAP).max(1.0);
+        let top = (-f32::from(scroll.offset().y) - PAGES_PADDING).max(0.0);
+        let height = match f32::from(scroll.bounds().size.height) {
+            shown if shown > 0.0 => shown,
+            _ => f32::from(viewport.height),
+        };
+        let count = document.page_count();
+        let first = ((top / pitch) as usize).saturating_sub(1);
+        let last = ((top + height) / pitch) as usize + 2;
+        // Widened evenly to the budget, within the document.
+        let spare = RESIDENT_PAGES.saturating_sub(last - first);
+        let start = first.saturating_sub(spare / 2);
+        let end = (last + spare - (first - start)).min(count.max(last));
+        let start = start.min(end.saturating_sub(RESIDENT_PAGES.max(last - first)));
+        let resident = start..end;
+        match document.set_resident_pages(resident) {
+            Ok(true) => {
+                self.refresh_repainted();
+                if let Document::Pages { reveal_pending, .. } = &mut self.document {
+                    if std::mem::take(reveal_pending) {
+                        self.reveal_caret();
+                    }
+                }
+            }
+            Ok(false) => {}
+            Err(error) => self.status = error.into(),
+        }
+    }
+
     fn pages_body(&mut self, viewport: gpui::Size<Pixels>, cx: &mut Context<Self>) -> gpui::Div {
         let zoom = self.zoom.unwrap_or(1.0);
         self.shown_zoom = zoom;
+        self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
         let Document::Pages {
             document,
