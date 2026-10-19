@@ -13,7 +13,7 @@ A fix starts as a case that fails.
 
 | Oracle | What a case is | Size | Where |
 |---|---|---|---|
-| Excel functions | a formula and what Excel computes, Japanese functions and HYPERLINK/ENCODEURL/DBCS/PHONETIC included; 497 of Excel's 518 functions | 304 cases | jade-core `crates/jade-xlsx-headless-editor/tests/excel_conformance.rs` |
+| Excel functions | a formula and what Excel computes, Japanese functions and HYPERLINK/ENCODEURL/DBCS/PHONETIC/BAHTTEXT included; 498 of Excel's 518 functions | 318 cases | jade-core `crates/jade-xlsx-headless-editor/tests/excel_conformance.rs` |
 | Excel number formats | a value, a format code and what Excel displays (en-US and `[$-411]`) | 62 cases | jade-core `crates/jade-xlsx-layout/tests/excel_number_format_conformance.rs` |
 | Word round trip | every fixture opened, edited, saved and reopened with every paragraph and part intact | 165 documents | jade-core `crates/jade-docx-editor/tests/round_trip_corpus.rs` |
 | Excel round trip | the same for every cell's value, formula and style | 29 workbooks | jade-core `crates/jade-xlsx-headless-editor/tests/round_trip_corpus.rs` |
@@ -35,7 +35,7 @@ A fix starts as a case that fails.
 | | Word | Excel | PowerPoint |
 |---|---|---|---|
 | Open and show | pages as laid out by the engine; headers, footers, tables, pictures, text boxes, comments, tracked changes | cells, number formats (incl. Japanese eras), merged cells, conditional formats, charts, filters, frozen panes | slides, shapes, pictures, charts, notes, slide show |
-| Edit | caret, typing (IMEs included), Backspace/Delete/Enter, selection by drag, Shift-click, Shift+arrows, ⌘A; Home/End/arrows; copy, cut, paste (lines become paragraphs); undo/redo | select by click, drag (scrolling past the edge), Shift-click, row and column headers and the corner, ⌘A (the data, then the sheet), Shift/Ctrl+Space; ⌘-arrows to the ends of the data, ⌘Home/⌘End, Page Up/Down, Home; arrows over merged cells and past hidden rows; Enter and Tab round a range, Enter back to where Tab started; the name box shows the active cell and goes to a typed reference; type as in Excel (`10%`, `1,234`, `¥1,000`, `2024/1/15`, `'0123`), arrows leaving the cell, F2 to edit in place, ⌥Enter for a line break, arrows and clicks pointing at cells while a formula is typed, F4 for `$`, AutoSum (⌘⇧T); formulas over 497 functions, errors as Excel shows them (`#NAME?` for a misspelt function, in its dependents too); ⌘Enter, ⌘D, ⌘R and the fill handle (series, and double-click down the data); copy and paste with formulas moved and formats carried, tiled over a larger selection, cut moving the cells, Excel's clipboard text in and out; clear; ⌘B/⌘I/⌘U/⌘⇧X, Ctrl+Shift+1–6 number formats, ⌃; and ⌘; for the date and time; Merge & Center; sort A–Z/Z–A keeping a header; insert and delete rows and columns (⌘+/⌘-, menu), resize them by their header edges and fit by double-click; add, rename, move and delete sheets; hide and unhide rows and columns; drag a selection by its border to move it (⌥ copies); a Home-tab strip (font styles and size, alignment, wrap, merge, number formats, decimals, fill and font colours, borders, filters); filter dropdowns (sort, clear, tick values); data validation (list dropdowns, refused entries with the rule's message); hyperlinks followed on a click; notes written, edited, deleted and shown on hover; Find (⌘F); a right-click menu; undo/redo | select a shape (click or Tab), type into it or into a table's cell, move it, resize it by its corners (native app; tables and charts too), delete it; undo/redo |
+| Edit | caret, typing (IMEs included), Backspace/Delete/Enter, selection by drag, Shift-click, Shift+arrows, ⌘A; Home/End/arrows; copy, cut, paste (lines become paragraphs); undo/redo | select by click, drag (scrolling past the edge), Shift-click, row and column headers and the corner, ⌘A (the data, then the sheet), Shift/Ctrl+Space; ⌘-arrows to the ends of the data, ⌘Home/⌘End, Page Up/Down, Home; arrows over merged cells and past hidden rows; Enter and Tab round a range, Enter back to where Tab started; the name box shows the active cell and goes to a typed reference; type as in Excel (`10%`, `1,234`, `¥1,000`, `2024/1/15`, `'0123`), arrows leaving the cell, F2 to edit in place, ⌥Enter for a line break, arrows and clicks pointing at cells while a formula is typed, F4 for `$`, AutoSum (⌘⇧T); formulas over 498 functions, errors as Excel shows them (`#NAME?` for a misspelt function, in its dependents too); ⌘Enter, ⌘D, ⌘R and the fill handle (series, and double-click down the data); copy and paste with formulas moved and formats carried, tiled over a larger selection, cut moving the cells, Excel's clipboard text in and out; clear; ⌘B/⌘I/⌘U/⌘⇧X, Ctrl+Shift+1–6 number formats, ⌃; and ⌘; for the date and time; Merge & Center; sort A–Z/Z–A keeping a header; insert and delete rows and columns (⌘+/⌘-, menu), resize them by their header edges and fit by double-click; add, rename, move and delete sheets; hide and unhide rows and columns; drag a selection by its border to move it (⌥ copies); a Home-tab strip (font styles and size, alignment, wrap, merge, number formats, decimals, fill and font colours, borders, filters); filter dropdowns (sort, clear, tick values); data validation (list dropdowns, refused entries with the rule's message); hyperlinks followed on a click; notes written, edited, deleted and shown on hover; Find (⌘F); a right-click menu; undo/redo | select a shape (click or Tab), type into it or into a table's cell, move it, resize it by its corners (native app; tables and charts too), delete it; undo/redo |
 | Native only | ribbon formatting, find and replace, tables, comments, change tracking, PDF export, print | | |
 | Save | the file that was opened, in place and atomically; `.docm`/`.dotx`/`.xlsm`/`.pptm` stay what they are | the same; a formula jade cannot evaluate keeps Excel's value and asks Excel to recalculate on open | the same |
 
@@ -49,11 +49,13 @@ painter) and edits through the same cores.
    does, tables and charts included). A table's rows and columns cannot be
    added or removed, and text typed into a cell takes the cell's first
    run's formatting.
-2. **21 of Excel's 518 functions are missing**, nearly all ones no offline
-   engine can compute: CUBE\*, CALL, REGISTER.ID, RTD, WEBSERVICE,
-   FILTERXML, IMAGE, EUROCONVERT, GETPIVOTDATA, GROUPBY, PIVOTBY; and
-   BAHTTEXT. A file's own formulas keep Excel's cached value; typed fresh,
-   they show `#NAME?`.
+2. **20 of Excel's 518 functions are missing**: CUBE\*, CALL, REGISTER.ID,
+   RTD, WEBSERVICE, FILTERXML and IMAGE need a server, a network or a
+   program outside the workbook; EUROCONVERT is an add-in's; GETPIVOTDATA,
+   GROUPBY and PIVOTBY need pivot tables, which are not computed. A file's
+   own formulas keep Excel's cached value; typed fresh, they show `#NAME?`.
+   BAHTTEXT's เอ็ด after the millions (21000001 → ยี่สิบเอ็ดล้านเอ็ด) follows
+   a reported Excel result, not one checked here.
 3. **The browser clipboard** is checked with dispatched paste events; the
    embedded test browser cannot read the system clipboard.
 4. **Formula entry is refused as Excel refuses it** — a trailing operator,
