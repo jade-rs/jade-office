@@ -320,3 +320,49 @@ web.read_only	Read-only
 web.download	Save (Download)
 web.downloaded	Downloaded {name}
 web.open_failed	Cannot open {name}: {error}
+ribbon.font_family	Font
+ribbon.font_size	Font size
+ribbon.paragraph_borders	Borders
+ribbon.border.bottom	Bottom border
+ribbon.border.top	Top border
+ribbon.border.box	Outside borders
+ribbon.border.none	No border
+ribbon.styles_more	All styles
+ribbon.insert_table	Table
+ribbon.insert_table_title	Insert table
+ribbon.table_size	{columns} × {rows} table
+ribbon.needs_table	Put the cursor in a table first
+ribbon.group.rows	Rows
+ribbon.group.columns	Columns
+ribbon.group.merge	Merge
+ribbon.group.table_format	Table format
+ribbon.row_above	Insert above
+ribbon.row_below	Insert below
+ribbon.row_delete	Delete row
+ribbon.column_left	Insert left
+ribbon.column_right	Insert right
+ribbon.column_delete	Delete column
+ribbon.table_delete	Delete table
+ribbon.table_split	Split table
+ribbon.merge	Merge cells
+ribbon.unmerge	Unmerge cells
+ribbon.table_style	Table style
+ribbon.cell_format	Cell format
+ribbon.preset.plain	Plain
+ribbon.preset.grid	Grid
+ribbon.preset.light_blue	Light blue
+ribbon.preset.blue_bands	Blue bands
+ribbon.preset.gray_bands	Gray bands
+ribbon.table_align	Table alignment
+ribbon.cell_align	Cell alignment
+ribbon.top	Top
+ribbon.bottom	Bottom
+ribbon.shading	Shading
+ribbon.borders_all	All borders
+ribbon.borders_none	No borders
+ribbon.size	Size
+ribbon.distribute_rows	Distribute rows
+ribbon.distribute_columns	Distribute columns
+ribbon.split_cell	Split cells
+ribbon.split_size	{columns} col × {rows} row
+ribbon.repeat_header	Repeat as header row

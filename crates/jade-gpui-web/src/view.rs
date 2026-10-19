@@ -26,7 +26,9 @@ use jade_web::deck::{DragMode, ShapeDrag, TextTarget};
 use jade_web::sheet::CellRef;
 use jade_web::text::{byte_to_utf16, utf16_to_byte, TextEdit};
 
+use crate::ribbon::{self, Action};
 use crate::{i18n, palette, Fonts, Host, UI_FONT};
+use jade_web::editing::{CharacterFormat, FormatState, WordFormatting};
 
 mod sheet;
 
@@ -256,6 +258,14 @@ fn image(painter: TinySkiaPainter) -> Option<Arc<RenderImage>> {
 /// edit generation.
 type PaintedSlide = (usize, u32, u64, Arc<RenderImage>);
 
+/// The caret, the selection and the edit the ribbon's formatting was read
+/// for.
+type FormatKey = (
+    Option<(usize, usize)>,
+    Option<((usize, usize), (usize, usize))>,
+    u64,
+);
+
 // One per open file, so the variants' sizes do not add up to anything.
 #[allow(clippy::large_enum_variant)]
 enum Document {
@@ -270,6 +280,11 @@ enum Document {
         /// Where each page sits in the window, recorded at paint: clicks
         /// arrive in window coordinates.
         page_bounds: Rc<RefCell<Vec<Option<Bounds<Pixels>>>>>,
+        /// The ribbon over the pages: its tab, its open list, the gallery.
+        ribbon: Box<ribbon::Ribbon>,
+        /// The formatting at the caret and the caret, selection and edit it
+        /// was read for: reading it runs queries, so not on every frame.
+        format: Option<(FormatKey, FormatState)>,
     },
     Deck {
         deck: jade_web::Deck,
@@ -336,7 +351,11 @@ impl DocView {
                     Rc::clone(&fonts.measurer),
                 )?;
                 let (width, height) = opened.page_size();
+                let mut ribbon = Box::<ribbon::Ribbon>::default();
+                ribbon.read_styles(&opened);
                 Document::Pages {
+                    ribbon,
+                    format: None,
                     pages: (0..opened.page_count())
                         .filter_map(|index| opened.page(index).as_ref().and_then(PageImage::new))
                         .collect(),
@@ -1588,9 +1607,116 @@ impl DocView {
         true
     }
 
-    fn pages_body(&mut self, cx: &mut Context<Self>) -> gpui::Div {
+    /// Runs a ribbon control against the Word document: a formatting command
+    /// keeps the selection, so the next one acts on the same text; a table
+    /// command that adds or removes cells puts the caret where it left it.
+    pub(crate) fn ribbon_action(
+        &mut self,
+        action: Action,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Document::Pages {
+            ribbon, document, ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        if action.is_chrome() {
+            match action {
+                Action::Tab(tab) => {
+                    ribbon.tab = tab;
+                    ribbon.popup = None;
+                }
+                Action::Popup(popup) => ribbon.toggle(popup),
+                Action::ClosePopup => ribbon.popup = None,
+                Action::Grid(columns, rows) => ribbon.grid = (columns, rows),
+                _ => {}
+            }
+            return cx.notify();
+        }
+        ribbon.popup = None;
+        window.focus(&self.focus, cx);
+        if let Action::Style(style_id) = action {
+            let result = document.set_paragraph_style(style_id.as_deref());
+            ribbon.read_styles(document);
+            self.refresh_repainted();
+            return self.word_result(result, cx);
+        }
+        self.word_edit(cx, move |document| match action {
+            Action::Toggle(format) => document.toggle_format(format),
+            Action::ClearFormatting => document.clear_formatting(),
+            Action::FontFamily(family) => document.set_font_family(family),
+            Action::FontSize(points) => document.set_font_size(points),
+            Action::StepFontSize(grow) => document.step_font_size(grow),
+            Action::FontColor(color) => document.set_font_color(&color),
+            Action::Highlight(color) => document.set_highlight(color),
+            Action::List(bullets) => document.toggle_list(bullets),
+            Action::Indent(increase) => document.step_indent(increase),
+            Action::Align(alignment) => document.set_alignment(alignment),
+            Action::LineSpacing(multiple) => document.set_line_spacing(multiple),
+            Action::Shading(color) => document.set_paragraph_shading(color.as_deref()),
+            Action::ParagraphBorders(borders) => document.set_paragraph_borders(borders),
+            Action::InsertTable(rows, columns) => {
+                let caret = document.insert_table(rows, columns)?;
+                document.place_caret(caret.0, caret.1);
+                Ok(())
+            }
+            Action::Table(command) if command.is_structural() => {
+                let caret = document.table_command(command)?;
+                document.place_caret(caret.0, caret.1);
+                Ok(())
+            }
+            Action::Table(command) => document.table_command(command).map(|_| ()),
+            Action::Undo => document.undo().map(|_| ()),
+            Action::Redo => document.redo().map(|_| ()),
+            Action::Style(_)
+            | Action::Tab(_)
+            | Action::Popup(_)
+            | Action::ClosePopup
+            | Action::Grid(..) => Ok(()),
+        });
+    }
+
+    /// The ribbon over the pages, with what it shows as current read again
+    /// only when the caret, the selection or the document changed.
+    fn word_ribbon(
+        &mut self,
+        viewport: gpui::Size<Pixels>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let generation = self.generation;
+        let Document::Pages {
+            document,
+            ribbon,
+            format,
+            pages,
+            current,
+            ..
+        } = &mut self.document
+        else {
+            unreachable!()
+        };
+        let key = (document.caret(), document.selection(), generation);
+        let state = match format {
+            Some((cached, state)) if *cached == key => state.clone(),
+            _ => {
+                let state = document.format_state();
+                *format = Some((key, state.clone()));
+                state
+            }
+        };
+        let position = i18n::format(
+            "doc.position",
+            &[("current", &(*current + 1)), ("count", &pages.len())],
+        );
+        ribbon::ribbon(ribbon, &state, position, document.is_dirty(), viewport, cx)
+    }
+
+    fn pages_body(&mut self, viewport: gpui::Size<Pixels>, cx: &mut Context<Self>) -> gpui::Div {
         let zoom = self.zoom.unwrap_or(1.0);
         self.shown_zoom = zoom;
+        let word_ribbon = self.word_ribbon(viewport, cx);
         let Document::Pages {
             document,
             pages,
@@ -1598,6 +1724,7 @@ impl DocView {
             scroll,
             current,
             page_bounds,
+            ..
         } = &mut self.document
         else {
             unreachable!()
@@ -1782,10 +1909,7 @@ impl DocView {
                     .h_full()
                     .flex()
                     .flex_col()
-                    .child(toolbar(i18n::format(
-                        "doc.position",
-                        &[("current", &(current_index + 1)), ("count", &count)],
-                    )))
+                    .child(word_ribbon)
                     .child(
                         div()
                             .id("pages")
@@ -1805,7 +1929,7 @@ impl DocView {
             )
     }
 
-    fn handle_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
         // A sheet takes its own keys first: Excel's shortcuts, ⌘-arrows,
@@ -1827,6 +1951,15 @@ impl DocView {
                 "a" if pages => self.word_move(cx, |document| document.select_all()),
                 "c" if pages => self.word_copy(false, cx),
                 "x" if pages => self.word_copy(true, cx),
+                // Word's own shortcuts for the ribbon's three toggles.
+                "b" | "i" | "u" if pages => {
+                    let format = match key {
+                        "b" => CharacterFormat::Bold,
+                        "i" => CharacterFormat::Italic,
+                        _ => CharacterFormat::Underline,
+                    };
+                    self.ribbon_action(Action::Toggle(format), window, cx)
+                }
                 // ⌘V is left to the browser, whose paste event brings the
                 // clipboard to the input handler.
                 _ => return,
@@ -2186,7 +2319,7 @@ impl Render for DocView {
             self.slideshow_body(window, cx)
         } else {
             match self.document {
-                Document::Pages { .. } => self.pages_body(cx),
+                Document::Pages { .. } => self.pages_body(window.viewport_size(), cx),
                 Document::Deck { .. } => self.deck_body(window, cx),
                 Document::Workbook(_) => self.workbook_body(window, cx),
             }
