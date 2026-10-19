@@ -25,7 +25,7 @@ use gpui::{
     WindowBounds, WindowOptions,
 };
 use jade_office_model::deck::{
-    Deck, DragMode, ShapeDrag, ShapeRect as SlideRect, ShapeTransformInfo, TextTarget,
+    Deck, DragMode, ShapeDrag, ShapeRect as SlideRect, ShapeTransformInfo, TableChange, TextTarget,
 };
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::Backend;
@@ -230,14 +230,18 @@ impl DeckView {
         &mut self,
         cx: &mut Context<Self>,
         change: impl FnOnce(&mut Deck<SkiaBackend>, usize) -> Result<bool, String>,
-    ) {
+    ) -> bool {
         match change(&mut self.deck, self.current) {
-            Ok(true) => self.reload(false, cx),
-            Ok(false) => {}
+            Ok(true) => {
+                self.reload(false, cx);
+                true
+            }
+            Ok(false) => false,
             Err(error) => {
                 self.status =
                     SharedString::from(i18n::format("deck.edit_failed", &[("error", &error)]));
                 cx.notify();
+                false
             }
         }
     }
@@ -417,6 +421,11 @@ impl DeckView {
     /// or the first cell without one — from the text it has.
     fn begin_text(&mut self, id: u32, point: Option<(f64, f64)>, cx: &mut Context<Self>) {
         let target = self.deck.text_target(self.current, id, point);
+        self.edit(target, cx);
+    }
+
+    /// Starts typing into `target` from the text it has.
+    fn edit(&mut self, target: TextTarget, cx: &mut Context<Self>) {
         let (Some(text), Some(rect)) = (
             self.deck.text(self.current, target),
             self.deck.text_rect(self.current, target),
@@ -445,6 +454,55 @@ impl DeckView {
         cx.notify();
     }
 
+    /// Tab in a table: the text written, then the next cell (⇧Tab: the one
+    /// before). Tab in the last cell adds a row and goes to its first, as
+    /// in PowerPoint.
+    fn tab_in_table(&mut self, backwards: bool, cx: &mut Context<Self>) {
+        let Some(from @ TextTarget::Cell { id, row, .. }) =
+            self.text_edit.as_ref().map(|edit| edit.target)
+        else {
+            return;
+        };
+        self.commit_text(cx);
+        match self.deck.next_cell(self.current, from, backwards) {
+            Some(next) => self.edit(next, cx),
+            None if !backwards => {
+                let added = self.write(cx, |deck, slide| {
+                    deck.change_table(slide, id, TableChange::InsertRow(row + 1))
+                });
+                if !added {
+                    return;
+                }
+                self.edit(
+                    TextTarget::Cell {
+                        id,
+                        row: row + 1,
+                        column: 0,
+                    },
+                    cx,
+                );
+            }
+            None => self.edit(from, cx),
+        }
+    }
+
+    /// A row or column added or removed beside the cell being typed into,
+    /// its text written first.
+    fn change_table(
+        &mut self,
+        change: impl FnOnce(usize, usize) -> TableChange,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(TextTarget::Cell { id, row, column }) =
+            self.text_edit.as_ref().map(|edit| edit.target)
+        else {
+            return;
+        };
+        self.commit_text(cx);
+        let change = change(row, column);
+        self.write(cx, |deck, slide| deck.change_table(slide, id, change));
+    }
+
     // ---- keys ------------------------------------------------------------
 
     fn handle_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
@@ -463,6 +521,9 @@ impl DeckView {
                 // As in PowerPoint, Escape leaves the text keeping what was
                 // typed, with the shape still selected.
                 "escape" => self.commit_text(cx),
+                "tab" if matches!(edit.target, TextTarget::Cell { .. }) => {
+                    self.tab_in_table(modifiers.shift, cx)
+                }
                 "enter" => {
                     edit.text.push('\n');
                     cx.notify();
@@ -956,6 +1017,10 @@ impl Render for DeckView {
             window.drop_image(image).ok();
         }
         self.paint_thumbnails_if_needed(window.scale_factor());
+        let editing_cell = self
+            .text_edit
+            .as_ref()
+            .is_some_and(|edit| matches!(edit.target, TextTarget::Cell { .. }));
 
         let (area_width, area_height) = workspace::editor_area(window, cx);
         let notes_height = if self.show_notes { NOTES_HEIGHT } else { 0.0 };
@@ -1077,6 +1142,70 @@ impl Render for DeckView {
                                 ),
                             ))
                             .child(div().flex_1())
+                            // A table's layout, while one of its cells is
+                            // typed into: PowerPoint's Layout tab.
+                            .when(editing_cell, |bar| {
+                                bar.child(
+                                    toolbar_button(
+                                        "row-below",
+                                        "icons/arrow-down-to-line.svg",
+                                        i18n::text("deck.row_below"),
+                                    )
+                                    .on_click(cx.listener(
+                                        |view, _event, _window, cx| {
+                                            view.change_table(
+                                                |row, _| TableChange::InsertRow(row + 1),
+                                                cx,
+                                            )
+                                        },
+                                    )),
+                                )
+                                .child(
+                                    toolbar_button(
+                                        "column-right",
+                                        "icons/arrow-right-to-line.svg",
+                                        i18n::text("deck.column_right"),
+                                    )
+                                    .on_click(cx.listener(
+                                        |view, _event, _window, cx| {
+                                            view.change_table(
+                                                |_, column| TableChange::InsertColumn(column + 1),
+                                                cx,
+                                            )
+                                        },
+                                    )),
+                                )
+                                .child(
+                                    toolbar_button(
+                                        "delete-row",
+                                        "icons/trash-2.svg",
+                                        i18n::text("deck.delete_row"),
+                                    )
+                                    .on_click(cx.listener(
+                                        |view, _event, _window, cx| {
+                                            view.change_table(
+                                                |row, _| TableChange::DeleteRow(row),
+                                                cx,
+                                            )
+                                        },
+                                    )),
+                                )
+                                .child(
+                                    toolbar_button(
+                                        "delete-column",
+                                        "icons/trash-2.svg",
+                                        i18n::text("deck.delete_column"),
+                                    )
+                                    .on_click(cx.listener(
+                                        |view, _event, _window, cx| {
+                                            view.change_table(
+                                                |_, column| TableChange::DeleteColumn(column),
+                                                cx,
+                                            )
+                                        },
+                                    )),
+                                )
+                            })
                             .child(
                                 toolbar_button(
                                     "notes",
@@ -1538,6 +1667,47 @@ mod tests {
             assert_eq!(text(2, 1), "Text 10 前年比");
             assert_eq!(text(0, 0), "Text 1!");
             assert_eq!(text(2, 0), "Text 9");
+        });
+    }
+
+    /// Tab goes to the next cell, writing what was typed; Tab in the last
+    /// cell adds a row and goes to its first. The Layout buttons add and
+    /// remove rows and columns beside the cell being typed into.
+    #[gpui::test]
+    fn tab_walks_the_table_and_adds_a_row_at_its_end(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_fixture(cx, "poi/table-with-different-font-colors.pptx");
+        let cell = |row, column| TextTarget::Cell { id: 4, row, column };
+        view.update(cx, |view, cx| {
+            view.select(Some(4), cx);
+            view.edit(cell(3, 2), cx);
+        });
+        cx.simulate_input("!");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("?");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("新しい行");
+        cx.simulate_keystrokes("shift-tab");
+        view.read_with(cx, |view, _| {
+            let text = |row, column| view.deck.text(0, cell(row, column)).unwrap();
+            assert_eq!(text(3, 2), "Text 15!");
+            assert_eq!(text(3, 3), "Text 16?");
+            assert_eq!(text(4, 0), "新しい行");
+            assert_eq!(
+                view.text_edit.as_ref().map(|edit| edit.target),
+                Some(cell(3, 3))
+            );
+        });
+        view.update(cx, |view, cx| {
+            view.change_table(|_, column| TableChange::InsertColumn(column + 1), cx);
+            view.edit(cell(0, 0), cx);
+            view.change_table(|row, _| TableChange::DeleteRow(row), cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.text_edit.is_none());
+            let text = |row, column| view.deck.text(0, cell(row, column)).unwrap();
+            assert_eq!(text(0, 0), "Text 5");
+            assert_eq!(text(0, 4), "");
+            assert_eq!(text(3, 0), "新しい行");
         });
     }
 
