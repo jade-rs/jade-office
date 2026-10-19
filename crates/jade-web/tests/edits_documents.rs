@@ -759,3 +759,71 @@ fn tab_goes_from_cell_to_cell_and_adds_a_row_at_the_end() {
     assert_eq!((cell.row, cell.column), (1, 0));
     assert_eq!(document.paragraph_text(second).unwrap(), "two");
 }
+
+#[test]
+fn word_and_document_moves_go_where_a_mac_takes_them() {
+    let mut document = open("contract.docx");
+    let (paragraph, _) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0);
+    document.insert_text("one two, three ").unwrap();
+    let typed = document.paragraph_text(paragraph).unwrap();
+
+    // ⌥→ goes to the end of the next word, past spaces and punctuation.
+    document.place_caret(paragraph, 0);
+    document.move_caret(Motion::WordRight, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, 3)));
+    document.move_caret(Motion::WordRight, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, 7)));
+    // ⌥← back to the start of the word before it; ⇧ extends.
+    document.move_caret(Motion::WordLeft, true).unwrap();
+    assert_eq!(document.selection(), Some(((paragraph, 7), (paragraph, 4))));
+    document.place_caret(paragraph, 9);
+    document.move_caret(Motion::WordLeft, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, 4)));
+    // A Japanese run is one word.
+    document.place_caret(paragraph, "one two, three ".len());
+    document.move_caret(Motion::WordRight, false).unwrap();
+    let (_, end) = document.caret().unwrap();
+    assert!(end > "one two, three ".len());
+    assert!(typed["one two, three ".len()..end]
+        .chars()
+        .all(char::is_alphanumeric));
+    // At a paragraph's start, into the one before.
+    document.place_caret(paragraph + 1, 0);
+    document.move_caret(Motion::WordLeft, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, typed.len())));
+
+    // ⌘↓ and ⌘↑: the body's last and first positions.
+    document.move_caret(Motion::DocumentEnd, false).unwrap();
+    let (last, offset) = document.caret().unwrap();
+    assert!(last > paragraph);
+    assert_eq!(offset, document.paragraph_text(last).unwrap().len());
+    document.move_caret(Motion::DocumentStart, true).unwrap();
+    assert_eq!(document.selection(), Some(((last, offset), (0, 0))));
+}
+
+/// A document opens painted as a whole repaint paints it — on a page box
+/// other than Letter (contract.docx) and on Letter (hello.docx), where the
+/// pass that finds the box is the one kept.
+#[test]
+fn a_document_opens_painted_as_a_whole_repaint_paints_it() {
+    for name in ["contract.docx", "public/fixtures/hello.docx"] {
+        let mut document = open(name);
+        let opened: Vec<Vec<u8>> = (0..document.page_count())
+            .map(|index| page_rgba(&document, index))
+            .collect();
+        let (paragraph, _) = first_text_paragraph(&document);
+        document.place_caret(paragraph, 0);
+        document.insert_text("x").unwrap();
+        // Undo repaints every page from nothing.
+        document.undo().unwrap();
+        assert_eq!(document.page_count(), opened.len(), "{name}");
+        for (index, pixels) in opened.iter().enumerate() {
+            assert!(
+                &page_rgba(&document, index) == pixels,
+                "{name}: page {} differs",
+                index + 1
+            );
+        }
+    }
+}
