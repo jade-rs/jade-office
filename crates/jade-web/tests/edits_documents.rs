@@ -13,6 +13,10 @@ fn core() -> PathBuf {
 }
 
 fn open(name: &str) -> EditableDocument {
+    open_bytes(&std::fs::read(core().join(name)).unwrap())
+}
+
+fn open_bytes(bytes: &[u8]) -> EditableDocument {
     let fonts_dir = core().join("fonts/Noto_Sans_JP/static");
     let regular = std::fs::read(fonts_dir.join("NotoSansJP-Regular.ttf")).unwrap();
     let bold = std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap();
@@ -20,8 +24,7 @@ fn open(name: &str) -> EditableDocument {
         .unwrap()
         .fonts();
     let measurer = jade_web::document::measurer(&regular, Some(&bold)).unwrap();
-    let bytes = std::fs::read(core().join(name)).unwrap();
-    EditableDocument::open(&bytes, 1.0, fonts, measurer).unwrap()
+    EditableDocument::open(bytes, 1.0, fonts, measurer).unwrap()
 }
 
 /// The first paragraph with text on the first page, and its text.
@@ -613,4 +616,25 @@ fn dark_paper_turns_the_pages_over_and_back() {
             index + 1
         );
     }
+}
+
+/// Enter at the end of a paragraph leaves that paragraph exactly as it was, so
+/// only the paragraphs after it move; the repaint must still show the new one.
+#[test]
+fn enter_at_the_end_of_a_paragraph_repaints_the_pages() {
+    let mut document = open("contract.docx");
+    let paragraph = (0..document.paragraph_count())
+        .find(|&index| {
+            document
+                .paragraph_text(index)
+                .is_some_and(|text| text.starts_with("開示を受けたときに既に保有"))
+        })
+        .expect("the first list item");
+    let end = document.paragraph_text(paragraph).unwrap().len();
+    document.place_caret(paragraph, end).unwrap();
+    document.insert_paragraph_break().unwrap();
+    document.insert_text("abc").unwrap();
+
+    let fresh = open_bytes(&document.export_docx().unwrap());
+    assert_eq!(page_rgba(&document, 0), page_rgba(&fresh, 0));
 }
