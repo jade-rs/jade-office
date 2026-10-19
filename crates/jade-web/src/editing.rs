@@ -13,6 +13,7 @@
 //! deleting and pasting replace it.
 
 use std::cell::{Cell, RefCell};
+use std::ops::{Range, RangeInclusive};
 use std::rc::Rc;
 
 use jade_docx_editor::canvas_renderer::{CanvasRenderer, CaretAffinity};
@@ -28,7 +29,7 @@ use jade_docx_layout::shaping_measurer::ShapingMeasurer;
 use jade_selection::{SelectionRange, TextPosition};
 use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 
-use crate::document::{TinySkiaRenderHost, INITIAL_PAGE};
+use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, INITIAL_PAGE};
 
 mod formatting;
 pub use formatting::{
@@ -94,6 +95,12 @@ pub struct EditableDocument {
     last_paintable_page: Rc<Cell<usize>>,
     /// See [`Self::set_dark_paper`].
     dark_paper: Rc<Cell<bool>>,
+    /// The pages kept as pixels: see [`Self::set_resident_pages`].
+    resident: Rc<RefCell<Range<usize>>>,
+    /// Each page's box, for giving a page its surface back.
+    page_sizes: Rc<RefCell<Vec<(f64, f64)>>>,
+    fonts: Rc<FontBook>,
+    scale: f64,
     options: Options,
     page_height: f64,
     dirty: bool,
@@ -122,6 +129,19 @@ impl EditableDocument {
         fonts: Rc<FontBook>,
         measurer: Rc<ShapingMeasurer>,
     ) -> Result<Self, String> {
+        Self::open_resident(bytes, scale, fonts, measurer, 0..usize::MAX)
+    }
+
+    /// [`Self::open`], keeping only the pages in `resident` (0-based) as
+    /// pixels: what a shell showing a long document wants, which then moves
+    /// them with [`Self::set_resident_pages`] as it scrolls.
+    pub fn open_resident(
+        bytes: &[u8],
+        scale: f64,
+        fonts: Rc<FontBook>,
+        measurer: Rc<ShapingMeasurer>,
+        resident: Range<usize>,
+    ) -> Result<Self, String> {
         let scale = if scale.is_finite() && scale > 0.0 {
             scale
         } else {
@@ -139,6 +159,8 @@ impl EditableDocument {
         // lays the document out — painting every page of it was most of what
         // opening a document that is not Letter cost, thrown away — and when
         // the box is Letter after all, its layout is painted as it stands.
+        // The first pass keeps no page as pixels: it lays out, and draws on
+        // nothing.
         let mut opened = Self::render(
             &word_document,
             &options,
@@ -146,9 +168,9 @@ impl EditableDocument {
             scale,
             &fonts,
             &measurer,
-            false,
+            0..0,
         )?;
-        let size = opened.0.layout_page_size();
+        let size = opened.renderer.layout_page_size();
         if size != INITIAL_PAGE && size.0 > 1.0 && size.1 > 1.0 {
             opened = Self::render(
                 &word_document,
@@ -157,19 +179,19 @@ impl EditableDocument {
                 scale,
                 &fonts,
                 &measurer,
-                true,
+                resident,
             )?;
         } else {
-            Self::paint_every_page(&mut opened.0, &word_document, &options)?;
+            // Letter after all: its layout, painted on the resident pages.
+            *opened.host.resident.borrow_mut() = resident;
+            Self::paint_every_page(
+                &mut opened.renderer,
+                &word_document,
+                &options,
+                &opened.host.resident.borrow(),
+            )?;
         }
-        let (
-            renderer,
-            pages,
-            rendered_pages,
-            pass_covers_whole_document,
-            last_paintable_page,
-            dark_paper,
-        ) = opened;
+        let Opened { renderer, host } = opened;
         let page_height = renderer.layout_page_size().1;
         Ok(Self {
             word_document,
@@ -179,11 +201,15 @@ impl EditableDocument {
             selection: None,
             composition: None,
             renderer,
-            pages,
-            rendered_pages,
-            pass_covers_whole_document,
-            last_paintable_page,
-            dark_paper,
+            pages: host.pages,
+            rendered_pages: host.rendered,
+            pass_covers_whole_document: host.whole,
+            last_paintable_page: host.limit,
+            dark_paper: host.dark,
+            resident: host.resident,
+            page_sizes: host.sizes,
+            fonts,
+            scale,
             options,
             page_height,
             dirty: false,
@@ -195,7 +221,8 @@ impl EditableDocument {
         })
     }
 
-    #[allow(clippy::type_complexity)]
+    /// Lays `word_document` out on pages of `width` × `height` and paints
+    /// the `resident` ones.
     fn render(
         word_document: &WordDocument,
         options: &Options,
@@ -203,46 +230,50 @@ impl EditableDocument {
         scale: f64,
         fonts: &Rc<FontBook>,
         measurer: &Rc<ShapingMeasurer>,
-        paint: bool,
-    ) -> Result<
-        (
-            CanvasRenderer<TinySkiaPainter>,
-            Rc<RefCell<Vec<TinySkiaPainter>>>,
-            Rc<Cell<usize>>,
-            Rc<Cell<bool>>,
-            Rc<Cell<usize>>,
-            Rc<Cell<bool>>,
-        ),
-        String,
-    > {
-        let host =
-            TinySkiaRenderHost::new(width, height, scale, Rc::clone(fonts), Rc::clone(measurer))
-                .ok_or_else(|| "cannot allocate a page surface".to_string())?;
-        let pages = Rc::clone(&host.pages);
-        let rendered = Rc::clone(&host.rendered_pages);
-        let whole = Rc::clone(&host.pass_covers_whole_document);
-        let limit = Rc::clone(&host.last_paintable_page);
-        let dark = Rc::clone(&host.dark_paper);
+        resident: Range<usize>,
+    ) -> Result<Opened, String> {
+        let host = TinySkiaRenderHost::with_resident(
+            width,
+            height,
+            scale,
+            Rc::clone(fonts),
+            Rc::clone(measurer),
+            resident,
+        )
+        .ok_or_else(|| "cannot allocate a page surface".to_string())?;
+        let handles = HostHandles {
+            pages: Rc::clone(&host.pages),
+            rendered: Rc::clone(&host.rendered_pages),
+            whole: Rc::clone(&host.pass_covers_whole_document),
+            limit: Rc::clone(&host.last_paintable_page),
+            dark: Rc::clone(&host.dark_paper),
+            resident: Rc::clone(&host.resident),
+            sizes: Rc::clone(&host.page_sizes),
+        };
         let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
             .map_err(|_| "renderer setup failed".to_string())?;
         renderer.sync_document_header_footer_stories(word_document);
         // The shell draws the selection over the pages.
         renderer.set_use_selection_overlay(true);
-        if !paint {
-            // Laid out, every page, but drawn on none.
-            renderer.set_visible_page_range(Some(usize::MAX..=usize::MAX));
-        }
-        let painted = Self::paint_every_page(&mut renderer, word_document, options);
-        renderer.clear_visible_page_range();
-        painted?;
-        Ok((renderer, pages, rendered, whole, limit, dark))
+        Self::paint_every_page(
+            &mut renderer,
+            word_document,
+            options,
+            &handles.resident.borrow(),
+        )?;
+        Ok(Opened {
+            renderer,
+            host: handles,
+        })
     }
 
-    /// A whole-document pass: every page laid out and painted.
+    /// A whole-document pass: every page laid out, the `resident` ones
+    /// painted.
     fn paint_every_page(
         renderer: &mut CanvasRenderer<TinySkiaPainter>,
         word_document: &WordDocument,
         options: &Options,
+        resident: &Range<usize>,
     ) -> Result<(), String> {
         renderer.mark_full_repaint();
         let document = word_document
@@ -250,21 +281,83 @@ impl EditableDocument {
             .as_ref()
             .ok_or_else(|| "the document has no main part".to_string())?
             .clone();
-        renderer
-            .render_with_numbering(
-                &document,
-                options,
-                word_document.numbering_part.as_ref(),
-                word_document.header_lines.as_deref(),
-                word_document.footer_lines.as_deref(),
-                Some(&word_document.comments),
-            )
-            .map_err(|_| "render failed".to_string())?;
+        renderer.set_visible_page_range(drawn_pages(resident, None));
+        let rendered = renderer.render_with_numbering(
+            &document,
+            options,
+            word_document.numbering_part.as_ref(),
+            word_document.header_lines.as_deref(),
+            word_document.footer_lines.as_deref(),
+            Some(&word_document.comments),
+        );
+        renderer.clear_visible_page_range();
+        rendered.map_err(|_| "render failed".to_string())?;
         if let Some(error) = renderer.take_render_error() {
             return Err(error);
         }
         renderer.clear_dirty_regions();
         Ok(())
+    }
+
+    /// Keeps the pages in `pages` (0-based) as pixels and lets go of the
+    /// rest: a page leaving gives its surface back, one coming in is given a
+    /// surface and painted — from the layout as it stands, so it costs the
+    /// drawing of those pages alone. Returns whether any page was painted,
+    /// for a shell to re-read ([`Self::take_repainted_pages`] says which).
+    pub fn set_resident_pages(&mut self, pages: Range<usize>) -> Result<bool, String> {
+        if *self.resident.borrow() == pages {
+            return Ok(false);
+        }
+        *self.resident.borrow_mut() = pages.clone();
+        let count = self.page_count();
+        let mut arriving = Vec::new();
+        {
+            let mut surfaces = self.pages.borrow_mut();
+            let sizes = self.page_sizes.borrow();
+            for (index, page) in surfaces.iter_mut().enumerate() {
+                let keep = pages.contains(&index) && index < count;
+                if keep != is_placeholder(page) {
+                    continue;
+                }
+                let (width, height) = sizes.get(index).copied().unwrap_or(INITIAL_PAGE);
+                let replacement = if keep {
+                    arriving.push(index);
+                    surface(&self.fonts, width, height, self.scale)
+                } else {
+                    placeholder(&self.fonts, self.scale)
+                }
+                .ok_or("cannot allocate a page surface")?;
+                replacement.set_dark_paper(self.dark_paper.get());
+                *page = replacement;
+            }
+        }
+        let (Some(&first), Some(&last)) = (arriving.first(), arriving.last()) else {
+            return Ok(false);
+        };
+        // Those pages only, from the layout the last pass left.
+        let document = self
+            .word_document
+            .document
+            .as_ref()
+            .ok_or_else(|| "document went missing".to_string())?
+            .clone();
+        self.renderer.mark_full_repaint();
+        self.pass_covers_whole_document.set(true);
+        self.renderer
+            .set_visible_page_range(Some((first + 1)..=(last + 1)));
+        let rendered = self.renderer.render_with_numbering(
+            &document,
+            &self.options,
+            self.word_document.numbering_part.as_ref(),
+            self.word_document.header_lines.as_deref(),
+            self.word_document.footer_lines.as_deref(),
+            Some(&self.word_document.comments),
+        );
+        self.renderer.clear_visible_page_range();
+        self.renderer.clear_dirty_regions();
+        rendered.map_err(|_| "repaint failed".to_string())?;
+        self.repainted_pages.extend(arriving);
+        Ok(true)
     }
 
     // ---- pages --------------------------------------------------------------
@@ -283,7 +376,11 @@ impl EditableDocument {
         if index >= self.page_count() {
             return None;
         }
-        self.pages.borrow().get(index).cloned()
+        self.pages
+            .borrow()
+            .get(index)
+            .filter(|page| !is_placeholder(page))
+            .cloned()
     }
 
     /// The page box, in CSS px.
@@ -688,8 +785,20 @@ impl EditableDocument {
 
     /// The page `paragraph` starts on, as last painted.
     fn paragraph_page(&mut self, paragraph: usize) -> usize {
-        self.rect_at((paragraph, 0))
-            .map_or(0, |rect| self.page_and_offset(rect.document_y).0)
+        self.paragraph_start_page(paragraph).unwrap_or(0)
+    }
+
+    /// The page (0-based) `paragraph` starts on: from its lines as last
+    /// laid out, or — for a paragraph before the resident pages, whose lines
+    /// a pass that does not draw them leaves out — from the layout cache.
+    pub fn paragraph_start_page(&mut self, paragraph: usize) -> Option<usize> {
+        match self.rect_at((paragraph, 0)) {
+            Some(rect) => Some(self.page_and_offset(rect.document_y).0),
+            None => self
+                .renderer
+                .cached_paragraph_start_page(paragraph)
+                .map(|page| page.saturating_sub(1)),
+        }
     }
 
     fn set_caret(&mut self, paragraph: usize, offset: usize) {
@@ -1101,8 +1210,8 @@ impl EditableDocument {
             .prepare_incremental_repaint(paragraph, last_page);
         // Pages past the bound keep their pixels: see `last_paintable_page`.
         self.last_paintable_page.set(last_page.saturating_sub(1));
-        self.renderer
-            .set_visible_page_range(draw_from.map(|first| (first + 1)..=usize::MAX));
+        let drawn = drawn_pages(&self.resident.borrow(), draw_from);
+        self.renderer.set_visible_page_range(drawn);
         let result = self.renderer.render_bounded_to_page_with_parts(
             document,
             &self.options,
@@ -1153,16 +1262,18 @@ impl EditableDocument {
         self.renderer.invalidate_paragraph_content_hash_cache();
         self.renderer.mark_full_repaint();
         self.pass_covers_whole_document.set(true);
-        self.renderer
-            .render_with_numbering(
-                &document,
-                &self.options,
-                self.word_document.numbering_part.as_ref(),
-                self.word_document.header_lines.as_deref(),
-                self.word_document.footer_lines.as_deref(),
-                Some(&self.word_document.comments),
-            )
-            .map_err(|_| "repaint failed".to_string())?;
+        let drawn = drawn_pages(&self.resident.borrow(), None);
+        self.renderer.set_visible_page_range(drawn);
+        let rendered = self.renderer.render_with_numbering(
+            &document,
+            &self.options,
+            self.word_document.numbering_part.as_ref(),
+            self.word_document.header_lines.as_deref(),
+            self.word_document.footer_lines.as_deref(),
+            Some(&self.word_document.comments),
+        );
+        self.renderer.clear_visible_page_range();
+        rendered.map_err(|_| "repaint failed".to_string())?;
         self.consume_dirty_regions(usize::MAX);
         if let Some(error) = self.renderer.take_render_error() {
             return Err(error);
@@ -1185,4 +1296,36 @@ impl EditableDocument {
         self.dirty = false;
         Ok(bytes)
     }
+}
+
+/// A renderer just built, and the handles on its host's state.
+struct Opened {
+    renderer: CanvasRenderer<TinySkiaPainter>,
+    host: HostHandles,
+}
+
+/// The host's state the document reads and sets after the renderer has
+/// taken the host.
+struct HostHandles {
+    pages: Rc<RefCell<Vec<TinySkiaPainter>>>,
+    rendered: Rc<Cell<usize>>,
+    whole: Rc<Cell<bool>>,
+    limit: Rc<Cell<usize>>,
+    dark: Rc<Cell<bool>>,
+    resident: Rc<RefCell<Range<usize>>>,
+    sizes: Rc<RefCell<Vec<(f64, f64)>>>,
+}
+
+/// The pages a pass may draw on, 1-based as the renderer counts them: the
+/// resident ones, from `draw_from` (0-based) on. `None` for every page.
+fn drawn_pages(resident: &Range<usize>, draw_from: Option<usize>) -> Option<RangeInclusive<usize>> {
+    let start = resident.start.max(draw_from.unwrap_or(0));
+    if start == 0 && resident.end == usize::MAX {
+        return None;
+    }
+    if start >= resident.end {
+        // Nothing to draw: a page past any document's end.
+        return Some(usize::MAX..=usize::MAX);
+    }
+    Some((start + 1)..=resident.end)
 }
