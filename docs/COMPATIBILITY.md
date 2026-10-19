@@ -24,6 +24,7 @@ A fix starts as a case that fails.
 | Word layout | pages compared against Word's own rendering | per fixture | jade-core CI `layout-compare` |
 | Typing like Excel | text typed into a cell and the value, format and display Excel makes of it; open parentheses closed; a misspelt function | 25 inputs + cases | `crates/jade-office-model/tests/typing_like_excel.rs` |
 | Clipboard like Excel | Excel's clipboard text in and out, quoted multi-line cells, CR LF; a copied formula pastes adjusted, a cut moves the cells on paste and references follow | 5 tests | `crates/jade-office-model/tests/clipboard_like_excel.rs` |
+| Working a sheet like Excel | selection (cells, headers, Shift, merges, hidden rows), ⌘-arrows, Enter/Tab round a range, ⌘D/⌘R/⌘Enter, the fill handle and its double-click, copies that move formulas, tiled pastes, cuts and drags that move, the Home tab's formats and decimals, Merge & Center, sorts with a header, filters, data validation, hyperlinks, notes, rows and columns inserted, deleted, hidden and resized, sheets added, renamed, moved and deleted, AutoSum, Find, F4 | 25 + 5 tests, and scenario tests in both shells | `crates/jade-office-model/src/sheet.rs`, `src/grid.rs` |
 | Japanese functions | LENB, MIDB, FINDB, REPLACEB, ASC, JIS and the rest, typed into a cell | 11 cases | `crates/jade-office-model/tests/japanese_functions_like_excel.rs` |
 | Files people have | every fixture opens; damaged, protected, macro-enabled and template files say what they are and save as what they are | 3 suites | `crates/jade-office-model/tests/`, `crates/jade-web/tests/` |
 | Editing Word in the browser | caret (on the line clicked, at a wrap too), typing, IME, selection, arrows, Home/End, clipboard, undo, save | 13 tests | `crates/jade-web/tests/edits_documents.rs` |
@@ -33,7 +34,7 @@ A fix starts as a case that fails.
 | | Word | Excel | PowerPoint |
 |---|---|---|---|
 | Open and show | pages as laid out by the engine; headers, footers, tables, pictures, text boxes, comments, tracked changes | cells, number formats (incl. Japanese eras), merged cells, conditional formats, charts, filters, frozen panes | slides, shapes, pictures, charts, notes, slide show |
-| Edit | caret, typing (IMEs included), Backspace/Delete/Enter, selection by drag, Shift-click, Shift+arrows, ⌘A; Home/End/arrows; copy, cut, paste (lines become paragraphs); undo/redo | type as in Excel (`10%`, `1,234`, `¥1,000`, `2024/1/15`, `'0123`), formulas over 498 functions, errors as Excel shows them (`#NAME?` for a misspelt function, in its dependents too); copy, cut, paste in Excel's clipboard text; clear; undo/redo | select a shape (click or Tab), type into it, move it, delete it; undo/redo |
+| Edit | caret, typing (IMEs included), Backspace/Delete/Enter, selection by drag, Shift-click, Shift+arrows, ⌘A; Home/End/arrows; copy, cut, paste (lines become paragraphs); undo/redo | select by click, drag (scrolling past the edge), Shift-click, row and column headers and the corner, ⌘A (the data, then the sheet), Shift/Ctrl+Space; ⌘-arrows to the ends of the data, ⌘Home/⌘End, Page Up/Down, Home; arrows over merged cells and past hidden rows; Enter and Tab round a range, Enter back to where Tab started; the name box shows the active cell and goes to a typed reference; type as in Excel (`10%`, `1,234`, `¥1,000`, `2024/1/15`, `'0123`), arrows leaving the cell, F2 to edit in place, ⌥Enter for a line break, arrows and clicks pointing at cells while a formula is typed, F4 for `$`, AutoSum (⌘⇧T); formulas over 498 functions, errors as Excel shows them (`#NAME?` for a misspelt function, in its dependents too); ⌘Enter, ⌘D, ⌘R and the fill handle (series, and double-click down the data); copy and paste with formulas moved and formats carried, tiled over a larger selection, cut moving the cells, Excel's clipboard text in and out; clear; ⌘B/⌘I/⌘U/⌘⇧X, Ctrl+Shift+1–6 number formats, ⌃; and ⌘; for the date and time; Merge & Center; sort A–Z/Z–A keeping a header; insert and delete rows and columns (⌘+/⌘-, menu), resize them by their header edges and fit by double-click; add, rename, move and delete sheets; hide and unhide rows and columns; drag a selection by its border to move it (⌥ copies); a Home-tab strip (font styles and size, alignment, wrap, merge, number formats, decimals, fill and font colours, borders, filters); filter dropdowns (sort, clear, tick values); data validation (list dropdowns, refused entries with the rule's message); hyperlinks followed on a click; notes written, edited, deleted and shown on hover; Find (⌘F); a right-click menu; undo/redo | select a shape (click or Tab), type into it, move it, delete it; undo/redo |
 | Native only | ribbon formatting, find and replace, tables, comments, change tracking, PDF export, print | | |
 | Save | the file that was opened, in place and atomically; `.docm`/`.dotx`/`.xlsm`/`.pptm` stay what they are | the same; a formula jade cannot evaluate keeps Excel's value and asks Excel to recalculate on open | the same |
 
@@ -57,6 +58,11 @@ painter) and edits through the same cores.
    an open string, an unmatched parenthesis, or a function given the wrong
    number of arguments — with the editor kept open; `TODAY(1)` is accepted,
    since the engine reads a time zone there.
+5. **Freeze Panes cannot be set or removed.** Frozen panes in a file are
+   shown and scroll as in Excel, but the engine has no writer for the
+   sheet view yet.
+6. **No Format Cells dialog (⌘1), conditional-format editing, charts or
+   pivot tables are edited**; they open, draw and save as they were.
 
 ## Running the oracles
 

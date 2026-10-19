@@ -79,7 +79,13 @@ fn every_workbook_opens_and_every_sheet_paints() {
                 problems.push(format!("{name} / {sheet}: cannot show: {error}"));
                 continue;
             }
-            match book.render_viewport((0.0, 0.0), 640, 400, 1.0, None) {
+            match book.render_viewport(
+                (0.0, 0.0),
+                640,
+                400,
+                1.0,
+                &jade_office_model::sheet::Overlay::default(),
+            ) {
                 Some(painter) => {
                     // The grid and its headers draw even on an empty sheet.
                     let png = TinySkiaBackend::png(&painter).unwrap();
