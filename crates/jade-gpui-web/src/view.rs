@@ -1614,7 +1614,49 @@ impl DocView {
         };
         let result = edit(document);
         self.refresh_repainted();
+        self.reveal_caret();
         self.word_result(result, cx);
+    }
+
+    /// Scrolls the pages so the caret — a selection's moving end — is in
+    /// view, a little clear of the edges, as typing or an arrow key moves
+    /// it: left alone, Down at the bottom of the view or typing past it
+    /// carried the caret off screen. Worked out from the layout the pages
+    /// are stacked in, so it holds for a page not yet painted.
+    fn reveal_caret(&mut self) {
+        const MARGIN: f32 = 24.0;
+        let zoom = self.zoom.unwrap_or(1.0);
+        let Document::Pages {
+            document,
+            page_size,
+            scroll,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(caret) = document.focus_rect() else {
+            return;
+        };
+        let (page, y) = document.page_and_offset(caret.document_y);
+        let pitch = page_size.1 * zoom + PAGE_GAP;
+        let top = PAGES_PADDING + page as f32 * pitch + y as f32 * zoom;
+        let bottom = top + caret.height as f32 * zoom;
+        let view = f32::from(scroll.bounds().size.height);
+        if view <= MARGIN * 2.0 {
+            return;
+        }
+        let offset = scroll.offset();
+        let shown = -f32::from(offset.y);
+        let target = if top < shown + MARGIN {
+            top - MARGIN
+        } else if bottom > shown + view - MARGIN {
+            bottom + MARGIN - view
+        } else {
+            return;
+        };
+        let target = target.clamp(0.0, f32::from(scroll.max_offset().y).max(0.0));
+        scroll.set_offset(point(offset.x, px(-target)));
     }
 
     /// Moves the caret or the selection without changing the text: no
@@ -1869,6 +1911,7 @@ impl DocView {
             _ => return false,
         };
         self.word_move(cx, |document| document.move_caret(motion, extend));
+        self.reveal_caret();
         true
     }
 
