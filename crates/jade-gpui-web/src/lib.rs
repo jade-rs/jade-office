@@ -17,6 +17,8 @@
 mod assets;
 mod i18n;
 mod palette;
+mod ribbon;
+mod tooltip;
 mod view;
 mod workspace;
 

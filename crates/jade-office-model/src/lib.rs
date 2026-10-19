@@ -3,6 +3,9 @@
 //! - [`sheet::Workbook`]: a workbook over jade-core's `HeadlessWorkbook` —
 //!   writes patch the bytes, recalculate and keep undo history — with the
 //!   selected sheet laid out, hit-tested and painted.
+//! - [`word::WordFormatting`]: a Word ribbon's formatting, style and table
+//!   commands over any [`word::WordSession`] — the native `NativeDocument`
+//!   or the browser's tiny-skia document.
 //! - [`deck::Deck`]: a presentation over the pptx `EditSession` — shape
 //!   text, moves, resizes and deletes as undoable changes — read back from
 //!   the session's bytes to lay out and paint.
@@ -21,6 +24,7 @@ pub mod grid;
 pub mod sheet;
 pub mod text;
 pub mod typing;
+pub mod word;
 
 #[cfg(feature = "skia")]
 pub mod skia;

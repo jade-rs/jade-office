@@ -24,6 +24,7 @@ mod deck;
 mod editor;
 mod i18n;
 mod native_print;
+mod ribbon;
 mod shell;
 mod tooltip;
 mod workbook;
@@ -45,8 +46,10 @@ use gpui::{
     MouseUpEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
 use jade_docx_native_render::{
-    CaretAffinity, CaretRect, CharacterFormat, FaceSpec, NativeDocument, ObjectHit, SearchHit,
+    CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit, SearchHit,
 };
+use jade_office_model::word::{CharacterFormat, FormatState, TableCommand, WordFormatting};
+use ribbon::Action;
 use std::cell::RefCell;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -785,13 +788,25 @@ impl gpui::AssetSource for Assets {
             };
         }
         let bytes = icons!(
+            "a-arrow-down",
+            "a-arrow-up",
             "align-center",
+            "align-justify",
             "align-left",
             "align-right",
+            "arrow-down-to-line",
+            "arrow-left-to-line",
+            "arrow-right-to-line",
+            "arrow-up-to-line",
+            "baseline",
+            "bold",
             "borders",
+            "check",
             "chevron-down",
             "chevron-right",
+            "chevrons-up-down",
             "clock",
+            "eraser",
             "file",
             "file-plus",
             "file-text",
@@ -800,15 +815,33 @@ impl gpui::AssetSource for Assets {
             "folder",
             "folder-open",
             "folder-plus",
+            "highlighter",
+            "indent-decrease",
+            "indent-increase",
+            "italic",
+            "list",
+            "list-ordered",
             "merge",
             "moon",
             "paint-bucket",
+            "paintbrush",
             "panel-right",
             "play",
             "presentation",
             "printer",
+            "redo",
+            "settings-2",
             "sheet",
+            "split",
+            "square",
+            "strikethrough",
+            "subscript",
             "sun",
+            "superscript",
+            "table",
+            "trash-2",
+            "underline",
+            "undo",
             "wrap-text",
             "x",
             "zap",
@@ -858,16 +891,6 @@ impl RibbonTab {
             RibbonTab::View => t("doc.tab.view"),
         }
     }
-}
-
-/// The lists the ribbon can drop under itself.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RibbonPopup {
-    FontFamily,
-    FontColor,
-    Highlight,
-    LineSpacing,
-    Shading,
 }
 
 /// The find bar's two fields.
@@ -922,6 +945,14 @@ struct ObjectDrag {
     applied: bool,
 }
 
+/// The caret, the selection and the edit count the ribbon's formatting was
+/// read for.
+type FormatKey = (
+    (usize, usize),
+    Option<((usize, usize), (usize, usize))>,
+    u64,
+);
+
 struct DocumentView {
     path: SharedString,
     file_size: u64,
@@ -959,20 +990,17 @@ struct DocumentView {
     find_status: Option<SharedString>,
     /// Which ribbon tab is showing.
     ribbon_tab: RibbonTab,
-    /// Which ribbon popup is open, if any. A list under the ribbon rather than
-    /// a native menu, because gpui has no menu to drop down inside a window.
-    popup: Option<RibbonPopup>,
-    /// The font size the size buttons last set, so + and − are relative to what
-    /// was asked for rather than to whatever the run happens to carry.
-    font_size_pt: f32,
-    /// The family the picker last applied, shown in the ribbon.
-    font_family: SharedString,
+    /// The ribbon's open list, table picker and style gallery.
+    ribbon: ribbon::Ribbon,
+    /// Bumped whenever the pages are repainted, so the formatting the ribbon
+    /// shows is read again after an edit.
+    edits: u64,
+    /// The formatting at the caret, and the caret, selection and edit it was
+    /// read for: reading it runs queries, so not on every frame.
+    format: Option<(FormatKey, FormatState)>,
     /// The find bar, while it is open. Open, it takes the keyboard: typing goes
     /// into its field rather than into the document.
     find_bar: Option<FindBar>,
-    /// Left indent in points. The command sets an absolute value, so the shell
-    /// tracks what it last asked for to make ⌘] and ⌘[ relative.
-    indent_points: f32,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1056,6 +1084,7 @@ impl DocumentView {
     /// `set_page_image` compares before it replaces, so a page that did not
     /// change costs a read and no upload.
     fn refresh_caret_page_image(&mut self) {
+        self.edits += 1;
         self.dump_page_if_asked();
         let page = self.caret_page_1idx().saturating_sub(1);
         self.set_page_image(page);
@@ -1315,7 +1344,7 @@ impl DocumentView {
     }
 
     /// The tab strip, and the tab's own groups under it.
-    fn ribbon(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn ribbon(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.ribbon_tab;
         div()
             .flex()
@@ -1349,7 +1378,7 @@ impl DocumentView {
                             .child(tab.label())
                             .on_click(cx.listener(move |view, _event, _window, cx| {
                                 view.ribbon_tab = tab;
-                                view.popup = None;
+                                view.ribbon.popup = None;
                                 cx.notify();
                             }))
                     }))
@@ -1389,38 +1418,24 @@ impl DocumentView {
                     .overflow_x_scroll()
                     .children(self.ribbon_groups(cx)),
             )
-            .children(self.ribbon_popup(cx))
+            .children(
+                self.ribbon
+                    .popup
+                    .map(|_| ribbon::backdrop(window.viewport_size(), cx)),
+            )
     }
 
     /// The groups under the selected tab.
     fn ribbon_groups(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let state = self.format_state();
         match self.ribbon_tab {
-            RibbonTab::Home => self.home_groups(cx),
+            RibbonTab::Home => {
+                let mut groups = vec![self.clipboard_group(cx)];
+                groups.extend(ribbon::home(&self.ribbon, &state, cx));
+                groups
+            }
             RibbonTab::Insert => vec![
-                Self::ribbon_group(
-                    t("doc.group.table"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "table-3x3",
-                            t("doc.table_3x3"),
-                            t("doc.table_3x3_title"),
-                            false,
-                            cx,
-                            |view, cx| view.insert_table(3, 3, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "table-2x2",
-                            t("doc.table_2x2"),
-                            t("doc.table_2x2_title"),
-                            false,
-                            cx,
-                            |view, cx| view.insert_table(2, 2, cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
+                ribbon::insert_table(&self.ribbon, cx).remove(0),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -1519,7 +1534,7 @@ impl DocumentView {
                             t("doc.indent_less_title"),
                             false,
                             cx,
-                            |view, cx| view.indent(-36.0, cx),
+                            |view, cx| view.run_ribbon(Action::Indent(false), cx),
                         )
                         .into_any_element(),
                         self.ribbon_button(
@@ -1528,7 +1543,7 @@ impl DocumentView {
                             t("doc.indent_more_title"),
                             false,
                             cx,
-                            |view, cx| view.indent(36.0, cx),
+                            |view, cx| view.run_ribbon(Action::Indent(true), cx),
                         )
                         .into_any_element(),
                     ])],
@@ -1548,7 +1563,10 @@ impl DocumentView {
                         .into_any_element()])],
                 )
                 .into_any_element(),
-            ],
+            ]
+            .into_iter()
+            .chain(ribbon::table_tools(&self.ribbon, &state, cx))
+            .collect(),
             RibbonTab::References => vec![Self::ribbon_group(
                 t("doc.toc"),
                 vec![Self::ribbon_row(vec![self
@@ -1700,543 +1718,42 @@ impl DocumentView {
         }
     }
 
-    /// The ホーム tab: what the browser shell puts there.
-    fn home_groups(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let family = self.font_family.clone();
-        let size = self.font_size_pt;
-        vec![
-            Self::ribbon_group(
-                t("doc.group.clipboard"),
-                vec![Self::ribbon_row(vec![
-                    self.ribbon_button(
-                        "paste",
-                        t("doc.paste"),
-                        t("doc.paste_title"),
-                        false,
-                        cx,
-                        |view, cx| view.paste(cx),
-                    )
-                    .into_any_element(),
-                    self.ribbon_button(
-                        "cut",
-                        t("doc.cut"),
-                        t("doc.cut_title"),
-                        false,
-                        cx,
-                        |view, cx| view.cut(cx),
-                    )
-                    .into_any_element(),
-                    self.ribbon_button(
-                        "copy",
-                        t("doc.copy"),
-                        t("doc.copy_title"),
-                        false,
-                        cx,
-                        |view, cx| view.copy(cx),
-                    )
-                    .into_any_element(),
-                ])],
-            )
-            .into_any_element(),
-            Self::ribbon_group(
-                t("doc.group.font"),
-                vec![
-                    Self::ribbon_row(vec![
-                        // The family picker: a button showing the family, and a
-                        // list that opens under the ribbon.
-                        div()
-                            .id("family")
-                            .flex()
-                            .items_center()
-                            .w(px(120.0))
-                            .h(px(24.0))
-                            .px_2()
-                            .rounded_md()
-                            .border_1()
-                            .border_color(theme::border())
-                            .cursor_pointer()
-                            .hover(|button| button.bg(theme::hovered()))
-                            .text_sm()
-                            .text_color(theme::text())
-                            .child(family)
-                            .on_click(cx.listener(|view, _event, _window, cx| {
-                                view.popup = (view.popup != Some(RibbonPopup::FontFamily))
-                                    .then_some(RibbonPopup::FontFamily);
-                                cx.notify();
-                            }))
-                            .into_any_element(),
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .w(px(44.0))
-                            .h(px(24.0))
-                            .rounded_md()
-                            .border_1()
-                            .border_color(theme::border())
-                            .text_sm()
-                            .text_color(theme::text_dim())
-                            .child(format!("{size:.1}"))
-                            .into_any_element(),
-                        self.ribbon_button(
-                            "size-up",
-                            t("doc.grow"),
-                            t("doc.grow_title"),
-                            false,
-                            cx,
-                            |view, cx| {
-                                let size = view.font_size_pt + 1.0;
-                                view.set_font_size(size, cx)
-                            },
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "size-down",
-                            t("doc.shrink"),
-                            t("doc.shrink_title"),
-                            false,
-                            cx,
-                            |view, cx| {
-                                let size = view.font_size_pt - 1.0;
-                                view.set_font_size(size, cx)
-                            },
-                        )
-                        .into_any_element(),
-                    ]),
-                    Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "bold",
-                            "B",
-                            t("doc.bold_title"),
-                            false,
-                            cx,
-                            |view, cx| view.format(CharacterFormat::Bold, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "italic",
-                            "I",
-                            t("doc.italic_title"),
-                            false,
-                            cx,
-                            |view, cx| view.format(CharacterFormat::Italic, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "underline",
-                            "U",
-                            t("doc.underline_title"),
-                            false,
-                            cx,
-                            |view, cx| view.format(CharacterFormat::Underline, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "strike",
-                            "S",
-                            t("doc.strike_title"),
-                            false,
-                            cx,
-                            |view, cx| view.format(CharacterFormat::Strikethrough, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "sub",
-                            t("doc.subscript"),
-                            t("doc.subscript_title"),
-                            false,
-                            cx,
-                            |view, cx| view.format(CharacterFormat::Subscript, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "sup",
-                            t("doc.superscript"),
-                            t("doc.superscript_title"),
-                            false,
-                            cx,
-                            |view, cx| view.format(CharacterFormat::Superscript, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "colour",
-                            t("doc.font_color"),
-                            t("doc.font_color_title"),
-                            self.popup == Some(RibbonPopup::FontColor),
-                            cx,
-                            |view, cx| view.toggle_popup(RibbonPopup::FontColor, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "highlight",
-                            t("doc.highlight"),
-                            t("doc.highlight_title"),
-                            self.popup == Some(RibbonPopup::Highlight),
-                            cx,
-                            |view, cx| view.toggle_popup(RibbonPopup::Highlight, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "clear",
-                            t("doc.clear_format"),
-                            t("doc.clear_format_title"),
-                            false,
-                            cx,
-                            |view, cx| view.format(CharacterFormat::Clear, cx),
-                        )
-                        .into_any_element(),
-                    ]),
-                ],
-            )
-            .into_any_element(),
-            Self::ribbon_group(
-                t("doc.group.paragraph"),
-                vec![
-                    Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "bullets",
-                            t("doc.bullets"),
-                            t("doc.bullets"),
-                            false,
-                            cx,
-                            |view, cx| view.set_numbering(Some("1"), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "numbering",
-                            t("doc.numbering"),
-                            t("doc.numbering"),
-                            false,
-                            cx,
-                            |view, cx| view.set_numbering(Some("2"), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "no-list",
-                            t("doc.no_list"),
-                            t("doc.no_list_title"),
-                            false,
-                            cx,
-                            |view, cx| view.set_numbering(None, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "indent-less",
-                            t("doc.indent_less"),
-                            t("doc.indent_less_title"),
-                            false,
-                            cx,
-                            |view, cx| view.indent(-36.0, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "indent-more",
-                            t("doc.indent_more"),
-                            t("doc.indent_more_title"),
-                            false,
-                            cx,
-                            |view, cx| view.indent(36.0, cx),
-                        )
-                        .into_any_element(),
-                    ]),
-                    Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "line-spacing",
-                            t("doc.line_spacing"),
-                            t("doc.line_spacing_title"),
-                            self.popup == Some(RibbonPopup::LineSpacing),
-                            cx,
-                            |view, cx| view.toggle_popup(RibbonPopup::LineSpacing, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "space-after",
-                            t("doc.space_after"),
-                            t("doc.space_after_title"),
-                            false,
-                            cx,
-                            |view, cx| view.set_paragraph_spacing(12.0, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "shading",
-                            t("doc.shading"),
-                            t("doc.shading_title"),
-                            self.popup == Some(RibbonPopup::Shading),
-                            cx,
-                            |view, cx| view.toggle_popup(RibbonPopup::Shading, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "borders",
-                            t("doc.borders"),
-                            t("doc.borders_title"),
-                            false,
-                            cx,
-                            |view, cx| view.set_paragraph_borders(true, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "no-borders",
-                            t("doc.no_borders"),
-                            t("doc.no_borders_title"),
-                            false,
-                            cx,
-                            |view, cx| view.set_paragraph_borders(false, cx),
-                        )
-                        .into_any_element(),
-                    ]),
-                    Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "align-left",
-                            t("doc.align_left"),
-                            t("doc.align_left_title"),
-                            false,
-                            cx,
-                            |view, cx| view.align("left", cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "align-center",
-                            t("doc.center"),
-                            t("doc.center_title"),
-                            false,
-                            cx,
-                            |view, cx| view.align("center", cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "align-right",
-                            t("doc.align_right"),
-                            t("doc.align_right_title"),
-                            false,
-                            cx,
-                            |view, cx| view.align("right", cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "align-both",
-                            t("doc.justify"),
-                            t("doc.justify_title"),
-                            false,
-                            cx,
-                            |view, cx| view.align("both", cx),
-                        )
-                        .into_any_element(),
-                    ]),
-                ],
-            )
-            .into_any_element(),
-            Self::ribbon_group(
-                t("doc.group.styles"),
-                vec![Self::ribbon_row(vec![
-                    self.style_button("style-normal", t("doc.style.normal"), "Normal", cx)
-                        .into_any_element(),
-                    self.style_button("style-h1", t("doc.style.heading1"), "Heading1", cx)
-                        .into_any_element(),
-                    self.style_button("style-h2", t("doc.style.heading2"), "Heading2", cx)
-                        .into_any_element(),
-                    self.style_button("style-h3", t("doc.style.heading3"), "Heading3", cx)
-                        .into_any_element(),
-                ])],
-            )
-            .into_any_element(),
-            Self::ribbon_group(
-                t("doc.group.editing"),
-                vec![Self::ribbon_row(vec![
-                    self.ribbon_button(
-                        "undo",
-                        t("doc.undo"),
-                        t("doc.undo_title"),
-                        false,
-                        cx,
-                        |view, cx| view.step_history(true, cx),
-                    )
-                    .into_any_element(),
-                    self.ribbon_button(
-                        "redo",
-                        t("doc.redo"),
-                        t("doc.redo"),
-                        false,
-                        cx,
-                        |view, cx| view.step_history(false, cx),
-                    )
-                    .into_any_element(),
-                    self.ribbon_button(
-                        "find",
-                        t("doc.find"),
-                        t("doc.find_title"),
-                        false,
-                        cx,
-                        |view, cx| view.open_find_bar(cx),
-                    )
-                    .into_any_element(),
-                ])],
-            )
-            .into_any_element(),
-        ]
-    }
-
-    /// A style gallery entry, wider than a glyph button because the name is the
-    /// point of it.
-    fn style_button(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        style_id: &'static str,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        div()
-            .id(id)
-            .flex()
-            .items_center()
-            .justify_center()
-            .w(px(72.0))
-            .h(px(28.0))
-            .rounded_md()
-            .border_1()
-            .border_color(theme::border())
-            .cursor_pointer()
-            .hover(|button| button.bg(theme::hovered()))
-            .text_sm()
-            .text_color(theme::text())
-            .child(label)
-            .on_click(
-                cx.listener(move |view, _event, _window, cx| {
-                    view.set_paragraph_style(style_id, cx)
-                }),
-            )
-    }
-
-    /// The list under the ribbon, while one is open.
-    ///
-    /// Word puts these behind a swatch or a chevron; here they are rows, which
-    /// is what can be built without an icon set.
-    fn ribbon_popup(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
-        let popup = self.popup?;
-        /// A family, or a colour as a name and its `RRGGBB`.
-        const FAMILIES: [&str; 6] = [
-            "游明朝",
-            "游ゴシック",
-            "MS 明朝",
-            "MS ゴシック",
-            "Times New Roman",
-            "Arial",
-        ];
-        const COLORS: [(&str, &str); 7] = [
-            ("doc.color.auto", "000000"),
-            ("doc.color.red", "C00000"),
-            ("doc.color.orange", "E36C0A"),
-            ("doc.color.green", "00B050"),
-            ("doc.color.blue", "0070C0"),
-            ("doc.color.purple", "7030A0"),
-            ("doc.color.gray", "808080"),
-        ];
-        const HIGHLIGHTS: [(&str, &str); 5] = [
-            ("doc.none", "none"),
-            ("doc.color.yellow", "yellow"),
-            ("doc.color.green", "green"),
-            ("doc.color.cyan", "cyan"),
-            ("doc.color.pink", "magenta"),
-        ];
-        const SPACINGS: [(&str, f32); 4] =
-            [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)];
-        const SHADINGS: [(&str, &str); 5] = [
-            ("doc.none", ""),
-            ("doc.color.pale_yellow", "FFF2CC"),
-            ("doc.color.pale_blue", "DEEAF6"),
-            ("doc.color.pale_green", "E2EFDA"),
-            ("doc.color.light_gray", "EDEDED"),
-        ];
-
-        let rows: Vec<AnyElement> = match popup {
-            RibbonPopup::FontFamily => FAMILIES
-                .iter()
-                .map(|family| {
-                    self.popup_row(family, family, cx, move |view, cx| {
-                        view.set_font_family(family, cx)
-                    })
-                    .into_any_element()
-                })
-                .collect(),
-            RibbonPopup::FontColor => COLORS
-                .iter()
-                .map(|(label, color)| {
-                    self.popup_row(color, t(label), cx, move |view, cx| {
-                        view.set_font_color(color, cx)
-                    })
-                    .into_any_element()
-                })
-                .collect(),
-            RibbonPopup::Highlight => HIGHLIGHTS
-                .iter()
-                .map(|(label, color)| {
-                    self.popup_row(color, t(label), cx, move |view, cx| {
-                        view.set_highlight(color, cx)
-                    })
-                    .into_any_element()
-                })
-                .collect(),
-            RibbonPopup::LineSpacing => SPACINGS
-                .iter()
-                .map(|(label, multiple)| {
-                    let multiple = *multiple;
-                    self.popup_row(label, label, cx, move |view, cx| {
-                        view.set_line_spacing(multiple, cx)
-                    })
-                    .into_any_element()
-                })
-                .collect(),
-            RibbonPopup::Shading => SHADINGS
-                .iter()
-                .map(|(label, color)| {
-                    self.popup_row(label, t(label), cx, move |view, cx| {
-                        view.set_shading((!color.is_empty()).then_some(color), cx)
-                    })
-                    .into_any_element()
-                })
-                .collect(),
-        };
-
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .w(px(180.0))
-                .ml(px(180.0))
-                .mb_2()
-                .p_1()
-                .rounded_md()
-                .bg(theme::panel())
-                .border_1()
-                .border_color(theme::border())
-                .children(rows),
+    /// The ホーム tab's clipboard, which only the native app can paste into
+    /// without asking.
+    fn clipboard_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        Self::ribbon_group(
+            t("doc.group.clipboard"),
+            vec![Self::ribbon_row(vec![
+                self.ribbon_button(
+                    "paste",
+                    t("doc.paste"),
+                    t("doc.paste_title"),
+                    false,
+                    cx,
+                    |view, cx| view.paste(cx),
+                )
+                .into_any_element(),
+                self.ribbon_button(
+                    "cut",
+                    t("doc.cut"),
+                    t("doc.cut_title"),
+                    false,
+                    cx,
+                    |view, cx| view.cut(cx),
+                )
+                .into_any_element(),
+                self.ribbon_button(
+                    "copy",
+                    t("doc.copy"),
+                    t("doc.copy_title"),
+                    false,
+                    cx,
+                    |view, cx| view.copy(cx),
+                )
+                .into_any_element(),
+            ])],
         )
-    }
-
-    /// One row of a ribbon popup.
-    fn popup_row(
-        &self,
-        id: &'static str,
-        label: &'static str,
-        cx: &mut Context<Self>,
-        action: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-    ) -> impl IntoElement {
-        div()
-            .id(id)
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .cursor_pointer()
-            .text_sm()
-            .text_color(theme::text())
-            .hover(|row| row.bg(theme::hovered()))
-            .child(label)
-            .on_click(cx.listener(move |view, _event, _window, cx| {
-                action(view, cx);
-                view.popup = None;
-                cx.notify();
-            }))
+        .into_any_element()
     }
 
     /// The find bar, drawn above the pages while it is open.
@@ -2606,23 +2123,6 @@ impl DocumentView {
         }
     }
 
-    /// Inserts a row below the caret's, or deletes the caret's row.
-    ///
-    /// Silently does nothing outside a table: these share ⌘⇧Return and
-    /// ⌘⇧Backspace with nothing else, and a beep would be noise.
-    fn edit_table_row(&mut self, insert: bool, cx: &mut Context<Self>) {
-        match self.document.edit_table_row(insert) {
-            Ok(()) => {
-                self.caret = self
-                    .document
-                    .place_caret(self.insert_at.0, self.insert_at.1);
-                self.rebuild_after_edit();
-                cx.notify();
-            }
-            Err(error) => self.table_status = Some(SharedString::from(error)),
-        }
-    }
-
     /// Leaves a comment on the selection, or on the caret's paragraph.
     ///
     /// The text is fixed until there is somewhere to type it. That is honest
@@ -2650,124 +2150,6 @@ impl DocumentView {
         }
     }
 
-    fn align(&mut self, alignment: &str, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        if self.document.set_alignment(alignment, page).is_ok() {
-            self.rebuild_after_edit();
-            cx.notify();
-        }
-    }
-
-    fn indent(&mut self, points: f32, cx: &mut Context<Self>) {
-        self.indent_points = (self.indent_points + points).max(0.0);
-        let page = self.caret_page_1idx();
-        let indent = self.indent_points;
-        if self.document.shift_indent(indent, page).is_ok() {
-            self.rebuild_after_edit();
-            cx.notify();
-        }
-    }
-
-    /// Clamped so a stray repeat cannot leave the document unreadably small or
-    /// so large that a page no longer fits any sensible window.
-    fn format(&mut self, format: CharacterFormat, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        // An error here means there was no selection, which is the ordinary
-        // case for a caret rather than a failure.
-        if self.document.format_selection(format, page).is_ok() {
-            self.refresh_caret_page_image();
-            cx.notify();
-        }
-    }
-
-    /// Selects the paragraph the caret is in.
-    ///
-    /// Not the whole document: selecting every paragraph would repaint all of
-    /// them, and the paragraph is the unit everything else here works on.
-    /// Applies a run-level command and refreshes what it touched.
-    fn after_run_format(&mut self, applied: Result<(), String>, cx: &mut Context<Self>) {
-        // An error is "there was no selection", which is the ordinary case for
-        // a caret rather than a failure. The selection survives a command that
-        // did apply, so the next ribbon button acts on the same run.
-        if applied.is_ok() {
-            self.dirty = true;
-            self.refresh_caret_page_image();
-            cx.notify();
-        }
-    }
-
-    fn set_font_size(&mut self, points: f32, cx: &mut Context<Self>) {
-        self.font_size_pt = points.clamp(6.0, 96.0);
-        let page = self.caret_page_1idx();
-        let applied = self.document.set_font_size(self.font_size_pt, page);
-        self.after_run_format(applied, cx);
-        cx.notify();
-    }
-
-    fn set_font_family(&mut self, family: &str, cx: &mut Context<Self>) {
-        self.font_family = SharedString::from(family.to_string());
-        self.popup = None;
-        let page = self.caret_page_1idx();
-        let applied = self.document.set_font_family(family, page);
-        self.after_run_format(applied, cx);
-        cx.notify();
-    }
-
-    fn set_font_color(&mut self, color: &str, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        let applied = self.document.set_font_color(color, page);
-        self.after_run_format(applied, cx);
-    }
-
-    fn set_highlight(&mut self, color: &str, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        let applied = self.document.set_highlight_color(color, page);
-        self.after_run_format(applied, cx);
-    }
-
-    /// Opens a ribbon list, or closes it if it is the one already open.
-    fn toggle_popup(&mut self, popup: RibbonPopup, cx: &mut Context<Self>) {
-        self.popup = (self.popup != Some(popup)).then_some(popup);
-        cx.notify();
-    }
-
-    fn set_line_spacing(&mut self, multiple: f32, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        if self.document.set_line_spacing(multiple, page).is_ok() {
-            // Line height moves everything below it.
-            self.rebuild_after_edit();
-            cx.notify();
-        }
-    }
-
-    fn set_paragraph_spacing(&mut self, after: f32, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        if self
-            .document
-            .set_paragraph_spacing(None, Some(after), page)
-            .is_ok()
-        {
-            self.rebuild_after_edit();
-            cx.notify();
-        }
-    }
-
-    fn set_shading(&mut self, color: Option<&str>, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        if self.document.set_paragraph_shading(color, page).is_ok() {
-            self.refresh_caret_page_image();
-            cx.notify();
-        }
-    }
-
-    fn set_paragraph_borders(&mut self, boxed: bool, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        if self.document.set_paragraph_borders(boxed, page).is_ok() {
-            self.refresh_caret_page_image();
-            cx.notify();
-        }
-    }
-
     fn set_page_background(&mut self, color: Option<&str>, cx: &mut Context<Self>) {
         if self.document.set_page_background(color).is_ok() {
             self.rebuild_after_edit();
@@ -2782,33 +2164,111 @@ impl DocumentView {
         }
     }
 
-    fn set_paragraph_style(&mut self, style_id: &str, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        if self.document.set_paragraph_style(style_id, page).is_ok() {
-            // A style changes line heights, so everything below can move.
-            self.rebuild_after_edit();
-            cx.notify();
+    // ---- the ribbon's commands ----------------------------------------------
+
+    /// The formatting at the caret, read again only when the caret, the
+    /// selection or the pages changed.
+    fn format_state(&mut self) -> FormatState {
+        let key = (self.insert_at, self.document.selection(), self.edits);
+        match &self.format {
+            Some((cached, state)) if *cached == key => state.clone(),
+            _ => {
+                let state = WordFormatting::format_state(&self.document);
+                self.format = Some((key, state.clone()));
+                state
+            }
         }
     }
 
-    fn set_numbering(&mut self, num_id: Option<&str>, cx: &mut Context<Self>) {
-        let page = self.caret_page_1idx();
-        if self.document.set_numbering(num_id, page).is_ok() {
-            self.rebuild_after_edit();
-            cx.notify();
-        }
+    /// A ribbon control was clicked.
+    fn ribbon_action(&mut self, action: Action, _window: &mut Window, cx: &mut Context<Self>) {
+        self.run_ribbon(action, cx);
     }
 
-    fn insert_table(&mut self, rows: usize, columns: usize, cx: &mut Context<Self>) {
-        self.log_call(format!(
-            "insert_table {rows}x{columns} at paragraph {} selection {:?}",
-            self.insert_at.0,
-            self.document.selection(),
-        ));
-        if self.document.insert_table(rows, columns).is_ok() {
-            self.rebuild_after_edit();
-            cx.notify();
+    /// Runs a ribbon command — from a button, a list or a shortcut — through
+    /// `jade-office-model`'s shared commands: formatting keeps the selection,
+    /// so the next command acts on the same text; a table command that adds
+    /// or removes cells moves the caret to where the command left it.
+    fn run_ribbon(&mut self, action: Action, cx: &mut Context<Self>) {
+        if action.is_chrome() {
+            match action {
+                Action::Popup(popup) => self.ribbon.toggle(popup),
+                Action::ClosePopup => self.ribbon.popup = None,
+                Action::Grid(columns, rows) => self.ribbon.grid = (columns, rows),
+                _ => {}
+            }
+            return cx.notify();
         }
+        self.ribbon.popup = None;
+        let document = &mut self.document;
+        let done = match action {
+            Action::Undo => return self.step_history(true, cx),
+            Action::Redo => return self.step_history(false, cx),
+            Action::InsertTable(rows, columns) => {
+                let moved = WordFormatting::insert_table(document, rows, columns);
+                return self.ribbon_moved(moved, cx);
+            }
+            Action::Table(command) if command.is_structural() => {
+                let moved = document.table_command(command);
+                return self.ribbon_moved(moved, cx);
+            }
+            Action::Table(command) => document.table_command(command).map(|_| ()),
+            Action::Toggle(format) => document.toggle_format(format),
+            Action::ClearFormatting => document.clear_formatting(),
+            Action::FontFamily(family) => WordFormatting::set_font_family(document, family),
+            Action::FontSize(points) => WordFormatting::set_font_size(document, points),
+            Action::StepFontSize(grow) => document.step_font_size(grow),
+            Action::FontColor(color) => WordFormatting::set_font_color(document, &color),
+            Action::Highlight(color) => document.set_highlight(color),
+            Action::List(bullets) => document.toggle_list(bullets),
+            Action::Indent(increase) => document.step_indent(increase),
+            Action::Align(alignment) => WordFormatting::set_alignment(document, alignment),
+            Action::LineSpacing(multiple) => WordFormatting::set_line_spacing(document, multiple),
+            Action::Shading(color) => {
+                WordFormatting::set_paragraph_shading(document, color.as_deref())
+            }
+            Action::ParagraphBorders(borders) => {
+                WordFormatting::set_paragraph_borders(document, borders)
+            }
+            Action::Style(style_id) => {
+                let done = WordFormatting::set_paragraph_style(document, style_id.as_deref());
+                self.ribbon.read_styles(&self.document);
+                done
+            }
+            Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
+        };
+        match done {
+            Ok(()) => {
+                self.dirty = true;
+                self.table_status = None;
+                // A bare caret stays put in its paragraph, but the line it is
+                // on may have moved; a selection hides the caret anyway.
+                if self.document.selection().is_none() {
+                    self.caret = self
+                        .document
+                        .place_caret(self.insert_at.0, self.insert_at.1);
+                }
+                self.rebuild_all_images();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
+    }
+
+    /// After a command that moved the caret: put it there, with no
+    /// selection.
+    fn ribbon_moved(&mut self, moved: Result<(usize, usize), String>, cx: &mut Context<Self>) {
+        match moved {
+            Ok(caret) => {
+                self.table_status = None;
+                self.selection_anchor = None;
+                self.insert_at = caret;
+                self.caret = self.document.place_caret(caret.0, caret.1);
+                self.rebuild_after_edit();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
     }
 
     fn insert_blank_page(&mut self, cx: &mut Context<Self>) {
@@ -3193,6 +2653,7 @@ impl DocumentView {
     /// Re-reads every page. Needed after a re-flow, where a later page's
     /// content may have moved even though the edit was on an earlier one.
     fn rebuild_all_images(&mut self) {
+        self.edits += 1;
         self.dump_page_if_asked();
         let pages = self.document.page_count();
         for index in 0..pages {
@@ -3852,28 +3313,36 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &ReplaceAll, _window, cx| view.replace_all_matches(cx)),
             )
-            .on_action(
-                cx.listener(|view, _: &Bold, _window, cx| view.format(CharacterFormat::Bold, cx)),
-            )
-            .on_action(
-                cx.listener(|view, _: &Italic, _window, cx| {
-                    view.format(CharacterFormat::Italic, cx)
-                }),
-            )
-            .on_action(cx.listener(|view, _: &Underline, _window, cx| {
-                view.format(CharacterFormat::Underline, cx)
+            .on_action(cx.listener(|view, _: &Bold, _window, cx| {
+                view.run_ribbon(Action::Toggle(CharacterFormat::Bold), cx)
             }))
-            .on_action(cx.listener(|view, _: &AlignLeft, _window, cx| view.align("left", cx)))
-            .on_action(cx.listener(|view, _: &AlignCenter, _window, cx| view.align("center", cx)))
-            .on_action(cx.listener(|view, _: &AlignRight, _window, cx| view.align("right", cx)))
-            .on_action(cx.listener(|view, _: &IndentMore, _window, cx| view.indent(36.0, cx)))
-            .on_action(cx.listener(|view, _: &IndentLess, _window, cx| view.indent(-36.0, cx)))
-            .on_action(
-                cx.listener(|view, _: &InsertTableRow, _window, cx| view.edit_table_row(true, cx)),
-            )
-            .on_action(
-                cx.listener(|view, _: &DeleteTableRow, _window, cx| view.edit_table_row(false, cx)),
-            )
+            .on_action(cx.listener(|view, _: &Italic, _window, cx| {
+                view.run_ribbon(Action::Toggle(CharacterFormat::Italic), cx)
+            }))
+            .on_action(cx.listener(|view, _: &Underline, _window, cx| {
+                view.run_ribbon(Action::Toggle(CharacterFormat::Underline), cx)
+            }))
+            .on_action(cx.listener(|view, _: &AlignLeft, _window, cx| {
+                view.run_ribbon(Action::Align("left"), cx)
+            }))
+            .on_action(cx.listener(|view, _: &AlignCenter, _window, cx| {
+                view.run_ribbon(Action::Align("center"), cx)
+            }))
+            .on_action(cx.listener(|view, _: &AlignRight, _window, cx| {
+                view.run_ribbon(Action::Align("right"), cx)
+            }))
+            .on_action(cx.listener(|view, _: &IndentMore, _window, cx| {
+                view.run_ribbon(Action::Indent(true), cx)
+            }))
+            .on_action(cx.listener(|view, _: &IndentLess, _window, cx| {
+                view.run_ribbon(Action::Indent(false), cx)
+            }))
+            .on_action(cx.listener(|view, _: &InsertTableRow, _window, cx| {
+                view.run_ribbon(Action::Table(TableCommand::InsertRowBelow), cx)
+            }))
+            .on_action(cx.listener(|view, _: &DeleteTableRow, _window, cx| {
+                view.run_ribbon(Action::Table(TableCommand::DeleteRow), cx)
+            }))
             .on_action(cx.listener(|view, _: &AddComment, _window, cx| view.add_comment(cx)))
             .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
@@ -3932,7 +3401,7 @@ impl Render for DocumentView {
                     .flex()
                     .flex_col()
                     .size_full()
-                    .child(self.ribbon(cx))
+                    .child(self.ribbon(window, cx))
                     .children(self.find_bar_element())
                     .child(
                         div()
@@ -4202,6 +3671,8 @@ fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentVi
         .filter_map(|index| page_image(&document, index))
         .collect();
     let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+    let mut ribbon = ribbon::Ribbon::default();
+    ribbon.read_styles(&document);
 
     Ok(DocumentView {
         path: SharedString::from(path_text),
@@ -4225,10 +3696,9 @@ fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentVi
         find_status: None,
         find_bar: None,
         ribbon_tab: RibbonTab::Home,
-        popup: None,
-        font_size_pt: 10.5,
-        font_family: SharedString::from("游明朝"),
-        indent_points: 0.0,
+        ribbon,
+        edits: 0,
+        format: None,
         saved_to: None,
         marked: None,
         page_bounds: Rc::new(RefCell::new(Vec::new())),
@@ -4414,6 +3884,128 @@ mod tests {
         let saved = jade_opc::OpcPackage::open(&std::fs::read(&path).unwrap()).unwrap();
         let xml = saved.part_str("word/document.xml").unwrap().unwrap();
         assert!(xml.contains("jadesaved"));
+    }
+
+    /// The contract fixture, open in a window with the keyboard on it.
+    fn open_contract(
+        cx: &mut gpui::TestAppContext,
+    ) -> (
+        gpui::Entity<super::DocumentView>,
+        &mut gpui::VisualTestContext,
+    ) {
+        use super::open_document_view;
+        use gpui::Focusable;
+        let path = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../jade-core/contract.docx"
+        ));
+        let (view, cx) = cx.add_window_view(|_window, cx| open_document_view(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        (view, cx)
+    }
+
+    /// Selects the first few characters of the caret's paragraph, as a drag
+    /// would.
+    fn select_start(view: &mut super::DocumentView) {
+        let paragraph = view.insert_at.0;
+        let text = view.current_paragraph_text();
+        let end = text.char_indices().nth(3).map(|(index, _)| index).unwrap();
+        view.document
+            .select((paragraph, 0), (paragraph, end), 1)
+            .unwrap();
+        view.insert_at = (paragraph, end);
+    }
+
+    /// ⌘B turns bold on for the selection and the ribbon shows it pressed;
+    /// the same shortcut turns it off, and Undo steps back through both.
+    #[gpui::test]
+    fn bold_toggles_from_the_shortcut(cx: &mut gpui::TestAppContext) {
+        use super::{Bold, Editor, Undo};
+        let (view, cx) = open_contract(cx);
+        let was_bold = view.update(cx, |view, _| {
+            select_start(view);
+            view.format_state().bold
+        });
+        cx.dispatch_action(Bold);
+        view.update(cx, |view, _| {
+            assert_eq!(view.format_state().bold, !was_bold);
+            assert!(view.is_dirty());
+            assert!(
+                view.document.selection().is_some(),
+                "the selection survives"
+            );
+        });
+        cx.dispatch_action(Bold);
+        view.update(cx, |view, _| assert_eq!(view.format_state().bold, was_bold));
+        cx.dispatch_action(Undo);
+        view.update(cx, |view, _| {
+            assert_eq!(view.format_state().bold, !was_bold)
+        });
+    }
+
+    /// A heading from the gallery shows as the active entry; 標準 takes it
+    /// off again.
+    #[gpui::test]
+    fn the_gallery_applies_a_heading(cx: &mut gpui::TestAppContext) {
+        use super::ribbon::Action;
+        let (view, cx) = open_contract(cx);
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::Style(Some("Heading1".to_string())), cx);
+            let state = view.format_state();
+            assert!(
+                view.ribbon.is_active(1, state.style_id.as_deref()),
+                "{state:?}"
+            );
+            assert!(state.font_size.is_some());
+            view.run_ribbon(Action::Style(None), cx);
+            let state = view.format_state();
+            assert!(
+                view.ribbon.is_active(0, state.style_id.as_deref()),
+                "{state:?}"
+            );
+        });
+    }
+
+    /// A table picked on the grid goes in with the caret in its first cell;
+    /// a row goes in below, two cells merge and unmerge, and Undo takes the
+    /// steps back.
+    #[gpui::test]
+    fn table_tools_edit_the_caret_table(cx: &mut gpui::TestAppContext) {
+        use super::ribbon::Action;
+        use super::{TableCommand, Undo};
+        let (view, cx) = open_contract(cx);
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::InsertTable(2, 3), cx);
+            let cell = view
+                .format_state()
+                .table
+                .expect("the caret is in the table");
+            assert_eq!(
+                (cell.row, cell.column, cell.rows, cell.columns),
+                (0, 0, 2, 3)
+            );
+
+            view.run_ribbon(Action::Table(TableCommand::InsertRowBelow), cx);
+            assert_eq!(view.format_state().table.unwrap().rows, 3);
+
+            // The caret's cell and the one to its right.
+            let next = view.insert_at.0 + 1;
+            let from = view.insert_at;
+            view.document.select(from, (next, 0), 1).unwrap();
+            view.insert_at = (next, 0);
+            assert!(view.format_state().table.unwrap().can_merge);
+            view.run_ribbon(Action::Table(TableCommand::MergeCells), cx);
+            assert!(view.format_state().table.unwrap().can_unmerge);
+            assert!(view.table_status.is_none(), "{:?}", view.table_status);
+        });
+        cx.dispatch_action(Undo);
+        view.update(cx, |view, _| {
+            assert!(
+                !view.format_state().table.unwrap().can_unmerge,
+                "the merge is undone"
+            );
+        });
     }
 
     #[test]

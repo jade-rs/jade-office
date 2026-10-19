@@ -27,6 +27,12 @@ use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 
 use crate::document::{TinySkiaRenderHost, INITIAL_PAGE};
 
+mod formatting;
+pub use formatting::{
+    style_gallery, CharacterFormat, FormatState, GalleryStyle, ListKind, ParagraphBorders,
+    ParagraphStyle, TableBorders, TableCell, TableCommand, WordFormatting, WordSession,
+};
+
 /// Where the caret is drawn: in the document's coordinate space, which
 /// stacks the pages with a gap between them.
 #[derive(Debug, Clone, Copy, PartialEq)]
