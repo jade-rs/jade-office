@@ -6,8 +6,9 @@
 //! Sheets and slides can be edited, through the same editing cores the
 //! native app uses (`jade-web`'s `Workbook` and `Deck`): select a cell and
 //! type, an IME's composition included; select a shape and type into it,
-//! move it with the arrow keys, delete it; undo and redo; and save, which
-//! hands the bytes to the page to download. Word documents are viewed.
+//! move it by dragging or with the arrow keys, resize it from its corners,
+//! delete it; undo and redo; and save, which hands the bytes to the page to
+//! download. Word documents are viewed.
 
 use std::cell::{Cell, RefCell};
 use std::ops::Range;
@@ -21,7 +22,7 @@ use gpui::{
     UTF16Selection, Window,
 };
 use jade_tiny_skia_painter::TinySkiaPainter;
-use jade_web::deck::TextTarget;
+use jade_web::deck::{DragMode, ShapeDrag, TextTarget};
 use jade_web::sheet::CellRef;
 use jade_web::text::{byte_to_utf16, utf16_to_byte, TextEdit};
 
@@ -45,6 +46,8 @@ const FORMULA_BAR_HEIGHT: f32 = 32.0;
 const SHEET_TABS_HEIGHT: f32 = 30.0;
 /// How far an arrow key moves a shape, in slide px; ⌥ moves one.
 const NUDGE_PX: f64 = 6.0;
+/// The size of a selection's corner handles, in window px.
+const HANDLE_SIZE: f32 = 9.0;
 
 pub const ZOOM_MIN: f32 = 0.25;
 pub const ZOOM_MAX: f32 = 4.0;
@@ -279,6 +282,8 @@ enum Document {
         selected_name: Option<SharedString>,
         /// Text being typed into a shape, or a cell of a table.
         edit: Option<(TextTarget, TextEdit)>,
+        /// A shape being moved or resized with the mouse.
+        drag: Option<ShapeDrag>,
         /// Window px per slide px of the slide on show.
         scale: f32,
     },
@@ -356,6 +361,7 @@ impl DocView {
                     selected: None,
                     selected_name: None,
                     edit: None,
+                    drag: None,
                     scale: 1.0,
                 }
             }
@@ -609,9 +615,11 @@ impl DocView {
             deck,
             current,
             thumbnail_scroll,
+            drag,
             ..
         } = &mut self.document
         {
+            *drag = None;
             *current = index.min(deck.slide_count().saturating_sub(1));
             thumbnail_scroll.scroll_to_item(*current);
         }
@@ -776,22 +784,18 @@ impl DocView {
     ) {
         window.focus(&self.focus, cx);
         cx.stop_propagation();
-        let Some(bounds) = self.surface.get() else {
+        let Some((x, y)) = self.slide_point(event.position) else {
             return;
         };
         let Document::Deck {
             deck,
             current,
             edit,
-            scale,
             ..
         } = &mut self.document
         else {
             return;
         };
-        let to_slide = |value: Pixels| f64::from(value) / f64::from(*scale);
-        let x = to_slide(event.position.x - bounds.origin.x);
-        let y = to_slide(event.position.y - bounds.origin.y);
         // A click inside the shape or cell being typed into stays in the
         // text.
         if let Some((target, _)) = edit {
@@ -803,13 +807,111 @@ impl DocView {
             }
         }
         let hit = deck.shape_at(*current, x, y);
+        let movable = hit
+            .and_then(|id| deck.shape(*current, id))
+            .is_some_and(|shape| shape.can_move);
         self.commit_slide_text(cx);
         self.select_shape(hit);
-        if event.click_count >= 2 && hit.is_some() {
+        match hit {
             // In a table, the cell under the click.
-            self.begin_slide_text(Some((x, y)), cx);
+            Some(_) if event.click_count >= 2 => self.begin_slide_text(Some((x, y)), cx),
+            // Dragging the shape moves it.
+            Some(id) if movable => {
+                if let Document::Deck { drag, .. } = &mut self.document {
+                    *drag = Some(ShapeDrag::new(id, DragMode::Move, (x, y)));
+                }
+            }
+            _ => {}
         }
         cx.notify();
+    }
+
+    /// A press on a corner handle of the selected shape: dragging it resizes
+    /// the shape from the opposite corner.
+    fn start_slide_resize(
+        &mut self,
+        left: bool,
+        top: bool,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        cx.stop_propagation();
+        let Some(from) = self.slide_point(event.position) else {
+            return;
+        };
+        let Document::Deck {
+            deck,
+            current,
+            selected,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(id) = *selected else {
+            return;
+        };
+        if !deck
+            .shape(*current, id)
+            .is_some_and(|shape| shape.can_resize)
+        {
+            return;
+        }
+        self.commit_slide_text(cx);
+        if let Document::Deck { drag, .. } = &mut self.document {
+            *drag = Some(ShapeDrag::new(id, DragMode::Resize { left, top }, from));
+        }
+        cx.notify();
+    }
+
+    /// The pointer moving with the button down drags the shape along.
+    fn slide_mouse_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if !event.dragging() {
+            return;
+        }
+        let Some((x, y)) = self.slide_point(event.position) else {
+            return;
+        };
+        if let Document::Deck {
+            drag: Some(drag), ..
+        } = &mut self.document
+        {
+            drag.drag_to(x, y);
+            cx.notify();
+        }
+    }
+
+    /// Letting go writes the drag, as one undoable change.
+    fn slide_mouse_up(&mut self, cx: &mut Context<Self>) {
+        let Document::Deck {
+            deck,
+            current,
+            drag,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(drag) = drag.take() else {
+            return;
+        };
+        let result = deck.drag_shape(*current, &drag);
+        self.edited(result, cx);
+    }
+
+    /// A window point as a point on the slide on show, in slide px.
+    fn slide_point(&self, position: gpui::Point<Pixels>) -> Option<(f64, f64)> {
+        let bounds = self.surface.get()?;
+        let Document::Deck { scale, .. } = &self.document else {
+            return None;
+        };
+        let to_slide = |value: Pixels| f64::from(value) / f64::from(*scale);
+        Some((
+            to_slide(position.x - bounds.origin.x),
+            to_slide(position.y - bounds.origin.y),
+        ))
     }
 
     /// Paints the current slide at `width` window px, unless it already is.
@@ -912,6 +1014,7 @@ impl DocView {
             slide,
             selected,
             edit,
+            drag,
             scale: shown_scale,
             ..
         } = &mut self.document
@@ -973,12 +1076,22 @@ impl DocView {
             .map(|notes| SharedString::from(notes.to_string()));
         let show_notes = self.show_notes;
 
-        // The selection outline, or the text editor, over the slide.
+        // The selection outline and its corner handles, or the text editor,
+        // over the slide; a shape being dragged where the drag has taken it.
+        let resizable = selected
+            .and_then(|id| deck.shape(current_index, id))
+            .is_some_and(|shape| shape.can_resize);
         let overlay = selected.and_then(|id| {
             let editing = edit.as_ref().filter(|(target, _)| target.id() == id);
             let rect = match editing {
                 Some((target, _)) => deck.text_rect(current_index, *target)?,
-                None => deck.shape_rect(current_index, id)?,
+                None => {
+                    let rect = deck.shape_rect(current_index, id)?;
+                    match drag.as_ref().filter(|drag| drag.id == id) {
+                        Some(drag) => drag.rect(rect),
+                        None => rect,
+                    }
+                }
             };
             let (x, y, w, h) = (
                 rect.x as f32 * zoom,
@@ -1020,7 +1133,42 @@ impl DocView {
                     .w(px(w))
                     .h(px(h))
                     .border_1()
-                    .border_color(palette::accent()),
+                    .border_color(palette::accent())
+                    .when(resizable, |outline| {
+                        outline.children(
+                            [(true, true), (false, true), (true, false), (false, false)]
+                                .into_iter()
+                                .enumerate()
+                                .map(|(index, (is_left, is_top))| {
+                                    let at = |near: bool, length: f32| {
+                                        px(if near { 0.0 } else { length } - HANDLE_SIZE / 2.0)
+                                    };
+                                    div()
+                                        .id(("resize-handle", index))
+                                        .absolute()
+                                        .left(at(is_left, w))
+                                        .top(at(is_top, h))
+                                        .size(px(HANDLE_SIZE))
+                                        .rounded_full()
+                                        .bg(gpui::white())
+                                        .border_1()
+                                        .border_color(palette::accent())
+                                        .cursor(if is_left == is_top {
+                                            gpui::CursorStyle::ResizeUpLeftDownRight
+                                        } else {
+                                            gpui::CursorStyle::ResizeUpRightDownLeft
+                                        })
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(move |view, event, window, cx| {
+                                                view.start_slide_resize(
+                                                    is_left, is_top, event, window, cx,
+                                                )
+                                            }),
+                                        )
+                                }),
+                        )
+                    }),
             })
         });
 
@@ -1030,6 +1178,17 @@ impl DocView {
             .size_full()
             .flex()
             .bg(palette::window())
+            // A drag follows the pointer anywhere over the view, and ends
+            // wherever the button comes up.
+            .on_mouse_move(cx.listener(|view, event, _window, cx| view.slide_mouse_move(event, cx)))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _event, _window, cx| view.slide_mouse_up(cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|view, _event, _window, cx| view.slide_mouse_up(cx)),
+            )
             .child(
                 div()
                     .w(px(DECK_SIDEBAR_WIDTH))
