@@ -587,6 +587,9 @@ impl DocView {
                     document.redo()
                 };
                 self.refresh_repainted();
+                // To where the step put the caret, as Word scrolls to what
+                // it undid.
+                self.reveal_caret();
                 self.word_result(result.map(|_| ()), cx);
                 return;
             }
@@ -2695,14 +2698,15 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        // In a Word document, beside the caret.
+        // In a Word document, beside the caret — a selection's moving end,
+        // which the renderer reports no caret for.
         if let Document::Pages {
             document,
             page_bounds,
             ..
-        } = &self.document
+        } = &mut self.document
         {
-            if let Some(caret) = document.caret_rect() {
+            if let Some(caret) = document.focus_rect() {
                 let (page, y) = document.page_and_offset(caret.document_y);
                 if let Some(page) = page_bounds.borrow().get(page).copied().flatten() {
                     let zoom = self.shown_zoom;
