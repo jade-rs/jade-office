@@ -329,6 +329,8 @@ pub struct DocView {
     shown_zoom: f32,
     show_notes: bool,
     slideshow: bool,
+    /// Whether the browser's paste event came after the last ⌘V.
+    paste_arrived: bool,
     host: Host,
 }
 
@@ -409,6 +411,7 @@ impl DocView {
             shown_zoom: 1.0,
             show_notes: true,
             slideshow: false,
+            paste_arrived: false,
             host,
         })
     }
@@ -575,6 +578,7 @@ impl DocView {
     }
 
     pub fn step_history(&mut self, undo: bool, cx: &mut Context<Self>) {
+        let keep;
         let result = match &mut self.document {
             Document::Pages { document, .. } => {
                 let result = if undo {
@@ -590,17 +594,15 @@ impl DocView {
                 deck,
                 edit,
                 selected,
-                selected_name,
+                current,
                 ..
             } => {
                 *edit = None;
-                *selected = None;
-                *selected_name = None;
-                if undo {
-                    deck.undo()
-                } else {
-                    deck.redo()
-                }
+                let result = if undo { deck.undo() } else { deck.redo() };
+                // The selection stays on a shape the step kept, as in
+                // PowerPoint; one it took away is deselected.
+                keep = (*selected).filter(|&id| deck.shape(*current, id).is_some());
+                result
             }
             Document::Workbook(sheet) => {
                 sheet.edit = None;
@@ -615,6 +617,7 @@ impl DocView {
             }
         };
         self.edited(result, cx);
+        self.select_shape(keep);
     }
 
     // ---- the deck ---------------------------------------------------------
@@ -713,8 +716,9 @@ impl DocView {
         cx.notify();
     }
 
-    /// Starts typing into `target` from the text it has.
-    fn edit_slide_text(&mut self, target: TextTarget, cx: &mut Context<Self>) {
+    /// Starts typing into `target` from the text it has — all of it
+    /// selected, when `whole`, so typing replaces it.
+    fn edit_slide_text(&mut self, target: TextTarget, whole: bool, cx: &mut Context<Self>) {
         let Document::Deck {
             deck,
             edit,
@@ -725,7 +729,12 @@ impl DocView {
             return;
         };
         if let Some(text) = deck.text(*current, target) {
-            *edit = Some((target, TextEdit::new(text)));
+            let text = if whole {
+                TextEdit::selected(text)
+            } else {
+                TextEdit::new(text)
+            };
+            *edit = Some((target, text));
         }
         cx.notify();
     }
@@ -754,7 +763,8 @@ impl DocView {
         };
         let slide = *current;
         match deck.next_cell(slide, from, backwards) {
-            Some(next) => self.edit_slide_text(next, cx),
+            // The next cell's text selected, as PowerPoint's Tab does.
+            Some(next) => self.edit_slide_text(next, true, cx),
             None if !backwards => {
                 let result = deck.change_table(slide, id, TableChange::InsertRow(row + 1));
                 let added = matches!(result, Ok(true));
@@ -768,10 +778,11 @@ impl DocView {
                         row: row + 1,
                         column: 0,
                     },
+                    false,
                     cx,
                 );
             }
-            None => self.edit_slide_text(from, cx),
+            None => self.edit_slide_text(from, true, cx),
         }
     }
 
@@ -1228,7 +1239,13 @@ impl DocView {
                             .flex()
                             .flex_wrap()
                             .items_end()
-                            .child(text.split().0.to_string())
+                            .child(if text.whole {
+                                div()
+                                    .bg(palette::selected())
+                                    .child(text.split().0.to_string())
+                            } else {
+                                div().child(text.split().0.to_string())
+                            })
                             .child(
                                 div()
                                     .w(px(1.5))
@@ -2233,6 +2250,25 @@ impl DocView {
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        // ⌘V is left to the browser, whose paste event brings the clipboard
+        // here. A browser that kept the copy off the clipboard (an embedding
+        // page without clipboard access) sends no paste event for an empty
+        // one: then a sheet pastes its own copy, as its menu's Paste does.
+        if (modifiers.platform || modifiers.control)
+            && key == "v"
+            && matches!(&self.document, Document::Workbook(sheet) if sheet.typed().is_none())
+        {
+            self.paste_arrived = false;
+            let view = cx.entity().downgrade();
+            window.on_next_frame(move |_window, cx| {
+                view.update(cx, |view, cx| {
+                    if !view.paste_arrived {
+                        view.sheet_paste(None, cx);
+                    }
+                })
+                .ok();
+            });
+        }
         // A sheet takes its own keys first: Excel's shortcuts, ⌘-arrows,
         // and the keys of a cell being typed into.
         if matches!(self.document, Document::Workbook(_))
@@ -2474,6 +2510,7 @@ impl EntityInputHandler for DocView {
     }
 
     fn paste(&mut self, item: gpui::ClipboardItem, window: &mut Window, cx: &mut Context<Self>) {
+        self.paste_arrived = true;
         let Some(text) = item.text() else {
             return;
         };

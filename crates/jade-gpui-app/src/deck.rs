@@ -117,6 +117,19 @@ struct TextEdit {
     text: String,
     /// The IME's composition, as a byte range of `text`.
     marked: Option<Range<usize>>,
+    /// All the text is selected, as after Tab into a table cell: what is
+    /// typed next replaces it.
+    whole: bool,
+}
+
+impl TextEdit {
+    /// Ends a whole-text selection, emptying the text it selected when
+    /// something replaces it.
+    fn take_whole(&mut self, replace: bool) {
+        if std::mem::take(&mut self.whole) && replace {
+            self.text.clear();
+        }
+    }
 }
 
 pub struct DeckView {
@@ -421,11 +434,12 @@ impl DeckView {
     /// or the first cell without one — from the text it has.
     fn begin_text(&mut self, id: u32, point: Option<(f64, f64)>, cx: &mut Context<Self>) {
         let target = self.deck.text_target(self.current, id, point);
-        self.edit(target, cx);
+        self.edit(target, false, cx);
     }
 
-    /// Starts typing into `target` from the text it has.
-    fn edit(&mut self, target: TextTarget, cx: &mut Context<Self>) {
+    /// Starts typing into `target` from the text it has — all of it
+    /// selected, when `whole`.
+    fn edit(&mut self, target: TextTarget, whole: bool, cx: &mut Context<Self>) {
         let (Some(text), Some(rect)) = (
             self.deck.text(self.current, target),
             self.deck.text_rect(self.current, target),
@@ -440,6 +454,7 @@ impl DeckView {
             rect,
             text,
             marked: None,
+            whole,
         });
         cx.notify();
     }
@@ -465,7 +480,8 @@ impl DeckView {
         };
         self.commit_text(cx);
         match self.deck.next_cell(self.current, from, backwards) {
-            Some(next) => self.edit(next, cx),
+            // The next cell's text selected, as PowerPoint's Tab does.
+            Some(next) => self.edit(next, true, cx),
             None if !backwards => {
                 let added = self.write(cx, |deck, slide| {
                     deck.change_table(slide, id, TableChange::InsertRow(row + 1))
@@ -479,10 +495,11 @@ impl DeckView {
                         row: row + 1,
                         column: 0,
                     },
+                    false,
                     cx,
                 );
             }
-            None => self.edit(from, cx),
+            None => self.edit(from, true, cx),
         }
     }
 
@@ -529,7 +546,11 @@ impl DeckView {
                     cx.notify();
                 }
                 "backspace" => {
-                    edit.text.pop();
+                    if edit.whole {
+                        edit.take_whole(true);
+                    } else {
+                        edit.text.pop();
+                    }
                     cx.notify();
                 }
                 _ => return,
@@ -713,6 +734,7 @@ impl DeckView {
                 ),
                 None => (edit.text.clone(), String::new(), String::new()),
             };
+            let whole = edit.whole;
             out.push(
                 div()
                     .absolute()
@@ -731,7 +753,11 @@ impl DeckView {
                             .flex()
                             .flex_wrap()
                             .items_end()
-                            .child(before)
+                            .child(if whole {
+                                div().bg(theme::selected()).child(before)
+                            } else {
+                                div().child(before)
+                            })
                             .when(!marked.is_empty(), |line| {
                                 line.child(div().underline().child(marked))
                             })
@@ -926,6 +952,7 @@ impl EntityInputHandler for DeckView {
         let Some(edit) = self.text_edit.as_mut() else {
             return;
         };
+        edit.take_whole(range.is_none() && edit.marked.is_none());
         let bytes = match range {
             Some(range) => {
                 utf16_to_byte(&edit.text, range.start)..utf16_to_byte(&edit.text, range.end)
@@ -957,6 +984,7 @@ impl EntityInputHandler for DeckView {
         let Some(edit) = self.text_edit.as_mut() else {
             return;
         };
+        edit.take_whole(range.is_none() && edit.marked.is_none());
         let bytes = match range {
             Some(range) => {
                 utf16_to_byte(&edit.text, range.start)..utf16_to_byte(&edit.text, range.end)
@@ -1670,16 +1698,17 @@ mod tests {
         });
     }
 
-    /// Tab goes to the next cell, writing what was typed; Tab in the last
-    /// cell adds a row and goes to its first. The Layout buttons add and
-    /// remove rows and columns beside the cell being typed into.
+    /// Tab goes to the next cell, writing what was typed, with the cell's
+    /// text selected — typing replaces it, as in PowerPoint; Tab in the
+    /// last cell adds a row and goes to its first. The Layout buttons add
+    /// and remove rows and columns beside the cell being typed into.
     #[gpui::test]
     fn tab_walks_the_table_and_adds_a_row_at_its_end(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_fixture(cx, "poi/table-with-different-font-colors.pptx");
         let cell = |row, column| TextTarget::Cell { id: 4, row, column };
         view.update(cx, |view, cx| {
             view.select(Some(4), cx);
-            view.edit(cell(3, 2), cx);
+            view.edit(cell(3, 2), false, cx);
         });
         cx.simulate_input("!");
         cx.simulate_keystrokes("tab");
@@ -1690,7 +1719,7 @@ mod tests {
         view.read_with(cx, |view, _| {
             let text = |row, column| view.deck.text(0, cell(row, column)).unwrap();
             assert_eq!(text(3, 2), "Text 15!");
-            assert_eq!(text(3, 3), "Text 16?");
+            assert_eq!(text(3, 3), "?");
             assert_eq!(text(4, 0), "新しい行");
             assert_eq!(
                 view.text_edit.as_ref().map(|edit| edit.target),
@@ -1699,7 +1728,7 @@ mod tests {
         });
         view.update(cx, |view, cx| {
             view.change_table(|_, column| TableChange::InsertColumn(column + 1), cx);
-            view.edit(cell(0, 0), cx);
+            view.edit(cell(0, 0), false, cx);
             view.change_table(|row, _| TableChange::DeleteRow(row), cx);
         });
         view.read_with(cx, |view, _| {
