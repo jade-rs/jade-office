@@ -785,6 +785,10 @@ impl gpui::AssetSource for Assets {
             };
         }
         let bytes = icons!(
+            "align-center",
+            "align-left",
+            "align-right",
+            "borders",
             "chevron-down",
             "chevron-right",
             "clock",
@@ -792,16 +796,20 @@ impl gpui::AssetSource for Assets {
             "file-plus",
             "file-text",
             "files",
+            "filter",
             "folder",
             "folder-open",
             "folder-plus",
+            "merge",
             "moon",
+            "paint-bucket",
             "panel-right",
             "play",
             "presentation",
             "printer",
             "sheet",
             "sun",
+            "wrap-text",
             "x",
             "zap",
         );

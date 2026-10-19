@@ -97,6 +97,67 @@ sheet.save_failed	Cannot save: {error}
 sheet.average	Average: {value}
 sheet.cell_count	Count: {n}
 sheet.sum	Sum: {value}
+sheet.find	Find
+sheet.not_found	No matches found
+sheet.filter.clear	Clear Filter
+sheet.filter.all	(Select All)
+sheet.filter.blank	(Blanks)
+sheet.filter.ok	OK
+sheet.filter.cancel	Cancel
+sheet.tool.currency_symbol	$
+sheet.tool.no_fill	No Fill
+sheet.tool.automatic	Automatic
+sheet.tool.border_bottom	Bottom Border
+sheet.tool.border_all	All Borders
+sheet.tool.border_outline	Outside Borders
+sheet.tool.border_thick	Thick Outside Borders
+sheet.tool.border_none	No Border
+sheet.tool.number_format	General
+sheet.format.general_name	General
+sheet.format.general	General
+sheet.format.number_name	Number
+sheet.format.number	#,##0.00
+sheet.format.currency_name	Currency
+sheet.format.long_date_name	Long Date
+sheet.format.long_date	dddd, mmmm d, yyyy
+sheet.format.date_name	Short Date
+sheet.format.time_name	Time
+sheet.format.percent_name	Percentage
+sheet.format.percent	0.00%
+sheet.format.fraction_name	Fraction
+sheet.format.fraction	# ?/?
+sheet.format.scientific_name	Scientific
+sheet.format.scientific	0.00E+00
+sheet.format.text_name	Text
+sheet.format.text	@
+sheet.menu.insert_note	New Note
+sheet.menu.edit_note	Edit Note
+sheet.menu.delete_note	Delete Note
+sheet.menu.hide	Hide
+sheet.menu.unhide	Unhide
+sheet.menu.move_left	Move Left
+sheet.menu.move_right	Move Right
+sheet.validation_refused	This value doesn't match the data validation restrictions defined for this cell.
+sheet.menu.cut	Cut
+sheet.menu.copy	Copy
+sheet.menu.paste	Paste
+sheet.menu.clear	Clear Contents
+sheet.menu.fill_down	Fill Down
+sheet.menu.fill_right	Fill Right
+sheet.menu.sort_ascending	Sort A to Z
+sheet.menu.sort_descending	Sort Z to A
+sheet.menu.merge_center	Merge & Center
+sheet.menu.insert_rows	Insert Rows
+sheet.menu.delete_rows	Delete Rows
+sheet.menu.insert_columns	Insert Columns
+sheet.menu.delete_columns	Delete Columns
+sheet.menu.insert_sheet	Insert Sheet
+sheet.menu.rename_sheet	Rename
+sheet.menu.delete_sheet	Delete
+sheet.no_reference	That reference isn't valid
+sheet.format.currency	"$"#,##0.00_);("$"#,##0.00)
+sheet.format.date	d-mmm-yy
+sheet.format.time	h:mm AM/PM
 deck.edit_failed	Cannot make the change: {error}
 deck.text_locked	This shape's text cannot be edited
 deck.saved	Saved to {name}

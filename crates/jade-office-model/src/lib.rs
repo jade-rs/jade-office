@@ -17,7 +17,9 @@ use jade_painter::Painter;
 
 pub mod clipboard;
 pub mod deck;
+pub mod grid;
 pub mod sheet;
+pub mod text;
 pub mod typing;
 
 #[cfg(feature = "skia")]
