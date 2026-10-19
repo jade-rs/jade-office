@@ -123,7 +123,10 @@ impl EditableDocument {
             return Err("the document has no main part".to_string());
         }
         // The section properties decide the page box: a first pass finds it,
-        // and the renderer kept is the one built to it.
+        // and the renderer kept is the one built to it. The first pass only
+        // lays the document out — painting every page of it was most of what
+        // opening a document that is not Letter cost, thrown away — and when
+        // the box is Letter after all, its layout is painted as it stands.
         let mut opened = Self::render(
             &word_document,
             &options,
@@ -131,10 +134,21 @@ impl EditableDocument {
             scale,
             &fonts,
             &measurer,
+            false,
         )?;
         let size = opened.0.layout_page_size();
         if size != INITIAL_PAGE && size.0 > 1.0 && size.1 > 1.0 {
-            opened = Self::render(&word_document, &options, size, scale, &fonts, &measurer)?;
+            opened = Self::render(
+                &word_document,
+                &options,
+                size,
+                scale,
+                &fonts,
+                &measurer,
+                true,
+            )?;
+        } else {
+            Self::paint_every_page(&mut opened.0, &word_document, &options)?;
         }
         let (
             renderer,
@@ -176,6 +190,7 @@ impl EditableDocument {
         scale: f64,
         fonts: &Rc<FontBook>,
         measurer: &Rc<ShapingMeasurer>,
+        paint: bool,
     ) -> Result<
         (
             CanvasRenderer<TinySkiaPainter>,
@@ -200,6 +215,22 @@ impl EditableDocument {
         renderer.sync_document_header_footer_stories(word_document);
         // The shell draws the selection over the pages.
         renderer.set_use_selection_overlay(true);
+        if !paint {
+            // Laid out, every page, but drawn on none.
+            renderer.set_visible_page_range(Some(usize::MAX..=usize::MAX));
+        }
+        let painted = Self::paint_every_page(&mut renderer, word_document, options);
+        renderer.clear_visible_page_range();
+        painted?;
+        Ok((renderer, pages, rendered, whole, limit, dark))
+    }
+
+    /// A whole-document pass: every page laid out and painted.
+    fn paint_every_page(
+        renderer: &mut CanvasRenderer<TinySkiaPainter>,
+        word_document: &WordDocument,
+        options: &Options,
+    ) -> Result<(), String> {
         renderer.mark_full_repaint();
         let document = word_document
             .document
@@ -220,7 +251,7 @@ impl EditableDocument {
             return Err(error);
         }
         renderer.clear_dirty_regions();
-        Ok((renderer, pages, rendered, whole, limit, dark))
+        Ok(())
     }
 
     // ---- pages --------------------------------------------------------------
