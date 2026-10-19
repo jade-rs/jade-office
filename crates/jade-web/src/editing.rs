@@ -79,11 +79,10 @@ pub enum Motion {
 
 pub struct EditableDocument {
     word_document: WordDocument,
+    /// The undo history: one entry per user action, an action of several
+    /// commands (a paste, Enter over a selection) recorded as a group. It
+    /// keeps the last 200 actions.
     executor: CommandExecutor,
-    /// How many executor entries each user action left, newest last, and
-    /// the same for the actions undone.
-    history: Vec<usize>,
-    redo_history: Vec<usize>,
     selection: Option<SelectionRange>,
     /// The composition in the text: its paragraph and byte range.
     composition: Option<(usize, usize, usize)>,
@@ -196,8 +195,6 @@ impl EditableDocument {
         Ok(Self {
             word_document,
             executor: CommandExecutor::default(),
-            history: Vec::new(),
-            redo_history: Vec::new(),
             selection: None,
             composition: None,
             renderer,
@@ -514,6 +511,63 @@ impl EditableDocument {
             .last()
             .map_or(offset, |(at, ch)| offset + at + ch.len_utf8());
         self.select((paragraph, start), (paragraph, end))
+    }
+
+    /// Tab and ⇧Tab in a table, as in Word: to the next or the previous
+    /// cell, its text selected so typing replaces it; Tab in the last cell
+    /// adds a row below and goes into it. `Ok(false)` when the caret is not
+    /// in a table, where Tab types a tab.
+    pub fn step_cell(&mut self, forwards: bool) -> Result<bool, String> {
+        use formatting::{TableCommand, WordFormatting, WordSession};
+        let Some((paragraph, _)) = self.caret() else {
+            return Ok(false);
+        };
+        let Some(current) = self
+            .cell_id_for_paragraph(paragraph)
+            .and_then(|id| self.cell_layout(id))
+            .map(|cell| (cell.table_id, cell.row, cell.column))
+        else {
+            return Ok(false);
+        };
+        // The table's cells in reading order, each with its first and last
+        // paragraph: a cell split over two pages is laid out as two pieces.
+        let mut cells = std::collections::BTreeMap::<(usize, usize), (usize, usize)>::new();
+        for cell in self.cell_layouts() {
+            let (Some(&first), Some(&last)) = (cell.paragraphs.first(), cell.paragraphs.last())
+            else {
+                continue;
+            };
+            if cell.table_id != current.0 {
+                continue;
+            }
+            cells
+                .entry((cell.row, cell.column))
+                .and_modify(|(from, to)| {
+                    *from = (*from).min(first);
+                    *to = (*to).max(last);
+                })
+                .or_insert((first, last));
+        }
+        let here = (current.1, current.2);
+        let target = if forwards {
+            cells
+                .range((std::ops::Bound::Excluded(here), std::ops::Bound::Unbounded))
+                .next()
+        } else {
+            cells.range(..here).next_back()
+        };
+        match target {
+            Some((_, &(first, last))) => {
+                let end = self.paragraph_text(last).map_or(0, |text| text.len());
+                self.select((first, 0), (last, end))?;
+            }
+            None if forwards => {
+                self.table_command(TableCommand::InsertRowBelow)?;
+                return self.step_cell(true);
+            }
+            None => {}
+        }
+        Ok(true)
     }
 
     /// The whole of `paragraph` selected, as a triple click selects in Word.
@@ -908,11 +962,12 @@ impl EditableDocument {
     pub fn insert_paragraph_break(&mut self) -> Result<(), String> {
         self.goal_x = None;
         if self.selection().is_some() {
-            let since = self.history.len();
-            self.replace_selection("")?;
-            self.split_at_caret()?;
-            self.group_history(since);
-            return Ok(());
+            self.executor.begin_group();
+            let result = self
+                .replace_selection("")
+                .and_then(|()| self.split_at_caret());
+            self.executor.end_group();
+            return result;
         }
         self.split_at_caret()
     }
@@ -936,7 +991,6 @@ impl EditableDocument {
     /// undo takes it all back.
     pub fn paste(&mut self, text: &str) -> Result<(), String> {
         let text = text.replace("\r\n", "\n").replace('\r', "\n");
-        let since = self.history.len();
         let mut lines = text.split('\n');
         // Every line is a split and an insert, and each of those repainted
         // the document from its paragraph down: pasting n lines cost n
@@ -944,6 +998,10 @@ impl EditableDocument {
         // the document is repainted from the first paragraph they touched,
         // once.
         self.deferred_repaint = Some(usize::MAX);
+        // One undo step, however many lines: counted per command, a paste of
+        // more than a hundred lines outran the history's 200 entries and
+        // could only be undone in part.
+        self.executor.begin_group();
         let result = (|| {
             self.insert_text(lines.next().unwrap_or_default())?;
             for line in lines {
@@ -952,11 +1010,11 @@ impl EditableDocument {
             }
             Ok(())
         })();
+        self.executor.end_group();
         let from = self
             .deferred_repaint
             .take()
             .filter(|&from| from != usize::MAX);
-        self.group_history(since);
         let repainted = match from {
             Some(from) => self.repaint_from(from),
             None => Ok(()),
@@ -984,14 +1042,6 @@ impl EditableDocument {
         )?;
         self.set_caret(start.paragraph, start.offset + text.len());
         Ok(())
-    }
-
-    /// Folds the history entries added since `since` into one user action.
-    fn group_history(&mut self, since: usize) {
-        if self.history.len() > since + 1 {
-            let steps = self.history.drain(since..).sum();
-            self.history.push(steps);
-        }
     }
 
     /// Shows an IME's composition at the caret in place of the previous one,
@@ -1053,11 +1103,11 @@ impl EditableDocument {
     }
 
     pub fn can_undo(&self) -> bool {
-        !self.history.is_empty()
+        self.executor.can_undo()
     }
 
     pub fn can_redo(&self) -> bool {
-        !self.redo_history.is_empty()
+        self.executor.can_redo()
     }
 
     pub fn undo(&mut self) -> Result<bool, String> {
@@ -1069,36 +1119,22 @@ impl EditableDocument {
     }
 
     fn step_history(&mut self, backwards: bool) -> Result<bool, String> {
-        let Some(steps) = (if backwards {
-            self.history.pop()
-        } else {
-            self.redo_history.pop()
-        }) else {
-            return Ok(false);
-        };
         self.composition = None;
         let mut selection = self.selection.take();
-        {
+        let stepped = {
             let mut context = CommandContext::new(&mut self.word_document, &mut selection);
-            for _ in 0..steps {
-                let stepped = if backwards {
-                    self.executor.undo(&mut context)
-                } else {
-                    self.executor.redo(&mut context)
-                }
-                .map_err(|error| format!("history failed: {error:?}"))?;
-                if !stepped {
-                    break;
-                }
+            if backwards {
+                self.executor.undo(&mut context)
+            } else {
+                self.executor.redo(&mut context)
             }
-        }
+            .map_err(|error| format!("history failed: {error:?}"))
+        };
         self.selection = selection;
-        self.renderer.set_selection_range(self.selection);
-        if backwards {
-            self.redo_history.push(steps);
-        } else {
-            self.history.push(steps);
+        if !stepped? {
+            return Ok(false);
         }
+        self.renderer.set_selection_range(self.selection);
         self.dirty = true;
         self.repaint_all()?;
         Ok(true)
@@ -1124,8 +1160,6 @@ impl EditableDocument {
                 &request,
             )
             .map_err(|error| format!("edit failed: {error:?}"))?;
-            self.history.push(1);
-            self.redo_history.clear();
         } else {
             apply_headless_commands_to_document(&mut self.word_document, &request)
                 .map_err(|error| format!("edit failed: {error:?}"))?;
@@ -1173,10 +1207,11 @@ impl EditableDocument {
     }
 
     /// The renderer's incremental sequence, through every page: an edit can
-    /// move content onto any page after it.
+    /// move content onto any page after it, and add pages — as many as it
+    /// takes, so the bound is the document's new end, not one page past its
+    /// old one (a paste of many lines, or one long line, adds several).
     fn repaint_from(&mut self, paragraph: usize) -> Result<(), String> {
-        let last_page = self.page_count().max(1) + 1;
-        self.repaint_through(paragraph, None, last_page)
+        self.repaint_through(paragraph, None, usize::MAX)
     }
 
     /// The incremental sequence from `paragraph` through page `last_page`
