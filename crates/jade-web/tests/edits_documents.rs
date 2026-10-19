@@ -662,3 +662,30 @@ fn enter_at_the_end_of_a_paragraph_repaints_the_pages() {
     let fresh = open_bytes(&document.export_docx().unwrap());
     assert_eq!(page_rgba(&document, 0), page_rgba(&fresh, 0));
 }
+
+#[test]
+fn home_and_end_in_a_table_cell_stay_in_the_cell() {
+    use jade_web::editing::WordFormatting;
+    let mut document = open("contract.docx");
+    document.place_caret(0, 0);
+    let first = document.insert_table(2, 3).unwrap();
+    document.place_caret(first.0, first.1);
+    document.insert_text("left cell text").unwrap();
+    document.move_caret(Motion::Right, false).unwrap();
+    let second = document.caret().unwrap();
+    assert_ne!(second.0, first.0, "Right goes on to the next cell");
+    document.insert_text("middle").unwrap();
+
+    document.place_caret(first.0, 4);
+    document.move_caret(Motion::LineEnd, false).unwrap();
+    assert_eq!(document.caret(), Some((first.0, "left cell text".len())));
+    document.place_caret(second.0, 3);
+    document.move_caret(Motion::LineStart, false).unwrap();
+    assert_eq!(document.caret(), Some((second.0, 0)));
+    document.place_caret(second.0, 3);
+    document.move_caret(Motion::LineEnd, true).unwrap();
+    assert_eq!(
+        document.selection(),
+        Some(((second.0, 3), (second.0, "middle".len())))
+    );
+}
