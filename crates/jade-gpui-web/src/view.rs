@@ -21,6 +21,7 @@ use gpui::{
     UTF16Selection, Window,
 };
 use jade_tiny_skia_painter::TinySkiaPainter;
+use jade_web::deck::TextTarget;
 use jade_web::sheet::CellRef;
 use jade_web::text::{byte_to_utf16, utf16_to_byte, TextEdit};
 
@@ -291,7 +292,8 @@ enum Document {
         selected: Option<u32>,
         /// The selected shape's name, for the status bar.
         selected_name: Option<SharedString>,
-        edit: Option<(u32, TextEdit)>,
+        /// Text being typed into a shape, or a cell of a table.
+        edit: Option<(TextTarget, TextEdit)>,
         /// Window px per slide px of the slide on show.
         scale: f32,
     },
@@ -664,14 +666,16 @@ impl DocView {
         else {
             return;
         };
-        let Some((id, text)) = edit.take() else {
+        let Some((target, text)) = edit.take() else {
             return;
         };
-        let result = deck.set_shape_text(*current, id, &text.text);
+        let result = deck.set_text(*current, target, &text.text);
         self.edited(result, cx);
     }
 
-    fn begin_slide_text(&mut self, cx: &mut Context<Self>) {
+    /// Starts typing into the selected shape — in a table, into the cell at
+    /// `point`, or the first cell without one.
+    fn begin_slide_text(&mut self, point: Option<(f64, f64)>, cx: &mut Context<Self>) {
         let Document::Deck {
             deck,
             edit,
@@ -685,8 +689,9 @@ impl DocView {
         let Some(id) = *selected else {
             return;
         };
-        match deck.shape_text(*current, id) {
-            Some(text) => *edit = Some((id, TextEdit::new(text))),
+        let target = deck.text_target(*current, id, point);
+        match deck.text(*current, target) {
+            Some(text) => *edit = Some((target, TextEdit::new(text))),
             None => self.status = i18n::text("deck.text_locked").into(),
         }
         cx.notify();
@@ -750,7 +755,7 @@ impl DocView {
                     result
                 }
                 "enter" | "f2" => {
-                    self.begin_slide_text(cx);
+                    self.begin_slide_text(None, cx);
                     return true;
                 }
                 "escape" => {
@@ -806,10 +811,11 @@ impl DocView {
         let to_slide = |value: Pixels| f64::from(value) / f64::from(*scale);
         let x = to_slide(event.position.x - bounds.origin.x);
         let y = to_slide(event.position.y - bounds.origin.y);
-        // A click inside the shape being typed into stays in the text.
-        if let Some((id, _)) = edit {
+        // A click inside the shape or cell being typed into stays in the
+        // text.
+        if let Some((target, _)) = edit {
             let inside = deck
-                .shape_rect(*current, *id)
+                .text_rect(*current, *target)
                 .is_some_and(|rect| rect.contains(x, y));
             if inside {
                 return;
@@ -819,7 +825,8 @@ impl DocView {
         self.commit_slide_text(cx);
         self.select_shape(hit);
         if event.click_count >= 2 && hit.is_some() {
-            self.begin_slide_text(cx);
+            // In a table, the cell under the click.
+            self.begin_slide_text(Some((x, y)), cx);
         }
         cx.notify();
     }
@@ -987,14 +994,18 @@ impl DocView {
 
         // The selection outline, or the text editor, over the slide.
         let overlay = selected.and_then(|id| {
-            let rect = deck.shape_rect(current_index, id)?;
+            let editing = edit.as_ref().filter(|(target, _)| target.id() == id);
+            let rect = match editing {
+                Some((target, _)) => deck.text_rect(current_index, *target)?,
+                None => deck.shape_rect(current_index, id)?,
+            };
             let (x, y, w, h) = (
                 rect.x as f32 * zoom,
                 rect.y as f32 * zoom,
                 rect.width as f32 * zoom,
                 rect.height as f32 * zoom,
             );
-            Some(match edit.as_ref().filter(|(edited, _)| *edited == id) {
+            Some(match editing {
                 Some((_, text)) => div()
                     .absolute()
                     .left(px(x))
@@ -1822,7 +1833,7 @@ impl DocView {
                 edit: None,
                 selected: Some(_),
                 ..
-            } => self.begin_slide_text(cx),
+            } => self.begin_slide_text(None, cx),
             _ => {}
         }
         match &mut self.document {

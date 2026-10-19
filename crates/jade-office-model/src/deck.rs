@@ -4,8 +4,8 @@
 //! browser editor uses: each change rewrites the slide part in the package
 //! bytes and keeps undo history, and the deck is read back from those bytes
 //! to lay out and paint. A shell hit-tests through [`Deck::shape_at`] and
-//! edits through [`Deck::set_shape_text`], [`Deck::set_shape_rect`] and the
-//! rest.
+//! edits through [`Deck::set_text`], [`Deck::set_shape_rect`] and the rest.
+//! Text is typed into a [`TextTarget`]: a shape, or a cell of a table.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -57,6 +57,22 @@ impl ShapeRect {
                 (self.height * EMU_PER_PX).round() as i64,
             ),
             ..transform
+        }
+    }
+}
+
+/// What typed text goes into: a shape's text body, or one cell of a table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextTarget {
+    Shape(u32),
+    Cell { id: u32, row: usize, column: usize },
+}
+
+impl TextTarget {
+    /// The shape — for a cell, its table — on the slide.
+    pub fn id(&self) -> u32 {
+        match *self {
+            Self::Shape(id) | Self::Cell { id, .. } => id,
         }
     }
 }
@@ -228,6 +244,101 @@ impl<B: Backend> Deck<B> {
         self.after(result)
     }
 
+    /// Where text typed into shape `id` goes, from a click at `point` or,
+    /// without one, from Enter or typing: in a table, the cell under the
+    /// point — a merged cell where it starts — or the first cell, as in
+    /// PowerPoint; anything else takes the text itself.
+    pub fn text_target(&mut self, slide: usize, id: u32, point: Option<(f64, f64)>) -> TextTarget {
+        if self
+            .shape(slide, id)
+            .is_none_or(|shape| shape.kind != "table")
+        {
+            return TextTarget::Shape(id);
+        }
+        let cells = self.placed_cells(slide, id);
+        let hit = match point {
+            Some((x, y)) => cells.iter().find(|(_, _, rect)| rect.contains(x, y)),
+            None => cells.iter().min_by_key(|(row, column, _)| (*row, *column)),
+        };
+        match hit {
+            Some(&(row, column, _)) => TextTarget::Cell { id, row, column },
+            None => TextTarget::Shape(id),
+        }
+    }
+
+    /// The table's cells as laid out: row, column and box in slide px. A
+    /// merged cell is placed once, where it starts, spanning the cells it
+    /// covers.
+    fn placed_cells(&mut self, slide: usize, id: u32) -> Vec<(usize, usize, ShapeRect)> {
+        let Some(layout) = self.layout(slide) else {
+            return Vec::new();
+        };
+        layout
+            .shapes
+            .iter()
+            .filter(|placed| placed.origin == PlacedOrigin::Slide && placed.source_id == Some(id))
+            .filter_map(|placed| {
+                // Cells are named `table!B3`; their borders `table!B3:left`.
+                let (_, cell) = placed.name.rsplit_once('!')?;
+                let (row, column) = cell_position(cell)?;
+                let rect = placed.rect;
+                Some((
+                    row,
+                    column,
+                    ShapeRect {
+                        x: rect.x,
+                        y: rect.y,
+                        width: rect.width,
+                        height: rect.height,
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    /// The box text typed into `target` is shown in, in slide px.
+    pub fn text_rect(&mut self, slide: usize, target: TextTarget) -> Option<ShapeRect> {
+        match target {
+            TextTarget::Shape(id) => self.shape_rect(slide, id),
+            TextTarget::Cell { id, row, column } => self
+                .placed_cells(slide, id)
+                .into_iter()
+                .find(|cell| (cell.0, cell.1) == (row, column))
+                .map(|cell| cell.2),
+        }
+    }
+
+    /// The text of `target`, when it may be edited: a shape's unlocked text,
+    /// or a table cell's — not one covered by a merge.
+    pub fn text(&self, slide: usize, target: TextTarget) -> Option<String> {
+        match target {
+            TextTarget::Shape(id) => self.shape_text(slide, id),
+            TextTarget::Cell { id, row, column } => {
+                let cells = jade_pptx_writer::table_cells(self.session.bytes(), slide, id).ok()?;
+                let cell = cells.get(row)?.get(column)?;
+                (!cell.merged).then(|| cell.text.clone())
+            }
+        }
+    }
+
+    /// Replaces the text of `target`, as one undoable change.
+    pub fn set_text(
+        &mut self,
+        slide: usize,
+        target: TextTarget,
+        text: &str,
+    ) -> Result<bool, String> {
+        match target {
+            TextTarget::Shape(id) => self.set_shape_text(slide, id, text),
+            TextTarget::Cell { id, row, column } => {
+                let result = self
+                    .session
+                    .set_table_cell_text(slide, id, row, column, text);
+                self.after(result)
+            }
+        }
+    }
+
     /// Moves and sizes a shape to `rect`, its rotation and flips kept.
     pub fn set_shape_rect(
         &mut self,
@@ -367,6 +478,20 @@ impl Deck<crate::skia::SkiaBackend> {
         }
         SkiaPainter::encode_pdf(&pages)
     }
+}
+
+/// `B3` as (row 2, column 1).
+fn cell_position(name: &str) -> Option<(usize, usize)> {
+    let split = name.find(|c: char| !c.is_ascii_uppercase())?;
+    let (letters, digits) = name.split_at(split);
+    if letters.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let column = letters
+        .bytes()
+        .fold(0usize, |n, letter| n * 26 + usize::from(letter - b'A' + 1));
+    let row: usize = digits.parse().ok()?;
+    Some((row.checked_sub(1)?, column - 1))
 }
 
 /// The parsed deck and its media parts, keyed by name.
