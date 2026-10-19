@@ -516,7 +516,17 @@ impl EditableDocument {
                     Motion::LineStart => (f64::MIN / 4.0, line),
                     _ => (f64::MAX / 4.0, line),
                 };
-                let target = self.position_at(x, y).unwrap_or(focus);
+                let target = match motion {
+                    // Along the caret's own line: in a table row the far side
+                    // of the page is another cell's text.
+                    Motion::LineStart | Motion::LineEnd => self
+                        .renderer
+                        .selection_manager()
+                        .hit_test_matching(x, y, |paragraph| paragraph == focus.0)
+                        .map(|position| (position.paragraph, position.offset)),
+                    _ => self.position_at(x, y),
+                }
+                .unwrap_or(focus);
                 if extend {
                     self.select(anchor, target)?;
                 } else {
