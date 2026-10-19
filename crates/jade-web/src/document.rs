@@ -47,6 +47,12 @@ pub struct TinySkiaRenderHost {
     /// bounded repaint stops early, and must not shrink the page count to
     /// where it stopped.
     pub(crate) pass_covers_whole_document: Rc<Cell<bool>>,
+    /// The last page (0-based) a bounded repaint may paint. Laying out up to
+    /// its bound, the renderer starts the page after it — clears it and
+    /// draws its first lines — before it stops; that page gets a one-pixel
+    /// scratch surface instead, and keeps the pixels it had.
+    pub(crate) last_paintable_page: Rc<Cell<usize>>,
+    scratch: RefCell<Option<TinySkiaPainter>>,
     measurer: Rc<ShapingMeasurer>,
     fonts: Rc<FontBook>,
     render_error: RefCell<Option<String>>,
@@ -77,6 +83,8 @@ impl TinySkiaRenderHost {
             current_page: Cell::new(0),
             rendered_pages: Rc::new(Cell::new(1)),
             pass_covers_whole_document: Rc::new(Cell::new(true)),
+            last_paintable_page: Rc::new(Cell::new(usize::MAX)),
+            scratch: RefCell::new(None),
             measurer,
             fonts,
             render_error: RefCell::new(None),
@@ -119,6 +127,18 @@ impl CanvasRenderHost for TinySkiaRenderHost {
     fn painter(&self) -> Self::Painter {
         let pages = self.pages.borrow();
         let index = self.current_page.get().min(pages.len().saturating_sub(1));
+        if index > self.last_paintable_page.get() {
+            // One pixel: whatever is drawn there lands outside it, so the
+            // clear and the lines the renderer starts the page with cost
+            // nothing rather than a page's worth of pixels.
+            let mut scratch = self.scratch.borrow_mut();
+            if scratch.is_none() {
+                *scratch = surface(&self.fonts, 1.0 / self.scale, 1.0 / self.scale, self.scale);
+            }
+            if let Some(scratch) = scratch.as_ref() {
+                return scratch.clone();
+            }
+        }
         pages[index].clone()
     }
 

@@ -23,7 +23,7 @@ A fix starts as a case that fails.
 | Excel tables | structured references (`Table1[Amount]`, `[#Totals]`) recalculate when the table is edited | 2 tests | jade-core `crates/jade-xlsx-calc/tests/recalculates.rs`, `crates/jade-office-model/tests/tables_like_excel.rs` |
 | Word layout | pages compared against Word's own rendering | per fixture | jade-core CI `layout-compare` |
 | Typing like Excel | text typed into a cell and the value, format and display Excel makes of it; open parentheses closed; a misspelt function | 25 inputs + cases | `crates/jade-office-model/tests/typing_like_excel.rs` |
-| Clipboard like Excel | Excel's clipboard text in and out, quoted multi-line cells, CR LF | 2 tests | `crates/jade-office-model/tests/clipboard_like_excel.rs` |
+| Clipboard like Excel | Excel's clipboard text in and out, quoted multi-line cells, CR LF; a copied formula pastes adjusted, a cut moves the cells on paste and references follow | 5 tests | `crates/jade-office-model/tests/clipboard_like_excel.rs` |
 | Working a sheet like Excel | selection (cells, headers, Shift, merges, hidden rows), ⌘-arrows, Enter/Tab round a range, ⌘D/⌘R/⌘Enter, the fill handle and its double-click, copies that move formulas, tiled pastes, cuts and drags that move, the Home tab's formats and decimals, Merge & Center, sorts with a header, filters, data validation, hyperlinks, notes, rows and columns inserted, deleted, hidden and resized, sheets added, renamed, moved and deleted, AutoSum, Find, F4 | 25 + 5 tests, and scenario tests in both shells | `crates/jade-office-model/src/sheet.rs`, `src/grid.rs` |
 | Japanese functions | LENB, MIDB, FINDB, REPLACEB, ASC, JIS and the rest, typed into a cell | 11 cases | `crates/jade-office-model/tests/japanese_functions_like_excel.rs` |
 | Files people have | every fixture opens; damaged, protected, macro-enabled and template files say what they are and save as what they are | 3 suites | `crates/jade-office-model/tests/`, `crates/jade-web/tests/` |
@@ -51,15 +51,14 @@ painter) and edits through the same cores.
    typed fresh, they show `#NAME?` until Excel recalculates the file.
 3. **The browser clipboard** is checked with dispatched paste events; the
    embedded test browser cannot read the system clipboard.
-4. **Formula entry is refused only when certainly malformed** (a trailing
-   operator, an open string, an unmatched parenthesis), with the editor
-   kept open as in Excel; a formula Excel would refuse for its arguments
-   (`=SUM()`) is accepted and shows `#ERROR!`.
-
-6. **Freeze Panes cannot be set or removed.** Frozen panes in a file are
+4. **Formula entry is refused as Excel refuses it** — a trailing operator,
+   an open string, an unmatched parenthesis, or a function given the wrong
+   number of arguments — with the editor kept open; `TODAY(1)` is accepted,
+   since the engine reads a time zone there.
+5. **Freeze Panes cannot be set or removed.** Frozen panes in a file are
    shown and scroll as in Excel, but the engine has no writer for the
    sheet view yet.
-7. **No Format Cells dialog (⌘1), conditional-format editing, charts or
+6. **No Format Cells dialog (⌘1), conditional-format editing, charts or
    pivot tables are edited**; they open, draw and save as they were.
 
 ## Running the oracles

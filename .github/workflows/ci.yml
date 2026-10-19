@@ -79,10 +79,11 @@ jobs:
             crates/jade-tiny-skia-painter
             crates/jade-web
             crates/jade-office-model
+            crates/jade-office-perf
 
-      - name: Pure-Rust painter and web engine (fmt, clippy, test)
+      - name: Pure-Rust painter, web engine and perf harness (fmt, clippy, test)
         run: |
-          for crate in jade-tiny-skia-painter jade-web; do
+          for crate in jade-tiny-skia-painter jade-web jade-office-perf; do
             cargo fmt --manifest-path crates/$crate/Cargo.toml -- --check
             cargo clippy --manifest-path crates/$crate/Cargo.toml --all-targets --locked -- -D warnings
             cargo test --manifest-path crates/$crate/Cargo.toml --locked

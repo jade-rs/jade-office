@@ -153,6 +153,12 @@ fn a_formula_excel_would_refuse_is_refused_and_the_cell_kept() {
         "=\"abc",
         "=1)",
         "=(1+2))",
+        // A function given the wrong number of arguments, which Excel
+        // refuses too; `=SUM(` closes to `=SUM()`.
+        "=SUM()",
+        "=SUM(",
+        "=ROUND(1",
+        "=IF(1)",
     ] {
         let error = book.set_cell(at, typed).unwrap_err();
         assert_eq!(error, jade_office_model::typing::FORMULA_PROBLEM, "{typed}");
@@ -164,6 +170,8 @@ fn a_formula_excel_would_refuse_is_refused_and_the_cell_kept() {
         ("=-1", -1.0),
         ("=1+-2", -1.0),
         ("=LEN(\"a\"\"b\")", 3.0),
+        ("=SUM(1", 1.0),
+        ("=ROUND(1.25,1", 1.3),
     ] {
         book.set_cell(at, typed).unwrap();
         assert_eq!(book.number(at), Some(number), "{typed}");
