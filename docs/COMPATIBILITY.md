@@ -18,7 +18,7 @@ A fix starts as a case that fails.
 | Word round trip | every fixture opened, edited, saved and reopened with every paragraph and part intact | 165 documents | jade-core `crates/jade-docx-editor/tests/round_trip_corpus.rs` |
 | Excel round trip | the same for every cell's value, formula and style | 29 workbooks | jade-core `crates/jade-xlsx-headless-editor/tests/round_trip_corpus.rs` |
 | PowerPoint round trip | the same for every shape's text and position, notes and media; tables and charts move and resize, SmartArt moves | 117 decks, 30 of them real decks from Apache POI's test data (PowerPoint, LibreOffice, published talks) | jade-core `crates/jade-pptx-writer/tests/round_trip_corpus.rs` |
-| Slides like PowerPoint | in decks made in PowerPoint: a double-click in a table types into the cell under it (a merged cell where it starts), Enter into its first cell, Tab and ⇧Tab from cell to cell (a merge one stop) and Tab in the last cell adds a row; rows and columns added beside a cell and removed, empty and formatted as their neighbour, the frame growing and shrinking by them, a change that would cut a merge refused; a table resizes with its columns and rows scaled to the frame, a chart with its frame; SmartArt moves and keeps its size; a corner drag resizes from the opposite corner and a body drag moves, each one undoable step, in both shells; every deck opens and every slide paints | 12 + 1 tests, and 2 scenario tests in the native shell | `crates/jade-office-model/tests/decks_like_powerpoint.rs`, `tests/opens_every_fixture.rs`, `crates/jade-gpui-app/src/deck.rs`; jade-core `crates/jade-pptx-writer/tests/tables_and_charts.rs` |
+| Slides like PowerPoint | in decks made in PowerPoint: a double-click in a table types into the cell under it (a merged cell where it starts), Enter into its first cell, Tab and ⇧Tab from cell to cell (a merge one stop) with the cell's text selected, so typing replaces it, and Tab in the last cell adds a row; rows and columns added beside a cell and removed, empty and formatted as their neighbour, the frame growing and shrinking by them, a change that would cut a merge refused; a table resizes with its columns and rows scaled to the frame, a chart with its frame; SmartArt moves and keeps its size; a corner drag resizes from the opposite corner and a body drag moves, each one undoable step, in both shells; every deck opens and every slide paints | 12 + 1 tests, and 2 scenario tests in the native shell | `crates/jade-office-model/tests/decks_like_powerpoint.rs`, `tests/opens_every_fixture.rs`, `crates/jade-gpui-app/src/deck.rs`; jade-core `crates/jade-pptx-writer/tests/tables_and_charts.rs` |
 | Rich slide objects | a table, a chart, SmartArt and a video keep every part through an edit and save, and draw the same | 2 tests | jade-core `crates/jade-pptx-writer/tests/rich_objects_round_trip.rs` |
 | Dynamic arrays | a spilling formula fills its cells, saves as Excel saves one (`t="array" ref`, `cm`, `xl/metadata.xml`), grows and shrinks with its inputs, reads `#SPILL!` when blocked; a file's spills survive recalculation | 6 tests | jade-core `crates/jade-xlsx-calc/tests/recalculates.rs`, `crates/jade-xlsx-writer/tests/writes_spills.rs`, `crates/jade-xlsx-headless-editor/tests/dynamic_arrays.rs`, `crates/jade-office-model/tests/dynamic_arrays_like_excel.rs` |
 | Excel tables | structured references (`Table1[Amount]`, `[#Totals]`) recalculate when the table is edited | 2 tests | jade-core `crates/jade-xlsx-calc/tests/recalculates.rs`, `crates/jade-office-model/tests/tables_like_excel.rs` |
@@ -54,16 +54,24 @@ painter) and edits through the same cores.
    own formulas keep Excel's cached value; typed fresh, they show `#NAME?`.
    BAHTTEXT's เอ็ด after the millions (21000001 → ยี่สิบเอ็ดล้านเอ็ด) follows
    a reported Excel result, not one checked here.
-3. **The browser clipboard** is checked with dispatched paste events; the
-   embedded test browser cannot read the system clipboard.
-4. **Formula entry is refused as Excel refuses it** — a trailing operator,
+3. **The browser clipboard** is checked with dispatched paste events, and
+   by hand: ⌘C and ⌘V between cells, through the system clipboard, paste
+   once. Where the page may not write to the clipboard (an embedding
+   page without clipboard access), ⌘V pastes the workbook's own copy, as
+   its menu's Paste does — but a clipboard still holding something older
+   pastes that, as the browser hands it over.
+4. **Japanese and Latin text only are drawn**: both shells paint with the
+   bundled Noto Sans JP, falling back only among its faces, so Thai
+   (BAHTTEXT's result), Korean, Arabic and other scripts show as boxes.
+   The values are right, and save and copy as they are.
+5. **Formula entry is refused as Excel refuses it** — a trailing operator,
    an open string, an unmatched parenthesis, or a function given the wrong
    number of arguments — with the editor kept open; `TODAY(1)` is accepted,
    since the engine reads a time zone there.
-5. **Freeze Panes cannot be set or removed.** Frozen panes in a file are
+6. **Freeze Panes cannot be set or removed.** Frozen panes in a file are
    shown and scroll as in Excel, but the engine has no writer for the
    sheet view yet.
-6. **No Format Cells dialog (⌘1), conditional-format editing, charts or
+7. **No Format Cells dialog (⌘1), conditional-format editing, charts or
    pivot tables are edited**; they open, draw and save as they were.
 
 ## Running the oracles
