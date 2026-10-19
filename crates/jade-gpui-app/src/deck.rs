@@ -24,7 +24,7 @@ use gpui::{
     MouseMoveEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
     WindowBounds, WindowOptions,
 };
-use jade_office_model::deck::{Deck, ShapeRect as SlideRect, ShapeTransformInfo};
+use jade_office_model::deck::{Deck, ShapeRect as SlideRect, ShapeTransformInfo, TextTarget};
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::Backend;
 use std::cell::Cell;
@@ -160,9 +160,11 @@ struct ShapeDrag {
     delta: (f64, f64),
 }
 
-/// Text being typed into a shape.
+/// Text being typed into a shape, or a cell of a table.
 struct TextEdit {
-    id: u32,
+    target: TextTarget,
+    /// Where the text is shown, in slide px: the shape, or the cell.
+    rect: SlideRect,
     text: String,
     /// The IME's composition, as a byte range of `text`.
     marked: Option<Range<usize>>,
@@ -395,21 +397,19 @@ impl DeckView {
             return;
         };
         if let Some(edit) = &self.text_edit {
-            let inside = self
-                .shape(edit.id)
-                .and_then(|shape| shape.transform)
-                .is_some_and(|transform| SlideRect::of(&transform).contains(x, y));
-            if inside {
+            if edit.rect.contains(x, y) {
                 return;
             }
         }
+        self.commit_text(cx);
         let hit = self.shape_at(x, y);
         self.select(hit, cx);
         let Some(id) = hit else {
             return;
         };
         if event.click_count >= 2 {
-            self.begin_text(id, None, cx);
+            // In a table, the cell under the click.
+            self.begin_text(id, Some((x, y)), cx);
             return;
         }
         if self.shape(id).is_some_and(|shape| shape.can_move) {
@@ -483,20 +483,22 @@ impl DeckView {
 
     // ---- text ------------------------------------------------------------
 
-    /// Starts typing into shape `id`, from its text plus `typed`.
-    fn begin_text(&mut self, id: u32, typed: Option<&str>, cx: &mut Context<Self>) {
-        let Some(text) = self.deck.shape_text(self.current, id) else {
+    /// Starts typing into shape `id` — in a table, into the cell at `point`,
+    /// or the first cell without one — from the text it has.
+    fn begin_text(&mut self, id: u32, point: Option<(f64, f64)>, cx: &mut Context<Self>) {
+        let target = self.deck.text_target(self.current, id, point);
+        let (Some(text), Some(rect)) = (
+            self.deck.text(self.current, target),
+            self.deck.text_rect(self.current, target),
+        ) else {
             self.status = SharedString::from(i18n::text("deck.text_locked"));
             cx.notify();
             return;
         };
-        let mut text = text;
-        if let Some(typed) = typed {
-            text.push_str(typed);
-        }
         self.drag = None;
         self.text_edit = Some(TextEdit {
-            id,
+            target,
+            rect,
             text,
             marked: None,
         });
@@ -508,8 +510,8 @@ impl DeckView {
         let Some(edit) = self.text_edit.take() else {
             return;
         };
-        let (id, text) = (edit.id, edit.text);
-        self.write(cx, |deck, slide| deck.set_shape_text(slide, id, &text));
+        let (target, text) = (edit.target, edit.text);
+        self.write(cx, |deck, slide| deck.set_text(slide, target, &text));
         cx.notify();
     }
 
@@ -701,7 +703,17 @@ impl DeckView {
             rect.height as f32 * scale,
         );
 
-        if let Some(edit) = self.text_edit.as_ref().filter(|edit| edit.id == id) {
+        if let Some(edit) = self
+            .text_edit
+            .as_ref()
+            .filter(|edit| edit.target.id() == id)
+        {
+            let (left, top, width, height) = (
+                edit.rect.x as f32 * scale,
+                edit.rect.y as f32 * scale,
+                edit.rect.width as f32 * scale,
+                edit.rect.height as f32 * scale,
+            );
             let (before, marked, after) = match &edit.marked {
                 Some(range) => (
                     edit.text[..range.start].to_string(),
@@ -976,10 +988,9 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        // The candidate window goes under the shape being typed into.
+        // The candidate window goes under the shape or cell being typed into.
         let slide = self.slide_bounds.get()?;
-        let id = self.text_edit.as_ref()?.id;
-        let rect = SlideRect::of(&self.shape(id)?.transform?);
+        let rect = self.text_edit.as_ref()?.rect;
         let scale = self.shown_scale;
         Some(Bounds {
             origin: point(
@@ -1462,10 +1473,18 @@ mod tests {
     fn open_view(
         cx: &mut gpui::TestAppContext,
     ) -> (Entity<DeckView>, &mut gpui::VisualTestContext) {
+        open_fixture(cx, "sample-deck.pptx")
+    }
+
+    fn open_fixture<'a>(
+        cx: &'a mut gpui::TestAppContext,
+        name: &str,
+    ) -> (Entity<DeckView>, &'a mut gpui::VisualTestContext) {
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../jade-core/public/fixtures/sample-deck.pptx"
-        ));
+            "/../../jade-core/public/fixtures"
+        ))
+        .join(name);
         let (view, cx) = cx.add_window_view(|_window, cx| DeckView::open(&path, cx).unwrap());
         cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
         cx.run_until_parked();
@@ -1560,6 +1579,36 @@ mod tests {
             view.deck.shape_text(0, id).unwrap()
         });
         assert!(text.ends_with(" 2026"), "{text:?}");
+    }
+
+    /// In a table made in PowerPoint, a double-click types into the cell
+    /// under it, and Enter on the selected table into its first cell; the
+    /// other cells keep their text.
+    #[gpui::test]
+    fn typed_text_lands_in_the_table_cell(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_fixture(cx, "poi/table-with-different-font-colors.pptx");
+        let cell = |row, column| TextTarget::Cell { id: 4, row, column };
+        let point = view.update(cx, |view, _| {
+            let rect = view.deck.text_rect(0, cell(2, 1)).unwrap();
+            (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0)
+        });
+        view.update(cx, |view, cx| {
+            view.select(Some(4), cx);
+            view.begin_text(4, Some(point), cx);
+        });
+        cx.simulate_input(" 前年比");
+        cx.simulate_keystrokes("escape");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("!");
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.text_edit.is_none());
+            assert_eq!(view.selected, Some(4));
+            let text = |row, column| view.deck.text(0, cell(row, column)).unwrap();
+            assert_eq!(text(2, 1), "Text 10 前年比");
+            assert_eq!(text(0, 0), "Text 1!");
+            assert_eq!(text(2, 0), "Text 9");
+        });
     }
 
     /// Delete removes the selected shape; Undo brings it back.

@@ -78,11 +78,37 @@ pub struct FontBook {
     covering: RefCell<HashMap<(usize, char), usize>>,
     /// The faces as a font database for SVG text, built on first use.
     svg_fonts: RefCell<Option<Arc<resvg::usvg::fontdb::Database>>>,
+    /// Decoded pictures, shared by every page as the glyphs are: a slide's
+    /// background is decoded once, not on every repaint. Keyed by the
+    /// caller's key and a hash of the bytes, since the key — a part name —
+    /// repeats from one document to the next. `None` for bytes that would
+    /// not decode, so they are not retried every frame.
+    pictures: RefCell<HashMap<PictureKey, Option<Rc<Pixmap>>>>,
+    /// The decoded pictures' pixel bytes, against [`PICTURE_CACHE_BYTES`].
+    picture_bytes: Cell<usize>,
 }
 
 impl FontBook {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The picture `bytes` decoded, from the cache when it has been before.
+    fn picture(&self, key: &str, bytes: &[u8]) -> Option<Rc<Pixmap>> {
+        let id = (key.to_string(), content_hash(bytes));
+        if let Some(found) = self.pictures.borrow().get(&id) {
+            return found.clone();
+        }
+        let decoded = decode(bytes).map(Rc::new);
+        let size = decoded.as_ref().map_or(0, |pixmap| pixmap.data().len());
+        let mut pictures = self.pictures.borrow_mut();
+        if self.picture_bytes.get() + size > PICTURE_CACHE_BYTES {
+            pictures.clear();
+            self.picture_bytes.set(0);
+        }
+        self.picture_bytes.set(self.picture_bytes.get() + size);
+        pictures.insert(id, decoded.clone());
+        decoded
     }
 
     /// Registers a font file under a family name and weight. The same bytes
@@ -264,6 +290,20 @@ struct GlyphKey {
 /// The cache is dropped whole when it grows past this, which only a document
 /// at many sizes and zooms reaches.
 const GLYPH_CACHE_LIMIT: usize = 16_384;
+
+/// The decoded pictures are dropped whole past this many pixel bytes: a
+/// dozen full-HD photos.
+const PICTURE_CACHE_BYTES: usize = 96 * 1024 * 1024;
+
+/// A picture's key from the caller, and a hash of its bytes.
+type PictureKey = (String, u64);
+
+fn content_hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// The quarter-pixel phase of a device coordinate, and the pixel it is
 /// counted from.
@@ -551,9 +591,6 @@ struct Inner {
     state: RefCell<State>,
     stack: RefCell<Vec<State>>,
     path: RefCell<PathBuilder>,
-    /// Decoded pictures by the caller's content key; `None` for bytes that
-    /// would not decode, so they are not retried every frame.
-    images: RefCell<HashMap<String, Option<Rc<Pixmap>>>>,
     /// Parsed SVG pictures by content key, likewise; rasterized per draw at
     /// the size they land at.
     svgs: RefCell<HashMap<String, Option<Rc<resvg::usvg::Tree>>>>,
@@ -586,7 +623,6 @@ impl TinySkiaPainter {
                 state: RefCell::new(State::default()),
                 stack: RefCell::new(Vec::new()),
                 path: RefCell::new(PathBuilder::new()),
-                images: RefCell::new(HashMap::new()),
                 svgs: RefCell::new(HashMap::new()),
                 damage: Cell::new(None),
                 dark_paper: Cell::new(false),
@@ -752,11 +788,7 @@ impl TinySkiaPainter {
         let image = if is_svg(bytes) {
             self.rasterize_svg(key, bytes, source, &destination)
         } else {
-            let mut images = self.inner.images.borrow_mut();
-            images
-                .entry(key.to_string())
-                .or_insert_with(|| decode(bytes).map(Rc::new))
-                .clone()
+            self.inner.fonts.picture(key, bytes)
         };
         let Some(image) = image else {
             return false;
@@ -2059,6 +2091,58 @@ mod tests {
             data[index + 2],
             data[index + 3],
         ]
+    }
+
+    /// A one-colour 4 × 4 PNG.
+    fn solid_png(rgba: [u8; 4]) -> Vec<u8> {
+        let mut pixmap = Pixmap::new(4, 4).unwrap();
+        pixmap.fill(Color::from_rgba8(rgba[0], rgba[1], rgba[2], rgba[3]));
+        pixmap.encode_png().unwrap()
+    }
+
+    fn draw_whole(painter: &TinySkiaPainter, key: &str, bytes: &[u8]) {
+        let destination = ImageRect {
+            x: 0.0,
+            y: 0.0,
+            width: 8.0,
+            height: 8.0,
+        };
+        assert!(painter.draw_encoded_image_rect(key, bytes, None, destination));
+    }
+
+    /// Every slide over a decoded background, and every repaint after an
+    /// edit, draws on a new surface: the picture is decoded once for all of
+    /// them, as the glyphs are rasterised once.
+    #[test]
+    fn a_picture_is_decoded_once_for_every_surface() {
+        let fonts = fonts();
+        let red = solid_png([255, 0, 0, 255]);
+        for _ in 0..3 {
+            let painter = TinySkiaPainter::new(8, 8, Rc::clone(&fonts)).unwrap();
+            draw_whole(&painter, "ppt/media/image1.png", &red);
+            assert_eq!(pixel(&painter, 4, 4), [255, 0, 0, 255]);
+        }
+        assert_eq!(fonts.pictures.borrow().len(), 1);
+    }
+
+    /// The key is a part name, which the next document reuses for its own
+    /// picture: that one draws, not the first document's.
+    #[test]
+    fn the_same_part_name_in_another_document_draws_its_own_picture() {
+        let fonts = fonts();
+        let painter = TinySkiaPainter::new(8, 8, Rc::clone(&fonts)).unwrap();
+        draw_whole(
+            &painter,
+            "ppt/media/image1.png",
+            &solid_png([255, 0, 0, 255]),
+        );
+        let painter = TinySkiaPainter::new(8, 8, Rc::clone(&fonts)).unwrap();
+        draw_whole(
+            &painter,
+            "ppt/media/image1.png",
+            &solid_png([0, 0, 255, 255]),
+        );
+        assert_eq!(pixel(&painter, 4, 4), [0, 0, 255, 255]);
     }
 
     /// Word converts WMF/EMF pictures (old equations among them) to SVG; the
