@@ -13,11 +13,11 @@ A fix starts as a case that fails.
 
 | Oracle | What a case is | Size | Where |
 |---|---|---|---|
-| Excel functions | a formula and what Excel computes, Japanese functions included | 296 cases | jade-core `crates/jade-xlsx-headless-editor/tests/excel_conformance.rs` |
+| Excel functions | a formula and what Excel computes, Japanese functions and HYPERLINK/ENCODEURL/DBCS included; 496 of Excel's 518 functions | 302 cases | jade-core `crates/jade-xlsx-headless-editor/tests/excel_conformance.rs` |
 | Excel number formats | a value, a format code and what Excel displays (en-US and `[$-411]`) | 62 cases | jade-core `crates/jade-xlsx-layout/tests/excel_number_format_conformance.rs` |
 | Word round trip | every fixture opened, edited, saved and reopened with every paragraph and part intact | 165 documents | jade-core `crates/jade-docx-editor/tests/round_trip_corpus.rs` |
 | Excel round trip | the same for every cell's value, formula and style | 29 workbooks | jade-core `crates/jade-xlsx-headless-editor/tests/round_trip_corpus.rs` |
-| PowerPoint round trip | the same for every shape's text and position, notes and media | 87 decks | jade-core `crates/jade-pptx-writer/tests/round_trip_corpus.rs` |
+| PowerPoint round trip | the same for every shape's text and position, notes and media; tables, charts and SmartArt move | 117 decks, 30 of them real decks from Apache POI's test data (PowerPoint, LibreOffice, published talks) | jade-core `crates/jade-pptx-writer/tests/round_trip_corpus.rs` |
 | Rich slide objects | a table, a chart, SmartArt and a video keep every part through an edit and save, and draw the same | 2 tests | jade-core `crates/jade-pptx-writer/tests/rich_objects_round_trip.rs` |
 | Dynamic arrays | a spilling formula fills its cells, saves as Excel saves one (`t="array" ref`, `cm`, `xl/metadata.xml`), grows and shrinks with its inputs, reads `#SPILL!` when blocked; a file's spills survive recalculation | 6 tests | jade-core `crates/jade-xlsx-calc/tests/recalculates.rs`, `crates/jade-xlsx-writer/tests/writes_spills.rs`, `crates/jade-xlsx-headless-editor/tests/dynamic_arrays.rs`, `crates/jade-office-model/tests/dynamic_arrays_like_excel.rs` |
 | Excel tables | structured references (`Table1[Amount]`, `[#Totals]`) recalculate when the table is edited | 2 tests | jade-core `crates/jade-xlsx-calc/tests/recalculates.rs`, `crates/jade-office-model/tests/tables_like_excel.rs` |
@@ -42,12 +42,15 @@ painter) and edits through the same cores.
 
 ## Short of a release
 
-1. **PowerPoint has no real decks with rich objects in its corpus.** Tables,
-   charts, SmartArt and video are checked on a deck built for the purpose
-   (they round-trip and draw); real decks from PowerPoint with them would
-   make that evidence stronger.
-2. **Functions the engine lacks** keep Excel's cached value in a saved file;
-   typed fresh, they show `#NAME?` until Excel recalculates the file.
+1. **Tables, charts and SmartArt move but do not resize yet.** Resizing a
+   table needs its column widths to follow, and a diagram its drawing; text
+   in a table cell is not yet editable.
+2. **22 of Excel's 518 functions are missing**, nearly all ones no offline
+   engine can compute: CUBE\*, CALL, REGISTER.ID, RTD, WEBSERVICE,
+   FILTERXML, IMAGE, EUROCONVERT, GETPIVOTDATA, GROUPBY, PIVOTBY; and
+   PHONETIC (the file's furigana is not yet read into the engine) and
+   BAHTTEXT. A file's own formulas keep Excel's cached value; typed fresh,
+   they show `#NAME?`.
 3. **The browser clipboard** is checked with dispatched paste events; the
    embedded test browser cannot read the system clipboard.
 4. **Formula entry is refused as Excel refuses it** — a trailing operator,
