@@ -22,7 +22,7 @@ use gpui::{
     UTF16Selection, Window,
 };
 use jade_tiny_skia_painter::TinySkiaPainter;
-use jade_web::deck::{DragMode, ShapeDrag, TextTarget};
+use jade_web::deck::{DragMode, ShapeDrag, TableChange, TextTarget};
 use jade_web::sheet::CellRef;
 use jade_web::text::{byte_to_utf16, utf16_to_byte, TextEdit};
 
@@ -705,6 +705,87 @@ impl DocView {
         cx.notify();
     }
 
+    /// Starts typing into `target` from the text it has.
+    fn edit_slide_text(&mut self, target: TextTarget, cx: &mut Context<Self>) {
+        let Document::Deck {
+            deck,
+            edit,
+            current,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        if let Some(text) = deck.text(*current, target) {
+            *edit = Some((target, TextEdit::new(text)));
+        }
+        cx.notify();
+    }
+
+    /// The cell being typed into, if a table's.
+    fn edited_cell(&self) -> Option<TextTarget> {
+        match &self.document {
+            Document::Deck {
+                edit: Some((target @ TextTarget::Cell { .. }, _)),
+                ..
+            } => Some(*target),
+            _ => None,
+        }
+    }
+
+    /// Tab in a table: the text written, then the next cell (⇧Tab: the one
+    /// before). Tab in the last cell adds a row and goes to its first, as
+    /// in PowerPoint.
+    fn tab_in_table(&mut self, backwards: bool, cx: &mut Context<Self>) {
+        let Some(from @ TextTarget::Cell { id, row, .. }) = self.edited_cell() else {
+            return;
+        };
+        self.commit_slide_text(cx);
+        let Document::Deck { deck, current, .. } = &mut self.document else {
+            return;
+        };
+        let slide = *current;
+        match deck.next_cell(slide, from, backwards) {
+            Some(next) => self.edit_slide_text(next, cx),
+            None if !backwards => {
+                let result = deck.change_table(slide, id, TableChange::InsertRow(row + 1));
+                let added = matches!(result, Ok(true));
+                self.edited(result, cx);
+                if !added {
+                    return;
+                }
+                self.edit_slide_text(
+                    TextTarget::Cell {
+                        id,
+                        row: row + 1,
+                        column: 0,
+                    },
+                    cx,
+                );
+            }
+            None => self.edit_slide_text(from, cx),
+        }
+    }
+
+    /// A row or column added or removed beside the cell being typed into,
+    /// its text written first.
+    fn change_slide_table(
+        &mut self,
+        change: impl FnOnce(usize, usize) -> TableChange,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(TextTarget::Cell { id, row, column }) = self.edited_cell() else {
+            return;
+        };
+        self.commit_slide_text(cx);
+        let Document::Deck { deck, current, .. } = &mut self.document else {
+            return;
+        };
+        let result = deck.change_table(*current, id, change(row, column));
+        self.edited(result, cx);
+        cx.notify();
+    }
+
     fn deck_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
@@ -730,13 +811,15 @@ impl DocView {
         else {
             return false;
         };
-        if let Some((_, text)) = edit.as_mut() {
+        if let Some((target, text)) = edit.as_mut() {
             if text.marked.is_some() {
                 return false;
             }
+            let in_table = matches!(target, TextTarget::Cell { .. });
             match key {
                 // As in PowerPoint, Escape leaves the text, keeping it.
                 "escape" => self.commit_slide_text(cx),
+                "tab" if in_table => self.tab_in_table(modifiers.shift, cx),
                 "enter" => text.insert("\n"),
                 "backspace" => text.backspace(),
                 "delete" => text.delete(),
@@ -1002,6 +1085,7 @@ impl DocView {
 
     fn deck_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::Div {
         let scale = window.scale_factor();
+        let editing_cell = self.edited_cell().is_some();
         let (area_width, area_height) = editor_area(window, cx);
         let notes_height = if self.show_notes { NOTES_HEIGHT } else { 0.0 };
         let Document::Deck {
@@ -1252,6 +1336,70 @@ impl DocView {
                             "deck.position",
                             &[("current", &(current_index + 1)), ("count", &count)],
                         ))
+                        // A table's layout, while one of its cells is typed
+                        // into: PowerPoint's Layout tab.
+                        .when(editing_cell, |bar| {
+                            bar.child(
+                                toolbar_button(
+                                    "row-below",
+                                    "icons/arrow-down-to-line.svg",
+                                    i18n::text("deck.row_below"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.change_slide_table(
+                                            |row, _| TableChange::InsertRow(row + 1),
+                                            cx,
+                                        )
+                                    },
+                                )),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "column-right",
+                                    "icons/arrow-right-to-line.svg",
+                                    i18n::text("deck.column_right"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.change_slide_table(
+                                            |_, column| TableChange::InsertColumn(column + 1),
+                                            cx,
+                                        )
+                                    },
+                                )),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "delete-row",
+                                    "icons/trash-2.svg",
+                                    i18n::text("deck.delete_row"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.change_slide_table(
+                                            |row, _| TableChange::DeleteRow(row),
+                                            cx,
+                                        )
+                                    },
+                                )),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "delete-column",
+                                    "icons/trash-2.svg",
+                                    i18n::text("deck.delete_column"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.change_slide_table(
+                                            |_, column| TableChange::DeleteColumn(column),
+                                            cx,
+                                        )
+                                    },
+                                )),
+                            )
+                        })
                         .child(
                             toolbar_button(
                                 "notes",

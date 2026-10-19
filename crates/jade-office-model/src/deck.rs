@@ -15,7 +15,7 @@ use jade_pptx_layout::{layout_deck_slide, PlacedOrigin, PlacedShape, SlideLayout
 use jade_pptx_reader::{emu_to_px, Transform};
 use jade_pptx_render::{render_slide_with, PainterMeasure, RenderOptions};
 use jade_pptx_writer::EditSession;
-pub use jade_pptx_writer::ShapeTransformInfo;
+pub use jade_pptx_writer::{ShapeTransformInfo, TableChange};
 
 use crate::Backend;
 
@@ -410,6 +410,47 @@ impl<B: Backend> Deck<B> {
                 (!cell.merged).then(|| cell.text.clone())
             }
         }
+    }
+
+    /// The cell Tab goes to from `from` (⇧Tab: `backwards`): along the row,
+    /// then the next row's first, a merged cell being one stop. `None` past
+    /// either end, and for a shape.
+    pub fn next_cell(&self, slide: usize, from: TextTarget, backwards: bool) -> Option<TextTarget> {
+        let TextTarget::Cell { id, row, column } = from else {
+            return None;
+        };
+        let cells = jade_pptx_writer::table_cells(self.session.bytes(), slide, id).ok()?;
+        let stops: Vec<(usize, usize)> = cells
+            .iter()
+            .enumerate()
+            .flat_map(|(r, cells)| {
+                cells
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, cell)| !cell.merged)
+                    .map(move |(c, _)| (r, c))
+            })
+            .collect();
+        let at = stops.iter().position(|stop| *stop == (row, column))?;
+        let next = if backwards {
+            at.checked_sub(1)?
+        } else {
+            at + 1
+        };
+        stops
+            .get(next)
+            .map(|&(row, column)| TextTarget::Cell { id, row, column })
+    }
+
+    /// Adds or removes a row or column of table `id`, as one undoable change.
+    pub fn change_table(
+        &mut self,
+        slide: usize,
+        id: u32,
+        change: TableChange,
+    ) -> Result<bool, String> {
+        let result = self.session.change_table(slide, id, change);
+        self.after(result)
     }
 
     /// Replaces the text of `target`, as one undoable change.
