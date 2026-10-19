@@ -61,6 +61,97 @@ impl ShapeRect {
     }
 }
 
+/// The smallest a resize leaves a shape, in slide px.
+pub const MIN_SHAPE_PX: f64 = 4.0;
+
+/// What a drag on a slide does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragMode {
+    Move,
+    /// A corner handle: which edges it moves, as (left?, top?). The opposite
+    /// corner stays put.
+    Resize {
+        left: bool,
+        top: bool,
+    },
+}
+
+/// A mouse drag on a shape, from press to release: the shells draw
+/// [`ShapeDrag::rect`] while it lasts and write it with
+/// [`Deck::drag_shape`] on release.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShapeDrag {
+    pub id: u32,
+    pub mode: DragMode,
+    /// Where the drag started, in slide px.
+    from: (f64, f64),
+    /// How far it has gone, in slide px.
+    delta: (f64, f64),
+}
+
+impl ShapeDrag {
+    pub fn new(id: u32, mode: DragMode, from: (f64, f64)) -> Self {
+        Self {
+            id,
+            mode,
+            from,
+            delta: (0.0, 0.0),
+        }
+    }
+
+    /// The pointer is now at `(x, y)` slide px.
+    pub fn drag_to(&mut self, x: f64, y: f64) {
+        self.delta = (x - self.from.0, y - self.from.1);
+    }
+
+    /// Whether the pointer has gone far enough to count as a drag rather
+    /// than a click.
+    pub fn moved(&self) -> bool {
+        self.delta.0.abs() >= 0.5 || self.delta.1.abs() >= 0.5
+    }
+
+    /// `rect`, the shape's box when the drag started, where the drag has
+    /// taken it.
+    pub fn rect(&self, rect: ShapeRect) -> ShapeRect {
+        rect.dragged(self.mode, self.delta.0, self.delta.1)
+    }
+}
+
+impl ShapeRect {
+    /// This box after dragging by `(dx, dy)` slide px in `mode`: a move
+    /// keeps the size, a corner keeps the opposite corner, and no side gets
+    /// shorter than [`MIN_SHAPE_PX`].
+    pub fn dragged(self, mode: DragMode, dx: f64, dy: f64) -> Self {
+        match mode {
+            DragMode::Move => Self {
+                x: self.x + dx,
+                y: self.y + dy,
+                ..self
+            },
+            DragMode::Resize { left, top } => {
+                let (x, width) = if left {
+                    let width = (self.width - dx).max(MIN_SHAPE_PX);
+                    (self.x + self.width - width, width)
+                } else {
+                    (self.x, (self.width + dx).max(MIN_SHAPE_PX))
+                };
+                let (y, height) = if top {
+                    let height = (self.height - dy).max(MIN_SHAPE_PX);
+                    (self.y + self.height - height, height)
+                } else {
+                    (self.y, (self.height + dy).max(MIN_SHAPE_PX))
+                };
+                Self {
+                    x,
+                    y,
+                    width,
+                    height,
+                }
+            }
+        }
+    }
+}
+
 /// What typed text goes into: a shape's text body, or one cell of a table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextTarget {
@@ -375,6 +466,23 @@ impl<B: Backend> Deck<B> {
                 ..rect
             },
         )
+    }
+
+    /// Writes a finished mouse drag, as one undoable change: a move if the
+    /// shape may move, a corner if it may resize — nothing for a press that
+    /// never went anywhere.
+    pub fn drag_shape(&mut self, slide: usize, drag: &ShapeDrag) -> Result<bool, String> {
+        let Some(shape) = self.shape(slide, drag.id) else {
+            return Ok(false);
+        };
+        let allowed = match drag.mode {
+            DragMode::Move => shape.can_move,
+            DragMode::Resize { .. } => shape.can_resize,
+        };
+        let (Some(transform), true, true) = (shape.transform, allowed, drag.moved()) else {
+            return Ok(false);
+        };
+        self.set_shape_rect(slide, drag.id, drag.rect(ShapeRect::of(&transform)))
     }
 
     pub fn delete_shape(&mut self, slide: usize, id: u32) -> Result<bool, String> {
