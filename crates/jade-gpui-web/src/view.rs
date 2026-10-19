@@ -1877,12 +1877,50 @@ impl DocView {
         }
     }
 
+    /// The long moves of ⌘ (a Mac) and Ctrl (elsewhere) with an arrow, Home
+    /// or End: to the document's start or end, a line's ends, or a word
+    /// along — Shift extending the selection, as the plain arrows do.
+    fn pages_jump(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        use jade_web::editing::Motion;
+        let modifiers = event.keystroke.modifiers;
+        let motion = match (event.keystroke.key.as_str(), modifiers.platform) {
+            ("up" | "home", _) => Motion::DocumentStart,
+            ("down" | "end", _) => Motion::DocumentEnd,
+            ("left", true) => Motion::LineStart,
+            ("right", true) => Motion::LineEnd,
+            ("left", false) => Motion::WordLeft,
+            ("right", false) => Motion::WordRight,
+            _ => return false,
+        };
+        self.pages_motion(motion, modifiers.shift, cx)
+    }
+
+    /// Moves the caret, or with `extend` the selection's moving end, and
+    /// keeps it in view. Mid-composition the keys are the IME's.
+    fn pages_motion(
+        &mut self,
+        motion: jade_web::editing::Motion,
+        extend: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Document::Pages { document, .. } = &self.document else {
+            return false;
+        };
+        if document.composition().is_some() || document.caret().is_none() {
+            return false;
+        }
+        self.word_move(cx, |document| document.move_caret(motion, extend));
+        self.reveal_caret();
+        true
+    }
+
     /// Keys the Word view answers: deleting, splitting, and moving the caret
     /// — Shift extending the selection. Mid-composition they are the IME's.
     fn pages_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
         use jade_web::editing::Motion;
         let key = event.keystroke.key.as_str();
         let extend = event.keystroke.modifiers.shift;
+        let alt = event.keystroke.modifiers.alt;
         let Document::Pages { document, .. } = &mut self.document else {
             return false;
         };
@@ -1890,6 +1928,23 @@ impl DocView {
             return false;
         }
         let motion = match key {
+            // ⌥⌫ and ⌥⌦ delete a word, as on a Mac: the word is selected,
+            // then deleted, in one edit.
+            "backspace" | "delete" if alt && document.selection().is_none() => {
+                let forwards = key == "delete";
+                self.word_edit(cx, |document| {
+                    let motion = if forwards {
+                        Motion::WordRight
+                    } else {
+                        Motion::WordLeft
+                    };
+                    document.move_caret(motion, true)?;
+                    document.delete(!forwards)
+                });
+                return true;
+            }
+            "left" if alt => Motion::WordLeft,
+            "right" if alt => Motion::WordRight,
             "backspace" => {
                 self.word_edit(cx, |document| document.delete(true));
                 return true;
@@ -2324,6 +2379,10 @@ impl DocView {
         // ⌘ on a Mac, Ctrl elsewhere.
         if modifiers.platform || modifiers.control {
             let pages = matches!(self.document, Document::Pages { .. });
+            if pages && self.pages_jump(event, cx) {
+                cx.stop_propagation();
+                return;
+            }
             match key {
                 "z" => self.step_history(!modifiers.shift, cx),
                 "y" => self.step_history(false, cx),
