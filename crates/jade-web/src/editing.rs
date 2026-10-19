@@ -813,6 +813,7 @@ impl EditableDocument {
         command: HeadlessCommand,
         recorded: bool,
     ) -> Result<(), String> {
+        let paragraphs = self.paragraph_count();
         let request = HeadlessEditRequest {
             commands: vec![command],
         };
@@ -854,7 +855,9 @@ impl EditableDocument {
         self.renderer.set_band_redraw_enabled(false);
         first?;
         let held_still = before.1.is_some() && geometry(&self.renderer) == before;
-        if held_still && self.page_count() == pages {
+        // A split or a join leaves its paragraph where it was but moves every
+        // paragraph after it, so a changed count is never "held still".
+        if held_still && self.page_count() == pages && self.paragraph_count() == paragraphs {
             return Ok(());
         }
         // The rest, from the paragraph after it: the first pass cached the
