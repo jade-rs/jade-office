@@ -146,19 +146,26 @@ impl Kind {
 }
 
 /// Rows of device px a page image is cut into. An edit repaints a band of
-/// its page, and only the tiles the band crosses are read back and uploaded
+/// its page — or, where the renderer cannot band it, the whole page — and
+/// only the tiles whose pixels came out different are read back and uploaded
 /// again: a whole page at 2x is megabytes, a tile a few hundred kilobytes.
-const TILE_ROWS: u32 = 256;
+const TILE_ROWS: u32 = 128;
 
 /// A Word page's pixels, as a column of tiles.
 struct PageImage {
     tiles: Vec<Arc<RenderImage>>,
+    /// Each tile's [`TinySkiaPainter::rows_fingerprint`] when it was read.
+    fingerprints: Vec<u64>,
     size: (u32, u32),
 }
 
 impl PageImage {
+    fn rows(painter: &TinySkiaPainter, index: u32) -> Range<u32> {
+        index * TILE_ROWS..((index + 1) * TILE_ROWS).min(painter.height())
+    }
+
     fn tile(painter: &TinySkiaPainter, index: u32) -> Option<Arc<RenderImage>> {
-        let rows = index * TILE_ROWS..((index + 1) * TILE_ROWS).min(painter.height());
+        let rows = Self::rows(painter, index);
         let height = rows.len() as u32;
         let buffer = image::ImageBuffer::from_raw(
             painter.width(),
@@ -172,13 +179,22 @@ impl PageImage {
     fn new(painter: &TinySkiaPainter) -> Option<Self> {
         painter.take_damaged_rows();
         let size = (painter.width(), painter.height());
-        let tiles = (0..size.1.div_ceil(TILE_ROWS))
+        let count = size.1.div_ceil(TILE_ROWS);
+        let tiles = (0..count)
             .map(|index| Self::tile(painter, index))
             .collect::<Option<Vec<_>>>()?;
-        Some(Self { tiles, size })
+        let fingerprints = (0..count)
+            .map(|index| painter.rows_fingerprint(Self::rows(painter, index)))
+            .collect();
+        Some(Self {
+            tiles,
+            fingerprints,
+            size,
+        })
     }
 
-    /// Re-reads the tiles drawing has touched since the last read. A page of
+    /// Re-reads the tiles drawing has changed since the last read: of the
+    /// rows it touched, those whose pixels differ from the tile's. A page of
     /// another size is read whole.
     fn refresh(&mut self, painter: &TinySkiaPainter, retired: &mut Vec<Arc<RenderImage>>) {
         if (painter.width(), painter.height()) != self.size {
@@ -192,11 +208,19 @@ impl PageImage {
             return;
         };
         for index in rows.start / TILE_ROWS..rows.end.div_ceil(TILE_ROWS) {
+            let fingerprint = painter.rows_fingerprint(Self::rows(painter, index));
+            let Some(known) = self.fingerprints.get_mut(index as usize) else {
+                continue;
+            };
+            if *known == fingerprint {
+                continue;
+            }
             if let (Some(slot), Some(fresh)) = (
                 self.tiles.get_mut(index as usize),
                 Self::tile(painter, index),
             ) {
                 retired.push(std::mem::replace(slot, fresh));
+                *known = fingerprint;
             }
         }
     }

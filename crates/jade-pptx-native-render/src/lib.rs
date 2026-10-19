@@ -171,12 +171,22 @@ impl NativeDeck {
         let mut parts = HashMap::new();
         let mut wanted = Vec::new();
         for slide in &deck.slides {
-            collect_media_parts(&slide.content.shapes, &mut wanted);
-            if let Some(layout) = &slide.layout_content {
-                collect_media_parts(&layout.shapes, &mut wanted);
-            }
-            if let Some(master) = &slide.master_content {
-                collect_media_parts(&master.shapes, &mut wanted);
+            let trees = [
+                Some(&slide.content),
+                slide.layout_content.as_ref(),
+                slide.master_content.as_ref(),
+            ];
+            for tree in trees.into_iter().flatten() {
+                collect_media_parts(&tree.shapes, &mut wanted);
+                if let Some(jade_pptx_reader::Fill::Picture {
+                    image_part: Some(part),
+                    ..
+                }) = &tree.background
+                {
+                    if !wanted.contains(part) {
+                        wanted.push(part.clone());
+                    }
+                }
             }
         }
         for part in wanted {
