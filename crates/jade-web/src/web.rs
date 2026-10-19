@@ -146,7 +146,13 @@ impl WebWorkbook {
         scale: f64,
     ) -> Option<Rendered> {
         self.0
-            .render_viewport((scroll_x, scroll_y), width, height, scale, None)
+            .render_viewport(
+                (scroll_x, scroll_y),
+                width,
+                height,
+                scale,
+                &crate::sheet::Overlay::default(),
+            )
             .map(rendered)
     }
 }

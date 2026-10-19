@@ -119,7 +119,13 @@ fn damaged_workbooks_fail_to_open_without_crashing() {
                 for index in 0..book.sheet_names().len() {
                     if book.select_sheet(index).is_ok() {
                         let _ = book
-                            .render_viewport((0.0, 0.0), 320, 200, 1.0, None)
+                            .render_viewport(
+                                (0.0, 0.0),
+                                320,
+                                200,
+                                1.0,
+                                &jade_office_model::sheet::Overlay::default(),
+                            )
                             .and_then(|painter| TinySkiaBackend::png(&painter));
                     }
                 }

@@ -7,17 +7,25 @@
 //! [`Workbook::set_cell`], and paints with [`Workbook::render_viewport`].
 
 use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use jade_painter::Painter;
-use jade_xlsx_headless_api::CellInput;
-use jade_xlsx_headless_editor::{formula_text, ClipboardSnapshot, HeadlessWorkbook};
+use jade_xlsx_headless_api::{AutoFilterChange, AutoFilterTarget, CellInput};
+use jade_xlsx_headless_editor::{formula_text, ClipboardSnapshot, FormatChange, HeadlessWorkbook};
 
+use crate::grid::{self, Direction, Hit, Selection};
 use crate::{clipboard, typing};
-pub use jade_xlsx_layout::HeaderMetrics;
-use jade_xlsx_layout::{column_label, layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
+pub use jade_xlsx_headless_api::{AutoFilterOption, AutoFilterOptions, BorderLine, BorderStyle};
+pub use jade_xlsx_headless_editor::FormatChange as CellFormat;
+pub use jade_xlsx_layout::filter_button::{FilterButton, FilterButtonTarget};
+pub use jade_xlsx_layout::resize::{ResizeGesture, ResizeHit};
+pub use jade_xlsx_layout::{column_label, HeaderMetrics};
+use jade_xlsx_layout::{layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
+pub use jade_xlsx_reader::Axis;
+pub use jade_xlsx_reader::HorizontalAlignment;
+use jade_xlsx_reader::{translate_formula, CellValue, SheetVisibility};
 pub use jade_xlsx_reader::{CellRange, CellRef};
-use jade_xlsx_reader::{CellValue, SheetVisibility};
 use jade_xlsx_render::{render_grid, GridSelection, PainterMeasure, RenderOptions};
 
 use crate::Backend;
@@ -25,6 +33,17 @@ use crate::Backend;
 /// The grid drawn past the last used cell; it grows as the selection moves.
 const MIN_COLUMNS: u32 = 12;
 const MIN_ROWS: u32 = 30;
+/// What an entry a data validation refuses is reported as: this, then the
+/// rule's own message (empty for Excel's standard one). See
+/// [`validation_refusal`].
+pub const VALIDATION_REFUSED: &str = "\u{1}validation:";
+
+/// The message of an entry a data validation refused — the rule's own, or
+/// an empty one for the shell's standard words — when `error` is one.
+pub fn validation_refusal(error: &str) -> Option<&str> {
+    error.strip_prefix(VALIDATION_REFUSED)
+}
+
 /// Excel's limits.
 pub const MAX_COLUMN: u32 = 16_383;
 pub const MAX_ROW: u32 = 1_048_575;
@@ -121,7 +140,7 @@ pub struct Workbook<B: Backend> {
     /// The last copy or cut: the engine's snapshot of the cells, the text it
     /// put on the clipboard, and whether it was a cut. A paste of that same
     /// text pastes the cells themselves, as Excel does within a workbook.
-    clipboard: Option<(ClipboardSnapshot, String, bool)>,
+    clipboard: Option<Clip>,
     /// The last surface painted on, reused while the size stays the same:
     /// a sheet repaints on every scroll frame.
     surface: RefCell<Option<(B::Painter, u32, u32)>>,
@@ -231,9 +250,33 @@ impl<B: Backend> Workbook<B> {
     }
 
     /// What is under a point of the viewport (sheet px from its top-left,
-    /// headers included) at `scroll`: a cell, or a whole row or column when
-    /// the point is on a header, as (anchor, far corner).
-    pub fn hit(&self, x: f64, y: f64, scroll: (f64, f64)) -> Option<(CellRef, CellRef)> {
+    /// headers included) at `scroll`: a cell, or a row or column header, or
+    /// the corner where the headers meet.
+    pub fn hit(&self, x: f64, y: f64, scroll: (f64, f64)) -> Option<Hit> {
+        let metrics = self.layout.header_metrics();
+        let cell = self.reach_point(x, y, scroll);
+        Some(match (x < metrics.row_width, y < metrics.column_height) {
+            (true, true) => Hit::All,
+            (true, false) => Hit::Row(cell.row),
+            (false, true) => Hit::Column(cell.column),
+            (false, false) => Hit::Cell(self.layout_cell(x, y, scroll)?),
+        })
+    }
+
+    fn layout_cell(&self, x: f64, y: f64, scroll: (f64, f64)) -> Option<CellRef> {
+        let metrics = self.layout.header_metrics();
+        let (sheet_x, sheet_y) = self.layout.sheet_point_in_viewport(
+            x - metrics.row_width,
+            y - metrics.column_height,
+            scroll.0,
+            scroll.1,
+        );
+        self.layout.cell_at(sheet_x, sheet_y)
+    }
+
+    /// The cell a drag has reached at a viewport point: under it, or the
+    /// nearest one when the pointer is over a header or past the grid.
+    pub fn reach_point(&self, x: f64, y: f64, scroll: (f64, f64)) -> CellRef {
         let layout = &self.layout;
         let metrics = layout.header_metrics();
         let (sheet_x, sheet_y) = layout.sheet_point_in_viewport(
@@ -242,22 +285,34 @@ impl<B: Backend> Workbook<B> {
             scroll.0,
             scroll.1,
         );
-        let end = self.grid_end();
-        match (x < metrics.row_width, y < metrics.column_height) {
-            (true, true) => Some((CellRef::new(0, 0), end)),
-            (true, false) => {
-                let row = layout.cell_at(0.0, sheet_y)?.row;
-                Some((CellRef::new(0, row), CellRef::new(end.column, row)))
-            }
-            (false, true) => {
-                let column = layout.cell_at(sheet_x, 0.0)?.column;
-                Some((CellRef::new(column, 0), CellRef::new(column, end.row)))
-            }
-            (false, false) => {
-                let cell = layout.cell_at(sheet_x, sheet_y)?;
-                Some((cell, cell))
-            }
-        }
+        let last = self.grid_end();
+        let column = layout
+            .column_at(sheet_x.max(0.0))
+            .unwrap_or(if sheet_x <= 0.0 { 0 } else { last.column });
+        let row = layout
+            .row_at(sheet_y.max(0.0))
+            .unwrap_or(if sheet_y <= 0.0 { 0 } else { last.row });
+        CellRef::new(column, row)
+    }
+
+    /// Whether a viewport point is on the fill handle — the square at the
+    /// bottom-right corner of `range` a drag fills from.
+    pub fn on_fill_handle(&self, x: f64, y: f64, scroll: (f64, f64), range: CellRange) -> bool {
+        let Some((cx, cy, w, h)) = self.cell_rect(range.end, scroll) else {
+            return false;
+        };
+        let (corner_x, corner_y) = (cx + w, cy + h);
+        (x - corner_x).abs() <= 5.0 && (y - corner_y).abs() <= 5.0
+    }
+
+    /// The column or row edge under a header point, which a drag resizes.
+    pub fn resize_hit(
+        &self,
+        x: f64,
+        y: f64,
+        scroll: (f64, f64),
+    ) -> Option<jade_xlsx_layout::resize::ResizeHit> {
+        jade_xlsx_layout::resize::header_resize_hit(&self.layout, x, y, scroll.0, scroll.1)
     }
 
     /// The cell's rectangle in the viewport (sheet px, headers included) at
@@ -290,6 +345,415 @@ impl<B: Backend> Workbook<B> {
             height: (size.1 - metrics.column_height).max(1.0),
         };
         self.layout.scroll_to_reveal(reference, viewport)
+    }
+
+    // ---- moving round the data -----------------------------------------
+
+    /// Where a stored cell holds a value or a formula along one row
+    /// (`horizontal`) or column, through `at`.
+    fn filled_line(&self, at: CellRef, horizontal: bool) -> BTreeSet<u32> {
+        let sheet = &self.book.workbook().sheets[self.index];
+        let mut line = BTreeSet::new();
+        for row in &sheet.rows {
+            if horizontal && row.index != at.row {
+                continue;
+            }
+            for cell in &row.cells {
+                let holds = cell.formula.is_some() || !matches!(cell.value, CellValue::Empty);
+                if !holds {
+                    continue;
+                }
+                if horizontal {
+                    line.insert(cell.reference.column);
+                } else if cell.reference.column == at.column {
+                    line.insert(cell.reference.row);
+                }
+            }
+        }
+        line
+    }
+
+    /// An arrow key's step from `from`, as Excel takes it: over the rest of
+    /// a merged cell, past hidden rows and columns, onto a merge's top-left
+    /// cell. Stays put at the sheet's edge.
+    pub fn step(&self, from: CellRef, direction: Direction) -> CellRef {
+        let sheet = &self.book.workbook().sheets[self.index];
+        // From a merged cell, the step starts at its far edge that way.
+        let edge = match sheet.merge_at(from) {
+            Some(merge) => match direction {
+                Direction::Up => CellRef::new(from.column, merge.start.row),
+                Direction::Down => CellRef::new(from.column, merge.end.row),
+                Direction::Left => CellRef::new(merge.start.column, from.row),
+                Direction::Right => CellRef::new(merge.end.column, from.row),
+            },
+            None => from,
+        };
+        let (columns, rows) = direction.delta();
+        let hidden = |at: CellRef| {
+            if direction.is_horizontal() {
+                self.layout
+                    .column(at.column)
+                    .is_some_and(|entry| entry.hidden || entry.size <= 0.0)
+            } else {
+                self.layout
+                    .row(at.row)
+                    .is_some_and(|entry| entry.hidden || entry.size <= 0.0)
+            }
+        };
+        let mut to = edge;
+        loop {
+            let next = grid::offset(to, columns, rows);
+            if next == to {
+                return from;
+            }
+            to = next;
+            if !hidden(to) {
+                break;
+            }
+        }
+        // A merged cell is entered at its top-left, the cell it is named by.
+        sheet.merge_at(to).map_or(to, |merge| merge.start)
+    }
+
+    /// `range` grown to take in every merged cell it touches, as Excel's
+    /// selection grows over them.
+    pub fn with_merges(&self, range: CellRange) -> CellRange {
+        let sheet = &self.book.workbook().sheets[self.index];
+        let mut range = range;
+        loop {
+            let before = range;
+            for merge in &sheet.merges {
+                let touches = merge.start.column <= range.end.column
+                    && range.start.column <= merge.end.column
+                    && merge.start.row <= range.end.row
+                    && range.start.row <= merge.end.row;
+                if touches {
+                    range = span(
+                        CellRef::new(
+                            range.start.column.min(merge.start.column),
+                            range.start.row.min(merge.start.row),
+                        ),
+                        CellRef::new(
+                            range.end.column.max(merge.end.column),
+                            range.end.row.max(merge.end.row),
+                        ),
+                    );
+                }
+            }
+            if range == before {
+                return range;
+            }
+        }
+    }
+
+    /// ⌘-arrow (Ctrl-arrow elsewhere): from a filled cell with a filled
+    /// neighbour, to the last filled cell of the run; otherwise to the next
+    /// filled cell — or the edge of the sheet when there is none.
+    pub fn jump(&self, from: CellRef, direction: Direction) -> CellRef {
+        let horizontal = direction.is_horizontal();
+        let line = self.filled_line(from, horizontal);
+        let (position, limit) = if horizontal {
+            (from.column, MAX_COLUMN)
+        } else {
+            (from.row, MAX_ROW)
+        };
+        let forward = matches!(direction, Direction::Right | Direction::Down);
+        let next = |p: u32| {
+            if forward {
+                (p < limit).then(|| p + 1)
+            } else {
+                p.checked_sub(1)
+            }
+        };
+        let Some(first) = next(position) else {
+            return from;
+        };
+        let to = if line.contains(&position) && line.contains(&first) {
+            let mut at = first;
+            while let Some(further) = next(at).filter(|p| line.contains(p)) {
+                at = further;
+            }
+            at
+        } else if forward {
+            line.range(first..).next().copied().unwrap_or(limit)
+        } else {
+            line.range(..=first).next_back().copied().unwrap_or(0)
+        };
+        if horizontal {
+            CellRef::new(to, from.row)
+        } else {
+            CellRef::new(from.column, to)
+        }
+    }
+
+    /// AutoSum's guess for a SUM in `at`: the run of numbers straight above
+    /// it, or else to its left, as Excel proposes.
+    pub fn autosum_range(&self, at: CellRef) -> Option<CellRange> {
+        let run = |direction: Direction| {
+            let mut first = None;
+            let mut cursor = at;
+            loop {
+                let next = grid::offset(cursor, direction.delta().0, direction.delta().1);
+                if next == cursor || self.number(next).is_none() {
+                    break;
+                }
+                first = Some(next);
+                cursor = next;
+            }
+            first.map(|first| {
+                span(
+                    first,
+                    grid::offset(at, direction.delta().0, direction.delta().1),
+                )
+            })
+        };
+        run(Direction::Up).or_else(|| run(Direction::Left))
+    }
+
+    /// The note on `at` (or the merged cell it is in), as a hover shows it.
+    pub fn note(&self, at: CellRef) -> Option<&str> {
+        self.layout
+            .notes
+            .iter()
+            .find(|note| note.reference == at)
+            .map(|note| note.text.as_str())
+    }
+
+    /// Find: the cells after `from` (on this sheet, then the next ones,
+    /// round to the start) that show `needle` or have it in their formula,
+    /// ignoring case — the next one Excel's Find Next would go to, as
+    /// (sheet index, cell).
+    pub fn find_next(
+        &self,
+        needle: &str,
+        from: (usize, CellRef),
+        back: bool,
+    ) -> Option<(usize, CellRef)> {
+        let mut hits: Vec<(usize, CellRef)> = self
+            .book
+            .find(needle, false)
+            .into_iter()
+            .filter(|hit| {
+                self.book.workbook().sheets[hit.sheet_index].visibility == SheetVisibility::Visible
+            })
+            .filter_map(|hit| Some((hit.sheet_index, CellRef::parse(&hit.reference).ok()?)))
+            .collect();
+        // Excel searches by rows.
+        hits.sort_by_key(|(sheet, cell)| (*sheet, cell.row, cell.column));
+        let key = |(sheet, cell): &(usize, CellRef)| (*sheet, cell.row, cell.column);
+        let here = key(&from);
+        if back {
+            hits.iter()
+                .rev()
+                .find(|hit| key(hit) < here)
+                .or_else(|| hits.last())
+                .copied()
+        } else {
+            hits.iter()
+                .find(|hit| key(hit) > here)
+                .or_else(|| hits.first())
+                .copied()
+        }
+    }
+
+    /// The hyperlink on `at`, if it has one: a web address, or a place in
+    /// the workbook.
+    pub fn link(&self, at: CellRef) -> Option<Link> {
+        let workbook = self.book.workbook();
+        let link = workbook.sheets[self.index].hyperlink_at(at)?;
+        if let Some(target) = link.target.as_ref().filter(|target| !target.is_empty()) {
+            let mut url = target.clone();
+            if let Some(location) = link
+                .location
+                .as_ref()
+                .filter(|location| !location.is_empty())
+            {
+                url = format!("{url}#{location}");
+            }
+            return Some(Link::Url(url));
+        }
+        let location = link.location.as_ref()?;
+        let (sheet, reference) = match location.rsplit_once('!') {
+            Some((sheet, reference)) => (sheet.trim_matches('\'').replace("''", "'"), reference),
+            None => (self.sheet_name(), location.as_str()),
+        };
+        let index = workbook
+            .sheets
+            .iter()
+            .position(|candidate| candidate.name.eq_ignore_ascii_case(&sheet))?;
+        let range = parse_range(&reference.replace('$', ""))?;
+        Some(Link::Place {
+            sheet: index,
+            range,
+        })
+    }
+
+    /// The data validation that applies to `at`.
+    fn validation(&self, at: CellRef) -> Option<&jade_xlsx_reader::DataValidation> {
+        self.book.workbook().sheets[self.index]
+            .data_validations
+            .iter()
+            .find(|validation| validation.ranges.iter().any(|range| range.contains(at)))
+    }
+
+    /// The choices of a list validation on `at` — what Excel's in-cell
+    /// dropdown offers — from the list typed into the rule or the cells it
+    /// names.
+    pub fn validation_list(&self, at: CellRef) -> Option<Vec<String>> {
+        let validation = self.validation(at)?;
+        if validation.validation_type.as_deref() != Some("list") {
+            return None;
+        }
+        let source = validation.formula1.as_deref()?.trim();
+        if let Some(list) = source
+            .strip_prefix('"')
+            .and_then(|rest| rest.strip_suffix('"'))
+        {
+            return Some(
+                list.split(',')
+                    .map(|item| item.trim().to_string())
+                    .collect(),
+            );
+        }
+        let source = source.trim_start_matches('=');
+        let (sheet, reference) = match source.rsplit_once('!') {
+            Some((sheet, reference)) => (sheet.trim_matches('\'').replace("''", "'"), reference),
+            None => (self.sheet_name(), source),
+        };
+        let range = parse_range(&reference.replace('$', ""))?;
+        let cells = u64::from(range.end.column - range.start.column + 1)
+            * u64::from(range.end.row - range.start.row + 1);
+        if cells > 10_000 {
+            return None;
+        }
+        let mut items = Vec::new();
+        for row in range.start.row..=range.end.row {
+            for column in range.start.column..=range.end.column {
+                let text = self
+                    .book
+                    .cell(&sheet, &reference_text(CellRef::new(column, row)))
+                    .map(|cell| cell.display)
+                    .unwrap_or_default();
+                if !text.is_empty() {
+                    items.push(text);
+                }
+            }
+        }
+        Some(items)
+    }
+
+    /// Whether `text` may go into `at` under its data validation: `Err`
+    /// with the rule's own error message (or `None` for Excel's) when a
+    /// Stop rule refuses it.
+    fn check_validation(&self, at: CellRef, text: &str) -> Result<(), Option<String>> {
+        let Some(validation) = self.validation(at) else {
+            return Ok(());
+        };
+        if !validation.show_error_message || text.starts_with('=') {
+            return Ok(());
+        }
+        if text.is_empty() {
+            return if validation.allow_blank {
+                Ok(())
+            } else {
+                Err(validation.error.clone())
+            };
+        }
+        let refuse = || Err(validation.error.clone());
+        let kind = validation.validation_type.as_deref().unwrap_or("none");
+        if kind == "list" {
+            return match self.validation_list(at) {
+                Some(items)
+                    if !items
+                        .iter()
+                        .any(|item| item.eq_ignore_ascii_case(text.trim())) =>
+                {
+                    refuse()
+                }
+                _ => Ok(()),
+            };
+        }
+        let value = match kind {
+            "whole" | "decimal" => {
+                let date1904 = matches!(
+                    self.book.workbook().date_system,
+                    jade_xlsx_reader::DateSystem::Nineteen04
+                );
+                match typing::read(text, date1904).input {
+                    CellInput::Number(number) => number,
+                    _ => return refuse(),
+                }
+            }
+            "textLength" => text.chars().count() as f64,
+            _ => return Ok(()),
+        };
+        if kind == "whole" && value.fract() != 0.0 {
+            return refuse();
+        }
+        let bound = |formula: Option<&String>| {
+            formula.and_then(|formula| formula.trim_start_matches('=').trim().parse::<f64>().ok())
+        };
+        let (Some(first), second) = (
+            bound(validation.formula1.as_ref()),
+            bound(validation.formula2.as_ref()),
+        ) else {
+            return Ok(());
+        };
+        let ok = match validation.operator.as_deref().unwrap_or("between") {
+            "between" => value >= first && second.is_none_or(|second| value <= second),
+            "notBetween" => !(value >= first && second.is_none_or(|second| value <= second)),
+            "equal" => value == first,
+            "notEqual" => value != first,
+            "greaterThan" => value > first,
+            "lessThan" => value < first,
+            "greaterThanOrEqual" => value >= first,
+            "lessThanOrEqual" => value <= first,
+            _ => true,
+        };
+        if ok {
+            Ok(())
+        } else {
+            refuse()
+        }
+    }
+
+    /// The bottom-right corner of what the sheet uses — where ⌘End goes.
+    pub fn used_end(&self) -> CellRef {
+        let mut end = CellRef::new(0, 0);
+        for row in &self.book.workbook().sheets[self.index].rows {
+            for cell in &row.cells {
+                end.column = end.column.max(cell.reference.column);
+                end.row = end.row.max(cell.reference.row);
+            }
+        }
+        end
+    }
+
+    /// The block of data round `at`, bounded by empty rows and columns —
+    /// what ⌘A selects first.
+    pub fn current_region(&self, at: CellRef) -> Option<CellRange> {
+        let text = self
+            .book
+            .current_region(&self.sheet_name(), &reference_text(at))
+            .ok()?;
+        let range = parse_range(&text)?;
+        (range.start != range.end).then_some(range)
+    }
+
+    /// How many rows from `row` down fill a viewport `height` sheet px tall
+    /// (column headers included): the step of Page Down.
+    pub fn page_rows(&self, row: u32, height: f64) -> u32 {
+        let body = (height - self.layout.header_metrics().column_height).max(1.0);
+        let mut used = 0.0;
+        let mut count = 0;
+        for entry in self.layout.rows.iter().skip(row as usize) {
+            used += entry.size;
+            if used > body {
+                break;
+            }
+            count += 1;
+        }
+        count.max(1)
     }
 
     fn cells_in(&self, range: CellRange) -> impl Iterator<Item = &jade_xlsx_reader::Cell> {
@@ -450,8 +914,25 @@ impl<B: Backend> Workbook<B> {
     /// Writes typed text into a cell, recalculating. Returns whether the
     /// cell changed.
     pub fn set_cell(&mut self, reference: CellRef, text: &str) -> Result<bool, String> {
-        if text == self.edit_text(reference) {
+        let Some(steps) = self.write_cell(reference, text)? else {
             return Ok(false);
+        };
+        self.record(steps);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// The write of [`Self::set_cell`], returning how many of the book's
+    /// undo steps it took, or `None` when the cell already reads `text`.
+    fn write_cell(&mut self, reference: CellRef, text: &str) -> Result<Option<usize>, String> {
+        if text == self.edit_text(reference) {
+            return Ok(None);
+        }
+        if let Err(message) = self.check_validation(reference, text) {
+            return Err(format!(
+                "{VALIDATION_REFUSED}{}",
+                message.unwrap_or_default()
+            ));
         }
         let name = self.sheet_name();
         let at = reference_text(reference);
@@ -482,7 +963,7 @@ impl<B: Backend> Workbook<B> {
             .map_err(|error| error.to_string())?;
         let mut steps = 1;
         if let Some(code) = format {
-            let change = jade_xlsx_headless_editor::FormatChange {
+            let change = FormatChange {
                 number_format: Some(code.to_string()),
                 ..Default::default()
             };
@@ -490,9 +971,326 @@ impl<B: Backend> Workbook<B> {
                 steps += 1;
             }
         }
+        // A line break typed into a cell wraps it, as Excel does.
+        if text.contains('\n') && !text.starts_with('=') {
+            let change = FormatChange {
+                wrap_text: Some(true),
+                ..Default::default()
+            };
+            if self.book.set_format(&name, &at, &change).is_ok() {
+                steps += 1;
+            }
+        }
+        Ok(Some(steps))
+    }
+
+    // ---- filling ----------------------------------------------------------
+
+    /// What `target` holds once `source` is laid over it, tiled from its
+    /// top-left, formulas moved as a paste moves them and formats carried:
+    /// the writes for the cells of `target` outside `source`.
+    fn tile_writes(
+        &self,
+        source: CellRange,
+        target: CellRange,
+    ) -> Vec<(String, CellInput, Option<u32>)> {
+        let sheet = &self.book.workbook().sheets[self.index];
+        let cells: BTreeMap<CellRef, &jade_xlsx_reader::Cell> = self
+            .cells_in(source)
+            .map(|cell| (cell.reference, cell))
+            .collect();
+        let width = source.end.column - source.start.column + 1;
+        let height = source.end.row - source.start.row + 1;
+        let mut writes = Vec::new();
+        for row in target.start.row..=target.end.row {
+            for column in target.start.column..=target.end.column {
+                let at = CellRef::new(column, row);
+                if source.contains(at) {
+                    continue;
+                }
+                let from = CellRef::new(
+                    source.start.column + (column - target.start.column) % width,
+                    source.start.row + (row - target.start.row) % height,
+                );
+                let style = Some(jade_xlsx_headless_editor::effective_style(sheet, from));
+                let value = match cells.get(&from) {
+                    Some(cell) => match &cell.formula {
+                        Some(formula) => CellInput::Formula(translate_formula(
+                            &formula_text::to_display_formula(formula),
+                            from,
+                            at,
+                        )),
+                        None => match &cell.value {
+                            CellValue::Empty => CellInput::Blank,
+                            CellValue::Number(number) => CellInput::Number(*number),
+                            CellValue::Text(text) => CellInput::Text(text.clone()),
+                            CellValue::Bool(flag) => CellInput::Bool(*flag),
+                            CellValue::Error(error) => CellInput::Text(error.clone()),
+                        },
+                    },
+                    None => CellInput::Blank,
+                };
+                writes.push((reference_text(at), value, style));
+            }
+        }
+        writes
+    }
+
+    /// Lays `source` over `target` as one write; returns whether anything
+    /// was written. `extra` steps already taken join the same undo.
+    fn tile(&mut self, source: CellRange, target: CellRange, extra: usize) -> Result<bool, String> {
+        let cells = u64::from(target.end.column - target.start.column + 1)
+            * u64::from(target.end.row - target.start.row + 1);
+        if cells > CLIPBOARD_CELL_LIMIT {
+            return Err(format!("{} is too large to fill", range_text(target)));
+        }
+        let writes = self.tile_writes(source, target);
+        let mut steps = extra;
+        if !writes.is_empty() {
+            let name = self.sheet_name();
+            self.book
+                .set_cells_styled(&name, &writes)
+                .map_err(|error| error.to_string())?;
+            steps += 1;
+        }
+        if steps == 0 {
+            return Ok(false);
+        }
         self.record(steps);
         self.after_write()?;
         Ok(true)
+    }
+
+    /// The selection's rows and columns, kept to the part of the sheet in
+    /// use when it runs to the sheet's edge — a whole column is filled as
+    /// far as there is data, not a million rows down.
+    fn in_use(&self, range: CellRange) -> CellRange {
+        let used = self.used_end();
+        let mut range = range;
+        if range.end.row == MAX_ROW {
+            range.end.row = used.row.max(range.start.row);
+        }
+        if range.end.column == MAX_COLUMN {
+            range.end.column = used.column.max(range.start.column);
+        }
+        range
+    }
+
+    /// ⌘D: the top row of the range copied down through it; a single row
+    /// takes the row above.
+    pub fn fill_down(&mut self, range: CellRange) -> Result<bool, String> {
+        let mut target = self.in_use(range);
+        if target.start.row == target.end.row {
+            if target.start.row == 0 {
+                return Ok(false);
+            }
+            target.start.row -= 1;
+        }
+        let source = CellRange {
+            start: target.start,
+            end: CellRef::new(target.end.column, target.start.row),
+        };
+        self.tile(source, target, 0)
+    }
+
+    /// ⌘R: the left column copied right through the range; a single column
+    /// takes the column to its left.
+    pub fn fill_right(&mut self, range: CellRange) -> Result<bool, String> {
+        let mut target = self.in_use(range);
+        if target.start.column == target.end.column {
+            if target.start.column == 0 {
+                return Ok(false);
+            }
+            target.start.column -= 1;
+        }
+        let source = CellRange {
+            start: target.start,
+            end: CellRef::new(target.start.column, target.end.row),
+        };
+        self.tile(source, target, 0)
+    }
+
+    /// ⌘Enter: what was typed into the active cell, into every cell of the
+    /// range, formulas moved for each — one undo.
+    pub fn fill_with(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        text: &str,
+    ) -> Result<bool, String> {
+        let steps = self.write_cell(active, text)?.unwrap_or(0);
+        let range = self.in_use(range);
+        let source = CellRange {
+            start: active,
+            end: active,
+        };
+        self.tile(source, range, steps)
+    }
+
+    /// The fill handle dragged from `source` over `target`: the run carried
+    /// on — numbers as a series, dates by the day, `Item 1` counting —
+    /// as Excel's fill does. One undo.
+    pub fn fill_series(&mut self, source: CellRange, target: CellRange) -> Result<bool, String> {
+        if source == target {
+            return Ok(false);
+        }
+        let name = self.sheet_name();
+        let summary = self
+            .book
+            .fill(&name, &range_text_full(source), &range_text_full(target))
+            .map_err(|error| error.to_string())?;
+        if summary.cells.is_empty() {
+            return Ok(false);
+        }
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Where a fill-handle drag from `source` reaches with the pointer over
+    /// `to`: the source grown down, up, right or left — whichever way the
+    /// pointer has gone further — to take `to` in.
+    pub fn fill_target(source: CellRange, to: CellRef) -> CellRange {
+        let below = i64::from(to.row) - i64::from(source.end.row);
+        let above = i64::from(source.start.row) - i64::from(to.row);
+        let right = i64::from(to.column) - i64::from(source.end.column);
+        let left = i64::from(source.start.column) - i64::from(to.column);
+        let vertical = below.max(above);
+        let horizontal = right.max(left);
+        let mut target = source;
+        if vertical <= 0 && horizontal <= 0 {
+            return source;
+        }
+        if vertical >= horizontal {
+            if below > 0 {
+                target.end.row = to.row;
+            } else {
+                target.start.row = to.row;
+            }
+        } else if right > 0 {
+            target.end.column = to.column;
+        } else {
+            target.start.column = to.column;
+        }
+        target
+    }
+
+    /// A double-click on the fill handle: the source carried down as far as
+    /// the data in the column beside it goes, as Excel does.
+    pub fn fill_handle_extent(&self, source: CellRange) -> Option<CellRange> {
+        let below = source.end.row + 1;
+        let mut end = source.end.row;
+        let neighbours = [
+            source.start.column.checked_sub(1),
+            (source.end.column < MAX_COLUMN).then(|| source.end.column + 1),
+        ];
+        for column in neighbours.into_iter().flatten() {
+            let line = self.filled_line(CellRef::new(column, below), false);
+            let mut row = source.end.row;
+            while line.contains(&(row + 1)) {
+                row += 1;
+            }
+            end = end.max(row);
+        }
+        (end > source.end.row).then(|| CellRange {
+            start: source.start,
+            end: CellRef::new(source.end.column, end),
+        })
+    }
+
+    // ---- the clipboard ----------------------------------------------------
+
+    /// Copies (or, with `cut`, cuts) `range`: returns the text for the
+    /// clipboard, and keeps the cells so that pasting that text pastes them —
+    /// formulas adjusted to where they land, formats with them. A cut leaves
+    /// the cells where they are until the paste moves them, as in Excel.
+    pub fn copy(&mut self, range: CellRange, cut: bool) -> String {
+        let range = self.in_use(range);
+        let text = self.range_text(range);
+        let name = self.sheet_name();
+        self.clipboard = self
+            .book
+            .copy_snapshot(&name, &range_text_full(range), cut)
+            .ok()
+            .map(|snapshot| Clip {
+                snapshot,
+                text: text.clone(),
+                cut,
+                range,
+                sheet: self.index,
+            });
+        text
+    }
+
+    /// What was last copied or cut, while a paste would still paste it: its
+    /// sheet and range, which Excel outlines.
+    pub fn copied(&self) -> Option<(usize, CellRange)> {
+        self.clipboard.as_ref().map(|clip| (clip.sheet, clip.range))
+    }
+
+    /// The text the last copy put on the clipboard, for a paste from a menu.
+    pub fn copied_text(&self) -> Option<String> {
+        self.clipboard.as_ref().map(|clip| clip.text.clone())
+    }
+
+    /// Lets go of what was copied — Escape, or typing into a cell — as
+    /// Excel does.
+    pub fn forget_copy(&mut self) {
+        self.clipboard = None;
+    }
+
+    /// Drag and drop: `source` moved (or with `copy`, copied) so its
+    /// top-left lands on `to`, formulas following as a cut and paste moves
+    /// them. Returns where it went. What is on the clipboard stays.
+    pub fn move_range(
+        &mut self,
+        source: CellRange,
+        to: CellRef,
+        copy: bool,
+    ) -> Result<CellRange, String> {
+        if to == source.start {
+            return Ok(source);
+        }
+        let name = self.sheet_name();
+        let snapshot = self
+            .book
+            .copy_snapshot(&name, &range_text_full(source), !copy)
+            .map_err(|error| error.to_string())?;
+        let moved = self
+            .book
+            .paste_snapshot(&snapshot, &name, &reference_text(to), false)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(moved)
+    }
+
+    /// Whether a viewport point is on the selection's border — where Excel
+    /// lets a drag pick the cells up — rather than inside it.
+    pub fn on_selection_border(
+        &self,
+        x: f64,
+        y: f64,
+        scroll: (f64, f64),
+        range: CellRange,
+    ) -> bool {
+        let last = self.grid_end();
+        let end = CellRef::new(
+            range.end.column.min(last.column),
+            range.end.row.min(last.row),
+        );
+        let (Some((left, top, _, _)), Some((ex, ey, ew, eh))) = (
+            self.cell_rect(range.start, scroll),
+            self.cell_rect(end, scroll),
+        ) else {
+            return false;
+        };
+        let (right, bottom) = (ex + ew, ey + eh);
+        let near = |a: f64, b: f64| (a - b).abs() <= 3.0;
+        let within_x = x >= left - 3.0 && x <= right + 3.0;
+        let within_y = y >= top - 3.0 && y <= bottom + 3.0;
+        ((near(x, left) || near(x, right)) && within_y)
+            || ((near(y, top) || near(y, bottom)) && within_x)
     }
 
     /// Notes an edit that took `steps` of the book's undo steps; a new
@@ -502,58 +1300,81 @@ impl<B: Backend> Workbook<B> {
         self.undone.clear();
     }
 
-    /// Copies (or, with `cut`, cuts) `range`: returns the text for the
-    /// clipboard, and keeps the cells so that pasting that text pastes them —
-    /// formulas adjusted to where they land, formats with them. A cut leaves
-    /// the cells where they are until the paste moves them, as in Excel.
-    pub fn copy(&mut self, range: CellRange, cut: bool) -> String {
-        let text = self.range_text(range);
-        let name = self.sheet_name();
-        self.clipboard = self
-            .book
-            .copy_snapshot(&name, &range_text(range), cut)
-            .ok()
-            .map(|snapshot| (snapshot, text.clone(), cut));
-        text
-    }
-
     /// Pastes the clipboard at `origin`, returning the far corner it filled.
     /// Text this workbook copied pastes its cells; anything else pastes as
     /// tab-separated text typed in from `origin` down and right.
     pub fn paste(&mut self, origin: CellRef, text: &str) -> Result<Option<CellRef>, String> {
+        Ok(self
+            .paste_over(
+                CellRange {
+                    start: origin,
+                    end: origin,
+                },
+                text,
+            )?
+            .map(|range| range.end))
+    }
+
+    /// Pastes the clipboard onto `target`: from its top-left, or tiled over
+    /// it when it is a whole multiple of what is pasted, as Excel does.
+    /// Text this workbook copied pastes its cells, and a cut moves them
+    /// once; anything else pastes as text. Returns what was filled.
+    pub fn paste_over(
+        &mut self,
+        target: CellRange,
+        text: &str,
+    ) -> Result<Option<CellRange>, String> {
         let ours = |copied: &str| clipboard_lines(copied) == clipboard_lines(text);
-        if let Some((snapshot, copied, cut)) = self.clipboard.take() {
-            if ours(&copied) {
+        if let Some(clip) = self.clipboard.take() {
+            if !ours(&clip.text) {
+                self.clipboard = Some(clip);
+            } else {
                 let name = self.sheet_name();
-                match self
-                    .book
-                    .paste_snapshot(&snapshot, &name, &reference_text(origin), false)
-                {
-                    Ok(range) => {
+                let pasted = self.book.paste_snapshot(
+                    &clip.snapshot,
+                    &name,
+                    &reference_text(target.start),
+                    false,
+                );
+                let cut = clip.cut;
+                match pasted {
+                    Ok(pasted) => {
                         // A cut moves once; a copy pastes as often as asked.
                         if !cut {
-                            self.clipboard = Some((snapshot, copied, cut));
+                            self.clipboard = Some(clip);
                         }
-                        self.record(1);
-                        self.after_write()?;
-                        return Ok(Some(range.end));
+                        let tiled = (!cut).then(|| tiled_over(pasted, target)).flatten();
+                        return match tiled {
+                            Some(whole) => {
+                                self.tile(pasted, whole, 1)?;
+                                Ok(Some(whole))
+                            }
+                            None => {
+                                self.record(1);
+                                self.after_write()?;
+                                Ok(Some(pasted))
+                            }
+                        };
                     }
                     // An edit since the cut cancelled it, as in Excel.
                     Err(error) if cut => return Err(error.to_string()),
                     Err(_) => {}
                 }
-            } else {
-                self.clipboard = Some((snapshot, copied, cut));
             }
         }
-        self.paste_text(origin, text)
+        self.paste_text(target, text)
     }
 
-    /// Pastes tab-separated text from `origin` down and right as one write,
-    /// returning the far corner it filled.
-    fn paste_text(&mut self, origin: CellRef, text: &str) -> Result<Option<CellRef>, String> {
+    /// Pastes tab-separated text from `target`'s top-left down and right as
+    /// one write, tiled over `target` when it is a whole multiple of it.
+    fn paste_text(&mut self, target: CellRange, text: &str) -> Result<Option<CellRange>, String> {
+        let origin = target.start;
         let mut values = Vec::new();
         let mut far = origin;
+        let date1904 = matches!(
+            self.book.workbook().date_system,
+            jade_xlsx_reader::DateSystem::Nineteen04
+        );
         for (row_offset, row) in clipboard::parse(text).iter().enumerate() {
             for (column_offset, value) in row.iter().enumerate() {
                 let reference = CellRef::new(
@@ -562,7 +1383,10 @@ impl<B: Backend> Workbook<B> {
                 );
                 far.column = far.column.max(reference.column);
                 far.row = far.row.max(reference.row);
-                values.push((reference_text(reference), typing::read(value, false).input));
+                values.push((
+                    reference_text(reference),
+                    typing::read(value, date1904).input,
+                ));
             }
         }
         if values.is_empty() {
@@ -572,9 +1396,21 @@ impl<B: Backend> Workbook<B> {
         self.book
             .set_cells(&name, &values)
             .map_err(|error| error.to_string())?;
-        self.record(1);
-        self.after_write()?;
-        Ok(Some(far))
+        let pasted = CellRange {
+            start: origin,
+            end: far,
+        };
+        match tiled_over(pasted, target) {
+            Some(whole) => {
+                self.tile(pasted, whole, 1)?;
+                Ok(Some(whole))
+            }
+            None => {
+                self.record(1);
+                self.after_write()?;
+                Ok(Some(pasted))
+            }
+        }
     }
 
     /// Empties the cells in `range` that hold anything, keeping formats.
@@ -596,8 +1432,772 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    // ---- formats -------------------------------------------------------
+
+    /// Changes how `range` looks — one write, one undo.
+    pub fn format(&mut self, range: CellRange, change: &FormatChange) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let range = if range.end.row == MAX_ROW || range.end.column == MAX_COLUMN {
+            range
+        } else {
+            self.in_use(range)
+        };
+        self.book
+            .set_format(&name, &range_text_full(range), change)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// How the cell at `at` looks, as a change that would give a cell its
+    /// look: bold, italic and the rest.
+    pub fn format_at(&self, at: CellRef) -> FormatChange {
+        self.book
+            .format_at(&self.sheet_name(), &reference_text(at))
+            .unwrap_or_default()
+    }
+
+    /// ⌘B, ⌘I, ⌘U, ⌘⇧X: the style turned on through `range`, or off when the
+    /// active cell has it, as Excel decides from the active cell.
+    pub fn toggle(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        style: FontToggle,
+    ) -> Result<bool, String> {
+        let now = self.format_at(active);
+        let on = |flag: Option<bool>| Some(!flag.unwrap_or(false));
+        let change = match style {
+            FontToggle::Bold => FormatChange {
+                bold: on(now.bold),
+                ..Default::default()
+            },
+            FontToggle::Italic => FormatChange {
+                italic: on(now.italic),
+                ..Default::default()
+            },
+            FontToggle::Underline => FormatChange {
+                underline: on(now.underline),
+                ..Default::default()
+            },
+            FontToggle::Strike => FormatChange {
+                strike: on(now.strike),
+                ..Default::default()
+            },
+        };
+        self.format(range, &change)
+    }
+
+    /// Merge & Center: `range` becomes one cell, its top-left's content
+    /// centred; a range that is already one merge is split again.
+    pub fn merge_and_center(&mut self, range: CellRange) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let existing = self.book.workbook().sheets[self.index]
+            .merges
+            .iter()
+            .any(|merge| {
+                merge.start.column <= range.end.column
+                    && range.start.column <= merge.end.column
+                    && merge.start.row <= range.end.row
+                    && range.start.row <= merge.end.row
+            });
+        if existing {
+            self.book
+                .unmerge_cells(&name, &range_text_full(range))
+                .map_err(|error| error.to_string())?;
+            return self.restructured();
+        }
+        if range.start == range.end {
+            return Ok(false);
+        }
+        self.book
+            .merge_cells(&name, &range_text_full(range))
+            .map_err(|error| error.to_string())?;
+        let center = FormatChange {
+            horizontal: Some(HorizontalAlignment::Center),
+            ..Default::default()
+        };
+        let steps = if self
+            .book
+            .set_format(&name, &range_text_full(range), &center)
+            .is_ok()
+        {
+            2
+        } else {
+            1
+        };
+        self.record(steps);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Sort A to Z (or Z to A) by the column of `at`: over `range`, or — a
+    /// single cell — the block of data round it, keeping a header row on
+    /// top when the first row reads as one, as Excel guesses.
+    pub fn sort(
+        &mut self,
+        range: CellRange,
+        at: CellRef,
+        descending: bool,
+    ) -> Result<bool, String> {
+        let range = if range.start == range.end {
+            match self.current_region(at) {
+                Some(region) => region,
+                None => return Ok(false),
+            }
+        } else {
+            self.in_use(range)
+        };
+        if range.start.row == range.end.row {
+            return Ok(false);
+        }
+        let header = self.looks_like_header(range);
+        let request = jade_xlsx_headless_api::SortRequest {
+            reference: range_text_full(range),
+            header,
+            case_sensitive: false,
+            locale: None,
+            phonetic: None,
+            keys: vec![jade_xlsx_headless_api::SortKey {
+                column: at.column.clamp(range.start.column, range.end.column) - range.start.column,
+                descending,
+            }],
+        };
+        let name = self.sheet_name();
+        let summary = self
+            .book
+            .sort_range(&name, &request)
+            .map_err(|error| error.to_string())?;
+        if summary.moved_rows == 0 {
+            return Ok(false);
+        }
+        self.restructured()
+    }
+
+    /// Whether the range's first row is a header: all text over a row that
+    /// holds something other than text.
+    fn looks_like_header(&self, range: CellRange) -> bool {
+        let first = CellRange {
+            start: range.start,
+            end: CellRef::new(range.end.column, range.start.row),
+        };
+        let second = CellRange {
+            start: CellRef::new(range.start.column, range.start.row + 1),
+            end: CellRef::new(range.end.column, range.start.row + 1),
+        };
+        let mut first_cells = self
+            .cells_in(first)
+            .filter(|cell| !cell.value.is_empty())
+            .peekable();
+        let all_text = first_cells.peek().is_some()
+            && first_cells
+                .all(|cell| matches!(cell.value, CellValue::Text(_)) && cell.formula.is_none());
+        all_text
+            && self
+                .cells_in(second)
+                .any(|cell| !matches!(cell.value, CellValue::Text(_) | CellValue::Empty))
+    }
+
+    // ---- filters --------------------------------------------------------
+
+    /// The filter button (▼) under a viewport point, if there is one.
+    pub fn filter_button_at(&self, x: f64, y: f64, scroll: (f64, f64)) -> Option<FilterButton> {
+        let metrics = self.layout.header_metrics();
+        self.layout
+            .filter_buttons
+            .iter()
+            .find(|button| {
+                let left = button.rect.x + metrics.row_width
+                    - if button.reference.column < self.layout.frozen_columns {
+                        0.0
+                    } else {
+                        scroll.0
+                    };
+                let top = button.rect.y + metrics.column_height
+                    - if button.reference.row < self.layout.frozen_rows {
+                        0.0
+                    } else {
+                        scroll.1
+                    };
+                x >= left
+                    && x <= left + button.rect.width
+                    && y >= top
+                    && y <= top + button.rect.height
+            })
+            .cloned()
+    }
+
+    fn filter_target(button: &FilterButton) -> AutoFilterTarget {
+        match &button.target {
+            FilterButtonTarget::Worksheet => AutoFilterTarget::Worksheet,
+            FilterButtonTarget::Table { name } => AutoFilterTarget::Table { name: name.clone() },
+        }
+    }
+
+    /// The values a filter button offers, with which are showing.
+    pub fn filter_options(&self, button: &FilterButton) -> Result<AutoFilterOptions, String> {
+        self.book
+            .auto_filter_options(
+                &self.sheet_name(),
+                &Self::filter_target(button),
+                button.column,
+                None,
+            )
+            .map_err(|error| error.to_string())
+    }
+
+    /// Shows only the rows whose cell in the button's column reads one of
+    /// `values` (and blank ones with `blank`); the rest are hidden.
+    pub fn filter_values(
+        &mut self,
+        button: &FilterButton,
+        values: Vec<String>,
+        blank: bool,
+    ) -> Result<bool, String> {
+        let change = AutoFilterChange::Values {
+            target: Self::filter_target(button),
+            reference: None,
+            column: button.column,
+            values,
+            include_blank: blank,
+        };
+        self.change_filter(&change)
+    }
+
+    /// Takes the button's column out of the filter.
+    pub fn clear_filter(&mut self, button: &FilterButton) -> Result<bool, String> {
+        let change = AutoFilterChange::Clear {
+            target: Self::filter_target(button),
+            column: Some(button.column),
+        };
+        self.change_filter(&change)
+    }
+
+    /// ⌘⇧F: filter buttons on the data round `at` (or on `range`), or off
+    /// again.
+    pub fn toggle_filter(&mut self, range: CellRange) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let range = self.in_use(range);
+        self.book
+            .toggle_auto_filter(&name, &range_text_full(range))
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    fn change_filter(&mut self, change: &AutoFilterChange) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .change_auto_filter(&name, change)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    /// Sort from a filter button: the filtered range by its column, the
+    /// header row staying.
+    pub fn sort_filter(&mut self, button: &FilterButton, descending: bool) -> Result<bool, String> {
+        let range = button.range;
+        let request = jade_xlsx_headless_api::SortRequest {
+            reference: range_text_full(range),
+            header: true,
+            case_sensitive: false,
+            locale: None,
+            phonetic: None,
+            keys: vec![jade_xlsx_headless_api::SortKey {
+                column: button.column,
+                descending,
+            }],
+        };
+        let name = self.sheet_name();
+        let summary = self
+            .book
+            .sort_range(&name, &request)
+            .map_err(|error| error.to_string())?;
+        if summary.moved_rows == 0 {
+            return Ok(false);
+        }
+        self.restructured()
+    }
+
+    /// Several format changes as one edit, one undo.
+    fn format_all(&mut self, changes: &[(CellRange, FormatChange)]) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let mut steps = 0;
+        for (range, change) in changes {
+            let range = if range.end.row == MAX_ROW || range.end.column == MAX_COLUMN {
+                *range
+            } else {
+                self.in_use(*range)
+            };
+            self.book
+                .set_format(&name, &range_text_full(range), change)
+                .map_err(|error| error.to_string())?;
+            steps += 1;
+        }
+        if steps == 0 {
+            return Ok(false);
+        }
+        self.record(steps);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// The Home tab's alignment buttons: left, centre or right — or back to
+    /// General when the active cell is already aligned so.
+    pub fn align(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        horizontal: HorizontalAlignment,
+    ) -> Result<bool, String> {
+        let now = self.format_at(active).horizontal;
+        let horizontal = if now == Some(horizontal) {
+            HorizontalAlignment::General
+        } else {
+            horizontal
+        };
+        self.format(
+            range,
+            &FormatChange {
+                horizontal: Some(horizontal),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Wrap Text, on or off as the active cell decides.
+    pub fn toggle_wrap(&mut self, range: CellRange, active: CellRef) -> Result<bool, String> {
+        let wrap = !self.format_at(active).wrap_text.unwrap_or(false);
+        self.format(
+            range,
+            &FormatChange {
+                wrap_text: Some(wrap),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Increase (or Decrease) Decimal: the active cell's number format with
+    /// one more (or fewer) place after the point, on every cell.
+    pub fn decimals(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        more: bool,
+    ) -> Result<bool, String> {
+        let code = self
+            .format_at(active)
+            .number_format
+            .unwrap_or_else(|| "General".to_string());
+        let shown = self.display_text(active);
+        let next = adjust_decimals(&code, &shown, more);
+        if next == code {
+            return Ok(false);
+        }
+        self.format(
+            range,
+            &FormatChange {
+                number_format: Some(next),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Increase (or Decrease) Font Size, through Excel's list of sizes.
+    pub fn grow_font(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        larger: bool,
+    ) -> Result<bool, String> {
+        const SIZES: &[f32] = &[
+            8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0,
+            72.0,
+        ];
+        let now = self.format_at(active).font_size.unwrap_or(11.0);
+        let next = if larger {
+            SIZES
+                .iter()
+                .copied()
+                .find(|size| *size > now + 0.01)
+                .unwrap_or(now + 10.0)
+        } else {
+            SIZES
+                .iter()
+                .rev()
+                .copied()
+                .find(|size| *size < now - 0.01)
+                .unwrap_or((now - 1.0).max(1.0))
+        };
+        self.format(
+            range,
+            &FormatChange {
+                font_size: Some(next),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// The fill (`RRGGBB`, or `None` for No Fill).
+    pub fn fill_color(&mut self, range: CellRange, color: Option<&str>) -> Result<bool, String> {
+        self.format(
+            range,
+            &FormatChange {
+                fill_color: Some(color.unwrap_or_default().to_string()),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// The font colour (`RRGGBB`).
+    pub fn font_color(&mut self, range: CellRange, color: &str) -> Result<bool, String> {
+        self.format(
+            range,
+            &FormatChange {
+                font_color: Some(color.to_string()),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// The Borders button's choices.
+    pub fn borders(&mut self, range: CellRange, borders: Borders) -> Result<bool, String> {
+        let thin = |thick: bool| BorderLine {
+            style: if thick {
+                BorderStyle::Medium
+            } else {
+                BorderStyle::Thin
+            },
+            color: None,
+        };
+        let edges = |line: BorderLine| FormatChange {
+            border_left: Some(line.clone()),
+            border_right: Some(line.clone()),
+            border_top: Some(line.clone()),
+            border_bottom: Some(line),
+            ..Default::default()
+        };
+        let range = if range.end.row == MAX_ROW || range.end.column == MAX_COLUMN {
+            self.in_use(range)
+        } else {
+            range
+        };
+        let top = CellRange {
+            start: range.start,
+            end: CellRef::new(range.end.column, range.start.row),
+        };
+        let bottom = CellRange {
+            start: CellRef::new(range.start.column, range.end.row),
+            end: range.end,
+        };
+        let left = CellRange {
+            start: range.start,
+            end: CellRef::new(range.start.column, range.end.row),
+        };
+        let right = CellRange {
+            start: CellRef::new(range.end.column, range.start.row),
+            end: range.end,
+        };
+        let outline = |thick: bool| {
+            vec![
+                (
+                    top,
+                    FormatChange {
+                        border_top: Some(thin(thick)),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    bottom,
+                    FormatChange {
+                        border_bottom: Some(thin(thick)),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    left,
+                    FormatChange {
+                        border_left: Some(thin(thick)),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    right,
+                    FormatChange {
+                        border_right: Some(thin(thick)),
+                        ..Default::default()
+                    },
+                ),
+            ]
+        };
+        let changes = match borders {
+            Borders::All => vec![(range, edges(thin(false)))],
+            Borders::None => vec![(range, edges(BorderLine::none()))],
+            Borders::Outline => outline(false),
+            Borders::ThickOutline => outline(true),
+            Borders::Bottom => vec![(
+                bottom,
+                FormatChange {
+                    border_bottom: Some(thin(false)),
+                    ..Default::default()
+                },
+            )],
+        };
+        self.format_all(&changes)
+    }
+
+    // ---- notes ------------------------------------------------------------
+
+    /// Puts a note on `at` (replacing its note), or with empty text takes
+    /// it away.
+    pub fn set_note(&mut self, at: CellRef, text: &str, author: &str) -> Result<bool, String> {
+        let name = self.sheet_name();
+        if text.trim().is_empty() {
+            let deleted = self
+                .book
+                .delete_note(&name, &reference_text(at))
+                .map_err(|error| error.to_string())?;
+            return if deleted {
+                self.restructured()
+            } else {
+                Ok(false)
+            };
+        }
+        if self.note(at) == Some(text) {
+            return Ok(false);
+        }
+        self.book
+            .set_note(&name, &reference_text(at), text, author)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    // ---- rows, columns and sheets -----------------------------------------
+
+    /// Inserts `count` rows above `row` (0-based); what was below moves
+    /// down and formulas follow.
+    pub fn insert_rows(&mut self, row: u32, count: u32) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .insert_rows(&name, row + 1, count)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    pub fn delete_rows(&mut self, row: u32, count: u32) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .delete_rows(&name, row + 1, count)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    /// Inserts `count` columns left of `column` (0-based).
+    pub fn insert_columns(&mut self, column: u32, count: u32) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .insert_columns(&name, &column_label(column), count)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    pub fn delete_columns(&mut self, column: u32, count: u32) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .delete_columns(&name, &column_label(column), count)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    fn restructured(&mut self) -> Result<bool, String> {
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Sets the columns' (or rows') size from a header edge dragged to
+    /// `size_px` sheet px.
+    pub fn resize(
+        &mut self,
+        axis: Axis,
+        first: u32,
+        last: u32,
+        size_px: f64,
+    ) -> Result<bool, String> {
+        let gesture = jade_xlsx_layout::resize::ResizeGesture {
+            hit: jade_xlsx_layout::resize::ResizeHit {
+                axis,
+                index: first,
+                size_px,
+            },
+            pointer_start: 0.0,
+            size_px,
+        };
+        let stored = gesture.stored_size(self.layout.max_digit_width_px);
+        let name = self.sheet_name();
+        self.book
+            .set_axis_size(&name, axis, first, last, stored)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    /// Hide: the rows or columns down to nothing.
+    pub fn hide(&mut self, axis: Axis, first: u32, last: u32) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .set_axis_size(&name, axis, first, last, 0.0)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    /// Unhide: the hidden rows or columns among `first..=last` back at the
+    /// sheet's standard size.
+    pub fn unhide(&mut self, axis: Axis, first: u32, last: u32) -> Result<bool, String> {
+        let entries = match axis {
+            Axis::Rows => &self.layout.rows,
+            Axis::Columns => &self.layout.columns,
+        };
+        let standard = match axis {
+            Axis::Rows => 15.0,
+            Axis::Columns => 8.43,
+        };
+        let sizes: BTreeMap<u32, f32> = entries
+            .iter()
+            .filter(|entry| entry.index >= first && entry.index <= last)
+            .filter(|entry| entry.hidden || entry.size <= 0.0)
+            .map(|entry| (entry.index, standard))
+            .collect();
+        if sizes.is_empty() {
+            return Ok(false);
+        }
+        let name = self.sheet_name();
+        self.book
+            .set_axis_sizes(&name, axis, &sizes)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    /// Moves the sheet at `index` to `to` in the tab order, keeping it
+    /// selected.
+    pub fn move_sheet(&mut self, index: usize, to: usize) -> Result<bool, String> {
+        let names = self.sheet_names();
+        let Some(name) = names.get(index) else {
+            return Err(format!("no sheet at index {index}"));
+        };
+        if to >= names.len() || to == index {
+            return Ok(false);
+        }
+        self.book
+            .move_sheet(name, to)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.dirty = true;
+        self.select_sheet(to)?;
+        Ok(true)
+    }
+
+    /// A header edge double-clicked: the columns as wide as what they hold.
+    pub fn auto_fit_columns(&mut self, first: u32, last: u32) -> Result<bool, String> {
+        let sheet = &self.book.workbook().sheets[self.index];
+        let sizes = jade_xlsx_layout::resize::auto_fit_columns(
+            sheet,
+            &self.book.workbook().styles,
+            first,
+            last,
+            &self.layout_options(),
+        );
+        if sizes.is_empty() {
+            return Ok(false);
+        }
+        let name = self.sheet_name();
+        self.book
+            .set_axis_sizes(&name, Axis::Columns, &sizes)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    /// Adds a sheet after the current one and selects it, named as Excel
+    /// names a new sheet (`Sheet4`).
+    pub fn add_sheet(&mut self) -> Result<usize, String> {
+        let names = self.sheet_names();
+        let name = (1..)
+            .map(|n| format!("Sheet{n}"))
+            .find(|name| !names.iter().any(|taken| taken.eq_ignore_ascii_case(name)))
+            .unwrap_or_default();
+        let after = self.sheet_name();
+        let index = self
+            .book
+            .add_sheet(&name, Some(&after))
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.dirty = true;
+        self.select_sheet(index)?;
+        Ok(index)
+    }
+
+    pub fn rename_sheet(&mut self, index: usize, name: &str) -> Result<bool, String> {
+        let old = self
+            .sheet_names()
+            .get(index)
+            .cloned()
+            .ok_or_else(|| format!("no sheet at index {index}"))?;
+        if old == name {
+            return Ok(false);
+        }
+        self.book
+            .rename_sheet(&old, name)
+            .map_err(|error| error.to_string())?;
+        self.restructured()
+    }
+
+    /// Deletes a sheet; the last visible one cannot go.
+    pub fn delete_sheet(&mut self, index: usize) -> Result<bool, String> {
+        let name = self
+            .sheet_names()
+            .get(index)
+            .cloned()
+            .ok_or_else(|| format!("no sheet at index {index}"))?;
+        self.book
+            .delete_sheet(&name)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.dirty = true;
+        let count = self.book.workbook().sheets.len();
+        let next = (0..count)
+            .map(|offset| (index + offset) % count)
+            .chain(std::iter::once(0))
+            .find(|candidate| {
+                self.book.workbook().sheets[*candidate].visibility == SheetVisibility::Visible
+            })
+            .unwrap_or(0);
+        self.select_sheet(next.min(count - 1))?;
+        Ok(true)
+    }
+
+    fn layout_options(&self) -> LayoutOptions {
+        let workbook = self.book.workbook();
+        let measure: Rc<dyn jade_xlsx_layout::TextMeasure> = match self.backend.surface(1, 1) {
+            Some(surface) => Rc::new(PainterMeasure::new(surface)),
+            None => LayoutOptions::default().measure,
+        };
+        LayoutOptions {
+            min_column_count: self.extent.0,
+            min_row_count: self.extent.1,
+            date_system: workbook.date_system,
+            measure,
+            ..LayoutOptions::default()
+        }
+        .with_normal_font_metrics(&workbook.styles)
+    }
+
     fn after_write(&mut self) -> Result<(), String> {
         self.dirty = true;
+        // An undone sheet added, or a redone one deleted, can leave the index
+        // past the end.
+        let count = self.book.workbook().sheets.len();
+        if self.index >= count {
+            self.index = count.saturating_sub(1);
+        }
         self.relayout()
     }
 
@@ -646,15 +2246,15 @@ impl<B: Backend> Workbook<B> {
     }
 
     /// Paints the part of the sheet under `scroll` (sheet px) onto a
-    /// `width` × `height` surface at `scale` device px per sheet px, with the
-    /// selection from `anchor` (the active cell) to its far corner.
+    /// `width` × `height` surface at `scale` device px per sheet px, with
+    /// the selection and what else the overlay asks for drawn over it.
     pub fn render_viewport(
         &self,
         scroll: (f64, f64),
         width: u32,
         height: u32,
         scale: f64,
-        selection: Option<(CellRef, CellRef)>,
+        overlay: &Overlay,
     ) -> Option<B::Painter> {
         let (width, height) = (width.max(1), height.max(1));
         let mut surface = self.surface.borrow_mut();
@@ -669,14 +2269,18 @@ impl<B: Backend> Workbook<B> {
             width: (f64::from(width) / scale - metrics.row_width).max(0.0),
             height: (f64::from(height) / scale - metrics.column_height).max(0.0),
         };
-        let selection = selection.map(|(anchor, focus)| GridSelection {
-            range: span(anchor, focus),
-            active: anchor,
-            fill_preview: None,
-            fill_handle: false,
+        let selection = overlay.selection.map(|selection| GridSelection {
+            range: if selection.is_cell() {
+                selection.range()
+            } else {
+                self.with_merges(selection.range())
+            },
+            active: selection.active,
+            fill_preview: overlay.preview,
+            fill_handle: overlay.preview.is_none(),
         });
         painter.save();
-        let painted = painter.scale(scale, scale).is_ok()
+        let mut painted = painter.scale(scale, scale).is_ok()
             && render_grid(
                 painter,
                 &self.layout,
@@ -685,9 +2289,74 @@ impl<B: Backend> Workbook<B> {
                 &RenderOptions::default(),
             )
             .is_ok();
+        if let Some(marquee) = overlay.marquee {
+            painted &= self.draw_marquee(painter, marquee, viewport).is_ok();
+        }
+        if let Some(gesture) = overlay.resize {
+            jade_xlsx_render::render_resize_guide(painter, &self.layout, viewport, gesture);
+        }
         painter.restore();
         painted.then(|| painter.clone())
     }
+
+    /// The dashed outline Excel keeps round copied cells until they are
+    /// pasted or let go.
+    fn draw_marquee(
+        &self,
+        painter: &B::Painter,
+        range: CellRange,
+        viewport: Rect,
+    ) -> Result<(), <B::Painter as Painter>::Error> {
+        let last = self.grid_end();
+        let end = CellRef::new(
+            range.end.column.min(last.column),
+            range.end.row.min(last.row),
+        );
+        let (Some(first), Some(far)) = (
+            self.layout
+                .cell_rect_in_viewport(range.start, viewport.x, viewport.y),
+            self.layout
+                .cell_rect_in_viewport(end, viewport.x, viewport.y),
+        ) else {
+            return Ok(());
+        };
+        let metrics = self.layout.header_metrics();
+        painter.save();
+        painter.begin_path();
+        painter.rect(
+            metrics.row_width,
+            metrics.column_height,
+            viewport.width,
+            viewport.height,
+        );
+        painter.clip();
+        painter.translate(metrics.row_width, metrics.column_height)?;
+        painter.set_stroke_style_str("#217346");
+        painter.set_line_width(2.0);
+        painter.set_line_dash(&[5.0, 3.0]);
+        painter.stroke_rect(
+            first.x,
+            first.y,
+            far.x + far.width - first.x,
+            far.y + far.height - first.y,
+        );
+        painter.set_line_dash(&[]);
+        painter.restore();
+        Ok(())
+    }
+}
+
+/// What a sheet is painted with over its cells.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct Overlay {
+    pub selection: Option<Selection>,
+    /// Drawn dashed: where a fill-handle drag would fill, or the range a
+    /// formula being typed points at.
+    pub preview: Option<CellRange>,
+    /// Copied cells, outlined until pasted or let go.
+    pub marquee: Option<CellRange>,
+    /// A column or row edge being dragged: the guide line where it is.
+    pub resize: Option<jade_xlsx_layout::resize::ResizeGesture>,
 }
 
 fn lay_out<B: Backend>(
@@ -715,9 +2384,151 @@ fn lay_out<B: Backend>(
     .ok_or_else(|| "the sheet does not exist".to_string())
 }
 
+/// `B3:B3` for a single cell too, as the engine's range arguments take.
+fn range_text_full(range: CellRange) -> String {
+    format!(
+        "{}:{}",
+        reference_text(range.start),
+        reference_text(range.end)
+    )
+}
+
+/// `B3:D7` (or `B3`) read back.
+fn parse_range(text: &str) -> Option<CellRange> {
+    let (start, end) = text.split_once(':').unwrap_or((text, text));
+    Some(span(CellRef::parse(start).ok()?, CellRef::parse(end).ok()?))
+}
+
+/// The target a paste tiles over: `target` when it is larger than what was
+/// pasted and a whole multiple of it in both directions.
+fn tiled_over(pasted: CellRange, target: CellRange) -> Option<CellRange> {
+    let width = pasted.end.column - pasted.start.column + 1;
+    let height = pasted.end.row - pasted.start.row + 1;
+    let target_width = target.end.column - target.start.column + 1;
+    let target_height = target.end.row - target.start.row + 1;
+    let larger = target_width > width || target_height > height;
+    (larger && target_width.is_multiple_of(width) && target_height.is_multiple_of(height))
+        .then_some(CellRange {
+            start: pasted.start,
+            end: target.end,
+        })
+}
+
+/// A number format with one more (or fewer) decimal place, as Excel's
+/// Increase and Decrease Decimal make it: each section's first number gets
+/// a `0` after its point, or loses one. General starts from what the cell
+/// shows.
+fn adjust_decimals(code: &str, shown: &str, more: bool) -> String {
+    if code.eq_ignore_ascii_case("general") || code.is_empty() {
+        let places = shown.rsplit_once('.').map_or(0, |(_, fraction)| {
+            fraction.chars().take_while(char::is_ascii_digit).count()
+        });
+        let places = if more {
+            places + 1
+        } else {
+            places.saturating_sub(1)
+        };
+        return if places == 0 {
+            "0".to_string()
+        } else {
+            format!("0.{}", "0".repeat(places))
+        };
+    }
+    code.split(';')
+        .map(|section| adjust_section(section, more))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+fn adjust_section(section: &str, more: bool) -> String {
+    // Outside quotes and brackets, the last run of digit placeholders.
+    let bytes: Vec<char> = section.chars().collect();
+    let mut quoted = false;
+    let mut bracket = false;
+    let mut last_digit = None;
+    let mut point = None;
+    for (index, ch) in bytes.iter().enumerate() {
+        match ch {
+            '"' => quoted = !quoted,
+            '[' if !quoted => bracket = true,
+            ']' if !quoted => bracket = false,
+            _ if quoted || bracket => {}
+            '0' | '#' | '?' => last_digit = Some(index),
+            '.' if last_digit.is_some() && point.is_none() => point = Some(index),
+            '%' | 'E' | 'e' if point.is_none() && last_digit.is_some() => break,
+            _ => {}
+        }
+        if point.is_some() && !matches!(ch, '0' | '#' | '?' | '.') && last_digit.is_some() {
+            break;
+        }
+    }
+    let Some(last) = last_digit else {
+        return section.to_string();
+    };
+    let mut out: Vec<char> = bytes.clone();
+    match (more, point) {
+        (true, Some(_)) => out.insert(last + 1, '0'),
+        (true, None) => {
+            out.insert(last + 1, '0');
+            out.insert(last + 1, '.');
+        }
+        (false, Some(point)) => {
+            if last > point {
+                out.remove(last);
+                if last == point + 1 {
+                    out.remove(point);
+                }
+            }
+        }
+        (false, None) => {}
+    }
+    out.into_iter().collect()
+}
+
+/// The Borders button's choices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Borders {
+    All,
+    Outline,
+    ThickOutline,
+    Bottom,
+    None,
+}
+
+/// Where a hyperlink goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Link {
+    Url(String),
+    /// A sheet (by index) and the cells to select there.
+    Place {
+        sheet: usize,
+        range: CellRange,
+    },
+}
+
+/// The font styles a shortcut turns on and off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontToggle {
+    Bold,
+    Italic,
+    Underline,
+    Strike,
+}
+
+/// The last copy or cut: the engine's snapshot of the cells, the text it
+/// put on the clipboard, whether it was a cut, and where it came from.
+struct Clip {
+    snapshot: ClipboardSnapshot,
+    text: String,
+    cut: bool,
+    range: CellRange,
+    sheet: usize,
+}
+
 #[cfg(all(test, feature = "tiny-skia"))]
 mod tests {
     use super::*;
+    use crate::grid::{Direction, Hit, Selection};
     use crate::test_support::{faces, fixture};
     use crate::tiny::TinySkiaBackend;
 
@@ -752,7 +2563,7 @@ mod tests {
         let (x, y, w, h) = book.cell_rect(CellRef::new(4, 1), (0.0, 0.0)).unwrap();
         assert_eq!(
             book.hit(x + w / 2.0, y + h / 2.0, (0.0, 0.0)),
-            Some((CellRef::new(4, 1), CellRef::new(4, 1)))
+            Some(Hit::Cell(CellRef::new(4, 1)))
         );
         assert!(book.undo().unwrap());
         assert_eq!(book.edit_text(CellRef::new(4, 1)), "");
@@ -815,9 +2626,472 @@ mod tests {
                 320,
                 200,
                 1.0,
-                Some((CellRef::new(1, 1), CellRef::new(2, 3))),
+                &Overlay {
+                    selection: Some(Selection::range_from(
+                        CellRef::new(1, 1),
+                        CellRef::new(2, 3),
+                    )),
+                    marquee: Some(span(CellRef::new(1, 1), CellRef::new(1, 2))),
+                    ..Overlay::default()
+                },
             )
             .unwrap();
         assert!(TinySkiaBackend::png(&painter).is_some());
+    }
+
+    fn at(column: u32, row: u32) -> CellRef {
+        CellRef::new(column, row)
+    }
+
+    /// ⌘-arrows stop at the ends of runs of data and at the sheet's edge,
+    /// ⌘End at the last used cell, and ⌘A takes the block of data first.
+    #[test]
+    fn command_arrows_jump_as_excel_does() {
+        let book = open("grid-operations-workbook.xlsx");
+        // B2:C4 hold numbers under a header row.
+        assert_eq!(book.jump(at(1, 1), Direction::Down), at(1, 3));
+        assert_eq!(book.jump(at(1, 3), Direction::Down), at(1, MAX_ROW));
+        assert_eq!(book.jump(at(1, 3), Direction::Up), at(1, 0));
+        assert_eq!(book.jump(at(5, 2), Direction::Left), at(2, 2));
+        assert_eq!(book.jump(at(0, 2), Direction::Left), at(0, 2));
+        let end = book.used_end();
+        assert!(end.row >= 3 && end.column >= 2);
+        let region = book.current_region(at(1, 2)).unwrap();
+        assert!(region.contains(at(1, 1)) && region.contains(at(2, 3)));
+        assert!(book.page_rows(0, 400.0) > 10);
+    }
+
+    /// ⌘D and ⌘R copy the first row or column through the range with the
+    /// formulas moved, ⌘Enter fills a range with what was typed, and the
+    /// fill handle continues a series — each one undo.
+    #[test]
+    fn fills_move_formulas_and_undo_as_one() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        assert!(book.set_cell(at(3, 1), "=B2+C2").unwrap());
+        assert!(book.fill_down(span(at(3, 1), at(3, 3))).unwrap());
+        assert_eq!(book.edit_text(at(3, 3)), "=B4+C4");
+        assert_eq!(book.display_text(at(3, 3)), "90");
+        assert!(book.undo().unwrap());
+        assert_eq!(book.edit_text(at(3, 3)), "");
+        assert_eq!(book.edit_text(at(3, 1)), "=B2+C2", "the typed cell stays");
+
+        // A single cell takes the one above.
+        assert!(book.fill_down(span(at(3, 2), at(3, 2))).unwrap());
+        assert_eq!(book.edit_text(at(3, 2)), "=B3+C3");
+
+        assert!(book.fill_right(span(at(1, 1), at(4, 1))).unwrap());
+        assert_eq!(book.display_text(at(4, 1)), "10");
+
+        assert!(book
+            .fill_with(span(at(6, 1), at(6, 3)), at(6, 1), "=B2*2")
+            .unwrap());
+        assert_eq!(book.edit_text(at(6, 3)), "=B4*2");
+        assert_eq!(book.display_text(at(6, 3)), "60");
+        assert!(book.undo().unwrap());
+        assert_eq!(book.edit_text(at(6, 1)), "", "⌘Enter undoes as one");
+
+        // The fill handle: 10, 20, 30 goes on 40, 50.
+        let source = span(at(1, 1), at(1, 3));
+        let target = Workbook::<TinySkiaBackend>::fill_target(source, at(1, 5));
+        assert_eq!(target, span(at(1, 1), at(1, 5)));
+        assert!(book.fill_series(source, target).unwrap());
+        assert_eq!(book.display_text(at(1, 5)), "50");
+    }
+
+    /// A copy pasted in the same workbook moves its formulas and is tiled
+    /// over a larger selection; a cut moves the cells.
+    #[test]
+    fn copies_paste_formulas_and_cuts_move() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        assert!(book.set_cell(at(3, 1), "=B2*10").unwrap());
+        let copied = book.copy(span(at(3, 1), at(3, 1)), false);
+        assert_eq!(copied, "100\n");
+        assert_eq!(
+            book.copied(),
+            Some((book.sheet_index(), span(at(3, 1), at(3, 1))))
+        );
+        let filled = book.paste_over(span(at(4, 1), at(4, 3)), &copied).unwrap();
+        assert_eq!(filled, Some(span(at(4, 1), at(4, 3))));
+        assert_eq!(book.edit_text(at(4, 3)), "=C4*10");
+        assert!(book.undo().unwrap());
+        assert_eq!(book.edit_text(at(4, 1)), "", "a tiled paste undoes as one");
+
+        // Text tiles too: one value over three cells.
+        let filled = book.paste_over(span(at(5, 1), at(5, 3)), "7").unwrap();
+        assert_eq!(filled, Some(span(at(5, 1), at(5, 3))));
+        assert_eq!(book.display_text(at(5, 3)), "7");
+
+        let cut = book.copy(span(at(3, 1), at(3, 1)), true);
+        book.paste_over(span(at(3, 6), at(3, 6)), &cut).unwrap();
+        assert_eq!(
+            book.edit_text(at(3, 6)),
+            "=B2*10",
+            "a moved formula keeps pointing"
+        );
+        assert_eq!(book.copied(), None, "a cut moves once");
+        assert_eq!(book.edit_text(at(3, 1)), "");
+    }
+
+    #[test]
+    fn styles_rows_columns_and_sheets_change_as_in_excel() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let range = span(at(1, 1), at(2, 2));
+        assert!(book.toggle(range, at(1, 1), FontToggle::Bold).unwrap());
+        assert_eq!(book.format_at(at(2, 2)).bold, Some(true));
+        assert!(book.toggle(range, at(1, 1), FontToggle::Bold).unwrap());
+        assert_ne!(book.format_at(at(2, 2)).bold, Some(true));
+
+        assert!(book.set_cell(at(3, 4), "=SUM(B2:B4)").unwrap());
+        assert!(book.insert_rows(2, 1).unwrap());
+        assert_eq!(book.edit_text(at(3, 5)), "=SUM(B2:B5)");
+        assert!(book.delete_rows(2, 1).unwrap());
+        assert_eq!(book.edit_text(at(3, 4)), "=SUM(B2:B4)");
+        assert!(book.insert_columns(0, 1).unwrap());
+        assert_eq!(book.edit_text(at(4, 4)), "=SUM(C2:C4)");
+        assert!(book.undo().unwrap());
+
+        assert!(book.resize(Axis::Columns, 1, 1, 150.0).unwrap());
+        let width = book.layout.column(1).unwrap().size;
+        assert!((width - 150.0).abs() < 8.0, "{width}");
+
+        let sheets = book.sheet_names().len();
+        let index = book.add_sheet().unwrap();
+        assert_eq!(book.sheet_names().len(), sheets + 1);
+        assert_eq!(book.sheet_index(), index);
+        assert!(book.rename_sheet(index, "Totals").unwrap());
+        assert_eq!(book.sheet_name(), "Totals");
+        assert!(book.delete_sheet(index).unwrap());
+        assert_eq!(book.sheet_names().len(), sheets);
+    }
+
+    /// Arrows step over merged cells and past hidden rows; Merge & Center
+    /// toggles; a sort keeps the header row on top.
+    #[test]
+    fn arrows_merges_and_sorts_behave_as_in_excel() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        assert!(book.merge_and_center(span(at(4, 1), at(5, 2))).unwrap());
+        assert_eq!(
+            book.step(at(4, 0), Direction::Down),
+            at(4, 1),
+            "onto the merge"
+        );
+        assert_eq!(
+            book.step(at(4, 1), Direction::Down),
+            at(4, 3),
+            "over the rest of it"
+        );
+        assert_eq!(book.step(at(3, 2), Direction::Right), at(4, 1));
+        assert_eq!(book.step(at(4, 1), Direction::Right), at(6, 1));
+        assert_eq!(
+            book.with_merges(span(at(3, 2), at(4, 2))),
+            span(at(3, 1), at(5, 2))
+        );
+        assert!(book.merge_and_center(span(at(4, 1), at(5, 2))).unwrap());
+        assert_eq!(
+            book.step(at(4, 1), Direction::Down),
+            at(4, 2),
+            "split again"
+        );
+
+        // A row hidden by a zero height is stepped past.
+        assert!(book.resize(Axis::Rows, 2, 2, 0.0).unwrap());
+        assert_eq!(book.step(at(1, 1), Direction::Down), at(1, 3));
+        assert!(book.undo().unwrap());
+
+        // B2:C4 under a header row, sorted largest first by column B.
+        let header = book.edit_text(at(1, 0));
+        assert!(book.sort(span(at(1, 2), at(1, 2)), at(1, 2), true).unwrap());
+        assert_eq!(book.edit_text(at(1, 0)), header, "the header stays on top");
+        assert_eq!(book.display_text(at(1, 1)), "30");
+        assert_eq!(book.display_text(at(2, 1)), "60", "rows move whole");
+        assert!(book.undo().unwrap());
+        assert_eq!(book.display_text(at(1, 1)), "10");
+    }
+
+    #[test]
+    fn a_fill_handle_double_click_fills_as_far_as_the_data_beside() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        // D2 beside B2:C4: down to row 4.
+        assert!(book.set_cell(at(3, 1), "=B2+C2").unwrap());
+        let source = span(at(3, 1), at(3, 1));
+        let target = book.fill_handle_extent(source).unwrap();
+        assert_eq!(target, span(at(3, 1), at(3, 3)));
+        assert!(book.fill_series(source, target).unwrap());
+        assert_eq!(book.edit_text(at(3, 3)), "=B4+C4");
+        assert_eq!(book.fill_handle_extent(span(at(9, 1), at(9, 1))), None);
+    }
+
+    #[test]
+    fn autosum_sums_the_numbers_above_or_beside() {
+        let book = open("grid-operations-workbook.xlsx");
+        assert_eq!(book.autosum_range(at(1, 4)), Some(span(at(1, 1), at(1, 3))));
+        assert_eq!(book.autosum_range(at(3, 2)), Some(span(at(1, 2), at(2, 2))));
+        assert_eq!(book.autosum_range(at(8, 8)), None);
+    }
+
+    #[test]
+    fn find_goes_round_the_matches_by_rows() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        assert!(book.set_cell(at(5, 5), "needle one").unwrap());
+        assert!(book.set_cell(at(2, 7), "Needle two").unwrap());
+        let sheet = book.sheet_index();
+        let first = book.find_next("needle", (sheet, at(0, 0)), false).unwrap();
+        assert_eq!(first, (sheet, at(5, 5)));
+        let second = book.find_next("needle", first, false).unwrap();
+        assert_eq!(second, (sheet, at(2, 7)));
+        assert_eq!(
+            book.find_next("needle", second, false),
+            Some(first),
+            "round again"
+        );
+        assert_eq!(book.find_next("needle", first, true), Some(second));
+        assert_eq!(book.find_next("nowhere", first, false), None);
+    }
+
+    /// A filter button's menu: its values, a filter by some of them, a
+    /// clear, a sort under the header.
+    #[test]
+    fn filter_buttons_filter_and_sort_their_columns() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let metrics = book.header_metrics();
+        let button = book
+            .layout
+            .filter_buttons
+            .first()
+            .cloned()
+            .expect("a filter button");
+        let (x, y) = (
+            button.rect.x + metrics.row_width + button.rect.width / 2.0,
+            button.rect.y + metrics.column_height + button.rect.height / 2.0,
+        );
+        assert_eq!(
+            book.filter_button_at(x, y, (0.0, 0.0)),
+            Some(button.clone())
+        );
+        let options = book.filter_options(&button).unwrap();
+        let labels: Vec<_> = options
+            .options
+            .iter()
+            .map(|option| option.label.as_str())
+            .collect();
+        assert!(labels.contains(&"Alpha"), "{labels:?}");
+        assert!(book
+            .filter_values(&button, vec!["Beta".into()], false)
+            .unwrap());
+        assert!(
+            book.layout.row(1).unwrap().hidden,
+            "Alpha's row is filtered out"
+        );
+        assert!(!book.layout.row(2).unwrap().hidden);
+        assert!(book.clear_filter(&button).unwrap());
+        assert!(!book.layout.row(1).unwrap().hidden);
+        assert!(book.sort_filter(&button, true).unwrap());
+        assert_eq!(book.display_text(at(0, 1)), "Gamma");
+        assert!(book.toggle_filter(span(at(0, 0), at(0, 0))).unwrap());
+        assert!(book.layout.filter_buttons.is_empty(), "filters off");
+    }
+
+    #[test]
+    fn decimals_step_as_excel_steps_them() {
+        assert_eq!(adjust_decimals("General", "10", true), "0.0");
+        assert_eq!(adjust_decimals("General", "3.14", false), "0.0");
+        assert_eq!(adjust_decimals("#,##0", "1,000", true), "#,##0.0");
+        assert_eq!(adjust_decimals("#,##0.00", "1,000.00", false), "#,##0.0");
+        assert_eq!(adjust_decimals("0.0", "1.0", false), "0");
+        assert_eq!(adjust_decimals("0%", "10%", true), "0.0%");
+        assert_eq!(
+            adjust_decimals("\"¥\"#,##0;\"¥\"\\-#,##0", "¥1", true),
+            "\"¥\"#,##0.0;\"¥\"\\-#,##0.0"
+        );
+    }
+
+    #[test]
+    fn the_home_tab_formats_cells() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let range = span(at(1, 1), at(2, 3));
+        assert!(book.decimals(range, at(1, 1), true).unwrap());
+        assert_eq!(book.display_text(at(2, 3)), "60.0");
+        assert!(book
+            .align(range, at(1, 1), HorizontalAlignment::Center)
+            .unwrap());
+        assert_eq!(
+            book.format_at(at(2, 2)).horizontal,
+            Some(HorizontalAlignment::Center)
+        );
+        assert!(book
+            .align(range, at(1, 1), HorizontalAlignment::Center)
+            .unwrap());
+        assert_eq!(
+            book.format_at(at(2, 2)).horizontal,
+            Some(HorizontalAlignment::General)
+        );
+        assert!(book.grow_font(range, at(1, 1), true).unwrap());
+        assert_eq!(book.format_at(at(1, 1)).font_size, Some(12.0));
+        assert!(book.fill_color(range, Some("FFFF00")).unwrap());
+        assert_eq!(
+            book.format_at(at(1, 1)).fill_color.as_deref(),
+            Some("FFFF00")
+        );
+        assert!(book.font_color(range, "FF0000").unwrap());
+        assert_eq!(
+            book.format_at(at(1, 1)).font_color.as_deref(),
+            Some("FF0000")
+        );
+        assert!(book.toggle_wrap(range, at(1, 1)).unwrap());
+        assert_eq!(book.format_at(at(1, 1)).wrap_text, Some(true));
+
+        assert!(book.borders(range, Borders::Outline).unwrap());
+        let corner = book.format_at(at(1, 1));
+        assert_eq!(corner.border_top.unwrap().style, BorderStyle::Thin);
+        assert_eq!(corner.border_right.unwrap().style, BorderStyle::None);
+        assert!(book.undo().unwrap());
+        assert_eq!(
+            book.format_at(at(1, 1)).border_top.unwrap().style,
+            BorderStyle::None,
+            "an outline undoes as one"
+        );
+        assert!(book.borders(range, Borders::All).unwrap());
+        assert_eq!(
+            book.format_at(at(2, 2)).border_left.unwrap().style,
+            BorderStyle::Thin
+        );
+        assert!(book.borders(range, Borders::None).unwrap());
+        assert_eq!(
+            book.format_at(at(2, 2)).border_left.unwrap().style,
+            BorderStyle::None
+        );
+    }
+
+    #[test]
+    fn notes_hidden_rows_and_moved_sheets() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        assert!(book.set_note(at(1, 1), "check this", "jade").unwrap());
+        assert_eq!(book.note(at(1, 1)), Some("check this"));
+        assert!(book.set_note(at(1, 1), "", "jade").unwrap());
+        assert_eq!(book.note(at(1, 1)), None);
+
+        assert!(book.hide(Axis::Rows, 1, 2).unwrap());
+        assert_eq!(book.step(at(0, 0), Direction::Down), at(0, 3));
+        assert!(book.unhide(Axis::Rows, 0, 5).unwrap());
+        assert_eq!(book.step(at(0, 0), Direction::Down), at(0, 1));
+        assert!(book.hide(Axis::Columns, 1, 1).unwrap());
+        assert!(
+            book.layout.column(1).unwrap().size <= 0.0 || book.layout.column(1).unwrap().hidden
+        );
+        assert!(book.unhide(Axis::Columns, 0, 2).unwrap());
+        assert!(book.layout.column(1).unwrap().size > 10.0);
+
+        let first = book.sheet_names()[0].clone();
+        book.add_sheet().unwrap();
+        assert!(book.move_sheet(1, 0).unwrap());
+        assert_eq!(book.sheet_index(), 0);
+        assert_eq!(book.sheet_names()[1], first);
+    }
+
+    /// A link to the web opens it; one into the workbook goes there.
+    #[test]
+    fn hyperlinks_lead_to_the_web_or_a_place_in_the_workbook() {
+        let mut package =
+            jade_opc::OpcPackage::open(&fixture("grid-operations-workbook.xlsx")).unwrap();
+        let sheet = package
+            .part_str("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .unwrap()
+            .replace(
+                "<tableParts",
+                "<hyperlinks><hyperlink ref=\"A2\" r:id=\"link\"/>\
+             <hyperlink ref=\"A3\" location=\"'Operations'!$C$4\"/></hyperlinks><tableParts",
+            );
+        package.replace("xl/worksheets/sheet1.xml", sheet.into_bytes());
+        let rels = package
+            .part_str("xl/worksheets/_rels/sheet1.xml.rels")
+            .unwrap()
+            .unwrap()
+            .replace(
+                "</Relationships>",
+                "<Relationship Id=\"link\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/\" TargetMode=\"External\"/></Relationships>",
+            );
+        package.replace("xl/worksheets/_rels/sheet1.xml.rels", rels.into_bytes());
+        let bytes = package.write().unwrap();
+        let book = Workbook::open(&bytes, "UTC", TinySkiaBackend::new(&faces()).unwrap()).unwrap();
+        assert_eq!(
+            book.link(at(0, 1)),
+            Some(Link::Url("https://example.com/".into()))
+        );
+        assert_eq!(
+            book.link(at(0, 2)),
+            Some(Link::Place {
+                sheet: 0,
+                range: span(at(2, 3), at(2, 3))
+            })
+        );
+        assert_eq!(book.link(at(0, 3)), None);
+    }
+
+    /// A list rule offers its choices and refuses anything else; a number
+    /// rule refuses what is out of bounds, with the rule's message.
+    #[test]
+    fn data_validation_lists_and_refuses_as_excel_does() {
+        let mut package =
+            jade_opc::OpcPackage::open(&fixture("grid-operations-workbook.xlsx")).unwrap();
+        let sheet = package
+            .part_str("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .unwrap()
+            .replace(
+                "<tableParts",
+                "<dataValidations count=\"2\">\
+                 <dataValidation type=\"list\" allowBlank=\"1\" showErrorMessage=\"1\" sqref=\"D2:D4\"><formula1>\"Yes,No\"</formula1></dataValidation>\
+                 <dataValidation type=\"whole\" operator=\"between\" showErrorMessage=\"1\" error=\"1 to 10\" sqref=\"E2\"><formula1>1</formula1><formula2>10</formula2></dataValidation>\
+                 </dataValidations><tableParts",
+            );
+        package.replace("xl/worksheets/sheet1.xml", sheet.into_bytes());
+        let bytes = package.write().unwrap();
+        let mut book =
+            Workbook::open(&bytes, "UTC", TinySkiaBackend::new(&faces()).unwrap()).unwrap();
+        assert_eq!(
+            book.validation_list(at(3, 2)),
+            Some(vec!["Yes".to_string(), "No".to_string()])
+        );
+        assert!(book.set_cell(at(3, 2), "yes").unwrap());
+        let refused = book.set_cell(at(3, 2), "Maybe").unwrap_err();
+        assert_eq!(validation_refusal(&refused), Some(""));
+        assert!(book.set_cell(at(4, 1), "7").unwrap());
+        let refused = book.set_cell(at(4, 1), "70").unwrap_err();
+        assert_eq!(validation_refusal(&refused), Some("1 to 10"));
+        assert!(
+            book.set_cell(at(4, 1), "=B2").unwrap(),
+            "formulas are not checked"
+        );
+        assert_eq!(book.validation_list(at(0, 0)), None);
+    }
+
+    #[test]
+    fn a_dragged_selection_moves_or_copies() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let moved = book
+            .move_range(span(at(2, 1), at(2, 3)), at(5, 1), false)
+            .unwrap();
+        assert_eq!(moved, span(at(5, 1), at(5, 3)));
+        assert_eq!(
+            book.edit_text(at(5, 3)),
+            "=B4*2",
+            "a moved formula keeps pointing"
+        );
+        assert_eq!(book.edit_text(at(2, 3)), "");
+        assert!(book.undo().unwrap());
+        assert_eq!(book.edit_text(at(2, 3)), "=B4*2");
+        book.move_range(span(at(2, 1), at(2, 1)), at(6, 1), true)
+            .unwrap();
+        assert_eq!(
+            book.edit_text(at(6, 1)),
+            "=F2*2",
+            "a copy moves its references"
+        );
+        assert_eq!(book.edit_text(at(2, 1)), "=B2*2");
+        let (x, y, w, h) = book.cell_rect(at(1, 1), (0.0, 0.0)).unwrap();
+        let range = span(at(1, 1), at(1, 2));
+        assert!(book.on_selection_border(x, y + h / 2.0, (0.0, 0.0), range));
+        assert!(!book.on_selection_border(x + w / 2.0, y + h / 2.0, (0.0, 0.0), range));
     }
 }
