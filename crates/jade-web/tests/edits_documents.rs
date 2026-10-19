@@ -746,3 +746,79 @@ fn a_document_opens_painted_as_a_whole_repaint_paints_it() {
         }
     }
 }
+
+/// A paste long enough to add pages adds every one of them: the single
+/// repaint after a paste runs to the document's new end, not its old one.
+#[test]
+fn a_paste_that_adds_pages_paints_every_new_page() {
+    let mut document = open("contract.docx");
+    let pages = document.page_count();
+    let last = document.paragraph_count() - 1;
+    let end = document.paragraph_text(last).unwrap().len();
+    document.place_caret(last, end);
+    let text: String = (0..300)
+        .map(|line| format!("\n{line} 本契約に定める秘密情報の取扱いについて誠実に協議する。"))
+        .collect();
+    document.paste(&text).unwrap();
+    let pasted = document.page_count();
+    assert!(pasted >= pages + 5, "{pages} pages became {pasted}");
+    // One long line, one insert, is as many pages again.
+    let line: String = "本契約に定める秘密情報の取扱いについて誠実に協議する。".repeat(200);
+    document.insert_text(&line).unwrap();
+    let typed = document.page_count();
+    assert!(typed >= pasted + 3, "{pasted} pages became {typed}");
+    document.undo().unwrap();
+    assert_eq!(document.page_count(), pasted);
+    let pixels: Vec<Vec<u8>> = (0..pasted)
+        .map(|index| page_rgba(&document, index))
+        .collect();
+    // Undo and redo repaint every page from nothing.
+    document.undo().unwrap();
+    document.redo().unwrap();
+    assert_eq!(document.page_count(), pasted);
+    for (index, page) in pixels.iter().enumerate() {
+        assert!(
+            &page_rgba(&document, index) == page,
+            "page {} differs from a whole repaint",
+            index + 1
+        );
+    }
+}
+
+/// A paste of hundreds of lines is one undo step that takes all of it back,
+/// and redo puts back exactly it.
+#[test]
+fn a_long_paste_undoes_and_redoes_whole() {
+    let mut document = open("contract.docx");
+    let count = document.paragraph_count();
+    let (paragraph, before) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0);
+    let text: String = (0..300).map(|line| format!("{line}\n")).collect();
+    document.paste(&text).unwrap();
+    assert_eq!(document.paragraph_count(), count + 300);
+    document.insert_text("after").unwrap();
+    document.undo().unwrap();
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_count(), count);
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+    assert!(!document.can_undo());
+    document.redo().unwrap();
+    assert_eq!(document.paragraph_count(), count + 300);
+    assert_eq!(document.paragraph_text(paragraph + 300).unwrap(), before);
+    assert!(document.can_redo());
+}
+
+/// An edit that changes nothing — Backspace at the very start — leaves no
+/// undo step, so the next undo takes back the edit before it.
+#[test]
+fn an_edit_that_changes_nothing_is_not_an_undo_step() {
+    let mut document = open("contract.docx");
+    let (paragraph, before) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0);
+    document.insert_text("ab").unwrap();
+    document.place_caret(0, 0);
+    document.delete(true).unwrap();
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+    assert!(!document.can_undo());
+}
