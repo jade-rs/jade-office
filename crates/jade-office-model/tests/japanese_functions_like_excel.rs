@@ -60,3 +60,26 @@ fn japanese_text_functions_compute_as_japanese_excel_does() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// PHONETIC reads the furigana Excel saved with the names: 山田太郎 typed
+/// with ヤマダ over 山田 and タロウ over 太郎 reads ヤマダタロウ. Text typed
+/// here has no furigana, so PHONETIC gives the text.
+#[test]
+fn phonetic_reads_the_furigana_saved_with_the_names() {
+    let directory = core().join("fonts/Noto_Sans_JP/static");
+    let backend = TinySkiaBackend::new(&aliased_faces(
+        Arc::new(std::fs::read(directory.join("NotoSansJP-Regular.ttf")).unwrap()),
+        None,
+    ))
+    .unwrap();
+    let bytes = std::fs::read(core().join("public/fixtures/furigana-workbook.xlsx")).unwrap();
+    let mut book = Workbook::open(&bytes, "UTC", backend).unwrap();
+    assert_eq!(book.display_text(CellRef::new(1, 0)), "ヤマダタロウ");
+
+    let typed = CellRef::new(2, 0);
+    book.set_cell(typed, "=PHONETIC(A1:A2)").unwrap();
+    assert_eq!(book.display_text(typed), "ヤマダタロウサトウハナコ");
+
+    book.set_cell(CellRef::new(0, 0), "鈴木").unwrap();
+    assert_eq!(book.display_text(typed), "鈴木サトウハナコ");
+}
