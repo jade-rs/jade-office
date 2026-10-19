@@ -16,10 +16,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    canvas, div, img, point, prelude::*, px, rgb, size, svg, App, Bounds, Context,
-    ElementInputHandler, EntityInputHandler, FocusHandle, Global, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, Pixels, RenderImage, ScrollHandle, SharedString,
-    UTF16Selection, Window,
+    canvas, div, img, point, prelude::*, px, rgb, rgba, size, svg, App, Bounds, Context,
+    DispatchPhase, ElementInputHandler, EntityInputHandler, FocusHandle, Global, KeyDownEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, RenderImage, ScrollHandle,
+    SharedString, UTF16Selection, Window,
 };
 use jade_tiny_skia_painter::TinySkiaPainter;
 use jade_web::deck::{DragMode, ShapeDrag, TableChange, TextTarget};
@@ -28,7 +28,7 @@ use jade_web::text::{byte_to_utf16, utf16_to_byte, TextEdit};
 
 use crate::ribbon::{self, Action};
 use crate::{i18n, palette, Fonts, Host, UI_FONT};
-use jade_web::editing::{CharacterFormat, FormatState, WordFormatting};
+use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatting};
 
 mod sheet;
 
@@ -285,6 +285,12 @@ enum Document {
         /// The formatting at the caret and the caret, selection and edit it
         /// was read for: reading it runs queries, so not on every frame.
         format: Option<(FormatKey, FormatState)>,
+        /// The selection's highlight and the caret, selection and edit it
+        /// was read for.
+        highlight: Option<(FormatKey, Vec<HighlightRect>)>,
+        /// Whether a press on a page is being dragged, extending the
+        /// selection wherever the pointer goes.
+        dragging: bool,
     },
     Deck {
         deck: jade_web::Deck,
@@ -356,6 +362,8 @@ impl DocView {
                 Document::Pages {
                     ribbon,
                     format: None,
+                    highlight: None,
+                    dragging: false,
                     pages: (0..opened.page_count())
                         .filter_map(|index| opened.page(index).as_ref().and_then(PageImage::new))
                         .collect(),
@@ -1676,6 +1684,12 @@ impl DocView {
             return;
         };
         let extend = event.modifiers.shift;
+        let clicks = event.click_count;
+        if let Document::Pages { dragging, .. } = &mut self.document {
+            // A drag selects from a single press; a double or triple one
+            // selects a word or a paragraph and is done.
+            *dragging = extend || clicks <= 1;
+        }
         self.word_move(cx, |document| {
             // Mid-composition the text under the pointer is the IME's.
             if document.composition().is_some() {
@@ -1685,6 +1699,8 @@ impl DocView {
                 (true, Some((anchor, _)), _) | (true, None, Some(anchor)) => {
                     document.select(anchor, target)
                 }
+                _ if clicks == 2 => document.select_word(target),
+                _ if clicks >= 3 => document.select_paragraph(target.0),
                 // On the line clicked, at a wrap too.
                 _ => {
                     document.place_caret_at(x, y);
@@ -1694,17 +1710,75 @@ impl DocView {
         });
     }
 
-    /// A drag on page `index` selects from where it was pressed.
-    fn page_mouse_move(&mut self, index: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) {
-        if event.pressed_button != Some(MouseButton::Left) {
+    /// The text position nearest a window point while dragging from
+    /// `anchor`: over the page under the point, or else the nearest page, the
+    /// point pulled onto it — so the gaps between pages and the space round
+    /// them still extend the selection, as in Word. A drag that starts in the
+    /// body stays in it rather than jumping into a header or a footer.
+    fn drag_position(
+        &self,
+        anchor: (usize, usize),
+        position: gpui::Point<Pixels>,
+    ) -> Option<(usize, usize)> {
+        let Document::Pages {
+            document,
+            page_bounds,
+            pages,
+            ..
+        } = &self.document
+        else {
+            return None;
+        };
+        let (index, bounds) = {
+            let store = page_bounds.borrow();
+            let distance = |bounds: &Bounds<Pixels>| {
+                let y = f32::from(position.y);
+                let (top, bottom) = (f32::from(bounds.top()), f32::from(bounds.bottom()));
+                (top - y).max(y - bottom).max(0.0)
+            };
+            store
+                .iter()
+                .take(pages.len())
+                .enumerate()
+                .filter_map(|(index, bounds)| Some((index, (*bounds)?)))
+                .min_by(|(_, a), (_, b)| distance(a).total_cmp(&distance(b)))?
+        };
+        let pull = |at: Pixels, from: Pixels, to: Pixels| {
+            px(f32::from(at).clamp(f32::from(from), f32::from(to) - 1.0))
+        };
+        let inside = point(
+            pull(position.x, bounds.left(), bounds.right()),
+            pull(position.y, bounds.top(), bounds.bottom()),
+        );
+        let (x, y) = self.page_point(index, inside)?;
+        if document.is_body_paragraph(anchor.0) {
+            document.body_position_at(x, y)
+        } else {
+            document.position_at(x, y)
+        }
+    }
+
+    /// A drag from a press on a page selects from where it was pressed. Seen
+    /// through the whole window, not only over a page, and past the top or
+    /// the bottom of the view the pages scroll to meet the pointer.
+    fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Document::Pages {
+            document,
+            dragging,
+            scroll,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        if !*dragging {
             return;
         }
-        let Some(target) = self.page_position(index, event.position) else {
+        // A release outside the window never arrived.
+        if event.pressed_button != Some(MouseButton::Left) {
+            *dragging = false;
             return;
-        };
-        let Document::Pages { document, .. } = &self.document else {
-            return;
-        };
+        }
         if document.composition().is_some() {
             return;
         }
@@ -1713,8 +1787,34 @@ impl DocView {
             (None, Some(caret)) => (caret, caret),
             _ => return,
         };
+        let view = scroll.bounds();
+        let overshoot = if event.position.y < view.top() {
+            event.position.y - view.top()
+        } else if event.position.y > view.bottom() {
+            event.position.y - view.bottom()
+        } else {
+            px(0.0)
+        };
+        if overshoot != px(0.0) {
+            let offset = scroll.offset();
+            let y = f32::from(offset.y - overshoot).clamp(-f32::from(scroll.max_offset().y), 0.0);
+            scroll.set_offset(point(offset.x, px(y)));
+            cx.notify();
+        }
+        let Some(target) = self.drag_position(anchor, event.position) else {
+            return;
+        };
         if focus != target {
             self.word_move(cx, |document| document.select(anchor, target));
+        }
+    }
+
+    /// A release ends a drag; the ribbon, left alone through it, catches up.
+    fn page_release(&mut self, cx: &mut Context<Self>) {
+        if let Document::Pages { dragging, .. } = &mut self.document {
+            if std::mem::take(dragging) {
+                cx.notify();
+            }
         }
     }
 
@@ -1840,6 +1940,7 @@ impl DocView {
             format,
             pages,
             current,
+            dragging,
             ..
         } = &mut self.document
         else {
@@ -1847,7 +1948,9 @@ impl DocView {
         };
         let key = (document.caret(), document.selection(), generation);
         let state = match format {
-            Some((cached, state)) if *cached == key => state.clone(),
+            // Not while a drag is still moving the selection: reading it runs
+            // queries over the whole selection, on every move.
+            Some((cached, state)) if *cached == key || *dragging => state.clone(),
             _ => {
                 let state = document.format_state();
                 *format = Some((key, state.clone()));
@@ -1872,12 +1975,23 @@ impl DocView {
             scroll,
             current,
             page_bounds,
+            highlight,
             ..
         } = &mut self.document
         else {
             unreachable!()
         };
         let (width, height) = (page_size.0 * zoom, page_size.1 * zoom);
+        // The selection's highlight, read again only when the selection or
+        // the text changed.
+        let key = (document.caret(), document.selection(), self.generation);
+        if highlight.as_ref().is_none_or(|(cached, _)| *cached != key) {
+            *highlight = Some((key, document.selection_rects()));
+        }
+        let highlight = highlight
+            .as_ref()
+            .map(|(_, rects)| rects.as_slice())
+            .unwrap_or(&[]);
         // The caret, as a page and a rectangle on it.
         let caret = document.caret_rect().map(|caret| {
             let (page, y) = document.page_and_offset(caret.document_y);
@@ -1972,10 +2086,26 @@ impl DocView {
                             view.page_mouse_down(index, event, window, cx)
                         }),
                     )
-                    .on_mouse_move(cx.listener(move |view, event, _window, cx| {
-                        view.page_mouse_move(index, event, cx)
-                    }))
                     .child(div().w(px(width)).h(px(height)).child(page.element()))
+                    // The selection, over the picture, in the renderer's own
+                    // fill and edges.
+                    .children(
+                        highlight
+                            .iter()
+                            .filter(|rect| rect.page == index)
+                            .map(|rect| {
+                                div()
+                                    .absolute()
+                                    .left(px(rect.x as f32 * zoom))
+                                    .top(px(rect.y as f32 * zoom))
+                                    .w(px(rect.width as f32 * zoom))
+                                    .h(px(rect.height as f32 * zoom))
+                                    .bg(rgba(0x584f_e833))
+                                    .border_l_1()
+                                    .border_r_1()
+                                    .border_color(rgba(0x584f_e8c7))
+                            }),
+                    )
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
                             div()
@@ -2004,6 +2134,29 @@ impl DocView {
                                         &focus,
                                         ElementInputHandler::new(page, entity.clone()),
                                         cx,
+                                    );
+                                    // A drag is followed wherever the pointer
+                                    // goes, not only over a page.
+                                    let dragged = entity.clone();
+                                    window.on_mouse_event(
+                                        move |event: &MouseMoveEvent, phase, _window, cx| {
+                                            if phase == DispatchPhase::Bubble {
+                                                dragged.update(cx, |view, cx| {
+                                                    view.page_drag(event, cx)
+                                                });
+                                            }
+                                        },
+                                    );
+                                    let released = entity.clone();
+                                    window.on_mouse_event(
+                                        move |event: &MouseUpEvent, phase, _window, cx| {
+                                            if phase == DispatchPhase::Bubble
+                                                && event.button == MouseButton::Left
+                                            {
+                                                released
+                                                    .update(cx, |view, cx| view.page_release(cx));
+                                            }
+                                        },
                                     );
                                 }
                             },

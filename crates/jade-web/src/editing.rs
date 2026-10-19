@@ -6,8 +6,11 @@
 //! click is hit-tested against the last paint; the caret is reported, not
 //! painted, so it can move without a repaint. An IME's composition is shown
 //! in the text as it changes but kept off the undo history, so one undo
-//! takes back the word it committed. A selection is painted by the
-//! renderer, as in the native app; typing, deleting and pasting replace it.
+//! takes back the word it committed. A selection is not painted either: the
+//! renderer works out its highlight from the last paint
+//! ([`EditableDocument::selection_rects`]) and the shell draws it over the
+//! pages, so selecting — a drag above all — repaints nothing. Typing,
+//! deleting and pasting replace it.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -39,6 +42,16 @@ pub use formatting::{
 pub struct CaretRect {
     pub x: f64,
     pub document_y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// One rectangle of the selection's highlight, in CSS px of page `page`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HighlightRect {
+    pub page: usize,
+    pub x: f64,
+    pub y: f64,
     pub width: f64,
     pub height: f64,
 }
@@ -185,7 +198,8 @@ impl EditableDocument {
         let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
             .map_err(|_| "renderer setup failed".to_string())?;
         renderer.sync_document_header_footer_stories(word_document);
-        renderer.set_use_selection_overlay(false);
+        // The shell draws the selection over the pages.
+        renderer.set_use_selection_overlay(true);
         renderer.mark_full_repaint();
         let document = word_document
             .document
@@ -272,20 +286,27 @@ impl EditableDocument {
             .map(|position| (position.paragraph, position.offset))
     }
 
-    /// Moves the caret, reporting where it is drawn. A selection it
-    /// collapses is repainted without its highlight.
+    /// [`Self::position_at`] in the body only: where a drag that started in
+    /// the body goes, rather than into a header, a footer, a note or a text
+    /// box it passes over.
+    pub fn body_position_at(&self, x: f64, document_y: f64) -> Option<(usize, usize)> {
+        self.renderer
+            .hit_test_body_position(x, document_y, &self.word_document)
+            .map(|position| (position.paragraph, position.offset))
+    }
+
+    /// Whether paragraph `index` is in the body.
+    pub fn is_body_paragraph(&self, index: usize) -> bool {
+        self.word_document.is_body_paragraph_surface(index)
+    }
+
+    /// Moves the caret, reporting where it is drawn.
     pub fn place_caret(&mut self, paragraph: usize, offset: usize) -> Option<CaretRect> {
         self.composition = None;
         self.goal_x = None;
         self.affinity = CaretAffinity::Upstream;
         self.renderer.set_caret_affinity(self.affinity);
-        let highlighted = self.highlighted_span();
         self.set_caret(paragraph, offset);
-        if let Some((from, to)) = highlighted {
-            // The text is as it was; a failed repaint leaves only a stale
-            // highlight, which the next paint clears.
-            let _ = self.repaint_highlight(from, to);
-        }
         self.caret_rect()
     }
 
@@ -316,7 +337,8 @@ impl EditableDocument {
         self.renderer.set_caret_affinity(self.affinity);
     }
 
-    /// Selects from `anchor` to `focus` and repaints so the highlight shows.
+    /// Selects from `anchor` to `focus`. Nothing is repainted: the shell
+    /// draws [`Self::selection_rects`] over the pages.
     pub fn select(&mut self, anchor: (usize, usize), focus: (usize, usize)) -> Result<(), String> {
         if anchor == focus {
             self.place_caret(focus.0, focus.1);
@@ -324,18 +346,70 @@ impl EditableDocument {
         }
         self.composition = None;
         self.goal_x = None;
-        let highlighted = self.highlighted_span();
         let range = SelectionRange::new(
             TextPosition::new(anchor.0, anchor.1),
             TextPosition::new(focus.0, focus.1),
         );
         self.selection = Some(range);
         self.renderer.set_selection_range(Some(range));
-        let (start, end) = range.normalized();
-        let (from, to) = highlighted.map_or((start.paragraph, end.paragraph), |(from, to)| {
-            (from.min(start.paragraph), to.max(end.paragraph))
-        });
-        self.repaint_highlight(from, to)
+        Ok(())
+    }
+
+    /// The run of letters and digits around `position` — Japanese runs as
+    /// a whole, having no spaces to break on — selected, as a double click
+    /// selects in Word. Elsewhere, the caret goes to `position`.
+    pub fn select_word(&mut self, (paragraph, offset): (usize, usize)) -> Result<(), String> {
+        let text = self.paragraph_text(paragraph).unwrap_or_default();
+        let offset = offset.min(text.len());
+        let start = text[..offset]
+            .char_indices()
+            .rev()
+            .take_while(|(_, ch)| ch.is_alphanumeric())
+            .last()
+            .map_or(offset, |(at, _)| at);
+        let end = text[offset..]
+            .char_indices()
+            .take_while(|(_, ch)| ch.is_alphanumeric())
+            .last()
+            .map_or(offset, |(at, ch)| offset + at + ch.len_utf8());
+        self.select((paragraph, start), (paragraph, end))
+    }
+
+    /// The whole of `paragraph` selected, as a triple click selects in Word.
+    pub fn select_paragraph(&mut self, paragraph: usize) -> Result<(), String> {
+        let end = self.paragraph_text(paragraph).map_or(0, |text| text.len());
+        self.select((paragraph, 0), (paragraph, end))
+    }
+
+    /// The selection's highlight, page by page, as the last paint laid the
+    /// text out; empty for a caret.
+    pub fn selection_rects(&self) -> Vec<HighlightRect> {
+        if self.selection().is_none() {
+            return Vec::new();
+        }
+        let pitch = self.page_pitch();
+        self.renderer
+            .get_selection_rects()
+            .into_iter()
+            .map(|rect| {
+                // Text rectangles are in page px; whole-cell ones in
+                // document px, gaps included. A page-px top is never as far
+                // down as the top of its page in document px.
+                let page_top = rect.page as f64 * pitch;
+                let y = if rect.page > 0 && rect.y >= page_top {
+                    rect.y - page_top
+                } else {
+                    rect.y
+                };
+                HighlightRect {
+                    page: rect.page,
+                    x: rect.x,
+                    y,
+                    width: rect.width,
+                    height: rect.height,
+                }
+            })
+            .collect()
     }
 
     /// The first page repainted since the last call, for a shell that keeps
@@ -503,31 +577,10 @@ impl EditableDocument {
         rect
     }
 
-    /// The paragraphs a painted highlight covers, if there is one.
-    fn highlighted_span(&self) -> Option<(usize, usize)> {
-        self.selection
-            .filter(|range| !range.is_collapsed())
-            .map(|range| {
-                let (start, end) = range.normalized();
-                (start.paragraph, end.paragraph)
-            })
-    }
-
     /// The page `paragraph` starts on, as last painted.
     fn paragraph_page(&mut self, paragraph: usize) -> usize {
         self.rect_at((paragraph, 0))
             .map_or(0, |rect| self.page_and_offset(rect.document_y).0)
-    }
-
-    /// Repaints the pages paragraphs `from` to `to` are on — a highlight
-    /// came or went, the text did not change, so nothing after them moves.
-    fn repaint_highlight(&mut self, from: usize, to: usize) -> Result<(), String> {
-        let end = self.paragraph_text(to).map_or(0, |text| text.len());
-        let last_page = self.rect_at((to, end)).map_or(self.page_count(), |rect| {
-            self.page_and_offset(rect.document_y + rect.height).0 + 1
-        });
-        let first_page = self.paragraph_page(from);
-        self.repaint_through(from, Some(first_page), last_page)
     }
 
     fn set_caret(&mut self, paragraph: usize, offset: usize) {
@@ -536,7 +589,15 @@ impl EditableDocument {
         self.renderer.set_selection_range(Some(range));
     }
 
-    /// Where the caret is drawn now.
+    /// Where the selection's focus is drawn as a caret would be: the
+    /// renderer reports a caret only while nothing is selected.
+    pub fn focus_rect(&mut self) -> Option<CaretRect> {
+        let focus = self.caret()?;
+        self.rect_at(focus)
+    }
+
+    /// Where the caret is drawn now; `None` while a range is selected (see
+    /// [`Self::focus_rect`]).
     pub fn caret_rect(&self) -> Option<CaretRect> {
         self.renderer.caret_metrics().map(|metrics| CaretRect {
             x: metrics.x,
@@ -844,8 +905,7 @@ impl EditableDocument {
         // the surfaces, which this host keeps between passes. So the first
         // pass stops at the paragraph's page; if the paragraph came out of it
         // where and as tall as it went in, that is all. Otherwise the rest of
-        // the document is repainted after it. Band redraw is off for the
-        // selection's repaints, whose highlight is not the edit's band.
+        // the document is repainted after it.
         let geometry = |renderer: &CanvasRenderer<TinySkiaPainter>| {
             (
                 renderer.cached_paragraph_start_page(paragraph),
