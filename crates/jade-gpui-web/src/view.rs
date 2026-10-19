@@ -2155,6 +2155,7 @@ impl DocView {
             document,
             page_size,
             scroll,
+            current,
             ..
         } = &mut self.document
         else {
@@ -2162,6 +2163,11 @@ impl DocView {
         };
         let pitch = (page_size.1 * zoom + PAGE_GAP).max(1.0);
         let top = (-f32::from(scroll.offset().y) - PAGES_PADDING).max(0.0);
+        // The page at the top third of the view is the current one: worked
+        // out here, before the ribbon shows it, so a jump shows its page on
+        // the frame it lands.
+        *current =
+            (((top + pitch / 3.0) / pitch) as usize).min(document.page_count().saturating_sub(1));
         let height = match f32::from(scroll.bounds().size.height) {
             shown if shown > 0.0 => shown,
             _ => f32::from(viewport.height),
@@ -2230,11 +2236,6 @@ impl DocView {
         });
         page_bounds.borrow_mut().resize(pages.len(), None);
         let bounds_store = Rc::clone(page_bounds);
-        // The page at the top third of the view is the current one.
-        let offset = -f32::from(scroll.offset().y);
-        let pitch = height + PAGE_GAP;
-        *current = (((offset - PAGES_PADDING + pitch / 3.0) / pitch).max(0.0) as usize)
-            .min(pages.len().saturating_sub(1));
         let current_index = *current;
         let count = pages.len();
         let thumbnail_height = PAGE_THUMBNAIL_WIDTH * page_size.1 / page_size.0.max(1.0);
