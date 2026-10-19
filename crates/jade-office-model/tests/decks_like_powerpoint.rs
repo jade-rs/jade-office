@@ -2,7 +2,8 @@
 //! data) edit in the app as in PowerPoint: a double-click in a table types
 //! into the cell under it, a merged cell is typed into where it starts, a
 //! table or chart resizes with its frame, and a SmartArt diagram moves but
-//! keeps its size.
+//! keeps its size. A corner drag resizes from the opposite corner, and a body
+//! drag moves the shape, each as one undoable step.
 
 #![cfg(feature = "tiny-skia")]
 
@@ -10,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
-use jade_office_model::deck::{Deck, ShapeRect, TextTarget};
+use jade_office_model::deck::{Deck, DragMode, ShapeDrag, ShapeRect, TextTarget, MIN_SHAPE_PX};
 use jade_office_model::tiny::TinySkiaBackend;
 
 fn core() -> PathBuf {
@@ -198,4 +199,129 @@ fn a_smartart_diagram_moves_but_keeps_its_size() {
         deck.text_target(0, diagram.id, None),
         TextTarget::Shape(diagram.id)
     );
+}
+
+/// A table's corner dragged as in PowerPoint: the opposite corner stays put,
+/// the drag is one undoable step, and the preview the shells draw while the
+/// mouse is down is the box the drop writes.
+#[test]
+fn a_corner_drag_resizes_from_the_opposite_corner() {
+    let mut deck = open("table_test.pptx");
+    let before = deck.shape_rect(0, 4).unwrap();
+    let corner = (before.x, before.y);
+    let mut drag = ShapeDrag::new(
+        4,
+        DragMode::Resize {
+            left: true,
+            top: true,
+        },
+        corner,
+    );
+    drag.drag_to(corner.0 - 30.0, corner.1 - 10.0);
+    let preview = drag.rect(before);
+    assert!(deck.drag_shape(0, &drag).unwrap());
+    let after = deck.shape_rect(0, 4).unwrap();
+    assert!(
+        (after.x - preview.x).abs() < 0.01,
+        "{preview:?} → {after:?}"
+    );
+    assert!((after.width - (before.width + 30.0)).abs() < 0.01);
+    assert!((after.height - (before.height + 10.0)).abs() < 0.01);
+    assert!((after.x + after.width - (before.x + before.width)).abs() < 0.01);
+    assert!((after.y + after.height - (before.y + before.height)).abs() < 0.01);
+
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shape_rect(0, 4), Some(before));
+}
+
+/// Dragged past the opposite edge, a shape stops at the smallest size.
+#[test]
+fn a_corner_dragged_past_the_far_edge_stops_at_the_smallest_size() {
+    let rect = ShapeRect {
+        x: 10.0,
+        y: 20.0,
+        width: 100.0,
+        height: 50.0,
+    };
+    let mut drag = ShapeDrag::new(
+        1,
+        DragMode::Resize {
+            left: false,
+            top: false,
+        },
+        (110.0, 70.0),
+    );
+    drag.drag_to(-400.0, 70.0);
+    let squashed = drag.rect(rect);
+    assert_eq!((squashed.x, squashed.width), (10.0, MIN_SHAPE_PX));
+    assert_eq!(squashed.height, 50.0);
+    // From the left, the right edge stays where it was.
+    let mut drag = ShapeDrag::new(
+        1,
+        DragMode::Resize {
+            left: true,
+            top: false,
+        },
+        (10.0, 70.0),
+    );
+    drag.drag_to(500.0, 70.0);
+    let squashed = drag.rect(rect);
+    assert_eq!(squashed.width, MIN_SHAPE_PX);
+    assert_eq!(squashed.x + squashed.width, 110.0);
+}
+
+/// Dragging the body moves the shape, size kept, as one undoable step; a
+/// press without a drag changes nothing.
+#[test]
+fn dragging_a_shape_moves_it() {
+    let mut deck = open("table_test.pptx");
+    let before = deck.shape_rect(0, 4).unwrap();
+    let mut drag = ShapeDrag::new(4, DragMode::Move, (before.x + 5.0, before.y + 5.0));
+    drag.drag_to(before.x + 5.2, before.y + 4.8);
+    assert!(!drag.moved());
+    assert!(!deck.drag_shape(0, &drag).unwrap());
+    assert!(!deck.is_dirty());
+
+    drag.drag_to(before.x + 45.0, before.y + 25.0);
+    assert!(drag.moved());
+    assert!(deck.drag_shape(0, &drag).unwrap());
+    let after = deck.shape_rect(0, 4).unwrap();
+    assert!((after.x - (before.x + 40.0)).abs() < 0.01);
+    assert!((after.y - (before.y + 20.0)).abs() < 0.01);
+    assert_eq!((after.width, after.height), (before.width, before.height));
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shape_rect(0, 4), Some(before));
+}
+
+/// A SmartArt diagram's corner does not drag: it has no handles in
+/// PowerPoint's sense, so a resize drag changes nothing, while dragging its
+/// body moves it.
+#[test]
+fn a_smartart_diagram_drags_but_does_not_resize() {
+    let mut deck = open("SmartArt.pptx");
+    let id = deck
+        .shapes(0)
+        .iter()
+        .find(|shape| shape.kind == "diagram")
+        .expect("the slide has a diagram")
+        .id;
+    let before = deck.shape_rect(0, id).unwrap();
+    let mut resize = ShapeDrag::new(
+        id,
+        DragMode::Resize {
+            left: false,
+            top: false,
+        },
+        (before.x + before.width, before.y + before.height),
+    );
+    resize.drag_to(before.x + before.width + 50.0, before.y + before.height);
+    assert!(!deck.drag_shape(0, &resize).unwrap());
+    assert_eq!(deck.shape_rect(0, id), Some(before));
+
+    let mut moving = ShapeDrag::new(id, DragMode::Move, (before.x, before.y));
+    moving.drag_to(before.x + 12.0, before.y);
+    assert!(deck.drag_shape(0, &moving).unwrap());
+    let after = deck.shape_rect(0, id).unwrap();
+    assert!((after.x - before.x - 12.0).abs() < 0.01);
+    assert_eq!((after.width, after.height), (before.width, before.height));
 }
