@@ -30,7 +30,11 @@ fn backend() -> TinySkiaBackend {
 }
 
 fn fixtures(extension: &str) -> Vec<(String, Vec<u8>)> {
-    let mut fixtures: Vec<_> = std::fs::read_dir(core().join("public/fixtures"))
+    fixtures_in("public/fixtures", extension)
+}
+
+fn fixtures_in(directory: &str, extension: &str) -> Vec<(String, Vec<u8>)> {
+    let mut fixtures: Vec<_> = std::fs::read_dir(core().join(directory))
         .unwrap()
         .filter_map(Result::ok)
         .map(|entry| entry.path())
@@ -104,8 +108,29 @@ fn every_workbook_opens_and_every_sheet_paints() {
 fn every_deck_opens_and_every_slide_paints() {
     let decks = fixtures("pptx");
     assert!(!decks.is_empty());
+    let problems = decks_paint(&decks);
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+/// Decks made in PowerPoint, with tables, charts and SmartArt: Apache POI's
+/// test data.
+#[test]
+fn every_powerpoint_deck_opens_and_every_slide_paints() {
+    let decks = fixtures_in("public/fixtures/poi", "pptx");
+    assert!(decks.len() >= 30);
+    let problems = decks_paint(&decks);
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+/// Slides PowerPoint shows blank too: deck, slide number.
+const BLANK_SLIDES: &[(&str, usize)] = &[
+    // The slide's one picture is fully transparent (`alphaModFix amt="0"`).
+    ("picture-transparency.pptx", 4),
+];
+
+fn decks_paint(decks: &[(String, Vec<u8>)]) -> Vec<String> {
     let mut problems = Vec::new();
-    for (name, bytes) in &decks {
+    for (name, bytes) in decks {
         let mut deck = match Deck::open(bytes, backend()) {
             Ok(deck) => deck,
             Err(error) => {
@@ -117,7 +142,7 @@ fn every_deck_opens_and_every_slide_paints() {
             match deck.render_slide(index, 640) {
                 Some(painter) => {
                     let png = TinySkiaBackend::png(&painter).unwrap();
-                    if !has_ink(&png) {
+                    if !has_ink(&png) && !BLANK_SLIDES.contains(&(name.as_str(), index + 1)) {
                         problems.push(format!("{name}: slide {} paints blank", index + 1));
                     }
                 }
@@ -125,5 +150,5 @@ fn every_deck_opens_and_every_slide_paints() {
             }
         }
     }
-    assert!(problems.is_empty(), "{}", problems.join("\n"));
+    problems
 }
