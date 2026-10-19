@@ -1710,6 +1710,9 @@ impl DocView {
         };
         let target = target.clamp(0.0, f32::from(scroll.max_offset().y).max(0.0));
         scroll.set_offset(point(offset.x, px(-target)));
+        // The current page, for the status bar, which is drawn before the
+        // pages are; and the pages now on screen, painted.
+        self.follow_scroll(gpui::Size::default());
     }
 
     /// Moves the caret or the selection without changing the text: no
