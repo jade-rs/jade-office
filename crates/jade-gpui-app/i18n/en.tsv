@@ -164,6 +164,8 @@ deck.row_below	Insert Row Below
 deck.column_right	Insert Column Right
 deck.delete_row	Delete Row
 deck.delete_column	Delete Column
+deck.merge_cells	Merge Cells
+deck.split_cell	Split Cells
 deck.saved	Saved to {name}
 deck.save_failed	Cannot save: {error}
 deck.selected_shape	Selected: {name}
