@@ -192,6 +192,16 @@ deck.bullets	箇条書き
 deck.numbering	段落番号
 deck.line_spacing	行間
 deck.space_after	段落後 {n} pt
+deck.text_box	テキストボックス
+deck.shapes	図形
+deck.picture	画像
+deck.picture_failed	画像を挿入できません: {error}
+deck.shape.rect	正方形/長方形
+deck.shape.round_rect	四角形: 角を丸くする
+deck.shape.ellipse	楕円
+deck.shape.triangle	二等辺三角形
+deck.shape.diamond	ひし形
+deck.shape.hexagon	六角形
 doc.tab.home	ホーム
 doc.tab.insert	挿入
 doc.tab.design	デザイン

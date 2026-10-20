@@ -12,8 +12,9 @@ use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
 use jade_office_model::deck::{
-    step_size, Deck, DragMode, Motion, ParagraphAlignment, ParagraphSpacingState, ShapeDrag,
-    ShapeRect, ShapeText, TableChange, TextCommand, TextTarget, MIN_SHAPE_PX,
+    step_size, Deck, DragMode, Insert, Motion, ParagraphAlignment, ParagraphSpacingState,
+    ShapeDrag, ShapeRect, ShapeText, TableChange, TextCommand, TextTarget, MIN_SHAPE_PX,
+    SHAPE_PRESETS,
 };
 use jade_office_model::tiny::TinySkiaBackend;
 
@@ -828,4 +829,106 @@ fn font_sizes_step_through_powerpoints_list() {
     assert_eq!(step_size(17.0, true), 18.0);
     assert_eq!(step_size(72.0, true), 80.0);
     assert_eq!(step_size(8.0, false), 8.0);
+}
+
+fn close(a: ShapeRect, b: ShapeRect) -> bool {
+    (a.x - b.x).abs() < 0.01
+        && (a.y - b.y).abs() < 0.01
+        && (a.width - b.width).abs() < 0.01
+        && (a.height - b.height).abs() < 0.01
+}
+
+#[test]
+fn a_text_box_drawn_on_a_slide_is_typed_into() {
+    let mut deck = open_own("sample-deck.pptx");
+    let before = deck.shapes(1).len();
+    let rect = Insert::TextBox.rect((400.0, 180.0), (100.0, 120.0));
+    assert!(close(
+        rect,
+        ShapeRect {
+            x: 100.0,
+            y: 120.0,
+            width: 300.0,
+            height: 60.0
+        }
+    ));
+    let id = deck.insert(1, Insert::TextBox, rect).unwrap();
+    assert_eq!(deck.shapes(1).len(), before + 1);
+    assert!(close(deck.shape_rect(1, id).unwrap(), rect));
+    // In front of everything: a click on it selects it.
+    assert_eq!(deck.shape_at(1, 250.0, 150.0), Some(id));
+    let mut text = ShapeText::begin(&mut deck, 1, id, None).unwrap();
+    assert!(text.type_text(&mut deck, "新しいテキスト").unwrap());
+    assert_eq!(deck.shape_text(1, id).as_deref(), Some("新しいテキスト"));
+    assert!(deck.render_slide(1, 320).is_some());
+    assert!(deck.undo().unwrap());
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shapes(1).len(), before);
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn a_click_drops_a_shape_at_its_usual_size() {
+    let mut deck = open_own("sample-deck.pptx");
+    for preset in SHAPE_PRESETS {
+        let rect = Insert::Shape(preset).rect((50.0, 60.0), (51.0, 60.0));
+        assert!(close(
+            rect,
+            ShapeRect {
+                x: 50.0,
+                y: 60.0,
+                width: 96.0,
+                height: 96.0
+            }
+        ));
+        let id = deck.insert(0, Insert::Shape(preset), rect).unwrap();
+        assert!(close(deck.shape_rect(0, id).unwrap(), rect));
+        // A shape takes text, as PowerPoint's do.
+        assert_eq!(deck.shape_text(0, id).as_deref(), Some(""));
+    }
+    assert!(deck.render_slide(0, 320).is_some());
+}
+
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, width, height);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer
+            .write_image_data(&vec![180u8; (width * height * 3) as usize])
+            .unwrap();
+    }
+    bytes
+}
+
+#[test]
+fn a_picture_goes_in_the_middle_of_the_slide_shrunk_to_fit() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (slide_width, slide_height) = deck.slide_size();
+    // Small enough: its own size, in the middle.
+    let id = deck.insert_picture(0, &png(120, 60)).unwrap();
+    let rect = deck.shape_rect(0, id).unwrap();
+    assert!(close(
+        rect,
+        ShapeRect {
+            x: (slide_width - 120.0) / 2.0,
+            y: (slide_height - 60.0) / 2.0,
+            width: 120.0,
+            height: 60.0
+        }
+    ));
+    // Too big: shrunk to fit, its shape kept.
+    let id = deck.insert_picture(0, &png(4000, 1000)).unwrap();
+    let rect = deck.shape_rect(0, id).unwrap();
+    assert!(rect.width <= slide_width * 0.9 + 0.01);
+    assert!((rect.width / rect.height - 4.0).abs() < 0.01);
+    assert!(deck.render_slide(0, 320).is_some());
+    // Saved and reopened, the picture is there.
+    let saved = deck.save_bytes();
+    let mut reopened = Deck::open(&saved, backend()).unwrap();
+    assert!(reopened.shape_rect(0, id).is_some());
+    // Anything but PNG or JPEG is refused, and nothing changes.
+    assert!(deck.insert_picture(0, b"GIF89a").is_err());
 }
