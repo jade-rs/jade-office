@@ -112,6 +112,104 @@ sheet.tool.border_all	All Borders
 sheet.tool.border_outline	Outside Borders
 sheet.tool.border_thick	Thick Outside Borders
 sheet.tool.border_none	No Border
+cf.highlight	Highlight Cells Rules
+cf.top_bottom	Top/Bottom Rules
+cf.data_bars	Data Bars
+cf.color_scales	Color Scales
+cf.clear_selected	Clear Rules from Selected Cells
+cf.clear_sheet	Clear Rules from Entire Sheet
+cf.manage	Manage Rules…
+cf.manage_title	Conditional Formatting Rules Manager
+cf.no_rules	This sheet has no conditional formatting rules.
+cf.delete	Delete Rule
+cf.close	Close
+cf.ok	OK
+cf.cancel	Cancel
+cf.with	with
+cf.and	and
+cf.greater_than	Greater Than…
+cf.less_than	Less Than…
+cf.between	Between…
+cf.equal_to	Equal To…
+cf.text_contains	Text that Contains…
+cf.duplicate_values	Duplicate Values…
+cf.top_items	Top 10 Items…
+cf.top_percent	Top 10%…
+cf.bottom_items	Bottom 10 Items…
+cf.bottom_percent	Bottom 10%…
+cf.above_average	Above Average…
+cf.below_average	Below Average…
+cf.prompt.greater_than	Format cells that are GREATER THAN:
+cf.prompt.less_than	Format cells that are LESS THAN:
+cf.prompt.between	Format cells that are BETWEEN:
+cf.prompt.equal_to	Format cells that are EQUAL TO:
+cf.prompt.text_contains	Format cells that contain the text:
+cf.prompt.duplicate_values	Format cells that contain duplicate values.
+cf.prompt.top_items	Format cells that rank in the TOP (items):
+cf.prompt.top_percent	Format cells that rank in the TOP (%):
+cf.prompt.bottom_items	Format cells that rank in the BOTTOM (items):
+cf.prompt.bottom_percent	Format cells that rank in the BOTTOM (%):
+cf.prompt.above_average	Format cells that are ABOVE AVERAGE for the selected range.
+cf.prompt.below_average	Format cells that are BELOW AVERAGE for the selected range.
+cf.style.light_red_dark_red	Light Red Fill with Dark Red Text
+cf.style.yellow_dark_yellow	Yellow Fill with Dark Yellow Text
+cf.style.green_dark_green	Green Fill with Dark Green Text
+cf.style.light_red	Light Red Fill
+cf.style.red_text	Red Text
+cf.bar.blue	Blue Data Bar
+cf.bar.green	Green Data Bar
+cf.bar.red	Red Data Bar
+cf.bar.orange	Orange Data Bar
+cf.bar.light_blue	Light Blue Data Bar
+cf.bar.purple	Purple Data Bar
+cf.scale.green_yellow_red	Green - Yellow - Red Color Scale
+cf.scale.red_yellow_green	Red - Yellow - Green Color Scale
+cf.scale.green_white_red	Green - White - Red Color Scale
+cf.scale.blue_white_red	Blue - White - Red Color Scale
+cf.scale.green_white	Green - White Color Scale
+cf.scale.white_red	White - Red Color Scale
+cf.describe.greater_than	Cell Value > {value}
+cf.describe.less_than	Cell Value < {value}
+cf.describe.between	Cell Value between {low} and {high}
+cf.describe.equal_to	Cell Value = {value}
+cf.describe.text_contains	Cell Value contains "{text}"
+cf.describe.duplicate_values	Duplicate Values
+cf.describe.top_items	Top {rank}
+cf.describe.top_percent	Top {rank}%
+cf.describe.bottom_items	Bottom {rank}
+cf.describe.bottom_percent	Bottom {rank}%
+cf.describe.above_average	Above Average
+cf.describe.below_average	Below Average
+cf.describe.data_bar	Data Bar
+cf.describe.color_scale	Graded Color Scale
+cf.describe.other	{rule}
+cf.invalid_value	Enter a value.
+cf.invalid_rank	Enter a whole number from 1 (at most 100 for a percent, 1000 for items).
+sheet.tool.conditional	Conditional Formatting
+chart.insert	Insert Chart
+chart.change_type	Change Chart Type
+chart.legend	Legend
+chart.title_menu	Chart Title…
+chart.data_menu	Select Data…
+chart.delete	Delete Chart
+chart.title	Chart Title (empty for none)
+chart.data	Chart Data Range
+chart.kind.column	Clustered Column
+chart.kind.stacked_column	Stacked Column
+chart.kind.bar	Clustered Bar
+chart.kind.stacked_bar	Stacked Bar
+chart.kind.line	Line
+chart.kind.line_markers	Line with Markers
+chart.kind.area	Area
+chart.kind.pie	Pie
+chart.kind.doughnut	Doughnut
+chart.kind.scatter	Scatter
+chart.legend.none	None
+chart.legend.right	Right
+chart.legend.top	Top
+chart.legend.left	Left
+chart.legend.bottom	Bottom
+sheet.tool.chart	Chart
 sheet.tool.number_format	General
 sheet.format.general_name	General
 sheet.format.general	General
@@ -434,3 +532,4 @@ format.fill_color	Background color
 format.fill.none	No color
 format.ok	OK
 format.cancel	Cancel
+sheet.protected	The cell or sheet you are trying to change is protected.
