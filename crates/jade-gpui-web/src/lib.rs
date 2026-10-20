@@ -134,10 +134,10 @@ pub fn run(
 ) -> Result<(), JsError> {
     console_error_panic_hook::set_once();
     i18n::init(&language);
-    let backend = jade_web::backend_with(regular.clone(), Some(bold.clone()), Some(thai))
+    let backend = jade_web::backend_with(regular.clone(), Some(bold.clone()), Some(thai.clone()))
         .map_err(|e| JsError::new(&e))?;
-    let measurer =
-        jade_web::document::measurer(&regular, Some(&bold)).map_err(|e| JsError::new(&e))?;
+    let measurer = jade_web::document::measurer_with(&regular, Some(&bold), Some(&thai))
+        .map_err(|e| JsError::new(&e))?;
     let fonts = Rc::new(Fonts {
         backend,
         measurer,
