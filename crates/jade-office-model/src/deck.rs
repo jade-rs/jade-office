@@ -12,10 +12,14 @@ use std::rc::Rc;
 
 use jade_painter::{ImageRect, ImageSource, Painter};
 use jade_pptx_layout::{layout_deck_slide, PlacedOrigin, PlacedShape, SlideLayout};
+pub use jade_pptx_layout::{TextFormatState, TextSelectionGeometry};
 use jade_pptx_reader::{emu_to_px, Transform};
 use jade_pptx_render::{render_slide_with, PainterMeasure, RenderOptions};
 use jade_pptx_writer::EditSession;
-pub use jade_pptx_writer::{ShapeTransformInfo, SlideLayoutInfo, TableChange};
+pub use jade_pptx_writer::{ShapeTransformInfo, SlideLayoutInfo, TableChange, TextFormat};
+
+mod text;
+pub use text::{Motion, ShapeText};
 
 use crate::Backend;
 
@@ -228,13 +232,22 @@ impl<B: Backend> Deck<B> {
         self.session.bytes()
     }
 
+    /// What text is measured with: the backend's fonts, as the slides are
+    /// painted.
+    fn measure(&self) -> Option<PainterMeasure<B::Painter>> {
+        let measuring = self.backend.surface(1, 1)?;
+        Some(PainterMeasure::new(
+            measuring,
+            self.options.default_font.clone(),
+        ))
+    }
+
     /// The laid-out slide, measured once and cached until the next change.
     pub fn layout(&mut self, index: usize) -> Option<Rc<SlideLayout>> {
         if let Some(layout) = self.layouts.get(&index) {
             return Some(Rc::clone(layout));
         }
-        let measuring = self.backend.surface(1, 1)?;
-        let measure = PainterMeasure::new(measuring, self.options.default_font.clone());
+        let measure = self.measure()?;
         let layout = Rc::new(layout_deck_slide(&self.deck, index, &measure)?);
         self.layouts.insert(index, Rc::clone(&layout));
         Some(layout)
@@ -327,6 +340,23 @@ impl<B: Backend> Deck<B> {
             self.reload()?;
         }
         Ok(changed)
+    }
+
+    /// The character formatting of `range` (UTF-16 offsets) of shape
+    /// `id`'s text, as inherited and drawn; a field is `None` where the
+    /// range mixes values.
+    pub fn text_format(
+        &self,
+        slide: usize,
+        id: u32,
+        range: std::ops::Range<usize>,
+    ) -> Option<TextFormatState> {
+        jade_pptx_layout::text_format_for_deck_shape(&self.deck, slide, id, range.start, range.end)
+    }
+
+    /// Ends a run of typing: what is typed next is a new step of Undo.
+    pub fn end_typing(&mut self) {
+        self.session.end_text_history();
     }
 
     /// Replaces a shape's text, as one undoable change.

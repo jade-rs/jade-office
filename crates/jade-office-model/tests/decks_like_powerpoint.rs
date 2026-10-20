@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
 use jade_office_model::deck::{
-    Deck, DragMode, ShapeDrag, ShapeRect, TableChange, TextTarget, MIN_SHAPE_PX,
+    Deck, DragMode, Motion, ShapeDrag, ShapeRect, ShapeText, TableChange, TextTarget, MIN_SHAPE_PX,
 };
 use jade_office_model::tiny::TinySkiaBackend;
 
@@ -577,4 +577,138 @@ fn a_slide_takes_another_layout() {
             .map(|l| l.part_name.clone()),
         Some(current.part_name)
     );
+}
+
+/// The first shape on `slide` with text that may be edited, and its text.
+fn text_shape(deck: &mut Deck<TinySkiaBackend>, slide: usize) -> (u32, String) {
+    let ids: Vec<u32> = deck.shapes(slide).iter().map(|shape| shape.id).collect();
+    ids.into_iter()
+        .find_map(|id| {
+            deck.shape_text(slide, id)
+                .filter(|text| text.chars().count() >= 4)
+                .map(|text| (id, text))
+        })
+        .expect("the slide has a text shape")
+}
+
+#[test]
+fn typing_in_place_goes_in_at_the_caret_and_keeps_the_runs_formatting() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let first = before.chars().next().unwrap().to_string();
+    let format_before = deck.text_format(0, id, 0..1);
+
+    // A click at the text's start puts the caret there.
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    assert_eq!(text.focus, before.encode_utf16().count());
+    text.move_caret(&mut deck, Motion::Start, false);
+    assert_eq!(text.focus, 0);
+    text.move_caret(&mut deck, Motion::Right, false);
+    for ch in ["新", "し", "い"] {
+        assert!(text.type_text(&mut deck, ch).unwrap());
+    }
+    let after = deck.shape_text(0, id).unwrap();
+    assert_eq!(after, format!("{first}新しい{}", &before[first.len()..]));
+    assert_eq!(text.focus, first.encode_utf16().count() + 3);
+    // What was typed took the formatting of the run it went into.
+    assert_eq!(deck.text_format(0, id, 1..4), format_before);
+
+    // Backspace and Delete take one character each side.
+    assert!(text.backspace(&mut deck).unwrap());
+    assert!(text.delete(&mut deck).unwrap());
+    let shorter = deck.shape_text(0, id).unwrap();
+    assert_eq!(shorter.chars().count(), after.chars().count() - 2);
+
+    // The typing was one step of Undo, each deletion one more.
+    assert!(deck.undo().unwrap());
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shape_text(0, id).unwrap(), after);
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shape_text(0, id).unwrap(), before);
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn a_selection_is_made_with_shift_and_replaced_by_what_is_typed() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    text.move_caret(&mut deck, Motion::Start, false);
+    text.move_caret(&mut deck, Motion::Right, true);
+    text.move_caret(&mut deck, Motion::Right, true);
+    assert_eq!(text.selection(), 0..2);
+    // The selection is drawn over the first two characters, the caret after
+    // them.
+    let geometry = text.geometry(&mut deck).unwrap();
+    assert_eq!(geometry.highlights.len(), 1);
+    assert!(geometry.caret[0].x > geometry.highlights[0][0].x);
+    assert!(text.type_text(&mut deck, "X").unwrap());
+    let skip: String = before.chars().skip(2).collect();
+    assert_eq!(deck.shape_text(0, id).unwrap(), format!("X{skip}"));
+    // ⌘A, then Left: the caret at the start.
+    text.select_all(&deck);
+    assert_eq!(text.selection().start, 0);
+    text.move_caret(&mut deck, Motion::Left, false);
+    assert_eq!(text.focus, 0);
+}
+
+#[test]
+fn a_click_puts_the_caret_where_it_lands_and_arrows_go_down_a_line() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    text.move_caret(&mut deck, Motion::Start, false);
+    let start = text.geometry(&mut deck).unwrap().caret;
+    // A click a little right of the start of the text: a caret a character
+    // or so in.
+    let (x, y) = (start[0].x + 1.0, (start[0].y + start[1].y) / 2.0);
+    let mut clicked = ShapeText::begin(&mut deck, 0, id, Some((x, y))).unwrap();
+    assert!(clicked.focus <= 1, "{}", clicked.focus);
+    // End goes to the line's end; Start and End to the text's.
+    clicked.move_caret(&mut deck, Motion::LineEnd, false);
+    assert!(clicked.focus > 0);
+    clicked.move_caret(&mut deck, Motion::End, false);
+    assert_eq!(clicked.focus, before.encode_utf16().count());
+    clicked.move_caret(&mut deck, Motion::WordLeft, false);
+    assert!(clicked.focus < before.encode_utf16().count());
+}
+
+#[test]
+fn enter_starts_a_paragraph_and_a_new_slide_placeholder_takes_text() {
+    let mut deck = open_own("sample-deck.pptx");
+    assert!(deck.insert_slide(1).unwrap());
+    let ids: Vec<u32> = deck.shapes(1).iter().map(|shape| shape.id).collect();
+    let id = ids
+        .into_iter()
+        .find(|id| deck.shape_text(1, *id).is_some())
+        .expect("the new slide has a placeholder");
+    let mut text = ShapeText::begin(&mut deck, 1, id, None).unwrap();
+    assert!(text.type_text(&mut deck, "一行目").unwrap());
+    assert!(text.type_text(&mut deck, "\n").unwrap());
+    assert!(text.type_text(&mut deck, "二行目").unwrap());
+    assert_eq!(deck.shape_text(1, id).unwrap(), "一行目\n二行目");
+    let geometry = text.geometry(&mut deck).unwrap();
+    text.move_caret(&mut deck, Motion::Up, false);
+    let up = text.geometry(&mut deck).unwrap();
+    assert!(up.caret[0].y < geometry.caret[0].y);
+    assert!(text.focus <= 3);
+}
+
+#[test]
+fn an_input_methods_composition_shows_at_the_caret_and_goes_in_when_committed() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    text.compose(None, "にほ");
+    let (seen, selection, marked) = text.input_text(&deck);
+    assert_eq!(seen, format!("{before}にほ"));
+    let end = before.encode_utf16().count();
+    assert_eq!(marked, Some(end..end + 2));
+    assert_eq!(selection, end + 2..end + 2);
+    // Nothing is in the slide until the composition is committed.
+    assert_eq!(deck.shape_text(0, id).unwrap(), before);
+    assert!(text.commit(&mut deck, None, "日本").unwrap());
+    assert_eq!(deck.shape_text(0, id).unwrap(), format!("{before}日本"));
+    assert_eq!(text.composition, None);
+    assert_eq!(text.focus, end + 2);
 }

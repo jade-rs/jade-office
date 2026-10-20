@@ -8,6 +8,8 @@
 //! (`deck::Deck`), the same code the native app runs; this is the gpui
 //! around it.
 
+use jade_web::deck::{Motion, ShapeText};
+
 use super::*;
 
 /// A thumbnail being dragged to another place in the list.
@@ -162,6 +164,10 @@ impl DocView {
     /// has it, or ⌘⇧N, as for Mac — browsers keep ⌘N) and Duplicate (⌘D)
     /// when no shape is selected.
     pub(super) fn deck_shortcut(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        if let Some(composing) = self.typing_state() {
+            let modifiers = event.keystroke.modifiers;
+            return !composing && self.typing_key(&event.keystroke.key, modifiers, cx);
+        }
         let Document::Deck { edit, selected, .. } = &self.document else {
             return false;
         };
@@ -208,17 +214,28 @@ impl DocView {
         cx.notify();
     }
 
-    /// Writes the text being typed into a shape, if any.
+    /// Writes the text being typed into a cell, if any. Text typed in
+    /// place is in the deck already; it just stops being typed into, an
+    /// IME's composition kept.
     pub(super) fn commit_slide_text(&mut self, cx: &mut Context<Self>) {
         let Document::Deck {
             deck,
             edit,
+            typing,
+            selecting_text,
             current,
             ..
         } = &mut self.document
         else {
             return;
         };
+        *selecting_text = false;
+        if let Some(mut typing) = typing.take() {
+            let result = typing.unmark(deck);
+            deck.end_typing();
+            self.typed(result, cx);
+            return;
+        }
         let Some((target, text)) = edit.take() else {
             return;
         };
@@ -232,6 +249,8 @@ impl DocView {
         let Document::Deck {
             deck,
             edit,
+            typing,
+            drag,
             current,
             selected,
             ..
@@ -243,11 +262,211 @@ impl DocView {
             return;
         };
         let target = deck.text_target(*current, id, point);
-        match deck.text(*current, target) {
-            Some(text) => *edit = Some((target, TextEdit::new(text))),
-            None => self.status = i18n::text("deck.text_locked").into(),
+        let begun = match target {
+            TextTarget::Shape(id) => {
+                *typing = ShapeText::begin(deck, *current, id, point);
+                *drag = None;
+                typing.is_some()
+            }
+            _ => match deck.text(*current, target) {
+                Some(text) => {
+                    *edit = Some((target, TextEdit::new(text)));
+                    true
+                }
+                None => false,
+            },
+        };
+        if !begun {
+            self.status = i18n::text("deck.text_locked").into();
         }
         cx.notify();
+    }
+
+    /// After an edit to text typed in place: the slide and its thumbnail
+    /// repainted, no other.
+    fn typed(&mut self, result: Result<bool, String>, cx: &mut Context<Self>) {
+        if !matches!(result, Ok(true)) {
+            return self.edited(result, cx);
+        }
+        self.generation += 1;
+        self.status = SharedString::default();
+        if let Document::Deck {
+            current,
+            thumbnails,
+            ..
+        } = &mut self.document
+        {
+            if let Some(old) = thumbnails.get_mut(*current).and_then(Option::take) {
+                self.retired.push(old);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Runs `edit` on the text being typed in place.
+    pub(super) fn edit_typing(
+        &mut self,
+        cx: &mut Context<Self>,
+        edit: impl FnOnce(&mut ShapeText, &mut jade_web::Deck) -> Result<bool, String>,
+    ) {
+        let Document::Deck {
+            deck,
+            typing: Some(typing),
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let result = edit(typing, deck);
+        self.typed(result, cx);
+    }
+
+    /// What an IME sees of the text typed in place: the text, the
+    /// selection and the composition, in UTF-16 offsets.
+    pub(super) fn slide_input(&self) -> Option<(String, Range<usize>, Option<Range<usize>>)> {
+        match &self.document {
+            Document::Deck {
+                deck,
+                typing: Some(typing),
+                ..
+            } => Some(typing.input_text(deck)),
+            _ => None,
+        }
+    }
+
+    pub(super) fn slide_input_reversed(&self) -> bool {
+        matches!(&self.document, Document::Deck { typing: Some(typing), .. }
+            if typing.focus < typing.anchor)
+    }
+
+    /// Text from the input handler into a shape — typed, or an IME's
+    /// composition when `mark` — starting to type into the selected shape
+    /// if need be. `false` when it is not for a shape.
+    pub(super) fn type_into_slide(
+        &mut self,
+        range: Option<Range<usize>>,
+        text: &str,
+        mark: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.slideshow {
+            return false;
+        }
+        if let Document::Deck {
+            edit: None,
+            typing: None,
+            selected: Some(_),
+            ..
+        } = &self.document
+        {
+            self.begin_slide_text(None, cx);
+        }
+        let Document::Deck {
+            typing: Some(typing),
+            ..
+        } = &mut self.document
+        else {
+            return false;
+        };
+        if mark {
+            typing.compose(range, text);
+            cx.notify();
+        } else {
+            let text = text.to_string();
+            self.edit_typing(cx, move |typing, deck| typing.commit(deck, range, &text));
+        }
+        true
+    }
+
+    /// Where the IME's candidate window goes: at the caret in the text typed
+    /// in place.
+    pub(super) fn slide_caret_bounds(&mut self) -> Option<Bounds<Pixels>> {
+        let slide = self.surface.get()?;
+        let Document::Deck {
+            deck,
+            typing: Some(typing),
+            scale,
+            ..
+        } = &mut self.document
+        else {
+            return None;
+        };
+        let [a, b] = typing.geometry(deck)?.caret;
+        Some(Bounds {
+            origin: point(
+                slide.origin.x + px(a.x.min(b.x) as f32 * *scale),
+                slide.origin.y + px(a.y.min(b.y) as f32 * *scale),
+            ),
+            size: size(px(1.0), px((a.y - b.y).abs() as f32 * *scale)),
+        })
+    }
+
+    /// The keys of text typed in place: the caret keys — ⇧ selecting, ⌥ by
+    /// words, ⌘ to the ends of the line and the text — ⌘A, Backspace,
+    /// Delete, Enter for a paragraph and ⇧Enter for a line break, Tab.
+    fn typing_key(
+        &mut self,
+        key: &str,
+        modifiers: gpui::Modifiers,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let shift = modifiers.shift;
+        let command = modifiers.platform || modifiers.control;
+        let motion = match key {
+            "left" if command => Some(Motion::LineStart),
+            "right" if command => Some(Motion::LineEnd),
+            "up" if command => Some(Motion::Start),
+            "down" if command => Some(Motion::End),
+            "left" if modifiers.alt => Some(Motion::WordLeft),
+            "right" if modifiers.alt => Some(Motion::WordRight),
+            "left" => Some(Motion::Left),
+            "right" => Some(Motion::Right),
+            "up" => Some(Motion::Up),
+            "down" => Some(Motion::Down),
+            "home" => Some(Motion::LineStart),
+            "end" => Some(Motion::LineEnd),
+            _ => None,
+        };
+        if let Some(motion) = motion {
+            self.edit_typing(cx, |typing, deck| {
+                typing.move_caret(deck, motion, shift);
+                Ok(false)
+            });
+            return true;
+        }
+        if command {
+            if key != "a" {
+                return false;
+            }
+            self.edit_typing(cx, |typing, deck| {
+                typing.select_all(deck);
+                Ok(false)
+            });
+            return true;
+        }
+        match key {
+            // As in PowerPoint, Escape leaves the text, the shape still
+            // selected.
+            "escape" => self.commit_slide_text(cx),
+            "enter" if shift => self.edit_typing(cx, |typing, deck| typing.line_break(deck)),
+            "enter" => self.edit_typing(cx, |typing, deck| typing.type_text(deck, "\n")),
+            "tab" => self.edit_typing(cx, |typing, deck| typing.type_text(deck, "\t")),
+            "backspace" => self.edit_typing(cx, |typing, deck| typing.backspace(deck)),
+            "delete" => self.edit_typing(cx, |typing, deck| typing.delete(deck)),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Whether text is being typed in place, and an IME is composing in it.
+    fn typing_state(&self) -> Option<bool> {
+        match &self.document {
+            Document::Deck {
+                typing: Some(typing),
+                ..
+            } => Some(typing.composition.is_some()),
+            _ => None,
+        }
     }
 
     /// Starts typing into `target` from the text it has — all of it
@@ -443,6 +662,10 @@ impl DocView {
             }
             return true;
         }
+        if let Some(composing) = self.typing_state() {
+            // An IME composing has the keys to itself.
+            return !composing && self.typing_key(key, modifiers, cx);
+        }
         let (slides_focused, layouts_open) = match &self.document {
             Document::Deck {
                 slides_focused,
@@ -562,6 +785,8 @@ impl DocView {
             deck,
             current,
             edit,
+            typing,
+            selecting_text,
             cells,
             slides_focused,
             layouts_open,
@@ -573,6 +798,28 @@ impl DocView {
         *cells = None;
         *slides_focused = false;
         *layouts_open = false;
+        // In the text being typed into, a click puts the caret, ⇧ or a drag
+        // selects, and a double-click selects a word.
+        let typed = typing.as_ref().map(|typing| typing.id);
+        if let Some(id) = typed {
+            if deck
+                .shape_rect(*current, id)
+                .is_some_and(|rect| rect.contains(x, y))
+            {
+                let shift = event.modifiers.shift;
+                let double = event.click_count >= 2;
+                *selecting_text = !double;
+                self.edit_typing(cx, |typing, deck| {
+                    if double {
+                        typing.select_word(deck, x, y);
+                    } else {
+                        typing.click(deck, x, y, shift);
+                    }
+                    Ok(false)
+                });
+                return;
+            }
+        }
         // A click inside the shape or cell being typed into stays in the
         // text.
         if let Some((target, _)) = edit {
@@ -652,6 +899,17 @@ impl DocView {
             return;
         };
         if let Document::Deck {
+            selecting_text: true,
+            ..
+        } = &self.document
+        {
+            self.edit_typing(cx, |typing, deck| {
+                typing.click(deck, x, y, true);
+                Ok(false)
+            });
+            return;
+        }
+        if let Document::Deck {
             drag: Some(drag), ..
         } = &mut self.document
         {
@@ -666,11 +924,13 @@ impl DocView {
             deck,
             current,
             drag,
+            selecting_text,
             ..
         } = &mut self.document
         else {
             return;
         };
+        *selecting_text = false;
         let Some(drag) = drag.take() else {
             return;
         };
@@ -806,6 +1066,7 @@ impl DocView {
             slide,
             selected,
             edit,
+            typing,
             drag,
             scale: shown_scale,
             layouts_open,
@@ -908,12 +1169,63 @@ impl DocView {
             .map(|notes| SharedString::from(notes.to_string()));
         let show_notes = self.show_notes;
 
+        // Text typed in place: the shape's outline, the selection shaded over
+        // the text, and the caret — or an IME's composition there.
+        let typed = typing.as_ref().and_then(|typing| {
+            let rect = deck.shape_rect(current_index, typing.id)?;
+            let geometry = typing.geometry(deck);
+            let mut out = vec![div()
+                .absolute()
+                .left(px(rect.x as f32 * zoom))
+                .top(px(rect.y as f32 * zoom))
+                .w(px(rect.width as f32 * zoom))
+                .h(px(rect.height as f32 * zoom))
+                .border_1()
+                .border_color(palette::accent())];
+            let geometry = geometry?;
+            for quad in &geometry.highlights {
+                let (x0, y0, x1, y1) = quad.iter().fold(
+                    (f64::MAX, f64::MAX, f64::MIN, f64::MIN),
+                    |(x0, y0, x1, y1), p| (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y)),
+                );
+                out.push(
+                    div()
+                        .absolute()
+                        .left(px(x0 as f32 * zoom))
+                        .top(px(y0 as f32 * zoom))
+                        .w(px((x1 - x0) as f32 * zoom))
+                        .h(px((y1 - y0) as f32 * zoom))
+                        .bg(gpui::rgba(0x3b82f655)),
+                );
+            }
+            let [a, b] = geometry.caret;
+            let (x, y, line) = (a.x.min(b.x), a.y.min(b.y), (a.y - b.y).abs());
+            let caret = div()
+                .absolute()
+                .left(px(x as f32 * zoom))
+                .top(px(y as f32 * zoom))
+                .h(px(line as f32 * zoom));
+            out.push(match &typing.composition {
+                Some(composition) => caret
+                    .flex()
+                    .items_center()
+                    .px_0p5()
+                    .bg(gpui::white())
+                    .text_color(gpui::black())
+                    .text_size(px((line as f32 * zoom * 0.7).max(10.0)))
+                    .child(div().underline().child(composition.clone())),
+                None => caret.w(px(1.5)).bg(gpui::black()),
+            });
+            Some(out)
+        });
+        let typed_id = typing.as_ref().map(|typing| typing.id);
+
         // The selection outline and its corner handles, or the text editor,
         // over the slide; a shape being dragged where the drag has taken it.
         let resizable = selected
             .and_then(|id| deck.shape(current_index, id))
             .is_some_and(|shape| shape.can_resize);
-        let overlay = selected.and_then(|id| {
+        let overlay = selected.filter(|id| Some(*id) != typed_id).and_then(|id| {
             let editing = edit.as_ref().filter(|(target, _)| target.id() == id);
             let rect = match editing {
                 Some((target, _)) => deck.text_rect(current_index, *target)?,
@@ -1315,6 +1627,7 @@ impl DocView {
                                                 }),
                                             )
                                             .children(overlay)
+                                            .children(typed.into_iter().flatten())
                                             // The selected cells, shaded as
                                             // PowerPoint shades them.
                                             .children(selected_cells.map(|rect| {
