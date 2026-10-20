@@ -23,6 +23,10 @@ use jade_web::sheet::{
 
 use super::*;
 
+mod conditional;
+use conditional::Conditional;
+use jade_web::conditional_formatting::RuleAsk;
+
 /// How far past the grid's edge the pointer has to be for a drag to scroll
 /// it, and how often it scrolls while held there.
 const AUTO_SCROLL_TICK: Duration = Duration::from_millis(40);
@@ -60,6 +64,10 @@ pub(super) struct Sheet {
     pub finding: Option<TextEdit>,
     /// A note being written on a cell.
     pub noting: Option<(CellRef, TextEdit)>,
+    /// A conditional format's dialog, asking for its value.
+    pub asking: Option<RuleAsk>,
+    /// The conditional formatting Rules Manager, open.
+    pub managing: bool,
     /// The note under the pointer, and where its cell's top-right corner
     /// is in the grid's px.
     note: Option<(CellRef, (f32, f32))>,
@@ -157,6 +165,7 @@ enum Popup {
     Fill,
     Font,
     Borders,
+    Conditional,
 }
 
 /// What a toolbar button does.
@@ -177,6 +186,7 @@ enum Tool {
     FontColor(&'static str),
     Borders(Borders),
     Filter,
+    Conditional(Conditional),
 }
 
 #[derive(Clone, Copy)]
@@ -236,6 +246,8 @@ impl Sheet {
             naming: None,
             finding: None,
             noting: None,
+            asking: None,
+            managing: false,
             note: None,
             menu: None,
             filter: None,
@@ -248,6 +260,9 @@ impl Sheet {
 
     /// The text being typed into: a tab's new name, the name box, or a cell.
     pub fn typing(&mut self) -> Option<&mut TextEdit> {
+        if let Some(ask) = self.asking.as_mut() {
+            return ask.typing();
+        }
         if let Some((_, text)) = self.renaming.as_mut() {
             return Some(text);
         }
@@ -264,6 +279,9 @@ impl Sheet {
     }
 
     pub fn typed(&self) -> Option<&TextEdit> {
+        if let Some(ask) = self.asking.as_ref() {
+            return ask.typed();
+        }
         if let Some((_, text)) = self.renaming.as_ref() {
             return Some(text);
         }
@@ -616,6 +634,7 @@ impl DocView {
             Tool::FontColor(color) => sheet.book.font_color(range, color),
             Tool::Borders(borders) => sheet.book.borders(range, borders),
             Tool::Filter => sheet.book.toggle_filter(range),
+            Tool::Conditional(tool) => return self.conditional(tool, cx),
             Tool::Open(_) => unreachable!(),
         };
         self.edited(result, cx);
@@ -816,6 +835,15 @@ impl DocView {
                 )
                 .child(icon("icons/borders.svg")),
             ))
+            .child(hang(
+                Popup::Conditional,
+                button(
+                    "tool-conditional",
+                    popup == Some(Popup::Conditional),
+                    Tool::Open(Popup::Conditional),
+                )
+                .child(icon("icons/highlighter.svg")),
+            ))
             .child(separator())
             .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
     }
@@ -954,6 +982,7 @@ impl DocView {
                     "sheet.tool.border_none",
                     Tool::Borders(Borders::None),
                 )),
+            Popup::Conditional => self.conditional_menu(cx),
         };
         Some(
             div()
@@ -1219,6 +1248,15 @@ impl DocView {
                 return true;
             }
             sheet.choices = None;
+        }
+        // A conditional format's dialog has the keys while it is open.
+        if sheet.asking.is_some() {
+            return self.rule_key(key, modifiers, cx);
+        }
+        if sheet.managing && key == "escape" {
+            sheet.managing = false;
+            cx.notify();
+            return true;
         }
         if sheet.filter.is_some() {
             match key {
@@ -2377,6 +2415,8 @@ impl DocView {
                 None => self.status = i18n::text("sheet.paint_failed").into(),
             }
         }
+        let rule_dialog = self.rule_dialog(cx);
+        let rules_manager = self.rules_manager(cx);
         let Document::Workbook(sheet) = &mut self.document else {
             unreachable!()
         };
@@ -3071,6 +3111,8 @@ impl DocView {
                     .children(list_button)
                     .children(find_bar)
                     .children(filter_panel)
+                    .children(rule_dialog)
+                    .children(rules_manager)
                     .children(menu)
                     // Records where the grid is, registers the input handler
                     // so typing — an IME's included — reaches the cell, and
