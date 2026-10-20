@@ -186,6 +186,30 @@ cf.describe.other	{rule}
 cf.invalid_value	Enter a value.
 cf.invalid_rank	Enter a whole number from 1 (at most 100 for a percent, 1000 for items).
 sheet.tool.conditional	Conditional Formatting
+chart.insert	Insert Chart
+chart.change_type	Change Chart Type
+chart.legend	Legend
+chart.title_menu	Chart Title…
+chart.data_menu	Select Data…
+chart.delete	Delete Chart
+chart.title	Chart Title (empty for none)
+chart.data	Chart Data Range
+chart.kind.column	Clustered Column
+chart.kind.stacked_column	Stacked Column
+chart.kind.bar	Clustered Bar
+chart.kind.stacked_bar	Stacked Bar
+chart.kind.line	Line
+chart.kind.line_markers	Line with Markers
+chart.kind.area	Area
+chart.kind.pie	Pie
+chart.kind.doughnut	Doughnut
+chart.kind.scatter	Scatter
+chart.legend.none	None
+chart.legend.right	Right
+chart.legend.top	Top
+chart.legend.left	Left
+chart.legend.bottom	Bottom
+sheet.tool.chart	Chart
 sheet.tool.number_format	General
 sheet.format.general_name	General
 sheet.format.general	General
