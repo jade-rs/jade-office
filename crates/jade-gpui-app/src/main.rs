@@ -1250,7 +1250,9 @@ impl DocumentView {
         match key {
             // ⌥⌫ and ⌥⌦ take a word, ⌘⌫ the line up to the caret, as on a
             // Mac: what goes is selected, then deleted, in one edit.
-            "backspace" | "delete" if modifiers.alt || (modifiers.platform && key == "backspace") => {
+            "backspace" | "delete"
+                if modifiers.alt || (modifiers.platform && key == "backspace") =>
+            {
                 let to = if modifiers.platform {
                     self.line_edge(false)
                 } else {
@@ -1307,8 +1309,12 @@ impl DocumentView {
                 self.after_edit(result, (paragraph + 1, 0), cx);
             }
             // In a table, to the next or the previous cell; elsewhere a tab
-            // typed, as in Word.
-            "tab" => self.tab(modifiers.shift, cx),
+            // typed, as in Word. Taken here, so the platform does not type
+            // the tab a second time through the input handler.
+            "tab" => {
+                cx.stop_propagation();
+                self.tab(modifiers.shift, cx);
+            }
             "left" | "right" | "up" | "down" | "home" | "end" => {
                 let extending = modifiers.shift;
                 // Anchored where the caret was before this keystroke, unless a
@@ -1323,12 +1329,24 @@ impl DocumentView {
                 // line's or the document's ends, ⌥ a word along.
                 let long = modifiers.platform || modifiers.control;
                 match (key, long, modifiers.alt) {
-                    ("up", true, _) | ("home", true, _) => self.jump_to(self.document_edge(false), cx),
-                    ("down", true, _) | ("end", true, _) => self.jump_to(self.document_edge(true), cx),
-                    ("left", true, _) | ("home", false, _) => self.jump_to(self.line_edge(false), cx),
-                    ("right", true, _) | ("end", false, _) => self.jump_to(self.line_edge(true), cx),
-                    ("left", false, true) => self.jump_to(self.word_step(self.insert_at, false), cx),
-                    ("right", false, true) => self.jump_to(self.word_step(self.insert_at, true), cx),
+                    ("up", true, _) | ("home", true, _) => {
+                        self.jump_to(self.document_edge(false), cx)
+                    }
+                    ("down", true, _) | ("end", true, _) => {
+                        self.jump_to(self.document_edge(true), cx)
+                    }
+                    ("left", true, _) | ("home", false, _) => {
+                        self.jump_to(self.line_edge(false), cx)
+                    }
+                    ("right", true, _) | ("end", false, _) => {
+                        self.jump_to(self.line_edge(true), cx)
+                    }
+                    ("left", false, true) => {
+                        self.jump_to(self.word_step(self.insert_at, false), cx)
+                    }
+                    ("right", false, true) => {
+                        self.jump_to(self.word_step(self.insert_at, true), cx)
+                    }
                     ("left", ..) => self.step_caret(-1, cx),
                     ("right", ..) => self.step_caret(1, cx),
                     ("up", ..) => self.step_line(-1.0, cx),
@@ -1399,7 +1417,11 @@ impl DocumentView {
     }
 
     /// One character along from `position`, across paragraph ends.
-    fn character_step(&self, (paragraph, offset): (usize, usize), forwards: bool) -> (usize, usize) {
+    fn character_step(
+        &self,
+        (paragraph, offset): (usize, usize),
+        forwards: bool,
+    ) -> (usize, usize) {
         let text = self.document.paragraph_text(paragraph).unwrap_or_default();
         let offset = offset.min(text.len());
         if forwards {
@@ -4290,7 +4312,9 @@ mod tests {
             assert_eq!(view.insert_at, (paragraph, 1));
         });
 
-        view.update(cx, |view, cx| view.run_ribbon(Action::InsertTable(1, 2), cx));
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::InsertTable(1, 2), cx)
+        });
         let first = view.read_with(cx, |view, _| view.insert_at);
         cx.simulate_input("one");
         cx.simulate_keystrokes("tab");
