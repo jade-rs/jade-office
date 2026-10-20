@@ -267,6 +267,13 @@ deck.split_cell	セルの分割
 deck.saved	{name} に保存しました
 deck.save_failed	保存できません: {error}
 deck.selected_shape	選択: {name}
+deck.new_slide	新しいスライド
+deck.layout	レイアウト
+deck.duplicate_slide	スライドの複製
+deck.delete_slide	スライドの削除
+deck.hide_slide	スライドを非表示
+deck.show_slide	スライドを再表示
+deck.slide_n	スライド {n}
 doc.tab.home	ホーム
 doc.tab.insert	挿入
 doc.tab.design	デザイン

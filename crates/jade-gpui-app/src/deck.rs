@@ -19,10 +19,10 @@
 //! again at a new width is only the Skia pass.
 
 use gpui::{
-    canvas, div, img, point, prelude::*, px, size, svg, App, Bounds, Context, ElementInputHandler,
-    Entity, EntityInputHandler, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
-    WindowBounds, WindowOptions,
+    anchored, canvas, deferred, div, img, point, prelude::*, px, size, svg, App, Bounds, Context,
+    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, KeyDownEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, RenderImage, ScrollHandle, SharedString,
+    UTF16Selection, Window, WindowBounds, WindowOptions,
 };
 use jade_office_model::deck::{
     Deck, DragMode, ShapeDrag, ShapeRect as SlideRect, ShapeTransformInfo, TableChange, TextTarget,
@@ -132,6 +132,34 @@ impl TextEdit {
     }
 }
 
+/// A list open under a toolbar button.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Popup {
+    /// The layouts the current slide can take.
+    Layouts,
+}
+
+/// A thumbnail being dragged to another place in the list.
+#[derive(Clone, Copy)]
+struct DraggedSlide(usize);
+
+/// What follows the pointer while a thumbnail is dragged.
+struct DraggedSlideView(usize);
+
+impl Render for DraggedSlideView {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .bg(theme::accent())
+            .text_xs()
+            .text_color(gpui::white())
+            .font_family(UI_FONT_FAMILY)
+            .child(i18n::format("deck.slide_n", &[("n", &(self.0 + 1))]))
+    }
+}
+
 /// Cells selected across a table, as by Shift+click: what Merge Cells merges.
 struct CellSelection {
     id: u32,
@@ -168,6 +196,11 @@ pub struct DeckView {
     /// Where the slide sits in the window, recorded at paint.
     slide_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     thumbnail_scroll: ScrollHandle,
+    /// The list open under a toolbar button, if any.
+    popup: Option<Popup>,
+    /// Keys go to the slide list — Delete deletes the slide — after a click
+    /// on a thumbnail, as in PowerPoint's thumbnail pane.
+    slides_focused: bool,
     focus: FocusHandle,
     status: SharedString,
 }
@@ -208,6 +241,77 @@ impl DeckView {
                 SharedString::from(i18n::format("deck.print_failed", &[("error", &error)]));
             cx.notify();
         }
+    }
+
+    // ---- slides ----------------------------------------------------------
+
+    /// Runs a change to the deck's slides; when it changes something, shows
+    /// slide `then` with every thumbnail repainted, as slides have moved.
+    fn change_slides(
+        &mut self,
+        then: usize,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut Deck<SkiaBackend>) -> Result<bool, String>,
+    ) -> bool {
+        self.commit_text(cx);
+        self.popup = None;
+        match change(&mut self.deck) {
+            Ok(true) => {
+                self.selected = None;
+                self.drag = None;
+                self.cells = None;
+                self.current = then;
+                self.reload(true, cx);
+                self.thumbnail_scroll.scroll_to_item(self.current);
+                true
+            }
+            Ok(false) => false,
+            Err(error) => {
+                self.status =
+                    SharedString::from(i18n::format("deck.edit_failed", &[("error", &error)]));
+                cx.notify();
+                false
+            }
+        }
+    }
+
+    /// New Slide: an empty one after the current slide, on its layout.
+    fn new_slide(&mut self, cx: &mut Context<Self>) {
+        let at = self.current + 1;
+        self.change_slides(at, cx, |deck| deck.insert_slide(at));
+    }
+
+    fn duplicate_slide(&mut self, cx: &mut Context<Self>) {
+        let index = self.current;
+        self.change_slides(index + 1, cx, |deck| deck.duplicate_slide(index));
+    }
+
+    /// Deletes the current slide, showing the one after it — or before, for
+    /// the last.
+    fn delete_slide(&mut self, cx: &mut Context<Self>) {
+        let index = self.current;
+        self.change_slides(index, cx, |deck| deck.delete_slide(index));
+    }
+
+    /// A thumbnail dropped on another: the slide moves to its place.
+    fn move_slide(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
+        self.change_slides(to, cx, |deck| deck.move_slide(from, to));
+    }
+
+    fn toggle_hidden(&mut self, cx: &mut Context<Self>) {
+        let index = self.current;
+        let hidden = !self.deck.is_hidden(index);
+        self.change_slides(index, cx, |deck| deck.set_slide_hidden(index, hidden));
+    }
+
+    fn set_layout(&mut self, part_name: &str, cx: &mut Context<Self>) {
+        let index = self.current;
+        self.change_slides(index, cx, |deck| deck.set_slide_layout(index, part_name));
+    }
+
+    fn toggle_popup(&mut self, popup: Popup, cx: &mut Context<Self>) {
+        self.popup = (self.popup != Some(popup)).then_some(popup);
+        cx.notify();
     }
 
     // ---- the model -------------------------------------------------------
@@ -306,6 +410,9 @@ impl DeckView {
     }
 
     fn select(&mut self, id: Option<u32>, cx: &mut Context<Self>) {
+        if id.is_some() {
+            self.slides_focused = false;
+        }
         if self.selected != id {
             self.commit_text(cx);
             self.selected = id;
@@ -369,6 +476,8 @@ impl DeckView {
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
+        self.slides_focused = false;
+        self.popup = None;
         let Some((x, y)) = self.slide_point(event.position) else {
             return;
         };
@@ -608,10 +717,20 @@ impl DeckView {
     fn handle_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
         let modifiers = keystroke.modifiers;
+        let key = keystroke.key.as_str();
+        if modifiers.platform && self.text_edit.is_none() {
+            // PowerPoint for Mac's New Slide (⌘⇧N) and Duplicate (⌘D).
+            match (key, modifiers.shift) {
+                ("n", true) => self.new_slide(cx),
+                ("d", false) if self.selected.is_none() => self.duplicate_slide(cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+            return;
+        }
         if modifiers.platform || modifiers.control {
             return;
         }
-        let key = keystroke.key.as_str();
 
         if self.cells.is_some() && key == "escape" {
             self.cells = None;
@@ -669,6 +788,12 @@ impl DeckView {
         }
 
         match key {
+            // In the slide list, Delete deletes the slide.
+            "delete" | "backspace" if self.slides_focused => self.delete_slide(cx),
+            "escape" if self.popup.is_some() => {
+                self.popup = None;
+                cx.notify();
+            }
             "down" | "right" | "pagedown" | "space" => self.step(1, cx),
             "up" | "left" | "pageup" => self.step(-1, cx),
             "home" => self.go_to(0, cx),
@@ -733,10 +858,19 @@ impl DeckView {
         }
     }
 
+    /// One slide in the list: its number — struck through with an eye for a
+    /// hidden slide, which is also dimmed, as PowerPoint marks it — and its
+    /// picture. A click shows it; a drag onto another moves it there.
     fn thumbnail(&self, index: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = index == self.current;
+        let hidden = self.deck.is_hidden(index);
         let (slide_width, slide_height) = self.deck.slide_size();
         let height = THUMBNAIL_WIDTH * (slide_height / slide_width.max(1.0)) as f32;
+        let number_color = if selected {
+            theme::accent()
+        } else {
+            theme::text_faint()
+        };
         div()
             .id(("slide-thumbnail", index))
             .flex()
@@ -744,17 +878,44 @@ impl DeckView {
             .px_2()
             .py_1()
             .cursor_pointer()
-            .on_click(cx.listener(move |view, _event, _window, cx| view.go_to(index, cx)))
+            .on_click(cx.listener(move |view, _event, window, cx| {
+                window.focus(&view.focus);
+                view.slides_focused = true;
+                view.go_to(index, cx);
+                cx.notify();
+            }))
+            .on_drag(DraggedSlide(index), |dragged, _offset, _window, cx| {
+                let index = dragged.0;
+                cx.new(|_| DraggedSlideView(index))
+            })
+            .drag_over::<DraggedSlide>(|style, _, _, _| style.bg(theme::hovered()))
+            .on_drop(
+                cx.listener(move |view, dragged: &DraggedSlide, _window, cx| {
+                    view.move_slide(dragged.0, index, cx)
+                }),
+            )
             .child(
                 div()
                     .w(px(16.0))
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_1()
                     .text_xs()
-                    .text_color(if selected {
-                        theme::accent()
-                    } else {
-                        theme::text_faint()
-                    })
-                    .child(format!("{}", index + 1)),
+                    .text_color(number_color)
+                    .child(
+                        div()
+                            .when(hidden, |number| number.line_through())
+                            .child(format!("{}", index + 1)),
+                    )
+                    .when(hidden, |column| {
+                        column.child(
+                            svg()
+                                .path("icons/eye-off.svg")
+                                .size_3()
+                                .text_color(number_color),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -765,6 +926,7 @@ impl DeckView {
                     .border_2()
                     .rounded_sm()
                     .overflow_hidden()
+                    .when(hidden, |thumbnail| thumbnail.opacity(0.45))
                     .border_color(if selected {
                         theme::accent()
                     } else {
@@ -926,6 +1088,90 @@ impl DeckView {
             }
         }
         out
+    }
+}
+
+impl DeckView {
+    /// Layout ▾: the layouts the slide can take, its own checked.
+    fn layouts_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let open = self.popup == Some(Popup::Layouts);
+        let menu = open.then(|| {
+            let rows: Vec<_> =
+                self.deck
+                    .slide_layouts(self.current)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, layout)| {
+                        let part = layout.part_name.clone();
+                        div()
+                            .id(("slide-layout", index))
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .h(px(26.0))
+                            .pl_1()
+                            .pr_3()
+                            .rounded_md()
+                            .whitespace_nowrap()
+                            .cursor_pointer()
+                            .hover(|row| row.bg(theme::hovered()))
+                            .on_click(cx.listener(move |view, _event, _window, cx| {
+                                view.set_layout(&part, cx)
+                            }))
+                            .child(div().size_4().flex_none().when(layout.current, |cell| {
+                                cell.child(
+                                    svg()
+                                        .path("icons/check.svg")
+                                        .size_4()
+                                        .text_color(theme::accent()),
+                                )
+                            }))
+                            .child(if layout.name.is_empty() {
+                                layout.kind
+                            } else {
+                                layout.name
+                            })
+                    })
+                    .collect();
+            div()
+                .id("slide-layouts")
+                .occlude()
+                .mt_1()
+                .p_1()
+                .flex()
+                .flex_col()
+                .max_h(px(360.0))
+                .overflow_y_scroll()
+                .rounded_md()
+                .bg(theme::panel())
+                .border_1()
+                .border_color(theme::border())
+                .shadow_lg()
+                .text_xs()
+                .text_color(theme::text())
+                .children(rows)
+        });
+        div()
+            .relative()
+            .flex_none()
+            .child(
+                toolbar_button(
+                    "slide-layout",
+                    "icons/panels-top-left.svg",
+                    i18n::text("deck.layout"),
+                )
+                .when(open, |button| button.bg(theme::hovered()))
+                .on_click(
+                    cx.listener(|view, _event, _window, cx| view.toggle_popup(Popup::Layouts, cx)),
+                ),
+            )
+            .children(menu.map(|menu| {
+                div().absolute().top_full().left_0().child(
+                    deferred(anchored().snap_to_window_with_margin(px(8.0)).child(menu))
+                        .with_priority(2),
+                )
+            }))
+            .into_any_element()
     }
 }
 
@@ -1191,6 +1437,7 @@ impl Render for DeckView {
         }
 
         let count = self.deck.slide_count();
+        let current_hidden = self.deck.is_hidden(self.current);
         let thumbnails: Vec<_> = (0..count).map(|index| self.thumbnail(index, cx)).collect();
         let notes = self
             .deck
@@ -1212,9 +1459,9 @@ impl Render for DeckView {
             .key_context("Deck")
             .on_key_down(cx.listener(Self::handle_key))
             .on_action(cx.listener(|view, _: &Print, _window, cx| view.print(cx)))
-            .on_action(
-                cx.listener(|view, _: &StartSlideshow, _window, cx| view.start_slideshow(0, cx)),
-            )
+            .on_action(cx.listener(|view, _: &StartSlideshow, _window, cx| {
+                view.start_slideshow(view.deck.first_shown(), cx)
+            }))
             .on_action(cx.listener(|view, _: &Undo, _window, cx| view.step_history(true, cx)))
             .on_action(cx.listener(|view, _: &Redo, _window, cx| view.step_history(false, cx)))
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
@@ -1281,6 +1528,57 @@ impl Render for DeckView {
                                     &[("current", &(self.current + 1)), ("count", &count)],
                                 ),
                             ))
+                            .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(theme::border()))
+                            .child(
+                                toolbar_button(
+                                    "new-slide",
+                                    "icons/file-plus.svg",
+                                    i18n::text("deck.new_slide"),
+                                )
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| view.new_slide(cx)),
+                                ),
+                            )
+                            .child(self.layouts_button(cx))
+                            .child(
+                                toolbar_button(
+                                    "duplicate-slide",
+                                    "icons/files.svg",
+                                    i18n::text("deck.duplicate_slide"),
+                                )
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| {
+                                        view.duplicate_slide(cx)
+                                    }),
+                                ),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "delete-slide",
+                                    "icons/trash-2.svg",
+                                    i18n::text("deck.delete_slide"),
+                                )
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| view.delete_slide(cx)),
+                                ),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "hide-slide",
+                                    "icons/eye-off.svg",
+                                    i18n::text(if current_hidden {
+                                        "deck.show_slide"
+                                    } else {
+                                        "deck.hide_slide"
+                                    }),
+                                )
+                                .when(current_hidden, |button| {
+                                    button.bg(theme::selected()).text_color(theme::text())
+                                })
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| view.toggle_hidden(cx)),
+                                ),
+                            )
                             .child(div().flex_1())
                             // A table's layout, while one of its cells is
                             // typed into: PowerPoint's Layout tab.
@@ -1430,7 +1728,7 @@ impl Render for DeckView {
                                     )
                                     .child(i18n::text("deck.slideshow"))
                                     .on_click(cx.listener(|view, _event, _window, cx| {
-                                        view.start_slideshow(0, cx)
+                                        view.start_slideshow(view.deck.first_shown(), cx)
                                     })),
                             ),
                     )
@@ -1449,6 +1747,8 @@ impl Render for DeckView {
                                 MouseButton::Left,
                                 cx.listener(|view, _event, window, cx| {
                                     window.focus(&view.focus);
+                                    view.slides_focused = false;
+                                    view.popup = None;
                                     view.select(None, cx);
                                 }),
                             )
@@ -1559,6 +1859,8 @@ impl DeckView {
             shown_scale: 1.0,
             slide_bounds: Rc::new(Cell::new(None)),
             thumbnail_scroll: ScrollHandle::new(),
+            popup: None,
+            slides_focused: false,
             focus: cx.focus_handle(),
             status: SharedString::from(""),
         };
@@ -1588,27 +1890,30 @@ struct SlideshowView {
 }
 
 impl SlideshowView {
-    fn step(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
-        let next = self.current as isize + delta;
-        if next >= self.deck.slide_count() as isize {
+    /// The next slide shown, or the one before: hidden slides are skipped.
+    fn step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        match self.deck.next_shown(self.current, forward) {
+            Some(next) => {
+                self.current = next;
+                cx.notify();
+            }
             // Past the last slide the show is over, as in PowerPoint.
-            window.remove_window();
-            return;
+            None if forward => window.remove_window(),
+            None => {}
         }
-        self.current = next.max(0) as usize;
-        cx.notify();
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event.keystroke.key.as_str() {
-            "down" | "right" | "pagedown" | "space" | "enter" | "n" => self.step(1, window, cx),
-            "up" | "left" | "pageup" | "backspace" | "p" => self.step(-1, window, cx),
+            "down" | "right" | "pagedown" | "space" | "enter" | "n" => self.step(true, window, cx),
+            "up" | "left" | "pageup" | "backspace" | "p" => self.step(false, window, cx),
             "home" => {
-                self.current = 0;
+                self.current = self.deck.first_shown();
                 cx.notify();
             }
             "end" => {
-                self.current = self.deck.slide_count().saturating_sub(1);
+                let count = self.deck.slide_count();
+                self.current = self.deck.next_shown(count, false).unwrap_or(self.current);
                 cx.notify();
             }
             "escape" => window.remove_window(),
@@ -1653,11 +1958,11 @@ impl Render for SlideshowView {
             .on_key_down(cx.listener(Self::handle_key))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|view, _event, window, cx| view.step(1, window, cx)),
+                cx.listener(|view, _event, window, cx| view.step(true, window, cx)),
             )
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(|view, _event, window, cx| view.step(-1, window, cx)),
+                cx.listener(|view, _event, window, cx| view.step(false, window, cx)),
             )
             .children(
                 self.slide
@@ -1920,6 +2225,96 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.deck.cell_span(0, cell(1, 1)), Some((1, 1)));
             assert_eq!(view.deck.text(0, cell(2, 2)).unwrap(), "");
+        });
+    }
+
+    /// ⌘⇧N adds a slide after the one shown and shows it; ⌘D duplicates
+    /// it; a thumbnail dropped on another moves its slide there; Delete in
+    /// the slide list deletes one. Each is one step of Undo.
+    #[gpui::test]
+    fn the_slide_list_adds_duplicates_moves_and_deletes_slides(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let count = view.read_with(cx, |view, _| view.deck.slide_count());
+        cx.simulate_keystrokes("cmd-shift-n");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.slide_count(), count + 1);
+            assert_eq!(view.current, 1);
+            assert_eq!(view.thumbnails.len(), count + 1);
+        });
+        cx.simulate_keystrokes("cmd-d");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.slide_count(), count + 2);
+            assert_eq!(view.current, 2);
+        });
+        view.update(cx, |view, cx| view.move_slide(2, 0, cx));
+        view.read_with(cx, |view, _| assert_eq!(view.current, 0));
+        view.update(cx, |view, cx| {
+            view.go_to(count + 1, cx);
+            view.slides_focused = true;
+        });
+        cx.simulate_keystrokes("delete");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.slide_count(), count + 1);
+            // The last slide gone, the one before it shows.
+            assert_eq!(view.current, count);
+        });
+        for _ in 0..4 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.slide_count(), count);
+            assert_eq!(view.thumbnails.len(), count);
+            assert!(!view.deck.is_dirty());
+        });
+    }
+
+    /// Hide Slide marks the slide in the list; a slide show steps over it.
+    #[gpui::test]
+    fn a_hidden_slide_is_skipped_by_the_slide_show(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.go_to(1, cx);
+            view.toggle_hidden(cx);
+        });
+        let bytes = view.read_with(cx, |view, _| {
+            assert!(view.deck.is_hidden(1));
+            assert_eq!(view.current, 1);
+            view.deck.bytes().to_vec()
+        });
+        let (show, cx) = cx.add_window_view(|_window, cx| SlideshowView {
+            deck: Deck::open(&bytes, crate::skia_backend().unwrap()).unwrap(),
+            current: 0,
+            slide: None,
+            retired: Vec::new(),
+            focus: cx.focus_handle(),
+        });
+        cx.update(|window, cx| window.focus(&show.focus_handle(cx)));
+        cx.simulate_keystrokes("right");
+        show.read_with(cx, |show, _| assert_eq!(show.current, 2));
+        cx.simulate_keystrokes("left");
+        show.read_with(cx, |show, _| assert_eq!(show.current, 0));
+    }
+
+    /// Layout ▾ lists the slide's layouts; picking one puts the slide on it.
+    #[gpui::test]
+    fn a_slide_is_put_on_another_layout(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let other = view.update(cx, |view, cx| {
+            view.go_to(1, cx);
+            view.toggle_popup(Popup::Layouts, cx);
+            view.deck
+                .slide_layouts(1)
+                .into_iter()
+                .find(|layout| !layout.current)
+                .expect("the deck has another layout")
+                .part_name
+        });
+        view.update(cx, |view, cx| view.set_layout(&other, cx));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.popup, None);
+            assert_eq!(view.current, 1);
+            let current = view.deck.slide_layouts(1).into_iter().find(|l| l.current);
+            assert_eq!(current.map(|layout| layout.part_name), Some(other));
         });
     }
 
