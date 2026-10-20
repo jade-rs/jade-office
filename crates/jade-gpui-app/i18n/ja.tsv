@@ -32,7 +32,7 @@ deck.notes	ノート
 deck.print	印刷
 deck.from_current	このスライドから
 deck.slideshow	スライドショー
-deck.no_notes	このスライドにノートはありません
+deck.add_notes	クリックしてノートを入力
 deck.print_failed	印刷できません: {error}
 deck.paint_failed	スライド {n} を描画できません
 deck.empty	{name}: スライドがありません

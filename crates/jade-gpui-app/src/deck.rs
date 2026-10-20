@@ -31,6 +31,7 @@ use jade_office_model::deck::{
     TextSelectionGeometry, TextTarget, FONT_SIZES, SHAPE_PRESETS,
 };
 use jade_office_model::skia::SkiaBackend;
+use jade_office_model::text::TextEdit as NotesEdit;
 use jade_office_model::Backend;
 use std::cell::Cell;
 use std::ops::Range;
@@ -202,6 +203,8 @@ pub struct DeckView {
     drawing: Option<((f64, f64), (f64, f64))>,
     /// Text being typed into a table cell, in a box over it.
     text_edit: Option<TextEdit>,
+    /// The speaker notes being typed into, written when they are left.
+    notes_edit: Option<NotesEdit>,
     cells: Option<CellSelection>,
     /// One per slide, painted on the first frame (it needs the window's scale
     /// factor) and kept: a thumbnail only changes when the slide does.
@@ -887,6 +890,7 @@ impl DeckView {
     /// typed in place is in the deck already; it just stops being typed
     /// into, an IME's composition kept.
     fn commit_text(&mut self, cx: &mut Context<Self>) {
+        self.commit_notes(cx);
         self.selecting_text = false;
         if let Some(mut typing) = self.typing.take() {
             if let Ok(true) = typing.unmark(&mut self.deck) {
@@ -901,6 +905,60 @@ impl DeckView {
         let (target, text) = (edit.target, edit.text);
         self.write(cx, |deck, slide| deck.set_text(slide, target, &text));
         cx.notify();
+    }
+
+    // ---- speaker notes -----------------------------------------------------
+
+    /// A click in the notes pane: typing into the slide's notes, the caret
+    /// at their end.
+    fn begin_notes(&mut self, cx: &mut Context<Self>) {
+        if self.notes_edit.is_some() {
+            return;
+        }
+        self.commit_text(cx);
+        self.select(None, cx);
+        match self.deck.notes_text(self.current) {
+            Some(text) => self.notes_edit = Some(NotesEdit::new(text)),
+            None => self.status = SharedString::from(i18n::text("deck.text_locked")),
+        }
+        cx.notify();
+    }
+
+    /// Writes the notes being typed, as one step of Undo.
+    fn commit_notes(&mut self, cx: &mut Context<Self>) {
+        let Some(edit) = self.notes_edit.take() else {
+            return;
+        };
+        let text = edit.text;
+        self.write(cx, |deck, slide| deck.set_notes(slide, &text));
+        cx.notify();
+    }
+
+    /// The keys of the notes being typed: Escape leaves them, Enter starts
+    /// a paragraph; the caret keys and deletion.
+    fn notes_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        let Some(edit) = self.notes_edit.as_mut() else {
+            return false;
+        };
+        if edit.marked.is_some() {
+            return false;
+        }
+        match key {
+            "escape" => {
+                self.commit_notes(cx);
+                return true;
+            }
+            "enter" => edit.insert("\n"),
+            "backspace" => edit.backspace(),
+            "delete" => edit.delete(),
+            "left" => edit.step(false),
+            "right" => edit.step(true),
+            "home" | "up" => edit.to_end(false),
+            "end" | "down" => edit.to_end(true),
+            _ => return false,
+        }
+        cx.notify();
+        true
     }
 
     /// Tab in a table: the text written, then the next cell (⇧Tab: the one
@@ -1027,6 +1085,12 @@ impl DeckView {
         let keystroke = &event.keystroke;
         let modifiers = keystroke.modifiers;
         let key = keystroke.key.as_str();
+        if self.notes_edit.is_some() {
+            if !modifiers.platform && self.notes_key(key, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // PowerPoint's formatting keys: ⌘B, ⌘I, ⌘U, ⌘L, ⌘E, ⌘R, ⌘J, and ⌘⇧>
         // and ⌘⇧< for the font size — not bound as actions, which would take
         // them from the Word view.
@@ -2002,6 +2066,28 @@ impl DeckView {
     }
 }
 
+/// The notes being typed, a row a line, the caret drawn in its line.
+fn notes_lines(edit: &NotesEdit) -> Vec<gpui::AnyElement> {
+    let caret = edit.caret();
+    let mut start = 0;
+    let mut rows = Vec::new();
+    for line in edit.text.split('\n') {
+        let end = start + line.len();
+        let row = div().flex().min_h(px(18.0));
+        rows.push(if (start..=end).contains(&caret) {
+            let at = caret - start;
+            row.child(line[..at].to_string())
+                .child(div().w(px(1.5)).h(px(16.0)).bg(theme::text()))
+                .child(line[at..].to_string())
+                .into_any_element()
+        } else {
+            row.child(line.to_string()).into_any_element()
+        });
+        start = end + 1;
+    }
+    rows
+}
+
 /// The words for a shape in Insert's list, as PowerPoint names them.
 fn shape_name(preset: jade_office_model::deck::ShapePreset) -> &'static str {
     use jade_office_model::deck::ShapePreset;
@@ -2082,6 +2168,13 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<String> {
+        if let Some(edit) = &self.notes_edit {
+            let text = edit.text.as_str();
+            let start = utf16_to_byte(text, range.start);
+            let end = utf16_to_byte(text, range.end).max(start);
+            *adjusted = Some(byte_to_utf16(text, start)..byte_to_utf16(text, end));
+            return Some(text.get(start..end)?.to_string());
+        }
         if let Some(typing) = &self.typing {
             let (text, _, _) = typing.input_text(&self.deck);
             let start = utf16_to_byte(&text, range.start);
@@ -2106,6 +2199,13 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
+        if let Some(edit) = &self.notes_edit {
+            let caret = byte_to_utf16(&edit.text, edit.caret());
+            return Some(UTF16Selection {
+                range: caret..caret,
+                reversed: false,
+            });
+        }
         if let Some(typing) = &self.typing {
             let (_, range, marked) = typing.input_text(&self.deck);
             return Some(UTF16Selection {
@@ -2130,6 +2230,12 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Range<usize>> {
+        if let Some(edit) = &self.notes_edit {
+            let marked = edit.marked.clone()?;
+            return Some(
+                byte_to_utf16(&edit.text, marked.start)..byte_to_utf16(&edit.text, marked.end),
+            );
+        }
         if let Some(typing) = &self.typing {
             return typing.input_text(&self.deck).2;
         }
@@ -2139,6 +2245,10 @@ impl EntityInputHandler for DeckView {
     }
 
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(edit) = self.notes_edit.as_mut() {
+            edit.marked = None;
+            return;
+        }
         self.edit_typing(cx, |typing, deck| typing.unmark(deck));
         if let Some(edit) = self.text_edit.as_mut() {
             edit.marked = None;
@@ -2152,6 +2262,11 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(edit) = self.notes_edit.as_mut() {
+            edit.replace(range, text, false);
+            cx.notify();
+            return;
+        }
         if self.text_edit.is_none() && self.typing.is_none() {
             // Typing with a shape selected types into it.
             let Some(id) = self.selected else {
@@ -2189,6 +2304,11 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(edit) = self.notes_edit.as_mut() {
+            edit.replace(range, new_text, true);
+            cx.notify();
+            return;
+        }
         if self.text_edit.is_none() && self.typing.is_none() {
             let Some(id) = self.selected else {
                 return;
@@ -2325,7 +2445,9 @@ impl Render for DeckView {
         let notes = self
             .deck
             .notes(self.current)
+            .filter(|notes| !notes.is_empty())
             .map(|notes| SharedString::from(notes.to_string()));
+        let notes_lines = self.notes_edit.as_ref().map(notes_lines);
         let show_notes = self.show_notes;
         let typed = match &self.typing {
             Some(typing) => typing.geometry(&mut self.deck),
@@ -2749,11 +2871,23 @@ impl Render for DeckView {
                                 .px_4()
                                 .py_2()
                                 .text_sm()
-                                .child(match notes {
-                                    Some(notes) => div().child(notes),
-                                    None => div()
+                                .cursor(gpui::CursorStyle::IBeam)
+                                .when(notes_lines.is_some(), |pane| {
+                                    pane.border_t_2().border_color(theme::accent())
+                                })
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _event, window, cx| {
+                                        window.focus(&view.focus);
+                                        view.begin_notes(cx);
+                                    }),
+                                )
+                                .child(match (notes_lines, notes) {
+                                    (Some(lines), _) => div().children(lines),
+                                    (None, Some(notes)) => div().child(notes),
+                                    (None, None) => div()
                                         .text_color(theme::text_faint())
-                                        .child(i18n::text("deck.no_notes")),
+                                        .child(i18n::text("deck.add_notes")),
                                 }),
                         )
                     }),
@@ -2779,6 +2913,7 @@ impl DeckView {
             inserting: None,
             drawing: None,
             text_edit: None,
+            notes_edit: None,
             cells: None,
             slide: None,
             retired: Vec::new(),
@@ -3215,6 +3350,39 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.shapes.len(), count + 3);
             assert!(!view.status.is_empty());
+        });
+    }
+
+    /// A click in the notes pane types into the slide's notes; Escape — or
+    /// going to another slide — writes them, as one step of Undo.
+    #[gpui::test]
+    fn speaker_notes_are_typed_into_the_notes_pane(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let before = view.read_with(cx, |view, _| view.deck.notes_text(0).unwrap());
+        view.update(cx, |view, cx| view.begin_notes(cx));
+        cx.simulate_input("話すこと");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("次へ");
+        cx.simulate_keystrokes("backspace escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.notes_edit.is_none());
+            assert_eq!(
+                view.deck.notes_text(0).unwrap(),
+                format!("{before}話すこと\n次")
+            );
+        });
+        view.update(cx, |view, cx| view.begin_notes(cx));
+        cx.simulate_input("!");
+        view.update(cx, |view, cx| view.go_to(1, cx));
+        view.read_with(cx, |view, _| {
+            assert!(view.notes_edit.is_none());
+            assert!(view.deck.notes_text(0).unwrap().ends_with("次!"));
+        });
+        cx.dispatch_action(Undo);
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.notes_text(0).unwrap(), before);
+            assert!(!view.deck.is_dirty());
         });
     }
 
