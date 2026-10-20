@@ -35,6 +35,7 @@ use gpui::{
     Focusable, KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
+use jade_office_model::csv;
 use jade_office_model::find::FindBar;
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::number_formats::NUMBER_FORMATS;
@@ -1202,14 +1203,23 @@ impl WorkbookView {
         if !self.commit_cell(cx) {
             return;
         }
-        let result = self.book.save_bytes().and_then(|bytes| {
+        // By the name's extension, as Excel's Save As by its format: a
+        // .csv holds the active sheet; anything else, the workbook.
+        let name = crate::shell::file_name(&target);
+        let result = self.book.save_bytes_as(&name).and_then(|bytes| {
             crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
         });
         self.status = SharedString::from(match result {
-            Ok(()) => i18n::format(
-                "sheet.saved",
-                &[("name", &crate::shell::file_name(&target))],
-            ),
+            Ok(()) => {
+                // Saved as, it is that file from now on.
+                self.path = target;
+                let key = if csv::is_csv(&name) {
+                    "sheet.saved_csv"
+                } else {
+                    "sheet.saved"
+                };
+                i18n::format(key, &[("name", &name)])
+            }
             Err(error) => i18n::format("sheet.save_failed", &[("error", &error)]),
         });
         cx.notify();
@@ -3548,7 +3558,12 @@ impl Render for WorkbookView {
 impl WorkbookView {
     fn open(path: &Path, cx: &mut App) -> Result<Self, String> {
         let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-        let book = Workbook::open(&bytes, &system_time_zone(), crate::skia_backend()?)?;
+        let name = crate::shell::file_name(path);
+        let book = if csv::is_csv(&name) {
+            Workbook::open_csv(&name, &bytes, &system_time_zone(), crate::skia_backend()?)?
+        } else {
+            Workbook::open(&bytes, &system_time_zone(), crate::skia_backend()?)?
+        };
         let sheet_names = book
             .sheet_names()
             .into_iter()
@@ -3676,6 +3691,39 @@ mod tests {
         )
         .unwrap();
         assert_eq!(book.edit_text(CellRef::new(1, 2)), "4242");
+    }
+
+    /// A CSV opens as a sheet named for the file, its fields read as typed;
+    /// ⌘S writes it back as CSV, and Save As to .xlsx writes a workbook
+    /// that is the file from then on.
+    #[gpui::test]
+    fn a_csv_opens_and_saves_as_csv(cx: &mut gpui::TestAppContext) {
+        let directory = std::env::temp_dir().join(format!("jade-csv-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("名簿.csv");
+        std::fs::write(&path, "氏名,年齢\r\n山田太郎,42\r\n\"佐藤, 花子\",7\r\n").unwrap();
+        let (view, cx) = cx.add_window_view(|_window, cx| WorkbookView::open(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.sheet_names(), vec!["名簿"]);
+            assert_eq!(view.book.display_text(at(0, 2)), "佐藤, 花子");
+            assert_eq!(view.book.number(at(1, 1)), Some(42.0));
+        });
+        cx.simulate_keystrokes("down down down");
+        cx.simulate_input("鈴木");
+        cx.simulate_keystrokes("enter");
+        cx.dispatch_action(Save);
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            saved,
+            "\u{feff}氏名,年齢\r\n山田太郎,42\r\n\"佐藤, 花子\",7\r\n鈴木,\r\n"
+        );
+        let xlsx = directory.join("名簿.xlsx");
+        view.update(cx, |view, cx| view.write_to(xlsx.clone(), cx));
+        assert!(std::fs::read(&xlsx).unwrap().starts_with(b"PK"));
+        view.read_with(cx, |view, _| assert_eq!(view.path, xlsx));
+        std::fs::remove_dir_all(&directory).ok();
     }
 
     /// A formula typed into a cell calculates, and Undo takes it back.

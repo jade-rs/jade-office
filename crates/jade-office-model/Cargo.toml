@@ -42,6 +42,8 @@ jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter", optional = true }
 jade-docx-native-render = { path = "../../jade-core/crates/jade-docx-native-render", optional = true }
 jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter", optional = true }
+# Shift_JIS, for the CSV a Japanese Excel writes.
+encoding_rs = "0.8"
 
 [dev-dependencies]
 png = "0.17"
