@@ -47,6 +47,8 @@ pub struct Workspace {
     focus: FocusHandle,
     fonts: Rc<Fonts>,
     host: Host,
+    /// How many new documents have been made, for their names.
+    untitled: usize,
 }
 
 impl Workspace {
@@ -62,6 +64,7 @@ impl Workspace {
             focus: cx.focus_handle(),
             fonts,
             host,
+            untitled: 0,
         }
     }
 
@@ -88,6 +91,28 @@ impl Workspace {
             if let Some(deck) = deck {
                 deck.update(cx, |view, cx| view.insert_picture(&bytes, cx));
                 return;
+            }
+        }
+        // A template opens as a new document made from it, as a
+        // double-click on one does in Word.
+        if jade_web::word::new::is_template_name(&name) {
+            match jade_web::word::new::document_from_template(&bytes) {
+                Ok(document) => {
+                    let extension = if jade_web::word::new::is_macro_enabled(&bytes) {
+                        "docm"
+                    } else {
+                        "docx"
+                    };
+                    let name = self.untitled_name(extension);
+                    return self.open(name, Rc::new(document), window, cx);
+                }
+                Err(error) => {
+                    self.error = Some(
+                        i18n::format("web.open_failed", &[("name", &name), ("error", &error)])
+                            .into(),
+                    );
+                    return cx.notify();
+                }
             }
         }
         if let Some(index) = self.tabs.iter().position(|tab| tab.read(cx).name == name) {
@@ -123,6 +148,28 @@ impl Workspace {
                 cx.notify();
             }
         }
+    }
+
+    /// The next new document's name: 文書 1, 文書 2, …
+    fn untitled_name(&mut self, extension: &str) -> SharedString {
+        self.untitled += 1;
+        format!(
+            "{}.{extension}",
+            i18n::format("doc.untitled", &[("n", &self.untitled)])
+        )
+        .into()
+    }
+
+    /// 新規文書: a blank document, as this language's Word makes one.
+    fn new_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use jade_web::word::new::{blank_document, Blank};
+        let blank = if i18n::is_english() {
+            Blank::English
+        } else {
+            Blank::Japanese
+        };
+        let name = self.untitled_name("docx");
+        self.open(name, Rc::new(blank_document(blank)), window, cx);
     }
 
     /// A sample or a recent file, from the explorer.
@@ -264,6 +311,26 @@ impl Workspace {
                         },
                     )),
                 )
+                .when(kind == Some(Kind::Document), |bar| {
+                    bar.child(
+                        div()
+                            .id("export-pdf")
+                            .px_2()
+                            .py_0p5()
+                            .rounded_md()
+                            .text_xs()
+                            .text_color(palette::dim())
+                            .cursor_pointer()
+                            .hover(|button| button.bg(palette::hovered()))
+                            .tooltip(crate::tooltip::Tooltip::text(i18n::text(
+                                "doc.export_pdf_title",
+                            )))
+                            .child(i18n::text("doc.export_pdf"))
+                            .on_click(cx.listener(|workspace, _event, _window, cx| {
+                                workspace.with_active(cx, |view, cx| view.export_pdf(cx))
+                            })),
+                    )
+                })
             })
             .child(
                 icon_button(
@@ -314,6 +381,15 @@ impl Workspace {
                     })),
             )
             .child(div().w_5().h(px(1.0)).my_1().bg(palette::border()))
+            .child(
+                activity_button("activity-new", "icons/file-text.svg", false)
+                    .tooltip(crate::tooltip::Tooltip::text(i18n::text(
+                        "workspace.new_document",
+                    )))
+                    .on_click(cx.listener(|workspace, _event, window, cx| {
+                        workspace.new_document(window, cx)
+                    })),
+            )
             .child(div().flex_1())
             .child(
                 activity_button("activity-open", "icons/file-plus.svg", false)
