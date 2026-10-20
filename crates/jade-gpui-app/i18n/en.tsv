@@ -243,6 +243,8 @@ deck.split_cell	Split Cells
 deck.saved	Saved to {name}
 deck.save_failed	Cannot save: {error}
 deck.selected_shape	Selected: {name}
+deck.selected_count	{n} objects selected
+deck.nothing_to_paste	Nothing to paste: the copied shapes are no longer there
 deck.new_slide	New Slide
 deck.layout	Layout
 deck.duplicate_slide	Duplicate Slide

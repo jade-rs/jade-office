@@ -382,6 +382,10 @@ enum Document {
         thumbnail_scroll: ScrollHandle,
         slide: Option<PaintedSlide>,
         selected: Option<u32>,
+        /// Shapes selected along with `selected`, by ⇧- or ⌘-click or ⌘A.
+        more: Vec<u32>,
+        /// Shapes copied with ⌘C: their slide and ids, pasted from there.
+        clipboard: Option<(usize, Vec<u32>)>,
         /// The selected shape's name, for the status bar.
         selected_name: Option<SharedString>,
         /// Text being typed into a table's cell, in a box over it.
@@ -511,6 +515,8 @@ impl DocView {
                     current: 0,
                     slide: None,
                     selected: None,
+                    more: Vec::new(),
+                    clipboard: None,
                     selected_name: None,
                     edit: None,
                     notes_edit: None,
@@ -1955,6 +1961,14 @@ impl EntityInputHandler for DocView {
                 let line = text.lines().next().unwrap_or_default().to_string();
                 self.replace_text_in_range(None, &line, window, cx);
             }
+            // Into text being typed; with shapes selected, ⌘V pasted the
+            // shapes copied in the app.
+            Document::Deck {
+                edit: None,
+                typing: None,
+                notes_edit: None,
+                ..
+            } => {}
             Document::Deck { .. } => self.replace_text_in_range(None, &text, window, cx),
         }
     }
