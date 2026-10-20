@@ -12,7 +12,12 @@ use std::rc::Rc;
 
 use jade_painter::Painter;
 use jade_xlsx_headless_api::{AutoFilterChange, AutoFilterTarget, CellInput};
-use jade_xlsx_headless_editor::{formula_text, ClipboardSnapshot, FormatChange, HeadlessWorkbook};
+use jade_xlsx_headless_editor::{
+    chart_kind, formula_text, ClipboardSnapshot, ConditionalFormatView, ConditionalStyle,
+    FormatChange, HeadlessWorkbook, NewConditionalRule, ShapeAnchor,
+};
+
+use crate::charts::{ChartChange, ChartInfo, ChartKind, LegendPosition};
 
 use crate::grid::{self, Direction, Hit, Selection};
 use crate::{clipboard, typing};
@@ -42,6 +47,13 @@ pub const VALIDATION_REFUSED: &str = "\u{1}validation:";
 /// an empty one for the shell's standard words — when `error` is one.
 pub fn validation_refusal(error: &str) -> Option<&str> {
     error.strip_prefix(VALIDATION_REFUSED)
+}
+
+/// Whether `error` is a protected sheet refusing the change — a locked
+/// cell typed into, or formatting it does not allow — which the shells say
+/// in their own words.
+pub fn protected_refusal(error: &str) -> bool {
+    error.starts_with("sheet `") && error.contains("` is protected: ")
 }
 
 /// Excel's limits.
@@ -1541,6 +1553,275 @@ impl<B: Backend> Workbook<B> {
             1
         };
         self.record(steps);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// The drawing object (chart, picture, shape) under a point of the
+    /// viewport (sheet px from its top-left, headers included) at
+    /// `scroll`: the one on top, as Excel picks it.
+    pub fn object_at(&self, x: f64, y: f64, scroll: (f64, f64)) -> Option<u32> {
+        let metrics = self.layout.header_metrics();
+        if x < metrics.row_width || y < metrics.column_height {
+            return None;
+        }
+        let (sheet_x, sheet_y) = self.layout.sheet_point_in_viewport(
+            x - metrics.row_width,
+            y - metrics.column_height,
+            scroll.0,
+            scroll.1,
+        );
+        self.layout.shape_at(sheet_x, sheet_y).map(|shape| shape.id)
+    }
+
+    /// Where the object `id` is on the sheet, in sheet px (x, y, width,
+    /// height) from the top-left of the cells.
+    pub fn object_bounds(&self, id: u32) -> Option<(f64, f64, f64, f64)> {
+        let everything = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: f64::MAX / 4.0,
+            height: f64::MAX / 4.0,
+        };
+        let shape = self
+            .layout
+            .shapes_in(everything)
+            .find(|shape| shape.id == id)?;
+        Some((
+            shape.rect.x,
+            shape.rect.y,
+            shape.rect.width,
+            shape.rect.height,
+        ))
+    }
+
+    /// Where the object `id` is in the viewport at `scroll` (sheet px,
+    /// headers included), for its frame and handles.
+    pub fn object_rect(&self, id: u32, scroll: (f64, f64)) -> Option<(f64, f64, f64, f64)> {
+        let (x, y, width, height) = self.object_bounds(id)?;
+        let metrics = self.layout.header_metrics();
+        // Frozen panes do not scroll.
+        let x = if x < self.layout.frozen_width() {
+            x
+        } else {
+            x - scroll.0
+        };
+        let y = if y < self.layout.frozen_height() {
+            y
+        } else {
+            y - scroll.1
+        };
+        Some((
+            x + metrics.row_width,
+            y + metrics.column_height,
+            width,
+            height,
+        ))
+    }
+
+    /// The cell a sheet point is in, and how far into it in EMUs, growing
+    /// the laid-out grid when the point is past it.
+    fn anchor_point(&mut self, x: f64, y: f64) -> (CellRef, (i64, i64)) {
+        const EMU_PER_PX: f64 = 9_525.0;
+        let (x, y) = (x.max(0.0), y.max(0.0));
+        for _ in 0..64 {
+            let column = self.layout.column_at(x);
+            let row = self.layout.row_at(y);
+            if let (Some(column), Some(row)) = (column, row) {
+                let left = self.layout.column(column).map_or(0.0, |entry| entry.offset);
+                let top = self.layout.row(row).map_or(0.0, |entry| entry.offset);
+                return (
+                    CellRef::new(column, row),
+                    (
+                        ((x - left) * EMU_PER_PX).round() as i64,
+                        ((y - top) * EMU_PER_PX).round() as i64,
+                    ),
+                );
+            }
+            let (columns, rows) = self.extent;
+            let wider = if column.is_none() { 16 } else { 0 };
+            let taller = if row.is_none() { 64 } else { 0 };
+            self.reach(CellRef::new(
+                (columns + wider).min(MAX_COLUMN),
+                (rows + taller).min(MAX_ROW),
+            ));
+        }
+        (CellRef::new(0, 0), (0, 0))
+    }
+
+    /// Puts the object `id` at `bounds` (sheet px): moved by its border,
+    /// or resized by a handle.
+    pub fn place_object(&mut self, id: u32, bounds: (f64, f64, f64, f64)) -> Result<bool, String> {
+        let (x, y, width, height) = bounds;
+        let (from, from_offset) = self.anchor_point(x, y);
+        let (to, to_offset) = self.anchor_point(x + width, y + height);
+        let anchor = ShapeAnchor {
+            from,
+            from_offset,
+            to,
+            to_offset,
+        };
+        let name = self.sheet_name();
+        self.book
+            .place_shape(&name, id, &anchor)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Deletes the object `id`, as Delete does to a selected one.
+    pub fn delete_object(&mut self, id: u32) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .delete_shape(&name, id)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Insert ▸ Chart over `range`: the new chart's id.
+    pub fn insert_chart(&mut self, range: CellRange, kind: ChartKind) -> Result<u32, String> {
+        let name = self.sheet_name();
+        let id = self
+            .book
+            .insert_chart(&name, &range_text_full(range), kind)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        // The grid reaches far enough to lay the chart out.
+        if let Some(to) = self.book.workbook().sheets[self.index]
+            .shapes
+            .iter()
+            .find(|shape| shape.id == id)
+            .and_then(|shape| shape.to)
+        {
+            self.reach(to);
+        }
+        Ok(id)
+    }
+
+    /// The chart `id` as Chart Design shows it.
+    pub fn chart(&self, id: u32) -> Option<ChartInfo> {
+        let chart = self.book.workbook().sheets[self.index]
+            .shapes
+            .iter()
+            .find(|shape| shape.id == id)?
+            .chart
+            .as_ref()?;
+        let legend = match chart.legend.as_deref() {
+            Some("r") => Some(LegendPosition::Right),
+            Some("l") => Some(LegendPosition::Left),
+            Some("t") | Some("tr") => Some(LegendPosition::Top),
+            Some("b") => Some(LegendPosition::Bottom),
+            _ => None,
+        };
+        // The range its series' references cover, on this sheet.
+        let sheet = self.sheet_name();
+        let mut bounds: Option<CellRange> = None;
+        for series in &chart.series {
+            for data in [
+                &series.name,
+                &series.categories,
+                &series.values,
+                &series.x_values,
+            ] {
+                let Some(formula) = data.formula.as_deref() else {
+                    continue;
+                };
+                let Some((on, reference)) = formula.rsplit_once('!') else {
+                    continue;
+                };
+                let on = on.trim_matches('\'').replace("''", "'");
+                if on != sheet {
+                    continue;
+                }
+                let Ok(range) = CellRange::parse(&reference.replace('$', "")) else {
+                    continue;
+                };
+                bounds = Some(match bounds {
+                    None => range,
+                    Some(around) => CellRange {
+                        start: CellRef::new(
+                            around.start.column.min(range.start.column),
+                            around.start.row.min(range.start.row),
+                        ),
+                        end: CellRef::new(
+                            around.end.column.max(range.end.column),
+                            around.end.row.max(range.end.row),
+                        ),
+                    },
+                });
+            }
+        }
+        Some(ChartInfo {
+            kind: chart_kind(chart),
+            title: chart.title.clone(),
+            legend,
+            data: bounds.map(range_text_full),
+        })
+    }
+
+    /// Chart Design: the chart `id`'s type, title, legend or data changed.
+    pub fn set_chart(&mut self, id: u32, change: &ChartChange) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .set_chart(&name, id, change)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// The sheet's conditional formats as Excel's Rules Manager lists them:
+    /// first the one that wins.
+    pub fn conditional_formats(&self) -> Vec<ConditionalFormatView> {
+        self.book
+            .conditional_formats(&self.sheet_name())
+            .unwrap_or_default()
+    }
+
+    /// Adds a rule from Home ▸ Conditional Formatting over `range`, ahead
+    /// of the sheet's others.
+    pub fn add_conditional_format(
+        &mut self,
+        range: CellRange,
+        rule: &NewConditionalRule,
+        style: ConditionalStyle,
+    ) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .add_conditional_format(&name, &range_text_full(range), rule, style)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Deletes the rule at `index` in [`Self::conditional_formats`].
+    pub fn delete_conditional_format(&mut self, index: usize) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .delete_conditional_format(&name, index)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Clear Rules from Selected Cells (`range`) or from Entire Sheet.
+    pub fn clear_conditional_formats(&mut self, range: Option<CellRange>) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let range = range.map(range_text_full);
+        if !self
+            .book
+            .clear_conditional_formats(&name, range.as_deref())
+            .map_err(|error| error.to_string())?
+        {
+            return Ok(false);
+        }
+        self.record(1);
         self.after_write()?;
         Ok(true)
     }
