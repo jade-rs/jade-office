@@ -45,6 +45,9 @@ menu.file.close_tab	Close Tab
 menu.file.save	Save
 menu.file.save_as	Save As…
 menu.file.print	Print…
+menu.file.new	New Document
+menu.file.new_from_template	New from Template…
+menu.file.export_pdf	Export as PDF…
 menu.edit	Edit
 menu.edit.undo	Undo
 menu.edit.redo	Redo
@@ -461,6 +464,10 @@ doc.find.next	Next
 doc.find.replace_one	Replace
 doc.find.replace_all	Replace All
 doc.find.close	Close (esc)
+doc.untitled	Document{n}
+workspace.new_document	New Document
+doc.export_pdf	PDF
+doc.export_pdf_title	Export as PDF
 web.samples	Samples
 web.read_only	Read-only
 web.download	Save (Download)

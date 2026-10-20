@@ -728,6 +728,30 @@ impl DocView {
         cx.notify();
     }
 
+    /// PDF として書き出す: the Word document's pages, as the page shows
+    /// them, handed to the page to download.
+    pub fn export_pdf(&mut self, cx: &mut Context<Self>) {
+        let Document::Pages { document, .. } = &mut self.document else {
+            return;
+        };
+        let pdf = document.export_pdf();
+        self.refresh_repainted();
+        let name = format!(
+            "{}.pdf",
+            self.name
+                .rsplit_once('.')
+                .map_or(self.name.as_ref(), |(stem, _)| stem)
+        );
+        self.status = match pdf {
+            Ok(bytes) => {
+                self.host.save(&name, &bytes);
+                i18n::format("web.downloaded", &[("name", &name)]).into()
+            }
+            Err(error) => i18n::format("sheet.save_failed", &[("error", &error)]).into(),
+        };
+        cx.notify();
+    }
+
     pub fn step_history(&mut self, undo: bool, cx: &mut Context<Self>) {
         let keep;
         let result = match &mut self.document {

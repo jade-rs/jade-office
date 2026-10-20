@@ -45,6 +45,9 @@ menu.file.close_tab	タブを閉じる
 menu.file.save	保存
 menu.file.save_as	名前を付けて保存…
 menu.file.print	印刷…
+menu.file.new	新規文書
+menu.file.new_from_template	テンプレートから新規作成…
+menu.file.export_pdf	PDF として書き出す…
 menu.edit	編集
 menu.edit.undo	元に戻す
 menu.edit.redo	やり直し
@@ -461,6 +464,10 @@ doc.find.next	次へ
 doc.find.replace_one	置換
 doc.find.replace_all	すべて置換
 doc.find.close	閉じる (esc)
+doc.untitled	文書 {n}
+workspace.new_document	新規文書
+doc.export_pdf	PDF
+doc.export_pdf_title	PDF として書き出す
 web.samples	サンプル
 web.read_only	閲覧のみ
 web.download	保存 (ダウンロード)

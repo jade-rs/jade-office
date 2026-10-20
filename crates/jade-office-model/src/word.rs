@@ -30,6 +30,7 @@ pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
 pub mod find;
+pub mod new;
 
 pub use find::{FindOptions, Found, WordFind};
 
