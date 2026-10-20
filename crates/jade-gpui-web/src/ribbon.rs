@@ -99,16 +99,18 @@ pub enum Tab {
     Home,
     Insert,
     Layout,
+    Review,
 }
 
 impl Tab {
-    const ALL: [Tab; 3] = [Tab::Home, Tab::Insert, Tab::Layout];
+    const ALL: [Tab; 4] = [Tab::Home, Tab::Insert, Tab::Layout, Tab::Review];
 
     fn label(self) -> &'static str {
         i18n::text(match self {
             Tab::Home => "doc.tab.home",
             Tab::Insert => "doc.tab.insert",
             Tab::Layout => "doc.tab.layout",
+            Tab::Review => "doc.tab.review",
         })
     }
 }
@@ -197,6 +199,8 @@ pub enum Action {
     Page(PageCommand),
     /// ヘッダーの編集 / フッターの編集: the bar over the pages.
     EditStory(Story),
+    /// The 校閲 tab.
+    Review(crate::word_review::ReviewAction),
 }
 
 impl Action {
@@ -563,10 +567,20 @@ pub struct PageState {
     pub japanese: bool,
 }
 
+/// What the tabs beyond ホーム show as current.
+pub struct TabState {
+    /// The page, read only while レイアウト shows it.
+    pub page: Option<PageState>,
+    /// Whether changes are tracked.
+    pub tracking: bool,
+    /// Whether the comments pane is open.
+    pub comments: bool,
+}
+
 pub fn ribbon(
     ribbon: &Ribbon,
     state: &FormatState,
-    page: Option<&PageState>,
+    shown: &TabState,
     position: String,
     dirty: bool,
     viewport: Size<Pixels>,
@@ -598,7 +612,7 @@ pub fn ribbon(
         }
         Tab::Layout => {
             let mut groups = Vec::new();
-            if let Some(page) = page {
+            if let Some(page) = &shown.page {
                 groups.push(crate::word_page::page_setup(
                     ribbon,
                     &page.setup,
@@ -610,6 +624,7 @@ pub fn ribbon(
             groups.extend(layout(ribbon, state, cx));
             groups
         }
+        Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
     };
     div()
         .flex()
