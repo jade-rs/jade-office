@@ -5,6 +5,11 @@
 /// The rows and cells of clipboard text. A trailing line break ends the
 /// last row rather than starting an empty one.
 pub fn parse(text: &str) -> Vec<Vec<String>> {
+    parse_separated(text, '\t')
+}
+
+/// [`parse`] with `separator` between the cells: a comma for CSV.
+pub fn parse_separated(text: &str, separator: char) -> Vec<Vec<String>> {
     let mut rows = Vec::new();
     let mut row = Vec::new();
     let mut field = String::new();
@@ -28,7 +33,7 @@ pub fn parse(text: &str) -> Vec<Vec<String>> {
                 }
                 at_field_start = false;
             }
-            '\t' => {
+            c if c == separator => {
                 row.push(std::mem::take(&mut field));
                 at_field_start = true;
             }

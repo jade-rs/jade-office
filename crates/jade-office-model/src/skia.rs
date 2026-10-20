@@ -70,6 +70,17 @@ impl Backend for SkiaBackend {
     fn png(painter: &SkiaPainter) -> Option<Vec<u8>> {
         painter.encode_png()
     }
+
+    fn page(&self, width: f64, height: f64) -> Option<SkiaPainter> {
+        let page = SkiaPainter::new_recording(width, height)?;
+        self.register_on(&page);
+        Some(page)
+    }
+
+    fn pdf(pages: &[SkiaPainter], _size: (f64, f64)) -> Result<Vec<u8>, String> {
+        // Each recording knows its size.
+        SkiaPainter::encode_pdf(pages)
+    }
 }
 
 /// The native app's Word document drives the shared ribbon commands.
@@ -92,6 +103,22 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
         keep_selection: bool,
     ) -> Result<(), String> {
         NativeDocument::apply_command(self, command, keep_selection)
+    }
+
+    fn apply_commands(
+        &mut self,
+        commands: Vec<jade_docx_headless_api::HeadlessCommand>,
+        keep_selection: bool,
+    ) -> Result<(), String> {
+        NativeDocument::apply_commands(self, commands, keep_selection)
+    }
+
+    fn execute_command(
+        &mut self,
+        command: Box<dyn jade_docx_editor::commands::Command>,
+        keep_selection: bool,
+    ) -> Result<(), String> {
+        NativeDocument::execute_command(self, command, keep_selection)
     }
 
     fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize> {

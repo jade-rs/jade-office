@@ -21,7 +21,7 @@ path = "src/lib.rs"
 [features]
 default = []
 skia = ["dep:jade-skia-painter", "dep:jade-docx-native-render"]
-tiny-skia = ["dep:jade-tiny-skia-painter"]
+tiny-skia = ["dep:jade-tiny-skia-painter", "dep:flate2"]
 
 [dependencies]
 jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
@@ -42,6 +42,10 @@ jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter", optional = true }
 jade-docx-native-render = { path = "../../jade-core/crates/jade-docx-native-render", optional = true }
 jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter", optional = true }
+# Shift_JIS, for the CSV a Japanese Excel writes.
+encoding_rs = "0.8"
+# The browser build's PDF of page pictures.
+flate2 = { version = "1", optional = true }
 
 [dev-dependencies]
 png = "0.17"
