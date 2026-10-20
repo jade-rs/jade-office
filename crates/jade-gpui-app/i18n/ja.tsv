@@ -45,6 +45,9 @@ menu.file.close_tab	タブを閉じる
 menu.file.save	保存
 menu.file.save_as	名前を付けて保存…
 menu.file.print	印刷…
+menu.file.new	新規文書
+menu.file.new_from_template	テンプレートから新規作成…
+menu.file.export_pdf	PDF として書き出す…
 menu.edit	編集
 menu.edit.undo	元に戻す
 menu.edit.redo	やり直し
@@ -459,11 +462,88 @@ doc.info.saved	保存先
 doc.info.help	ドラッグで選択 · ダブルクリックで単語 · ⇧+矢印で拡張 · 選択範囲に入力で置換 · 画像はドラッグで移動、角でサイズ変更 · 検索バー: ⇥ 欄の切替 · ⏎ 次へ · ⇧⏎ 置換 · ⌘⏎ すべて · esc 閉じる
 doc.find.query	検索
 doc.find.replacement	置換
-doc.find.keys	⇥ 欄 · ⏎ 次へ · ⇧⏎ 置換 · ⌘⏎ すべて · esc 閉じる
+doc.find.keys	⇥ 欄 · ⏎ 次へ · ⇧⏎ 置換 · ⌘⏎ すべて · ⌥⌘C 大小 · ⌥⌘W 単語 · esc 閉じる
 doc.find.none	{query}: 見つかりません
 doc.find.count	{query}: {n} 件
 doc.find.position	{query}: {n} / {count}
 doc.find.replaced	{query} → {replacement}: {n} 件置換
+doc.find.match_case	大文字と小文字を区別する (⌥⌘C)
+doc.find.whole_word	完全に一致する単語だけを検索する (⌥⌘W)
+doc.find.previous	前へ
+doc.find.next	次へ
+doc.find.replace_one	置換
+doc.find.replace_all	すべて置換
+doc.find.close	閉じる (esc)
+doc.untitled	文書 {n}
+workspace.new_document	新規文書
+doc.export_pdf	PDF
+doc.export_pdf_title	PDF として書き出す
+page.group.setup	ページ設定
+page.margins	余白
+page.margins.normal	標準
+page.margins.narrow	狭い
+page.margins.moderate	やや狭い
+page.margins.wide	広い
+page.margins.top_bottom	上下
+page.margins.left_right	左右
+page.orientation	印刷の向き
+page.portrait	縦
+page.landscape	横
+page.size	サイズ
+page.columns	段組み
+page.columns.count	{n} 段
+page.breaks	区切り
+page.break.sections	セクション区切り
+page.break.next_page	次のページから開始
+page.break.continuous	現在の位置から開始
+page.break.even_page	偶数ページから開始
+page.break.odd_page	奇数ページから開始
+page.group.header_footer	ヘッダーとフッター
+page.header	ヘッダー
+page.header_title	ヘッダーの編集
+page.footer	フッター
+page.footer_title	フッターの編集
+page.number	ページ番号
+page.number.top_left	ページの上部 (左)
+page.number.top_center	ページの上部 (中央)
+page.number.top_right	ページの上部 (右)
+page.number.bottom_left	ページの下部 (左)
+page.number.bottom_center	ページの下部 (中央)
+page.number.bottom_right	ページの下部 (右)
+page.number.remove	ページ番号の削除
+page.header_editing	ヘッダー
+page.footer_editing	フッター
+page.story_keys	⇥ 左 · 中央 · 右 · ⏎ 反映 · esc 取消
+review.new_comment	新しいコメント
+review.show_comments	コメントの表示
+review.comments	コメント
+review.no_comments	コメントはありません
+review.reply	返信
+review.edit	編集
+review.resolve	解決
+review.reopen	もう一度開く
+review.delete	削除
+review.previous	前へ
+review.previous_title	前の変更箇所
+review.next	次へ
+review.next_title	次の変更箇所
+review.accept	承諾
+review.accept_title	承諾して次へ進む
+review.reject	元に戻す
+review.reject_title	元に戻して次へ進む
+review.no_changes	変更履歴はありません
+review.comment_keys	⏎ 投稿 · ⇧⏎ 改行 · esc 取消
+picture.group	図
+picture.insert	画像
+picture.insert_title	画像をこのデバイスから挿入
+picture.wrap	文字列の折り返し
+picture.wrap.inline	行内
+picture.wrap.square	四角形
+picture.wrap.tight	外周
+picture.wrap.through	内部
+picture.wrap.top_bottom	上下
+picture.wrap.behind	背面
+picture.wrap.front	前面
 web.samples	サンプル
 web.read_only	閲覧のみ
 web.download	保存 (ダウンロード)

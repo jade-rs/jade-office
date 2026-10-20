@@ -24,6 +24,48 @@ pub fn byte_to_utf16(text: &str, byte: usize) -> usize {
     text[..byte.min(text.len())].encode_utf16().count()
 }
 
+/// Where ⌥→ (Ctrl+→ elsewhere) goes in `text` from `offset`: past any
+/// spaces and punctuation, then over a run of letters and digits — a
+/// Japanese run as a whole, having no spaces to break on.
+pub fn word_end_after(text: &str, offset: usize) -> usize {
+    let offset = floor_boundary(text, offset);
+    let rest = &text[offset..];
+    let skipped = rest
+        .char_indices()
+        .find(|(_, ch)| ch.is_alphanumeric())
+        .map_or(rest.len(), |(at, _)| at);
+    let word = rest[skipped..]
+        .char_indices()
+        .find(|(_, ch)| !ch.is_alphanumeric())
+        .map_or(rest.len() - skipped, |(at, _)| at);
+    offset + skipped + word
+}
+
+/// Where ⌥← goes in `text` from `offset`: back past spaces and punctuation,
+/// then to the start of the run of letters and digits before them.
+pub fn word_start_before(text: &str, offset: usize) -> usize {
+    let before = &text[..floor_boundary(text, offset)];
+    let skipped = before
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| ch.is_alphanumeric())
+        .map_or(0, |(at, ch)| at + ch.len_utf8());
+    before[..skipped]
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !ch.is_alphanumeric())
+        .map_or(0, |(at, ch)| at + ch.len_utf8())
+}
+
+/// `offset`, clamped to `text` and moved back onto a character boundary.
+fn floor_boundary(text: &str, offset: usize) -> usize {
+    let mut offset = offset.min(text.len());
+    while !text.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    offset
+}
+
 /// Text being typed: into a cell or into a shape.
 pub struct TextEdit {
     pub text: String,
@@ -172,5 +214,24 @@ mod tests {
         assert_eq!(tab.text, "Sheet");
         assert_eq!(utf16_to_byte("a日b", 2), 4);
         assert_eq!(byte_to_utf16("a日b", 4), 2);
+    }
+
+    /// ⌥← and ⌥→ skip spaces and punctuation, then a run of letters and
+    /// digits; a Japanese run counts as one word, as it has no spaces.
+    #[test]
+    fn words_are_runs_of_letters_and_digits() {
+        let text = "Hello, wide 世界!";
+        assert_eq!(word_end_after(text, 0), 5);
+        assert_eq!(word_end_after(text, 5), 11);
+        assert_eq!(word_end_after(text, 11), 18);
+        assert_eq!(word_end_after(text, 18), text.len());
+        assert_eq!(word_end_after(text, text.len()), text.len());
+        assert_eq!(word_start_before(text, text.len()), 12);
+        assert_eq!(word_start_before(text, 12), 7);
+        assert_eq!(word_start_before(text, 7), 0);
+        assert_eq!(word_start_before(text, 0), 0);
+        // Mid-word, to that word's own edge.
+        assert_eq!(word_start_before(text, 3), 0);
+        assert_eq!(word_end_after(text, 3), 5);
     }
 }
