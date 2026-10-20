@@ -8,7 +8,10 @@
 //! (`deck::Deck`), the same code the native app runs; this is the gpui
 //! around it.
 
-use jade_web::deck::{FormatStrip, Motion, ParagraphAlignment, ShapeText, TextCommand, FONT_SIZES};
+use jade_web::deck::{
+    FormatStrip, Insert, Motion, ParagraphAlignment, ShapePreset, ShapeText, TextCommand,
+    FONT_SIZES, SHAPE_PRESETS,
+};
 
 use crate::tooltip::Tooltip;
 
@@ -24,6 +27,8 @@ pub(super) enum Popup {
     Size,
     Color,
     Spacing,
+    /// Insert's shapes.
+    Shapes,
 }
 
 /// A thumbnail being dragged to another place in the list.
@@ -178,6 +183,58 @@ impl DocView {
             *format_popup = None;
         }
         cx.notify();
+    }
+
+    // ---- inserting ----------------------------------------------------------
+
+    /// Text Box, or a shape from Shapes: the next drag on the slide draws it,
+    /// as in PowerPoint; a click drops it at its usual size.
+    fn start_insert(&mut self, insert: Insert, cx: &mut Context<Self>) {
+        self.commit_slide_text(cx);
+        self.close_popups();
+        self.select_shape(None);
+        if let Document::Deck { inserting, .. } = &mut self.document {
+            *inserting = Some(insert);
+        }
+        cx.notify();
+    }
+
+    /// Picture: the page's file picker, whose PNG or JPEG comes back through
+    /// the workspace to [`DocView::insert_picture`].
+    fn pick_picture(&mut self, cx: &mut Context<Self>) {
+        self.commit_slide_text(cx);
+        self.close_popups();
+        self.host.pick();
+        cx.notify();
+    }
+
+    /// A PNG or JPEG placed in the middle of the slide on show, selected.
+    pub(crate) fn insert_picture(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        self.commit_slide_text(cx);
+        let Document::Deck { deck, current, .. } = &mut self.document else {
+            return;
+        };
+        let result = deck.insert_picture(*current, bytes);
+        if let Err(error) = &result {
+            self.status = i18n::format("deck.picture_failed", &[("error", error)]).into();
+            cx.notify();
+            return;
+        }
+        self.inserted(result, cx);
+    }
+
+    /// After an insert: the slide repainted and the new object selected.
+    fn inserted(&mut self, result: Result<u32, String>, cx: &mut Context<Self>) -> Option<u32> {
+        let id = match result {
+            Ok(id) => id,
+            Err(error) => {
+                self.edited(Err(error), cx);
+                return None;
+            }
+        };
+        self.typed(Ok(true), cx);
+        self.select_shape(Some(id));
+        Some(id)
     }
 
     // ---- formatting ---------------------------------------------------------
@@ -785,14 +842,20 @@ impl DocView {
             // An IME composing has the keys to itself.
             return !composing && self.typing_key(key, modifiers, cx);
         }
-        let (slides_focused, layouts_open, format_open) = match &self.document {
+        let (slides_focused, layouts_open, format_open, inserting) = match &self.document {
             Document::Deck {
                 slides_focused,
                 layouts_open,
                 format_popup,
+                inserting,
                 ..
-            } => (*slides_focused, *layouts_open, format_popup.is_some()),
-            _ => (false, false, false),
+            } => (
+                *slides_focused,
+                *layouts_open,
+                format_popup.is_some(),
+                inserting.is_some(),
+            ),
+            _ => (false, false, false, false),
         };
         if let Document::Deck {
             cells: cells @ Some(_),
@@ -872,6 +935,16 @@ impl DocView {
         match key {
             // In the slide list, Delete deletes the slide.
             "delete" | "backspace" if slides_focused => self.delete_slide(cx),
+            "escape" if inserting => {
+                if let Document::Deck {
+                    inserting, drawing, ..
+                } = &mut self.document
+                {
+                    *inserting = None;
+                    *drawing = None;
+                }
+                cx.notify();
+            }
             "escape" if layouts_open => self.toggle_layouts(cx),
             "escape" if format_open => {
                 self.close_popups();
@@ -900,6 +973,16 @@ impl DocView {
         let Some((x, y)) = self.slide_point(event.position) else {
             return;
         };
+        if let Document::Deck {
+            inserting: Some(_),
+            drawing,
+            ..
+        } = &mut self.document
+        {
+            *drawing = Some(((x, y), (x, y)));
+            cx.notify();
+            return;
+        }
         // Shift+click in a table whose cell is being typed into, or whose
         // cells are selected, selects the cells between, as in PowerPoint.
         if event.modifiers.shift && self.select_slide_cells_to(x, y, cx) {
@@ -1025,6 +1108,15 @@ impl DocView {
             return;
         };
         if let Document::Deck {
+            drawing: Some((_, to)),
+            ..
+        } = &mut self.document
+        {
+            *to = (x, y);
+            cx.notify();
+            return;
+        }
+        if let Document::Deck {
             selecting_text: true,
             ..
         } = &self.document
@@ -1051,12 +1143,23 @@ impl DocView {
             current,
             drag,
             selecting_text,
+            inserting,
+            drawing,
             ..
         } = &mut self.document
         else {
             return;
         };
         *selecting_text = false;
+        if let (Some((from, to)), Some(insert)) = (drawing.take(), *inserting) {
+            *inserting = None;
+            let result = deck.insert(*current, insert, insert.rect(from, to));
+            // A text box takes the caret.
+            if let (Some(_), Insert::TextBox) = (self.inserted(result, cx), insert) {
+                self.begin_slide_text(None, cx);
+            }
+            return;
+        }
         let Some(drag) = drag.take() else {
             return;
         };
@@ -1204,6 +1307,8 @@ impl DocView {
             drag,
             scale: shown_scale,
             layouts_open,
+            inserting,
+            drawing,
             ..
         } = &mut self.document
         else {
@@ -1359,6 +1464,25 @@ impl DocView {
         let resizable = selected
             .and_then(|id| deck.shape(current_index, id))
             .is_some_and(|shape| shape.can_resize);
+        // A text box or shape being drawn.
+        let drawn = match (*drawing, *inserting) {
+            (Some((from, to)), Some(insert)) => {
+                let rect = insert.rect(from, to);
+                Some(
+                    div()
+                        .absolute()
+                        .left(px(rect.x as f32 * zoom))
+                        .top(px(rect.y as f32 * zoom))
+                        .w(px(rect.width as f32 * zoom))
+                        .h(px(rect.height as f32 * zoom))
+                        .border_1()
+                        .border_color(palette::accent()),
+                )
+            }
+            _ => None,
+        };
+        let inserting = *inserting;
+        let shapes_button = shapes_button(inserting, format_popup == Some(Popup::Shapes), cx);
         let overlay = selected.filter(|id| Some(*id) != typed_id).and_then(|id| {
             let editing = edit.as_ref().filter(|(target, _)| target.id() == id);
             let rect = match editing {
@@ -1564,6 +1688,31 @@ impl DocView {
                             ),
                         )
                         .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(palette::border()))
+                        .child(
+                            toolbar_button(
+                                "insert-text-box",
+                                "icons/type.svg",
+                                i18n::text("deck.text_box"),
+                            )
+                            .when(inserting == Some(Insert::TextBox), |button| {
+                                button.bg(palette::selected())
+                            })
+                            .on_click(cx.listener(
+                                |view, _event, _window, cx| view.start_insert(Insert::TextBox, cx),
+                            )),
+                        )
+                        .child(shapes_button)
+                        .child(
+                            toolbar_button(
+                                "insert-picture",
+                                "icons/image.svg",
+                                i18n::text("deck.picture"),
+                            )
+                            .on_click(
+                                cx.listener(|view, _event, _window, cx| view.pick_picture(cx)),
+                            ),
+                        )
+                        .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(palette::border()))
                         // A table's layout, while one of its cells is typed
                         // into: PowerPoint's Layout tab.
                         .when(editing_cell, |bar| {
@@ -1751,6 +1900,9 @@ impl DocView {
                                             .flex_none()
                                             .w(px(width))
                                             .h(px(height))
+                                            .when(inserting.is_some(), |slide| {
+                                                slide.cursor(gpui::CursorStyle::Crosshair)
+                                            })
                                             .bg(gpui::white())
                                             .shadow_lg()
                                             .on_mouse_down(
@@ -1763,6 +1915,7 @@ impl DocView {
                                                 }),
                                             )
                                             .children(overlay)
+                                            .children(drawn)
                                             .children(typed.into_iter().flatten())
                                             // The selected cells, shaded as
                                             // PowerPoint shades them.
@@ -2317,5 +2470,53 @@ impl DocView {
                 .into_any_element(),
                 spacing_menu,
             ))
+    }
+}
+
+/// Shapes ▾: the shapes Insert offers; one picked is drawn next.
+fn shapes_button(
+    inserting: Option<Insert>,
+    open: bool,
+    cx: &mut Context<DocView>,
+) -> gpui::AnyElement {
+    let menu = open.then(|| {
+        menu_panel("deck-shapes")
+            .children(SHAPE_PRESETS.iter().enumerate().map(|(index, &preset)| {
+                menu_row(
+                    ("deck-shape", index),
+                    i18n::text(shape_name(preset)),
+                    inserting == Some(Insert::Shape(preset)),
+                )
+                .on_click(cx.listener(move |view, _event, _window, cx| {
+                    view.start_insert(Insert::Shape(preset), cx)
+                }))
+            }))
+            .into_any_element()
+    });
+    let drawing_shape = matches!(inserting, Some(Insert::Shape(_)));
+    with_menu(
+        toolbar_button(
+            "insert-shape",
+            "icons/shapes.svg",
+            i18n::text("deck.shapes"),
+        )
+        .when(open || drawing_shape, |button| {
+            button.bg(palette::selected())
+        })
+        .on_click(cx.listener(|view, _event, _window, cx| view.toggle_popup(Popup::Shapes, cx)))
+        .into_any_element(),
+        menu,
+    )
+}
+
+/// The words for a shape in Insert's list, as PowerPoint names them.
+fn shape_name(preset: ShapePreset) -> &'static str {
+    match preset {
+        ShapePreset::Rect => "deck.shape.rect",
+        ShapePreset::RoundRect => "deck.shape.round_rect",
+        ShapePreset::Ellipse => "deck.shape.ellipse",
+        ShapePreset::Triangle => "deck.shape.triangle",
+        ShapePreset::Diamond => "deck.shape.diamond",
+        ShapePreset::Hexagon => "deck.shape.hexagon",
     }
 }

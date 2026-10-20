@@ -26,9 +26,9 @@ use gpui::{
     WindowOptions,
 };
 use jade_office_model::deck::{
-    Deck, DragMode, FormatStrip, Motion, ParagraphAlignment, ShapeDrag, ShapeRect as SlideRect,
-    ShapeText, ShapeTransformInfo, TableChange, TextCommand, TextSelectionGeometry, TextTarget,
-    FONT_SIZES,
+    Deck, DragMode, FormatStrip, Insert, Motion, ParagraphAlignment, ShapeDrag,
+    ShapeRect as SlideRect, ShapeText, ShapeTransformInfo, TableChange, TextCommand,
+    TextSelectionGeometry, TextTarget, FONT_SIZES, SHAPE_PRESETS,
 };
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::Backend;
@@ -147,6 +147,8 @@ enum Popup {
     Size,
     Color,
     Spacing,
+    /// Insert's shapes.
+    Shapes,
 }
 
 /// A thumbnail being dragged to another place in the list.
@@ -194,6 +196,10 @@ pub struct DeckView {
     typing: Option<ShapeText>,
     /// A press in the text being typed into is being dragged, selecting.
     selecting_text: bool,
+    /// What the next drag on the slide draws: a text box or a shape.
+    inserting: Option<Insert>,
+    /// That drag, from where it started to where it is, in slide px.
+    drawing: Option<((f64, f64), (f64, f64))>,
     /// Text being typed into a table cell, in a box over it.
     text_edit: Option<TextEdit>,
     cells: Option<CellSelection>,
@@ -378,6 +384,92 @@ impl DeckView {
         true
     }
 
+    // ---- inserting -------------------------------------------------------
+
+    /// Text Box, or a shape from Shapes: the next drag on the slide draws it,
+    /// as in PowerPoint; a click drops it at its usual size.
+    fn start_insert(&mut self, insert: Insert, cx: &mut Context<Self>) {
+        self.commit_text(cx);
+        self.popup = None;
+        self.inserting = Some(insert);
+        self.select(None, cx);
+        cx.notify();
+    }
+
+    /// Draws what is being inserted over `rect` and selects it — a text box
+    /// with the caret in it.
+    fn insert_at(&mut self, insert: Insert, rect: SlideRect, cx: &mut Context<Self>) {
+        self.inserting = None;
+        let result = self.deck.insert(self.current, insert, rect);
+        let Some(id) = self.inserted(result, cx) else {
+            return;
+        };
+        if insert == Insert::TextBox {
+            self.type_in_place(id, None, cx);
+        }
+    }
+
+    /// Picture: a PNG or JPEG file, placed in the middle of the slide.
+    fn pick_picture(&mut self, cx: &mut Context<Self>) {
+        self.commit_text(cx);
+        self.popup = None;
+        let prompt = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+        cx.spawn(async move |view, cx| {
+            let Ok(Ok(Some(paths))) = prompt.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            view.update(cx, |view, cx| match std::fs::read(&path) {
+                Ok(bytes) => view.insert_picture(&bytes, cx),
+                Err(error) => {
+                    let error = format!("{}: {error}", path.display());
+                    view.status = SharedString::from(i18n::format(
+                        "deck.picture_failed",
+                        &[("error", &error)],
+                    ));
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn insert_picture(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        let result = self.deck.insert_picture(self.current, bytes);
+        if let Err(error) = &result {
+            self.status =
+                SharedString::from(i18n::format("deck.picture_failed", &[("error", error)]));
+            cx.notify();
+            return;
+        }
+        self.inserted(result, cx);
+    }
+
+    /// After an insert: the slide repainted and the new object selected.
+    fn inserted(&mut self, result: Result<u32, String>, cx: &mut Context<Self>) -> Option<u32> {
+        match result {
+            Ok(id) => {
+                self.reload(false, cx);
+                self.select(Some(id), cx);
+                Some(id)
+            }
+            Err(error) => {
+                self.status =
+                    SharedString::from(i18n::format("deck.edit_failed", &[("error", &error)]));
+                cx.notify();
+                None
+            }
+        }
+    }
+
     fn toggle_popup(&mut self, popup: Popup, cx: &mut Context<Self>) {
         self.popup = (self.popup != Some(popup)).then_some(popup);
         cx.notify();
@@ -558,6 +650,11 @@ impl DeckView {
         let Some((x, y)) = self.slide_point(event.position) else {
             return;
         };
+        if self.inserting.is_some() {
+            self.drawing = Some(((x, y), (x, y)));
+            cx.notify();
+            return;
+        }
         // Shift+click in a table whose cell is being typed into, or whose
         // cells are selected, selects the cells between, as in PowerPoint.
         if event.modifiers.shift && self.select_cells_to(x, y, cx) {
@@ -635,6 +732,11 @@ impl DeckView {
         let Some((x, y)) = self.slide_point(event.position) else {
             return;
         };
+        if let Some((_, to)) = self.drawing.as_mut() {
+            *to = (x, y);
+            cx.notify();
+            return;
+        }
         if self.selecting_text {
             self.edit_typing(cx, |typing, deck| {
                 typing.click(deck, x, y, true);
@@ -650,6 +752,10 @@ impl DeckView {
 
     fn mouse_up(&mut self, cx: &mut Context<Self>) {
         self.selecting_text = false;
+        if let (Some((from, to)), Some(insert)) = (self.drawing.take(), self.inserting) {
+            self.insert_at(insert, insert.rect(from, to), cx);
+            return;
+        }
         let Some(drag) = self.drag.take() else {
             return;
         };
@@ -1011,6 +1117,11 @@ impl DeckView {
         match key {
             // In the slide list, Delete deletes the slide.
             "delete" | "backspace" if self.slides_focused => self.delete_slide(cx),
+            "escape" if self.inserting.is_some() => {
+                self.inserting = None;
+                self.drawing = None;
+                cx.notify();
+            }
             "escape" if self.popup.is_some() => {
                 self.popup = None;
                 cx.notify();
@@ -1173,6 +1284,21 @@ impl DeckView {
         cx: &mut Context<Self>,
     ) -> Vec<gpui::AnyElement> {
         let mut out = Vec::new();
+        // A text box or shape being drawn.
+        if let (Some((from, to)), Some(insert)) = (self.drawing, self.inserting) {
+            let rect = insert.rect(from, to);
+            out.push(
+                div()
+                    .absolute()
+                    .left(px(rect.x as f32 * scale))
+                    .top(px(rect.y as f32 * scale))
+                    .w(px(rect.width as f32 * scale))
+                    .h(px(rect.height as f32 * scale))
+                    .border_1()
+                    .border_color(theme::accent())
+                    .into_any_element(),
+            );
+        }
         // The selected cells, shaded as PowerPoint shades them.
         if let Some(cells) = &self.cells {
             let rect = cells.rect;
@@ -1373,6 +1499,37 @@ impl DeckView {
 }
 
 impl DeckView {
+    /// Shapes ▾: the shapes Insert offers; one picked is drawn next.
+    fn shapes_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let open = self.popup == Some(Popup::Shapes);
+        let drawing_shape = matches!(self.inserting, Some(Insert::Shape(_)));
+        let menu = open.then(|| {
+            menu_panel("deck-shapes")
+                .children(SHAPE_PRESETS.iter().enumerate().map(|(index, &preset)| {
+                    menu_row(
+                        ("deck-shape", index),
+                        i18n::text(shape_name(preset)),
+                        self.inserting == Some(Insert::Shape(preset)),
+                    )
+                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                        view.start_insert(Insert::Shape(preset), cx)
+                    }))
+                }))
+                .into_any_element()
+        });
+        with_menu(
+            toolbar_button(
+                "insert-shape",
+                "icons/shapes.svg",
+                i18n::text("deck.shapes"),
+            )
+            .when(open || drawing_shape, |button| button.bg(theme::selected()))
+            .on_click(cx.listener(|view, _event, _window, cx| view.toggle_popup(Popup::Shapes, cx)))
+            .into_any_element(),
+            menu,
+        )
+    }
+
     /// Layout ▾: the layouts the slide can take, its own checked.
     fn layouts_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let open = self.popup == Some(Popup::Layouts);
@@ -1845,6 +2002,19 @@ impl DeckView {
     }
 }
 
+/// The words for a shape in Insert's list, as PowerPoint names them.
+fn shape_name(preset: jade_office_model::deck::ShapePreset) -> &'static str {
+    use jade_office_model::deck::ShapePreset;
+    match preset {
+        ShapePreset::Rect => "deck.shape.rect",
+        ShapePreset::RoundRect => "deck.shape.round_rect",
+        ShapePreset::Ellipse => "deck.shape.ellipse",
+        ShapePreset::Triangle => "deck.shape.triangle",
+        ShapePreset::Diamond => "deck.shape.diamond",
+        ShapePreset::Hexagon => "deck.shape.hexagon",
+    }
+}
+
 fn toolbar_button(
     id: &'static str,
     icon: &'static str,
@@ -2302,6 +2472,33 @@ impl Render for DeckView {
                                     cx.listener(|view, _event, _window, cx| view.toggle_hidden(cx)),
                                 ),
                             )
+                            .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(theme::border()))
+                            .child(
+                                toolbar_button(
+                                    "insert-text-box",
+                                    "icons/type.svg",
+                                    i18n::text("deck.text_box"),
+                                )
+                                .when(self.inserting == Some(Insert::TextBox), |button| {
+                                    button.bg(theme::selected())
+                                })
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.start_insert(Insert::TextBox, cx)
+                                    },
+                                )),
+                            )
+                            .child(self.shapes_button(cx))
+                            .child(
+                                toolbar_button(
+                                    "insert-picture",
+                                    "icons/image.svg",
+                                    i18n::text("deck.picture"),
+                                )
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| view.pick_picture(cx)),
+                                ),
+                            )
                             .child(div().flex_1())
                             // A table's layout, while one of its cells is
                             // typed into: PowerPoint's Layout tab.
@@ -2487,6 +2684,9 @@ impl Render for DeckView {
                                     .child(
                                         div()
                                             .id("slide")
+                                            .when(self.inserting.is_some(), |slide| {
+                                                slide.cursor(gpui::CursorStyle::Crosshair)
+                                            })
                                             .relative()
                                             .flex_none()
                                             .w(px(width))
@@ -2576,6 +2776,8 @@ impl DeckView {
             drag: None,
             typing: None,
             selecting_text: false,
+            inserting: None,
+            drawing: None,
             text_edit: None,
             cells: None,
             slide: None,
@@ -2959,6 +3161,61 @@ mod tests {
             cx.dispatch_action(Undo);
         }
         view.read_with(cx, |view, _| assert!(!view.deck.is_dirty()));
+    }
+
+    /// Text Box, then a drag on the slide: a text box there, with the caret
+    /// in it. A shape from Shapes, dropped by a click at its usual size. A
+    /// picture, in the middle of the slide. Each is selected once in.
+    #[gpui::test]
+    fn text_boxes_shapes_and_pictures_are_inserted(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let count = view.read_with(cx, |view, _| view.shapes.len());
+        view.update(cx, |view, cx| {
+            view.start_insert(Insert::TextBox, cx);
+            view.drawing = Some(((100.0, 100.0), (300.0, 160.0)));
+            view.mouse_up(cx);
+        });
+        cx.simulate_input("見出し");
+        let text_box = view.read_with(cx, |view, _| {
+            assert_eq!(view.inserting, None);
+            assert_eq!(view.shapes.len(), count + 1);
+            let id = view.typing.as_ref().expect("typing into the text box").id;
+            assert_eq!(view.selected, Some(id));
+            assert_eq!(view.deck.shape_text(0, id).as_deref(), Some("見出し"));
+            id
+        });
+        cx.simulate_keystrokes("escape");
+        view.update(cx, |view, cx| {
+            view.toggle_popup(Popup::Shapes, cx);
+            view.start_insert(
+                Insert::Shape(jade_office_model::deck::ShapePreset::Ellipse),
+                cx,
+            );
+            view.drawing = Some(((50.0, 50.0), (50.0, 50.0)));
+            view.mouse_up(cx);
+        });
+        view.read_with(cx, |view, _| {
+            let id = view.selected.expect("the shape is selected");
+            assert_ne!(id, text_box);
+            let rect = SlideRect::of(&view.shape(id).unwrap().transform.unwrap());
+            assert!((rect.width - 96.0).abs() < 0.01 && (rect.x - 50.0).abs() < 0.01);
+        });
+        let mut png = Vec::new();
+        image::RgbImage::from_pixel(40, 20, image::Rgb([200, 40, 40]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        view.update(cx, |view, cx| view.insert_picture(&png, cx));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count + 3);
+            let picture = view.shape(view.selected.unwrap()).unwrap();
+            assert_eq!(picture.kind, "picture");
+        });
+        // Not a picture: nothing goes in, and the status says why.
+        view.update(cx, |view, cx| view.insert_picture(b"not a picture", cx));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count + 3);
+            assert!(!view.status.is_empty());
+        });
     }
 
     /// In a table made in PowerPoint, a double-click types into the cell
