@@ -1121,15 +1121,15 @@ impl EditableDocument {
     fn step_history(&mut self, backwards: bool) -> Result<bool, String> {
         self.composition = None;
         let mut selection = self.selection.take();
-        let stepped = {
-            let mut context = CommandContext::new(&mut self.word_document, &mut selection);
+        let stepped = self.edit_in_place(|this| {
+            let mut context = CommandContext::new(&mut this.word_document, &mut selection);
             if backwards {
-                self.executor.undo(&mut context)
+                this.executor.undo(&mut context)
             } else {
-                self.executor.redo(&mut context)
+                this.executor.redo(&mut context)
             }
             .map_err(|error| format!("history failed: {error:?}"))
-        };
+        });
         self.selection = selection;
         if !stepped? {
             return Ok(false);
@@ -1138,6 +1138,24 @@ impl EditableDocument {
         self.dirty = true;
         self.repaint_all()?;
         Ok(true)
+    }
+
+    /// Runs `edit` on the document with the renderer's hold on it let go,
+    /// then points the renderer at the result.
+    ///
+    /// The renderer keeps the document it last laid out, so changing a
+    /// paragraph through the shared `Rc` copied the whole document first —
+    /// every paragraph, on every keystroke, a tenth of what typing cost. Let
+    /// go of, the document is changed where it is. Letting go also forgets
+    /// the paragraph hashes the renderer keys by address, which an edit in
+    /// place would otherwise leave stale; the copy forgot them too.
+    fn edit_in_place<R>(&mut self, edit: impl FnOnce(&mut Self) -> R) -> R {
+        self.renderer.drop_document_cache();
+        let result = edit(self);
+        if let Some(document) = &self.word_document.document {
+            self.renderer.restore_document_cache(Rc::clone(document));
+        }
+        result
     }
 
     /// Applies `command` — recorded for undo when `recorded` — and repaints
@@ -1152,18 +1170,21 @@ impl EditableDocument {
         let request = HeadlessEditRequest {
             commands: vec![command],
         };
-        if recorded {
-            self.selection = apply_headless_commands_with_executor_to_document(
-                &mut self.word_document,
-                &mut self.executor,
-                self.selection.take(),
-                &request,
-            )
-            .map_err(|error| format!("edit failed: {error:?}"))?;
-        } else {
-            apply_headless_commands_to_document(&mut self.word_document, &request)
+        self.edit_in_place(|this| {
+            if recorded {
+                this.selection = apply_headless_commands_with_executor_to_document(
+                    &mut this.word_document,
+                    &mut this.executor,
+                    this.selection.take(),
+                    &request,
+                )
                 .map_err(|error| format!("edit failed: {error:?}"))?;
-        }
+            } else {
+                apply_headless_commands_to_document(&mut this.word_document, &request)
+                    .map_err(|error| format!("edit failed: {error:?}"))?;
+            }
+            Ok::<(), String>(())
+        })?;
         self.dirty = true;
         if let Some(from) = &mut self.deferred_repaint {
             *from = (*from).min(paragraph);
