@@ -449,16 +449,20 @@ fn rasterize_glyph(
 }
 
 /// The coverage of `outline`, filled under `transform`, of each pixel of a
-/// `width` × `height` grid whose border the outline stays a pixel inside:
+/// `width` × `height` grid (the outline may run off it):
 /// the exact area each pixel has inside, by accumulating every edge's
 /// signed area along its rows (as font-rs and ab_glyph do) instead of the
 /// path rasteriser's sixteen samples. Rasterising glyphs was half of what
 /// opening a document cost.
 fn area_coverage(outline: &Path, transform: Transform, width: usize, height: usize) -> Vec<u8> {
+    // Two cells past each row's end take what an edge right of the grid
+    // leaves, so that it never reaches into the next row.
+    let stride = width + 2;
     let mut area = AreaAccumulator {
         width,
         height,
-        cells: vec![0.0; width * height + 2],
+        stride,
+        cells: vec![0.0; stride * height],
     };
     let place = |point: tiny_skia::Point| {
         let mut point = point;
@@ -497,20 +501,22 @@ fn area_coverage(outline: &Path, transform: Transform, width: usize, height: usi
     area.line(last, start);
     // Each row's signed areas sum to its winding: covered where it is not
     // zero, as the non-zero rule fills.
-    let mut sum = 0.0_f32;
-    area.cells[..width * height]
-        .iter()
-        .map(|cell| {
+    let mut alpha = Vec::with_capacity(width * height);
+    for row in area.cells.chunks_exact(stride) {
+        let mut sum = 0.0_f32;
+        alpha.extend(row[..width].iter().map(|cell| {
             sum += cell;
             (sum.abs().min(1.0) * 255.0 + 0.5) as u8
-        })
-        .collect()
+        }));
+    }
+    alpha
 }
 
 /// The signed area each edge adds to the pixels it crosses, row by row.
 struct AreaAccumulator {
     width: usize,
     height: usize,
+    stride: usize,
     cells: Vec<f32>,
 }
 
@@ -532,7 +538,7 @@ impl AreaAccumulator {
         }
         let last = (to.1.ceil().max(0.0) as usize).min(self.height);
         for row in first as usize..last {
-            let start = row * self.width;
+            let start = row * self.stride;
             let height = (row as f32 + 1.0).min(to.1) - (row as f32).max(from.1);
             let next = x + slope * height;
             let signed = height * direction;
@@ -849,6 +855,10 @@ struct Inner {
     /// The blends of the text colours drawn lately, newest first.
     blends: RefCell<Vec<Rc<BlendTable>>>,
 }
+
+/// The most pixels a path's coverage buffer covers: past it, a large shape's
+/// whole spans go through the rasteriser faster than a cell per pixel.
+const AREA_FILL_LIMIT: f32 = 512.0 * 512.0;
 
 /// How many text colours keep their [`BlendTable`].
 const BLEND_TABLES: usize = 8;
@@ -1402,6 +1412,9 @@ impl TinySkiaPainter {
     }
 
     fn fill_path_with(&self, path: &Path, color: Color, transform: Transform) {
+        if self.fill_area(path, color, transform) {
+            return;
+        }
         let paint = self.paint(color);
         self.clipped(path.bounds(), transform, |pixmap, transform, mask| {
             pixmap.fill_path(path, &paint, FillRule::Winding, transform, mask);
@@ -1432,12 +1445,73 @@ impl TinySkiaPainter {
         {
             return;
         }
-        let paint = self.paint(color);
         let stroke = self.stroke_style();
+        // The stroke's outline, filled as any other path is.
+        let resolution = tiny_skia::PathStroker::compute_resolution_scale(&transform);
+        let dashed = match &stroke.dash {
+            Some(dash) => path.dash(dash, resolution),
+            None => None,
+        };
+        let outline = dashed
+            .as_ref()
+            .or((stroke.dash.is_none()).then_some(path))
+            .and_then(|path| path.stroke(&stroke, resolution));
+        if outline.is_some_and(|outline| self.fill_area(&outline, color, transform)) {
+            return;
+        }
+        let paint = self.paint(color);
         let bounds = Self::stroke_bounds(path, stroke.width);
         self.clipped(bounds, transform, |pixmap, transform, mask| {
             pixmap.stroke_path(path, &paint, &stroke, transform, mask);
         });
+    }
+
+    /// Fills `path` (non-zero) by the area each pixel has inside it, as a
+    /// glyph is, and blends that under the clip; `false`, drawing nothing,
+    /// when the part of it on the surface is too large for a coverage
+    /// buffer the rasteriser's spans would beat.
+    fn fill_area(&self, path: &Path, color: Color, transform: Transform) -> bool {
+        let (surface_width, surface_height) = {
+            let pixmap = self.inner.pixmap.borrow();
+            (pixmap.width() as f32, pixmap.height() as f32)
+        };
+        let clip = self.inner.state.borrow().clip.clone();
+        let [left, top, right, bottom] = clip
+            .as_deref()
+            .map_or([0.0, 0.0, surface_width, surface_height], |clip| clip.rect);
+        let device = device_bounds(path.bounds(), transform);
+        if !device.iter().all(|value| value.is_finite()) {
+            return false;
+        }
+        // Unclipped, or inside the clip, the rasteriser's spans draw straight
+        // onto the surface; across a clip's edge it needs a layer and a mask.
+        let crosses_clip = clip
+            .as_deref()
+            .is_some_and(|clip| matches!(clip.coverage(device), Coverage::Partial));
+        if !crosses_clip {
+            return false;
+        }
+        let x0 = (device[0] - 1.0).max(left).max(0.0).floor();
+        let y0 = (device[1] - 1.0).max(top).max(0.0).floor();
+        let x1 = (device[2] + 1.0).min(right).min(surface_width).ceil();
+        let y1 = (device[3] + 1.0).min(bottom).min(surface_height).ceil();
+        if x1 <= x0 || y1 <= y0 {
+            return true;
+        }
+        if (x1 - x0) * (y1 - y0) > AREA_FILL_LIMIT {
+            return false;
+        }
+        let (width, height) = ((x1 - x0) as usize, (y1 - y0) as usize);
+        let placed = transform.post_translate(-x0, -y0);
+        let coverage = GlyphCoverage {
+            left: x0 as i32,
+            top: y0 as i32,
+            width: width as u32,
+            height: height as u32,
+            alpha: area_coverage(path, placed, width, height),
+        };
+        self.blend_coverage(&coverage, 0, 0, self.color(color));
+        true
     }
 
     /// Fills the rectangles a plain stroke covers, if the stroke is one
@@ -2913,9 +2987,9 @@ mod tests {
         );
     }
 
-    /// A stroke and a fill across the edges of a rectangle clip, drawn on a
-    /// layer of their own, come out exactly as drawing them through a mask
-    /// of the clip over the whole surface does.
+    /// A stroke and a fill across the edges of a rectangle clip, drawn by
+    /// the rasteriser on a layer of their own, come out exactly as drawing
+    /// them through a mask of the clip over the whole surface does.
     #[test]
     fn drawing_across_a_rectangle_clip_matches_a_whole_mask() {
         let (width, height) = (120, 90);
@@ -2937,11 +3011,21 @@ mod tests {
             f64::from(clip.height()),
         );
         painter.clip();
-        painter.set_line_width(3.0);
-        painter.set_stroke_style_str("#204080");
-        painter.stroke_path_with(&line, parse_color("#204080"), scale);
-        painter.set_fill_style_str("rgba(200, 30, 30, 0.6)");
-        painter.fill_path_with(&disc, parse_color("rgba(200, 30, 30, 0.6)"), scale);
+        // Through the layer itself: paths filled by area never reach it.
+        let rasterise = |path: &Path, color: &str, stroke: Option<&Stroke>| {
+            let paint = painter.paint(parse_color(color));
+            let bounds = TinySkiaPainter::stroke_bounds(path, 3.0);
+            painter.clipped(bounds, scale, |pixmap, transform, mask| match stroke {
+                Some(stroke) => pixmap.stroke_path(path, &paint, stroke, transform, mask),
+                None => pixmap.fill_path(path, &paint, FillRule::Winding, transform, mask),
+            });
+        };
+        let line_stroke = Stroke {
+            width: 3.0,
+            ..Stroke::default()
+        };
+        rasterise(&line, "#204080", Some(&line_stroke));
+        rasterise(&disc, "rgba(200, 30, 30, 0.6)", None);
 
         let mut expected = Pixmap::new(width, height).unwrap();
         expected.fill(Color::WHITE);
@@ -3250,6 +3334,76 @@ mod tests {
         assert!(data
             .chunks_exact(4)
             .all(|pixel| pixel == [0x33, 0x66, 0x99, 255]));
+    }
+
+    /// Paths drawn across a rectangle clip's edge are filled by area: what
+    /// lies outside the clip is untouched, and inside they land where the
+    /// rasteriser puts them, give or take its sixteen samples to a pixel.
+    #[test]
+    fn paths_across_a_clip_are_filled_by_area_inside_it() {
+        let (width, height) = (120, 90);
+        let clip = Rect::from_ltrb(10.5, 7.25, 50.3, 40.7).unwrap();
+        let scale = Transform::from_scale(2.0, 2.0);
+        let mut line = PathBuilder::new();
+        line.move_to(0.0, 20.0);
+        line.line_to(30.0, 32.0);
+        line.line_to(60.0, 30.0);
+        let line = line.finish().unwrap();
+        let disc = PathBuilder::from_circle(45.0, 38.0, 12.0).unwrap();
+
+        let painter = TinySkiaPainter::new(width, height, fonts()).unwrap();
+        painter.scale(2.0, 2.0).unwrap();
+        painter.begin_path();
+        painter.rect(
+            f64::from(clip.left()),
+            f64::from(clip.top()),
+            f64::from(clip.width()),
+            f64::from(clip.height()),
+        );
+        painter.clip();
+        painter.set_line_width(3.0);
+        painter.stroke_path_with(&line, parse_color("#204080"), scale);
+        painter.fill_path_with(&disc, parse_color("rgba(200, 30, 30, 0.6)"), scale);
+
+        let mut expected = Pixmap::new(width, height).unwrap();
+        expected.fill(Color::WHITE);
+        let mut mask = Mask::new(width, height).unwrap();
+        mask.fill_path(
+            &PathBuilder::from_rect(clip),
+            FillRule::Winding,
+            true,
+            scale,
+        );
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Paint::default()
+        };
+        paint.set_color(parse_color("#204080"));
+        let stroke = Stroke {
+            width: 3.0,
+            ..Stroke::default()
+        };
+        expected.stroke_path(&line, &paint, &stroke, scale, Some(&mask));
+        paint.set_color(parse_color("rgba(200, 30, 30, 0.6)"));
+        expected.fill_path(&disc, &paint, FillRule::Winding, scale, Some(&mask));
+
+        let drawn = painter.rgba_premultiplied();
+        let device = [21, 14, 101, 82];
+        for (index, (a, b)) in drawn
+            .chunks_exact(4)
+            .zip(expected.data().chunks_exact(4))
+            .enumerate()
+        {
+            let (x, y) = (index % width as usize, index / width as usize);
+            let outside = x < device[0] || y < device[1] || x >= device[2] || y >= device[3];
+            if outside {
+                assert_eq!(a, [255, 255, 255, 255], "({x}, {y}) is outside the clip");
+            }
+            let worst = a.iter().zip(b).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
+            assert!(worst <= 64, "({x}, {y}): {a:?} against {b:?}");
+        }
+        let inked = drawn.chunks_exact(4).filter(|pixel| pixel[0] < 200).count();
+        assert!(inked > 100, "{inked} inked pixels");
     }
 
     #[test]
