@@ -28,7 +28,7 @@ pub(super) enum FindCommand {
 impl DocView {
     /// ⌘F opens the bar; Ctrl+H opens it with the Replace field, or shows
     /// that field in a bar already open.
-    pub(super) fn open_find(&mut self, replacing: bool, cx: &mut Context<Self>) {
+    pub(super) fn open_sheet_find(&mut self, replacing: bool, cx: &mut Context<Self>) {
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
@@ -40,7 +40,7 @@ impl DocView {
         cx.notify();
     }
 
-    pub(super) fn find_command(&mut self, command: FindCommand, cx: &mut Context<Self>) {
+    pub(super) fn sheet_find_command(&mut self, command: FindCommand, cx: &mut Context<Self>) {
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
@@ -147,7 +147,7 @@ impl DocView {
     /// Keys while the bar is open: Enter finds the next (Shift, the one
     /// before), Tab goes between the fields, Ctrl+H shows Replace, Escape
     /// closes it; the rest edit the field.
-    pub(super) fn find_key(
+    pub(super) fn sheet_find_key(
         &mut self,
         key: &str,
         modifiers: gpui::Modifiers,
@@ -161,15 +161,15 @@ impl DocView {
         }
         let replacing = bar.replacing;
         match key {
-            "enter" => self.find_command(FindCommand::Next(modifiers.shift), cx),
+            "enter" => self.sheet_find_command(FindCommand::Next(modifiers.shift), cx),
             "tab" if replacing => {
                 if let Some(bar) = self.sheet_mut().and_then(|sheet| sheet.finding.as_mut()) {
                     bar.next_field();
                 }
                 cx.notify();
             }
-            "tab" | "escape" => self.find_command(FindCommand::Close, cx),
-            "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
+            "tab" | "escape" => self.sheet_find_command(FindCommand::Close, cx),
+            "h" if modifiers.control && !modifiers.platform => self.open_sheet_find(true, cx),
             // ⌘F again leaves the bar as it is.
             "f" if modifiers.platform || modifiers.control => {}
             _ => return self.name_key(key, modifiers, cx),
@@ -178,7 +178,7 @@ impl DocView {
     }
 
     /// The bar, while it is open.
-    pub(super) fn find_bar(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
+    pub(super) fn sheet_find_bar(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
         let bar = self.sheet_ref()?.finding.as_ref()?;
         let button = |id: &'static str, on: bool, command: FindCommand| {
             div()
@@ -194,7 +194,7 @@ impl DocView {
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |view, _event, window, cx| {
                     window.focus(&view.focus, cx);
-                    view.find_command(command, cx);
+                    view.sheet_find_command(command, cx);
                 }))
         };
         let field = |id: &'static str, label: &'static str, replace: bool| {
@@ -237,7 +237,7 @@ impl DocView {
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |view, _event, window, cx| {
                     window.focus(&view.focus, cx);
-                    view.find_command(FindCommand::Field(replace), cx);
+                    view.sheet_find_command(FindCommand::Field(replace), cx);
                 }))
         };
         let options = bar.options;

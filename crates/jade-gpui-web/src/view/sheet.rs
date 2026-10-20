@@ -1283,7 +1283,7 @@ impl DocView {
         // A tab being renamed, or the name box: Enter takes it, Escape
         // leaves it.
         if sheet.finding.is_some() && sheet.renaming.is_none() && sheet.naming.is_none() {
-            return self.find_key(key, modifiers, cx);
+            return self.sheet_find_key(key, modifiers, cx);
         }
         if sheet.renaming.is_some() || sheet.naming.is_some() || sheet.noting.is_some() {
             return self.name_key(key, modifiers, cx);
@@ -1508,9 +1508,9 @@ impl DocView {
                 let result = sheet.book.toggle_filter(range);
                 self.edited(result, cx);
             }
-            "f" => self.open_find(false, cx),
+            "f" => self.open_sheet_find(false, cx),
             // Ctrl+H, as Excel: Find and Replace.
-            "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
+            "h" if modifiers.control && !modifiers.platform => self.open_sheet_find(true, cx),
             "x" if !shift => self.sheet_copy(true, cx),
             // ⌘A: the block of data round the active cell, then the sheet.
             "a" => {
@@ -2447,7 +2447,7 @@ impl DocView {
         let rules_manager = self.rules_manager(cx);
         let chart_dialog = self.chart_dialog(cx);
         let object_frame = self.object_frame();
-        let find_bar = self.find_bar(cx);
+        let find_bar = self.sheet_find_bar(cx);
         let Document::Workbook(sheet) = &mut self.document else {
             unreachable!()
         };
