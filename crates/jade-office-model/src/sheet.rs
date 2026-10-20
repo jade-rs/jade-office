@@ -12,7 +12,10 @@ use std::rc::Rc;
 
 use jade_painter::Painter;
 use jade_xlsx_headless_api::{AutoFilterChange, AutoFilterTarget, CellInput};
-use jade_xlsx_headless_editor::{formula_text, ClipboardSnapshot, FormatChange, HeadlessWorkbook};
+use jade_xlsx_headless_editor::{
+    formula_text, ClipboardSnapshot, ConditionalFormatView, ConditionalStyle, FormatChange,
+    HeadlessWorkbook, NewConditionalRule,
+};
 
 use crate::grid::{self, Direction, Hit, Selection};
 use crate::{clipboard, typing};
@@ -1535,6 +1538,58 @@ impl<B: Backend> Workbook<B> {
             1
         };
         self.record(steps);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// The sheet's conditional formats as Excel's Rules Manager lists them:
+    /// first the one that wins.
+    pub fn conditional_formats(&self) -> Vec<ConditionalFormatView> {
+        self.book
+            .conditional_formats(&self.sheet_name())
+            .unwrap_or_default()
+    }
+
+    /// Adds a rule from Home ▸ Conditional Formatting over `range`, ahead
+    /// of the sheet's others.
+    pub fn add_conditional_format(
+        &mut self,
+        range: CellRange,
+        rule: &NewConditionalRule,
+        style: ConditionalStyle,
+    ) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .add_conditional_format(&name, &range_text_full(range), rule, style)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Deletes the rule at `index` in [`Self::conditional_formats`].
+    pub fn delete_conditional_format(&mut self, index: usize) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.book
+            .delete_conditional_format(&name, index)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Clear Rules from Selected Cells (`range`) or from Entire Sheet.
+    pub fn clear_conditional_formats(&mut self, range: Option<CellRange>) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let range = range.map(range_text_full);
+        if !self
+            .book
+            .clear_conditional_formats(&name, range.as_deref())
+            .map_err(|error| error.to_string())?
+        {
+            return Ok(false);
+        }
+        self.record(1);
         self.after_write()?;
         Ok(true)
     }

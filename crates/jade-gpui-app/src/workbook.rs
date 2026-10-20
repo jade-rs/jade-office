@@ -52,10 +52,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::editor::{self, Editor};
+
+mod conditional;
 use crate::{
     byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Redo, Save, SaveAs,
     SelectAll, Undo, UI_FONT_FAMILY,
 };
+use conditional::Conditional;
+use jade_office_model::conditional_formatting::RuleAsk;
 
 /// The formatting strip over the formula bar: Excel's Home tab, short.
 const SHEET_TOOLBAR_HEIGHT: f32 = 34.0;
@@ -234,6 +238,7 @@ enum Popup {
     Fill,
     Font,
     Borders,
+    Conditional,
 }
 
 /// What a toolbar button does to the selection.
@@ -256,6 +261,7 @@ enum Tool {
     FontColor(&'static str),
     Borders(Borders),
     Filter,
+    Conditional(Conditional),
 }
 
 #[derive(Clone, Copy)]
@@ -326,6 +332,10 @@ pub struct WorkbookView {
     finding: Option<TextEdit>,
     /// A note being written on a cell.
     noting: Option<(CellRef, TextEdit)>,
+    /// A conditional format's dialog, asking for its value.
+    asking: Option<RuleAsk>,
+    /// The conditional formatting Rules Manager, open.
+    managing: bool,
     /// The active cell's list of choices (its data validation), open.
     choices: Option<Vec<String>>,
     /// A hyperlink pressed: followed when the press lets go on it, as in
@@ -368,6 +378,9 @@ impl WorkbookView {
 
     /// The text being typed into: a tab's new name, the name box, or a cell.
     fn typing(&mut self) -> Option<&mut TextEdit> {
+        if let Some(ask) = self.asking.as_mut() {
+            return ask.typing();
+        }
         if let Some((_, text)) = self.renaming.as_mut() {
             return Some(text);
         }
@@ -384,6 +397,9 @@ impl WorkbookView {
     }
 
     fn typed(&self) -> Option<&TextEdit> {
+        if let Some(ask) = self.asking.as_ref() {
+            return ask.typed();
+        }
         if let Some((_, text)) = self.renaming.as_ref() {
             return Some(text);
         }
@@ -1125,6 +1141,7 @@ impl WorkbookView {
             Tool::FontColor(color) => self.book.font_color(range, color),
             Tool::Borders(borders) => self.book.borders(range, borders),
             Tool::Filter => self.book.toggle_filter(range),
+            Tool::Conditional(tool) => return self.conditional(tool, cx),
             Tool::Open(_) => return,
         };
         self.after_write(result, cx);
@@ -1214,6 +1231,16 @@ impl WorkbookView {
                 "enter" => self.apply_filter(cx),
                 _ => {}
             }
+            cx.notify();
+            return true;
+        }
+
+        // A conditional format's dialog has the keys while it is open.
+        if self.asking.is_some() {
+            return self.rule_key(key, modifiers, cx);
+        }
+        if self.managing && key == "escape" {
+            self.managing = false;
             cx.notify();
             return true;
         }
@@ -2605,6 +2632,14 @@ impl WorkbookView {
                 )
                 .child(icon("icons/borders.svg")),
             )
+            .child(
+                button(
+                    "tool-conditional",
+                    popup == Some(Popup::Conditional),
+                    Tool::Open(Popup::Conditional),
+                )
+                .child(icon("icons/highlighter.svg")),
+            )
             .child(separator())
             .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
     }
@@ -2791,12 +2826,14 @@ impl WorkbookView {
                     "sheet.tool.border_none",
                     Tool::Borders(Borders::None),
                 )),
+            Popup::Conditional => self.conditional_menu(cx),
         };
         // Under its button: the strip's buttons are laid out in a row.
         let left = match popup {
             Popup::Fill => 430.0,
             Popup::Font => 456.0,
             Popup::Borders => 482.0,
+            Popup::Conditional => 508.0,
         };
         Some(
             div()
@@ -3100,6 +3137,10 @@ impl EntityInputHandler for WorkbookView {
     ) {
         // Typing into a selected cell replaces what is in it, as in Excel.
         if self.typed().is_none() {
+            // A dialog over the grid takes no typing into the cells.
+            if self.asking.is_some() || self.managing {
+                return;
+            }
             self.begin_edit(Some(String::new()), false, cx);
         }
         if let Some(edit) = self.typing() {
@@ -3118,6 +3159,10 @@ impl EntityInputHandler for WorkbookView {
         cx: &mut Context<Self>,
     ) {
         if self.typed().is_none() {
+            // A dialog over the grid takes no typing into the cells.
+            if self.asking.is_some() || self.managing {
+                return;
+            }
             self.begin_edit(Some(String::new()), false, cx);
         }
         if let Some(edit) = self.typing() {
@@ -3270,6 +3315,8 @@ impl Render for WorkbookView {
         let dragging = self.drag.is_some();
         let toolbar = self.sheet_toolbar(cx);
         let toolbar_popup = self.toolbar_popup(cx);
+        let rule_dialog = self.rule_dialog(cx);
+        let rules_manager = self.rules_manager(cx);
         let filter_panel = self.filter_panel(cx);
 
         div()
@@ -3410,6 +3457,8 @@ impl Render for WorkbookView {
                     .children(tabs),
             )
             .children(toolbar_popup)
+            .children(rule_dialog)
+            .children(rules_manager)
     }
 }
 
@@ -3436,6 +3485,8 @@ impl WorkbookView {
             naming: None,
             finding: None,
             noting: None,
+            asking: None,
+            managing: false,
             choices: None,
             pending_link: None,
             menu: None,
@@ -3912,6 +3963,56 @@ mod tests {
         cx.dispatch_action(Undo);
         view.read_with(cx, |view, _| {
             assert_eq!(view.book.display_text(at(1, 1)), "10")
+        });
+    }
+
+    /// Conditional Formatting ▸ Greater Than asks for its value in a
+    /// dialog filled in from the selection: what is typed goes there, not
+    /// into a cell, and Enter adds the rule. A data bar applies at once;
+    /// the Rules Manager lists both and Escape closes it.
+    #[gpui::test]
+    fn conditional_formats_come_from_the_toolbar(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::conditional_formatting::{NewConditionalRule, Preset, DATA_BARS};
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down right shift-down shift-down");
+        view.update(cx, |view, cx| {
+            view.tool(Tool::Open(Popup::Conditional), cx);
+            assert!(view.popup == Some(Popup::Conditional));
+            view.tool(Tool::Conditional(Conditional::Ask(Preset::GreaterThan)), cx);
+            assert!(view.popup.is_none());
+            let ask = view.asking.as_ref().expect("the dialog is open");
+            assert_eq!(ask.fields[0].text, "20", "the selection's average");
+        });
+        cx.simulate_input("15");
+        view.read_with(cx, |view, _| {
+            assert!(view.edit.is_none(), "typing goes into the dialog");
+            assert_eq!(view.asking.as_ref().unwrap().fields[0].text, "15");
+        });
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, cx| {
+            assert!(view.asking.is_none());
+            let rules = view.book.conditional_formats();
+            assert_eq!(rules.len(), 1);
+            assert_eq!(rules[0].range, "B2:B4");
+            assert_eq!(
+                rules[0].rule,
+                Some(NewConditionalRule::GreaterThan("15".into()))
+            );
+            view.tool(Tool::Conditional(Conditional::Apply(DATA_BARS[0])), cx);
+            view.tool(Tool::Conditional(Conditional::Manage), cx);
+            assert_eq!(view.book.conditional_formats().len(), 2);
+            assert!(view.managing);
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| assert!(!view.managing));
+        // Escape leaves a dialog without a rule.
+        view.update(cx, |view, cx| {
+            view.tool(Tool::Conditional(Conditional::Ask(Preset::TopItems)), cx);
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.asking.is_none());
+            assert_eq!(view.book.conditional_formats().len(), 2);
         });
     }
 
