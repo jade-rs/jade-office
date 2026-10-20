@@ -504,6 +504,25 @@ page.number.remove	ページ番号の削除
 page.header_editing	ヘッダー
 page.footer_editing	フッター
 page.story_keys	⇥ 左 · 中央 · 右 · ⏎ 反映 · esc 取消
+review.new_comment	新しいコメント
+review.show_comments	コメントの表示
+review.comments	コメント
+review.no_comments	コメントはありません
+review.reply	返信
+review.edit	編集
+review.resolve	解決
+review.reopen	もう一度開く
+review.delete	削除
+review.previous	前へ
+review.previous_title	前の変更箇所
+review.next	次へ
+review.next_title	次の変更箇所
+review.accept	承諾
+review.accept_title	承諾して次へ進む
+review.reject	元に戻す
+review.reject_title	元に戻して次へ進む
+review.no_changes	変更履歴はありません
+review.comment_keys	⏎ 投稿 · ⇧⏎ 改行 · esc 取消
 web.samples	サンプル
 web.read_only	閲覧のみ
 web.download	保存 (ダウンロード)

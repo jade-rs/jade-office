@@ -28,6 +28,7 @@ mod ribbon;
 mod shell;
 mod tooltip;
 mod word_page;
+mod word_review;
 mod workbook;
 mod workspace;
 
@@ -48,6 +49,7 @@ use gpui::{
 };
 use jade_docx_native_render::{CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit};
 use jade_office_model::word::page::{Story, WordPage};
+use jade_office_model::word::review::WordReview;
 use jade_office_model::word::{
     CharacterFormat, FindOptions, FormatState, Found, TableCommand, WordFind, WordFormatting,
 };
@@ -1025,8 +1027,6 @@ struct DocumentView {
     /// A new document, not saved anywhere yet: `path` is only its name,
     /// and ⌘S asks where to save it.
     untitled: bool,
-    /// Whether edits are being recorded as revisions.
-    tracking_changes: bool,
     /// Why the last table command did nothing, if it did nothing.
     table_status: Option<SharedString>,
     /// The last search query and where it got to, shown in the panel.
@@ -1048,6 +1048,10 @@ struct DocumentView {
     /// A header or footer being typed, in its bar over the pages; it takes
     /// the keyboard as the find bar does.
     story_bar: Option<word_page::StoryBar>,
+    /// A comment being typed — new, a reply, an edit — in its bar.
+    comment_bar: Option<word_review::CommentBar>,
+    /// Whether the comments pane is open beside the pages.
+    show_comments: bool,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1246,6 +1250,10 @@ impl DocumentView {
         }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
+        if self.comment_bar.is_some() && self.handle_comment_bar_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.story_bar.is_some() && self.handle_story_bar_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -1836,58 +1844,7 @@ impl DocumentView {
                     .into_any_element()])],
             )
             .into_any_element()],
-            RibbonTab::Review => {
-                let tracking = self.tracking_changes;
-                vec![
-                    Self::ribbon_group(
-                        t("doc.comment"),
-                        vec![Self::ribbon_row(vec![self
-                            .ribbon_button(
-                                "review-comment",
-                                t("doc.comment"),
-                                t("doc.comment"),
-                                false,
-                                cx,
-                                |view, cx| view.add_comment(cx),
-                            )
-                            .into_any_element()])],
-                    )
-                    .into_any_element(),
-                    Self::ribbon_group(
-                        t("doc.group.tracking"),
-                        vec![Self::ribbon_row(vec![
-                            self.ribbon_button(
-                                "track",
-                                t("doc.track"),
-                                t("doc.track_title"),
-                                tracking,
-                                cx,
-                                |view, cx| view.toggle_tracking(cx),
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "accept",
-                                t("doc.accept_all"),
-                                t("doc.accept_all"),
-                                false,
-                                cx,
-                                |view, cx| view.resolve_revisions(true, cx),
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "reject",
-                                t("doc.reject_all"),
-                                t("doc.reject_all_title"),
-                                false,
-                                cx,
-                                |view, cx| view.resolve_revisions(false, cx),
-                            )
-                            .into_any_element(),
-                        ])],
-                    )
-                    .into_any_element(),
-                ]
-            }
+            RibbonTab::Review => self.review_groups(cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
@@ -2129,17 +2086,26 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
-        self.story_bar.as_ref().map(|bar| &bar.text)
+        match (&self.comment_bar, &self.story_bar) {
+            (Some(bar), _) => Some(&bar.text),
+            (None, Some(bar)) => Some(&bar.text),
+            (None, None) => None,
+        }
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
-        self.story_bar.as_mut().map(|bar| &mut bar.text)
+        match (&mut self.comment_bar, &mut self.story_bar) {
+            (Some(bar), _) => Some(&mut bar.text),
+            (None, Some(bar)) => Some(&mut bar.text),
+            (None, None) => None,
+        }
     }
 
     /// ヘッダーの編集 / フッターの編集: the bar over the pages, holding the
     /// story's first line (its tab-separated left, centre and right).
     fn open_story_bar(&mut self, story: Story, cx: &mut Context<Self>) {
         self.find_bar = None;
+        self.comment_bar = None;
         let text = self.document.story_text(story);
         self.story_bar = Some(word_page::StoryBar {
             story,
@@ -2553,33 +2519,6 @@ impl DocumentView {
         }
     }
 
-    /// Leaves a comment on the selection, or on the caret's paragraph.
-    ///
-    /// The text is fixed until there is somewhere to type it. That is honest
-    /// about what this does — a placeholder comment is still a real comment in
-    /// the file, and the panel says how many there are.
-    fn add_comment(&mut self, cx: &mut Context<Self>) {
-        match self.document.add_comment(t("doc.comment"), "jade") {
-            Ok(()) => {
-                self.rebuild_after_edit();
-                cx.notify();
-            }
-            Err(error) => eprintln!("comment failed: {error}"),
-        }
-    }
-
-    fn toggle_tracking(&mut self, cx: &mut Context<Self>) {
-        let next = !self.tracking_changes;
-        match self.document.set_change_tracking(next, "jade") {
-            Ok(()) => {
-                self.tracking_changes = next;
-                self.rebuild_after_edit();
-                cx.notify();
-            }
-            Err(error) => eprintln!("change tracking failed: {error}"),
-        }
-    }
-
     fn set_page_background(&mut self, color: Option<&str>, cx: &mut Context<Self>) {
         if self.document.set_page_background(color).is_ok() {
             self.rebuild_after_edit();
@@ -2715,13 +2654,6 @@ impl DocumentView {
 
     fn insert_table_of_contents(&mut self, cx: &mut Context<Self>) {
         if self.document.insert_table_of_contents().is_ok() {
-            self.rebuild_after_edit();
-            cx.notify();
-        }
-    }
-
-    fn resolve_revisions(&mut self, accept: bool, cx: &mut Context<Self>) {
-        if self.document.resolve_revisions(accept).is_ok() {
             self.rebuild_after_edit();
             cx.notify();
         }
@@ -3710,7 +3642,7 @@ impl editor::Editor for DocumentView {
         if comments > 0 {
             items.push(i18n::format("doc.comments", &[("n", &comments)]).into());
         }
-        if self.tracking_changes {
+        if self.document.is_tracking_changes() {
             items.push(i18n::text("doc.tracking").into());
         }
         items
@@ -3785,6 +3717,7 @@ impl Render for DocumentView {
             (w as f32, h as f32)
         };
         let zoom = self.zoom;
+        let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -3902,6 +3835,7 @@ impl Render for DocumentView {
                     .flex_col()
                     .size_full()
                     .child(self.ribbon(window, cx))
+                    .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
                     .child(
@@ -4001,6 +3935,8 @@ impl Render for DocumentView {
                             })),
                     ),
             )
+            // ---- the comments pane, beside the pages while it is open ----
+            .children(comments_pane)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4091,7 +4027,7 @@ impl Render for DocumentView {
                                     ("n", &self.document.comment_count()),
                                     (
                                         "tracking",
-                                        &t(if self.tracking_changes {
+                                        &t(if self.document.is_tracking_changes() {
                                             "doc.info.on"
                                         } else {
                                             "doc.info.off"
@@ -4219,12 +4155,13 @@ fn document_view(
         zoom: 1.0,
         raster_scale: 1.0,
         dark_pages: false,
-        tracking_changes: false,
         table_status: None,
         find_query: None,
         find_status: None,
         find_bar: None,
         story_bar: None,
+        comment_bar: None,
+        show_comments: false,
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,
@@ -4790,6 +4727,71 @@ mod tests {
             cx.dispatch_action(Undo);
         }
         view.read_with(cx, |view, _| assert_eq!(view.document.page_setup(), before));
+    }
+
+    /// ⌘M opens the comment bar; Enter puts the comment on the selection,
+    /// and the pane's reply and resolve work on it. With changes tracked,
+    /// typing is a revision that 元に戻す takes out again.
+    #[gpui::test]
+    fn comments_are_written_answered_and_changes_decided(cx: &mut gpui::TestAppContext) {
+        use super::word_review::CommentEntry;
+        use super::AddComment;
+        use jade_office_model::word::review::WordReview;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "Clause one. ");
+        view.update(cx, |view, _| {
+            view.document
+                .select((paragraph, 0), (paragraph, "Clause".len()), 1)
+                .unwrap();
+            view.insert_at = (paragraph, "Clause".len());
+        });
+        cx.dispatch_action(AddComment);
+        cx.simulate_input("Check this.");
+        cx.simulate_keystrokes("enter");
+        let id = view.read_with(cx, |view, _| {
+            assert!(view.comment_bar.is_none());
+            assert!(view.show_comments);
+            let comment = view
+                .document
+                .comments()
+                .into_iter()
+                .find(|comment| comment.text == "Check this.")
+                .expect("the comment went in");
+            assert_eq!(comment.anchor.map(|(start, _)| start), Some((paragraph, 0)));
+            comment.id
+        });
+        view.update(cx, |view, cx| {
+            view.open_comment_bar(CommentEntry::Reply(id.clone()), String::new(), cx)
+        });
+        cx.simulate_input("Done.");
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, cx| {
+            view.resolve_comment(&id, true, cx);
+            let comment = view
+                .document
+                .comments()
+                .into_iter()
+                .find(|comment| comment.id == id)
+                .unwrap();
+            assert_eq!(comment.replies.len(), 1);
+            assert!(comment.resolved);
+
+            view.toggle_tracking(cx);
+            assert!(view.document.is_tracking_changes());
+            view.insert_at = (paragraph, 0);
+            view.caret = view.document.place_caret(paragraph, 0);
+        });
+        let before = view.read_with(cx, |view, _| view.current_paragraph_text());
+        cx.simulate_input("new ");
+        view.update(cx, |view, cx| {
+            assert!(!view.document.revisions().is_empty());
+            view.insert_at = (paragraph, 1);
+            view.caret = view.document.place_caret(paragraph, 1);
+            view.decide_revision(false, cx);
+            assert_eq!(view.document.paragraph_text(paragraph).unwrap(), before);
+            view.toggle_tracking(cx);
+            assert!(!view.document.is_tracking_changes());
+        });
     }
 
     #[test]

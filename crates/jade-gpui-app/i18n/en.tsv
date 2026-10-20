@@ -504,6 +504,25 @@ page.number.remove	Remove Page Numbers
 page.header_editing	Header
 page.footer_editing	Footer
 page.story_keys	⇥ left · center · right · ⏎ apply · esc cancel
+review.new_comment	New Comment
+review.show_comments	Show Comments
+review.comments	Comments
+review.no_comments	No comments
+review.reply	Reply
+review.edit	Edit
+review.resolve	Resolve
+review.reopen	Reopen
+review.delete	Delete
+review.previous	Previous
+review.previous_title	Previous change
+review.next	Next
+review.next_title	Next change
+review.accept	Accept
+review.accept_title	Accept and Move to Next
+review.reject	Reject
+review.reject_title	Reject and Move to Next
+review.no_changes	No tracked changes
+review.comment_keys	⏎ post · ⇧⏎ line break · esc cancel
 web.samples	Samples
 web.read_only	Read-only
 web.download	Save (Download)
