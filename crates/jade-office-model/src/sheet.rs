@@ -156,6 +156,15 @@ pub struct Workbook<B: Backend> {
     /// The last surface painted on, reused while the size stays the same:
     /// a sheet repaints on every scroll frame.
     surface: RefCell<Option<(B::Painter, u32, u32)>>,
+    /// Bumped whenever the sheet is laid out again, so a shell keeping
+    /// painted pieces of it knows they are stale.
+    revision: u64,
+    /// What the relayouts since a shell last asked changed, in sheet px;
+    /// `None` for anything. See [`Self::take_changes`].
+    changes: Option<Vec<Rect>>,
+    /// The same for pieces of the sheet painted on their own — tiles of
+    /// cells, the header bands — by their size.
+    pieces: RefCell<Vec<(B::Painter, u32, u32)>>,
 }
 
 impl<B: Backend> Workbook<B> {
@@ -193,6 +202,9 @@ impl<B: Backend> Workbook<B> {
             undone: Vec::new(),
             clipboard: None,
             surface: RefCell::new(None),
+            pieces: RefCell::new(Vec::new()),
+            revision: 0,
+            changes: None,
         })
     }
 
@@ -231,14 +243,46 @@ impl<B: Backend> Workbook<B> {
         if index >= self.book.workbook().sheets.len() {
             return Err(format!("no sheet at index {index}"));
         }
+        if index != self.index {
+            self.changes = None;
+        }
         self.index = index;
         self.extent = (MIN_COLUMNS, MIN_ROWS);
         self.relayout()
     }
 
     fn relayout(&mut self) -> Result<(), String> {
-        self.layout = lay_out(&self.book, self.index, self.extent, &self.backend)?;
+        let layout = lay_out(&self.book, self.index, self.extent, &self.backend)?;
+        let changed = layout_changes(&self.layout, &layout);
+        if let (Some(changes), Some(changed)) = (&mut self.changes, changed) {
+            changes.extend(changed);
+        } else {
+            self.changes = None;
+        }
+        self.layout = layout;
+        self.revision += 1;
         Ok(())
+    }
+
+    /// Where the sheet may paint differently since the last call, in sheet px
+    /// as `(x, y, width, height)` — the cells an edit touched, their text
+    /// running into their neighbours, the grid grown — or `None` for
+    /// anywhere: another sheet, columns or rows resized or moved, a chart
+    /// changed. A shell keeping painted pieces of the sheet repaints those
+    /// these touch.
+    pub fn take_changes(&mut self) -> Option<Vec<SheetRect>> {
+        self.changes.replace(Vec::new()).map(|rects| {
+            rects
+                .into_iter()
+                .map(|r| (r.x, r.y, r.width, r.height))
+                .collect()
+        })
+    }
+
+    /// Changes whenever the sheet is laid out again — an edit, another
+    /// sheet, the grid grown — and so whenever what it paints may have.
+    pub fn layout_revision(&self) -> u64 {
+        self.revision
     }
 
     /// The laid-out sheet's size in px, headers included.
@@ -2490,6 +2534,7 @@ impl<B: Backend> Workbook<B> {
         let count = self.book.workbook().sheets.len();
         if self.index >= count {
             self.index = count.saturating_sub(1);
+            self.changes = None;
         }
         self.relayout()
     }
@@ -2592,6 +2637,210 @@ impl<B: Backend> Workbook<B> {
         painted.then(|| painter.clone())
     }
 
+    // ---- the sheet in pieces ---------------------------------------------------
+    //
+    // A shell that keeps what it has painted asks for the sheet in pieces:
+    // the cells as tiles fixed in sheet space, which scrolling only moves; the
+    // header bands, which are small; and the selection as shapes it draws
+    // itself, so moving it repaints nothing. [`Self::render_viewport`] paints
+    // the same things in one picture.
+
+    /// A surface `width`×`height` from the pool, reused while a piece of that
+    /// size is asked for again.
+    fn piece(&self, width: u32, height: u32) -> Option<B::Painter> {
+        let (width, height) = (width.max(1), height.max(1));
+        let mut pieces = self.pieces.borrow_mut();
+        if let Some((painter, ..)) = pieces.iter().find(|(_, w, h)| (*w, *h) == (width, height)) {
+            return Some(painter.clone());
+        }
+        let painter = self.backend.surface(width, height)?;
+        // A tile and the two bands at most, with room for a resize.
+        if pieces.len() >= 4 {
+            pieces.remove(0);
+        }
+        pieces.push((painter.clone(), width, height));
+        Some(painter)
+    }
+
+    /// The panes a viewport of `size` (sheet px, headers included) at
+    /// `scroll` shows: where each sits in the viewport and the part of the
+    /// sheet it shows, both in sheet px, as `((x, y), (x, y, width,
+    /// height))`. One pane, or up to four with frozen rows and columns: the
+    /// scrolling one, the frozen rows above it, the frozen columns beside it
+    /// and the corner they share.
+    pub fn panes(&self, scroll: (f64, f64), size: (f64, f64)) -> Vec<Pane> {
+        let metrics = self.layout.header_metrics();
+        let viewport = Rect {
+            x: scroll.0.max(0.0),
+            y: scroll.1.max(0.0),
+            width: (size.0 - metrics.row_width).max(0.0),
+            height: (size.1 - metrics.column_height).max(0.0),
+        };
+        let regions = self.layout.viewport_regions(viewport);
+        [
+            (regions.main, (regions.frozen_width, regions.frozen_height)),
+            (regions.frozen_rows, (regions.frozen_width, 0.0)),
+            (regions.frozen_columns, (0.0, regions.frozen_height)),
+            (regions.corner, (0.0, 0.0)),
+        ]
+        .into_iter()
+        .filter(|(region, _)| region.width > 0.0 && region.height > 0.0)
+        .map(|(region, offset)| {
+            (
+                (
+                    metrics.row_width + offset.0,
+                    metrics.column_height + offset.1,
+                ),
+                (region.x, region.y, region.width, region.height),
+            )
+        })
+        .collect()
+    }
+
+    /// Paints the cells in `region` (sheet px, as `(x, y, width, height)`) —
+    /// no headers, no selection — onto a `width`×`height` device px surface,
+    /// `scale` device px to a sheet px. What [`Self::render_viewport`] paints
+    /// under its headers is these, side by side.
+    pub fn render_cells(
+        &self,
+        region: SheetRect,
+        width: u32,
+        height: u32,
+        scale: f64,
+    ) -> Option<B::Painter> {
+        let painter = self.piece(width, height)?;
+        let region = Rect {
+            x: region.0,
+            y: region.1,
+            width: region.2,
+            height: region.3,
+        };
+        painter.save();
+        let painted = painter.scale(scale, scale).is_ok()
+            && jade_xlsx_render::render_viewport(
+                &painter,
+                &self.layout,
+                region,
+                &RenderOptions::default(),
+            )
+            .is_ok();
+        painter.restore();
+        painted.then_some(painter)
+    }
+
+    /// The column letters across the top of a viewport of `size` (sheet px,
+    /// headers included) at `scroll`, with the corner, as a band `width`
+    /// device px wide and as tall as the headers are and the line under
+    /// them, which reaches a px past them; `selection`'s columns highlighted.
+    /// It goes over the row band.
+    pub fn render_column_headers(
+        &self,
+        scroll: (f64, f64),
+        size: (f64, f64),
+        width: u32,
+        scale: f64,
+        selection: Option<Selection>,
+    ) -> Option<B::Painter> {
+        let metrics = self.layout.header_metrics();
+        let height = ((metrics.column_height + 1.0) * scale).ceil() as u32;
+        self.render_header_band(scroll, size, (width, height), scale, selection, true)
+    }
+
+    /// The row numbers down the left of the same viewport, from the bottom
+    /// of the headers, as a band as wide as they are and the line beside
+    /// them, and `height` device px tall.
+    pub fn render_row_headers(
+        &self,
+        scroll: (f64, f64),
+        size: (f64, f64),
+        height: u32,
+        scale: f64,
+        selection: Option<Selection>,
+    ) -> Option<B::Painter> {
+        let metrics = self.layout.header_metrics();
+        let width = ((metrics.row_width + 1.0) * scale).ceil() as u32;
+        self.render_header_band(scroll, size, (width, height), scale, selection, false)
+    }
+
+    /// One header band, painted as `jade_xlsx_render::render_grid` paints
+    /// them both round a viewport.
+    fn render_header_band(
+        &self,
+        scroll: (f64, f64),
+        size: (f64, f64),
+        device: (u32, u32),
+        scale: f64,
+        selection: Option<Selection>,
+        columns: bool,
+    ) -> Option<B::Painter> {
+        let painter = self.piece(device.0, device.1)?;
+        let metrics = self.layout.header_metrics();
+        let viewport = Rect {
+            x: scroll.0.max(0.0),
+            y: scroll.1.max(0.0),
+            width: (size.0 - metrics.row_width).max(0.0),
+            height: (size.1 - metrics.column_height).max(0.0),
+        };
+        let selected = selection.map(|selection| self.selection_range(selection));
+        painter.save();
+        let painted = painter.scale(scale, scale).is_ok()
+            // The row band starts below the column band.
+            && (columns || painter.translate(0.0, -metrics.column_height).is_ok())
+            && paint_header_band(&painter, &self.layout, viewport, selected, columns).is_ok();
+        painter.restore();
+        painted.then_some(painter)
+    }
+
+    /// The range `selection` reads as on the grid: grown over the merges it
+    /// touches, or, for one cell anchoring a merge, the whole merge.
+    fn selection_range(&self, selection: Selection) -> CellRange {
+        if selection.is_cell() {
+            if let Some(merge) = self
+                .layout
+                .cell(selection.active)
+                .and_then(|cell| cell.merge)
+            {
+                return merge;
+            }
+            return selection.range();
+        }
+        self.with_merges(selection.range())
+    }
+
+    /// Where `selection` is drawn, in sheet px as `(x, y, width, height)`:
+    /// the range's rectangle and the active cell's, which its wash leaves
+    /// clear. As `jade_xlsx_render` draws it: the wash over the range, a
+    /// 2 px border centred on its edge and the fill handle, 6 px square, on
+    /// its bottom-right corner.
+    pub fn selection_shape(&self, selection: Selection) -> Option<(SheetRect, SheetRect)> {
+        let range = self.selection_range(selection);
+        let last = self.grid_end();
+        let first_column = self.layout.column(range.start.column)?;
+        let first_row = self.layout.row(range.start.row)?;
+        let last_column = self.layout.column(range.end.column.min(last.column))?;
+        let last_row = self.layout.row(range.end.row.min(last.row))?;
+        let rect = (
+            first_column.offset,
+            first_row.offset,
+            last_column.offset + last_column.size - first_column.offset,
+            last_row.offset + last_row.size - first_row.offset,
+        );
+        let active = match self.layout.cell(selection.active) {
+            Some(placed) => (
+                placed.rect.x,
+                placed.rect.y,
+                placed.rect.width,
+                placed.rect.height,
+            ),
+            None => {
+                let column = self.layout.column(selection.active.column)?;
+                let row = self.layout.row(selection.active.row)?;
+                (column.offset, row.offset, column.size, row.size)
+            }
+        };
+        Some((rect, active))
+    }
+
     /// The dashed outline Excel keeps round copied cells until they are
     /// pasted or let go.
     fn draw_marquee(
@@ -2638,6 +2887,236 @@ impl<B: Backend> Workbook<B> {
         Ok(())
     }
 }
+
+/// Where `new` paints differently from `old`, or `None` when that could be
+/// anywhere. Cells are compared one by one — their rectangles, the text
+/// spilling out of them and a border's width round them — and the grid
+/// grown past its old extent is new; anything that moves cells (an axis
+/// changed), restyles blank ones or draws over them (shapes) is anywhere.
+fn layout_changes(old: &SheetLayout, new: &SheetLayout) -> Option<Vec<Rect>> {
+    let prefix = |a: &[jade_xlsx_layout::AxisEntry], b: &[jade_xlsx_layout::AxisEntry]| {
+        let shared = a.len().min(b.len());
+        a[..shared] == b[..shared]
+    };
+    if !prefix(&old.columns, &new.columns)
+        || !prefix(&old.rows, &new.rows)
+        || old.show_grid_lines != new.show_grid_lines
+        || old.frozen_columns != new.frozen_columns
+        || old.frozen_rows != new.frozen_rows
+        || old.cell_padding_px != new.cell_padding_px
+        || old.max_digit_width_px != new.max_digit_width_px
+        || old.blank_conditional_rules != new.blank_conditional_rules
+        || old.blank_row_styles != new.blank_row_styles
+        || old.blank_column_styles != new.blank_column_styles
+        || old.shapes != new.shapes
+    {
+        return None;
+    }
+    // Far enough to be everywhere past an edge.
+    const BEYOND: f64 = 1e9;
+    // A thick border straddles a cell's edge.
+    const MARGIN: f64 = 3.0;
+    let grown = |rect: Rect| Rect {
+        x: rect.x - MARGIN,
+        y: rect.y - MARGIN,
+        width: rect.width + 2.0 * MARGIN,
+        height: rect.height + 2.0 * MARGIN,
+    };
+    let mut changes = Vec::new();
+    if old.content_width != new.content_width {
+        changes.push(Rect {
+            x: old.content_width.min(new.content_width) - MARGIN,
+            y: 0.0,
+            width: BEYOND,
+            height: BEYOND,
+        });
+    }
+    if old.content_height != new.content_height {
+        changes.push(Rect {
+            x: 0.0,
+            y: old.content_height.min(new.content_height) - MARGIN,
+            width: BEYOND,
+            height: BEYOND,
+        });
+    }
+    fn by_reference(layout: &SheetLayout) -> BTreeMap<CellRef, &jade_xlsx_layout::PlacedCell> {
+        layout
+            .cells
+            .iter()
+            .map(|cell| (cell.reference, cell))
+            .collect()
+    }
+    let (before, after) = (by_reference(old), by_reference(new));
+    let mut mark = |cell: &jade_xlsx_layout::PlacedCell| {
+        changes.push(grown(cell.rect));
+        if let Some(clip) = cell.text_clip {
+            changes.push(grown(clip));
+        }
+    };
+    for (reference, cell) in &before {
+        if after.get(reference) != Some(cell) {
+            mark(cell);
+        }
+    }
+    for (reference, cell) in &after {
+        if before.get(reference) != Some(cell) {
+            mark(cell);
+        }
+    }
+    if old.notes != new.notes {
+        changes.extend(
+            old.notes
+                .iter()
+                .chain(&new.notes)
+                .map(|note| grown(note.rect)),
+        );
+    }
+    if old.filter_buttons != new.filter_buttons {
+        changes.extend(
+            old.filter_buttons
+                .iter()
+                .chain(&new.filter_buttons)
+                .map(|button| grown(button.rect)),
+        );
+    }
+    Some(changes)
+}
+
+/// The column band (with the corner) or the row band of a viewport, in
+/// viewport px: `jade_xlsx_render`'s `render_headers`, one band at a time, so
+/// a shell can repaint the bands without the cells between them.
+fn paint_header_band<P: Painter>(
+    painter: &P,
+    layout: &SheetLayout,
+    viewport: Rect,
+    selected: Option<CellRange>,
+    columns: bool,
+) -> Result<(), P::Error> {
+    use jade_xlsx_layout::units::points_to_px;
+
+    let style = jade_xlsx_render::HeaderStyle::default();
+    let metrics = layout.header_metrics();
+    let surface_width = metrics.row_width + viewport.width;
+    let surface_height = metrics.column_height + viewport.height;
+    painter.set_fill_style_str(&style.background);
+    if columns {
+        painter.fill_rect(0.0, 0.0, surface_width, metrics.column_height);
+    } else {
+        painter.fill_rect(0.0, 0.0, metrics.row_width, surface_height);
+    }
+    painter.set_font(&format!("{:.2}pt 'Calibri'", style.font_size_points));
+    painter.set_text_baseline("alphabetic");
+    let em = points_to_px(style.font_size_points);
+    let regions = layout.viewport_regions(viewport);
+    let in_columns = |index: u32| {
+        selected.is_some_and(|range| (range.start.column..=range.end.column).contains(&index))
+    };
+    let in_rows = |index: u32| {
+        selected.is_some_and(|range| (range.start.row..=range.end.row).contains(&index))
+    };
+
+    let column = |entry: &jade_xlsx_layout::AxisEntry, x: f64| -> Result<(), P::Error> {
+        if in_columns(entry.index) {
+            painter.set_fill_style_str(&style.highlight);
+            painter.fill_rect(x, 0.0, entry.size, metrics.column_height);
+        }
+        let label = jade_xlsx_layout::column_label(entry.index);
+        painter.set_fill_style_str(&style.text_color);
+        let width = painter.measure_text_width(&label)?;
+        painter.fill_text(
+            &label,
+            x + (entry.size - width) / 2.0,
+            (metrics.column_height + em * 0.7) / 2.0,
+        )
+    };
+    let row = |entry: &jade_xlsx_layout::AxisEntry, y: f64| -> Result<(), P::Error> {
+        if in_rows(entry.index) {
+            painter.set_fill_style_str(&style.highlight);
+            painter.fill_rect(0.0, y, metrics.row_width, entry.size);
+        }
+        let label = (entry.index + 1).to_string();
+        painter.set_fill_style_str(&style.text_color);
+        let width = painter.measure_text_width(&label)?;
+        painter.fill_text(
+            &label,
+            (metrics.row_width - width - 4.0).max(2.0),
+            y + (entry.size + em * 0.7) / 2.0,
+        )
+    };
+
+    // The scrolling pane's, then the frozen ones over them.
+    if let Some(range) = layout.visible_range(regions.main) {
+        if columns {
+            for index in range.first_column..=range.last_column {
+                if let Some(entry) = layout.column(index).filter(|entry| entry.size > 0.0) {
+                    column(
+                        entry,
+                        metrics.row_width + regions.frozen_width + entry.offset - regions.main.x,
+                    )?;
+                }
+            }
+        } else {
+            for index in range.first_row..=range.last_row {
+                if let Some(entry) = layout.row(index).filter(|entry| entry.size > 0.0) {
+                    row(
+                        entry,
+                        metrics.column_height + regions.frozen_height + entry.offset
+                            - regions.main.y,
+                    )?;
+                }
+            }
+        }
+    }
+    if columns {
+        for entry in layout
+            .columns
+            .iter()
+            .take(layout.frozen_columns as usize)
+            .take_while(|entry| entry.offset < regions.frozen_width)
+            .filter(|entry| entry.size > 0.0)
+        {
+            column(entry, metrics.row_width + entry.offset)?;
+        }
+    } else {
+        for entry in layout
+            .rows
+            .iter()
+            .take(layout.frozen_rows as usize)
+            .take_while(|entry| entry.offset < regions.frozen_height)
+            .filter(|entry| entry.size > 0.0)
+        {
+            row(entry, metrics.column_height + entry.offset)?;
+        }
+    }
+
+    // The line that closes the band.
+    painter.set_stroke_style_str(&style.line_color);
+    painter.set_line_width(1.0);
+    painter.set_line_dash(&[]);
+    painter.begin_path();
+    if columns {
+        let bottom = metrics.column_height.floor() + 0.5;
+        painter.move_to(0.0, bottom);
+        painter.line_to(surface_width, bottom);
+        // The corner's own edge, which the row band continues below it.
+        let right = metrics.row_width.floor() + 0.5;
+        painter.move_to(right, 0.0);
+        painter.line_to(right, metrics.column_height);
+    } else {
+        let right = metrics.row_width.floor() + 0.5;
+        painter.move_to(right, 0.0);
+        painter.line_to(right, surface_height);
+    }
+    painter.stroke();
+    Ok(())
+}
+
+/// A rectangle of the sheet in sheet px, as `(x, y, width, height)`.
+pub type SheetRect = (f64, f64, f64, f64);
+
+/// A pane of a viewport: where it sits in the viewport, in sheet px, and the
+/// part of the sheet it shows. See [`Workbook::panes`].
+pub type Pane = ((f64, f64), SheetRect);
 
 /// What a sheet is painted with over its cells.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
