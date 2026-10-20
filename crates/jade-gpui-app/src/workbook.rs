@@ -38,6 +38,7 @@ use gpui::{
 use jade_office_model::find::FindBar;
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::number_formats::NUMBER_FORMATS;
+use jade_office_model::paste_special::PasteSpecial;
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
     CellFormat, CellRange, CellRef, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay,
@@ -58,6 +59,7 @@ use crate::editor::{self, Editor};
 mod charts;
 mod conditional;
 mod find_bar;
+mod paste_special;
 use crate::{
     byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Redo, Save, SaveAs,
     SelectAll, Undo, UI_FONT_FAMILY,
@@ -290,6 +292,7 @@ enum MenuCommand {
     Cut,
     Copy,
     Paste,
+    PasteSpecial,
     Clear,
     InsertRows,
     DeleteRows,
@@ -361,6 +364,8 @@ pub struct WorkbookView {
     object: Option<u32>,
     /// Chart Title… or Select Data…, asking.
     chart_asking: Option<ChartAsk>,
+    /// The Paste Special dialog, open, with its choices.
+    pasting: Option<PasteSpecial>,
     /// The active cell's list of choices (its data validation), open.
     choices: Option<Vec<String>>,
     /// A hyperlink pressed: followed when the press lets go on it, as in
@@ -954,6 +959,7 @@ impl WorkbookView {
             MenuCommand::Cut => return self.sheet_copy(true, cx),
             MenuCommand::Copy => return self.sheet_copy(false, cx),
             MenuCommand::Paste => return self.sheet_paste(None, cx),
+            MenuCommand::PasteSpecial => return self.open_paste_special(cx),
             MenuCommand::Clear => self.book.clear(range),
             MenuCommand::InsertRows => self.book.insert_rows(range.start.row, rows),
             MenuCommand::DeleteRows => self.book.delete_rows(range.start.row, rows),
@@ -1261,6 +1267,9 @@ impl WorkbookView {
         if self.asking.is_some() {
             return self.rule_key(key, modifiers, cx);
         }
+        if self.pasting.is_some() {
+            return self.paste_special_key(key, modifiers, cx);
+        }
         if self.managing && key == "escape" {
             self.managing = false;
             cx.notify();
@@ -1489,6 +1498,10 @@ impl WorkbookView {
             // ⌘C, ⌘X, ⌘V and ⌘A are actions; these are their Ctrl forms.
             "c" if !modifiers.platform => self.sheet_copy(false, cx),
             "x" if !shift && !modifiers.platform => self.sheet_copy(true, cx),
+            // ⌃⌘V, as Excel for Mac (Ctrl+Alt+V elsewhere): Paste Special.
+            "v" if modifiers.control && (modifiers.platform || modifiers.alt) => {
+                self.open_paste_special(cx)
+            }
             "v" if !modifiers.platform => self.paste(cx),
             "a" if !modifiers.platform => self.select_all(cx),
             "d" => {
@@ -2321,6 +2334,9 @@ impl WorkbookView {
                 ];
                 if self.book.copied().is_some() {
                     items.push((MenuCommand::Paste, "sheet.menu.paste"));
+                }
+                if self.book.can_paste_special(None) {
+                    items.push((MenuCommand::PasteSpecial, "sheet.menu.paste_special"));
                 }
                 items.extend([
                     (MenuCommand::Clear, "sheet.menu.clear"),
@@ -3230,7 +3246,7 @@ impl EntityInputHandler for WorkbookView {
         // Typing into a selected cell replaces what is in it, as in Excel.
         if self.typed().is_none() {
             // A dialog over the grid takes no typing into the cells.
-            if self.asking.is_some() || self.managing {
+            if self.asking.is_some() || self.managing || self.pasting.is_some() {
                 return;
             }
             self.begin_edit(Some(String::new()), false, cx);
@@ -3252,7 +3268,7 @@ impl EntityInputHandler for WorkbookView {
     ) {
         if self.typed().is_none() {
             // A dialog over the grid takes no typing into the cells.
-            if self.asking.is_some() || self.managing {
+            if self.asking.is_some() || self.managing || self.pasting.is_some() {
                 return;
             }
             self.begin_edit(Some(String::new()), false, cx);
@@ -3381,6 +3397,7 @@ impl Render for WorkbookView {
         let rule_dialog = self.rule_dialog(cx);
         let chart_dialog = self.chart_dialog(cx);
         let rules_manager = self.rules_manager(cx);
+        let paste_special = self.paste_special_dialog(cx);
         let filter_panel = self.filter_panel(cx);
 
         div()
@@ -3524,6 +3541,7 @@ impl Render for WorkbookView {
             .children(rule_dialog)
             .children(rules_manager)
             .children(chart_dialog)
+            .children(paste_special)
     }
 }
 
@@ -3554,6 +3572,7 @@ impl WorkbookView {
             managing: false,
             object: None,
             chart_asking: None,
+            pasting: None,
             choices: None,
             pending_link: None,
             menu: None,
@@ -3853,6 +3872,47 @@ mod tests {
         });
         cx.simulate_keystrokes("escape");
         view.read_with(cx, |view, _| assert!(view.book.copied().is_none()));
+    }
+
+    /// ⌃⌘V opens Paste Special: arrows choose Values, Transpose ticked,
+    /// Return pastes the formulas' results turned on their side, as one
+    /// undo; typing does not reach the cells while it is open.
+    #[gpui::test]
+    fn control_command_v_pastes_values_transposed(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::paste_special::PasteWhat;
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down right right shift-down shift-down cmd-c");
+        cx.simulate_keystrokes("right right ctrl-cmd-v");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.pasting, Some(PasteSpecial::default()))
+        });
+        cx.simulate_keystrokes("down down");
+        cx.simulate_input("x");
+        view.update(cx, |view, _| {
+            assert!(view.edit.is_none(), "the dialog takes no typing");
+            let special = view.pasting.as_mut().unwrap();
+            assert_eq!(special.what, PasteWhat::Values);
+            special.transpose = true;
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.pasting.is_none());
+            // C2:C4's =B2*2… pasted from E2 across: 20, 40, 60.
+            assert_eq!(view.book.edit_text(at(4, 1)), "20");
+            assert_eq!(view.book.edit_text(at(6, 1)), "60");
+            assert_eq!(view.range(), span(at(4, 1), at(6, 1)));
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.edit_text(at(4, 1)), "");
+            assert_eq!(view.book.edit_text(at(6, 1)), "");
+        });
+        // Escape leaves the dialog without pasting.
+        cx.simulate_keystrokes("ctrl-cmd-v escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.pasting.is_none());
+            assert_eq!(view.book.edit_text(at(4, 1)), "");
+        });
     }
 
     /// ⌘X then ⌘V moves the cells: they leave where they were.
