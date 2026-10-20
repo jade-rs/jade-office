@@ -401,6 +401,10 @@ enum Document {
         layouts_open: bool,
         /// The format strip's list that is open, if any.
         format_popup: Option<deck::Popup>,
+        /// What the next drag on the slide draws: a text box or a shape.
+        inserting: Option<jade_web::deck::Insert>,
+        /// That drag, from where it started to where it is, in slide px.
+        drawing: Option<((f64, f64), (f64, f64))>,
         /// Keys go to the slide list — Delete deletes the slide — after a
         /// click on a thumbnail, as in PowerPoint's thumbnail pane.
         slides_focused: bool,
@@ -514,6 +518,8 @@ impl DocView {
                     scale: 1.0,
                     layouts_open: false,
                     format_popup: None,
+                    inserting: None,
+                    drawing: None,
                     slides_focused: false,
                 }
             }

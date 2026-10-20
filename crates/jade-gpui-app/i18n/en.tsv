@@ -192,6 +192,16 @@ deck.bullets	Bullets
 deck.numbering	Numbering
 deck.line_spacing	Line Spacing
 deck.space_after	Space After {n} pt
+deck.text_box	Text Box
+deck.shapes	Shapes
+deck.picture	Picture
+deck.picture_failed	Cannot insert the picture: {error}
+deck.shape.rect	Rectangle
+deck.shape.round_rect	Rounded Rectangle
+deck.shape.ellipse	Oval
+deck.shape.triangle	Isosceles Triangle
+deck.shape.diamond	Diamond
+deck.shape.hexagon	Hexagon
 doc.tab.home	Home
 doc.tab.insert	Insert
 doc.tab.design	Design

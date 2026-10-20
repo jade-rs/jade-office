@@ -23,8 +23,10 @@ pub use jade_pptx_writer::{
 };
 
 mod format;
+mod insert;
 mod text;
 pub use format::{step_size, FormatStrip, TextCommand, FONT_SIZES};
+pub use insert::{Insert, ShapePreset, SHAPE_PRESETS};
 pub use text::{Motion, ShapeText};
 
 use crate::Backend;
