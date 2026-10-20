@@ -27,6 +27,11 @@ for sample in sample-deck.pptx themed-deck.pptx charts-workbook.xlsx grid-operat
   cp "$root/jade-core/public/fixtures/$sample" "$www/samples/"
 done
 cp "$root/jade-core/contract.docx" "$www/samples/"
+# Two decks made in PowerPoint (Apache POI's test data, Apache-2.0; its
+# NOTICE rides along): SmartArt to resize, a table with merged cells.
+for sample in SmartArt.pptx table_test2.pptx NOTICE.md; do
+  cp "$root/jade-core/public/fixtures/poi/$sample" "$www/samples/poi-$sample"
+done
 ls -la "$www/pkg"
 
 # The gpui shell (gpui-pre's web platform) on the same engine: www/index.html.
