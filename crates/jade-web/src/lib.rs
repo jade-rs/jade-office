@@ -15,11 +15,12 @@ use std::sync::Arc;
 pub use jade_office_model::tiny::TinySkiaBackend;
 pub use jade_office_model::{
     charts, conditional_formatting, csv, deck, find, grid, number_formats, paste_special, print,
-    sheet, text, typing,
+    sheet, text, typing, word,
 };
 
 pub mod document;
 pub mod editing;
+pub mod pdf;
 #[cfg(target_arch = "wasm32")]
 mod web;
 

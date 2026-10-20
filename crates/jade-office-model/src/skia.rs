@@ -105,6 +105,22 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
         NativeDocument::apply_command(self, command, keep_selection)
     }
 
+    fn apply_commands(
+        &mut self,
+        commands: Vec<jade_docx_headless_api::HeadlessCommand>,
+        keep_selection: bool,
+    ) -> Result<(), String> {
+        NativeDocument::apply_commands(self, commands, keep_selection)
+    }
+
+    fn execute_command(
+        &mut self,
+        command: Box<dyn jade_docx_editor::commands::Command>,
+        keep_selection: bool,
+    ) -> Result<(), String> {
+        NativeDocument::execute_command(self, command, keep_selection)
+    }
+
     fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize> {
         self.renderer().cell_id_for_paragraph(paragraph)
     }
