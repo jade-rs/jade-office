@@ -399,6 +399,8 @@ enum Document {
         scale: f32,
         /// Whether Layout ▾'s list is open.
         layouts_open: bool,
+        /// The format strip's list that is open, if any.
+        format_popup: Option<deck::Popup>,
         /// Keys go to the slide list — Delete deletes the slide — after a
         /// click on a thumbnail, as in PowerPoint's thumbnail pane.
         slides_focused: bool,
@@ -511,6 +513,7 @@ impl DocView {
                     drag: None,
                     scale: 1.0,
                     layouts_open: false,
+                    format_popup: None,
                     slides_focused: false,
                 }
             }
@@ -1734,7 +1737,7 @@ impl DocView {
 fn deck_fit(slide: (f64, f64), area: (f32, f32)) -> f32 {
     let available = (
         (area.0 - DECK_SIDEBAR_WIDTH - SLIDE_MARGIN * 2.0).max(40.0),
-        (area.1 - TOOLBAR_HEIGHT - SLIDE_MARGIN * 2.0).max(40.0),
+        (area.1 - TOOLBAR_HEIGHT - deck::FORMAT_BAR_HEIGHT - SLIDE_MARGIN * 2.0).max(40.0),
     );
     (available.0 / slide.0.max(1.0) as f32).min(available.1 / slide.1.max(1.0) as f32)
 }

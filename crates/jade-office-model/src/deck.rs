@@ -12,13 +12,19 @@ use std::rc::Rc;
 
 use jade_painter::{ImageRect, ImageSource, Painter};
 use jade_pptx_layout::{layout_deck_slide, PlacedOrigin, PlacedShape, SlideLayout};
-pub use jade_pptx_layout::{TextFormatState, TextSelectionGeometry};
+pub use jade_pptx_layout::{
+    ParagraphFormatState, ParagraphSpacingState, TextFormatState, TextSelectionGeometry,
+};
 use jade_pptx_reader::{emu_to_px, Transform};
 use jade_pptx_render::{render_slide_with, PainterMeasure, RenderOptions};
 use jade_pptx_writer::EditSession;
-pub use jade_pptx_writer::{ShapeTransformInfo, SlideLayoutInfo, TableChange, TextFormat};
+pub use jade_pptx_writer::{
+    ParagraphAlignment, ShapeTransformInfo, SlideLayoutInfo, TableChange, TextFormat,
+};
 
+mod format;
 mod text;
+pub use format::{step_size, FormatStrip, TextCommand, FONT_SIZES};
 pub use text::{Motion, ShapeText};
 
 use crate::Backend;

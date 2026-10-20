@@ -12,7 +12,8 @@ use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
 use jade_office_model::deck::{
-    Deck, DragMode, Motion, ShapeDrag, ShapeRect, ShapeText, TableChange, TextTarget, MIN_SHAPE_PX,
+    step_size, Deck, DragMode, Motion, ParagraphAlignment, ParagraphSpacingState, ShapeDrag,
+    ShapeRect, ShapeText, TableChange, TextCommand, TextTarget, MIN_SHAPE_PX,
 };
 use jade_office_model::tiny::TinySkiaBackend;
 
@@ -711,4 +712,120 @@ fn an_input_methods_composition_shows_at_the_caret_and_goes_in_when_committed() 
     assert_eq!(deck.shape_text(0, id).unwrap(), format!("{before}日本"));
     assert_eq!(text.composition, None);
     assert_eq!(text.focus, end + 2);
+}
+
+/// `#C00000` and `c00000` alike.
+fn same_colour(a: Option<&str>, b: &str) -> bool {
+    a.is_some_and(|a| {
+        a.trim_start_matches('#')
+            .eq_ignore_ascii_case(b.trim_start_matches('#'))
+    })
+}
+
+#[test]
+fn a_selection_takes_character_formatting_and_its_paragraph_paragraph_formatting() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, _) = text_shape(&mut deck, 0);
+    let untouched = deck.text_format(0, id, 3..4);
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    text.move_caret(&mut deck, Motion::Start, false);
+    text.move_caret(&mut deck, Motion::Right, true);
+    text.move_caret(&mut deck, Motion::Right, true);
+    let before = text.format_strip(&deck);
+    let size = before.size.expect("one size");
+
+    assert!(text.format(&mut deck, &TextCommand::Bold).unwrap());
+    assert_eq!(text.format_strip(&deck).bold, !before.bold);
+    assert!(text.format(&mut deck, &TextCommand::Italic).unwrap());
+    assert!(text.format(&mut deck, &TextCommand::Grow).unwrap());
+    assert_eq!(text.format_strip(&deck).size, Some(step_size(size, true)));
+    assert!(text
+        .format(&mut deck, &TextCommand::Font("Meiryo".into()))
+        .unwrap());
+    assert_eq!(text.format_strip(&deck).font.as_deref(), Some("Meiryo"));
+    assert!(text
+        .format(&mut deck, &TextCommand::Color("#C00000".into()))
+        .unwrap());
+    assert!(same_colour(
+        text.format_strip(&deck).color.as_deref(),
+        "C00000"
+    ));
+    // Characters outside the selection keep theirs.
+    assert_eq!(deck.text_format(0, id, 3..4), untouched);
+
+    assert!(text
+        .format(&mut deck, &TextCommand::Align(ParagraphAlignment::Center))
+        .unwrap());
+    assert_eq!(
+        text.format_strip(&deck).alignment,
+        Some(ParagraphAlignment::Center)
+    );
+    assert!(text.format(&mut deck, &TextCommand::Bullets).unwrap());
+    assert!(text.format_strip(&deck).bullets);
+    assert!(text.format(&mut deck, &TextCommand::Numbering).unwrap());
+    let strip = text.format_strip(&deck);
+    assert!(strip.numbering && !strip.bullets);
+    assert!(text.format(&mut deck, &TextCommand::Numbering).unwrap());
+    assert!(!text.format_strip(&deck).numbering);
+    assert!(text
+        .format(&mut deck, &TextCommand::LineSpacing(1.5))
+        .unwrap());
+    assert!(text
+        .format(&mut deck, &TextCommand::SpaceAfter(12.0))
+        .unwrap());
+    let paragraph = deck.paragraph_format(0, id, text.selection()).unwrap();
+    assert_eq!(
+        paragraph.line_spacing,
+        Some(ParagraphSpacingState::Percent(150.0))
+    );
+    assert_eq!(
+        paragraph.space_after,
+        Some(ParagraphSpacingState::Points(12.0))
+    );
+    // Saved and reopened, the formatting is there.
+    let saved = deck.save_bytes();
+    let reopened = Deck::open(&saved, backend()).unwrap();
+    let strip = reopened.text_format(0, id, 0..2).unwrap();
+    assert_eq!(strip.font.as_deref(), Some("Meiryo"));
+}
+
+#[test]
+fn with_nothing_selected_formatting_goes_to_what_is_typed_next() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let end = before.encode_utf16().count();
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    let bold = text.format_strip(&deck).bold;
+    // Nothing changes yet; the strip shows what typing will take.
+    assert!(!text.format(&mut deck, &TextCommand::Bold).unwrap());
+    assert_eq!(text.format_strip(&deck).bold, !bold);
+    assert!(!text.format(&mut deck, &TextCommand::Size(40.0)).unwrap());
+    assert!(text.type_text(&mut deck, "AB").unwrap());
+    let typed = deck.text_format(0, id, end..end + 2).unwrap();
+    assert_eq!(typed.bold, Some(!bold));
+    assert_eq!(typed.size_pt, Some(40.0));
+    // The text before keeps its own.
+    assert_eq!(deck.text_format(0, id, 0..1).unwrap().bold, Some(bold));
+}
+
+#[test]
+fn a_selected_shape_is_formatted_as_a_whole() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let bold = deck.shape_format(0, id).unwrap().bold;
+    assert!(deck.format_shape(0, id, &TextCommand::Bold).unwrap());
+    let end = before.encode_utf16().count();
+    assert_eq!(deck.text_format(0, id, 0..end).unwrap().bold, Some(!bold));
+    assert_eq!(deck.shape_format(0, id).unwrap().bold, !bold);
+    assert!(deck.undo().unwrap());
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn font_sizes_step_through_powerpoints_list() {
+    assert_eq!(step_size(18.0, true), 20.0);
+    assert_eq!(step_size(18.0, false), 16.0);
+    assert_eq!(step_size(17.0, true), 18.0);
+    assert_eq!(step_size(72.0, true), 80.0);
+    assert_eq!(step_size(8.0, false), 8.0);
 }
