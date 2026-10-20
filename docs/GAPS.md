@@ -11,7 +11,10 @@ the Format Cells dialog, conditional-format editing and chart editing. Table
 cell merge/split and SmartArt resizing were required and are done. Every
 PowerPoint blocker is done, marked **Done** with the pull request that did
 it; copy and paste across slides needed the engine (jade-rs/jade-core#111).
-Thai tone marks
+Excel's printing, CSV, Paste Special, Find and Replace and the native Number
+Format dropdown are done, marked the same way; the engine gave them a number
+under Text shown as General and transposed formulas (jade-rs/jade-core#118,
+#119). Thai tone marks
 (#56), Korean (#57) and Arabic (#58) are tracked as issues, not blockers.
 
 ## Excel
@@ -23,11 +26,14 @@ Thai tone marks
 | **Blocker** | Charts: select, move, resize, edit type, data, titles, axes, legend | High | reads and draws bar/line/area/pie/doughnut/scatter; no chart authoring or anchor move/resize |
 | **Blocker** | Hidden sheets show as tabs | High (fidelity) | sheets carry visibility; the shells don't filter |
 | **Blocker** | Edits to a protected sheet are not blocked | High (fidelity) | protection not modelled |
-| **Blocker** | Print and export to PDF | High | no |
-| **Blocker** | CSV import and export; Save As writes xlsx whatever the name | High | no |
-| **Blocker** | Paste Special (values, formats, transpose) | High | no |
-| **Blocker** | Find and Replace (only Find, no options) | High | partly |
-| **Blocker** | Number-format dropdown in the native app (the browser has one) | High | yes |
+| **Done** (#95) | Print and export to PDF | High | no — jade-office-model paginates; Skia records the PDF |
+| **Done** (#94) | CSV import and export; Save As writes xlsx whatever the name | High | no — jade-office-model reads and writes it |
+| **Done** (#93) | Paste Special (values, formats, transpose) | High | yes (`transpose_formula`, jade-core#119) |
+| **Done** (#92) | Find and Replace (only Find, no options) | High | yes (`find`) |
+| **Done** (#91) | Number-format dropdown in the native app (the browser has one) | High | yes |
+| | Find All (the matches listed); Look in Values or Notes; within the selection | Medium | yes (`find`) |
+| | Paste Special: operations (Add, Multiply…), column widths, Paste Link; Paste Options after a paste | Medium | partly |
+| | CSV: other delimiters and encodings (Text Import Wizard), leading zeros kept as text | Medium | — |
 | | Format Painter | Medium | yes (`copy_format`) |
 | | Clear Formats / Clear All | Medium | partly |
 | | Font family, vertical alignment, indent controls; custom/theme colours | Medium | yes for most |
@@ -45,7 +51,7 @@ Thai tone marks
 | | Remove duplicates, text to columns, flash fill | Medium | no |
 | | Trace precedents, error checking, show formulas | Medium | no |
 | | Excel tables: create, resize, style, total row | Low–Medium | no |
-| | Page setup: margins, orientation, print area, headers/footers | Medium | headers/footers only |
+| | Page setup: margins, orientation, paper size, scaling, print titles — read from the sheet and set in a dialog (printing uses Excel's defaults with the sheet's print area, breaks, header and footer) | Medium | partly — print area, breaks, headers/footers read; `pageSetup`/`pageMargins` not |
 | | Insert pictures and shapes | Low–Medium | no |
 | | Calculation mode and F9 | Low | yes |
 | | Threaded comments, multi-sheet selection, Merge Across, split view, cell styles gallery | Low | no |
