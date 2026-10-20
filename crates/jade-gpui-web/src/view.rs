@@ -121,7 +121,8 @@ impl Kind {
         let extension = name.rsplit_once('.')?.1.to_lowercase();
         match extension.as_str() {
             "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
-            "xlsx" | "xlsm" | "xltx" | "xltm" => Some(Kind::Workbook),
+            // A CSV opens as a workbook of one sheet, as in Excel.
+            "xlsx" | "xlsm" | "xltx" | "xltm" | "csv" => Some(Kind::Workbook),
             "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
             _ => None,
         }
@@ -571,9 +572,19 @@ impl DocView {
                     slides_focused: false,
                 }
             }
-            Kind::Workbook => Document::Workbook(Box::new(sheet::Sheet::open(
-                jade_web::Workbook::open(bytes, &fonts.time_zone, fonts.backend.clone())?,
-            ))),
+            Kind::Workbook => {
+                let book = if jade_web::csv::is_csv(&name) {
+                    jade_web::Workbook::open_csv(
+                        &name,
+                        bytes,
+                        &fonts.time_zone,
+                        fonts.backend.clone(),
+                    )?
+                } else {
+                    jade_web::Workbook::open(bytes, &fonts.time_zone, fonts.backend.clone())?
+                };
+                Document::Workbook(Box::new(sheet::Sheet::open(book)))
+            }
         };
         Ok(Self {
             name,
@@ -751,7 +762,8 @@ impl DocView {
         let bytes = match &mut self.document {
             Document::Pages { document, .. } => document.export_docx(),
             Document::Deck { deck, .. } => Ok(deck.save_bytes()),
-            Document::Workbook(sheet) => sheet.book.save_bytes(),
+            // A .csv saves the active sheet as CSV, as Excel does.
+            Document::Workbook(sheet) => sheet.book.save_bytes_as(&self.name),
         };
         self.status = match bytes {
             Ok(bytes) => {

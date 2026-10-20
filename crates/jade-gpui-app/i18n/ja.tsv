@@ -96,6 +96,9 @@ menu.slideshow.from_beginning	最初から
 sheet.edit_failed	セルに書き込めません: {error}
 sheet.formula_problem	この数式には問題があります。= で始まる入力は数式として扱われます
 sheet.saved	{name} に保存しました
+sheet.saved_csv	{name} を保存しました（CSV: 作業中のシートのみ）
+sheet.save_as	名前を付けて保存
+sheet.save_as_hint	.xlsx はブック全体、.csv は作業中のシートを保存します
 sheet.save_failed	保存できません: {error}
 sheet.average	平均: {value}
 sheet.cell_count	データの個数: {n}

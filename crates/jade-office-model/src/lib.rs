@@ -21,6 +21,7 @@ use jade_painter::Painter;
 pub mod charts;
 pub mod clipboard;
 pub mod conditional_formatting;
+pub mod csv;
 pub mod deck;
 pub mod find;
 pub mod grid;

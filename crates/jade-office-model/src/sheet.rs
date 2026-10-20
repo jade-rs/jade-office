@@ -2583,6 +2583,12 @@ impl<B: Backend> Workbook<B> {
         self.dirty
     }
 
+    /// Counts the workbook as saved: written out some other way than
+    /// [`Self::save_bytes`], as CSV say.
+    pub(crate) fn mark_saved(&mut self) {
+        self.dirty = false;
+    }
+
     /// The workbook as `.xlsx` bytes, as saving writes it; marks it saved.
     pub fn save_bytes(&mut self) -> Result<Vec<u8>, String> {
         let bytes = self.book.save_bytes().map_err(|error| error.to_string())?;

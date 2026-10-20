@@ -29,6 +29,7 @@ mod charts;
 mod conditional;
 mod find_bar;
 mod paste_special;
+mod save_as;
 use charts::ChartTool;
 use conditional::Conditional;
 use jade_web::charts::{ChartAsk, Handle};
@@ -76,6 +77,8 @@ pub(super) struct Sheet {
     pub finding: Option<FindBar>,
     /// A note being written on a cell.
     pub noting: Option<(CellRef, TextEdit)>,
+    /// Save As (⌘⇧S): the file's name being typed.
+    pub saving_as: Option<TextEdit>,
     /// A conditional format's dialog, asking for its value.
     pub asking: Option<RuleAsk>,
     /// The conditional formatting Rules Manager, open.
@@ -557,6 +560,7 @@ impl Sheet {
             naming: None,
             finding: None,
             noting: None,
+            saving_as: None,
             asking: None,
             managing: false,
             object: None,
@@ -586,6 +590,9 @@ impl Sheet {
         if let Some(text) = self.naming.as_mut() {
             return Some(text);
         }
+        if let Some(text) = self.saving_as.as_mut() {
+            return Some(text);
+        }
         if let Some(bar) = self.finding.as_mut() {
             return Some(bar.field_mut());
         }
@@ -606,6 +613,9 @@ impl Sheet {
             return Some(text);
         }
         if let Some(text) = self.naming.as_ref() {
+            return Some(text);
+        }
+        if let Some(text) = self.saving_as.as_ref() {
             return Some(text);
         }
         if let Some(bar) = self.finding.as_ref() {
@@ -1557,6 +1567,9 @@ impl DocView {
         if sheet.pasting.is_some() {
             return self.paste_special_key(key, modifiers, cx);
         }
+        if sheet.saving_as.is_some() {
+            return self.save_as_key(key, modifiers, cx);
+        }
         if sheet.managing && key == "escape" {
             sheet.managing = false;
             cx.notify();
@@ -1801,6 +1814,8 @@ impl DocView {
                 self.edited(result, cx);
             }
             "f" => self.open_sheet_find(false, cx),
+            // ⌘⇧S: Save As, its extension picking the format.
+            "s" if shift => self.open_save_as(cx),
             // Ctrl+H, as Excel: Find and Replace.
             "h" if modifiers.control && !modifiers.platform => self.open_sheet_find(true, cx),
             "x" if !shift => self.sheet_copy(true, cx),
@@ -2774,6 +2789,7 @@ impl DocView {
         let object_frame = self.object_frame();
         let find_bar = self.sheet_find_bar(cx);
         let paste_special = self.paste_special_dialog(cx);
+        let save_as_bar = self.save_as_bar();
         let Document::Workbook(sheet) = &mut self.document else {
             unreachable!()
         };
@@ -3453,6 +3469,7 @@ impl DocView {
                     .children(note_editor)
                     .children(list_button)
                     .children(find_bar)
+                    .children(save_as_bar)
                     .children(filter_panel)
                     .children(rule_dialog)
                     .children(rules_manager)
