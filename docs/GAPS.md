@@ -45,7 +45,7 @@ Thai tone marks
 | | Remove duplicates, text to columns, flash fill | Medium | no |
 | | Trace precedents, error checking, show formulas | Medium | no |
 | | Excel tables: create, resize, style, total row | Low–Medium | no |
-| | Page setup: margins, orientation, print area, headers/footers | Medium | headers/footers only |
+| | Page setup: change margins, orientation, paper, scaling and print titles (printing already follows the file's own, with its print area and header/footer) | Medium | read, not written — jade-rs/jade-core#126; the writer sets only headers/footers |
 | | Insert pictures and shapes | Low–Medium | no |
 | | Calculation mode and F9 | Low | yes |
 | | Threaded comments, multi-sheet selection, Merge Across, split view, cell styles gallery | Low | no |
