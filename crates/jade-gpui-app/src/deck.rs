@@ -132,6 +132,15 @@ impl TextEdit {
     }
 }
 
+/// Cells selected across a table, as by Shift+click: what Merge Cells merges.
+struct CellSelection {
+    id: u32,
+    from: (usize, usize),
+    to: (usize, usize),
+    /// The cells' box, in slide px.
+    rect: SlideRect,
+}
+
 pub struct DeckView {
     path: PathBuf,
     /// The shared editing model (jade-office-model), painted with Skia.
@@ -143,6 +152,7 @@ pub struct DeckView {
     selected: Option<u32>,
     drag: Option<ShapeDrag>,
     text_edit: Option<TextEdit>,
+    cells: Option<CellSelection>,
     /// One per slide, painted on the first frame (it needs the window's scale
     /// factor) and kept: a thumbnail only changes when the slide does.
     thumbnails: Vec<Option<Arc<RenderImage>>>,
@@ -362,6 +372,12 @@ impl DeckView {
         let Some((x, y)) = self.slide_point(event.position) else {
             return;
         };
+        // Shift+click in a table whose cell is being typed into, or whose
+        // cells are selected, selects the cells between, as in PowerPoint.
+        if event.modifiers.shift && self.select_cells_to(x, y, cx) {
+            return;
+        }
+        self.cells = None;
         if let Some(edit) = &self.text_edit {
             if edit.rect.contains(x, y) {
                 return;
@@ -520,6 +536,73 @@ impl DeckView {
         self.write(cx, |deck, slide| deck.change_table(slide, id, change));
     }
 
+    /// Extends a cell selection — from the cell being typed into, or the
+    /// selection's first — to the cell at (`x`, `y`) of the same table.
+    fn select_cells_to(&mut self, x: f64, y: f64, cx: &mut Context<Self>) -> bool {
+        let anchor = match (&self.cells, self.text_edit.as_ref().map(|edit| edit.target)) {
+            (Some(cells), _) => (cells.id, cells.from),
+            (None, Some(TextTarget::Cell { id, row, column })) => (id, (row, column)),
+            _ => return false,
+        };
+        let (id, from) = anchor;
+        let TextTarget::Cell { row, column, .. } =
+            self.deck.text_target(self.current, id, Some((x, y)))
+        else {
+            return false;
+        };
+        let Some(rect) = self
+            .deck
+            .cell_range_rect(self.current, id, from, (row, column))
+        else {
+            return false;
+        };
+        self.commit_text(cx);
+        self.cells = Some(CellSelection {
+            id,
+            from,
+            to: (row, column),
+            rect,
+        });
+        cx.notify();
+        true
+    }
+
+    /// Merge Cells: the selected cells become one, typed into next.
+    fn merge_cells(&mut self, cx: &mut Context<Self>) {
+        let Some(cells) = self.cells.take() else {
+            return;
+        };
+        let change = jade_office_model::deck::merge_cells(cells.from, cells.to);
+        let merged = self.write(cx, |deck, slide| deck.change_table(slide, cells.id, change));
+        if let (true, TableChange::MergeCells { row, column, .. }) = (merged, change) {
+            self.edit(
+                TextTarget::Cell {
+                    id: cells.id,
+                    row,
+                    column,
+                },
+                false,
+                cx,
+            );
+        }
+        cx.notify();
+    }
+
+    /// Split Cells: the merged cell being typed into becomes its cells.
+    fn split_cell(&mut self, cx: &mut Context<Self>) {
+        let Some(target @ TextTarget::Cell { id, row, column }) =
+            self.text_edit.as_ref().map(|edit| edit.target)
+        else {
+            return;
+        };
+        self.commit_text(cx);
+        if self.write(cx, |deck, slide| {
+            deck.change_table(slide, id, TableChange::SplitCell { row, column })
+        }) {
+            self.edit(target, false, cx);
+        }
+    }
+
     // ---- keys ------------------------------------------------------------
 
     fn handle_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
@@ -529,6 +612,13 @@ impl DeckView {
             return;
         }
         let key = keystroke.key.as_str();
+
+        if self.cells.is_some() && key == "escape" {
+            self.cells = None;
+            cx.notify();
+            cx.stop_propagation();
+            return;
+        }
 
         if let Some(edit) = self.text_edit.as_mut() {
             if edit.marked.is_some() {
@@ -695,6 +785,22 @@ impl DeckView {
     /// over the slide.
     fn overlays(&self, scale: f32, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let mut out = Vec::new();
+        // The selected cells, shaded as PowerPoint shades them.
+        if let Some(cells) = &self.cells {
+            let rect = cells.rect;
+            out.push(
+                div()
+                    .absolute()
+                    .left(px(rect.x as f32 * scale))
+                    .top(px(rect.y as f32 * scale))
+                    .w(px(rect.width as f32 * scale))
+                    .h(px(rect.height as f32 * scale))
+                    .bg(gpui::rgba(0x3b82f633))
+                    .border_1()
+                    .border_color(theme::accent())
+                    .into_any_element(),
+            );
+        }
         let Some(id) = self.selected else {
             return out;
         };
@@ -1049,6 +1155,12 @@ impl Render for DeckView {
             .text_edit
             .as_ref()
             .is_some_and(|edit| matches!(edit.target, TextTarget::Cell { .. }));
+        let editing_merged = self.text_edit.as_ref().is_some_and(|edit| {
+            self.deck
+                .cell_span(self.current, edit.target)
+                .is_some_and(|span| span != (1, 1))
+        });
+        let selecting_cells = self.cells.is_some();
 
         let (area_width, area_height) = workspace::editor_area(window, cx);
         let notes_height = if self.show_notes { NOTES_HEIGHT } else { 0.0 };
@@ -1234,6 +1346,34 @@ impl Render for DeckView {
                                     )),
                                 )
                             })
+                            .when(selecting_cells, |bar| {
+                                bar.child(
+                                    toolbar_button(
+                                        "merge-cells",
+                                        "icons/merge.svg",
+                                        i18n::text("deck.merge_cells"),
+                                    )
+                                    .on_click(
+                                        cx.listener(|view, _event, _window, cx| {
+                                            view.merge_cells(cx)
+                                        }),
+                                    ),
+                                )
+                            })
+                            .when(editing_merged, |bar| {
+                                bar.child(
+                                    toolbar_button(
+                                        "split-cell",
+                                        "icons/split.svg",
+                                        i18n::text("deck.split_cell"),
+                                    )
+                                    .on_click(
+                                        cx.listener(|view, _event, _window, cx| {
+                                            view.split_cell(cx)
+                                        }),
+                                    ),
+                                )
+                            })
                             .child(
                                 toolbar_button(
                                     "notes",
@@ -1411,6 +1551,7 @@ impl DeckView {
             selected: None,
             drag: None,
             text_edit: None,
+            cells: None,
             slide: None,
             retired: Vec::new(),
             show_notes: true,
@@ -1737,6 +1878,48 @@ mod tests {
             assert_eq!(text(0, 0), "Text 5");
             assert_eq!(text(0, 4), "");
             assert_eq!(text(3, 0), "新しい行");
+        });
+    }
+
+    /// Shift+click from the cell being typed into selects the cells between;
+    /// Merge Cells makes them one, typed into next, and Split Cells undoes
+    /// it. Escape drops a selection.
+    #[gpui::test]
+    fn shift_click_selects_cells_to_merge_and_split(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_fixture(cx, "poi/table-with-different-font-colors.pptx");
+        let cell = |row, column| TextTarget::Cell { id: 4, row, column };
+        let (x, y) = view.update(cx, |view, _| {
+            let rect = view.deck.text_rect(0, cell(2, 2)).unwrap();
+            (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0)
+        });
+        view.update(cx, |view, cx| {
+            view.select(Some(4), cx);
+            view.edit(cell(1, 1), false, cx);
+            assert!(view.select_cells_to(x, y, cx));
+            assert!(view.text_edit.is_none());
+        });
+        cx.simulate_keystrokes("escape");
+        view.update(cx, |view, cx| {
+            assert!(view.cells.is_none());
+            view.edit(cell(1, 1), false, cx);
+            assert!(view.select_cells_to(x, y, cx));
+            view.merge_cells(cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.deck.text(0, cell(1, 1)).unwrap(),
+                "Text 6\nText 7\nText 10\nText 11"
+            );
+            assert_eq!(view.deck.cell_span(0, cell(1, 1)), Some((2, 2)));
+            assert_eq!(
+                view.text_edit.as_ref().map(|edit| edit.target),
+                Some(cell(1, 1))
+            );
+        });
+        view.update(cx, |view, cx| view.split_cell(cx));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.cell_span(0, cell(1, 1)), Some((1, 1)));
+            assert_eq!(view.deck.text(0, cell(2, 2)).unwrap(), "");
         });
     }
 

@@ -164,6 +164,8 @@ deck.row_below	下に行を挿入
 deck.column_right	右に列を挿入
 deck.delete_row	行を削除
 deck.delete_column	列を削除
+deck.merge_cells	セルの結合
+deck.split_cell	セルの分割
 deck.saved	{name} に保存しました
 deck.save_failed	保存できません: {error}
 deck.selected_shape	選択: {name}
