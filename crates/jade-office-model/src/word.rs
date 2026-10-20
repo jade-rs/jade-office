@@ -31,6 +31,7 @@ use jade_selection::{SelectionRange, TextPosition};
 
 pub mod find;
 pub mod new;
+pub mod page;
 
 pub use find::{FindOptions, Found, WordFind};
 

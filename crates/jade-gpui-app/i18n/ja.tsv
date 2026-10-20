@@ -335,6 +335,42 @@ doc.untitled	文書 {n}
 workspace.new_document	新規文書
 doc.export_pdf	PDF
 doc.export_pdf_title	PDF として書き出す
+page.group.setup	ページ設定
+page.margins	余白
+page.margins.normal	標準
+page.margins.narrow	狭い
+page.margins.moderate	やや狭い
+page.margins.wide	広い
+page.margins.top_bottom	上下
+page.margins.left_right	左右
+page.orientation	印刷の向き
+page.portrait	縦
+page.landscape	横
+page.size	サイズ
+page.columns	段組み
+page.columns.count	{n} 段
+page.breaks	区切り
+page.break.sections	セクション区切り
+page.break.next_page	次のページから開始
+page.break.continuous	現在の位置から開始
+page.break.even_page	偶数ページから開始
+page.break.odd_page	奇数ページから開始
+page.group.header_footer	ヘッダーとフッター
+page.header	ヘッダー
+page.header_title	ヘッダーの編集
+page.footer	フッター
+page.footer_title	フッターの編集
+page.number	ページ番号
+page.number.top_left	ページの上部 (左)
+page.number.top_center	ページの上部 (中央)
+page.number.top_right	ページの上部 (右)
+page.number.bottom_left	ページの下部 (左)
+page.number.bottom_center	ページの下部 (中央)
+page.number.bottom_right	ページの下部 (右)
+page.number.remove	ページ番号の削除
+page.header_editing	ヘッダー
+page.footer_editing	フッター
+page.story_keys	⇥ 左 · 中央 · 右 · ⏎ 反映 · esc 取消
 web.samples	サンプル
 web.read_only	閲覧のみ
 web.download	保存 (ダウンロード)
