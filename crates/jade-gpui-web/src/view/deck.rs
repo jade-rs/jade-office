@@ -54,22 +54,106 @@ impl Render for DraggedSlideView {
 
 impl DocView {
     pub(super) fn select_shape(&mut self, id: Option<u32>) {
+        self.select_shapes(id.into_iter().collect());
+    }
+
+    /// Selects `ids`, the first as the one Tab and its handles go by.
+    fn select_shapes(&mut self, ids: Vec<u32>) {
         if let Document::Deck {
             deck,
             current,
             selected,
+            more,
             selected_name,
             slides_focused,
             ..
         } = &mut self.document
         {
-            if id.is_some() {
+            let mut ids = ids.into_iter();
+            *selected = ids.next();
+            *more = ids.collect();
+            if selected.is_some() {
                 *slides_focused = false;
             }
-            *selected = id;
-            *selected_name = id
-                .and_then(|id| deck.shape(*current, id))
-                .map(|shape| SharedString::from(shape.name));
+            *selected_name = if more.is_empty() {
+                selected
+                    .and_then(|id| deck.shape(*current, id))
+                    .map(|shape| SharedString::from(shape.name))
+            } else {
+                Some(i18n::format("deck.selected_count", &[("n", &(more.len() + 1))]).into())
+            };
+        }
+    }
+
+    /// The shapes selected, the first one first.
+    fn selection(&self) -> Vec<u32> {
+        match &self.document {
+            Document::Deck { selected, more, .. } => {
+                selected.iter().chain(more.iter()).copied().collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// ⇧- or ⌘-click: the shape joins the selection, or leaves it.
+    fn toggle_selected(&mut self, id: u32) {
+        let mut ids = self.selection();
+        match ids.iter().position(|selected| *selected == id) {
+            Some(at) => {
+                ids.remove(at);
+            }
+            None => ids.push(id),
+        }
+        self.select_shapes(ids);
+    }
+
+    // ---- copying -------------------------------------------------------------
+
+    /// ⌘C on shapes: kept to paste, as PowerPoint keeps them.
+    fn copy_shapes(&mut self) {
+        let ids = self.selection();
+        if let Document::Deck {
+            current, clipboard, ..
+        } = &mut self.document
+        {
+            if !ids.is_empty() {
+                *clipboard = Some((*current, ids));
+            }
+        }
+    }
+
+    /// ⌘V: the copied shapes pasted onto the slide shown — where they were,
+    /// or offset on their own slide — and selected; ⌘D: the selection
+    /// copied offset on its slide.
+    fn paste_shapes(&mut self, duplicate: bool, cx: &mut Context<Self>) {
+        let selection = self.selection();
+        let Document::Deck {
+            deck,
+            current,
+            clipboard,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let result = if duplicate {
+            deck.duplicate_shapes(*current, &selection)
+        } else {
+            let Some((from, ids)) = clipboard.clone() else {
+                return;
+            };
+            deck.paste_shapes(from, &ids, *current)
+        };
+        match result {
+            Ok(copies) if copies.is_empty() => {
+                self.status = i18n::text("deck.nothing_to_paste").into();
+                cx.notify();
+            }
+            Ok(copies) => {
+                self.typed(Ok(true), cx);
+                self.select_shapes(copies);
+            }
+            Err(error) => self.edited(Err(error), cx),
         }
     }
 
@@ -438,12 +522,31 @@ impl DocView {
             return false;
         }
         let no_shape = selected.is_none();
+        let notes = matches!(
+            &self.document,
+            Document::Deck {
+                notes_edit: Some(_),
+                ..
+            }
+        );
         match (
             event.keystroke.key.as_str(),
             event.keystroke.modifiers.shift,
         ) {
             ("m", false) | ("n", true) => self.new_slide(cx),
             ("d", false) if no_shape => self.duplicate_slide(cx),
+            ("d", false) => self.paste_shapes(true, cx),
+            ("c", false) if !no_shape => self.copy_shapes(),
+            ("v", false) if !notes => self.paste_shapes(false, cx),
+            // ⌘A off the text: every shape on the slide.
+            ("a", false) if !notes => {
+                let ids = match &mut self.document {
+                    Document::Deck { deck, current, .. } => deck.selectable_shapes(*current),
+                    _ => Vec::new(),
+                };
+                self.select_shapes(ids);
+                cx.notify();
+            }
             _ => return false,
         }
         true
@@ -964,14 +1067,7 @@ impl DocView {
                 return true;
             }
         }
-        let Document::Deck {
-            deck,
-            current,
-            selected,
-            edit,
-            ..
-        } = &mut self.document
-        else {
+        let Document::Deck { edit, .. } = &mut self.document else {
             return false;
         };
         if let Some((target, text)) = edit.as_mut() {
@@ -995,6 +1091,46 @@ impl DocView {
             cx.notify();
             return true;
         }
+        let several = match &self.document {
+            Document::Deck { more, .. } => !more.is_empty(),
+            _ => false,
+        };
+        if several {
+            let ids = self.selection();
+            let step = if modifiers.alt { 1.0 } else { NUDGE_PX };
+            let Document::Deck { deck, current, .. } = &mut self.document else {
+                return false;
+            };
+            let slide = *current;
+            let result = match key {
+                "left" => deck.move_shapes(slide, &ids, -step, 0.0),
+                "right" => deck.move_shapes(slide, &ids, step, 0.0),
+                "up" => deck.move_shapes(slide, &ids, 0.0, -step),
+                "down" => deck.move_shapes(slide, &ids, 0.0, step),
+                "delete" | "backspace" => {
+                    let result = deck.delete_shapes(slide, &ids);
+                    self.select_shape(None);
+                    result
+                }
+                "escape" => {
+                    self.select_shape(None);
+                    cx.notify();
+                    return true;
+                }
+                _ => return false,
+            };
+            self.edited(result, cx);
+            return true;
+        }
+        let Document::Deck {
+            deck,
+            current,
+            selected,
+            ..
+        } = &mut self.document
+        else {
+            return false;
+        };
         let slide = *current;
         if let Some(id) = *selected {
             let step = if modifiers.alt { 1.0 } else { NUDGE_PX };
@@ -1140,7 +1276,22 @@ impl DocView {
             .and_then(|id| deck.shape(*current, id))
             .is_some_and(|shape| shape.can_move);
         self.commit_slide_text(cx);
-        self.select_shape(hit);
+        let selection = self.selection();
+        // ⇧- or ⌘-click adds a shape to the selection, or takes it out.
+        if let (Some(id), false, true) = (
+            hit,
+            selection.is_empty(),
+            event.modifiers.shift || event.modifiers.platform,
+        ) {
+            self.toggle_selected(id);
+            cx.notify();
+            return;
+        }
+        // A press on a shape of the selection keeps it, to drag it all.
+        let in_selection = hit.is_some_and(|id| selection.contains(&id));
+        if !(in_selection && event.click_count < 2) {
+            self.select_shape(hit);
+        }
         match hit {
             // In a table, the cell under the click.
             Some(_) if event.click_count >= 2 => self.begin_slide_text(Some((x, y)), cx),
@@ -1259,7 +1410,12 @@ impl DocView {
         let Some(drag) = drag.take() else {
             return;
         };
-        let result = deck.drag_shape(*current, &drag);
+        let (slide, drag) = (*current, drag);
+        let selection = self.selection();
+        let Document::Deck { deck, .. } = &mut self.document else {
+            return;
+        };
+        let result = deck.drag_shapes(slide, &drag, &selection);
         self.edited(result, cx);
     }
 
@@ -1398,6 +1554,7 @@ impl DocView {
             thumbnail_scroll,
             slide,
             selected,
+            more,
             edit,
             typing,
             notes_edit,
@@ -1560,9 +1717,28 @@ impl DocView {
 
         // The selection outline and its corner handles, or the text editor,
         // over the slide; a shape being dragged where the drag has taken it.
-        let resizable = selected
-            .and_then(|id| deck.shape(current_index, id))
-            .is_some_and(|shape| shape.can_resize);
+        // Corner handles on one shape alone, as PowerPoint's; the rest of a
+        // selection of several outlined, where a drag has taken them.
+        let resizable = more.is_empty()
+            && selected
+                .and_then(|id| deck.shape(current_index, id))
+                .is_some_and(|shape| shape.can_resize);
+        let moving = drag.filter(|drag| drag.mode == DragMode::Move);
+        let others: Vec<_> = more
+            .iter()
+            .filter_map(|id| deck.shape_rect(current_index, *id))
+            .map(|rect| {
+                let rect = moving.map_or(rect, |drag| drag.rect(rect));
+                div()
+                    .absolute()
+                    .left(px(rect.x as f32 * zoom))
+                    .top(px(rect.y as f32 * zoom))
+                    .w(px(rect.width as f32 * zoom))
+                    .h(px(rect.height as f32 * zoom))
+                    .border_1()
+                    .border_color(palette::accent())
+            })
+            .collect();
         // A text box or shape being drawn.
         let drawn = match (*drawing, *inserting) {
             (Some((from, to)), Some(insert)) => {
@@ -2014,6 +2190,7 @@ impl DocView {
                                                 }),
                                             )
                                             .children(overlay)
+                                            .children(others)
                                             .children(drawn)
                                             .children(typed.into_iter().flatten())
                                             // The selected cells, shaded as
