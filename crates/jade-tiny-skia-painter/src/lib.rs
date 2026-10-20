@@ -1287,8 +1287,9 @@ impl TinySkiaPainter {
         }
         // The paper's own colour over nothing but paper — a sheet's white
         // background on a new surface — changes no pixel.
-        let paper = self.paper().to_color_u8();
-        if self.inner.blank.get() && opaque.is_some_and(|color| color.to_color_u8() == paper) {
+        if self.inner.blank.get()
+            && opaque.is_some_and(|color| color.to_color_u8() == self.paper().to_color_u8())
+        {
             return;
         }
         // Opaque over every pixel: the paper would only be painted over.
