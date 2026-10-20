@@ -385,12 +385,24 @@ enum Document {
         selected_name: Option<SharedString>,
         /// Text being typed into a shape, or a cell of a table.
         edit: Option<(TextTarget, TextEdit)>,
+        /// Cells selected across a table, as by Shift+click.
+        cells: Option<CellSelection>,
         /// A shape being moved or resized with the mouse.
         drag: Option<ShapeDrag>,
         /// Window px per slide px of the slide on show.
         scale: f32,
     },
     Workbook(Box<sheet::Sheet>),
+}
+
+/// Cells selected across a table: what Merge Cells merges.
+#[derive(Clone, Copy)]
+struct CellSelection {
+    id: u32,
+    from: (usize, usize),
+    to: (usize, usize),
+    /// The cells' box, in slide px.
+    rect: jade_web::deck::ShapeRect,
 }
 
 pub struct DocView {
@@ -482,6 +494,7 @@ impl DocView {
                     selected: None,
                     selected_name: None,
                     edit: None,
+                    cells: None,
                     drag: None,
                     scale: 1.0,
                 }
@@ -881,6 +894,90 @@ impl DocView {
         }
     }
 
+    /// Extends a cell selection — from the cell being typed into, or the
+    /// selection's first — to the cell at (`x`, `y`) of the same table.
+    fn select_slide_cells_to(&mut self, x: f64, y: f64, cx: &mut Context<Self>) -> bool {
+        let Document::Deck {
+            deck,
+            current,
+            edit,
+            cells,
+            ..
+        } = &mut self.document
+        else {
+            return false;
+        };
+        let (id, from) = match (*cells, edit.as_ref().map(|(target, _)| *target)) {
+            (Some(cells), _) => (cells.id, cells.from),
+            (None, Some(TextTarget::Cell { id, row, column })) => (id, (row, column)),
+            _ => return false,
+        };
+        let TextTarget::Cell { row, column, .. } = deck.text_target(*current, id, Some((x, y)))
+        else {
+            return false;
+        };
+        let Some(rect) = deck.cell_range_rect(*current, id, from, (row, column)) else {
+            return false;
+        };
+        self.commit_slide_text(cx);
+        if let Document::Deck { cells, .. } = &mut self.document {
+            *cells = Some(CellSelection {
+                id,
+                from,
+                to: (row, column),
+                rect,
+            });
+        }
+        cx.notify();
+        true
+    }
+
+    /// Merge Cells: the selected cells become one, typed into next.
+    fn merge_slide_cells(&mut self, cx: &mut Context<Self>) {
+        let Document::Deck {
+            deck,
+            current,
+            cells,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(selection) = cells.take() else {
+            return;
+        };
+        let change = jade_web::deck::merge_cells(selection.from, selection.to);
+        let result = deck.change_table(*current, selection.id, change);
+        let merged = matches!(result, Ok(true));
+        self.edited(result, cx);
+        if let (true, TableChange::MergeCells { row, column, .. }) = (merged, change) {
+            let target = TextTarget::Cell {
+                id: selection.id,
+                row,
+                column,
+            };
+            self.edit_slide_text(target, false, cx);
+        }
+        cx.notify();
+    }
+
+    /// Split Cells: the merged cell being typed into becomes its cells.
+    fn split_slide_cell(&mut self, cx: &mut Context<Self>) {
+        let Some(target @ TextTarget::Cell { id, row, column }) = self.edited_cell() else {
+            return;
+        };
+        self.commit_slide_text(cx);
+        let Document::Deck { deck, current, .. } = &mut self.document else {
+            return;
+        };
+        let result = deck.change_table(*current, id, TableChange::SplitCell { row, column });
+        let split = matches!(result, Ok(true));
+        self.edited(result, cx);
+        if split {
+            self.edit_slide_text(target, false, cx);
+        }
+    }
+
     /// A row or column added or removed beside the cell being typed into,
     /// its text written first.
     fn change_slide_table(
@@ -914,6 +1011,17 @@ impl DocView {
                 _ => return false,
             }
             return true;
+        }
+        if let Document::Deck {
+            cells: cells @ Some(_),
+            ..
+        } = &mut self.document
+        {
+            if key == "escape" {
+                *cells = None;
+                cx.notify();
+                return true;
+            }
         }
         let Document::Deck {
             deck,
@@ -1003,15 +1111,22 @@ impl DocView {
         let Some((x, y)) = self.slide_point(event.position) else {
             return;
         };
+        // Shift+click in a table whose cell is being typed into, or whose
+        // cells are selected, selects the cells between, as in PowerPoint.
+        if event.modifiers.shift && self.select_slide_cells_to(x, y, cx) {
+            return;
+        }
         let Document::Deck {
             deck,
             current,
             edit,
+            cells,
             ..
         } = &mut self.document
         else {
             return;
         };
+        *cells = None;
         // A click inside the shape or cell being typed into stays in the
         // text.
         if let Some((target, _)) = edit {
@@ -1200,6 +1315,16 @@ impl DocView {
     fn deck_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::Div {
         let scale = window.scale_factor();
         let editing_cell = self.edited_cell().is_some();
+        let editing_merged = match (&self.document, self.edited_cell()) {
+            (Document::Deck { deck, current, .. }, Some(target)) => deck
+                .cell_span(*current, target)
+                .is_some_and(|span| span != (1, 1)),
+            _ => false,
+        };
+        let selected_cells = match &self.document {
+            Document::Deck { cells, .. } => cells.map(|cells| cells.rect),
+            _ => None,
+        };
         let (area_width, area_height) = editor_area(window, cx);
         let notes_height = if self.show_notes { NOTES_HEIGHT } else { 0.0 };
         let Document::Deck {
@@ -1520,6 +1645,30 @@ impl DocView {
                                 )),
                             )
                         })
+                        .when(selected_cells.is_some(), |bar| {
+                            bar.child(
+                                toolbar_button(
+                                    "merge-cells",
+                                    "icons/merge.svg",
+                                    i18n::text("deck.merge_cells"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| view.merge_slide_cells(cx),
+                                )),
+                            )
+                        })
+                        .when(editing_merged, |bar| {
+                            bar.child(
+                                toolbar_button(
+                                    "split-cell",
+                                    "icons/split.svg",
+                                    i18n::text("deck.split_cell"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| view.split_slide_cell(cx),
+                                )),
+                            )
+                        })
                         .child(
                             toolbar_button(
                                 "notes",
@@ -1616,6 +1765,19 @@ impl DocView {
                                                 }),
                                             )
                                             .children(overlay)
+                                            // The selected cells, shaded as
+                                            // PowerPoint shades them.
+                                            .children(selected_cells.map(|rect| {
+                                                div()
+                                                    .absolute()
+                                                    .left(px(rect.x as f32 * zoom))
+                                                    .top(px(rect.y as f32 * zoom))
+                                                    .w(px(rect.width as f32 * zoom))
+                                                    .h(px(rect.height as f32 * zoom))
+                                                    .bg(gpui::rgba(0x3b82f633))
+                                                    .border_1()
+                                                    .border_color(palette::accent())
+                                            }))
                                             .child(
                                                 canvas(
                                                     move |bounds, _window, _cx| {

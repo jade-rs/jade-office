@@ -382,3 +382,41 @@ fn rows_and_columns_are_added_and_removed_beside_a_cell() {
         .is_err());
     assert!(!deck.is_dirty());
 }
+
+/// Cells selected across a table merge into one, as PowerPoint's Merge
+/// Cells does: the selection's box is the merged cell's, its text the
+/// cells' paragraphs; the merged cell splits back into its cells.
+#[test]
+fn a_selected_range_merges_into_one_cell_and_splits_back() {
+    let mut deck = open("table-with-different-font-colors.pptx");
+    // The selection, dragged from (2, 2) back to (1, 1).
+    let range = deck.cell_range_rect(0, 4, (2, 2), (1, 1)).unwrap();
+    let first = deck.text_rect(0, cell(4, 1, 1)).unwrap();
+    let last = deck.text_rect(0, cell(4, 2, 2)).unwrap();
+    assert_eq!((range.x, range.y), (first.x, first.y));
+    assert!((range.x + range.width - (last.x + last.width)).abs() < 0.01);
+    assert!((range.y + range.height - (last.y + last.height)).abs() < 0.01);
+    assert_eq!(deck.cell_span(0, cell(4, 1, 1)), Some((1, 1)));
+
+    let merge = jade_office_model::deck::merge_cells((2, 2), (1, 1));
+    assert!(deck.change_table(0, 4, merge).unwrap());
+    assert_eq!(
+        deck.text(0, cell(4, 1, 1)).as_deref(),
+        Some("Text 6\nText 7\nText 10\nText 11")
+    );
+    assert_eq!(deck.text(0, cell(4, 2, 2)), None);
+    assert_eq!(deck.cell_span(0, cell(4, 1, 1)), Some((2, 2)));
+    let merged = deck.text_rect(0, cell(4, 1, 1)).unwrap();
+    assert!((merged.width - range.width).abs() < 0.01);
+    assert!(merged.height >= range.height - 0.01);
+    // A double-click anywhere over it types into it.
+    let (x, y) = (last.x + last.width / 2.0, last.y + last.height / 2.0);
+    assert_eq!(deck.text_target(0, 4, Some((x, y))), cell(4, 1, 1));
+    assert!(deck.render_slide(0, 480).is_some());
+
+    assert!(deck
+        .change_table(0, 4, TableChange::SplitCell { row: 1, column: 1 })
+        .unwrap());
+    assert_eq!(deck.cell_span(0, cell(4, 1, 1)), Some((1, 1)));
+    assert_eq!(deck.text(0, cell(4, 2, 2)).as_deref(), Some(""));
+}
