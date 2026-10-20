@@ -464,6 +464,17 @@ review.reject	元に戻す
 review.reject_title	元に戻して次へ進む
 review.no_changes	変更履歴はありません
 review.comment_keys	⏎ 投稿 · ⇧⏎ 改行 · esc 取消
+picture.group	図
+picture.insert	画像
+picture.insert_title	画像をこのデバイスから挿入
+picture.wrap	文字列の折り返し
+picture.wrap.inline	行内
+picture.wrap.square	四角形
+picture.wrap.tight	外周
+picture.wrap.through	内部
+picture.wrap.top_bottom	上下
+picture.wrap.behind	背面
+picture.wrap.front	前面
 web.samples	サンプル
 web.read_only	閲覧のみ
 web.download	保存 (ダウンロード)

@@ -22,10 +22,11 @@ use jade_docx_editor::headless_api::{
     apply_headless_commands_to_document, apply_headless_commands_with_executor_to_document,
 };
 use jade_docx_editor::render_host::PAGE_GAP_PX;
-use jade_docx_editor::word_document::WordDocument;
+use jade_docx_editor::word_document::{FloatingObjectTarget, WordDocument};
 use jade_docx_editor::Options;
 use jade_docx_headless_api::{HeadlessCommand, HeadlessDeleteDirection, HeadlessEditRequest};
 use jade_docx_layout::shaping_measurer::ShapingMeasurer;
+use jade_office_model::word::picture::PlacedObject;
 use jade_selection::{SelectionRange, TextPosition};
 use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 
@@ -1280,6 +1281,20 @@ impl EditableDocument {
         Ok(())
     }
 
+    // ---- pictures and shapes ------------------------------------------------
+
+    /// The picture or shape under a point in document coordinates, as the
+    /// last paint placed it: a press there takes hold of it rather than
+    /// putting the caret behind it.
+    pub fn object_at(&self, x: f64, document_y: f64) -> Option<PlacedObject> {
+        self.renderer.hit_test_object(x, document_y).map(placed)
+    }
+
+    /// Where a picture or shape is on its page, as the last paint placed it.
+    pub fn object_region(&self, target: FloatingObjectTarget) -> Option<PlacedObject> {
+        self.renderer.object_region(target).map(placed)
+    }
+
     // ---- saving -------------------------------------------------------------
 
     pub fn is_dirty(&self) -> bool {
@@ -1334,6 +1349,22 @@ impl EditableDocument {
             .map_err(|error| format!("cannot save: {error:?}"))?;
         self.dirty = false;
         Ok(bytes)
+    }
+}
+
+/// A picture or shape as the renderer placed it.
+fn placed(info: jade_docx_editor::canvas_renderer::ObjectDebugInfo) -> PlacedObject {
+    PlacedObject {
+        target: FloatingObjectTarget {
+            paragraph_index: info.paragraph_index,
+            run_index: info.run_index,
+            kind: info.kind,
+        },
+        page: info.page.saturating_sub(1),
+        x: info.x,
+        y: info.y,
+        width: info.width,
+        height: info.height,
     }
 }
 

@@ -464,6 +464,17 @@ review.reject	Reject
 review.reject_title	Reject and Move to Next
 review.no_changes	No tracked changes
 review.comment_keys	⏎ post · ⇧⏎ line break · esc cancel
+picture.group	Illustrations
+picture.insert	Picture
+picture.insert_title	Insert a picture from this device
+picture.wrap	Wrap Text
+picture.wrap.inline	In Line
+picture.wrap.square	Square
+picture.wrap.tight	Tight
+picture.wrap.through	Through
+picture.wrap.top_bottom	Top and Bottom
+picture.wrap.behind	Behind Text
+picture.wrap.front	In Front of Text
 web.samples	Samples
 web.read_only	Read-only
 web.download	Save (Download)
