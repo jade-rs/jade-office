@@ -29,6 +29,17 @@ const SCALE: f64 = 2.0;
 /// leaves it unset so both sides type the same.
 const KEYSTROKES: usize = 20;
 
+/// How many times the scenario runs, the last one reported.
+/// `JADE_PERF_REPEAT` raises it for a sampling profiler, which needs more
+/// than one short run to see; the workflow leaves it unset.
+fn repeats() -> usize {
+    std::env::var("JADE_PERF_REPEAT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1)
+        .max(1)
+}
+
 fn keystrokes() -> usize {
     std::env::var("JADE_PERF_KEYSTROKES")
         .ok()
@@ -175,6 +186,12 @@ fn main() -> ExitCode {
     let mut fixture = PathBuf::from(fixture);
     if !fixture.exists() {
         fixture = core().join("public/fixtures").join(&fixture);
+    }
+    for _ in 1..repeats() {
+        if let Err(error) = run(scenario, &fixture) {
+            eprintln!("{scenario} {}: {error}", fixture.display());
+            return ExitCode::FAILURE;
+        }
     }
     match run(scenario, &fixture) {
         Ok(elapsed) => {
