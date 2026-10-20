@@ -449,11 +449,18 @@ doc.info.saved	保存先
 doc.info.help	ドラッグで選択 · ダブルクリックで単語 · ⇧+矢印で拡張 · 選択範囲に入力で置換 · 画像はドラッグで移動、角でサイズ変更 · 検索バー: ⇥ 欄の切替 · ⏎ 次へ · ⇧⏎ 置換 · ⌘⏎ すべて · esc 閉じる
 doc.find.query	検索
 doc.find.replacement	置換
-doc.find.keys	⇥ 欄 · ⏎ 次へ · ⇧⏎ 置換 · ⌘⏎ すべて · esc 閉じる
+doc.find.keys	⇥ 欄 · ⏎ 次へ · ⇧⏎ 置換 · ⌘⏎ すべて · ⌥⌘C 大小 · ⌥⌘W 単語 · esc 閉じる
 doc.find.none	{query}: 見つかりません
 doc.find.count	{query}: {n} 件
 doc.find.position	{query}: {n} / {count}
 doc.find.replaced	{query} → {replacement}: {n} 件置換
+doc.find.match_case	大文字と小文字を区別する (⌥⌘C)
+doc.find.whole_word	完全に一致する単語だけを検索する (⌥⌘W)
+doc.find.previous	前へ
+doc.find.next	次へ
+doc.find.replace_one	置換
+doc.find.replace_all	すべて置換
+doc.find.close	閉じる (esc)
 web.samples	サンプル
 web.read_only	閲覧のみ
 web.download	保存 (ダウンロード)

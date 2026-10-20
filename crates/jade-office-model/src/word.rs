@@ -17,6 +17,7 @@
 //! row and column, none of which the caret knows; the cell registry of the
 //! last paint bridges the two, as the browser runtime does.
 
+use jade_docx_editor::commands::Command;
 use jade_docx_editor::headless_api::execute_headless_queries_on_document;
 use jade_docx_editor::word_document::WordDocument;
 use jade_docx_headless_api::{
@@ -27,6 +28,10 @@ use jade_docx_headless_api::{
 };
 pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
+
+pub mod find;
+
+pub use find::{FindOptions, Found, WordFind};
 
 /// A paragraph and a byte offset into its text.
 pub type Position = (usize, usize);
@@ -47,6 +52,20 @@ pub trait WordSession {
         command: HeadlessCommand,
         keep_selection: bool,
     ) -> Result<(), String>;
+    /// Applies several commands as one action — one undo step — and repaints
+    /// the whole document. When one fails, the ones before it are taken back.
+    fn apply_commands(
+        &mut self,
+        commands: Vec<HeadlessCommand>,
+        keep_selection: bool,
+    ) -> Result<(), String>;
+    /// Executes a command the shell built itself — a picture with its bytes,
+    /// a header edit — as one undo step, and repaints the whole document.
+    fn execute_command(
+        &mut self,
+        command: Box<dyn Command>,
+        keep_selection: bool,
+    ) -> Result<(), String>;
     /// The table cell a paragraph was laid out in at the last paint, by its
     /// id in the renderer's cell registry.
     fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize>;
@@ -57,7 +76,7 @@ pub trait WordSession {
     fn table_order_for(&self, table_id: usize) -> Option<usize>;
 }
 
-fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
+pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
     execute_headless_queries_on_document(
         document,
         &HeadlessQueryRequest {
