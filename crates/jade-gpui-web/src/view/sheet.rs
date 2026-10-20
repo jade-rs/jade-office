@@ -1305,7 +1305,7 @@ impl DocView {
         // A tab being renamed, or the name box: Enter takes it, Escape
         // leaves it.
         if sheet.finding.is_some() && sheet.renaming.is_none() && sheet.naming.is_none() {
-            return self.find_key(key, modifiers, cx);
+            return self.sheet_find_key(key, modifiers, cx);
         }
         if sheet.renaming.is_some() || sheet.naming.is_some() || sheet.noting.is_some() {
             return self.name_key(key, modifiers, cx);
@@ -1530,11 +1530,11 @@ impl DocView {
                 let result = sheet.book.toggle_filter(range);
                 self.edited(result, cx);
             }
-            "f" => self.open_find(false, cx),
+            "f" => self.open_sheet_find(false, cx),
             // ⌘⇧S: Save As, its extension picking the format.
             "s" if shift => self.open_save_as(cx),
             // Ctrl+H, as Excel: Find and Replace.
-            "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
+            "h" if modifiers.control && !modifiers.platform => self.open_sheet_find(true, cx),
             "x" if !shift => self.sheet_copy(true, cx),
             // ⌃⌘V (Ctrl+Alt+V elsewhere): Paste Special.
             "v" if modifiers.control && (modifiers.platform || modifiers.alt) => {
@@ -2476,7 +2476,7 @@ impl DocView {
         let rules_manager = self.rules_manager(cx);
         let chart_dialog = self.chart_dialog(cx);
         let object_frame = self.object_frame();
-        let find_bar = self.find_bar(cx);
+        let find_bar = self.sheet_find_bar(cx);
         let paste_special = self.paste_special_dialog(cx);
         let save_as_bar = self.save_as_bar();
         let Document::Workbook(sheet) = &mut self.document else {
