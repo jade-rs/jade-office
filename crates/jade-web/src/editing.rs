@@ -33,7 +33,7 @@ use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, 
 
 mod formatting;
 pub use formatting::{
-    style_gallery, CharacterFormat, FormatState, GalleryStyle, ListKind, ParagraphBorders,
+    style_gallery, CellStep, CharacterFormat, FormatState, GalleryStyle, ListKind, ParagraphBorders,
     ParagraphStyle, TableBorders, TableCell, TableCommand, WordFormatting, WordSession,
 };
 
@@ -518,56 +518,15 @@ impl EditableDocument {
     /// adds a row below and goes into it. `Ok(false)` when the caret is not
     /// in a table, where Tab types a tab.
     pub fn step_cell(&mut self, forwards: bool) -> Result<bool, String> {
-        use formatting::{TableCommand, WordFormatting, WordSession};
-        let Some((paragraph, _)) = self.caret() else {
-            return Ok(false);
-        };
-        let Some(current) = self
-            .cell_id_for_paragraph(paragraph)
-            .and_then(|id| self.cell_layout(id))
-            .map(|cell| (cell.table_id, cell.row, cell.column))
-        else {
-            return Ok(false);
-        };
-        // The table's cells in reading order, each with its first and last
-        // paragraph: a cell split over two pages is laid out as two pieces.
-        let mut cells = std::collections::BTreeMap::<(usize, usize), (usize, usize)>::new();
-        for cell in self.cell_layouts() {
-            let (Some(&first), Some(&last)) = (cell.paragraphs.first(), cell.paragraphs.last())
-            else {
-                continue;
-            };
-            if cell.table_id != current.0 {
-                continue;
+        use formatting::{CellStep, WordFormatting};
+        match WordFormatting::step_cell(self, forwards)? {
+            CellStep::NotInTable => Ok(false),
+            CellStep::Stay => Ok(true),
+            CellStep::Select(from, to) => {
+                self.select(from, to)?;
+                Ok(true)
             }
-            cells
-                .entry((cell.row, cell.column))
-                .and_modify(|(from, to)| {
-                    *from = (*from).min(first);
-                    *to = (*to).max(last);
-                })
-                .or_insert((first, last));
         }
-        let here = (current.1, current.2);
-        let target = if forwards {
-            cells
-                .range((std::ops::Bound::Excluded(here), std::ops::Bound::Unbounded))
-                .next()
-        } else {
-            cells.range(..here).next_back()
-        };
-        match target {
-            Some((_, &(first, last))) => {
-                let end = self.paragraph_text(last).map_or(0, |text| text.len());
-                self.select((first, 0), (last, end))?;
-            }
-            None if forwards => {
-                self.table_command(TableCommand::InsertRowBelow)?;
-                return self.step_cell(true);
-            }
-            None => {}
-        }
-        Ok(true)
     }
 
     /// The whole of `paragraph` selected, as a triple click selects in Word.
@@ -789,38 +748,21 @@ impl EditableDocument {
     /// punctuation, then over a run of letters and digits (Japanese runs as
     /// a whole). At a paragraph's edge, into the next paragraph.
     fn step_word(&self, (paragraph, offset): (usize, usize), forwards: bool) -> (usize, usize) {
+        use jade_office_model::text::{word_end_after, word_start_before};
         let text = self.paragraph_text(paragraph).unwrap_or_default();
         let offset = offset.min(text.len());
-        if forwards {
-            let rest = &text[offset..];
-            if rest.is_empty() {
-                return self.step_character((paragraph, offset), true);
-            }
-            let skipped = rest
-                .char_indices()
-                .find(|(_, ch)| ch.is_alphanumeric())
-                .map_or(rest.len(), |(at, _)| at);
-            let word = rest[skipped..]
-                .char_indices()
-                .find(|(_, ch)| !ch.is_alphanumeric())
-                .map_or(rest.len() - skipped, |(at, _)| at);
-            (paragraph, offset + skipped + word)
+        let at_edge = if forwards {
+            offset == text.len()
         } else {
-            let before = &text[..offset];
-            if before.is_empty() {
-                return self.step_character((paragraph, offset), false);
-            }
-            let skipped = before
-                .char_indices()
-                .rev()
-                .find(|(_, ch)| ch.is_alphanumeric())
-                .map_or(0, |(at, ch)| at + ch.len_utf8());
-            let word = before[..skipped]
-                .char_indices()
-                .rev()
-                .find(|(_, ch)| !ch.is_alphanumeric())
-                .map_or(0, |(at, ch)| at + ch.len_utf8());
-            (paragraph, word)
+            offset == 0
+        };
+        if at_edge {
+            return self.step_character((paragraph, offset), forwards);
+        }
+        if forwards {
+            (paragraph, word_end_after(&text, offset))
+        } else {
+            (paragraph, word_start_before(&text, offset))
         }
     }
 
