@@ -177,7 +177,7 @@ impl WorkbookView {
     }
 
     /// A dialog's panel, with its title.
-    fn dialog_panel(&self, title: String, width: f32) -> gpui::Div {
+    pub(super) fn dialog_panel(&self, title: String, width: f32) -> gpui::Div {
         div()
             .w(px(width))
             .flex()
@@ -196,7 +196,7 @@ impl WorkbookView {
             .child(div().text_sm().child(title))
     }
 
-    fn dialog_button(
+    pub(super) fn dialog_button(
         &self,
         id: &'static str,
         label: &'static str,
@@ -386,7 +386,7 @@ impl WorkbookView {
 }
 
 /// `panel` centred over the grid, as Excel's dialogs sit.
-fn centred(panel: gpui::Div) -> gpui::Div {
+pub(super) fn centred(panel: gpui::Div) -> gpui::Div {
     div()
         .absolute()
         .top(px(SHEET_TOOLBAR_HEIGHT + 60.0))

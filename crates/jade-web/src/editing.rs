@@ -22,10 +22,11 @@ use jade_docx_editor::headless_api::{
     apply_headless_commands_to_document, apply_headless_commands_with_executor_to_document,
 };
 use jade_docx_editor::render_host::PAGE_GAP_PX;
-use jade_docx_editor::word_document::WordDocument;
+use jade_docx_editor::word_document::{FloatingObjectTarget, WordDocument};
 use jade_docx_editor::Options;
 use jade_docx_headless_api::{HeadlessCommand, HeadlessDeleteDirection, HeadlessEditRequest};
 use jade_docx_layout::shaping_measurer::ShapingMeasurer;
+use jade_office_model::word::picture::PlacedObject;
 use jade_selection::{SelectionRange, TextPosition};
 use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 
@@ -33,8 +34,9 @@ use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, 
 
 mod formatting;
 pub use formatting::{
-    style_gallery, CharacterFormat, FormatState, GalleryStyle, ListKind, ParagraphBorders,
-    ParagraphStyle, TableBorders, TableCell, TableCommand, WordFormatting, WordSession,
+    style_gallery, CellStep, CharacterFormat, FindOptions, FormatState, Found, GalleryStyle,
+    ListKind, ParagraphBorders, ParagraphStyle, TableBorders, TableCell, TableCommand, WordFind,
+    WordFormatting, WordSession,
 };
 
 /// Where the caret is drawn: in the document's coordinate space, which
@@ -518,56 +520,15 @@ impl EditableDocument {
     /// adds a row below and goes into it. `Ok(false)` when the caret is not
     /// in a table, where Tab types a tab.
     pub fn step_cell(&mut self, forwards: bool) -> Result<bool, String> {
-        use formatting::{TableCommand, WordFormatting, WordSession};
-        let Some((paragraph, _)) = self.caret() else {
-            return Ok(false);
-        };
-        let Some(current) = self
-            .cell_id_for_paragraph(paragraph)
-            .and_then(|id| self.cell_layout(id))
-            .map(|cell| (cell.table_id, cell.row, cell.column))
-        else {
-            return Ok(false);
-        };
-        // The table's cells in reading order, each with its first and last
-        // paragraph: a cell split over two pages is laid out as two pieces.
-        let mut cells = std::collections::BTreeMap::<(usize, usize), (usize, usize)>::new();
-        for cell in self.cell_layouts() {
-            let (Some(&first), Some(&last)) = (cell.paragraphs.first(), cell.paragraphs.last())
-            else {
-                continue;
-            };
-            if cell.table_id != current.0 {
-                continue;
+        use formatting::{CellStep, WordFormatting};
+        match WordFormatting::step_cell(self, forwards)? {
+            CellStep::NotInTable => Ok(false),
+            CellStep::Stay => Ok(true),
+            CellStep::Select(from, to) => {
+                self.select(from, to)?;
+                Ok(true)
             }
-            cells
-                .entry((cell.row, cell.column))
-                .and_modify(|(from, to)| {
-                    *from = (*from).min(first);
-                    *to = (*to).max(last);
-                })
-                .or_insert((first, last));
         }
-        let here = (current.1, current.2);
-        let target = if forwards {
-            cells
-                .range((std::ops::Bound::Excluded(here), std::ops::Bound::Unbounded))
-                .next()
-        } else {
-            cells.range(..here).next_back()
-        };
-        match target {
-            Some((_, &(first, last))) => {
-                let end = self.paragraph_text(last).map_or(0, |text| text.len());
-                self.select((first, 0), (last, end))?;
-            }
-            None if forwards => {
-                self.table_command(TableCommand::InsertRowBelow)?;
-                return self.step_cell(true);
-            }
-            None => {}
-        }
-        Ok(true)
     }
 
     /// The whole of `paragraph` selected, as a triple click selects in Word.
@@ -789,38 +750,21 @@ impl EditableDocument {
     /// punctuation, then over a run of letters and digits (Japanese runs as
     /// a whole). At a paragraph's edge, into the next paragraph.
     fn step_word(&self, (paragraph, offset): (usize, usize), forwards: bool) -> (usize, usize) {
+        use jade_office_model::text::{word_end_after, word_start_before};
         let text = self.paragraph_text(paragraph).unwrap_or_default();
         let offset = offset.min(text.len());
-        if forwards {
-            let rest = &text[offset..];
-            if rest.is_empty() {
-                return self.step_character((paragraph, offset), true);
-            }
-            let skipped = rest
-                .char_indices()
-                .find(|(_, ch)| ch.is_alphanumeric())
-                .map_or(rest.len(), |(at, _)| at);
-            let word = rest[skipped..]
-                .char_indices()
-                .find(|(_, ch)| !ch.is_alphanumeric())
-                .map_or(rest.len() - skipped, |(at, _)| at);
-            (paragraph, offset + skipped + word)
+        let at_edge = if forwards {
+            offset == text.len()
         } else {
-            let before = &text[..offset];
-            if before.is_empty() {
-                return self.step_character((paragraph, offset), false);
-            }
-            let skipped = before
-                .char_indices()
-                .rev()
-                .find(|(_, ch)| ch.is_alphanumeric())
-                .map_or(0, |(at, ch)| at + ch.len_utf8());
-            let word = before[..skipped]
-                .char_indices()
-                .rev()
-                .find(|(_, ch)| !ch.is_alphanumeric())
-                .map_or(0, |(at, ch)| at + ch.len_utf8());
-            (paragraph, word)
+            offset == 0
+        };
+        if at_edge {
+            return self.step_character((paragraph, offset), forwards);
+        }
+        if forwards {
+            (paragraph, word_end_after(&text, offset))
+        } else {
+            (paragraph, word_start_before(&text, offset))
         }
     }
 
@@ -1337,10 +1281,64 @@ impl EditableDocument {
         Ok(())
     }
 
+    // ---- pictures and shapes ------------------------------------------------
+
+    /// The picture or shape under a point in document coordinates, as the
+    /// last paint placed it: a press there takes hold of it rather than
+    /// putting the caret behind it.
+    pub fn object_at(&self, x: f64, document_y: f64) -> Option<PlacedObject> {
+        self.renderer.hit_test_object(x, document_y).map(placed)
+    }
+
+    /// Where a picture or shape is on its page, as the last paint placed it.
+    pub fn object_region(&self, target: FloatingObjectTarget) -> Option<PlacedObject> {
+        self.renderer.object_region(target).map(placed)
+    }
+
     // ---- saving -------------------------------------------------------------
 
     pub fn is_dirty(&self) -> bool {
         self.dirty
+    }
+
+    /// The document as a PDF of its pages as the editor paints them (see
+    /// [`crate::pdf`]), on its own paper, at the view's scale: each page
+    /// painted in turn, then the pages kept before put back.
+    pub fn export_pdf(&mut self) -> Result<Vec<u8>, String> {
+        let resident = self.resident.borrow().clone();
+        let dark = self.dark_paper.get();
+        // The document's own paper, whatever the view shows.
+        self.set_dark_paper(false)?;
+        let mut pages = Vec::with_capacity(self.page_count());
+        let mut result = Ok(());
+        for index in 0..self.page_count() {
+            if let Err(error) = self.set_resident_pages(index..index + 1) {
+                result = Err(error);
+                break;
+            }
+            let Some(page) = self.page(index) else {
+                result = Err(format!("page {} did not paint", index + 1));
+                break;
+            };
+            let (width, height) = self
+                .page_sizes
+                .borrow()
+                .get(index)
+                .copied()
+                .unwrap_or_else(|| self.page_size());
+            pages.push(crate::pdf::PdfPage {
+                // CSS px to points.
+                width_pt: width * 0.75,
+                height_pt: height * 0.75,
+                pixel_width: page.width(),
+                pixel_height: page.height(),
+                rgba: page.rgba_premultiplied(),
+            });
+        }
+        self.set_resident_pages(resident)?;
+        self.set_dark_paper(dark)?;
+        result?;
+        crate::pdf::pdf_of_pages(&pages)
     }
 
     /// The document as `.docx` bytes, every edit in it; marks it saved.
@@ -1351,6 +1349,22 @@ impl EditableDocument {
             .map_err(|error| format!("cannot save: {error:?}"))?;
         self.dirty = false;
         Ok(bytes)
+    }
+}
+
+/// A picture or shape as the renderer placed it.
+fn placed(info: jade_docx_editor::canvas_renderer::ObjectDebugInfo) -> PlacedObject {
+    PlacedObject {
+        target: FloatingObjectTarget {
+            paragraph_index: info.paragraph_index,
+            run_index: info.run_index,
+            kind: info.kind,
+        },
+        page: info.page.saturating_sub(1),
+        x: info.x,
+        y: info.y,
+        width: info.width,
+        height: info.height,
     }
 }
 

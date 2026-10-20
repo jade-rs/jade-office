@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use gpui::{DispatchPhase, MouseUpEvent, Point};
 use jade_web::grid::{self, Direction, DragKind, Hit, Selection};
+use jade_web::number_formats::NUMBER_FORMATS;
 use jade_web::sheet::{
     column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
     CellRange, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay, ResizeGesture,
@@ -25,10 +26,15 @@ use super::*;
 
 mod charts;
 mod conditional;
+mod find_bar;
+mod paste_special;
+mod save_as;
 use charts::ChartTool;
 use conditional::Conditional;
 use jade_web::charts::{ChartAsk, Handle};
 use jade_web::conditional_formatting::RuleAsk;
+use jade_web::find::FindBar;
+use jade_web::paste_special::PasteSpecial;
 
 /// How far past the grid's edge the pointer has to be for a drag to scroll
 /// it, and how often it scrolls while held there.
@@ -63,10 +69,13 @@ pub(super) struct Sheet {
     pub renaming: Option<(usize, TextEdit)>,
     /// The name box being typed into: a cell or range to go to.
     pub naming: Option<TextEdit>,
-    /// The find bar (⌘F) and what is being looked for.
-    pub finding: Option<TextEdit>,
+    /// Find and Replace (⌘F, Ctrl+H): what is typed into it, and its
+    /// options.
+    pub finding: Option<FindBar>,
     /// A note being written on a cell.
     pub noting: Option<(CellRef, TextEdit)>,
+    /// Save As (⌘⇧S): the file's name being typed.
+    pub saving_as: Option<TextEdit>,
     /// A conditional format's dialog, asking for its value.
     pub asking: Option<RuleAsk>,
     /// The conditional formatting Rules Manager, open.
@@ -75,6 +84,8 @@ pub(super) struct Sheet {
     pub object: Option<u32>,
     /// Chart Title… or Select Data…, asking.
     pub chart_asking: Option<ChartAsk>,
+    /// The Paste Special dialog, open, with its choices.
+    pub pasting: Option<PasteSpecial>,
     /// The note under the pointer, and where its cell's top-right corner
     /// is in the grid's px.
     note: Option<(CellRef, (f32, f32))>,
@@ -223,6 +234,7 @@ enum MenuCommand {
     Cut,
     Copy,
     Paste,
+    PasteSpecial,
     Clear,
     InsertRows,
     DeleteRows,
@@ -265,10 +277,12 @@ impl Sheet {
             naming: None,
             finding: None,
             noting: None,
+            saving_as: None,
             asking: None,
             managing: false,
             object: None,
             chart_asking: None,
+            pasting: None,
             note: None,
             menu: None,
             filter: None,
@@ -293,8 +307,11 @@ impl Sheet {
         if let Some(text) = self.naming.as_mut() {
             return Some(text);
         }
-        if let Some(text) = self.finding.as_mut() {
+        if let Some(text) = self.saving_as.as_mut() {
             return Some(text);
+        }
+        if let Some(bar) = self.finding.as_mut() {
+            return Some(bar.field_mut());
         }
         if let Some((_, text)) = self.noting.as_mut() {
             return Some(text);
@@ -315,8 +332,11 @@ impl Sheet {
         if let Some(text) = self.naming.as_ref() {
             return Some(text);
         }
-        if let Some(text) = self.finding.as_ref() {
+        if let Some(text) = self.saving_as.as_ref() {
             return Some(text);
+        }
+        if let Some(bar) = self.finding.as_ref() {
+            return Some(bar.field());
         }
         if let Some((_, text)) = self.noting.as_ref() {
             return Some(text);
@@ -530,33 +550,6 @@ impl DocView {
         };
         let to = sheet.book.step(from, direction);
         self.select_cell(to, extend, cx);
-    }
-
-    /// Find Next (Enter in the find bar; Shift+Enter goes back): the next
-    /// cell showing what is typed, on this sheet or the next.
-    fn find_next(&mut self, back: bool, cx: &mut Context<Self>) {
-        let Some(sheet) = self.sheet_mut() else {
-            return;
-        };
-        let Some(needle) = sheet.finding.as_ref().map(|text| text.text.clone()) else {
-            return;
-        };
-        let from = (sheet.book.sheet_index(), sheet.selection.active);
-        match sheet.book.find_next(&needle, from, back) {
-            Some((index, cell)) => {
-                if index != sheet.book.sheet_index() {
-                    let finding = sheet.finding.take();
-                    self.select_sheet(index, cx);
-                    if let Some(sheet) = self.sheet_mut() {
-                        sheet.finding = finding;
-                    }
-                }
-                self.select_cell(cell, false, cx);
-                self.status = SharedString::default();
-            }
-            None => self.status = i18n::text("sheet.not_found").into(),
-        }
-        cx.notify();
     }
 
     /// The filter dropdown's OK: only the ticked values show — or, all
@@ -808,7 +801,14 @@ impl DocView {
                     Tool::Open(Popup::NumberFormat),
                 )
                 .gap_1()
-                .child(i18n::text("sheet.tool.number_format"))
+                .min_w(px(72.0))
+                .justify_between()
+                // Named for the active cell's format, as Excel's box is.
+                .child(i18n::text(
+                    sheet
+                        .book
+                        .number_format_name(sheet.selection.active, i18n::text),
+                ))
                 .child(icon("icons/chevron-down.svg").size_3()),
             ))
             .child(
@@ -888,6 +888,7 @@ impl DocView {
     /// A colour or borders dropdown under its toolbar button.
     fn toolbar_popup(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
         let popup = self.sheet_ref()?.popup?;
+        let sheet_active = self.sheet_ref()?.selection.active;
         let swatch = |index: usize, color: &'static str, tool: Tool| {
             div()
                 .id(("swatch", index))
@@ -948,50 +949,27 @@ impl DocView {
                         ))
                     })
             }
-            Popup::NumberFormat => div().py_1().children(
-                [
-                    (
-                        "nf-general",
-                        "sheet.format.general_name",
-                        "sheet.format.general",
-                    ),
-                    (
-                        "nf-number",
-                        "sheet.format.number_name",
-                        "sheet.format.number",
-                    ),
-                    (
-                        "nf-currency",
-                        "sheet.format.currency_name",
-                        "sheet.format.currency",
-                    ),
-                    ("nf-date", "sheet.format.date_name", "sheet.format.date"),
-                    (
-                        "nf-long-date",
-                        "sheet.format.long_date_name",
-                        "sheet.format.long_date",
-                    ),
-                    ("nf-time", "sheet.format.time_name", "sheet.format.time"),
-                    (
-                        "nf-percent",
-                        "sheet.format.percent_name",
-                        "sheet.format.percent",
-                    ),
-                    (
-                        "nf-fraction",
-                        "sheet.format.fraction_name",
-                        "sheet.format.fraction",
-                    ),
-                    (
-                        "nf-scientific",
-                        "sheet.format.scientific_name",
-                        "sheet.format.scientific",
-                    ),
-                    ("nf-text", "sheet.format.text_name", "sheet.format.text"),
-                ]
-                .into_iter()
-                .map(|(id, label, code)| item(id, label, Tool::NumberFormat(code))),
-            ),
+            Popup::NumberFormat => {
+                let active = sheet_active;
+                div().py_1().children(NUMBER_FORMATS.iter().map(|choice| {
+                    let code = i18n::text(choice.code);
+                    // Each with what the active cell would read as in it.
+                    let sample = self
+                        .sheet_ref()
+                        .and_then(|sheet| sheet.book.number_format_sample(active, code));
+                    item(choice.id, choice.name, Tool::NumberFormat(choice.code))
+                        .flex()
+                        .justify_between()
+                        .gap_4()
+                        .children(sample.map(|sample| {
+                            div()
+                                .max_w(px(140.0))
+                                .overflow_hidden()
+                                .text_color(palette::dim())
+                                .child(sample)
+                        }))
+                }))
+            }
             Popup::Borders => div()
                 .py_1()
                 .child(item(
@@ -1303,6 +1281,12 @@ impl DocView {
         if sheet.asking.is_some() {
             return self.rule_key(key, modifiers, cx);
         }
+        if sheet.pasting.is_some() {
+            return self.paste_special_key(key, modifiers, cx);
+        }
+        if sheet.saving_as.is_some() {
+            return self.save_as_key(key, modifiers, cx);
+        }
         if sheet.managing && key == "escape" {
             sheet.managing = false;
             cx.notify();
@@ -1320,18 +1304,10 @@ impl DocView {
 
         // A tab being renamed, or the name box: Enter takes it, Escape
         // leaves it.
-        if sheet.renaming.is_some()
-            || sheet.naming.is_some()
-            || sheet.finding.is_some()
-            || sheet.noting.is_some()
-        {
-            if sheet.finding.is_some() && key == "enter" {
-                self.find_next(shift, cx);
-                return true;
-            }
-            if sheet.finding.is_some() && key == "f" && command {
-                return true;
-            }
+        if sheet.finding.is_some() && sheet.renaming.is_none() && sheet.naming.is_none() {
+            return self.sheet_find_key(key, modifiers, cx);
+        }
+        if sheet.renaming.is_some() || sheet.naming.is_some() || sheet.noting.is_some() {
             return self.name_key(key, modifiers, cx);
         }
 
@@ -1554,11 +1530,18 @@ impl DocView {
                 let result = sheet.book.toggle_filter(range);
                 self.edited(result, cx);
             }
-            "f" => {
-                sheet.finding = Some(TextEdit::new(String::new()));
-                cx.notify();
-            }
+            "f" => self.open_sheet_find(false, cx),
+            // ⌘⇧S: Save As, its extension picking the format.
+            "s" if shift => self.open_save_as(cx),
+            // ⌘P: the pages, as a PDF to print.
+            "p" => self.print_sheet(cx),
+            // Ctrl+H, as Excel: Find and Replace.
+            "h" if modifiers.control && !modifiers.platform => self.open_sheet_find(true, cx),
             "x" if !shift => self.sheet_copy(true, cx),
+            // ⌃⌘V (Ctrl+Alt+V elsewhere): Paste Special.
+            "v" if modifiers.control && (modifiers.platform || modifiers.alt) => {
+                self.open_paste_special(cx)
+            }
             // ⌘A: the block of data round the active cell, then the sheet.
             "a" => {
                 let region = sheet.book.current_region(active);
@@ -1621,8 +1604,8 @@ impl DocView {
             text
         } else if let Some(text) = sheet.naming.as_mut() {
             text
-        } else if let Some(text) = sheet.finding.as_mut() {
-            text
+        } else if let Some(bar) = sheet.finding.as_mut() {
+            bar.field_mut()
         } else if let Some((_, text)) = sheet.noting.as_mut() {
             // A note takes line breaks: Enter on its own ends it.
             if key == "enter" && (modifiers.alt || modifiers.shift) {
@@ -1782,6 +1765,7 @@ impl DocView {
             MenuCommand::Cut => return self.sheet_copy(true, cx),
             MenuCommand::Copy => return self.sheet_copy(false, cx),
             MenuCommand::Paste => return self.sheet_paste(None, cx),
+            MenuCommand::PasteSpecial => return self.open_paste_special(cx),
             MenuCommand::Clear => sheet.book.clear(range),
             MenuCommand::InsertRows => sheet.book.insert_rows(range.start.row, rows),
             MenuCommand::DeleteRows => sheet.book.delete_rows(range.start.row, rows),
@@ -2494,6 +2478,9 @@ impl DocView {
         let rules_manager = self.rules_manager(cx);
         let chart_dialog = self.chart_dialog(cx);
         let object_frame = self.object_frame();
+        let find_bar = self.sheet_find_bar(cx);
+        let paste_special = self.paste_special_dialog(cx);
+        let save_as_bar = self.save_as_bar();
         let Document::Workbook(sheet) = &mut self.document else {
             unreachable!()
         };
@@ -2543,10 +2530,13 @@ impl DocView {
         });
 
         let renaming = sheet.renaming.as_ref().map(|(index, text)| (*index, text));
+        // A hidden sheet has no tab, as in Excel.
+        let visible = sheet.book.sheet_tabs();
         let mut tabs: Vec<gpui::AnyElement> = sheet
             .names
             .iter()
             .enumerate()
+            .filter(|(index, _)| visible.contains(index))
             .map(|(index, name)| {
                 let selected = index == current;
                 let label = match renaming {
@@ -2665,6 +2655,9 @@ impl DocView {
                     ];
                     if sheet.book.copied().is_some() {
                         items.push((MenuCommand::Paste, "sheet.menu.paste"));
+                    }
+                    if sheet.book.can_paste_special(None) {
+                        items.push((MenuCommand::PasteSpecial, "sheet.menu.paste_special"));
                     }
                     items.extend([
                         (MenuCommand::Clear, "sheet.menu.clear"),
@@ -2873,36 +2866,6 @@ impl DocView {
                     .child(caret_line(text, gpui::black(), false)),
             )
         });
-        let find_bar = sheet.finding.as_ref().map(|text| {
-            div()
-                .absolute()
-                .top_2()
-                .right_4()
-                .w(px(260.0))
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .border_1()
-                .border_color(palette::accent())
-                .bg(palette::panel())
-                .shadow_lg()
-                .text_xs()
-                .text_color(palette::text())
-                .child(
-                    div()
-                        .text_color(palette::dim())
-                        .child(i18n::text("sheet.find")),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(caret_line(text, palette::accent().into(), false)),
-                )
-        });
-
         let filter_panel = sheet.filter.as_ref().map(|panel| {
             let action = |id: &'static str, label: &'static str, command: FilterCommand| {
                 div()
@@ -3187,11 +3150,13 @@ impl DocView {
                     .children(note_editor)
                     .children(list_button)
                     .children(find_bar)
+                    .children(save_as_bar)
                     .children(filter_panel)
                     .children(rule_dialog)
                     .children(rules_manager)
                     .children(chart_dialog)
                     .children(object_frame)
+                    .children(paste_special)
                     .children(menu)
                     // Records where the grid is, registers the input handler
                     // so typing — an IME's included — reaches the cell, and
@@ -3259,7 +3224,7 @@ impl DocView {
 }
 
 /// Text being typed, with its caret drawn where it is and its lines kept.
-fn caret_line(text: &TextEdit, caret_color: gpui::Hsla, tall: bool) -> gpui::Div {
+pub(super) fn caret_line(text: &TextEdit, caret_color: gpui::Hsla, tall: bool) -> gpui::Div {
     if text.whole {
         let mut selected = caret_color;
         selected.a = 0.3;
