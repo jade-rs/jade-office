@@ -28,9 +28,9 @@ pub use jade_xlsx_layout::resize::{ResizeGesture, ResizeHit};
 pub use jade_xlsx_layout::{column_label, HeaderMetrics};
 use jade_xlsx_layout::{layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
 pub use jade_xlsx_reader::Axis;
-pub use jade_xlsx_reader::{HorizontalAlignment, VerticalAlignment};
 use jade_xlsx_reader::{translate_formula, CellValue, SheetVisibility};
 pub use jade_xlsx_reader::{CellRange, CellRef};
+pub use jade_xlsx_reader::{HorizontalAlignment, VerticalAlignment};
 use jade_xlsx_render::{render_grid, GridSelection, PainterMeasure, RenderOptions};
 
 use crate::Backend;
