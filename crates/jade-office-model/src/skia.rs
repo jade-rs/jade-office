@@ -70,6 +70,17 @@ impl Backend for SkiaBackend {
     fn png(painter: &SkiaPainter) -> Option<Vec<u8>> {
         painter.encode_png()
     }
+
+    fn page(&self, width: f64, height: f64) -> Option<SkiaPainter> {
+        let page = SkiaPainter::new_recording(width, height)?;
+        self.register_on(&page);
+        Some(page)
+    }
+
+    fn pdf(pages: &[SkiaPainter], _size: (f64, f64)) -> Result<Vec<u8>, String> {
+        // Each recording knows its size.
+        SkiaPainter::encode_pdf(pages)
+    }
 }
 
 /// The native app's Word document drives the shared ribbon commands.

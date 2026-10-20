@@ -1533,6 +1533,8 @@ impl DocView {
             "f" => self.open_find(false, cx),
             // ⌘⇧S: Save As, its extension picking the format.
             "s" if shift => self.open_save_as(cx),
+            // ⌘P: the pages, as a PDF to print.
+            "p" => self.print_sheet(cx),
             // Ctrl+H, as Excel: Find and Replace.
             "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
             "x" if !shift => self.sheet_copy(true, cx),

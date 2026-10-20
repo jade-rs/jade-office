@@ -40,6 +40,7 @@ use jade_office_model::find::FindBar;
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::number_formats::NUMBER_FORMATS;
 use jade_office_model::paste_special::PasteSpecial;
+use jade_office_model::print;
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
     CellFormat, CellRange, CellRef, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay,
@@ -62,8 +63,8 @@ mod conditional;
 mod find_bar;
 mod paste_special;
 use crate::{
-    byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Redo, Save, SaveAs,
-    SelectAll, Undo, UI_FONT_FAMILY,
+    byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Print, Redo, Save,
+    SaveAs, SelectAll, Undo, UI_FONT_FAMILY,
 };
 use charts::ChartTool;
 use conditional::Conditional;
@@ -1204,8 +1205,20 @@ impl WorkbookView {
             return;
         }
         // By the name's extension, as Excel's Save As by its format: a
-        // .csv holds the active sheet; anything else, the workbook.
+        // .pdf exports the active sheet's pages, leaving the workbook as it
+        // was; a .csv holds the active sheet; anything else, the workbook.
         let name = crate::shell::file_name(&target);
+        if print::is_pdf(&name) {
+            let result = self.book.pdf(&self.print_fields()).and_then(|bytes| {
+                crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
+            });
+            self.status = SharedString::from(match result {
+                Ok(()) => i18n::format("sheet.exported_pdf", &[("name", &name)]),
+                Err(error) => print_failure(&error),
+            });
+            cx.notify();
+            return;
+        }
         let result = self.book.save_bytes_as(&name).and_then(|bytes| {
             crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
         });
@@ -1223,6 +1236,31 @@ impl WorkbookView {
             Err(error) => i18n::format("sheet.save_failed", &[("error", &error)]),
         });
         cx.notify();
+    }
+
+    /// What a header's or footer's fields print: today, now, the file.
+    fn print_fields(&self) -> print::PrintFields {
+        print::PrintFields {
+            date: now_text(false),
+            time: now_text(true),
+            file: crate::shell::file_name(&self.path),
+        }
+    }
+
+    /// ⌘P: the active sheet's pages, as Excel prints them at its defaults,
+    /// in the system's print dialog.
+    fn print(&mut self, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        let result = self
+            .book
+            .pdf(&self.print_fields())
+            .and_then(|pdf| crate::native_print::show_pdf_print_dialog(&pdf));
+        if let Err(error) = result {
+            self.status = SharedString::from(print_failure(&error));
+            cx.notify();
+        }
     }
 
     // ---- keys ------------------------------------------------------------
@@ -3423,6 +3461,7 @@ impl Render for WorkbookView {
             .on_action(cx.listener(|view, _: &SelectAll, _window, cx| view.select_all(cx)))
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
             .on_action(cx.listener(|view, _: &SaveAs, _window, cx| view.save_as(cx)))
+            .on_action(cx.listener(|view, _: &Print, _window, cx| view.print(cx)))
             .relative()
             .flex()
             .flex_col()
@@ -3609,6 +3648,16 @@ impl WorkbookView {
     }
 }
 
+/// Why printing failed, in the shell's words: an empty sheet as Excel
+/// says it, anything else as it came.
+fn print_failure(error: &str) -> String {
+    if error == print::NOTHING_TO_PRINT {
+        i18n::text("sheet.nothing_to_print").to_string()
+    } else {
+        i18n::format("sheet.print_failed", &[("error", &error)])
+    }
+}
+
 /// Opens `path` as a spreadsheet view, for the workspace to show in a tab.
 pub fn new_view(path: &Path, cx: &mut App) -> Result<Entity<WorkbookView>, String> {
     let view = WorkbookView::open(path, cx)?;
@@ -3723,6 +3772,27 @@ mod tests {
         view.update(cx, |view, cx| view.write_to(xlsx.clone(), cx));
         assert!(std::fs::read(&xlsx).unwrap().starts_with(b"PK"));
         view.read_with(cx, |view, _| assert_eq!(view.path, xlsx));
+        std::fs::remove_dir_all(&directory).ok();
+    }
+
+    /// Save As to a .pdf exports the sheet's pages and leaves the workbook
+    /// the file it was, unsaved changes and all.
+    #[gpui::test]
+    fn save_as_pdf_exports_the_pages(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_input("changed");
+        cx.simulate_keystrokes("enter");
+        let directory = std::env::temp_dir().join(format!("jade-pdf-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let pdf = directory.join("book.pdf");
+        let before = view.read_with(cx, |view, _| view.path.clone());
+        view.update(cx, |view, cx| view.write_to(pdf.clone(), cx));
+        let bytes = std::fs::read(&pdf).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.path, before);
+            assert!(view.book.is_dirty(), "exporting is not saving");
+        });
         std::fs::remove_dir_all(&directory).ok();
     }
 
