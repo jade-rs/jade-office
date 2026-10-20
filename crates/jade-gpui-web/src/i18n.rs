@@ -36,6 +36,12 @@ pub fn init(language: &str) {
     ENGLISH_LIVE.with(|cell| cell.set(language.to_lowercase().starts_with("en")));
 }
 
+/// Whether the page is in English, which decides the Word a new document is
+/// made as.
+pub fn is_english() -> bool {
+    ENGLISH_LIVE.with(Cell::get)
+}
+
 pub fn text(key: &'static str) -> &'static str {
     table(ENGLISH_LIVE.with(Cell::get))
         .get(key)
