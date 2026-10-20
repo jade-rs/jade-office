@@ -3,9 +3,10 @@
 //! and off, walked one by one, accepted or rejected one at a time or all at
 //! once.
 
+use jade_docx_editor::headless_api::revision_targets_for;
 use jade_docx_headless_api::{
     HeadlessCommand, HeadlessCommentThreadSnapshot, HeadlessQuery, HeadlessQueryResult,
-    HeadlessRevisionTarget,
+    HeadlessRevisionSnapshot, HeadlessRevisionTarget,
 };
 
 use super::{query, Position, WordSession};
@@ -63,9 +64,9 @@ pub struct Revision {
     pub text: String,
     /// The change is the paragraph's mark: a paragraph inserted or joined.
     pub paragraph_mark: bool,
-    /// The revisions the file records it as: typing makes one a keystroke,
-    /// which Word shows and decides as one change.
-    parts: Vec<HeadlessRevisionTarget>,
+    /// The revisions the engine lists it as, which Word shows and decides
+    /// as one change.
+    parts: Vec<HeadlessRevisionSnapshot>,
 }
 
 impl Revision {
@@ -246,22 +247,16 @@ pub trait WordReview: WordSession {
         let mut revisions: Vec<Revision> = revisions
             .into_iter()
             .map(|revision| Revision {
-                parts: vec![HeadlessRevisionTarget {
-                    paragraph: revision.paragraph,
-                    start_offset: revision.start_offset,
-                    end_offset: revision.end_offset,
-                    paragraph_mark: revision.paragraph_mark,
-                    id: revision.id.clone(),
-                }],
-                id: revision.id,
-                kind: revision.kind,
-                author: revision.author,
-                date: revision.date,
+                id: revision.id.clone(),
+                kind: revision.kind.clone(),
+                author: revision.author.clone(),
+                date: revision.date.clone(),
                 paragraph: revision.paragraph,
                 start: revision.start_offset,
                 end: revision.end_offset,
-                text: revision.text,
+                text: revision.text.clone(),
                 paragraph_mark: revision.paragraph_mark,
+                parts: vec![revision],
             })
             .collect();
         revisions.sort_by_key(|revision| (revision.paragraph, revision.start, revision.end));
@@ -322,40 +317,10 @@ pub trait WordReview: WordSession {
         }
     }
 
-    /// The engine's targets for a change: one for each revision run inside
-    /// it, by that run's own id. Typed with changes tracked, a word is a run
-    /// and an id a keystroke, which the revisions query reports as one
-    /// revision under the first id — a target by that span and id alone
-    /// decided the first keystroke only.
+    /// The engine's targets for a change: its listed revisions, each of
+    /// which the engine decides with every keystroke typed into it.
     fn targets_of(&self, change: &Revision) -> Vec<HeadlessRevisionTarget> {
-        let paragraph = (!change.paragraph_mark)
-            .then(|| self.word_document().paragraph(change.paragraph))
-            .flatten();
-        let Some(paragraph) = paragraph else {
-            return change.parts.clone();
-        };
-        let mut targets = Vec::new();
-        let mut at = 0;
-        for run in &paragraph.runs {
-            let end = at + run.text.len();
-            if let Some(mark) = &run.revision {
-                if at < end && at < change.end && change.start < end {
-                    targets.push(HeadlessRevisionTarget {
-                        paragraph: change.paragraph,
-                        start_offset: at.max(change.start),
-                        end_offset: end.min(change.end),
-                        paragraph_mark: false,
-                        id: mark.id.clone(),
-                    });
-                }
-            }
-            at = end;
-        }
-        if targets.is_empty() {
-            change.parts.clone()
-        } else {
-            targets
-        }
+        revision_targets_for(&change.parts.iter().collect::<Vec<_>>())
     }
 
     /// 承諾 or 元に戻す for these changes, as one undo step.
