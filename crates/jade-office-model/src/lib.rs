@@ -20,6 +20,7 @@ use jade_painter::Painter;
 
 pub mod clipboard;
 pub mod deck;
+pub mod format_cells;
 pub mod grid;
 pub mod sheet;
 pub mod text;
