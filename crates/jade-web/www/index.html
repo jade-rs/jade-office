@@ -64,12 +64,13 @@
 
     try {
       await init();
-      const [regular, bold] = await Promise.all([
+      const [regular, bold, thai] = await Promise.all([
         bytes("fonts/NotoSansJP-Regular.ttf"),
         bytes("fonts/NotoSansJP-Bold.ttf"),
+        bytes("fonts/NotoSansThai.ttf"),
       ]);
       run(
-        regular, bold,
+        regular, bold, thai,
         window.devicePixelRatio || 1,
         Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         navigator.language || "ja",

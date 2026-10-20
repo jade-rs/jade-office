@@ -60,10 +60,15 @@ painter) and edits through the same cores.
    page without clipboard access), ⌘V pastes the workbook's own copy, as
    its menu's Paste does — but a clipboard still holding something older
    pastes that, as the browser hands it over.
-4. **Japanese and Latin text only are drawn**: both shells paint with the
-   bundled Noto Sans JP, falling back only among its faces, so Thai
-   (BAHTTEXT's result), Korean, Arabic and other scripts show as boxes.
-   The values are right, and save and copy as they are.
+4. **Japanese, Latin and Thai text only are drawn**: both shells paint
+   sheets and slides with the bundled Noto Sans JP and Noto Sans Thai,
+   each character falling back to a face that has it, so Korean, Arabic,
+   Hebrew, Devanagari and other scripts show as boxes. The values are
+   right, and save and copy as they are. Word documents in the browser
+   are still laid out with Noto Sans JP alone, Thai included. A Thai tone
+   mark over an upper vowel (the ่ of ยี่) is drawn on the vowel rather
+   than above it: the painters place glyphs without OpenType mark
+   positioning.
 5. **Formula entry is refused as Excel refuses it** — a trailing operator,
    an open string, an unmatched parenthesis, or a function given the wrong
    number of arguments — with the editor kept open; `TODAY(1)` is accepted,
