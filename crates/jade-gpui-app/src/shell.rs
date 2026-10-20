@@ -30,7 +30,8 @@ impl Kind {
         let extension = path.extension()?.to_string_lossy().to_lowercase();
         match extension.as_str() {
             "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
-            "xlsx" | "xlsm" | "xltx" | "xltm" => Some(Kind::Workbook),
+            // A CSV opens as a workbook of one sheet, as in Excel.
+            "xlsx" | "xlsm" | "xltx" | "xltm" | "csv" => Some(Kind::Workbook),
             "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
             _ => None,
         }
@@ -303,6 +304,7 @@ mod tests {
         assert_eq!(Kind::of(Path::new("a.DOCX")), Some(Kind::Document));
         assert_eq!(Kind::of(Path::new("a.xlsx")), Some(Kind::Workbook));
         assert_eq!(Kind::of(Path::new("a.xlsm")), Some(Kind::Workbook));
+        assert_eq!(Kind::of(Path::new("a.CSV")), Some(Kind::Workbook));
         assert_eq!(Kind::of(Path::new("a.pptx")), Some(Kind::Deck));
         assert_eq!(Kind::of(Path::new("a.txt")), None);
         assert_eq!(Kind::of(Path::new("pptx")), None);
