@@ -51,7 +51,7 @@ fn list_button(
 }
 
 /// A text button that runs `action`; `active` shows it pressed.
-fn text_button(
+pub(crate) fn text_button(
     id: &'static str,
     label: &'static str,
     tooltip: &'static str,
