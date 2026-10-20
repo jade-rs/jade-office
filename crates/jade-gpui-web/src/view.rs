@@ -33,6 +33,7 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 mod deck;
 mod sheet;
 mod word_find;
+mod word_story;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -377,6 +378,8 @@ enum Document {
         reveal_pending: bool,
         /// The find bar (⌘F), while it is open: typing goes into it.
         find: Option<Box<word_find::FindBar>>,
+        /// A header or footer being typed, in its bar over the pages.
+        story: Option<Box<crate::word_page::StoryBar>>,
     },
     Deck {
         deck: jade_web::Deck,
@@ -491,6 +494,7 @@ impl DocView {
                     dragging: false,
                     reveal_pending: false,
                     find: None,
+                    story: None,
                     pages: (0..opened.page_count())
                         .map(|index| {
                             opened
@@ -1280,6 +1284,9 @@ impl DocView {
         }
         ribbon.popup = None;
         window.focus(&self.focus, cx);
+        if let Action::EditStory(story) = action {
+            return self.open_story(story, cx);
+        }
         if let Action::Style(style_id) = action {
             let result = document.set_paragraph_style(style_id.as_deref());
             ribbon.read_styles(document);
@@ -1313,7 +1320,11 @@ impl DocView {
             Action::Table(command) => document.table_command(command).map(|_| ()),
             Action::Undo => document.undo().map(|_| ()),
             Action::Redo => document.redo().map(|_| ()),
-            Action::Style(_)
+            Action::Page(command) => {
+                jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
+            }
+            Action::EditStory(_)
+            | Action::Style(_)
             | Action::Tab(_)
             | Action::Popup(_)
             | Action::ClosePopup
@@ -1356,7 +1367,25 @@ impl DocView {
             "doc.position",
             &[("current", &(*current + 1)), ("count", &pages.len())],
         );
-        ribbon::ribbon(ribbon, &state, position, document.is_dirty(), viewport, cx)
+        // Read only for the tab that shows it: a query of the section.
+        let page = (ribbon.tab == ribbon::Tab::Layout).then(|| {
+            use jade_web::word::page::WordPage;
+            let japanese = !i18n::is_english();
+            ribbon::PageState {
+                setup: document.page_setup(),
+                preset: document.margin_preset(japanese),
+                japanese,
+            }
+        });
+        ribbon::ribbon(
+            ribbon,
+            &state,
+            page.as_ref(),
+            position,
+            document.is_dirty(),
+            viewport,
+            cx,
+        )
     }
 
     /// Keeps the pages on screen, one either side and as many more round
@@ -1414,6 +1443,7 @@ impl DocView {
         self.shown_zoom = zoom;
         self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
+        let story_bar = self.story_bar_element();
         let find_bar = self.find_bar_element(cx);
         let Document::Pages {
             document,
@@ -1653,6 +1683,7 @@ impl DocView {
                     .flex()
                     .flex_col()
                     .child(word_ribbon)
+                    .children(story_bar)
                     .children(find_bar)
                     .child(
                         div()
@@ -1696,6 +1727,10 @@ impl DocView {
             });
         }
         // The find bar over a Word document takes the keys it has.
+        if self.story_editing() && self.story_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.finding() && self.find_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -1786,6 +1821,9 @@ impl DocView {
                 ..
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_mut().map(|(_, text)| text),
+            Document::Pages {
+                story: Some(bar), ..
+            } => Some(&mut bar.text),
             Document::Pages { find, .. } => find
                 .as_deref_mut()
                 .filter(|bar| bar.active)
@@ -1801,6 +1839,9 @@ impl DocView {
                 ..
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_ref().map(|(_, text)| text),
+            Document::Pages {
+                story: Some(bar), ..
+            } => Some(&bar.text),
             Document::Pages { find, .. } => find
                 .as_deref()
                 .filter(|bar| bar.active)
@@ -1868,8 +1909,8 @@ impl DocView {
     /// where in it the caret and the composition are, for the input
     /// handler.
     fn word_input(&self) -> Option<(String, usize, Option<Range<usize>>)> {
-        // While the find bar has the keyboard, typing is the bar's.
-        if self.finding() {
+        // While a bar has the keyboard, typing is the bar's.
+        if self.finding() || self.story_editing() {
             return None;
         }
         let Document::Pages { document, .. } = &self.document else {
@@ -1988,6 +2029,9 @@ impl EntityInputHandler for DocView {
                 ..
             } => edit.marked = None,
             Document::Pages {
+                story: Some(bar), ..
+            } => bar.text.marked = None,
+            Document::Pages {
                 find: Some(bar), ..
             } if bar.active => bar.field_mut().marked = None,
             _ => {}
@@ -2000,7 +2044,11 @@ impl EntityInputHandler for DocView {
             return;
         };
         match &mut self.document {
-            // Into the find bar, its first line.
+            // Into a bar, its first line.
+            Document::Pages { story: Some(_), .. } => {
+                let line = text.lines().next().unwrap_or_default().to_string();
+                self.replace_text_in_range(None, &line, window, cx);
+            }
             Document::Pages {
                 find: Some(bar), ..
             } if bar.active => {
@@ -2041,7 +2089,10 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if matches!(self.document, Document::Pages { .. }) && !self.finding() {
+        if matches!(self.document, Document::Pages { .. })
+            && !self.finding()
+            && !self.story_editing()
+        {
             let text = text.to_string();
             let composing = self
                 .word_input()
@@ -2078,7 +2129,10 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if matches!(self.document, Document::Pages { .. }) && !self.finding() {
+        if matches!(self.document, Document::Pages { .. })
+            && !self.finding()
+            && !self.story_editing()
+        {
             let text = new_text.to_string();
             self.word_edit(cx, move |document| document.set_composition(&text));
             return;

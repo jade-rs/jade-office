@@ -468,6 +468,42 @@ doc.untitled	Document{n}
 workspace.new_document	New Document
 doc.export_pdf	PDF
 doc.export_pdf_title	Export as PDF
+page.group.setup	Page Setup
+page.margins	Margins
+page.margins.normal	Normal
+page.margins.narrow	Narrow
+page.margins.moderate	Moderate
+page.margins.wide	Wide
+page.margins.top_bottom	top/bottom
+page.margins.left_right	left/right
+page.orientation	Orientation
+page.portrait	Portrait
+page.landscape	Landscape
+page.size	Size
+page.columns	Columns
+page.columns.count	{n} columns
+page.breaks	Breaks
+page.break.sections	Section breaks
+page.break.next_page	Next Page
+page.break.continuous	Continuous
+page.break.even_page	Even Page
+page.break.odd_page	Odd Page
+page.group.header_footer	Header & Footer
+page.header	Header
+page.header_title	Edit Header
+page.footer	Footer
+page.footer_title	Edit Footer
+page.number	Page Number
+page.number.top_left	Top of Page (left)
+page.number.top_center	Top of Page (center)
+page.number.top_right	Top of Page (right)
+page.number.bottom_left	Bottom of Page (left)
+page.number.bottom_center	Bottom of Page (center)
+page.number.bottom_right	Bottom of Page (right)
+page.number.remove	Remove Page Numbers
+page.header_editing	Header
+page.footer_editing	Footer
+page.story_keys	⇥ left · center · right · ⏎ apply · esc cancel
 web.samples	Samples
 web.read_only	Read-only
 web.download	Save (Download)
