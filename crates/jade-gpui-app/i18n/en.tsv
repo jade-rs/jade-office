@@ -274,6 +274,22 @@ deck.delete_slide	Delete Slide
 deck.hide_slide	Hide Slide
 deck.show_slide	Show Slide
 deck.slide_n	Slide {n}
+deck.font	Font
+deck.font_size	Font Size
+deck.grow_font	Increase Font Size
+deck.shrink_font	Decrease Font Size
+deck.bold	Bold
+deck.italic	Italic
+deck.underline	Underline
+deck.font_color	Font Color
+deck.align_left	Align Left
+deck.align_center	Center
+deck.align_right	Align Right
+deck.justify	Justify
+deck.bullets	Bullets
+deck.numbering	Numbering
+deck.line_spacing	Line Spacing
+deck.space_after	Space After {n} pt
 doc.tab.home	Home
 doc.tab.insert	Insert
 doc.tab.design	Design
