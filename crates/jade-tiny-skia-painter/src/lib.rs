@@ -1275,6 +1275,12 @@ impl TinySkiaPainter {
         if visible[2] <= visible[0] || visible[3] <= visible[1] {
             return;
         }
+        // The paper's own colour over nothing but paper — a sheet's white
+        // background on a new surface — changes no pixel.
+        let paper = self.paper().to_color_u8();
+        if self.inner.blank.get() && opaque.is_some_and(|color| color.to_color_u8() == paper) {
+            return;
+        }
         // Opaque over every pixel: the paper would only be painted over.
         if opaque.is_some() && visible == surface {
             self.inner.unpainted.set(false);
@@ -3227,6 +3233,15 @@ mod tests {
         dark.fill_rect(2.0, 2.0, 2.0, 2.0);
         assert_eq!(pixel(&dark, 0, 0), paper);
         assert_ne!(pixel(&dark, 2, 2), paper);
+
+        // The paper's colour on a blank surface leaves it blank: nothing to
+        // read back, and a clear after it has nothing to do.
+        let papered = TinySkiaPainter::new(8, 8, fonts()).unwrap();
+        papered.take_damaged_rows();
+        papered.set_fill_style_str("#ffffff");
+        papered.fill_rect(0.0, 0.0, 6.0, 6.0);
+        assert_eq!(papered.take_damaged_rows(), None);
+        assert_eq!(pixel(&papered, 3, 3), [255, 255, 255, 255]);
 
         let covered = TinySkiaPainter::new(8, 8, fonts()).unwrap();
         covered.set_fill_style_str("#336699");
