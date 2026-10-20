@@ -24,6 +24,8 @@ jade-selection = { path = "../../jade-core/crates/jade-selection" }
 # The shaping measurer (rustybuzz) the native docx host measures with.
 jade-docx-layout = { path = "../../jade-core/crates/jade-docx-layout", features = ["native-shaping"] }
 futures = "0.3"
+# The PDF of the pages (`pdf.rs`): their pixels, Flate-compressed.
+flate2 = "1"
 js-sys = "0.3"
 wasm-bindgen = "=0.2.128"
 web-sys = { version = "0.3", features = ["CanvasRenderingContext2d"] }

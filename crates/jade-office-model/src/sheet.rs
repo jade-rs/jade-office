@@ -108,7 +108,7 @@ pub fn cell_input(text: &str) -> CellInput {
 
 /// A number as the formula bar shows it: up to fifteen significant
 /// digits, Excel's precision, without trailing zeros.
-fn full_precision(value: f64) -> String {
+pub(crate) fn full_precision(value: f64) -> String {
     if value.fract() == 0.0 && value.abs() < 1e15 {
         return format!("{}", value as i64);
     }
@@ -202,6 +202,19 @@ impl<B: Backend> Workbook<B> {
             .sheets
             .iter()
             .map(|sheet| sheet.name.clone())
+            .collect()
+    }
+
+    /// The sheets that have a tab, by index: every sheet but a hidden one,
+    /// as Excel shows them.
+    pub fn sheet_tabs(&self) -> Vec<usize> {
+        self.book
+            .workbook()
+            .sheets
+            .iter()
+            .enumerate()
+            .filter(|(_, sheet)| sheet.visibility == SheetVisibility::Visible)
+            .map(|(index, _)| index)
             .collect()
     }
 
@@ -531,43 +544,6 @@ impl<B: Backend> Workbook<B> {
             .map(|note| note.text.as_str())
     }
 
-    /// Find: the cells after `from` (on this sheet, then the next ones,
-    /// round to the start) that show `needle` or have it in their formula,
-    /// ignoring case — the next one Excel's Find Next would go to, as
-    /// (sheet index, cell).
-    pub fn find_next(
-        &self,
-        needle: &str,
-        from: (usize, CellRef),
-        back: bool,
-    ) -> Option<(usize, CellRef)> {
-        let mut hits: Vec<(usize, CellRef)> = self
-            .book
-            .find(needle, false)
-            .into_iter()
-            .filter(|hit| {
-                self.book.workbook().sheets[hit.sheet_index].visibility == SheetVisibility::Visible
-            })
-            .filter_map(|hit| Some((hit.sheet_index, CellRef::parse(&hit.reference).ok()?)))
-            .collect();
-        // Excel searches by rows.
-        hits.sort_by_key(|(sheet, cell)| (*sheet, cell.row, cell.column));
-        let key = |(sheet, cell): &(usize, CellRef)| (*sheet, cell.row, cell.column);
-        let here = key(&from);
-        if back {
-            hits.iter()
-                .rev()
-                .find(|hit| key(hit) < here)
-                .or_else(|| hits.last())
-                .copied()
-        } else {
-            hits.iter()
-                .find(|hit| key(hit) > here)
-                .or_else(|| hits.first())
-                .copied()
-        }
-    }
-
     /// The hyperlink on `at`, if it has one: a web address, or a place in
     /// the workbook.
     pub fn link(&self, at: CellRef) -> Option<Link> {
@@ -783,11 +759,21 @@ impl<B: Backend> Workbook<B> {
     /// The formula with its `=`, or the stored value: what the formula bar
     /// shows and what an edit starts from.
     pub fn edit_text(&self, reference: CellRef) -> String {
-        let range = CellRange {
-            start: reference,
-            end: reference,
-        };
-        let Some(cell) = self.cells_in(range).next() else {
+        self.edit_text_on(self.index, reference)
+    }
+
+    /// [`Self::edit_text`] for a cell on the sheet at `index`.
+    pub(crate) fn edit_text_on(&self, index: usize, reference: CellRef) -> String {
+        let Some(cell) = self.book.workbook().sheets[index]
+            .rows
+            .iter()
+            .find(|row| row.index == reference.row)
+            .and_then(|row| {
+                row.cells
+                    .iter()
+                    .find(|cell| cell.reference.column == reference.column)
+            })
+        else {
             return String::new();
         };
         if let Some(formula) = &cell.formula {
@@ -797,7 +783,7 @@ impl<B: Backend> Workbook<B> {
         }
         match &cell.value {
             CellValue::Empty => String::new(),
-            CellValue::Number(number) => self.edit_number(reference, *number),
+            CellValue::Number(number) => self.edit_number(index, reference, *number),
             // Text that would read as a value if typed back keeps the
             // apostrophe that makes it text, as Excel's formula bar shows.
             CellValue::Text(text) if typing::reads_as_value(text) => format!("'{text}"),
@@ -809,8 +795,8 @@ impl<B: Backend> Workbook<B> {
 
     /// A number as Excel's formula bar shows it: a percentage as one, a
     /// date or time as one, anything else at full precision.
-    fn edit_number(&self, reference: CellRef, number: f64) -> String {
-        let format = self.number_format(reference).unwrap_or_default();
+    fn edit_number(&self, index: usize, reference: CellRef, number: f64) -> String {
+        let format = self.number_format_on(index, reference).unwrap_or_default();
         if format.contains('%') && !format.contains('"') {
             return format!("{}%", full_precision(number * 100.0));
         }
@@ -840,8 +826,13 @@ impl<B: Backend> Workbook<B> {
 
     /// The cell's number format code, if it has one other than General.
     fn number_format(&self, reference: CellRef) -> Option<String> {
+        self.number_format_on(self.index, reference)
+    }
+
+    fn number_format_on(&self, index: usize, reference: CellRef) -> Option<String> {
+        let name = &self.book.workbook().sheets[index].name;
         self.book
-            .cell(&self.sheet_name(), &reference_text(reference))
+            .cell(name, &reference_text(reference))
             .ok()?
             .number_format
             .filter(|code| !code.eq_ignore_ascii_case("general"))
@@ -857,6 +848,11 @@ impl<B: Backend> Workbook<B> {
             CellValue::Number(number) => Some(number),
             _ => None,
         }
+    }
+
+    /// The workbook's date system: 1900, or the Mac's old 1904.
+    pub(crate) fn date_system(&self) -> jade_xlsx_reader::DateSystem {
+        self.book.workbook().date_system
     }
 
     /// What a cell shows, through its number format.
@@ -1240,6 +1236,13 @@ impl<B: Backend> Workbook<B> {
         self.clipboard.as_ref().map(|clip| (clip.sheet, clip.range))
     }
 
+    /// The last copy or cut: its sheet, its range, and whether it was a cut.
+    pub(crate) fn copied_cells(&self) -> Option<(usize, CellRange, bool)> {
+        self.clipboard
+            .as_ref()
+            .map(|clip| (clip.sheet, clip.range, clip.cut))
+    }
+
     /// The text the last copy put on the clipboard, for a paste from a menu.
     pub fn copied_text(&self) -> Option<String> {
         self.clipboard.as_ref().map(|clip| clip.text.clone())
@@ -1303,6 +1306,38 @@ impl<B: Backend> Workbook<B> {
         let within_y = y >= top - 3.0 && y <= bottom + 3.0;
         ((near(x, left) || near(x, right)) && within_y)
             || ((near(y, top) || near(y, bottom)) && within_x)
+    }
+
+    /// The painter backend, for the pages other modules of this crate paint.
+    pub(crate) fn backend(&self) -> &B {
+        &self.backend
+    }
+
+    /// The active sheet laid out through `end` at least, as printing needs
+    /// the whole of it rather than the part on screen.
+    pub(crate) fn print_layout(&self, end: CellRef) -> Result<SheetLayout, String> {
+        lay_out(
+            &self.book,
+            self.index,
+            (end.column + 1, end.row + 1),
+            &self.backend,
+        )
+    }
+
+    /// The engine, for the editing other modules of this crate add.
+    pub(crate) fn engine(&self) -> &HeadlessWorkbook {
+        &self.book
+    }
+
+    pub(crate) fn engine_mut(&mut self) -> &mut HeadlessWorkbook {
+        &mut self.book
+    }
+
+    /// Notes a write through [`Self::engine_mut`] that took `steps` of the
+    /// book's undo steps, and lays the sheet out again.
+    pub(crate) fn wrote(&mut self, steps: usize) -> Result<(), String> {
+        self.record(steps);
+        self.after_write()
     }
 
     /// Notes an edit that took `steps` of the book's undo steps; a new
@@ -2519,6 +2554,12 @@ impl<B: Backend> Workbook<B> {
         self.dirty
     }
 
+    /// Counts the workbook as saved: written out some other way than
+    /// [`Self::save_bytes`], as CSV say.
+    pub(crate) fn mark_saved(&mut self) {
+        self.dirty = false;
+    }
+
     /// The workbook as `.xlsx` bytes, as saving writes it; marks it saved.
     pub fn save_bytes(&mut self) -> Result<Vec<u8>, String> {
         let bytes = self.book.save_bytes().map_err(|error| error.to_string())?;
@@ -2822,6 +2863,16 @@ mod tests {
         .unwrap()
     }
 
+    /// A hidden sheet has no tab, as in Excel: the workbook opens on the
+    /// first visible sheet, and the tabs skip the hidden one.
+    #[test]
+    fn a_hidden_sheet_has_no_tab() {
+        let book = open("hidden-sheets-workbook.xlsx");
+        assert_eq!(book.sheet_names(), ["売上サマリ", "Notes"]);
+        assert_eq!(book.sheet_tabs(), [1]);
+        assert_eq!(book.sheet_index(), 1);
+    }
+
     #[test]
     fn typed_text_becomes_the_right_kind_of_input() {
         assert!(matches!(cell_input("=SUM(A1:A3)"), CellInput::Formula(f) if f == "SUM(A1:A3)"));
@@ -3116,17 +3167,20 @@ mod tests {
         assert!(book.set_cell(at(5, 5), "needle one").unwrap());
         assert!(book.set_cell(at(2, 7), "Needle two").unwrap());
         let sheet = book.sheet_index();
-        let first = book.find_next("needle", (sheet, at(0, 0)), false).unwrap();
+        let options = crate::find::FindOptions::default();
+        let first = book
+            .find_next("needle", options, (sheet, at(0, 0)), false)
+            .unwrap();
         assert_eq!(first, (sheet, at(5, 5)));
-        let second = book.find_next("needle", first, false).unwrap();
+        let second = book.find_next("needle", options, first, false).unwrap();
         assert_eq!(second, (sheet, at(2, 7)));
         assert_eq!(
-            book.find_next("needle", second, false),
+            book.find_next("needle", options, second, false),
             Some(first),
             "round again"
         );
-        assert_eq!(book.find_next("needle", first, true), Some(second));
-        assert_eq!(book.find_next("nowhere", first, false), None);
+        assert_eq!(book.find_next("needle", options, first, true), Some(second));
+        assert_eq!(book.find_next("nowhere", options, first, false), None);
     }
 
     /// A filter button's menu: its values, a filter by some of them, a

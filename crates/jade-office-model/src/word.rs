@@ -17,6 +17,7 @@
 //! row and column, none of which the caret knows; the cell registry of the
 //! last paint bridges the two, as the browser runtime does.
 
+use jade_docx_editor::commands::Command;
 use jade_docx_editor::headless_api::execute_headless_queries_on_document;
 use jade_docx_editor::word_document::WordDocument;
 use jade_docx_headless_api::{
@@ -27,6 +28,15 @@ use jade_docx_headless_api::{
 };
 pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
+
+pub mod clipboard;
+pub mod find;
+pub mod new;
+pub mod page;
+pub mod picture;
+pub mod review;
+
+pub use find::{FindOptions, Found, WordFind};
 
 /// A paragraph and a byte offset into its text.
 pub type Position = (usize, usize);
@@ -47,6 +57,20 @@ pub trait WordSession {
         command: HeadlessCommand,
         keep_selection: bool,
     ) -> Result<(), String>;
+    /// Applies several commands as one action — one undo step — and repaints
+    /// the whole document. When one fails, the ones before it are taken back.
+    fn apply_commands(
+        &mut self,
+        commands: Vec<HeadlessCommand>,
+        keep_selection: bool,
+    ) -> Result<(), String>;
+    /// Executes a command the shell built itself — a picture with its bytes,
+    /// a header edit — as one undo step, and repaints the whole document.
+    fn execute_command(
+        &mut self,
+        command: Box<dyn Command>,
+        keep_selection: bool,
+    ) -> Result<(), String>;
     /// The table cell a paragraph was laid out in at the last paint, by its
     /// id in the renderer's cell registry.
     fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize>;
@@ -57,7 +81,7 @@ pub trait WordSession {
     fn table_order_for(&self, table_id: usize) -> Option<usize>;
 }
 
-fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
+pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
     execute_headless_queries_on_document(
         document,
         &HeadlessQueryRequest {
@@ -1048,9 +1072,79 @@ pub trait WordFormatting: WordSession {
         self.collapse_to(position);
         Ok(position)
     }
+
+    /// Tab and ⇧Tab in a table, as in Word: the next or the previous cell,
+    /// its text to be selected so typing replaces it. Tab in the last cell
+    /// adds a row below and goes into its first cell. Nothing is selected
+    /// here: the shell selects what this returns, as it selects anything.
+    fn step_cell(&mut self, forwards: bool) -> Result<CellStep, String> {
+        let Some(paragraph) = self.selection_range().map(|range| range.focus.paragraph) else {
+            return Ok(CellStep::NotInTable);
+        };
+        let Some(current) = self
+            .cell_id_for_paragraph(paragraph)
+            .and_then(|id| self.cell_layout(id))
+            .map(|cell| (cell.table_id, cell.row, cell.column))
+        else {
+            return Ok(CellStep::NotInTable);
+        };
+        // The table's cells in reading order, each with its first and last
+        // paragraph: a cell split over two pages is laid out as two pieces.
+        let mut cells = std::collections::BTreeMap::<(usize, usize), (usize, usize)>::new();
+        for cell in self.cell_layouts() {
+            let (Some(&first), Some(&last)) = (cell.paragraphs.first(), cell.paragraphs.last())
+            else {
+                continue;
+            };
+            if cell.table_id != current.0 {
+                continue;
+            }
+            cells
+                .entry((cell.row, cell.column))
+                .and_modify(|(from, to)| {
+                    *from = (*from).min(first);
+                    *to = (*to).max(last);
+                })
+                .or_insert((first, last));
+        }
+        let here = (current.1, current.2);
+        let target = if forwards {
+            cells
+                .range((std::ops::Bound::Excluded(here), std::ops::Bound::Unbounded))
+                .next()
+        } else {
+            cells.range(..here).next_back()
+        };
+        match target {
+            Some((_, &(first, last))) => {
+                let end = self.text_of(last).map_or(0, |text| text.len());
+                Ok(CellStep::Select((first, 0), (last, end)))
+            }
+            None if forwards => {
+                let caret = self.table_command(TableCommand::InsertRowBelow)?;
+                self.collapse_to(caret);
+                match self.step_cell(true)? {
+                    CellStep::NotInTable => Ok(CellStep::Stay),
+                    step => Ok(step),
+                }
+            }
+            None => Ok(CellStep::Stay),
+        }
+    }
 }
 
 impl<T: WordSession + ?Sized> WordFormatting for T {}
+
+/// Where Tab takes the caret: see [`WordFormatting::step_cell`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CellStep {
+    /// The caret is not in a table, where Tab types a tab.
+    NotInTable,
+    /// ⇧Tab in the first cell: nowhere to go.
+    Stay,
+    /// The cell to go to, from its start to its end.
+    Select(Position, Position),
+}
 
 /// One entry of the style gallery.
 #[derive(Clone, Debug, PartialEq, Eq)]
