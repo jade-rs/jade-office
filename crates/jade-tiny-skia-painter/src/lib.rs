@@ -840,6 +840,12 @@ struct Inner {
     /// do. A new page was filled white, then cleared white again before
     /// anything was drawn on it.
     blank: Cell<bool>,
+    /// Whether the paper has yet to be painted in: the pixels are still the
+    /// zeroes the surface was allocated with, and are filled with paper
+    /// before anything reads them or is drawn on them — unless the first
+    /// drawing covers every pixel opaquely, as a slide's or a sheet's
+    /// background does, and the fill would only be painted over.
+    unpainted: Cell<bool>,
     /// The blends of the text colours drawn lately, newest first.
     blends: RefCell<Vec<Rc<BlendTable>>>,
 }
@@ -913,8 +919,7 @@ impl TinySkiaPainter {
     /// A `width` × `height` surface filled with opaque white, as the Skia
     /// backend starts.
     pub fn new(width: u32, height: u32, fonts: Rc<FontBook>) -> Option<Self> {
-        let mut pixmap = Pixmap::new(width.max(1), height.max(1))?;
-        pixmap.fill(Color::WHITE);
+        let pixmap = Pixmap::new(width.max(1), height.max(1))?;
         Some(Self {
             inner: Rc::new(Inner {
                 pixmap: RefCell::new(pixmap),
@@ -926,9 +931,25 @@ impl TinySkiaPainter {
                 damage: Cell::new(None),
                 dark_paper: Cell::new(false),
                 blank: Cell::new(true),
+                unpainted: Cell::new(true),
                 blends: RefCell::new(Vec::new()),
             }),
         })
+    }
+
+    /// The surface's pixels, the paper painted in first if it is not yet.
+    fn pixels(&self) -> std::cell::RefMut<'_, Pixmap> {
+        let mut pixmap = self.inner.pixmap.borrow_mut();
+        if self.inner.unpainted.replace(false) {
+            pixmap.fill(self.paper());
+        }
+        pixmap
+    }
+
+    /// The pixels to read, the paper painted in first if it is not yet.
+    fn pixels_to_read(&self) -> std::cell::Ref<'_, Pixmap> {
+        drop(self.pixels());
+        self.inner.pixmap.borrow()
     }
 
     /// Notes that drawing may have changed the pixels within `bounds`
@@ -972,7 +993,7 @@ impl TinySkiaPainter {
     /// Rows `rows` of the surface as BGRA with premultiplied alpha, as
     /// [`Self::bgra_premultiplied`] gives the whole of it.
     pub fn bgra_premultiplied_rows(&self, rows: std::ops::Range<u32>) -> Vec<u8> {
-        let pixmap = self.inner.pixmap.borrow();
+        let pixmap = self.pixels_to_read();
         let stride = pixmap.width() as usize * 4;
         let rows = rows.start.min(pixmap.height()) as usize..rows.end.min(pixmap.height()) as usize;
         let bytes = &pixmap.data()[rows.start * stride..rows.end * stride];
@@ -992,7 +1013,7 @@ impl TinySkiaPainter {
     /// tell which of the rows drawing touched actually changed — a repaint
     /// that draws the same pixels again need not be copied anywhere.
     pub fn rows_fingerprint(&self, rows: std::ops::Range<u32>) -> u64 {
-        let pixmap = self.inner.pixmap.borrow();
+        let pixmap = self.pixels_to_read();
         let stride = pixmap.width() as usize * 4;
         let rows = rows.start.min(pixmap.height()) as usize..rows.end.min(pixmap.height()) as usize;
         let bytes = &pixmap.data()[rows.start * stride..rows.end * stride];
@@ -1031,13 +1052,13 @@ impl TinySkiaPainter {
         if self.inner.dark_paper.replace(on) == on {
             return;
         }
-        let paper = self.paper();
-        let mut pixmap = self.inner.pixmap.borrow_mut();
-        pixmap.fill(paper);
-        let whole = [0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32];
-        drop(pixmap);
+        let whole = {
+            let pixmap = self.inner.pixmap.borrow();
+            [0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32]
+        };
         self.note_damage(whole, None);
         self.inner.blank.set(true);
+        self.inner.unpainted.set(true);
     }
 
     /// `source` (premultiplied) blended at every coverage, over this page's
@@ -1083,7 +1104,7 @@ impl TinySkiaPainter {
 
     /// The pixels as RGBA, premultiplied — tiny-skia's own order.
     pub fn rgba_premultiplied(&self) -> Vec<u8> {
-        self.inner.pixmap.borrow().data().to_vec()
+        self.pixels_to_read().data().to_vec()
     }
 
     /// The pixels as BGRA, premultiplied: what gpui's `RenderImage` holds.
@@ -1094,7 +1115,7 @@ impl TinySkiaPainter {
     }
 
     pub fn encode_png(&self) -> Option<Vec<u8>> {
-        self.inner.pixmap.borrow().encode_png().ok()
+        self.pixels_to_read().encode_png().ok()
     }
 
     /// Draws encoded image bytes into a rectangle, cropping to a normalised
@@ -1143,7 +1164,7 @@ impl TinySkiaPainter {
             destination.height as f32,
         )
         .map(PathBuilder::from_rect);
-        let mut pixmap = self.inner.pixmap.borrow_mut();
+        let mut pixmap = self.pixels();
         let size = (pixmap.width(), pixmap.height());
         // The crop is one more clip, in force for this picture alone.
         let cropped = crop
@@ -1238,8 +1259,11 @@ impl TinySkiaPainter {
                 pixmap.fill_rect(rect, paint, transform, mask);
             });
         }
-        let mut pixmap = self.inner.pixmap.borrow_mut();
-        let surface = [0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32];
+        let size = {
+            let pixmap = self.inner.pixmap.borrow();
+            (pixmap.width() as f32, pixmap.height() as f32)
+        };
+        let surface = [0.0, 0.0, size.0, size.1];
         let [left, top, right, bottom] = clip.as_deref().map_or(surface, |clip| clip.rect);
         let device = device_bounds(rect, transform);
         let visible = [
@@ -1251,6 +1275,11 @@ impl TinySkiaPainter {
         if visible[2] <= visible[0] || visible[3] <= visible[1] {
             return;
         }
+        // Opaque over every pixel: the paper would only be painted over.
+        if opaque.is_some() && visible == surface {
+            self.inner.unpainted.set(false);
+        }
+        let mut pixmap = self.pixels();
         self.note_damage(visible, None);
         let Some(color) = opaque else {
             if let Some(visible) = Rect::from_ltrb(visible[0], visible[1], visible[2], visible[3]) {
@@ -1330,7 +1359,7 @@ impl TinySkiaPainter {
     ) {
         let clip = self.inner.state.borrow().clip.clone();
         let device = device_bounds(bounds, transform);
-        let mut pixmap = self.inner.pixmap.borrow_mut();
+        let mut pixmap = self.pixels();
         match clip.as_deref() {
             None => draw(&mut pixmap, transform, None),
             Some(clip) => match clip.coverage(device) {
@@ -1620,7 +1649,7 @@ impl TinySkiaPainter {
         let (left, top) = (x + coverage.left, y + coverage.top);
         let (width, height) = (coverage.width as i32, coverage.height as i32);
         let clip = self.inner.state.borrow().clip.clone();
-        let mut pixmap = self.inner.pixmap.borrow_mut();
+        let mut pixmap = self.pixels();
         let (surface_width, surface_height) = (pixmap.width() as i32, pixmap.height() as i32);
         let mut columns = left.max(0)..(left + width).min(surface_width);
         let mut rows = top.max(0)..(top + height).min(surface_height);
@@ -3180,6 +3209,32 @@ mod tests {
         painter.fill_rect(5.0, 5.0, 4.0, 4.0);
         painter.clear_rect(0.0, 0.0, 20.0, 20.0);
         assert_eq!(pixel(&painter, 6, 6), dark);
+    }
+
+    /// The paper is painted in when the surface is first read or drawn
+    /// on, in the paper it has then; an opaque fill over every pixel takes
+    /// its place.
+    #[test]
+    fn the_paper_is_painted_in_when_first_needed() {
+        let painter = TinySkiaPainter::new(8, 8, fonts()).unwrap();
+        assert_eq!(pixel(&painter, 3, 3), [255, 255, 255, 255]);
+
+        let dark = TinySkiaPainter::new(8, 8, fonts()).unwrap();
+        dark.set_dark_paper(true);
+        let paper = dark.paper().premultiply().to_color_u8();
+        let paper = [paper.red(), paper.green(), paper.blue(), paper.alpha()];
+        dark.set_fill_style_str("#ff0000");
+        dark.fill_rect(2.0, 2.0, 2.0, 2.0);
+        assert_eq!(pixel(&dark, 0, 0), paper);
+        assert_ne!(pixel(&dark, 2, 2), paper);
+
+        let covered = TinySkiaPainter::new(8, 8, fonts()).unwrap();
+        covered.set_fill_style_str("#336699");
+        covered.fill_rect(-1.0, -1.0, 10.0, 10.0);
+        let data = covered.rgba_premultiplied();
+        assert!(data
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0x33, 0x66, 0x99, 255]));
     }
 
     #[test]
