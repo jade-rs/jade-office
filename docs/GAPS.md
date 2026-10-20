@@ -7,7 +7,9 @@ does it, so only the shells lack a button or key (**engine: yes**), or the
 engine needs work first (**engine: no**).
 
 **Blocker** marks what is required before a release: every High row, and
-the Format Cells dialog, conditional-format editing and chart editing. Table
+the Format Cells dialog, conditional-format editing and chart editing.
+Word's blockers are closed by #74, #76, #78, #79, #81 and #82; the rows
+below them are what those leave. Table
 cell merge/split and SmartArt resizing were required and are done. Thai tone marks
 (#56), Korean (#57) and Arabic (#58) are tracked as issues, not blockers.
 
@@ -51,16 +53,10 @@ cell merge/split and SmartArt resizing were required and are done. Thai tone mar
 
 | | Gap | Hit | Engine |
 |---|---|---|---|
-| **Blocker** | New blank document, new from template | High | no |
-| **Blocker** | Save as / export PDF (native prints only; the browser has neither) | High | yes (`export_pdf`) |
-| **Blocker** | Copy and paste keeping formatting (plain text today, even within a document) | High | partly |
-| **Blocker** | Insert picture (and moving it in the browser; wrap options) | High | yes (`insert_image`) |
-| **Blocker** | Page setup: margins, orientation, size, columns, section breaks | High | yes |
-| **Blocker** | Headers and footers: edit; page numbers | High | yes (`set_header_footer_text`) |
-| **Blocker** | Comments: type the text, reply, resolve, delete, pane; none in the browser | High | yes |
-| **Blocker** | Tracked changes: accept or reject one, next and previous; none in the browser | High | partly |
-| **Blocker** | Find and Replace in the browser; options (case, whole word) in both | High | yes |
-| **Blocker** | Native keys: Home/End, word and line jumps, word delete, Tab (the browser has them) | High | yes |
+| | Headers and footers: first-page and odd/even variants, a story of more than one line, a header per section | Medium | partly (`SetHeaderFooterVariants`) |
+| | Page setup per section (the commands act on the default one) | Medium | partly |
+| | Paste with formatting from other apps (HTML, RTF); a copy keeps its formatting within the app only | Medium | no |
+| | PDF in the browser is a picture of each page: its text cannot be selected or searched | Medium | partly (`jade-docx-pdf-renderer`) |
 | | Shift+Enter line break | Medium | partly |
 | | Space before/after, paragraph dialog (first-line/hanging indent, keep with next) | Medium | yes (`set_paragraph_spacing`) |
 | | Fonts beyond a fixed list; custom colours; Font dialog | Medium | partly |
