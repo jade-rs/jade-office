@@ -322,8 +322,12 @@ impl ttf_parser::OutlineBuilder for OutlineBuilder {
 /// a repaint — a keystroke repaints its page — where a browser or Skia
 /// blends a cached mask. So does this: a glyph is rasterised the first time
 /// it is drawn at a size, slant and sub-pixel phase, and blended after that.
-/// A quarter pixel is as fine as the phase goes, so a glyph lands within an
-/// eighth of a pixel of where its outline would.
+/// A quarter pixel is as fine as the phase goes across, so a glyph lands
+/// within an eighth of a pixel of where its outline would along the line.
+/// Its baseline is rounded to a whole pixel, as Skia's glyph cache does for
+/// upright text: lines sit at many fractional heights, and a phase in each
+/// direction had every glyph rasterised up to sixteen times, half of what
+/// opening a document cost.
 struct GlyphCoverage {
     /// The coverage's top-left, from the pixel the pen's phase is counted in.
     left: i32,
@@ -335,14 +339,14 @@ struct GlyphCoverage {
 
 /// What a [`GlyphCoverage`] depends on: the face and glyph, the outline's
 /// scale and slant in device px (as bits, so it hashes), synthetic bold, and
-/// the quarter-pixel phase of the pen.
+/// the quarter-pixel phase of the pen along the line.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct GlyphKey {
     font: usize,
     glyph: u16,
     matrix: [u32; 3],
     bold: bool,
-    phase: (u8, u8),
+    phase: u8,
 }
 
 /// The cache is dropped whole when it grows past this, which only a document
@@ -1305,7 +1309,7 @@ impl TinySkiaPainter {
             return false;
         }
         let (x, phase_x) = phase(transform.tx);
-        let (y, phase_y) = phase(transform.ty);
+        let y = transform.ty.round() as i32;
         let key = GlyphKey {
             font,
             glyph: glyph.0,
@@ -1315,7 +1319,7 @@ impl TinySkiaPainter {
                 transform.sy.to_bits(),
             ],
             bold: bold_width.is_some(),
-            phase: (phase_x, phase_y),
+            phase: phase_x,
         };
         let fonts = &self.inner.fonts;
         let cached = fonts.glyphs.borrow().get(&key).cloned();
@@ -1328,7 +1332,7 @@ impl TinySkiaPainter {
                     transform.kx,
                     transform.sy,
                     f32::from(phase_x) / 4.0,
-                    f32::from(phase_y) / 4.0,
+                    0.0,
                 );
                 let coverage = fonts
                     .outline(font, glyph)
