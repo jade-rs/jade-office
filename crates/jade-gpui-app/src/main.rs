@@ -1251,7 +1251,37 @@ impl DocumentView {
         }
 
         let (paragraph, offset) = self.insert_at;
-        match event.keystroke.key.as_str() {
+        let modifiers = event.keystroke.modifiers;
+        let key = event.keystroke.key.as_str();
+        match key {
+            // ⌥⌫ and ⌥⌦ take a word, ⌘⌫ the line up to the caret, as on a
+            // Mac: what goes is selected, then deleted, in one edit.
+            "backspace" | "delete"
+                if modifiers.alt || (modifiers.platform && key == "backspace") =>
+            {
+                let to = if modifiers.platform {
+                    self.line_edge(false)
+                } else {
+                    self.word_step((paragraph, offset), key == "delete")
+                };
+                if to != self.insert_at {
+                    let page = self.caret_page_1idx();
+                    let edited = self
+                        .document
+                        .select(self.insert_at, to, page)
+                        .and_then(|()| self.document.replace_selection("", page));
+                    match edited {
+                        Ok(caret) => {
+                            self.selection_anchor = None;
+                            self.insert_at = caret;
+                            self.caret = self.document.place_caret(caret.0, caret.1);
+                            self.rebuild_after_edit();
+                            cx.notify();
+                        }
+                        Err(error) => eprintln!("delete failed: {error}"),
+                    }
+                }
+            }
             "backspace" if offset > 0 => {
                 let text = self.current_paragraph_text();
                 let removed = text[..offset].chars().next_back().map(char::len_utf8);
@@ -1260,6 +1290,17 @@ impl DocumentView {
                     let result = self.document.delete_text(paragraph, offset, true, 1, page);
                     self.after_edit(result, (paragraph, offset - removed), cx);
                 }
+            }
+            // At a paragraph's start, Backspace joins it to the one before.
+            "backspace" if paragraph > 0 => {
+                let joined_at = self
+                    .document
+                    .paragraph_text(paragraph - 1)
+                    .map_or(0, |text| text.len());
+                let page = self.caret_page_1idx();
+                let result = self.document.delete_text(paragraph, 0, true, 1, page);
+                self.rebuild_all_images();
+                self.after_edit(result, (paragraph - 1, joined_at), cx);
             }
             "delete" => {
                 let page = self.caret_page_1idx();
@@ -1273,8 +1314,15 @@ impl DocumentView {
                 self.rebuild_after_edit();
                 self.after_edit(result, (paragraph + 1, 0), cx);
             }
-            "left" | "right" | "up" | "down" => {
-                let extending = event.keystroke.modifiers.shift;
+            // In a table, to the next or the previous cell; elsewhere a tab
+            // typed, as in Word. Taken here, so the platform does not type
+            // the tab a second time through the input handler.
+            "tab" => {
+                cx.stop_propagation();
+                self.tab(modifiers.shift, cx);
+            }
+            "left" | "right" | "up" | "down" | "home" | "end" => {
+                let extending = modifiers.shift;
                 // Anchored where the caret was before this keystroke, unless a
                 // shift-selection is already running.
                 let anchor = if extending {
@@ -1283,10 +1331,31 @@ impl DocumentView {
                     self.selection_anchor = None;
                     self.insert_at
                 };
-                match event.keystroke.key.as_str() {
-                    "left" => self.step_caret(-1, cx),
-                    "right" => self.step_caret(1, cx),
-                    "up" => self.step_line(-1.0, cx),
+                // ⌘ with an arrow (Ctrl with Home or End elsewhere) goes to a
+                // line's or the document's ends, ⌥ a word along.
+                let long = modifiers.platform || modifiers.control;
+                match (key, long, modifiers.alt) {
+                    ("up", true, _) | ("home", true, _) => {
+                        self.jump_to(self.document_edge(false), cx)
+                    }
+                    ("down", true, _) | ("end", true, _) => {
+                        self.jump_to(self.document_edge(true), cx)
+                    }
+                    ("left", true, _) | ("home", false, _) => {
+                        self.jump_to(self.line_edge(false), cx)
+                    }
+                    ("right", true, _) | ("end", false, _) => {
+                        self.jump_to(self.line_edge(true), cx)
+                    }
+                    ("left", false, true) => {
+                        self.jump_to(self.word_step(self.insert_at, false), cx)
+                    }
+                    ("right", false, true) => {
+                        self.jump_to(self.word_step(self.insert_at, true), cx)
+                    }
+                    ("left", ..) => self.step_caret(-1, cx),
+                    ("right", ..) => self.step_caret(1, cx),
+                    ("up", ..) => self.step_line(-1.0, cx),
                     _ => self.step_line(1.0, cx),
                 }
                 if extending {
@@ -1295,6 +1364,131 @@ impl DocumentView {
             }
             _ => {}
         }
+    }
+
+    /// Tab: in a table, the next cell (⇧ the previous one) with its text
+    /// selected, a row added past the last; elsewhere a tab typed.
+    fn tab(&mut self, backwards: bool, cx: &mut Context<Self>) {
+        use jade_office_model::word::CellStep;
+        let (paragraph, offset) = self.insert_at;
+        self.document.place_caret(paragraph, offset);
+        let step = WordFormatting::step_cell(&mut self.document, !backwards);
+        match step {
+            Ok(CellStep::Select(from, to)) => {
+                // A row added is a re-flow: every page is re-read.
+                self.rebuild_all_images();
+                self.selection_anchor = Some(from);
+                self.insert_at = to;
+                self.caret = self.document.place_caret(to.0, to.1);
+                if from != to {
+                    let page = self.caret_page_1idx();
+                    if let Err(error) = self.document.select(from, to, page) {
+                        eprintln!("tab failed: {error}");
+                    }
+                }
+                self.refresh_caret_page_image();
+                cx.notify();
+            }
+            Ok(CellStep::Stay) => {}
+            Ok(CellStep::NotInTable) if !backwards => {
+                let page = self.caret_page_1idx();
+                let result = self.document.insert_text(paragraph, offset, "\t", page);
+                self.after_edit(result, (paragraph, offset + 1), cx);
+            }
+            Ok(CellStep::NotInTable) => {}
+            Err(error) => eprintln!("tab failed: {error}"),
+        }
+    }
+
+    /// The caret to `position`, drawn there.
+    fn jump_to(&mut self, position: (usize, usize), cx: &mut Context<Self>) {
+        self.insert_at = position;
+        self.caret = self.document.place_caret(position.0, position.1);
+        cx.notify();
+    }
+
+    /// One word along from `position`, as ⌥← and ⌥→ go; at a paragraph's
+    /// edge, into the paragraph beside it.
+    fn word_step(&self, (paragraph, offset): (usize, usize), forwards: bool) -> (usize, usize) {
+        use jade_office_model::text::{word_end_after, word_start_before};
+        let text = self.document.paragraph_text(paragraph).unwrap_or_default();
+        let offset = offset.min(text.len());
+        if forwards && offset < text.len() {
+            (paragraph, word_end_after(&text, offset))
+        } else if !forwards && offset > 0 {
+            (paragraph, word_start_before(&text, offset))
+        } else {
+            self.character_step((paragraph, offset), forwards)
+        }
+    }
+
+    /// One character along from `position`, across paragraph ends.
+    fn character_step(
+        &self,
+        (paragraph, offset): (usize, usize),
+        forwards: bool,
+    ) -> (usize, usize) {
+        let text = self.document.paragraph_text(paragraph).unwrap_or_default();
+        let offset = offset.min(text.len());
+        if forwards {
+            match text[offset..].chars().next() {
+                Some(next) => (paragraph, offset + next.len_utf8()),
+                None if paragraph + 1 < self.document.paragraph_count() => (paragraph + 1, 0),
+                None => (paragraph, offset),
+            }
+        } else {
+            match text[..offset].chars().next_back() {
+                Some(previous) => (paragraph, offset - previous.len_utf8()),
+                None if paragraph > 0 => (
+                    paragraph - 1,
+                    self.document
+                        .paragraph_text(paragraph - 1)
+                        .map_or(0, |text| text.len()),
+                ),
+                None => (paragraph, offset),
+            }
+        }
+    }
+
+    /// The start or the end of the line the caret is drawn on, along the
+    /// caret's own paragraph: in a table row the far side of the page is
+    /// another cell's text.
+    fn line_edge(&self, end: bool) -> (usize, usize) {
+        let Some(caret) = self.caret else {
+            return self.insert_at;
+        };
+        let paragraph = self.insert_at.0;
+        let x = if end { f64::MAX / 4.0 } else { f64::MIN / 4.0 };
+        self.document
+            .renderer()
+            .selection_manager()
+            .hit_test_matching(x, caret.document_y + caret.height / 2.0, |index| {
+                index == paragraph
+            })
+            .map_or(self.insert_at, |position| {
+                (position.paragraph, position.offset)
+            })
+    }
+
+    /// The start or the end of the document's body (⌘↑ and ⌘↓).
+    fn document_edge(&self, end: bool) -> (usize, usize) {
+        let word = self.document.word_document();
+        let count = self.document.paragraph_count();
+        let body = |index: &usize| word.is_body_paragraph_surface(*index);
+        let paragraph = if end {
+            (0..count).rev().find(body)
+        } else {
+            (0..count).find(body)
+        }
+        .unwrap_or(0);
+        let offset = if end {
+            self.document
+                .paragraph_text(paragraph)
+                .map_or(0, |text| text.len())
+        } else {
+            0
+        };
+        (paragraph, offset)
     }
 
     // ---- the ribbon ------------------------------------------------------
@@ -2591,25 +2785,11 @@ impl DocumentView {
         }
     }
 
-    /// Moves the caret one character along the current paragraph.
+    /// Moves the caret one character along, across paragraph ends.
     fn step_caret(&mut self, direction: i32, cx: &mut Context<Self>) {
-        let (paragraph, offset) = self.insert_at;
-        let text = self.current_paragraph_text();
-        let next = if direction < 0 {
-            text[..offset.min(text.len())]
-                .chars()
-                .next_back()
-                .map(|ch| offset - ch.len_utf8())
-        } else {
-            text[offset.min(text.len())..]
-                .chars()
-                .next()
-                .map(|ch| offset + ch.len_utf8())
-        };
-        if let Some(next) = next {
-            self.insert_at = (paragraph, next);
-            self.caret = self.document.place_caret(paragraph, next);
-            cx.notify();
+        let next = self.character_step(self.insert_at, direction > 0);
+        if next != self.insert_at {
+            self.jump_to(next, cx);
         }
     }
 
@@ -4029,6 +4209,141 @@ mod tests {
                 !view.format_state().table.unwrap().can_unmerge,
                 "the merge is undone"
             );
+        });
+    }
+
+    /// Puts the caret at the start of the caret's paragraph and types
+    /// `text` there; returns the paragraph.
+    fn type_at_start(
+        view: &gpui::Entity<super::DocumentView>,
+        cx: &mut gpui::VisualTestContext,
+        text: &str,
+    ) -> usize {
+        let paragraph = view.update(cx, |view, _| {
+            let paragraph = view.insert_at.0;
+            view.insert_at = (paragraph, 0);
+            view.caret = view.document.place_caret(paragraph, 0);
+            paragraph
+        });
+        cx.simulate_input(text);
+        paragraph
+    }
+
+    /// ⌥← and ⌥→ go a word along, ⇧ extending; ⌘← and End go to the line's
+    /// ends, ⌘↑ and ⌘↓ to the document's — as on a Mac.
+    #[gpui::test]
+    fn word_line_and_document_keys_move_the_caret(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "one two, three ");
+        view.update(cx, |view, _| {
+            view.insert_at = (paragraph, 0);
+            view.caret = view.document.place_caret(paragraph, 0);
+        });
+        cx.simulate_keystrokes("alt-right");
+        view.read_with(cx, |view, _| assert_eq!(view.insert_at, (paragraph, 3)));
+        cx.simulate_keystrokes("alt-right");
+        view.read_with(cx, |view, _| assert_eq!(view.insert_at, (paragraph, 7)));
+        cx.simulate_keystrokes("alt-shift-left");
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.document.selection(),
+                Some(((paragraph, 7), (paragraph, 4)))
+            )
+        });
+        cx.simulate_keystrokes("end");
+        let line_end = view.read_with(cx, |view, _| {
+            assert!(view.document.selection().is_none());
+            view.insert_at
+        });
+        assert_eq!(line_end.0, paragraph);
+        assert!(line_end.1 > "one two, three ".len(), "{line_end:?}");
+        cx.simulate_keystrokes("cmd-left");
+        view.read_with(cx, |view, _| assert_eq!(view.insert_at, (paragraph, 0)));
+        cx.simulate_keystrokes("cmd-down");
+        let end = view.read_with(cx, |view, _| view.insert_at);
+        assert!(end.0 > paragraph, "{end:?}");
+        cx.simulate_keystrokes("cmd-up");
+        view.read_with(cx, |view, _| {
+            assert!(view.insert_at.0 < paragraph);
+            assert_eq!(view.insert_at.1, 0);
+        });
+    }
+
+    /// ⌥⌫ takes the word before the caret in one edit; Backspace at a
+    /// paragraph's start joins it to the one before.
+    #[gpui::test]
+    fn option_backspace_deletes_a_word_and_backspace_joins(cx: &mut gpui::TestAppContext) {
+        use super::Undo;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "alpha beta ");
+        let before = view.read_with(cx, |view, _| view.current_paragraph_text());
+        cx.simulate_keystrokes("alt-backspace");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.insert_at, (paragraph, "alpha ".len()));
+            assert_eq!(
+                view.current_paragraph_text(),
+                before.replacen("beta ", "", 1)
+            );
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.current_paragraph_text(), before)
+        });
+
+        view.update(cx, |view, _| {
+            view.insert_at = (paragraph, 0);
+            view.caret = view.document.place_caret(paragraph, 0);
+        });
+        let above = view.read_with(cx, |view, _| {
+            view.document.paragraph_text(paragraph - 1).unwrap()
+        });
+        cx.simulate_keystrokes("backspace");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.insert_at, (paragraph - 1, above.len()));
+            assert_eq!(view.current_paragraph_text(), format!("{above}{before}"));
+        });
+    }
+
+    /// Tab goes from cell to cell with the cell's text selected, ⇧Tab
+    /// back, and Tab in the last cell adds a row; outside a table it types
+    /// a tab.
+    #[gpui::test]
+    fn tab_goes_from_cell_to_cell(cx: &mut gpui::TestAppContext) {
+        use super::ribbon::Action;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "");
+        cx.simulate_keystrokes("tab");
+        view.read_with(cx, |view, _| {
+            assert!(view.current_paragraph_text().starts_with('\t'));
+            assert_eq!(view.insert_at, (paragraph, 1));
+        });
+
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::InsertTable(1, 2), cx)
+        });
+        let first = view.read_with(cx, |view, _| view.insert_at);
+        cx.simulate_input("one");
+        cx.simulate_keystrokes("tab");
+        let second = view.read_with(cx, |view, _| {
+            assert_ne!(view.insert_at.0, first.0);
+            view.insert_at.0
+        });
+        cx.simulate_input("two");
+        cx.simulate_keystrokes("shift-tab");
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.document.selection(),
+                Some(((first.0, 0), (first.0, 3)))
+            )
+        });
+        view.update(cx, |view, _| {
+            view.insert_at = (second, 3);
+            view.caret = view.document.place_caret(second, 3);
+        });
+        cx.simulate_keystrokes("tab");
+        view.update(cx, |view, _| {
+            let cell = view.format_state().table.expect("in the table");
+            assert_eq!((cell.rows, cell.row, cell.column), (2, 1, 0));
         });
     }
 
