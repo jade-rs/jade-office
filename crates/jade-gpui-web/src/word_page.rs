@@ -262,6 +262,50 @@ pub fn page_setup(
     )
 }
 
+/// 挿入 → 図: a picture from the device, and the selected one's wrap.
+pub fn pictures(selected: bool, cx: &mut Context<DocView>) -> AnyElement {
+    use jade_web::word::picture::{Wrap, WRAPS};
+    let mut buttons = vec![text_button(
+        "insert-picture",
+        i18n::text("picture.insert"),
+        i18n::text("picture.insert_title"),
+        false,
+        Action::InsertPicture,
+        cx,
+    )];
+    if selected {
+        let ids = [
+            "wrap-inline",
+            "wrap-square",
+            "wrap-tight",
+            "wrap-through",
+            "wrap-top-bottom",
+            "wrap-behind",
+            "wrap-front",
+        ];
+        for (index, wrap) in WRAPS.into_iter().enumerate() {
+            let label = i18n::text(match wrap {
+                Wrap::Inline => "picture.wrap.inline",
+                Wrap::Square => "picture.wrap.square",
+                Wrap::Tight => "picture.wrap.tight",
+                Wrap::Through => "picture.wrap.through",
+                Wrap::TopAndBottom => "picture.wrap.top_bottom",
+                Wrap::BehindText => "picture.wrap.behind",
+                Wrap::InFrontOfText => "picture.wrap.front",
+            });
+            buttons.push(text_button(
+                ids[index],
+                label,
+                i18n::text("picture.wrap"),
+                false,
+                Action::Wrap(wrap),
+                cx,
+            ));
+        }
+    }
+    group(i18n::text("picture.group"), vec![row(buttons)])
+}
+
 /// 挿入 → ヘッダーとフッター.
 pub fn header_footer(ribbon: &Ribbon, cx: &mut Context<DocView>) -> AnyElement {
     let open = ribbon.popup;

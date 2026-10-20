@@ -201,6 +201,10 @@ pub enum Action {
     EditStory(Story),
     /// The 校閲 tab.
     Review(crate::word_review::ReviewAction),
+    /// 挿入 → 画像: a picture picked from the device.
+    InsertPicture,
+    /// 文字列の折り返し for the picture selected.
+    Wrap(jade_web::word::picture::Wrap),
 }
 
 impl Action {
@@ -575,6 +579,8 @@ pub struct TabState {
     pub tracking: bool,
     /// Whether the comments pane is open.
     pub comments: bool,
+    /// Whether a picture is selected, which 文字列の折り返し acts on.
+    pub picture: bool,
 }
 
 pub fn ribbon(
@@ -607,6 +613,7 @@ pub fn ribbon(
         Tab::Home => home(ribbon, state, cx),
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
+            groups.push(crate::word_page::pictures(shown.picture, cx));
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups
         }
