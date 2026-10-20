@@ -30,6 +30,7 @@ use crate::ribbon::{self, Action};
 use crate::{i18n, palette, Fonts, Host, UI_FONT};
 use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatting};
 
+mod deck;
 mod sheet;
 
 /// The deck's slide list, as in the native app.
@@ -381,16 +382,38 @@ enum Document {
         thumbnail_scroll: ScrollHandle,
         slide: Option<PaintedSlide>,
         selected: Option<u32>,
+        /// Shapes selected along with `selected`, by ⇧- or ⌘-click or ⌘A.
+        more: Vec<u32>,
+        /// Shapes copied with ⌘C: their slide and ids, pasted from there.
+        clipboard: Option<(usize, Vec<u32>)>,
         /// The selected shape's name, for the status bar.
         selected_name: Option<SharedString>,
-        /// Text being typed into a shape, or a cell of a table.
+        /// Text being typed into a table's cell, in a box over it.
         edit: Option<(TextTarget, TextEdit)>,
+        /// The speaker notes being typed into, written when they are left.
+        notes_edit: Option<TextEdit>,
+        /// Text being typed into a shape where it lies: its caret,
+        /// selection and an IME's composition.
+        typing: Option<jade_web::deck::ShapeText>,
+        /// A press in the text being typed into is being dragged, selecting.
+        selecting_text: bool,
         /// Cells selected across a table, as by Shift+click.
         cells: Option<CellSelection>,
         /// A shape being moved or resized with the mouse.
         drag: Option<ShapeDrag>,
         /// Window px per slide px of the slide on show.
         scale: f32,
+        /// Whether Layout ▾'s list is open.
+        layouts_open: bool,
+        /// The format strip's list that is open, if any.
+        format_popup: Option<deck::Popup>,
+        /// What the next drag on the slide draws: a text box or a shape.
+        inserting: Option<jade_web::deck::Insert>,
+        /// That drag, from where it started to where it is, in slide px.
+        drawing: Option<((f64, f64), (f64, f64))>,
+        /// Keys go to the slide list — Delete deletes the slide — after a
+        /// click on a thumbnail, as in PowerPoint's thumbnail pane.
+        slides_focused: bool,
     },
     Workbook(Box<sheet::Sheet>),
 }
@@ -492,11 +515,21 @@ impl DocView {
                     current: 0,
                     slide: None,
                     selected: None,
+                    more: Vec::new(),
+                    clipboard: None,
                     selected_name: None,
                     edit: None,
+                    notes_edit: None,
+                    typing: None,
+                    selecting_text: false,
                     cells: None,
                     drag: None,
                     scale: 1.0,
+                    layouts_open: false,
+                    format_popup: None,
+                    inserting: None,
+                    drawing: None,
+                    slides_focused: false,
                 }
             }
             Kind::Workbook => Document::Workbook(Box::new(sheet::Sheet::open(
@@ -625,13 +658,18 @@ impl DocView {
             Ok(true) => {
                 self.generation += 1;
                 self.status = SharedString::default();
-                // Undo can touch any slide; thumbnails are cheap to repaint.
-                if let Document::Deck { thumbnails, .. } = &mut self.document {
-                    for thumbnail in thumbnails.iter_mut() {
-                        if let Some(old) = thumbnail.take() {
-                            self.retired.push(old);
-                        }
-                    }
+                // Undo can touch any slide, add one or take one away;
+                // thumbnails are cheap to repaint.
+                if let Document::Deck {
+                    deck,
+                    current,
+                    thumbnails,
+                    ..
+                } = &mut self.document
+                {
+                    self.retired.extend(thumbnails.drain(..).flatten());
+                    thumbnails.resize(deck.slide_count(), None);
+                    *current = (*current).min(deck.slide_count().saturating_sub(1));
                 }
             }
             Ok(false) => {}
@@ -705,12 +743,19 @@ impl DocView {
             Document::Deck {
                 deck,
                 edit,
+                typing,
                 selected,
                 current,
                 ..
             } => {
                 *edit = None;
                 let result = if undo { deck.undo() } else { deck.redo() };
+                // Text typed in place: Undo takes it back and the caret
+                // stays, as in PowerPoint.
+                if let Some(typing) = typing.as_mut() {
+                    typing.composition = None;
+                    typing.clamp(deck);
+                }
                 // The selection stays on a shape the step kept, as in
                 // PowerPoint; one it took away is deselected.
                 keep = (*selected).filter(|&id| deck.shape(*current, id).is_some());
@@ -730,1106 +775,6 @@ impl DocView {
         };
         self.edited(result, cx);
         self.select_shape(keep);
-    }
-
-    // ---- the deck ---------------------------------------------------------
-
-    fn select_shape(&mut self, id: Option<u32>) {
-        if let Document::Deck {
-            deck,
-            current,
-            selected,
-            selected_name,
-            ..
-        } = &mut self.document
-        {
-            *selected = id;
-            *selected_name = id
-                .and_then(|id| deck.shape(*current, id))
-                .map(|shape| SharedString::from(shape.name));
-        }
-    }
-
-    fn go_to_slide(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.commit_slide_text(cx);
-        self.select_shape(None);
-        if let Document::Deck {
-            deck,
-            current,
-            thumbnail_scroll,
-            drag,
-            ..
-        } = &mut self.document
-        {
-            *drag = None;
-            *current = index.min(deck.slide_count().saturating_sub(1));
-            thumbnail_scroll.scroll_to_item(*current);
-        }
-        cx.notify();
-    }
-
-    fn step_slide(&mut self, delta: isize, cx: &mut Context<Self>) {
-        if let Document::Deck { current, .. } = &self.document {
-            let to = current.saturating_add_signed(delta);
-            self.go_to_slide(to, cx);
-        }
-    }
-
-    fn start_slideshow(&mut self, from: Option<usize>, cx: &mut Context<Self>) {
-        if let Some(from) = from {
-            self.go_to_slide(from, cx);
-        } else {
-            self.commit_slide_text(cx);
-            self.select_shape(None);
-        }
-        self.slideshow = true;
-        cx.notify();
-    }
-
-    /// Writes the text being typed into a shape, if any.
-    fn commit_slide_text(&mut self, cx: &mut Context<Self>) {
-        let Document::Deck {
-            deck,
-            edit,
-            current,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        let Some((target, text)) = edit.take() else {
-            return;
-        };
-        let result = deck.set_text(*current, target, &text.text);
-        self.edited(result, cx);
-    }
-
-    /// Starts typing into the selected shape — in a table, into the cell at
-    /// `point`, or the first cell without one.
-    fn begin_slide_text(&mut self, point: Option<(f64, f64)>, cx: &mut Context<Self>) {
-        let Document::Deck {
-            deck,
-            edit,
-            current,
-            selected,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        let Some(id) = *selected else {
-            return;
-        };
-        let target = deck.text_target(*current, id, point);
-        match deck.text(*current, target) {
-            Some(text) => *edit = Some((target, TextEdit::new(text))),
-            None => self.status = i18n::text("deck.text_locked").into(),
-        }
-        cx.notify();
-    }
-
-    /// Starts typing into `target` from the text it has — all of it
-    /// selected, when `whole`, so typing replaces it.
-    fn edit_slide_text(&mut self, target: TextTarget, whole: bool, cx: &mut Context<Self>) {
-        let Document::Deck {
-            deck,
-            edit,
-            current,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        if let Some(text) = deck.text(*current, target) {
-            let text = if whole {
-                TextEdit::selected(text)
-            } else {
-                TextEdit::new(text)
-            };
-            *edit = Some((target, text));
-        }
-        cx.notify();
-    }
-
-    /// The cell being typed into, if a table's.
-    fn edited_cell(&self) -> Option<TextTarget> {
-        match &self.document {
-            Document::Deck {
-                edit: Some((target @ TextTarget::Cell { .. }, _)),
-                ..
-            } => Some(*target),
-            _ => None,
-        }
-    }
-
-    /// Tab in a table: the text written, then the next cell (⇧Tab: the one
-    /// before). Tab in the last cell adds a row and goes to its first, as
-    /// in PowerPoint.
-    fn tab_in_table(&mut self, backwards: bool, cx: &mut Context<Self>) {
-        let Some(from @ TextTarget::Cell { id, row, .. }) = self.edited_cell() else {
-            return;
-        };
-        self.commit_slide_text(cx);
-        let Document::Deck { deck, current, .. } = &mut self.document else {
-            return;
-        };
-        let slide = *current;
-        match deck.next_cell(slide, from, backwards) {
-            // The next cell's text selected, as PowerPoint's Tab does.
-            Some(next) => self.edit_slide_text(next, true, cx),
-            None if !backwards => {
-                let result = deck.change_table(slide, id, TableChange::InsertRow(row + 1));
-                let added = matches!(result, Ok(true));
-                self.edited(result, cx);
-                if !added {
-                    return;
-                }
-                self.edit_slide_text(
-                    TextTarget::Cell {
-                        id,
-                        row: row + 1,
-                        column: 0,
-                    },
-                    false,
-                    cx,
-                );
-            }
-            None => self.edit_slide_text(from, true, cx),
-        }
-    }
-
-    /// Extends a cell selection — from the cell being typed into, or the
-    /// selection's first — to the cell at (`x`, `y`) of the same table.
-    fn select_slide_cells_to(&mut self, x: f64, y: f64, cx: &mut Context<Self>) -> bool {
-        let Document::Deck {
-            deck,
-            current,
-            edit,
-            cells,
-            ..
-        } = &mut self.document
-        else {
-            return false;
-        };
-        let (id, from) = match (*cells, edit.as_ref().map(|(target, _)| *target)) {
-            (Some(cells), _) => (cells.id, cells.from),
-            (None, Some(TextTarget::Cell { id, row, column })) => (id, (row, column)),
-            _ => return false,
-        };
-        let TextTarget::Cell { row, column, .. } = deck.text_target(*current, id, Some((x, y)))
-        else {
-            return false;
-        };
-        let Some(rect) = deck.cell_range_rect(*current, id, from, (row, column)) else {
-            return false;
-        };
-        self.commit_slide_text(cx);
-        if let Document::Deck { cells, .. } = &mut self.document {
-            *cells = Some(CellSelection {
-                id,
-                from,
-                to: (row, column),
-                rect,
-            });
-        }
-        cx.notify();
-        true
-    }
-
-    /// Merge Cells: the selected cells become one, typed into next.
-    fn merge_slide_cells(&mut self, cx: &mut Context<Self>) {
-        let Document::Deck {
-            deck,
-            current,
-            cells,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        let Some(selection) = cells.take() else {
-            return;
-        };
-        let change = jade_web::deck::merge_cells(selection.from, selection.to);
-        let result = deck.change_table(*current, selection.id, change);
-        let merged = matches!(result, Ok(true));
-        self.edited(result, cx);
-        if let (true, TableChange::MergeCells { row, column, .. }) = (merged, change) {
-            let target = TextTarget::Cell {
-                id: selection.id,
-                row,
-                column,
-            };
-            self.edit_slide_text(target, false, cx);
-        }
-        cx.notify();
-    }
-
-    /// Split Cells: the merged cell being typed into becomes its cells.
-    fn split_slide_cell(&mut self, cx: &mut Context<Self>) {
-        let Some(target @ TextTarget::Cell { id, row, column }) = self.edited_cell() else {
-            return;
-        };
-        self.commit_slide_text(cx);
-        let Document::Deck { deck, current, .. } = &mut self.document else {
-            return;
-        };
-        let result = deck.change_table(*current, id, TableChange::SplitCell { row, column });
-        let split = matches!(result, Ok(true));
-        self.edited(result, cx);
-        if split {
-            self.edit_slide_text(target, false, cx);
-        }
-    }
-
-    /// A row or column added or removed beside the cell being typed into,
-    /// its text written first.
-    fn change_slide_table(
-        &mut self,
-        change: impl FnOnce(usize, usize) -> TableChange,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(TextTarget::Cell { id, row, column }) = self.edited_cell() else {
-            return;
-        };
-        self.commit_slide_text(cx);
-        let Document::Deck { deck, current, .. } = &mut self.document else {
-            return;
-        };
-        let result = deck.change_table(*current, id, change(row, column));
-        self.edited(result, cx);
-        cx.notify();
-    }
-
-    fn deck_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        let modifiers = event.keystroke.modifiers;
-        let key = event.keystroke.key.as_str();
-        if self.slideshow {
-            match key {
-                "right" | "down" | "space" | "enter" | "pagedown" => self.step_slide(1, cx),
-                "left" | "up" | "backspace" | "pageup" => self.step_slide(-1, cx),
-                "escape" => {
-                    self.slideshow = false;
-                    cx.notify();
-                }
-                _ => return false,
-            }
-            return true;
-        }
-        if let Document::Deck {
-            cells: cells @ Some(_),
-            ..
-        } = &mut self.document
-        {
-            if key == "escape" {
-                *cells = None;
-                cx.notify();
-                return true;
-            }
-        }
-        let Document::Deck {
-            deck,
-            current,
-            selected,
-            edit,
-            ..
-        } = &mut self.document
-        else {
-            return false;
-        };
-        if let Some((target, text)) = edit.as_mut() {
-            if text.marked.is_some() {
-                return false;
-            }
-            let in_table = matches!(target, TextTarget::Cell { .. });
-            match key {
-                // As in PowerPoint, Escape leaves the text, keeping it.
-                "escape" => self.commit_slide_text(cx),
-                "tab" if in_table => self.tab_in_table(modifiers.shift, cx),
-                "enter" => text.insert("\n"),
-                "backspace" => text.backspace(),
-                "delete" => text.delete(),
-                "left" => text.step(false),
-                "right" => text.step(true),
-                "home" => text.to_end(false),
-                "end" => text.to_end(true),
-                _ => return false,
-            }
-            cx.notify();
-            return true;
-        }
-        let slide = *current;
-        if let Some(id) = *selected {
-            let step = if modifiers.alt { 1.0 } else { NUDGE_PX };
-            let result = match key {
-                "left" => deck.move_shape(slide, id, -step, 0.0),
-                "right" => deck.move_shape(slide, id, step, 0.0),
-                "up" => deck.move_shape(slide, id, 0.0, -step),
-                "down" => deck.move_shape(slide, id, 0.0, step),
-                "delete" | "backspace" => {
-                    let result = deck.delete_shape(slide, id);
-                    self.select_shape(None);
-                    result
-                }
-                "enter" | "f2" => {
-                    self.begin_slide_text(None, cx);
-                    return true;
-                }
-                "escape" => {
-                    self.select_shape(None);
-                    cx.notify();
-                    return true;
-                }
-                "tab" => {
-                    let next = deck.next_shape(slide, Some(id), modifiers.shift);
-                    self.select_shape(next);
-                    cx.notify();
-                    return true;
-                }
-                _ => return false,
-            };
-            self.edited(result, cx);
-            return true;
-        }
-        match key {
-            "down" | "right" | "pagedown" => self.step_slide(1, cx),
-            "up" | "left" | "pageup" => self.step_slide(-1, cx),
-            "tab" => {
-                let next = deck.next_shape(slide, None, modifiers.shift);
-                self.select_shape(next);
-                cx.notify();
-            }
-            _ => return false,
-        }
-        true
-    }
-
-    fn slide_mouse_down(
-        &mut self,
-        event: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        window.focus(&self.focus, cx);
-        cx.stop_propagation();
-        let Some((x, y)) = self.slide_point(event.position) else {
-            return;
-        };
-        // Shift+click in a table whose cell is being typed into, or whose
-        // cells are selected, selects the cells between, as in PowerPoint.
-        if event.modifiers.shift && self.select_slide_cells_to(x, y, cx) {
-            return;
-        }
-        let Document::Deck {
-            deck,
-            current,
-            edit,
-            cells,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        *cells = None;
-        // A click inside the shape or cell being typed into stays in the
-        // text.
-        if let Some((target, _)) = edit {
-            let inside = deck
-                .text_rect(*current, *target)
-                .is_some_and(|rect| rect.contains(x, y));
-            if inside {
-                return;
-            }
-        }
-        let hit = deck.shape_at(*current, x, y);
-        let movable = hit
-            .and_then(|id| deck.shape(*current, id))
-            .is_some_and(|shape| shape.can_move);
-        self.commit_slide_text(cx);
-        self.select_shape(hit);
-        match hit {
-            // In a table, the cell under the click.
-            Some(_) if event.click_count >= 2 => self.begin_slide_text(Some((x, y)), cx),
-            // Dragging the shape moves it.
-            Some(id) if movable => {
-                if let Document::Deck { drag, .. } = &mut self.document {
-                    *drag = Some(ShapeDrag::new(id, DragMode::Move, (x, y)));
-                }
-            }
-            _ => {}
-        }
-        cx.notify();
-    }
-
-    /// A press on a corner handle of the selected shape: dragging it resizes
-    /// the shape from the opposite corner.
-    fn start_slide_resize(
-        &mut self,
-        left: bool,
-        top: bool,
-        event: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        window.focus(&self.focus, cx);
-        cx.stop_propagation();
-        let Some(from) = self.slide_point(event.position) else {
-            return;
-        };
-        let Document::Deck {
-            deck,
-            current,
-            selected,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        let Some(id) = *selected else {
-            return;
-        };
-        if !deck
-            .shape(*current, id)
-            .is_some_and(|shape| shape.can_resize)
-        {
-            return;
-        }
-        self.commit_slide_text(cx);
-        if let Document::Deck { drag, .. } = &mut self.document {
-            *drag = Some(ShapeDrag::new(id, DragMode::Resize { left, top }, from));
-        }
-        cx.notify();
-    }
-
-    /// The pointer moving with the button down drags the shape along.
-    fn slide_mouse_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
-        if !event.dragging() {
-            return;
-        }
-        let Some((x, y)) = self.slide_point(event.position) else {
-            return;
-        };
-        if let Document::Deck {
-            drag: Some(drag), ..
-        } = &mut self.document
-        {
-            drag.drag_to(x, y);
-            cx.notify();
-        }
-    }
-
-    /// Letting go writes the drag, as one undoable change.
-    fn slide_mouse_up(&mut self, cx: &mut Context<Self>) {
-        let Document::Deck {
-            deck,
-            current,
-            drag,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        let Some(drag) = drag.take() else {
-            return;
-        };
-        let result = deck.drag_shape(*current, &drag);
-        self.edited(result, cx);
-    }
-
-    /// A window point as a point on the slide on show, in slide px.
-    fn slide_point(&self, position: gpui::Point<Pixels>) -> Option<(f64, f64)> {
-        let bounds = self.surface.get()?;
-        let Document::Deck { scale, .. } = &self.document else {
-            return None;
-        };
-        let to_slide = |value: Pixels| f64::from(value) / f64::from(*scale);
-        Some((
-            to_slide(position.x - bounds.origin.x),
-            to_slide(position.y - bounds.origin.y),
-        ))
-    }
-
-    /// Paints the current slide at `width` window px, unless it already is.
-    fn paint_slide(&mut self, width: f32, scale: f32) {
-        let generation = self.generation;
-        let Document::Deck {
-            deck,
-            current,
-            slide,
-            ..
-        } = &mut self.document
-        else {
-            return;
-        };
-        let device_width = (width * scale).round() as u32;
-        let fresh = matches!(slide, Some((index, w, g, _))
-            if *index == *current && *w == device_width && *g == generation);
-        if fresh {
-            return;
-        }
-        match deck.render_slide(*current, device_width).and_then(image) {
-            Some(painted) => {
-                if let Some((_, _, _, old)) =
-                    slide.replace((*current, device_width, generation, painted))
-                {
-                    self.retired.push(old);
-                }
-            }
-            None => {
-                self.status = i18n::format("deck.paint_failed", &[("n", &(*current + 1))]).into()
-            }
-        }
-    }
-
-    /// The slide alone on black, filling the window, as a slideshow.
-    fn slideshow_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::Div {
-        let (area_width, area_height) = editor_area(window, cx);
-        let Document::Deck { deck, .. } = &self.document else {
-            unreachable!()
-        };
-        let (slide_width, slide_height) = deck.slide_size();
-        let fit = (area_width / slide_width as f32).min(area_height / slide_height as f32);
-        let (width, height) = (slide_width as f32 * fit, slide_height as f32 * fit);
-        self.paint_slide(width, window.scale_factor());
-        let Document::Deck { slide, .. } = &self.document else {
-            unreachable!()
-        };
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(gpui::black())
-            .cursor_pointer()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|view, _event, _window, cx| view.step_slide(1, cx)),
-            )
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(|view, _event, _window, cx| view.step_slide(-1, cx)),
-            )
-            .children(
-                slide
-                    .as_ref()
-                    .map(|(_, _, _, image)| img(image.clone()).w(px(width)).h(px(height))),
-            )
-    }
-
-    fn deck_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::Div {
-        let scale = window.scale_factor();
-        let editing_cell = self.edited_cell().is_some();
-        let editing_merged = match (&self.document, self.edited_cell()) {
-            (Document::Deck { deck, current, .. }, Some(target)) => deck
-                .cell_span(*current, target)
-                .is_some_and(|span| span != (1, 1)),
-            _ => false,
-        };
-        let selected_cells = match &self.document {
-            Document::Deck { cells, .. } => cells.map(|cells| cells.rect),
-            _ => None,
-        };
-        let (area_width, area_height) = editor_area(window, cx);
-        let notes_height = if self.show_notes { NOTES_HEIGHT } else { 0.0 };
-        let Document::Deck {
-            deck, thumbnails, ..
-        } = &mut self.document
-        else {
-            unreachable!()
-        };
-        for (index, thumbnail) in thumbnails.iter_mut().enumerate() {
-            if thumbnail.is_none() {
-                *thumbnail = deck
-                    .render_slide(index, (SLIDE_THUMBNAIL_WIDTH * scale) as u32)
-                    .and_then(image);
-            }
-        }
-        let (slide_width, slide_height) = deck.slide_size();
-        let zoom = self.zoom.unwrap_or_else(|| {
-            deck_fit(deck.slide_size(), (area_width, area_height - notes_height))
-        });
-        self.shown_zoom = zoom;
-        let (width, height) = (slide_width as f32 * zoom, slide_height as f32 * zoom);
-        self.paint_slide(width, scale);
-
-        let Document::Deck {
-            deck,
-            current,
-            thumbnails,
-            thumbnail_scroll,
-            slide,
-            selected,
-            edit,
-            drag,
-            scale: shown_scale,
-            ..
-        } = &mut self.document
-        else {
-            unreachable!()
-        };
-        *shown_scale = zoom;
-        let current_index = *current;
-        let count = deck.slide_count();
-        let thumbnail_height = SLIDE_THUMBNAIL_WIDTH * (slide_height / slide_width) as f32;
-        let rows: Vec<_> = thumbnails
-            .iter()
-            .enumerate()
-            .map(|(index, thumbnail)| {
-                let selected = index == current_index;
-                div()
-                    .id(("slide-thumbnail", index))
-                    .flex()
-                    .gap_2()
-                    .px_2()
-                    .py_1()
-                    .cursor_pointer()
-                    .on_click(
-                        cx.listener(move |view, _event, _window, cx| view.go_to_slide(index, cx)),
-                    )
-                    .child(
-                        div()
-                            .w(px(16.0))
-                            .text_xs()
-                            .text_color(if selected {
-                                palette::accent()
-                            } else {
-                                palette::faint()
-                            })
-                            .child(format!("{}", index + 1)),
-                    )
-                    .child(
-                        div()
-                            .w(px(SLIDE_THUMBNAIL_WIDTH))
-                            .h(px(thumbnail_height))
-                            .flex_none()
-                            .bg(gpui::white())
-                            .border_2()
-                            .rounded_sm()
-                            .overflow_hidden()
-                            .border_color(if selected {
-                                palette::accent()
-                            } else {
-                                palette::border()
-                            })
-                            .hover(|thumbnail| thumbnail.border_color(palette::faint()))
-                            .children(thumbnail.clone().map(|image| img(image).size_full())),
-                    )
-            })
-            .collect();
-        let slide_image = slide.as_ref().map(|(_, _, _, image)| image.clone());
-        let notes = deck
-            .notes(current_index)
-            .map(|notes| SharedString::from(notes.to_string()));
-        let show_notes = self.show_notes;
-
-        // The selection outline and its corner handles, or the text editor,
-        // over the slide; a shape being dragged where the drag has taken it.
-        let resizable = selected
-            .and_then(|id| deck.shape(current_index, id))
-            .is_some_and(|shape| shape.can_resize);
-        let overlay = selected.and_then(|id| {
-            let editing = edit.as_ref().filter(|(target, _)| target.id() == id);
-            let rect = match editing {
-                Some((target, _)) => deck.text_rect(current_index, *target)?,
-                None => {
-                    let rect = deck.shape_rect(current_index, id)?;
-                    match drag.as_ref().filter(|drag| drag.id == id) {
-                        Some(drag) => drag.rect(rect),
-                        None => rect,
-                    }
-                }
-            };
-            let (x, y, w, h) = (
-                rect.x as f32 * zoom,
-                rect.y as f32 * zoom,
-                rect.width as f32 * zoom,
-                rect.height as f32 * zoom,
-            );
-            Some(match editing {
-                Some((_, text)) => div()
-                    .absolute()
-                    .left(px(x))
-                    .top(px(y))
-                    .min_w(px(w))
-                    .min_h(px(h))
-                    .p(px(6.0))
-                    .bg(gpui::rgba(0xffffffee))
-                    .border_1()
-                    .border_color(palette::accent())
-                    .text_color(gpui::black())
-                    .text_size(px((18.0 * zoom).max(11.0)))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .items_end()
-                            .child(if text.whole {
-                                div()
-                                    .bg(palette::selected())
-                                    .child(text.split().0.to_string())
-                            } else {
-                                div().child(text.split().0.to_string())
-                            })
-                            .child(
-                                div()
-                                    .w(px(1.5))
-                                    .h(px((20.0 * zoom).max(12.0)))
-                                    .bg(gpui::black()),
-                            )
-                            .child(text.split().1.to_string()),
-                    ),
-                None => div()
-                    .absolute()
-                    .left(px(x))
-                    .top(px(y))
-                    .w(px(w))
-                    .h(px(h))
-                    .border_1()
-                    .border_color(palette::accent())
-                    .when(resizable, |outline| {
-                        outline.children(
-                            [(true, true), (false, true), (true, false), (false, false)]
-                                .into_iter()
-                                .enumerate()
-                                .map(|(index, (is_left, is_top))| {
-                                    let at = |near: bool, length: f32| {
-                                        px(if near { 0.0 } else { length } - HANDLE_SIZE / 2.0)
-                                    };
-                                    div()
-                                        .id(("resize-handle", index))
-                                        .absolute()
-                                        .left(at(is_left, w))
-                                        .top(at(is_top, h))
-                                        .size(px(HANDLE_SIZE))
-                                        .rounded_full()
-                                        .bg(gpui::white())
-                                        .border_1()
-                                        .border_color(palette::accent())
-                                        .cursor(if is_left == is_top {
-                                            gpui::CursorStyle::ResizeUpLeftDownRight
-                                        } else {
-                                            gpui::CursorStyle::ResizeUpRightDownLeft
-                                        })
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(move |view, event, window, cx| {
-                                                view.start_slide_resize(
-                                                    is_left, is_top, event, window, cx,
-                                                )
-                                            }),
-                                        )
-                                }),
-                        )
-                    }),
-            })
-        });
-
-        let store = Rc::clone(&self.surface);
-        let entity = cx.entity();
-        div()
-            .size_full()
-            .flex()
-            .bg(palette::window())
-            // A drag follows the pointer anywhere over the view, and ends
-            // wherever the button comes up.
-            .on_mouse_move(cx.listener(|view, event, _window, cx| view.slide_mouse_move(event, cx)))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|view, _event, _window, cx| view.slide_mouse_up(cx)),
-            )
-            .on_mouse_up_out(
-                MouseButton::Left,
-                cx.listener(|view, _event, _window, cx| view.slide_mouse_up(cx)),
-            )
-            .child(
-                div()
-                    .w(px(DECK_SIDEBAR_WIDTH))
-                    .h_full()
-                    .flex_none()
-                    .flex()
-                    .flex_col()
-                    .bg(palette::sidebar())
-                    .border_r_1()
-                    .border_color(palette::border())
-                    .child(
-                        div()
-                            .px_3()
-                            .pt_3()
-                            .pb_2()
-                            .text_xs()
-                            .text_color(palette::faint())
-                            .child(i18n::format("deck.slides", &[("n", &count)])),
-                    )
-                    .child(
-                        div()
-                            .id("slide-thumbnails")
-                            .flex_1()
-                            .overflow_y_scroll()
-                            .track_scroll(thumbnail_scroll)
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .pb_3()
-                            .children(rows),
-                    ),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .h_full()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        toolbar(i18n::format(
-                            "deck.position",
-                            &[("current", &(current_index + 1)), ("count", &count)],
-                        ))
-                        // A table's layout, while one of its cells is typed
-                        // into: PowerPoint's Layout tab.
-                        .when(editing_cell, |bar| {
-                            bar.child(
-                                toolbar_button(
-                                    "row-below",
-                                    "icons/arrow-down-to-line.svg",
-                                    i18n::text("deck.row_below"),
-                                )
-                                .on_click(cx.listener(
-                                    |view, _event, _window, cx| {
-                                        view.change_slide_table(
-                                            |row, _| TableChange::InsertRow(row + 1),
-                                            cx,
-                                        )
-                                    },
-                                )),
-                            )
-                            .child(
-                                toolbar_button(
-                                    "column-right",
-                                    "icons/arrow-right-to-line.svg",
-                                    i18n::text("deck.column_right"),
-                                )
-                                .on_click(cx.listener(
-                                    |view, _event, _window, cx| {
-                                        view.change_slide_table(
-                                            |_, column| TableChange::InsertColumn(column + 1),
-                                            cx,
-                                        )
-                                    },
-                                )),
-                            )
-                            .child(
-                                toolbar_button(
-                                    "delete-row",
-                                    "icons/trash-2.svg",
-                                    i18n::text("deck.delete_row"),
-                                )
-                                .on_click(cx.listener(
-                                    |view, _event, _window, cx| {
-                                        view.change_slide_table(
-                                            |row, _| TableChange::DeleteRow(row),
-                                            cx,
-                                        )
-                                    },
-                                )),
-                            )
-                            .child(
-                                toolbar_button(
-                                    "delete-column",
-                                    "icons/trash-2.svg",
-                                    i18n::text("deck.delete_column"),
-                                )
-                                .on_click(cx.listener(
-                                    |view, _event, _window, cx| {
-                                        view.change_slide_table(
-                                            |_, column| TableChange::DeleteColumn(column),
-                                            cx,
-                                        )
-                                    },
-                                )),
-                            )
-                        })
-                        .when(selected_cells.is_some(), |bar| {
-                            bar.child(
-                                toolbar_button(
-                                    "merge-cells",
-                                    "icons/merge.svg",
-                                    i18n::text("deck.merge_cells"),
-                                )
-                                .on_click(cx.listener(
-                                    |view, _event, _window, cx| view.merge_slide_cells(cx),
-                                )),
-                            )
-                        })
-                        .when(editing_merged, |bar| {
-                            bar.child(
-                                toolbar_button(
-                                    "split-cell",
-                                    "icons/split.svg",
-                                    i18n::text("deck.split_cell"),
-                                )
-                                .on_click(cx.listener(
-                                    |view, _event, _window, cx| view.split_slide_cell(cx),
-                                )),
-                            )
-                        })
-                        .child(
-                            toolbar_button(
-                                "notes",
-                                "icons/file-text.svg",
-                                i18n::text("deck.notes"),
-                            )
-                            .when(show_notes, |button| button.bg(palette::selected()))
-                            .on_click(cx.listener(
-                                |view, _event, _window, cx| {
-                                    view.show_notes = !view.show_notes;
-                                    cx.notify();
-                                },
-                            )),
-                        )
-                        .child(
-                            toolbar_button(
-                                "from-current",
-                                "icons/play.svg",
-                                i18n::text("deck.from_current"),
-                            )
-                            .on_click(cx.listener(
-                                |view, _event, _window, cx| view.start_slideshow(None, cx),
-                            )),
-                        )
-                        .child(
-                            div()
-                                .id("slideshow")
-                                .flex()
-                                .items_center()
-                                .gap_1p5()
-                                .ml_1()
-                                .px_3()
-                                .py_1()
-                                .rounded_md()
-                                .text_xs()
-                                .text_color(gpui::white())
-                                .bg(palette::accent())
-                                .cursor_pointer()
-                                .hover(|button| button.opacity(0.9))
-                                .child(
-                                    svg()
-                                        .path("icons/play.svg")
-                                        .size_3()
-                                        .text_color(gpui::white()),
-                                )
-                                .child(i18n::text("deck.slideshow"))
-                                .on_click(cx.listener(|view, _event, _window, cx| {
-                                    view.start_slideshow(Some(0), cx)
-                                })),
-                        ),
-                    )
-                    .child(
-                        // Scrolls once a chosen zoom makes the slide bigger
-                        // than the space. A click off the slide clears the
-                        // selection.
-                        div()
-                            .id("slide-canvas")
-                            .flex_1()
-                            .min_h_0()
-                            .overflow_scroll()
-                            .bg(palette::canvas())
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|view, _event, window, cx| {
-                                    window.focus(&view.focus, cx);
-                                    view.commit_slide_text(cx);
-                                    view.select_shape(None);
-                                    cx.notify();
-                                }),
-                            )
-                            .child(
-                                div()
-                                    .min_w_full()
-                                    .min_h_full()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .p(px(SLIDE_MARGIN))
-                                    .child(
-                                        div()
-                                            .relative()
-                                            .flex_none()
-                                            .w(px(width))
-                                            .h(px(height))
-                                            .bg(gpui::white())
-                                            .shadow_lg()
-                                            .on_mouse_down(
-                                                MouseButton::Left,
-                                                cx.listener(Self::slide_mouse_down),
-                                            )
-                                            .children(
-                                                slide_image.map(|image| {
-                                                    img(image).w(px(width)).h(px(height))
-                                                }),
-                                            )
-                                            .children(overlay)
-                                            // The selected cells, shaded as
-                                            // PowerPoint shades them.
-                                            .children(selected_cells.map(|rect| {
-                                                div()
-                                                    .absolute()
-                                                    .left(px(rect.x as f32 * zoom))
-                                                    .top(px(rect.y as f32 * zoom))
-                                                    .w(px(rect.width as f32 * zoom))
-                                                    .h(px(rect.height as f32 * zoom))
-                                                    .bg(gpui::rgba(0x3b82f633))
-                                                    .border_1()
-                                                    .border_color(palette::accent())
-                                            }))
-                                            .child(
-                                                canvas(
-                                                    move |bounds, _window, _cx| {
-                                                        store.set(Some(bounds));
-                                                        bounds
-                                                    },
-                                                    move |_bounds, slide, window, cx| {
-                                                        let focus = entity.read(cx).focus.clone();
-                                                        window.handle_input(
-                                                            &focus,
-                                                            ElementInputHandler::new(
-                                                                slide,
-                                                                entity.clone(),
-                                                            ),
-                                                            cx,
-                                                        );
-                                                    },
-                                                )
-                                                .absolute()
-                                                .top_0()
-                                                .left_0()
-                                                .size_full(),
-                                            ),
-                                    ),
-                            ),
-                    )
-                    .when(show_notes, |column| {
-                        column.child(
-                            div()
-                                .id("slide-notes")
-                                .h(px(NOTES_HEIGHT))
-                                .flex_none()
-                                .overflow_y_scroll()
-                                .border_t_1()
-                                .border_color(palette::border())
-                                .bg(palette::panel())
-                                .px_4()
-                                .py_2()
-                                .text_sm()
-                                .child(match notes {
-                                    Some(notes) => div().child(notes),
-                                    None => div()
-                                        .text_color(palette::faint())
-                                        .child(i18n::text("deck.no_notes")),
-                                }),
-                        )
-                    }),
-            )
     }
 
     // ---- pages ------------------------------------------------------------
@@ -2733,6 +1678,11 @@ impl DocView {
                 cx.stop_propagation();
                 return;
             }
+            let deck = matches!(self.document, Document::Deck { .. });
+            if deck && !self.slideshow && self.deck_shortcut(event, cx) {
+                cx.stop_propagation();
+                return;
+            }
             match key {
                 "z" => self.step_history(!modifiers.shift, cx),
                 "y" => self.step_history(false, cx),
@@ -2781,6 +1731,8 @@ impl DocView {
             }
             Document::Deck {
                 edit: None,
+                notes_edit: None,
+                typing: None,
                 selected: Some(_),
                 ..
             } => self.begin_slide_text(None, cx),
@@ -2788,6 +1740,10 @@ impl DocView {
         }
         match &mut self.document {
             Document::Workbook(sheet) => sheet.typing(),
+            Document::Deck {
+                notes_edit: Some(notes),
+                ..
+            } => Some(notes),
             Document::Deck { edit, .. } => edit.as_mut().map(|(_, text)| text),
             Document::Pages { .. } => None,
         }
@@ -2796,6 +1752,10 @@ impl DocView {
     fn current_text(&self) -> Option<&TextEdit> {
         match &self.document {
             Document::Workbook(sheet) => sheet.typed(),
+            Document::Deck {
+                notes_edit: Some(notes),
+                ..
+            } => Some(notes),
             Document::Deck { edit, .. } => edit.as_ref().map(|(_, text)| text),
             Document::Pages { .. } => None,
         }
@@ -2807,7 +1767,7 @@ impl DocView {
 fn deck_fit(slide: (f64, f64), area: (f32, f32)) -> f32 {
     let available = (
         (area.0 - DECK_SIDEBAR_WIDTH - SLIDE_MARGIN * 2.0).max(40.0),
-        (area.1 - TOOLBAR_HEIGHT - SLIDE_MARGIN * 2.0).max(40.0),
+        (area.1 - TOOLBAR_HEIGHT - deck::FORMAT_BAR_HEIGHT - SLIDE_MARGIN * 2.0).max(40.0),
     );
     (available.0 / slide.0.max(1.0) as f32).min(available.1 / slide.1.max(1.0) as f32)
 }
@@ -2888,6 +1848,12 @@ impl EntityInputHandler for DocView {
             *adjusted = Some(byte_to_utf16(&text, start)..byte_to_utf16(&text, end));
             return Some(text.get(start..end)?.to_string());
         }
+        if let Some((text, _, _)) = self.slide_input() {
+            let start = utf16_to_byte(&text, range.start);
+            let end = utf16_to_byte(&text, range.end).max(start);
+            *adjusted = Some(byte_to_utf16(&text, start)..byte_to_utf16(&text, end));
+            return Some(text.get(start..end)?.to_string());
+        }
         let text = self
             .current_text()
             .map(|edit| edit.text.as_str())
@@ -2910,6 +1876,10 @@ impl EntityInputHandler for DocView {
                 range: caret..caret,
                 reversed: false,
             });
+        }
+        if let Some((_, range, marked)) = self.slide_input() {
+            let reversed = marked.is_none() && self.slide_input_reversed();
+            return Some(UTF16Selection { range, reversed });
         }
         let (text, caret, whole) = self
             .current_text()
@@ -2937,6 +1907,9 @@ impl EntityInputHandler for DocView {
             let marked = marked?;
             return Some(byte_to_utf16(&text, marked.start)..byte_to_utf16(&text, marked.end));
         }
+        if let Some((_, _, marked)) = self.slide_input() {
+            return marked;
+        }
         let edit = self.current_text()?;
         let marked = edit.marked.clone()?;
         Some(byte_to_utf16(&edit.text, marked.start)..byte_to_utf16(&edit.text, marked.end))
@@ -2947,6 +1920,10 @@ impl EntityInputHandler for DocView {
         if let Some((text, _, Some(marked))) = self.word_input() {
             let committed = text[marked].to_string();
             self.word_edit(cx, |document| document.commit_composition(&committed));
+            return;
+        }
+        if self.slide_input().is_some() {
+            self.edit_typing(cx, |typing, deck| typing.unmark(deck));
             return;
         }
         match &mut self.document {
@@ -2984,6 +1961,14 @@ impl EntityInputHandler for DocView {
                 let line = text.lines().next().unwrap_or_default().to_string();
                 self.replace_text_in_range(None, &line, window, cx);
             }
+            // Into text being typed; with shapes selected, ⌘V pasted the
+            // shapes copied in the app.
+            Document::Deck {
+                edit: None,
+                typing: None,
+                notes_edit: None,
+                ..
+            } => {}
             Document::Deck { .. } => self.replace_text_in_range(None, &text, window, cx),
         }
     }
@@ -3009,6 +1994,9 @@ impl EntityInputHandler for DocView {
             });
             return;
         }
+        if self.type_into_slide(range.clone(), text, false, cx) {
+            return;
+        }
         if let Some(edit) = self.typing_target(cx) {
             edit.replace(range, text, false);
             cx.notify();
@@ -3029,6 +2017,9 @@ impl EntityInputHandler for DocView {
         if matches!(self.document, Document::Pages { .. }) {
             let text = new_text.to_string();
             self.word_edit(cx, move |document| document.set_composition(&text));
+            return;
+        }
+        if self.type_into_slide(range.clone(), new_text, true, cx) {
             return;
         }
         if let Some(edit) = self.typing_target(cx) {
@@ -3068,6 +2059,9 @@ impl EntityInputHandler for DocView {
                     });
                 }
             }
+        }
+        if let Some(caret) = self.slide_caret_bounds() {
+            return Some(caret);
         }
         // The candidate window goes at the editing surface's top-left: never
         // off-screen, if not beside the caret yet.
