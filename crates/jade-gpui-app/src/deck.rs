@@ -19,15 +19,19 @@
 //! again at a new width is only the Skia pass.
 
 use gpui::{
-    canvas, div, img, point, prelude::*, px, size, svg, App, Bounds, Context, ElementInputHandler,
-    Entity, EntityInputHandler, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
-    WindowBounds, WindowOptions,
+    anchored, canvas, deferred, div, img, point, prelude::*, px, rgb, size, svg, AnyElement, App,
+    Bounds, ClickEvent, Context, Div, ElementId, ElementInputHandler, Entity, EntityInputHandler,
+    FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels,
+    RenderImage, ScrollHandle, SharedString, Stateful, UTF16Selection, Window, WindowBounds,
+    WindowOptions,
 };
 use jade_office_model::deck::{
-    Deck, DragMode, ShapeDrag, ShapeRect as SlideRect, ShapeTransformInfo, TableChange, TextTarget,
+    Deck, DragMode, FormatStrip, Insert, Motion, ParagraphAlignment, ShapeDrag,
+    ShapeRect as SlideRect, ShapeText, ShapeTransformInfo, TableChange, TextCommand,
+    TextSelectionGeometry, TextTarget, FONT_SIZES, SHAPE_PRESETS,
 };
 use jade_office_model::skia::SkiaBackend;
+use jade_office_model::text::TextEdit as NotesEdit;
 use jade_office_model::Backend;
 use std::cell::Cell;
 use std::ops::Range;
@@ -36,9 +40,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::editor::{self, Editor};
+use crate::tooltip::Tooltip;
 use crate::{
-    byte_to_utf16, i18n, native_print, theme, utf16_to_byte, workspace, Print, Redo, Save, SaveAs,
-    StartSlideshow, Undo, UI_FONT_FAMILY,
+    byte_to_utf16, i18n, native_print, theme, utf16_to_byte, workspace, Copy, Paste, Print, Redo,
+    Save, SaveAs, SelectAll, StartSlideshow, Undo, UI_FONT_FAMILY,
 };
 
 /// The thumbnail strip's width, and the width each thumbnail is shown at.
@@ -46,6 +51,8 @@ const SIDEBAR_WIDTH: f32 = 200.0;
 const THUMBNAIL_WIDTH: f32 = 152.0;
 /// The bar above the slide: slide number, print, slide show.
 const TOOLBAR_HEIGHT: f32 = 40.0;
+/// The format strip under it: font and paragraph.
+const FORMAT_BAR_HEIGHT: f32 = 36.0;
 /// The speaker-notes pane under the slide.
 const NOTES_HEIGHT: f32 = 110.0;
 /// Space left round the slide inside its canvas.
@@ -132,6 +139,40 @@ impl TextEdit {
     }
 }
 
+/// A list open under a toolbar button.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Popup {
+    /// The layouts the current slide can take.
+    Layouts,
+    Font,
+    Size,
+    Color,
+    Spacing,
+    /// Insert's shapes.
+    Shapes,
+}
+
+/// A thumbnail being dragged to another place in the list.
+#[derive(Clone, Copy)]
+struct DraggedSlide(usize);
+
+/// What follows the pointer while a thumbnail is dragged.
+struct DraggedSlideView(usize);
+
+impl Render for DraggedSlideView {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .bg(theme::accent())
+            .text_xs()
+            .text_color(gpui::white())
+            .font_family(UI_FONT_FAMILY)
+            .child(i18n::format("deck.slide_n", &[("n", &(self.0 + 1))]))
+    }
+}
+
 /// Cells selected across a table, as by Shift+click: what Merge Cells merges.
 struct CellSelection {
     id: u32,
@@ -150,8 +191,24 @@ pub struct DeckView {
     /// selected, moved, resized.
     shapes: Vec<ShapeTransformInfo>,
     selected: Option<u32>,
+    /// Shapes selected along with `selected`, by ⇧- or ⌘-click or ⌘A.
+    more: Vec<u32>,
+    /// Shapes copied with ⌘C: their slide and ids, pasted from there.
+    clipboard: Option<(usize, Vec<u32>)>,
     drag: Option<ShapeDrag>,
+    /// Text being typed into a shape where it lies: its caret, selection
+    /// and an IME's composition.
+    typing: Option<ShapeText>,
+    /// A press in the text being typed into is being dragged, selecting.
+    selecting_text: bool,
+    /// What the next drag on the slide draws: a text box or a shape.
+    inserting: Option<Insert>,
+    /// That drag, from where it started to where it is, in slide px.
+    drawing: Option<((f64, f64), (f64, f64))>,
+    /// Text being typed into a table cell, in a box over it.
     text_edit: Option<TextEdit>,
+    /// The speaker notes being typed into, written when they are left.
+    notes_edit: Option<NotesEdit>,
     cells: Option<CellSelection>,
     /// One per slide, painted on the first frame (it needs the window's scale
     /// factor) and kept: a thumbnail only changes when the slide does.
@@ -168,6 +225,11 @@ pub struct DeckView {
     /// Where the slide sits in the window, recorded at paint.
     slide_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     thumbnail_scroll: ScrollHandle,
+    /// The list open under a toolbar button, if any.
+    popup: Option<Popup>,
+    /// Keys go to the slide list — Delete deletes the slide — after a click
+    /// on a thumbnail, as in PowerPoint's thumbnail pane.
+    slides_focused: bool,
     focus: FocusHandle,
     status: SharedString,
 }
@@ -210,6 +272,216 @@ impl DeckView {
         }
     }
 
+    // ---- slides ----------------------------------------------------------
+
+    /// Runs a change to the deck's slides; when it changes something, shows
+    /// slide `then` with every thumbnail repainted, as slides have moved.
+    fn change_slides(
+        &mut self,
+        then: usize,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut Deck<SkiaBackend>) -> Result<bool, String>,
+    ) -> bool {
+        self.commit_text(cx);
+        self.popup = None;
+        match change(&mut self.deck) {
+            Ok(true) => {
+                self.selected = None;
+                self.drag = None;
+                self.cells = None;
+                self.current = then;
+                self.reload(true, cx);
+                self.thumbnail_scroll.scroll_to_item(self.current);
+                true
+            }
+            Ok(false) => false,
+            Err(error) => {
+                self.status =
+                    SharedString::from(i18n::format("deck.edit_failed", &[("error", &error)]));
+                cx.notify();
+                false
+            }
+        }
+    }
+
+    /// New Slide: an empty one after the current slide, on its layout.
+    fn new_slide(&mut self, cx: &mut Context<Self>) {
+        let at = self.current + 1;
+        self.change_slides(at, cx, |deck| deck.insert_slide(at));
+    }
+
+    fn duplicate_slide(&mut self, cx: &mut Context<Self>) {
+        let index = self.current;
+        self.change_slides(index + 1, cx, |deck| deck.duplicate_slide(index));
+    }
+
+    /// Deletes the current slide, showing the one after it — or before, for
+    /// the last.
+    fn delete_slide(&mut self, cx: &mut Context<Self>) {
+        let index = self.current;
+        self.change_slides(index, cx, |deck| deck.delete_slide(index));
+    }
+
+    /// A thumbnail dropped on another: the slide moves to its place.
+    fn move_slide(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
+        self.change_slides(to, cx, |deck| deck.move_slide(from, to));
+    }
+
+    fn toggle_hidden(&mut self, cx: &mut Context<Self>) {
+        let index = self.current;
+        let hidden = !self.deck.is_hidden(index);
+        self.change_slides(index, cx, |deck| deck.set_slide_hidden(index, hidden));
+    }
+
+    fn set_layout(&mut self, part_name: &str, cx: &mut Context<Self>) {
+        let index = self.current;
+        self.change_slides(index, cx, |deck| deck.set_slide_layout(index, part_name));
+    }
+
+    // ---- formatting ------------------------------------------------------
+
+    /// What the format strip shows: the text typed into, or all of the
+    /// selected shape's — `None` when neither has text to format.
+    fn format_strip(&mut self) -> Option<FormatStrip> {
+        if let Some(typing) = &self.typing {
+            return Some(typing.format_strip(&self.deck));
+        }
+        let id = self
+            .selected
+            .filter(|_| self.text_edit.is_none() && self.cells.is_none())?;
+        self.deck.shape_format(self.current, id)
+    }
+
+    /// A format strip command — or ⌘B and the rest — on the text typed
+    /// into, or on all of the selected shape's.
+    fn format_slide_text(&mut self, command: TextCommand, cx: &mut Context<Self>) {
+        self.popup = None;
+        if self.typing.is_some() {
+            self.edit_typing(cx, |typing, deck| typing.format(deck, &command));
+            return;
+        }
+        let Some(id) = self
+            .selected
+            .filter(|_| self.text_edit.is_none() && self.cells.is_none())
+        else {
+            cx.notify();
+            return;
+        };
+        self.write(cx, |deck, slide| deck.format_shape(slide, id, &command));
+        cx.notify();
+    }
+
+    fn format_shortcut(&mut self, key: &str, shift: bool, cx: &mut Context<Self>) -> bool {
+        let command = match (key, shift) {
+            ("b", false) => TextCommand::Bold,
+            ("i", false) => TextCommand::Italic,
+            ("u", false) => TextCommand::Underline,
+            ("l", false) => TextCommand::Align(ParagraphAlignment::Left),
+            ("e", false) => TextCommand::Align(ParagraphAlignment::Center),
+            ("r", false) => TextCommand::Align(ParagraphAlignment::Right),
+            ("j", false) => TextCommand::Align(ParagraphAlignment::Justify),
+            (".", true) | (">", _) => TextCommand::Grow,
+            (",", true) | ("<", _) => TextCommand::Shrink,
+            _ => return false,
+        };
+        if self.format_strip().is_none() {
+            return false;
+        }
+        self.format_slide_text(command, cx);
+        true
+    }
+
+    // ---- inserting -------------------------------------------------------
+
+    /// Text Box, or a shape from Shapes: the next drag on the slide draws it,
+    /// as in PowerPoint; a click drops it at its usual size.
+    fn start_insert(&mut self, insert: Insert, cx: &mut Context<Self>) {
+        self.commit_text(cx);
+        self.popup = None;
+        self.inserting = Some(insert);
+        self.select(None, cx);
+        cx.notify();
+    }
+
+    /// Draws what is being inserted over `rect` and selects it — a text box
+    /// with the caret in it.
+    fn insert_at(&mut self, insert: Insert, rect: SlideRect, cx: &mut Context<Self>) {
+        self.inserting = None;
+        let result = self.deck.insert(self.current, insert, rect);
+        let Some(id) = self.inserted(result, cx) else {
+            return;
+        };
+        if insert == Insert::TextBox {
+            self.type_in_place(id, None, cx);
+        }
+    }
+
+    /// Picture: a PNG or JPEG file, placed in the middle of the slide.
+    fn pick_picture(&mut self, cx: &mut Context<Self>) {
+        self.commit_text(cx);
+        self.popup = None;
+        let prompt = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+        cx.spawn(async move |view, cx| {
+            let Ok(Ok(Some(paths))) = prompt.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            view.update(cx, |view, cx| match std::fs::read(&path) {
+                Ok(bytes) => view.insert_picture(&bytes, cx),
+                Err(error) => {
+                    let error = format!("{}: {error}", path.display());
+                    view.status = SharedString::from(i18n::format(
+                        "deck.picture_failed",
+                        &[("error", &error)],
+                    ));
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn insert_picture(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        let result = self.deck.insert_picture(self.current, bytes);
+        if let Err(error) = &result {
+            self.status =
+                SharedString::from(i18n::format("deck.picture_failed", &[("error", error)]));
+            cx.notify();
+            return;
+        }
+        self.inserted(result, cx);
+    }
+
+    /// After an insert: the slide repainted and the new object selected.
+    fn inserted(&mut self, result: Result<u32, String>, cx: &mut Context<Self>) -> Option<u32> {
+        match result {
+            Ok(id) => {
+                self.reload(false, cx);
+                self.select(Some(id), cx);
+                Some(id)
+            }
+            Err(error) => {
+                self.status =
+                    SharedString::from(i18n::format("deck.edit_failed", &[("error", &error)]));
+                cx.notify();
+                None
+            }
+        }
+    }
+
+    fn toggle_popup(&mut self, popup: Popup, cx: &mut Context<Self>) {
+        self.popup = (self.popup != Some(popup)).then_some(popup);
+        cx.notify();
+    }
+
     // ---- the model -------------------------------------------------------
 
     fn refresh_shapes(&mut self) {
@@ -218,6 +490,12 @@ impl DeckView {
             if !self.shapes.iter().any(|shape| shape.id == id) {
                 self.selected = None;
             }
+        }
+        let shapes = &self.shapes;
+        self.more
+            .retain(|id| shapes.iter().any(|shape| shape.id == *id));
+        if self.selected.is_none() {
+            self.more.clear();
         }
     }
 
@@ -270,12 +548,20 @@ impl DeckView {
     }
 
     fn step_history(&mut self, undo: bool, cx: &mut Context<Self>) {
+        // Text typed in place is already in the deck: Undo takes it back
+        // and the caret stays, as in PowerPoint.
+        let typing = self.typing.take();
         self.commit_text(cx);
+        self.typing = typing;
         let result = if undo {
             self.deck.undo()
         } else {
             self.deck.redo()
         };
+        if let Some(typing) = self.typing.as_mut() {
+            typing.composition = None;
+            typing.clamp(&self.deck);
+        }
         match result {
             Ok(true) => self.reload(true, cx),
             Ok(false) => {}
@@ -306,10 +592,89 @@ impl DeckView {
     }
 
     fn select(&mut self, id: Option<u32>, cx: &mut Context<Self>) {
-        if self.selected != id {
+        if id.is_some() {
+            self.slides_focused = false;
+        }
+        if self.selected != id || !self.more.is_empty() {
             self.commit_text(cx);
             self.selected = id;
+            self.more.clear();
             cx.notify();
+        }
+    }
+
+    /// The shapes selected, the first one first.
+    fn selection(&self) -> Vec<u32> {
+        self.selected.into_iter().chain(self.more.clone()).collect()
+    }
+
+    /// Selects `ids`, the first as the one Tab and the status bar go by.
+    fn select_all_of(&mut self, ids: Vec<u32>, cx: &mut Context<Self>) {
+        self.commit_text(cx);
+        let mut ids = ids.into_iter();
+        self.selected = ids.next();
+        self.more = ids.collect();
+        self.slides_focused = false;
+        cx.notify();
+    }
+
+    /// ⇧- or ⌘-click: the shape joins the selection, or leaves it.
+    fn toggle_selected(&mut self, id: u32, cx: &mut Context<Self>) {
+        let mut ids = self.selection();
+        match ids.iter().position(|selected| *selected == id) {
+            Some(at) => {
+                ids.remove(at);
+            }
+            None => ids.push(id),
+        }
+        self.select_all_of(ids, cx);
+    }
+
+    // ---- copying ---------------------------------------------------------
+
+    /// ⌘C on shapes: kept to paste, as PowerPoint keeps them.
+    fn copy_shapes(&mut self, cx: &mut Context<Self>) {
+        let ids = self.selection();
+        if !ids.is_empty() {
+            self.clipboard = Some((self.current, ids));
+            cx.notify();
+        }
+    }
+
+    /// ⌘V: the copied shapes pasted onto the slide shown — where they were,
+    /// or offset on their own slide — and selected.
+    fn paste_shapes(&mut self, cx: &mut Context<Self>) {
+        let Some((from, ids)) = self.clipboard.clone() else {
+            return;
+        };
+        self.commit_text(cx);
+        let result = self.deck.paste_shapes(from, &ids, self.current);
+        self.copied(result, cx);
+    }
+
+    /// ⌘D on shapes: copies of them offset on the slide, selected.
+    fn duplicate_shapes(&mut self, cx: &mut Context<Self>) {
+        let ids = self.selection();
+        self.commit_text(cx);
+        let result = self.deck.duplicate_shapes(self.current, &ids);
+        self.copied(result, cx);
+    }
+
+    fn copied(&mut self, result: Result<Vec<u32>, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(copies) if copies.is_empty() => {
+                self.status = SharedString::from(i18n::text("deck.nothing_to_paste"));
+                cx.notify();
+            }
+            Ok(copies) => {
+                self.reload(false, cx);
+                self.select_all_of(copies, cx);
+            }
+            Err(error) => {
+                self.status =
+                    SharedString::from(i18n::format("deck.edit_failed", &[("error", &error)]));
+                cx.notify();
+            }
         }
     }
 
@@ -342,6 +707,11 @@ impl DeckView {
     }
 
     fn nudge(&mut self, dx: f64, dy: f64, cx: &mut Context<Self>) {
+        if !self.more.is_empty() {
+            let ids = self.selection();
+            self.write(cx, |deck, slide| deck.move_shapes(slide, &ids, dx, dy));
+            return;
+        }
         let Some(shape) = self.selected.and_then(|id| self.shape(id)) else {
             return;
         };
@@ -356,6 +726,13 @@ impl DeckView {
     }
 
     fn delete_selected(&mut self, cx: &mut Context<Self>) {
+        if !self.more.is_empty() {
+            let ids = self.selection();
+            self.selected = None;
+            self.more.clear();
+            self.write(cx, |deck, slide| deck.delete_shapes(slide, &ids));
+            return;
+        }
         let Some(shape) = self.selected.and_then(|id| self.shape(id)) else {
             return;
         };
@@ -369,9 +746,16 @@ impl DeckView {
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
+        self.slides_focused = false;
+        self.popup = None;
         let Some((x, y)) = self.slide_point(event.position) else {
             return;
         };
+        if self.inserting.is_some() {
+            self.drawing = Some(((x, y), (x, y)));
+            cx.notify();
+            return;
+        }
         // Shift+click in a table whose cell is being typed into, or whose
         // cells are selected, selects the cells between, as in PowerPoint.
         if event.modifiers.shift && self.select_cells_to(x, y, cx) {
@@ -383,9 +767,45 @@ impl DeckView {
                 return;
             }
         }
+        // In the text being typed into, a click puts the caret, ⇧ or a drag
+        // selects, and a double-click selects a word.
+        if let Some(id) = self.typing.as_ref().map(|typing| typing.id) {
+            if self
+                .deck
+                .shape_rect(self.current, id)
+                .is_some_and(|rect| rect.contains(x, y))
+            {
+                let shift = event.modifiers.shift;
+                let double = event.click_count >= 2;
+                self.edit_typing(cx, |typing, deck| {
+                    if double {
+                        typing.select_word(deck, x, y);
+                    } else {
+                        typing.click(deck, x, y, shift);
+                    }
+                    Ok(false)
+                });
+                self.selecting_text = !double;
+                return;
+            }
+        }
         self.commit_text(cx);
         let hit = self.shape_at(x, y);
-        self.select(hit, cx);
+        // ⇧- or ⌘-click adds a shape to the selection, or takes it out.
+        if let (Some(id), Some(_), true) = (
+            hit,
+            self.selected,
+            event.modifiers.shift || event.modifiers.platform,
+        ) {
+            self.toggle_selected(id, cx);
+            return;
+        }
+        // A press on a shape of the selection keeps it, to drag it all.
+        let in_selection =
+            hit.is_some_and(|id| self.more.contains(&id) || self.selected == Some(id));
+        if !(in_selection && event.click_count < 2) {
+            self.select(hit, cx);
+        }
         let Some(id) = hit else {
             return;
         };
@@ -427,6 +847,18 @@ impl DeckView {
         let Some((x, y)) = self.slide_point(event.position) else {
             return;
         };
+        if let Some((_, to)) = self.drawing.as_mut() {
+            *to = (x, y);
+            cx.notify();
+            return;
+        }
+        if self.selecting_text {
+            self.edit_typing(cx, |typing, deck| {
+                typing.click(deck, x, y, true);
+                Ok(false)
+            });
+            return;
+        }
         if let Some(drag) = self.drag.as_mut() {
             drag.drag_to(x, y);
             cx.notify();
@@ -434,6 +866,11 @@ impl DeckView {
     }
 
     fn mouse_up(&mut self, cx: &mut Context<Self>) {
+        self.selecting_text = false;
+        if let (Some((from, to)), Some(insert)) = (self.drawing.take(), self.inserting) {
+            self.insert_at(insert, insert.rect(from, to), cx);
+            return;
+        }
         let Some(drag) = self.drag.take() else {
             return;
         };
@@ -441,16 +878,103 @@ impl DeckView {
             cx.notify();
             return;
         }
-        self.write(cx, |deck, slide| deck.drag_shape(slide, &drag));
+        let selection = self.selection();
+        self.write(cx, |deck, slide| deck.drag_shapes(slide, &drag, &selection));
     }
 
     // ---- text ------------------------------------------------------------
 
-    /// Starts typing into shape `id` — in a table, into the cell at `point`,
-    /// or the first cell without one — from the text it has.
+    /// Starts typing into shape `id`: in a table, into the cell at `point`,
+    /// or the first cell without one; anything else where it lies, the
+    /// caret at `point` or at the end of the text.
     fn begin_text(&mut self, id: u32, point: Option<(f64, f64)>, cx: &mut Context<Self>) {
-        let target = self.deck.text_target(self.current, id, point);
-        self.edit(target, false, cx);
+        match self.deck.text_target(self.current, id, point) {
+            TextTarget::Shape(id) => self.type_in_place(id, point, cx),
+            target => self.edit(target, false, cx),
+        }
+    }
+
+    fn type_in_place(&mut self, id: u32, point: Option<(f64, f64)>, cx: &mut Context<Self>) {
+        match ShapeText::begin(&mut self.deck, self.current, id, point) {
+            Some(typing) => {
+                self.drag = None;
+                self.typing = Some(typing);
+            }
+            None => self.status = SharedString::from(i18n::text("deck.text_locked")),
+        }
+        cx.notify();
+    }
+
+    /// Runs `edit` on the text being typed in place, repainting the slide
+    /// when it changed the deck.
+    fn edit_typing(
+        &mut self,
+        cx: &mut Context<Self>,
+        edit: impl FnOnce(&mut ShapeText, &mut Deck<SkiaBackend>) -> Result<bool, String>,
+    ) {
+        let Some(mut typing) = self.typing.take() else {
+            return;
+        };
+        let result = edit(&mut typing, &mut self.deck);
+        self.typing = Some(typing);
+        match result {
+            Ok(true) => self.reload(false, cx),
+            Ok(false) => cx.notify(),
+            Err(error) => {
+                self.status =
+                    SharedString::from(i18n::format("deck.edit_failed", &[("error", &error)]));
+                cx.notify();
+            }
+        }
+    }
+
+    /// The keys of text being typed in place: the caret keys — ⇧ selecting,
+    /// ⌥ by words, ⌘ to the ends of the line and the text — Backspace,
+    /// Delete, Enter for a paragraph and ⇧Enter for a line break, Tab.
+    fn typing_key(
+        &mut self,
+        key: &str,
+        modifiers: gpui::Modifiers,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let shift = modifiers.shift;
+        let motion = match key {
+            "left" if modifiers.platform => Some(Motion::LineStart),
+            "right" if modifiers.platform => Some(Motion::LineEnd),
+            "up" if modifiers.platform => Some(Motion::Start),
+            "down" if modifiers.platform => Some(Motion::End),
+            "left" if modifiers.alt => Some(Motion::WordLeft),
+            "right" if modifiers.alt => Some(Motion::WordRight),
+            "left" => Some(Motion::Left),
+            "right" => Some(Motion::Right),
+            "up" => Some(Motion::Up),
+            "down" => Some(Motion::Down),
+            "home" => Some(Motion::LineStart),
+            "end" => Some(Motion::LineEnd),
+            _ => None,
+        };
+        if let Some(motion) = motion {
+            self.edit_typing(cx, |typing, deck| {
+                typing.move_caret(deck, motion, shift);
+                Ok(false)
+            });
+            return true;
+        }
+        if modifiers.platform || modifiers.control {
+            return false;
+        }
+        match key {
+            // As in PowerPoint, Escape leaves the text, the shape still
+            // selected.
+            "escape" => self.commit_text(cx),
+            "enter" if shift => self.edit_typing(cx, |typing, deck| typing.line_break(deck)),
+            "enter" => self.edit_typing(cx, |typing, deck| typing.type_text(deck, "\n")),
+            "tab" => self.edit_typing(cx, |typing, deck| typing.type_text(deck, "\t")),
+            "backspace" => self.edit_typing(cx, |typing, deck| typing.backspace(deck)),
+            "delete" => self.edit_typing(cx, |typing, deck| typing.delete(deck)),
+            _ => return false,
+        }
+        true
     }
 
     /// Starts typing into `target` from the text it has — all of it
@@ -475,14 +999,79 @@ impl DeckView {
         cx.notify();
     }
 
-    /// Writes the text being typed, if any, as one undoable change.
+    /// Writes the text being typed, if any, as one undoable change. Text
+    /// typed in place is in the deck already; it just stops being typed
+    /// into, an IME's composition kept.
     fn commit_text(&mut self, cx: &mut Context<Self>) {
+        self.commit_notes(cx);
+        self.selecting_text = false;
+        if let Some(mut typing) = self.typing.take() {
+            if let Ok(true) = typing.unmark(&mut self.deck) {
+                self.reload(false, cx);
+            }
+            self.deck.end_typing();
+            cx.notify();
+        }
         let Some(edit) = self.text_edit.take() else {
             return;
         };
         let (target, text) = (edit.target, edit.text);
         self.write(cx, |deck, slide| deck.set_text(slide, target, &text));
         cx.notify();
+    }
+
+    // ---- speaker notes -----------------------------------------------------
+
+    /// A click in the notes pane: typing into the slide's notes, the caret
+    /// at their end.
+    fn begin_notes(&mut self, cx: &mut Context<Self>) {
+        if self.notes_edit.is_some() {
+            return;
+        }
+        self.commit_text(cx);
+        self.select(None, cx);
+        match self.deck.notes_text(self.current) {
+            Some(text) => self.notes_edit = Some(NotesEdit::new(text)),
+            None => self.status = SharedString::from(i18n::text("deck.text_locked")),
+        }
+        cx.notify();
+    }
+
+    /// Writes the notes being typed, as one step of Undo.
+    fn commit_notes(&mut self, cx: &mut Context<Self>) {
+        let Some(edit) = self.notes_edit.take() else {
+            return;
+        };
+        let text = edit.text;
+        self.write(cx, |deck, slide| deck.set_notes(slide, &text));
+        cx.notify();
+    }
+
+    /// The keys of the notes being typed: Escape leaves them, Enter starts
+    /// a paragraph; the caret keys and deletion.
+    fn notes_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        let Some(edit) = self.notes_edit.as_mut() else {
+            return false;
+        };
+        if edit.marked.is_some() {
+            return false;
+        }
+        match key {
+            "escape" => {
+                self.commit_notes(cx);
+                return true;
+            }
+            "enter" => edit.insert("\n"),
+            "backspace" => edit.backspace(),
+            "delete" => edit.delete(),
+            "left" => edit.step(false),
+            "right" => edit.step(true),
+            "home" | "up" => edit.to_end(false),
+            "end" | "down" => edit.to_end(true),
+            _ => return false,
+        }
+        cx.notify();
+        true
     }
 
     /// Tab in a table: the text written, then the next cell (⇧Tab: the one
@@ -608,10 +1197,45 @@ impl DeckView {
     fn handle_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
         let modifiers = keystroke.modifiers;
+        let key = keystroke.key.as_str();
+        if self.notes_edit.is_some() {
+            if !modifiers.platform && self.notes_key(key, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        // PowerPoint's formatting keys: ⌘B, ⌘I, ⌘U, ⌘L, ⌘E, ⌘R, ⌘J, and ⌘⇧>
+        // and ⌘⇧< for the font size — not bound as actions, which would take
+        // them from the Word view.
+        if modifiers.platform && self.format_shortcut(key, modifiers.shift, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        if self.typing.is_some() {
+            // An IME composing has the keys to itself.
+            let composing = self
+                .typing
+                .as_ref()
+                .is_some_and(|typing| typing.composition.is_some());
+            if !composing && self.typing_key(key, modifiers, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if modifiers.platform && self.text_edit.is_none() {
+            // PowerPoint for Mac's New Slide (⌘⇧N) and Duplicate (⌘D).
+            match (key, modifiers.shift) {
+                ("n", true) => self.new_slide(cx),
+                ("d", false) if self.selected.is_none() => self.duplicate_slide(cx),
+                ("d", false) => self.duplicate_shapes(cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+            return;
+        }
         if modifiers.platform || modifiers.control {
             return;
         }
-        let key = keystroke.key.as_str();
 
         if self.cells.is_some() && key == "escape" {
             self.cells = None;
@@ -669,6 +1293,17 @@ impl DeckView {
         }
 
         match key {
+            // In the slide list, Delete deletes the slide.
+            "delete" | "backspace" if self.slides_focused => self.delete_slide(cx),
+            "escape" if self.inserting.is_some() => {
+                self.inserting = None;
+                self.drawing = None;
+                cx.notify();
+            }
+            "escape" if self.popup.is_some() => {
+                self.popup = None;
+                cx.notify();
+            }
             "down" | "right" | "pagedown" | "space" => self.step(1, cx),
             "up" | "left" | "pageup" => self.step(-1, cx),
             "home" => self.go_to(0, cx),
@@ -733,10 +1368,19 @@ impl DeckView {
         }
     }
 
+    /// One slide in the list: its number — struck through with an eye for a
+    /// hidden slide, which is also dimmed, as PowerPoint marks it — and its
+    /// picture. A click shows it; a drag onto another moves it there.
     fn thumbnail(&self, index: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = index == self.current;
+        let hidden = self.deck.is_hidden(index);
         let (slide_width, slide_height) = self.deck.slide_size();
         let height = THUMBNAIL_WIDTH * (slide_height / slide_width.max(1.0)) as f32;
+        let number_color = if selected {
+            theme::accent()
+        } else {
+            theme::text_faint()
+        };
         div()
             .id(("slide-thumbnail", index))
             .flex()
@@ -744,17 +1388,44 @@ impl DeckView {
             .px_2()
             .py_1()
             .cursor_pointer()
-            .on_click(cx.listener(move |view, _event, _window, cx| view.go_to(index, cx)))
+            .on_click(cx.listener(move |view, _event, window, cx| {
+                window.focus(&view.focus);
+                view.slides_focused = true;
+                view.go_to(index, cx);
+                cx.notify();
+            }))
+            .on_drag(DraggedSlide(index), |dragged, _offset, _window, cx| {
+                let index = dragged.0;
+                cx.new(|_| DraggedSlideView(index))
+            })
+            .drag_over::<DraggedSlide>(|style, _, _, _| style.bg(theme::hovered()))
+            .on_drop(
+                cx.listener(move |view, dragged: &DraggedSlide, _window, cx| {
+                    view.move_slide(dragged.0, index, cx)
+                }),
+            )
             .child(
                 div()
                     .w(px(16.0))
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_1()
                     .text_xs()
-                    .text_color(if selected {
-                        theme::accent()
-                    } else {
-                        theme::text_faint()
-                    })
-                    .child(format!("{}", index + 1)),
+                    .text_color(number_color)
+                    .child(
+                        div()
+                            .when(hidden, |number| number.line_through())
+                            .child(format!("{}", index + 1)),
+                    )
+                    .when(hidden, |column| {
+                        column.child(
+                            svg()
+                                .path("icons/eye-off.svg")
+                                .size_3()
+                                .text_color(number_color),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -765,6 +1436,7 @@ impl DeckView {
                     .border_2()
                     .rounded_sm()
                     .overflow_hidden()
+                    .when(hidden, |thumbnail| thumbnail.opacity(0.45))
                     .border_color(if selected {
                         theme::accent()
                     } else {
@@ -783,8 +1455,28 @@ impl DeckView {
 
     /// The selection outline and its corner handles, or the text editor,
     /// over the slide.
-    fn overlays(&self, scale: f32, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+    fn overlays(
+        &self,
+        scale: f32,
+        typed: Option<&TextSelectionGeometry>,
+        cx: &mut Context<Self>,
+    ) -> Vec<gpui::AnyElement> {
         let mut out = Vec::new();
+        // A text box or shape being drawn.
+        if let (Some((from, to)), Some(insert)) = (self.drawing, self.inserting) {
+            let rect = insert.rect(from, to);
+            out.push(
+                div()
+                    .absolute()
+                    .left(px(rect.x as f32 * scale))
+                    .top(px(rect.y as f32 * scale))
+                    .w(px(rect.width as f32 * scale))
+                    .h(px(rect.height as f32 * scale))
+                    .border_1()
+                    .border_color(theme::accent())
+                    .into_any_element(),
+            );
+        }
         // The selected cells, shaded as PowerPoint shades them.
         if let Some(cells) = &self.cells {
             let rect = cells.rect;
@@ -796,6 +1488,29 @@ impl DeckView {
                     .w(px(rect.width as f32 * scale))
                     .h(px(rect.height as f32 * scale))
                     .bg(gpui::rgba(0x3b82f633))
+                    .border_1()
+                    .border_color(theme::accent())
+                    .into_any_element(),
+            );
+        }
+        // The rest of a selection of several, outlined — where a drag of
+        // them has taken them.
+        let moving = self.drag.filter(|drag| drag.mode == DragMode::Move);
+        for shape in self.more.iter().filter_map(|id| self.shape(*id)) {
+            let Some(transform) = shape.transform else {
+                continue;
+            };
+            let mut rect = SlideRect::of(&transform);
+            if let Some(drag) = moving {
+                rect = drag.rect(rect);
+            }
+            out.push(
+                div()
+                    .absolute()
+                    .left(px(rect.x as f32 * scale))
+                    .top(px(rect.y as f32 * scale))
+                    .w(px(rect.width as f32 * scale))
+                    .h(px(rect.height as f32 * scale))
                     .border_1()
                     .border_color(theme::accent())
                     .into_any_element(),
@@ -820,6 +1535,61 @@ impl DeckView {
             rect.width as f32 * scale,
             rect.height as f32 * scale,
         );
+
+        // Text typed in place: the shape's outline, the selection shaded
+        // over the text, and the caret — or an IME's composition there.
+        if let Some(typing) = self.typing.as_ref().filter(|typing| typing.id == id) {
+            out.push(
+                div()
+                    .absolute()
+                    .left(px(left))
+                    .top(px(top))
+                    .w(px(width))
+                    .h(px(height))
+                    .border_1()
+                    .border_color(theme::accent())
+                    .into_any_element(),
+            );
+            let Some(geometry) = typed else {
+                return out;
+            };
+            for quad in &geometry.highlights {
+                let (x0, y0, x1, y1) = quad.iter().fold(
+                    (f64::MAX, f64::MAX, f64::MIN, f64::MIN),
+                    |(x0, y0, x1, y1), p| (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y)),
+                );
+                out.push(
+                    div()
+                        .absolute()
+                        .left(px(x0 as f32 * scale))
+                        .top(px(y0 as f32 * scale))
+                        .w(px((x1 - x0) as f32 * scale))
+                        .h(px((y1 - y0) as f32 * scale))
+                        .bg(gpui::rgba(0x3b82f655))
+                        .into_any_element(),
+                );
+            }
+            let [a, b] = geometry.caret;
+            let (x, y, line) = (a.x.min(b.x), a.y.min(b.y), (a.y - b.y).abs());
+            let caret = div()
+                .absolute()
+                .left(px(x as f32 * scale))
+                .top(px(y as f32 * scale))
+                .h(px(line as f32 * scale));
+            out.push(match &typing.composition {
+                Some(composition) => caret
+                    .flex()
+                    .items_center()
+                    .px_0p5()
+                    .bg(gpui::white())
+                    .text_color(gpui::black())
+                    .text_size(px((line as f32 * scale * 0.7).max(10.0)))
+                    .child(div().underline().child(composition.clone()))
+                    .into_any_element(),
+                None => caret.w(px(1.5)).bg(gpui::black()).into_any_element(),
+            });
+            return out;
+        }
 
         if let Some(edit) = self
             .text_edit
@@ -891,7 +1661,8 @@ impl DeckView {
                 .border_color(theme::accent())
                 .into_any_element(),
         );
-        if shape.can_resize {
+        // Corner handles on one shape alone, as PowerPoint's.
+        if shape.can_resize && self.more.is_empty() {
             for (index, (is_left, is_top)) in
                 [(true, true), (false, true), (true, false), (false, false)]
                     .into_iter()
@@ -929,6 +1700,545 @@ impl DeckView {
     }
 }
 
+impl DeckView {
+    /// Shapes ▾: the shapes Insert offers; one picked is drawn next.
+    fn shapes_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let open = self.popup == Some(Popup::Shapes);
+        let drawing_shape = matches!(self.inserting, Some(Insert::Shape(_)));
+        let menu = open.then(|| {
+            menu_panel("deck-shapes")
+                .children(SHAPE_PRESETS.iter().enumerate().map(|(index, &preset)| {
+                    menu_row(
+                        ("deck-shape", index),
+                        i18n::text(shape_name(preset)),
+                        self.inserting == Some(Insert::Shape(preset)),
+                    )
+                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                        view.start_insert(Insert::Shape(preset), cx)
+                    }))
+                }))
+                .into_any_element()
+        });
+        with_menu(
+            toolbar_button(
+                "insert-shape",
+                "icons/shapes.svg",
+                i18n::text("deck.shapes"),
+            )
+            .when(open || drawing_shape, |button| button.bg(theme::selected()))
+            .on_click(cx.listener(|view, _event, _window, cx| view.toggle_popup(Popup::Shapes, cx)))
+            .into_any_element(),
+            menu,
+        )
+    }
+
+    /// Layout ▾: the layouts the slide can take, its own checked.
+    fn layouts_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let open = self.popup == Some(Popup::Layouts);
+        let menu = open.then(|| {
+            let rows: Vec<_> =
+                self.deck
+                    .slide_layouts(self.current)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, layout)| {
+                        let part = layout.part_name.clone();
+                        div()
+                            .id(("slide-layout", index))
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .h(px(26.0))
+                            .pl_1()
+                            .pr_3()
+                            .rounded_md()
+                            .whitespace_nowrap()
+                            .cursor_pointer()
+                            .hover(|row| row.bg(theme::hovered()))
+                            .on_click(cx.listener(move |view, _event, _window, cx| {
+                                view.set_layout(&part, cx)
+                            }))
+                            .child(div().size_4().flex_none().when(layout.current, |cell| {
+                                cell.child(
+                                    svg()
+                                        .path("icons/check.svg")
+                                        .size_4()
+                                        .text_color(theme::accent()),
+                                )
+                            }))
+                            .child(if layout.name.is_empty() {
+                                layout.kind
+                            } else {
+                                layout.name
+                            })
+                    })
+                    .collect();
+            div()
+                .id("slide-layouts")
+                .occlude()
+                .mt_1()
+                .p_1()
+                .flex()
+                .flex_col()
+                .max_h(px(360.0))
+                .overflow_y_scroll()
+                .rounded_md()
+                .bg(theme::panel())
+                .border_1()
+                .border_color(theme::border())
+                .shadow_lg()
+                .text_xs()
+                .text_color(theme::text())
+                .children(rows)
+        });
+        div()
+            .relative()
+            .flex_none()
+            .child(
+                toolbar_button(
+                    "slide-layout",
+                    "icons/panels-top-left.svg",
+                    i18n::text("deck.layout"),
+                )
+                .when(open, |button| button.bg(theme::hovered()))
+                .on_click(
+                    cx.listener(|view, _event, _window, cx| view.toggle_popup(Popup::Layouts, cx)),
+                ),
+            )
+            .children(menu.map(|menu| {
+                div().absolute().top_full().left_0().child(
+                    deferred(anchored().snap_to_window_with_margin(px(8.0)).child(menu))
+                        .with_priority(2),
+                )
+            }))
+            .into_any_element()
+    }
+}
+
+/// A click listener, as the format strip hands them round.
+type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+/// The font list the format strip offers, before the text's own.
+const FONT_FAMILIES: [&str; 9] = [
+    "游ゴシック",
+    "メイリオ",
+    "Hiragino Sans",
+    "Noto Sans JP",
+    "游明朝",
+    "Calibri",
+    "Arial",
+    "Georgia",
+    "Times New Roman",
+];
+/// PowerPoint's standard colours, under its font colour button.
+const FONT_COLORS: [u32; 12] = [
+    0x000000, 0x7f7f7f, 0xc00000, 0xff0000, 0xffc000, 0xffff00, 0x92d050, 0x00b050, 0x00b0f0,
+    0x0070c0, 0x002060, 0x7030a0,
+];
+/// Line spacing (multiples of single) and space after (points), PowerPoint's
+/// Line Spacing list.
+const LINE_SPACINGS: [f64; 4] = [1.0, 1.15, 1.5, 2.0];
+const SPACES_AFTER: [f64; 3] = [0.0, 6.0, 12.0];
+
+/// A format strip button: an icon, shaded while what it sets is on.
+fn format_button(
+    id: &'static str,
+    icon: &'static str,
+    tip: &'static str,
+    on: bool,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .size(px(26.0))
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .rounded_md()
+        .cursor_pointer()
+        .when(on, |button| button.bg(theme::selected()))
+        .hover(|button| button.bg(theme::hovered()))
+        .tooltip(Tooltip::text(i18n::text(tip)))
+        .child(svg().path(icon).size_4().text_color(theme::text_dim()))
+}
+
+/// A list trigger: its value and a chevron.
+fn format_list(id: &'static str, width: f32, value: String, open: bool) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_between()
+        .w(px(width))
+        .h(px(24.0))
+        .pl_2()
+        .pr_1()
+        .rounded_md()
+        .border_1()
+        .border_color(if open {
+            theme::accent()
+        } else {
+            theme::border()
+        })
+        .cursor_pointer()
+        .hover(|button| button.bg(theme::hovered()))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_xs()
+                .child(value),
+        )
+        .child(
+            svg()
+                .path("icons/chevron-down.svg")
+                .size_3()
+                .text_color(theme::text_dim()),
+        )
+}
+
+/// A trigger with its list under it while open.
+fn with_menu(trigger: AnyElement, menu: Option<AnyElement>) -> AnyElement {
+    div()
+        .relative()
+        .flex_none()
+        .child(trigger)
+        .children(menu.map(|menu| {
+            div().absolute().top_full().left_0().child(
+                deferred(anchored().snap_to_window_with_margin(px(8.0)).child(menu))
+                    .with_priority(2),
+            )
+        }))
+        .into_any_element()
+}
+
+/// The panel a list is drawn on.
+fn menu_panel(id: &'static str) -> Stateful<Div> {
+    div()
+        .id(id)
+        .occlude()
+        .mt_1()
+        .p_1()
+        .flex()
+        .flex_col()
+        .max_h(px(360.0))
+        .overflow_y_scroll()
+        .rounded_md()
+        .bg(theme::panel())
+        .border_1()
+        .border_color(theme::border())
+        .shadow_lg()
+        .text_xs()
+        .text_color(theme::text())
+}
+
+/// One row of a list, checked when it is the current value.
+fn menu_row(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    checked: bool,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_2()
+        .h(px(26.0))
+        .pl_1()
+        .pr_3()
+        .rounded_md()
+        .whitespace_nowrap()
+        .cursor_pointer()
+        .hover(|row| row.bg(theme::hovered()))
+        .child(div().size_4().flex_none().when(checked, |cell| {
+            cell.child(
+                svg()
+                    .path("icons/check.svg")
+                    .size_4()
+                    .text_color(theme::accent()),
+            )
+        }))
+        .child(label.into())
+}
+
+fn size_label(size: f32) -> String {
+    if size.fract() == 0.0 {
+        format!("{size:.0}")
+    } else {
+        format!("{size}")
+    }
+}
+
+impl DeckView {
+    fn on_format(command: TextCommand, cx: &mut Context<Self>) -> ClickHandler {
+        Box::new(cx.listener(move |view, _event: &ClickEvent, _window, cx| {
+            view.format_slide_text(command.clone(), cx)
+        }))
+    }
+
+    fn on_popup(popup: Popup, cx: &mut Context<Self>) -> ClickHandler {
+        Box::new(
+            cx.listener(move |view, _event: &ClickEvent, _window, cx| view.toggle_popup(popup, cx)),
+        )
+    }
+
+    /// The format strip, PowerPoint's Font and Paragraph groups, over the
+    /// text typed into or all of the selected shape's.
+    fn format_bar(&self, strip: &FormatStrip, open: Option<Popup>, cx: &mut Context<Self>) -> Div {
+        let font = strip.font.clone().unwrap_or_default();
+        let font_menu = (open == Some(Popup::Font)).then(|| {
+            let mut fonts: Vec<String> = FONT_FAMILIES.iter().map(|f| f.to_string()).collect();
+            if !font.is_empty() && !fonts.contains(&font) {
+                fonts.insert(0, font.clone());
+            }
+            menu_panel("deck-fonts")
+                .children(fonts.into_iter().enumerate().map(|(index, name)| {
+                    menu_row(("deck-font", index), name.clone(), name == font)
+                        .font_family(SharedString::from(name.clone()))
+                        .on_click(Self::on_format(TextCommand::Font(name), cx))
+                }))
+                .into_any_element()
+        });
+        let size_menu = (open == Some(Popup::Size)).then(|| {
+            menu_panel("deck-sizes")
+                .children(FONT_SIZES.iter().enumerate().map(|(index, &size)| {
+                    menu_row(
+                        ("deck-size", index),
+                        size_label(size),
+                        strip.size == Some(size),
+                    )
+                    .on_click(Self::on_format(TextCommand::Size(size), cx))
+                }))
+                .into_any_element()
+        });
+        let color_menu = (open == Some(Popup::Color)).then(|| {
+            menu_panel("deck-colors")
+                .child(div().w(px(6.0 * 24.0)).flex().flex_wrap().gap_1().children(
+                    FONT_COLORS.iter().enumerate().map(|(index, &color)| {
+                        div()
+                            .id(("deck-color", index))
+                            .size(px(20.0))
+                            .rounded_sm()
+                            .bg(rgb(color))
+                            .border_1()
+                            .border_color(theme::border())
+                            .cursor_pointer()
+                            .hover(|square| square.border_color(theme::accent()))
+                            .on_click(Self::on_format(
+                                TextCommand::Color(format!("#{color:06X}")),
+                                cx,
+                            ))
+                    }),
+                ))
+                .into_any_element()
+        });
+        let spacing_menu = (open == Some(Popup::Spacing)).then(|| {
+            menu_panel("deck-spacing")
+                .children(LINE_SPACINGS.iter().enumerate().map(|(index, &lines)| {
+                    menu_row(
+                        ("deck-line-spacing", index),
+                        format!("{lines:.2}")
+                            .trim_end_matches('0')
+                            .trim_end_matches('.')
+                            .to_string(),
+                        false,
+                    )
+                    .on_click(Self::on_format(TextCommand::LineSpacing(lines), cx))
+                }))
+                .children(SPACES_AFTER.iter().enumerate().map(|(index, &points)| {
+                    menu_row(
+                        ("deck-space-after", index),
+                        i18n::format("deck.space_after", &[("n", &points)]),
+                        false,
+                    )
+                    .on_click(Self::on_format(TextCommand::SpaceAfter(points), cx))
+                }))
+                .into_any_element()
+        });
+        let separator = || div().w(px(1.0)).h(px(18.0)).mx_1().bg(theme::border());
+        let alignment = strip.alignment;
+        div()
+            .h(px(FORMAT_BAR_HEIGHT))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .px_3()
+            .bg(theme::panel())
+            .border_b_1()
+            .border_color(theme::border())
+            .text_color(theme::text())
+            .child(with_menu(
+                format_list("deck-font", 150.0, font, open == Some(Popup::Font))
+                    .tooltip(Tooltip::text(i18n::text("deck.font")))
+                    .on_click(Self::on_popup(Popup::Font, cx))
+                    .into_any_element(),
+                font_menu,
+            ))
+            .child(with_menu(
+                format_list(
+                    "deck-size",
+                    56.0,
+                    strip.size.map(size_label).unwrap_or_default(),
+                    open == Some(Popup::Size),
+                )
+                .tooltip(Tooltip::text(i18n::text("deck.font_size")))
+                .on_click(Self::on_popup(Popup::Size, cx))
+                .into_any_element(),
+                size_menu,
+            ))
+            .child(
+                format_button("deck-grow", "icons/a-arrow-up.svg", "deck.grow_font", false)
+                    .on_click(Self::on_format(TextCommand::Grow, cx)),
+            )
+            .child(
+                format_button(
+                    "deck-shrink",
+                    "icons/a-arrow-down.svg",
+                    "deck.shrink_font",
+                    false,
+                )
+                .on_click(Self::on_format(TextCommand::Shrink, cx)),
+            )
+            .child(separator())
+            .child(
+                format_button("deck-bold", "icons/bold.svg", "deck.bold", strip.bold)
+                    .on_click(Self::on_format(TextCommand::Bold, cx)),
+            )
+            .child(
+                format_button(
+                    "deck-italic",
+                    "icons/italic.svg",
+                    "deck.italic",
+                    strip.italic,
+                )
+                .on_click(Self::on_format(TextCommand::Italic, cx)),
+            )
+            .child(
+                format_button(
+                    "deck-underline",
+                    "icons/underline.svg",
+                    "deck.underline",
+                    strip.underline,
+                )
+                .on_click(Self::on_format(TextCommand::Underline, cx)),
+            )
+            .child(with_menu(
+                format_button(
+                    "deck-color",
+                    "icons/baseline.svg",
+                    "deck.font_color",
+                    open == Some(Popup::Color),
+                )
+                .on_click(Self::on_popup(Popup::Color, cx))
+                .into_any_element(),
+                color_menu,
+            ))
+            .child(separator())
+            .children(
+                [
+                    (
+                        ParagraphAlignment::Left,
+                        "deck-align-left",
+                        "icons/align-left.svg",
+                        "deck.align_left",
+                    ),
+                    (
+                        ParagraphAlignment::Center,
+                        "deck-align-center",
+                        "icons/align-center.svg",
+                        "deck.align_center",
+                    ),
+                    (
+                        ParagraphAlignment::Right,
+                        "deck-align-right",
+                        "icons/align-right.svg",
+                        "deck.align_right",
+                    ),
+                    (
+                        ParagraphAlignment::Justify,
+                        "deck-justify",
+                        "icons/align-justify.svg",
+                        "deck.justify",
+                    ),
+                ]
+                .into_iter()
+                .map(|(value, id, icon, tip)| {
+                    format_button(id, icon, tip, alignment == Some(value))
+                        .on_click(Self::on_format(TextCommand::Align(value), cx))
+                }),
+            )
+            .child(separator())
+            .child(
+                format_button(
+                    "deck-bullets",
+                    "icons/list.svg",
+                    "deck.bullets",
+                    strip.bullets,
+                )
+                .on_click(Self::on_format(TextCommand::Bullets, cx)),
+            )
+            .child(
+                format_button(
+                    "deck-numbering",
+                    "icons/list-ordered.svg",
+                    "deck.numbering",
+                    strip.numbering,
+                )
+                .on_click(Self::on_format(TextCommand::Numbering, cx)),
+            )
+            .child(with_menu(
+                format_button(
+                    "deck-line-spacing",
+                    "icons/chevrons-up-down.svg",
+                    "deck.line_spacing",
+                    open == Some(Popup::Spacing),
+                )
+                .on_click(Self::on_popup(Popup::Spacing, cx))
+                .into_any_element(),
+                spacing_menu,
+            ))
+    }
+}
+
+/// The notes being typed, a row a line, the caret drawn in its line.
+fn notes_lines(edit: &NotesEdit) -> Vec<gpui::AnyElement> {
+    let caret = edit.caret();
+    let mut start = 0;
+    let mut rows = Vec::new();
+    for line in edit.text.split('\n') {
+        let end = start + line.len();
+        let row = div().flex().min_h(px(18.0));
+        rows.push(if (start..=end).contains(&caret) {
+            let at = caret - start;
+            row.child(line[..at].to_string())
+                .child(div().w(px(1.5)).h(px(16.0)).bg(theme::text()))
+                .child(line[at..].to_string())
+                .into_any_element()
+        } else {
+            row.child(line.to_string()).into_any_element()
+        });
+        start = end + 1;
+    }
+    rows
+}
+
+/// The words for a shape in Insert's list, as PowerPoint names them.
+fn shape_name(preset: jade_office_model::deck::ShapePreset) -> &'static str {
+    use jade_office_model::deck::ShapePreset;
+    match preset {
+        ShapePreset::Rect => "deck.shape.rect",
+        ShapePreset::RoundRect => "deck.shape.round_rect",
+        ShapePreset::Ellipse => "deck.shape.ellipse",
+        ShapePreset::Triangle => "deck.shape.triangle",
+        ShapePreset::Diamond => "deck.shape.diamond",
+        ShapePreset::Hexagon => "deck.shape.hexagon",
+    }
+}
+
 fn toolbar_button(
     id: &'static str,
     icon: &'static str,
@@ -960,7 +2270,10 @@ impl Editor for DeckView {
             ],
         )
         .into()];
-        if let Some(shape) = self.selected.and_then(|id| self.shape(id)) {
+        if !self.more.is_empty() {
+            let count = self.more.len() + 1;
+            items.push(i18n::format("deck.selected_count", &[("n", &count)]).into());
+        } else if let Some(shape) = self.selected.and_then(|id| self.shape(id)) {
             items.push(i18n::format("deck.selected_shape", &[("name", &shape.name)]).into());
         }
         if !self.status.is_empty() {
@@ -996,6 +2309,20 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<String> {
+        if let Some(edit) = &self.notes_edit {
+            let text = edit.text.as_str();
+            let start = utf16_to_byte(text, range.start);
+            let end = utf16_to_byte(text, range.end).max(start);
+            *adjusted = Some(byte_to_utf16(text, start)..byte_to_utf16(text, end));
+            return Some(text.get(start..end)?.to_string());
+        }
+        if let Some(typing) = &self.typing {
+            let (text, _, _) = typing.input_text(&self.deck);
+            let start = utf16_to_byte(&text, range.start);
+            let end = utf16_to_byte(&text, range.end).max(start);
+            *adjusted = Some(byte_to_utf16(&text, start)..byte_to_utf16(&text, end));
+            return Some(text.get(start..end)?.to_string());
+        }
         let text = self
             .text_edit
             .as_ref()
@@ -1013,6 +2340,20 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
+        if let Some(edit) = &self.notes_edit {
+            let caret = byte_to_utf16(&edit.text, edit.caret());
+            return Some(UTF16Selection {
+                range: caret..caret,
+                reversed: false,
+            });
+        }
+        if let Some(typing) = &self.typing {
+            let (_, range, marked) = typing.input_text(&self.deck);
+            return Some(UTF16Selection {
+                range,
+                reversed: marked.is_none() && typing.focus < typing.anchor,
+            });
+        }
         let text = self
             .text_edit
             .as_ref()
@@ -1030,12 +2371,26 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Range<usize>> {
+        if let Some(edit) = &self.notes_edit {
+            let marked = edit.marked.clone()?;
+            return Some(
+                byte_to_utf16(&edit.text, marked.start)..byte_to_utf16(&edit.text, marked.end),
+            );
+        }
+        if let Some(typing) = &self.typing {
+            return typing.input_text(&self.deck).2;
+        }
         let edit = self.text_edit.as_ref()?;
         let marked = edit.marked.clone()?;
         Some(byte_to_utf16(&edit.text, marked.start)..byte_to_utf16(&edit.text, marked.end))
     }
 
-    fn unmark_text(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
+    fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(edit) = self.notes_edit.as_mut() {
+            edit.marked = None;
+            return;
+        }
+        self.edit_typing(cx, |typing, deck| typing.unmark(deck));
         if let Some(edit) = self.text_edit.as_mut() {
             edit.marked = None;
         }
@@ -1048,12 +2403,21 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.text_edit.is_none() {
+        if let Some(edit) = self.notes_edit.as_mut() {
+            edit.replace(range, text, false);
+            cx.notify();
+            return;
+        }
+        if self.text_edit.is_none() && self.typing.is_none() {
             // Typing with a shape selected types into it.
             let Some(id) = self.selected else {
                 return;
             };
             self.begin_text(id, None, cx);
+        }
+        if self.typing.is_some() {
+            self.edit_typing(cx, |typing, deck| typing.commit(deck, range, text));
+            return;
         }
         let Some(edit) = self.text_edit.as_mut() else {
             return;
@@ -1081,11 +2445,21 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.text_edit.is_none() {
+        if let Some(edit) = self.notes_edit.as_mut() {
+            edit.replace(range, new_text, true);
+            cx.notify();
+            return;
+        }
+        if self.text_edit.is_none() && self.typing.is_none() {
             let Some(id) = self.selected else {
                 return;
             };
             self.begin_text(id, None, cx);
+        }
+        if let Some(typing) = self.typing.as_mut() {
+            typing.compose(range, new_text);
+            cx.notify();
+            return;
         }
         let Some(edit) = self.text_edit.as_mut() else {
             return;
@@ -1113,10 +2487,21 @@ impl EntityInputHandler for DeckView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        // The candidate window goes under the shape or cell being typed into.
+        // The candidate window goes at the caret, or under the cell being
+        // typed into.
         let slide = self.slide_bounds.get()?;
-        let rect = self.text_edit.as_ref()?.rect;
         let scale = self.shown_scale;
+        if let Some(typing) = &self.typing {
+            let [a, b] = typing.geometry(&mut self.deck)?.caret;
+            return Some(Bounds {
+                origin: point(
+                    slide.origin.x + px(a.x.min(b.x) as f32 * scale),
+                    slide.origin.y + px(a.y.min(b.y) as f32 * scale),
+                ),
+                size: size(px(1.0), px((a.y - b.y).abs() as f32 * scale)),
+            });
+        }
+        let rect = self.text_edit.as_ref()?.rect;
         Some(Bounds {
             origin: point(
                 slide.origin.x + px(rect.x as f32 * scale),
@@ -1166,7 +2551,8 @@ impl Render for DeckView {
         let notes_height = if self.show_notes { NOTES_HEIGHT } else { 0.0 };
         let available = (
             (area_width - SIDEBAR_WIDTH - SLIDE_MARGIN * 2.0).max(40.0),
-            (area_height - TOOLBAR_HEIGHT - notes_height - SLIDE_MARGIN * 2.0).max(40.0),
+            (area_height - TOOLBAR_HEIGHT - FORMAT_BAR_HEIGHT - notes_height - SLIDE_MARGIN * 2.0)
+                .max(40.0),
         );
         let (width, height) = match self.zoom {
             None => fitted(&self.deck, available),
@@ -1190,14 +2576,25 @@ impl Render for DeckView {
             ));
         }
 
+        let strip = self.format_strip();
+        let format_bar = self
+            .format_bar(&strip.clone().unwrap_or_default(), self.popup, cx)
+            .when(strip.is_none(), |bar| bar.opacity(0.5));
         let count = self.deck.slide_count();
+        let current_hidden = self.deck.is_hidden(self.current);
         let thumbnails: Vec<_> = (0..count).map(|index| self.thumbnail(index, cx)).collect();
         let notes = self
             .deck
             .notes(self.current)
+            .filter(|notes| !notes.is_empty())
             .map(|notes| SharedString::from(notes.to_string()));
+        let notes_lines = self.notes_edit.as_ref().map(notes_lines);
         let show_notes = self.show_notes;
-        let overlays = self.overlays(self.shown_scale, cx);
+        let typed = match &self.typing {
+            Some(typing) => typing.geometry(&mut self.deck),
+            None => None,
+        };
+        let overlays = self.overlays(self.shown_scale, typed.as_ref(), cx);
         let bounds_store = Rc::clone(&self.slide_bounds);
         let entity = cx.entity();
 
@@ -1212,10 +2609,32 @@ impl Render for DeckView {
             .key_context("Deck")
             .on_key_down(cx.listener(Self::handle_key))
             .on_action(cx.listener(|view, _: &Print, _window, cx| view.print(cx)))
-            .on_action(
-                cx.listener(|view, _: &StartSlideshow, _window, cx| view.start_slideshow(0, cx)),
-            )
+            .on_action(cx.listener(|view, _: &StartSlideshow, _window, cx| {
+                view.start_slideshow(view.deck.first_shown(), cx)
+            }))
             .on_action(cx.listener(|view, _: &Undo, _window, cx| view.step_history(true, cx)))
+            .on_action(cx.listener(|view, _: &SelectAll, _window, cx| {
+                if view.typing.is_some() {
+                    view.edit_typing(cx, |typing, deck| {
+                        typing.select_all(deck);
+                        Ok(false)
+                    });
+                } else if view.text_edit.is_none() && view.notes_edit.is_none() {
+                    // ⌘A off the text: every shape on the slide.
+                    let ids = view.deck.selectable_shapes(view.current);
+                    view.select_all_of(ids, cx);
+                }
+            }))
+            .on_action(cx.listener(|view, _: &Copy, _window, cx| {
+                if view.typing.is_none() && view.text_edit.is_none() && view.notes_edit.is_none() {
+                    view.copy_shapes(cx);
+                }
+            }))
+            .on_action(cx.listener(|view, _: &Paste, _window, cx| {
+                if view.typing.is_none() && view.text_edit.is_none() && view.notes_edit.is_none() {
+                    view.paste_shapes(cx);
+                }
+            }))
             .on_action(cx.listener(|view, _: &Redo, _window, cx| view.step_history(false, cx)))
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
             .on_action(cx.listener(|view, _: &SaveAs, _window, cx| view.save_as(cx)))
@@ -1281,6 +2700,84 @@ impl Render for DeckView {
                                     &[("current", &(self.current + 1)), ("count", &count)],
                                 ),
                             ))
+                            .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(theme::border()))
+                            .child(
+                                toolbar_button(
+                                    "new-slide",
+                                    "icons/file-plus.svg",
+                                    i18n::text("deck.new_slide"),
+                                )
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| view.new_slide(cx)),
+                                ),
+                            )
+                            .child(self.layouts_button(cx))
+                            .child(
+                                toolbar_button(
+                                    "duplicate-slide",
+                                    "icons/files.svg",
+                                    i18n::text("deck.duplicate_slide"),
+                                )
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| {
+                                        view.duplicate_slide(cx)
+                                    }),
+                                ),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "delete-slide",
+                                    "icons/trash-2.svg",
+                                    i18n::text("deck.delete_slide"),
+                                )
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| view.delete_slide(cx)),
+                                ),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "hide-slide",
+                                    "icons/eye-off.svg",
+                                    i18n::text(if current_hidden {
+                                        "deck.show_slide"
+                                    } else {
+                                        "deck.hide_slide"
+                                    }),
+                                )
+                                .when(current_hidden, |button| {
+                                    button.bg(theme::selected()).text_color(theme::text())
+                                })
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| view.toggle_hidden(cx)),
+                                ),
+                            )
+                            .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(theme::border()))
+                            .child(
+                                toolbar_button(
+                                    "insert-text-box",
+                                    "icons/type.svg",
+                                    i18n::text("deck.text_box"),
+                                )
+                                .when(self.inserting == Some(Insert::TextBox), |button| {
+                                    button.bg(theme::selected())
+                                })
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.start_insert(Insert::TextBox, cx)
+                                    },
+                                )),
+                            )
+                            .child(self.shapes_button(cx))
+                            .child(
+                                toolbar_button(
+                                    "insert-picture",
+                                    "icons/image.svg",
+                                    i18n::text("deck.picture"),
+                                )
+                                .on_click(
+                                    cx.listener(|view, _event, _window, cx| view.pick_picture(cx)),
+                                ),
+                            )
                             .child(div().flex_1())
                             // A table's layout, while one of its cells is
                             // typed into: PowerPoint's Layout tab.
@@ -1430,10 +2927,11 @@ impl Render for DeckView {
                                     )
                                     .child(i18n::text("deck.slideshow"))
                                     .on_click(cx.listener(|view, _event, _window, cx| {
-                                        view.start_slideshow(0, cx)
+                                        view.start_slideshow(view.deck.first_shown(), cx)
                                     })),
                             ),
                     )
+                    .child(format_bar)
                     .child(
                         // Scrolls once a chosen zoom makes the slide bigger
                         // than the space; while fitting there is nothing to
@@ -1449,6 +2947,8 @@ impl Render for DeckView {
                                 MouseButton::Left,
                                 cx.listener(|view, _event, window, cx| {
                                     window.focus(&view.focus);
+                                    view.slides_focused = false;
+                                    view.popup = None;
                                     view.select(None, cx);
                                 }),
                             )
@@ -1463,6 +2963,9 @@ impl Render for DeckView {
                                     .child(
                                         div()
                                             .id("slide")
+                                            .when(self.inserting.is_some(), |slide| {
+                                                slide.cursor(gpui::CursorStyle::Crosshair)
+                                            })
                                             .relative()
                                             .flex_none()
                                             .w(px(width))
@@ -1525,11 +3028,23 @@ impl Render for DeckView {
                                 .px_4()
                                 .py_2()
                                 .text_sm()
-                                .child(match notes {
-                                    Some(notes) => div().child(notes),
-                                    None => div()
+                                .cursor(gpui::CursorStyle::IBeam)
+                                .when(notes_lines.is_some(), |pane| {
+                                    pane.border_t_2().border_color(theme::accent())
+                                })
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _event, window, cx| {
+                                        window.focus(&view.focus);
+                                        view.begin_notes(cx);
+                                    }),
+                                )
+                                .child(match (notes_lines, notes) {
+                                    (Some(lines), _) => div().children(lines),
+                                    (None, Some(notes)) => div().child(notes),
+                                    (None, None) => div()
                                         .text_color(theme::text_faint())
-                                        .child(i18n::text("deck.no_notes")),
+                                        .child(i18n::text("deck.add_notes")),
                                 }),
                         )
                     }),
@@ -1549,8 +3064,15 @@ impl DeckView {
             current: 0,
             shapes: Vec::new(),
             selected: None,
+            more: Vec::new(),
+            clipboard: None,
             drag: None,
+            typing: None,
+            selecting_text: false,
+            inserting: None,
+            drawing: None,
             text_edit: None,
+            notes_edit: None,
             cells: None,
             slide: None,
             retired: Vec::new(),
@@ -1559,6 +3081,8 @@ impl DeckView {
             shown_scale: 1.0,
             slide_bounds: Rc::new(Cell::new(None)),
             thumbnail_scroll: ScrollHandle::new(),
+            popup: None,
+            slides_focused: false,
             focus: cx.focus_handle(),
             status: SharedString::from(""),
         };
@@ -1588,27 +3112,30 @@ struct SlideshowView {
 }
 
 impl SlideshowView {
-    fn step(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
-        let next = self.current as isize + delta;
-        if next >= self.deck.slide_count() as isize {
+    /// The next slide shown, or the one before: hidden slides are skipped.
+    fn step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        match self.deck.next_shown(self.current, forward) {
+            Some(next) => {
+                self.current = next;
+                cx.notify();
+            }
             // Past the last slide the show is over, as in PowerPoint.
-            window.remove_window();
-            return;
+            None if forward => window.remove_window(),
+            None => {}
         }
-        self.current = next.max(0) as usize;
-        cx.notify();
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event.keystroke.key.as_str() {
-            "down" | "right" | "pagedown" | "space" | "enter" | "n" => self.step(1, window, cx),
-            "up" | "left" | "pageup" | "backspace" | "p" => self.step(-1, window, cx),
+            "down" | "right" | "pagedown" | "space" | "enter" | "n" => self.step(true, window, cx),
+            "up" | "left" | "pageup" | "backspace" | "p" => self.step(false, window, cx),
             "home" => {
-                self.current = 0;
+                self.current = self.deck.first_shown();
                 cx.notify();
             }
             "end" => {
-                self.current = self.deck.slide_count().saturating_sub(1);
+                let count = self.deck.slide_count();
+                self.current = self.deck.next_shown(count, false).unwrap_or(self.current);
                 cx.notify();
             }
             "escape" => window.remove_window(),
@@ -1653,11 +3180,11 @@ impl Render for SlideshowView {
             .on_key_down(cx.listener(Self::handle_key))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|view, _event, window, cx| view.step(1, window, cx)),
+                cx.listener(|view, _event, window, cx| view.step(true, window, cx)),
             )
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(|view, _event, window, cx| view.step(-1, window, cx)),
+                cx.listener(|view, _event, window, cx| view.step(false, window, cx)),
             )
             .children(
                 self.slide
@@ -1809,6 +3336,275 @@ mod tests {
         assert!(text.ends_with(" 2026"), "{text:?}");
     }
 
+    /// Text is typed where the caret is, in the slide itself: ⌘↑ goes to
+    /// the start, → one character on, ⇧→ selects, and what is typed
+    /// replaces the selection; the caret is drawn where the text lies, and
+    /// an IME's composition at it until committed. Escape leaves the text
+    /// with the shape selected; Undo takes the typing back.
+    #[gpui::test]
+    fn text_is_typed_where_the_caret_is(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let (id, before) = view.read_with(cx, |view, _| {
+            view.shapes
+                .iter()
+                .find_map(|shape| {
+                    view.deck
+                        .shape_text(0, shape.id)
+                        .filter(|text| text.chars().count() >= 4)
+                        .map(|text| (shape.id, text))
+                })
+                .expect("the first slide has a text shape")
+        });
+        view.update(cx, |view, cx| view.select(Some(id), cx));
+        cx.simulate_keystrokes("enter cmd-up right");
+        cx.simulate_input("新");
+        let first: String = before.chars().take(1).collect();
+        let rest: String = before.chars().skip(1).collect();
+        view.update(cx, |view, _| {
+            assert_eq!(
+                view.deck.shape_text(0, id).unwrap(),
+                format!("{first}新{rest}")
+            );
+            let typing = view.typing.as_ref().expect("typing in place");
+            assert_eq!(typing.focus, first.encode_utf16().count() + 1);
+            assert!(typing.geometry(&mut view.deck).is_some());
+        });
+        cx.simulate_keystrokes("shift-right shift-right");
+        cx.simulate_input("X");
+        let skipped: String = rest.chars().skip(2).collect();
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.deck.shape_text(0, id).unwrap(),
+                format!("{first}新X{skipped}")
+            );
+        });
+        // An IME composes at the caret; nothing goes in until it commits.
+        view.update(cx, |view, cx| {
+            if let Some(typing) = view.typing.as_mut() {
+                typing.compose(None, "にほ");
+            }
+            cx.notify();
+        });
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.deck.shape_text(0, id).unwrap(),
+                format!("{first}新X{skipped}")
+            );
+        });
+        cx.simulate_input("日本");
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.typing.is_none());
+            assert_eq!(view.selected, Some(id));
+            assert_eq!(
+                view.deck.shape_text(0, id).unwrap(),
+                format!("{first}新X日本{skipped}")
+            );
+        });
+        for _ in 0..3 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.shape_text(0, id).unwrap(), before);
+            assert!(!view.deck.is_dirty());
+        });
+    }
+
+    /// With text selected, ⌘B and the format strip format it; with the
+    /// shape selected and not typed into, all of its text. Each is a step
+    /// of Undo.
+    #[gpui::test]
+    fn the_format_strip_formats_the_selection_or_the_whole_shape(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let id = view.read_with(cx, |view, _| {
+            view.shapes
+                .iter()
+                .find(|shape| {
+                    view.deck
+                        .shape_text(0, shape.id)
+                        .is_some_and(|text| text.chars().count() >= 4)
+                })
+                .map(|shape| shape.id)
+                .expect("the first slide has a text shape")
+        });
+        view.update(cx, |view, cx| view.select(Some(id), cx));
+        let before = view.update(cx, |view, _| view.format_strip().unwrap());
+        cx.simulate_keystrokes("enter cmd-up shift-right shift-right cmd-b");
+        view.update(cx, |view, cx| {
+            view.toggle_popup(Popup::Size, cx);
+            view.format_slide_text(TextCommand::Size(40.0), cx);
+            view.format_slide_text(TextCommand::Align(ParagraphAlignment::Center), cx);
+        });
+        view.update(cx, |view, _| {
+            assert_eq!(view.popup, None);
+            let strip = view.format_strip().unwrap();
+            assert_eq!(strip.bold, !before.bold);
+            assert_eq!(strip.size, Some(40.0));
+            assert_eq!(strip.alignment, Some(ParagraphAlignment::Center));
+            // The characters after the selection keep theirs.
+            let after = view.deck.text_format(0, id, 3..4).unwrap();
+            assert_ne!(after.size_pt, Some(40.0));
+        });
+        // Escape: the shape selected, the strip formats all its text.
+        cx.simulate_keystrokes("escape cmd-i");
+        view.update(cx, |view, _| {
+            assert!(view.typing.is_none());
+            assert_eq!(view.format_strip().unwrap().italic, !before.italic);
+        });
+        for _ in 0..4 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| assert!(!view.deck.is_dirty()));
+    }
+
+    /// Text Box, then a drag on the slide: a text box there, with the caret
+    /// in it. A shape from Shapes, dropped by a click at its usual size. A
+    /// picture, in the middle of the slide. Each is selected once in.
+    #[gpui::test]
+    fn text_boxes_shapes_and_pictures_are_inserted(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let count = view.read_with(cx, |view, _| view.shapes.len());
+        view.update(cx, |view, cx| {
+            view.start_insert(Insert::TextBox, cx);
+            view.drawing = Some(((100.0, 100.0), (300.0, 160.0)));
+            view.mouse_up(cx);
+        });
+        cx.simulate_input("見出し");
+        let text_box = view.read_with(cx, |view, _| {
+            assert_eq!(view.inserting, None);
+            assert_eq!(view.shapes.len(), count + 1);
+            let id = view.typing.as_ref().expect("typing into the text box").id;
+            assert_eq!(view.selected, Some(id));
+            assert_eq!(view.deck.shape_text(0, id).as_deref(), Some("見出し"));
+            id
+        });
+        cx.simulate_keystrokes("escape");
+        view.update(cx, |view, cx| {
+            view.toggle_popup(Popup::Shapes, cx);
+            view.start_insert(
+                Insert::Shape(jade_office_model::deck::ShapePreset::Ellipse),
+                cx,
+            );
+            view.drawing = Some(((50.0, 50.0), (50.0, 50.0)));
+            view.mouse_up(cx);
+        });
+        view.read_with(cx, |view, _| {
+            let id = view.selected.expect("the shape is selected");
+            assert_ne!(id, text_box);
+            let rect = SlideRect::of(&view.shape(id).unwrap().transform.unwrap());
+            assert!((rect.width - 96.0).abs() < 0.01 && (rect.x - 50.0).abs() < 0.01);
+        });
+        let mut png = Vec::new();
+        image::RgbImage::from_pixel(40, 20, image::Rgb([200, 40, 40]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        view.update(cx, |view, cx| view.insert_picture(&png, cx));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count + 3);
+            let picture = view.shape(view.selected.unwrap()).unwrap();
+            assert_eq!(picture.kind, "picture");
+        });
+        // Not a picture: nothing goes in, and the status says why.
+        view.update(cx, |view, cx| view.insert_picture(b"not a picture", cx));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count + 3);
+            assert!(!view.status.is_empty());
+        });
+    }
+
+    /// A click in the notes pane types into the slide's notes; Escape — or
+    /// going to another slide — writes them, as one step of Undo.
+    #[gpui::test]
+    fn speaker_notes_are_typed_into_the_notes_pane(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let before = view.read_with(cx, |view, _| view.deck.notes_text(0).unwrap());
+        view.update(cx, |view, cx| view.begin_notes(cx));
+        cx.simulate_input("話すこと");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("次へ");
+        cx.simulate_keystrokes("backspace escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.notes_edit.is_none());
+            assert_eq!(
+                view.deck.notes_text(0).unwrap(),
+                format!("{before}話すこと\n次")
+            );
+        });
+        view.update(cx, |view, cx| view.begin_notes(cx));
+        cx.simulate_input("!");
+        view.update(cx, |view, cx| view.go_to(1, cx));
+        view.read_with(cx, |view, _| {
+            assert!(view.notes_edit.is_none());
+            assert!(view.deck.notes_text(0).unwrap().ends_with("次!"));
+        });
+        cx.dispatch_action(Undo);
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.notes_text(0).unwrap(), before);
+            assert!(!view.deck.is_dirty());
+        });
+    }
+
+    /// ⇧-click selects a second shape; ⌘C and, on another slide, ⌘V paste
+    /// both where they were, selected; the arrows move them together, ⌘D
+    /// duplicates them and Delete deletes them — each one step of Undo.
+    #[gpui::test]
+    fn shapes_are_selected_together_copied_pasted_and_duplicated(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let ids = view.read_with(cx, |view, _| {
+            view.shapes
+                .iter()
+                .filter(|shape| {
+                    shape.can_move
+                        && shape.can_delete
+                        && shape.can_duplicate
+                        && shape.transform.is_some()
+                })
+                .map(|shape| shape.id)
+                .take(2)
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(ids.len(), 2);
+        let first = view.update(cx, |view, cx| {
+            view.select(Some(ids[0]), cx);
+            view.toggle_selected(ids[1], cx);
+            assert_eq!(view.selection(), ids);
+            view.deck.shape_rect(0, ids[0]).unwrap()
+        });
+        cx.dispatch_action(Copy);
+        view.update(cx, |view, cx| view.go_to(1, cx));
+        let count = view.read_with(cx, |view, _| view.shapes.len());
+        cx.dispatch_action(Paste);
+        let copies = view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count + 2);
+            let copies = view.selection();
+            assert_eq!(copies.len(), 2);
+            let rect = SlideRect::of(&view.shape(copies[0]).unwrap().transform.unwrap());
+            assert!((rect.x - first.x).abs() < 0.01 && (rect.y - first.y).abs() < 0.01);
+            copies
+        });
+        cx.simulate_keystrokes("right");
+        view.read_with(cx, |view, _| {
+            let rect = SlideRect::of(&view.shape(copies[0]).unwrap().transform.unwrap());
+            assert!((rect.x - first.x - NUDGE_PX).abs() < 0.01);
+            assert_eq!(view.selection(), copies);
+        });
+        cx.simulate_keystrokes("cmd-d");
+        view.read_with(cx, |view, _| assert_eq!(view.shapes.len(), count + 4));
+        cx.simulate_keystrokes("delete");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count + 2);
+            assert!(view.selection().is_empty());
+        });
+        for _ in 0..4 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count);
+            assert!(!view.deck.is_dirty());
+        });
+    }
+
     /// In a table made in PowerPoint, a double-click types into the cell
     /// under it, and Enter on the selected table into its first cell; the
     /// other cells keep their text.
@@ -1920,6 +3716,96 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.deck.cell_span(0, cell(1, 1)), Some((1, 1)));
             assert_eq!(view.deck.text(0, cell(2, 2)).unwrap(), "");
+        });
+    }
+
+    /// ⌘⇧N adds a slide after the one shown and shows it; ⌘D duplicates
+    /// it; a thumbnail dropped on another moves its slide there; Delete in
+    /// the slide list deletes one. Each is one step of Undo.
+    #[gpui::test]
+    fn the_slide_list_adds_duplicates_moves_and_deletes_slides(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let count = view.read_with(cx, |view, _| view.deck.slide_count());
+        cx.simulate_keystrokes("cmd-shift-n");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.slide_count(), count + 1);
+            assert_eq!(view.current, 1);
+            assert_eq!(view.thumbnails.len(), count + 1);
+        });
+        cx.simulate_keystrokes("cmd-d");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.slide_count(), count + 2);
+            assert_eq!(view.current, 2);
+        });
+        view.update(cx, |view, cx| view.move_slide(2, 0, cx));
+        view.read_with(cx, |view, _| assert_eq!(view.current, 0));
+        view.update(cx, |view, cx| {
+            view.go_to(count + 1, cx);
+            view.slides_focused = true;
+        });
+        cx.simulate_keystrokes("delete");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.slide_count(), count + 1);
+            // The last slide gone, the one before it shows.
+            assert_eq!(view.current, count);
+        });
+        for _ in 0..4 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.deck.slide_count(), count);
+            assert_eq!(view.thumbnails.len(), count);
+            assert!(!view.deck.is_dirty());
+        });
+    }
+
+    /// Hide Slide marks the slide in the list; a slide show steps over it.
+    #[gpui::test]
+    fn a_hidden_slide_is_skipped_by_the_slide_show(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.go_to(1, cx);
+            view.toggle_hidden(cx);
+        });
+        let bytes = view.read_with(cx, |view, _| {
+            assert!(view.deck.is_hidden(1));
+            assert_eq!(view.current, 1);
+            view.deck.bytes().to_vec()
+        });
+        let (show, cx) = cx.add_window_view(|_window, cx| SlideshowView {
+            deck: Deck::open(&bytes, crate::skia_backend().unwrap()).unwrap(),
+            current: 0,
+            slide: None,
+            retired: Vec::new(),
+            focus: cx.focus_handle(),
+        });
+        cx.update(|window, cx| window.focus(&show.focus_handle(cx)));
+        cx.simulate_keystrokes("right");
+        show.read_with(cx, |show, _| assert_eq!(show.current, 2));
+        cx.simulate_keystrokes("left");
+        show.read_with(cx, |show, _| assert_eq!(show.current, 0));
+    }
+
+    /// Layout ▾ lists the slide's layouts; picking one puts the slide on it.
+    #[gpui::test]
+    fn a_slide_is_put_on_another_layout(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let other = view.update(cx, |view, cx| {
+            view.go_to(1, cx);
+            view.toggle_popup(Popup::Layouts, cx);
+            view.deck
+                .slide_layouts(1)
+                .into_iter()
+                .find(|layout| !layout.current)
+                .expect("the deck has another layout")
+                .part_name
+        });
+        view.update(cx, |view, cx| view.set_layout(&other, cx));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.popup, None);
+            assert_eq!(view.current, 1);
+            let current = view.deck.slide_layouts(1).into_iter().find(|l| l.current);
+            assert_eq!(current.map(|layout| layout.part_name), Some(other));
         });
     }
 

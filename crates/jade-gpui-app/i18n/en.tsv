@@ -32,7 +32,7 @@ deck.notes	Notes
 deck.print	Print
 deck.from_current	From Current Slide
 deck.slideshow	Slide Show
-deck.no_notes	No notes on this slide
+deck.add_notes	Click to add notes
 deck.print_failed	Cannot print: {error}
 deck.paint_failed	Cannot draw slide {n}
 deck.empty	{name}: the presentation has no slides
@@ -189,6 +189,30 @@ cf.describe.other	{rule}
 cf.invalid_value	Enter a value.
 cf.invalid_rank	Enter a whole number from 1 (at most 100 for a percent, 1000 for items).
 sheet.tool.conditional	Conditional Formatting
+chart.insert	Insert Chart
+chart.change_type	Change Chart Type
+chart.legend	Legend
+chart.title_menu	Chart Title…
+chart.data_menu	Select Data…
+chart.delete	Delete Chart
+chart.title	Chart Title (empty for none)
+chart.data	Chart Data Range
+chart.kind.column	Clustered Column
+chart.kind.stacked_column	Stacked Column
+chart.kind.bar	Clustered Bar
+chart.kind.stacked_bar	Stacked Bar
+chart.kind.line	Line
+chart.kind.line_markers	Line with Markers
+chart.kind.area	Area
+chart.kind.pie	Pie
+chart.kind.doughnut	Doughnut
+chart.kind.scatter	Scatter
+chart.legend.none	None
+chart.legend.right	Right
+chart.legend.top	Top
+chart.legend.left	Left
+chart.legend.bottom	Bottom
+sheet.tool.chart	Chart
 sheet.tool.number_format	General
 sheet.format.general_name	General
 sheet.format.general	General
@@ -246,6 +270,41 @@ deck.split_cell	Split Cells
 deck.saved	Saved to {name}
 deck.save_failed	Cannot save: {error}
 deck.selected_shape	Selected: {name}
+deck.selected_count	{n} objects selected
+deck.nothing_to_paste	Nothing to paste: the copied shapes are no longer there
+deck.new_slide	New Slide
+deck.layout	Layout
+deck.duplicate_slide	Duplicate Slide
+deck.delete_slide	Delete Slide
+deck.hide_slide	Hide Slide
+deck.show_slide	Show Slide
+deck.slide_n	Slide {n}
+deck.font	Font
+deck.font_size	Font Size
+deck.grow_font	Increase Font Size
+deck.shrink_font	Decrease Font Size
+deck.bold	Bold
+deck.italic	Italic
+deck.underline	Underline
+deck.font_color	Font Color
+deck.align_left	Align Left
+deck.align_center	Center
+deck.align_right	Align Right
+deck.justify	Justify
+deck.bullets	Bullets
+deck.numbering	Numbering
+deck.line_spacing	Line Spacing
+deck.space_after	Space After {n} pt
+deck.text_box	Text Box
+deck.shapes	Shapes
+deck.picture	Picture
+deck.picture_failed	Cannot insert the picture: {error}
+deck.shape.rect	Rectangle
+deck.shape.round_rect	Rounded Rectangle
+deck.shape.ellipse	Oval
+deck.shape.triangle	Isosceles Triangle
+deck.shape.diamond	Diamond
+deck.shape.hexagon	Hexagon
 doc.tab.home	Home
 doc.tab.insert	Insert
 doc.tab.design	Design
