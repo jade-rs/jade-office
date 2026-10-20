@@ -17,6 +17,7 @@
 //! and time its measurement calls (`std::time::Instant` panics in wasm).
 
 use std::cell::{Cell, RefCell};
+use std::ops::Range;
 use std::rc::Rc;
 
 use jade_docx_editor::canvas_renderer::CanvasRenderer;
@@ -37,9 +38,18 @@ pub(crate) const INITIAL_PAGE: (f64, f64) = (816.0, 1056.0);
 
 pub struct TinySkiaRenderHost {
     /// A surface per page, in document order, shared so they stay readable
-    /// after the renderer has taken the host.
+    /// after the renderer has taken the host. A page outside [`Self::resident`]
+    /// has a one-pixel placeholder instead.
     pub(crate) pages: Rc<RefCell<Vec<TinySkiaPainter>>>,
-    page_sizes: Vec<(f64, f64)>,
+    /// Each page's box, in CSS px, shared so a page can be given its surface
+    /// again when it comes back into [`Self::resident`].
+    pub(crate) page_sizes: Rc<RefCell<Vec<(f64, f64)>>>,
+    /// The pages (0-based) kept as pixels. A page at 2x is megabytes, so a
+    /// shell showing a long document keeps only the pages on screen and a
+    /// few round them: every page of a 174-page document ran a browser out
+    /// of memory. Drawing meant for any other page goes to the scratch
+    /// surface. All of them unless a shell says otherwise.
+    pub(crate) resident: Rc<RefCell<Range<usize>>>,
     current_page: Cell<usize>,
     /// How many pages the last render produced; surfaces past it are a pool.
     pub(crate) rendered_pages: Rc<Cell<usize>>,
@@ -76,10 +86,34 @@ impl TinySkiaRenderHost {
         fonts: Rc<FontBook>,
         measurer: Rc<ShapingMeasurer>,
     ) -> Option<Self> {
-        let first = surface(&fonts, page_width, page_height, scale)?;
+        Self::with_resident(
+            page_width,
+            page_height,
+            scale,
+            fonts,
+            measurer,
+            0..usize::MAX,
+        )
+    }
+
+    /// [`Self::new`], keeping only the pages in `resident` as pixels.
+    pub fn with_resident(
+        page_width: f64,
+        page_height: f64,
+        scale: f64,
+        fonts: Rc<FontBook>,
+        measurer: Rc<ShapingMeasurer>,
+        resident: Range<usize>,
+    ) -> Option<Self> {
+        let first = if resident.contains(&0) {
+            surface(&fonts, page_width, page_height, scale)?
+        } else {
+            placeholder(&fonts, scale)?
+        };
         Some(Self {
             pages: Rc::new(RefCell::new(vec![first])),
-            page_sizes: vec![(page_width, page_height)],
+            page_sizes: Rc::new(RefCell::new(vec![(page_width, page_height)])),
+            resident: Rc::new(RefCell::new(resident)),
             current_page: Cell::new(0),
             rendered_pages: Rc::new(Cell::new(1)),
             pass_covers_whole_document: Rc::new(Cell::new(true)),
@@ -96,22 +130,47 @@ impl TinySkiaRenderHost {
     }
 
     fn ensure_page_size(&mut self, index: usize, width: f64, height: f64) {
-        if self.page_sizes.get(index) == Some(&(width, height)) {
+        let resident = self.resident.borrow().contains(&index);
+        let held = self.pages.borrow().get(index).map(is_placeholder);
+        // Already the right box, and pixels exactly when it is resident.
+        if self.page_sizes.borrow().get(index) == Some(&(width, height)) && held == Some(!resident)
+        {
             return;
         }
-        let page = surface(&self.fonts, width, height, self.scale).expect("a page-sized surface");
+        let page = if resident {
+            surface(&self.fonts, width, height, self.scale).expect("a page-sized surface")
+        } else {
+            placeholder(&self.fonts, self.scale).expect("a one-pixel surface")
+        };
         page.set_dark_paper(self.dark_paper.get());
-        if index == self.page_sizes.len() {
+        let mut sizes = self.page_sizes.borrow_mut();
+        if index == sizes.len() {
             self.pages.borrow_mut().push(page);
-            self.page_sizes.push((width, height));
+            sizes.push((width, height));
         } else {
             self.pages.borrow_mut()[index] = page;
-            self.page_sizes[index] = (width, height);
+            sizes[index] = (width, height);
         }
     }
 }
 
-fn surface(fonts: &Rc<FontBook>, width: f64, height: f64, scale: f64) -> Option<TinySkiaPainter> {
+/// A page's surface while it is not kept as pixels: one pixel, which every
+/// draw lands outside of.
+pub(crate) fn placeholder(fonts: &Rc<FontBook>, scale: f64) -> Option<TinySkiaPainter> {
+    surface(fonts, 1.0 / scale, 1.0 / scale, scale)
+}
+
+/// Whether `page` is a [`placeholder`] rather than a page's pixels.
+pub(crate) fn is_placeholder(page: &TinySkiaPainter) -> bool {
+    page.width() <= 1 && page.height() <= 1
+}
+
+pub(crate) fn surface(
+    fonts: &Rc<FontBook>,
+    width: f64,
+    height: f64,
+    scale: f64,
+) -> Option<TinySkiaPainter> {
     let painter = TinySkiaPainter::new(
         (width * scale).ceil() as u32,
         (height * scale).ceil() as u32,
@@ -127,7 +186,7 @@ impl CanvasRenderHost for TinySkiaRenderHost {
     fn painter(&self) -> Self::Painter {
         let pages = self.pages.borrow();
         let index = self.current_page.get().min(pages.len().saturating_sub(1));
-        if index > self.last_paintable_page.get() {
+        if index > self.last_paintable_page.get() || !self.resident.borrow().contains(&index) {
             // One pixel: whatever is drawn there lands outside it, so the
             // clear and the lines the renderer starts the page with cost
             // nothing rather than a page's worth of pixels.
@@ -255,7 +314,7 @@ impl CanvasRenderHost for TinySkiaRenderHost {
     }
 
     fn page_dimensions(&self, page_index: usize) -> Option<(f64, f64)> {
-        self.page_sizes.get(page_index).copied()
+        self.page_sizes.borrow().get(page_index).copied()
     }
 
     fn reset_pages(&mut self) -> Result<(), JsValue> {
