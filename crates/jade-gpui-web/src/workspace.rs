@@ -77,10 +77,17 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // A picture goes into the Word document in front, as 挿入 → 画像.
+        // A picture picked from Insert goes into the deck or the Word
+        // document in front, as 挿入 → 画像.
         if jade_web::word::picture::picture_type(&bytes).is_some() {
             let taken = self.active_tab().cloned().is_some_and(|tab| {
-                tab.update(cx, |view, cx| view.insert_picture(bytes.to_vec(), cx))
+                tab.update(cx, |view, cx| match view.kind {
+                    Kind::Deck => {
+                        view.insert_picture(&bytes, cx);
+                        true
+                    }
+                    _ => view.insert_word_picture(bytes.to_vec(), cx),
+                })
             });
             if !taken {
                 self.error = Some(i18n::format("workspace.unsupported", &[("name", &name)]).into());
