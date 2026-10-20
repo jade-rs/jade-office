@@ -24,6 +24,7 @@ pub mod conditional_formatting;
 pub mod csv;
 pub mod deck;
 pub mod find;
+pub mod format_cells;
 pub mod grid;
 pub mod number_formats;
 pub mod paste_special;

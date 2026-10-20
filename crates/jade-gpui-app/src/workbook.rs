@@ -71,6 +71,8 @@ use conditional::Conditional;
 use jade_office_model::charts::{ChartAsk, Handle};
 use jade_office_model::conditional_formatting::RuleAsk;
 
+mod format_dialog;
+
 /// The formatting strip over the formula bar: Excel's Home tab, short.
 const SHEET_TOOLBAR_HEIGHT: f32 = 34.0;
 /// The name box and formula bar above the grid.
@@ -291,6 +293,7 @@ enum Tool {
 
 #[derive(Clone, Copy)]
 enum MenuCommand {
+    FormatCells,
     Cut,
     Copy,
     Paste,
@@ -374,6 +377,8 @@ pub struct WorkbookView {
     /// Excel (a press held into a drag selects instead).
     pending_link: Option<(CellRef, Link)>,
     menu: Option<SheetMenu>,
+    /// The Format Cells dialog (⌘1), while it is open.
+    format_dialog: Option<jade_office_model::format_cells::FormatCellsDialog>,
     /// A filter button's dropdown.
     filter: Option<FilterPanel>,
     /// A toolbar button's dropdown: colours or borders.
@@ -958,6 +963,7 @@ impl WorkbookView {
             command => command,
         };
         let result = match command {
+            MenuCommand::FormatCells => return self.open_format_dialog(cx),
             MenuCommand::Cut => return self.sheet_copy(true, cx),
             MenuCommand::Copy => return self.sheet_copy(false, cx),
             MenuCommand::Paste => return self.sheet_paste(None, cx),
@@ -1284,6 +1290,12 @@ impl WorkbookView {
         if self.menu.take().is_some() {
             cx.notify();
         }
+        // The Format Cells dialog takes every key while it is open.
+        if self.format_dialog.is_some() {
+            let key_char = event.keystroke.key_char.clone();
+            self.format_dialog_key(key, key_char.as_deref(), cx);
+            return true;
+        }
         // An open list of choices: Escape closes it, any other key too
         // before doing what it does.
         if self.choices.take().is_some() {
@@ -1560,6 +1572,8 @@ impl WorkbookView {
                 let result = self.book.fill_right(range);
                 self.after_write(result, cx);
             }
+            // ⌘1: Format Cells, as in Excel.
+            "1" if !shift => self.open_format_dialog(cx),
             "b" | "2" => self.toggle(FontToggle::Bold, cx),
             "i" | "3" => self.toggle(FontToggle::Italic, cx),
             "u" | "4" => self.toggle(FontToggle::Underline, cx),
@@ -2420,6 +2434,7 @@ impl WorkbookView {
                 } else {
                     items.push((MenuCommand::EditNote, "sheet.menu.insert_note"));
                 }
+                items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                 items
             }
         };
@@ -3396,6 +3411,7 @@ impl Render for WorkbookView {
             .get()
             .and_then(|grid| self.cell_editor(grid, cx));
         let menu = self.context_menu(cx);
+        let format_dialog = self.format_dialog_element(cx);
         let note = self.note.and_then(|(cell, (x, y))| {
             let text = self.book.note(cell)?.to_string();
             Some(
@@ -3530,6 +3546,7 @@ impl Render for WorkbookView {
                     .children(find_bar)
                     .children(filter_panel)
                     .children(menu)
+                    .children(format_dialog)
                     // Records where the grid is, registers the input handler
                     // so typing — an IME's included — reaches the cell, and
                     // while a drag is on follows the pointer anywhere in the
@@ -3633,6 +3650,7 @@ impl WorkbookView {
             choices: None,
             pending_link: None,
             menu: None,
+            format_dialog: None,
             filter: None,
             popup: None,
             hover: Hover::Cells,
@@ -3696,6 +3714,64 @@ mod tests {
         cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
         cx.run_until_parked();
         (view, cx)
+    }
+
+    /// ⌘1 opens Format Cells on the active cell; Enter applies what was
+    /// changed, Escape leaves the cell as it was, and on Custom the code is
+    /// typed into the dialog, not the cell.
+    #[gpui::test]
+    fn command_1_opens_format_cells_and_enter_applies_it(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::format_cells::{NumberCategory, Tab};
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down down right");
+        cx.simulate_input("1234.5");
+        cx.simulate_keystrokes("enter up cmd-1");
+        let at = view.read_with(cx, |view, _| {
+            let dialog = view.format_dialog.as_ref().expect("⌘1 opens the dialog");
+            assert_eq!(dialog.number.category, NumberCategory::General);
+            view.active()
+        });
+        // Escape cancels.
+        view.update(cx, |view, _| {
+            view.format_dialog.as_mut().unwrap().number.category = NumberCategory::Currency;
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.format_dialog.is_none());
+            assert_eq!(view.book.display_text(at), "1234.5");
+        });
+        // Currency and bold, then Enter.
+        cx.simulate_keystrokes("cmd-1");
+        view.update(cx, |view, _| {
+            let dialog = view.format_dialog.as_mut().unwrap();
+            dialog.number.category = NumberCategory::Currency;
+            dialog.bold = true;
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.format_dialog.is_none());
+            assert_eq!(view.book.display_text(at), "¥1,235");
+            assert_eq!(view.book.format_at(at).bold, Some(true));
+        });
+        // A custom code is typed into the dialog.
+        cx.simulate_keystrokes("cmd-1");
+        view.update(cx, |view, _| {
+            let dialog = view.format_dialog.as_mut().unwrap();
+            dialog.tab = Tab::Number;
+            dialog.number.category = NumberCategory::Custom;
+            dialog.number.pattern.clear();
+        });
+        cx.simulate_input("0.00");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at), "1234.50");
+            assert!(view.edit.is_none());
+        });
+        // One step each.
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at), "¥1,235")
+        });
     }
 
     /// Arrow to a cell, type, press Enter: the value is written, the
