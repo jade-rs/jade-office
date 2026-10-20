@@ -18,7 +18,9 @@ use std::sync::Arc;
 
 use jade_painter::Painter;
 
+pub mod charts;
 pub mod clipboard;
+pub mod conditional_formatting;
 pub mod deck;
 pub mod grid;
 pub mod sheet;
