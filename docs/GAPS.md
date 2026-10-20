@@ -8,7 +8,9 @@ engine needs work first (**engine: no**).
 
 **Blocker** marks what is required before a release: every High row, and
 the Format Cells dialog, conditional-format editing and chart editing. Table
-cell merge/split and SmartArt resizing were required and are done. Thai tone marks
+cell merge/split and SmartArt resizing were required and are done. Each
+PowerPoint blocker is in a pull request, named in its row; copy and paste
+across slides needed the engine (jade-rs/jade-core#111). Thai tone marks
 (#56), Korean (#57) and Arabic (#58) are tracked as issues, not blockers.
 
 ## Excel
@@ -81,15 +83,18 @@ cell merge/split and SmartArt resizing were required and are done. Thai tone mar
 
 | | Gap | Hit | Engine |
 |---|---|---|---|
-| **Blocker** | Slides: new, duplicate, delete, reorder | High | yes |
-| **Blocker** | Layouts; hide a slide (hidden slides still play) | High | yes |
-| **Blocker** | Text: caret movement, selection, typing in place (native types at the end only) | High | yes (`apply_text_input`) |
-| **Blocker** | Character formatting: font, size, bold, italic, colour | High | yes (`format_text_range`) |
-| **Blocker** | Paragraph formatting: alignment, bullets, numbering, spacing | High | yes (`format_paragraphs`) |
-| **Blocker** | Insert text box, shape, picture | High | yes |
-| **Blocker** | Copy, paste, duplicate shapes; select several | High | partly (`duplicate_shape`) |
-| **Blocker** | Speaker notes: edit | High | yes (`set_slide_notes`) |
+| **Blocker** (in #73) | Slides: new, duplicate, delete, reorder | High | yes |
+| **Blocker** (in #73) | Layouts; hide a slide (hidden slides still play) | High | yes |
+| **Blocker** (in #77) | Text: caret movement, selection, typing in place (native types at the end only) | High | yes (`apply_text_input`) |
+| **Blocker** (in #80) | Character formatting: font, size, bold, italic, colour | High | yes (`format_text_range`) |
+| **Blocker** (in #80) | Paragraph formatting: alignment, bullets, numbering, spacing | High | yes (`format_paragraphs`) |
+| **Blocker** (in #84) | Insert text box, shape, picture | High | yes |
+| **Blocker** (in #86) | Copy, paste, duplicate shapes; select several | High | yes (`copy_shapes`, jade-core#111) |
+| **Blocker** (in #85) | Speaker notes: edit | High | yes (`set_slide_notes`) |
 | | Paste into text in the native app; copy and cut slide text | Medium | — |
+| | Cut shapes; paste pictures and shapes from other apps | Medium | partly |
+| | Table cells typed in a box over the cell, not in place | Medium | partly |
+| | Notes pane: caret put by a click, selection, formatting | Low | yes |
 | | Fill and outline; rotate and flip; z-order; group | Medium | yes |
 | | Ungroup, align and distribute, effects | Low–Medium | no |
 | | Table styles, borders, shading | Medium | no |
