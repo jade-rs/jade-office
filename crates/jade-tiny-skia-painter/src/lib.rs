@@ -377,6 +377,42 @@ fn scale_u8(a: u8, b: u8) -> u8 {
     ((product + (product >> 8)) >> 8) as u8
 }
 
+/// The low byte of each 16-bit lane.
+const LANES: u64 = 0x00ff_00ff_00ff_00ff;
+
+/// A pixel's four channels, each in a 16-bit lane of its own, so that one
+/// multiply scales all four without them carrying into each other.
+#[inline(always)]
+fn spread(pixel: [u8; 4]) -> u64 {
+    let value = u64::from(u32::from_le_bytes(pixel));
+    (value & 0xff) | (value & 0xff00) << 8 | (value & 0xff_0000) << 16 | (value & 0xff00_0000) << 24
+}
+
+/// The pixel [`spread`] lanes hold.
+#[inline(always)]
+fn gather(lanes: u64) -> [u8; 4] {
+    let value = (lanes & 0xff)
+        | (lanes >> 8) & 0xff00
+        | (lanes >> 16) & 0xff_0000
+        | (lanes >> 24) & 0xff00_0000;
+    (value as u32).to_le_bytes()
+}
+
+/// [`scale_u8`] of every lane by `by`, rounded the same way.
+#[inline(always)]
+fn scale_lanes(lanes: u64, by: u8) -> u64 {
+    let product = lanes * u64::from(by) + 0x0080_0080_0080_0080;
+    ((product + ((product >> 8) & LANES)) >> 8) & LANES
+}
+
+/// Lane-wise `saturating_add` of two sets of byte lanes.
+#[inline(always)]
+fn add_lanes(a: u64, b: u64) -> u64 {
+    let sum = a + b;
+    let over = (sum >> 8) & 0x0001_0001_0001_0001;
+    (sum | (over * 0xff)) & LANES
+}
+
 /// Rasterises `outline` under `transform` (device px, the phase included)
 /// as the painter draws a glyph: filled, and stroked as well for a
 /// synthetic bold of `bold_width` font units.
@@ -1394,15 +1430,17 @@ impl TinySkiaPainter {
         let source = color.premultiply().to_color_u8();
         let source = [source.red(), source.green(), source.blue(), source.alpha()];
         let opaque = source[3] == 255;
-        let blend = |pixel: &mut [u8], alpha: u8| {
+        let lanes = spread(source);
+        let blend = |pixel: &mut [u8; 4], alpha: u8| {
             if alpha == 255 && opaque {
-                pixel.copy_from_slice(&source);
+                *pixel = source;
                 return;
             }
             let keep = 255 - scale_u8(source[3], alpha);
-            for (channel, value) in pixel.iter_mut().enumerate() {
-                *value = scale_u8(source[channel], alpha).saturating_add(scale_u8(*value, keep));
-            }
+            *pixel = gather(add_lanes(
+                scale_lanes(lanes, alpha),
+                scale_lanes(spread(*pixel), keep),
+            ));
         };
         if columns.is_empty() || rows.is_empty() {
             return;
@@ -1423,11 +1461,13 @@ impl TinySkiaPainter {
             let surface_row = (row * surface_width) as usize;
             let alphas = &coverage.alpha[glyph_row + span.start..glyph_row + span.end];
             let first = surface_row + columns.start as usize;
-            let pixels = &mut data[first * 4..(surface_row + columns.end as usize) * 4];
+            let pixels = data[first * 4..(surface_row + columns.end as usize) * 4]
+                .as_chunks_mut::<4>()
+                .0;
             match (&edges, mask) {
                 // The usual case, kept free of per-pixel checks.
                 (None, None) => {
-                    for (&alpha, pixel) in alphas.iter().zip(pixels.chunks_exact_mut(4)) {
+                    for (&alpha, pixel) in alphas.iter().zip(pixels.iter_mut()) {
                         if alpha != 0 {
                             blend(pixel, alpha);
                         }
@@ -1436,7 +1476,7 @@ impl TinySkiaPainter {
                 (Some((rect, _, _)), _) => {
                     let row_cover = overlap(row, rect[1], rect[3]);
                     for ((column, &alpha), pixel) in
-                        columns.clone().zip(alphas).zip(pixels.chunks_exact_mut(4))
+                        columns.clone().zip(alphas).zip(pixels.iter_mut())
                     {
                         if alpha != 0 {
                             let cover = scale_u8(row_cover, overlap(column, rect[0], rect[2]));
@@ -1446,9 +1486,7 @@ impl TinySkiaPainter {
                 }
                 (None, Some(mask)) => {
                     let mask = &mask[first..first + alphas.len()];
-                    for ((&alpha, &clip), pixel) in
-                        alphas.iter().zip(mask).zip(pixels.chunks_exact_mut(4))
-                    {
+                    for ((&alpha, &clip), pixel) in alphas.iter().zip(mask).zip(pixels.iter_mut()) {
                         if alpha != 0 {
                             blend(pixel, scale_u8(alpha, clip));
                         }
@@ -2768,6 +2806,30 @@ mod tests {
             // by a quarter of the ink's contrast with the paper.
             assert!(worst <= 64, "scale {scale}: worst difference {worst}");
         }
+    }
+
+    /// The packed blend rounds each channel as the byte-wise one did.
+    #[test]
+    fn lane_arithmetic_matches_bytes() {
+        for value in 0..=255 {
+            let pixel = pixel_of(value);
+            assert_eq!(gather(spread(pixel)), pixel);
+            for other in 0..=255 {
+                let by = other;
+                let other = pixel_of(other);
+                let sum = gather(add_lanes(spread(pixel), spread(other)));
+                assert_eq!(
+                    sum,
+                    std::array::from_fn(|i| pixel[i].saturating_add(other[i]))
+                );
+                let scaled = gather(scale_lanes(spread(pixel), by));
+                assert_eq!(scaled, pixel.map(|channel| scale_u8(channel, by)));
+            }
+        }
+    }
+
+    fn pixel_of(value: u8) -> [u8; 4] {
+        [value, 255 - value, value ^ 0x5a, value / 3]
     }
 
     #[test]
