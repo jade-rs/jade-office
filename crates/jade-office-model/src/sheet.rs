@@ -205,6 +205,19 @@ impl<B: Backend> Workbook<B> {
             .collect()
     }
 
+    /// The sheets that have a tab, by index: every sheet but a hidden one,
+    /// as Excel shows them.
+    pub fn sheet_tabs(&self) -> Vec<usize> {
+        self.book
+            .workbook()
+            .sheets
+            .iter()
+            .enumerate()
+            .filter(|(_, sheet)| sheet.visibility == SheetVisibility::Visible)
+            .map(|(index, _)| index)
+            .collect()
+    }
+
     pub fn sheet_index(&self) -> usize {
         self.index
     }
@@ -2832,6 +2845,16 @@ mod tests {
             TinySkiaBackend::new(&faces()).unwrap(),
         )
         .unwrap()
+    }
+
+    /// A hidden sheet has no tab, as in Excel: the workbook opens on the
+    /// first visible sheet, and the tabs skip the hidden one.
+    #[test]
+    fn a_hidden_sheet_has_no_tab() {
+        let book = open("hidden-sheets-workbook.xlsx");
+        assert_eq!(book.sheet_names(), ["売上サマリ", "Notes"]);
+        assert_eq!(book.sheet_tabs(), [1]);
+        assert_eq!(book.sheet_index(), 1);
     }
 
     #[test]
