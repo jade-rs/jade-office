@@ -1453,9 +1453,13 @@ impl TinySkiaPainter {
             Some(dash) => path.dash(dash, resolution),
             None => None,
         };
+        // A stroke no wider than a pixel the rasteriser draws as a hairline,
+        // more cheaply than its outline can be made and filled.
+        let hairline = stroke.width * resolution <= 1.0;
         let outline = dashed
             .as_ref()
             .or((stroke.dash.is_none()).then_some(path))
+            .filter(|_| !hairline)
             .and_then(|path| path.stroke(&stroke, resolution));
         if outline.is_some_and(|outline| self.fill_area(&outline, color, transform)) {
             return;
@@ -1759,10 +1763,11 @@ impl TinySkiaPainter {
                 Coverage::Partial => mask = Some(clip.whole_mask().data()),
             }
         }
-        // How much of pixel `index` along an axis lies within `from..to`.
+        // How much of pixel `index` along an axis lies within `from..to`,
+        // rounded without `round`, a call into libm on some targets.
         let overlap = |index: i32, from: f32, to: f32| -> u8 {
             let (start, end) = (index as f32, index as f32 + 1.0);
-            ((end.min(to) - start.max(from)).clamp(0.0, 1.0) * 255.0).round() as u8
+            ((end.min(to) - start.max(from)).clamp(0.0, 1.0) * 255.0 + 0.5) as u8
         };
         let source = color.premultiply().to_color_u8();
         let source = [source.red(), source.green(), source.blue(), source.alpha()];
@@ -1799,15 +1804,39 @@ impl TinySkiaPainter {
                         }
                     }
                 }
+                // Only the first and last columns, and rows at the clip's
+                // top and bottom, can be cut by its edges: a path filled
+                // across the clip covers many pixels between them.
                 (Some((rect, _, _)), _) => {
                     let row_cover = overlap(row, rect[1], rect[3]);
-                    for ((column, &alpha), pixel) in
-                        columns.clone().zip(alphas).zip(pixels.iter_mut())
+                    let (first_cover, last_cover) = (
+                        overlap(columns.start, rect[0], rect[2]),
+                        overlap(columns.end - 1, rect[0], rect[2]),
+                    );
+                    let last = alphas.len() - 1;
+                    for (index, (&alpha, pixel)) in alphas.iter().zip(pixels.iter_mut()).enumerate()
                     {
-                        if alpha != 0 {
-                            let cover = scale_u8(row_cover, overlap(column, rect[0], rect[2]));
-                            blend(pixel, scale_u8(alpha, cover));
+                        if alpha == 0 {
+                            continue;
                         }
+                        let column_cover = match index {
+                            0 => first_cover,
+                            _ if index == last => last_cover,
+                            _ => 255,
+                        };
+                        let cover = match (row_cover, column_cover) {
+                            (255, 255) => 255,
+                            (row, 255) => row,
+                            (row, column) => scale_u8(row, column),
+                        };
+                        blend(
+                            pixel,
+                            if cover == 255 {
+                                alpha
+                            } else {
+                                scale_u8(alpha, cover)
+                            },
+                        );
                     }
                 }
                 (None, Some(mask)) => {
