@@ -213,7 +213,6 @@ chart.legend.top	Top
 chart.legend.left	Left
 chart.legend.bottom	Bottom
 sheet.tool.chart	Chart
-sheet.tool.number_format	General
 sheet.format.general_name	General
 sheet.format.general	General
 sheet.format.number_name	Number
@@ -231,6 +230,7 @@ sheet.format.scientific_name	Scientific
 sheet.format.scientific	0.00E+00
 sheet.format.text_name	Text
 sheet.format.text	@
+sheet.format.custom_name	Custom
 sheet.menu.insert_note	New Note
 sheet.menu.edit_note	Edit Note
 sheet.menu.delete_note	Delete Note
