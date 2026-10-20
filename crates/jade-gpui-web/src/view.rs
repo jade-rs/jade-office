@@ -31,6 +31,7 @@ use crate::{i18n, palette, Fonts, Host, UI_FONT};
 use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatting};
 
 mod sheet;
+mod word_find;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -373,6 +374,8 @@ enum Document {
         /// Whether the caret is to be scrolled to once its page is painted:
         /// see `reveal_caret`.
         reveal_pending: bool,
+        /// The find bar (⌘F), while it is open: typing goes into it.
+        find: Option<Box<word_find::FindBar>>,
     },
     Deck {
         deck: jade_web::Deck,
@@ -464,6 +467,7 @@ impl DocView {
                     highlight: None,
                     dragging: false,
                     reveal_pending: false,
+                    find: None,
                     pages: (0..opened.page_count())
                         .map(|index| {
                             opened
@@ -2023,6 +2027,9 @@ impl DocView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus, cx);
+        if let Some(bar) = self.find_bar_mut() {
+            bar.active = false;
+        }
         let (Some((x, y)), Some(target)) = (
             self.page_point(index, event.position),
             self.page_position(index, event.position),
@@ -2434,6 +2441,7 @@ impl DocView {
         self.shown_zoom = zoom;
         self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
+        let find_bar = self.find_bar_element(cx);
         let Document::Pages {
             document,
             pages,
@@ -2672,6 +2680,7 @@ impl DocView {
                     .flex()
                     .flex_col()
                     .child(word_ribbon)
+                    .children(find_bar)
                     .child(
                         div()
                             .id("pages")
@@ -2713,6 +2722,11 @@ impl DocView {
                 .ok();
             });
         }
+        // The find bar over a Word document takes the keys it has.
+        if self.finding() && self.find_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         // A sheet takes its own keys first: Excel's shortcuts, ⌘-arrows,
         // and the keys of a cell being typed into.
         if matches!(self.document, Document::Workbook(_))
@@ -2734,6 +2748,9 @@ impl DocView {
                 "y" => self.step_history(false, cx),
                 "s" => self.save(cx),
                 "a" if pages => self.word_move(cx, |document| document.select_all()),
+                // Find, and Word for Mac's Find and Replace.
+                "f" if pages => self.open_find(false, cx),
+                "h" if pages && modifiers.shift => self.open_find(true, cx),
                 "c" if pages => self.word_copy(false, cx),
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.
@@ -2783,7 +2800,10 @@ impl DocView {
         match &mut self.document {
             Document::Workbook(sheet) => sheet.typing(),
             Document::Deck { edit, .. } => edit.as_mut().map(|(_, text)| text),
-            Document::Pages { .. } => None,
+            Document::Pages { find, .. } => find
+                .as_deref_mut()
+                .filter(|bar| bar.active)
+                .map(|bar| bar.field_mut()),
         }
     }
 
@@ -2791,7 +2811,10 @@ impl DocView {
         match &self.document {
             Document::Workbook(sheet) => sheet.typed(),
             Document::Deck { edit, .. } => edit.as_ref().map(|(_, text)| text),
-            Document::Pages { .. } => None,
+            Document::Pages { find, .. } => find
+                .as_deref()
+                .filter(|bar| bar.active)
+                .map(|bar| bar.field()),
         }
     }
 }
@@ -2855,6 +2878,10 @@ impl DocView {
     /// where in it the caret and the composition are, for the input
     /// handler.
     fn word_input(&self) -> Option<(String, usize, Option<Range<usize>>)> {
+        // While the find bar has the keyboard, typing is the bar's.
+        if self.finding() {
+            return None;
+        }
         let Document::Pages { document, .. } = &self.document else {
             return None;
         };
@@ -2953,6 +2980,9 @@ impl EntityInputHandler for DocView {
                 edit: Some((_, edit)),
                 ..
             } => edit.marked = None,
+            Document::Pages {
+                find: Some(bar), ..
+            } if bar.active => bar.field_mut().marked = None,
             _ => {}
         }
     }
@@ -2963,6 +2993,13 @@ impl EntityInputHandler for DocView {
             return;
         };
         match &mut self.document {
+            // Into the find bar, its first line.
+            Document::Pages {
+                find: Some(bar), ..
+            } if bar.active => {
+                let line = text.lines().next().unwrap_or_default().to_string();
+                self.replace_text_in_range(None, &line, window, cx);
+            }
             Document::Pages { .. } => {
                 // Lines become paragraphs, as they were when copied out.
                 self.word_edit(cx, move |document| document.paste(&text));
@@ -2989,7 +3026,7 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if matches!(self.document, Document::Pages { .. }) {
+        if matches!(self.document, Document::Pages { .. }) && !self.finding() {
             let text = text.to_string();
             let composing = self
                 .word_input()
@@ -3010,6 +3047,9 @@ impl EntityInputHandler for DocView {
         if let Document::Workbook(sheet) = &mut self.document {
             sheet.typed_into();
         }
+        if self.finding() {
+            self.typed_into_find(cx);
+        }
     }
 
     fn replace_and_mark_text_in_range(
@@ -3020,7 +3060,7 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if matches!(self.document, Document::Pages { .. }) {
+        if matches!(self.document, Document::Pages { .. }) && !self.finding() {
             let text = new_text.to_string();
             self.word_edit(cx, move |document| document.set_composition(&text));
             return;

@@ -316,11 +316,18 @@ doc.info.saved	Saved
 doc.info.help	Drag to select · double-click a word · ⇧arrows extend · type over a selection to replace it · drag a picture to move it, its corner to size · in the find bar: ⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · esc close.
 doc.find.query	Find
 doc.find.replacement	Replace
-doc.find.keys	⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · esc close
+doc.find.keys	⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · ⌥⌘C case · ⌥⌘W words · esc close
 doc.find.none	{query}: no matches
 doc.find.count	{query}: {n} matches
 doc.find.position	{query}: {n} of {count}
 doc.find.replaced	{query} → {replacement}: {n} replaced
+doc.find.match_case	Match case (⌥⌘C)
+doc.find.whole_word	Whole words only (⌥⌘W)
+doc.find.previous	Previous
+doc.find.next	Next
+doc.find.replace_one	Replace
+doc.find.replace_all	Replace All
+doc.find.close	Close (esc)
 web.samples	Samples
 web.read_only	Read-only
 web.download	Save (Download)
