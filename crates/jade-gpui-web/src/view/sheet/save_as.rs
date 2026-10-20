@@ -57,8 +57,12 @@ impl DocView {
         true
     }
 
-    /// Saves under `name`: the tab is that file from now on.
+    /// Saves under `name`: the tab is that file from now on. A `.pdf`
+    /// exports the sheet's pages instead, and the tab keeps its name.
     fn save_named(&mut self, name: String, cx: &mut Context<Self>) {
+        if jade_web::print::is_pdf(&name) {
+            return self.download_pdf(name, cx);
+        }
         // A workbook's own extensions, or .csv; anything else becomes a
         // workbook with .xlsx on the end.
         let name = if Kind::of(&name) == Some(Kind::Workbook) {
@@ -68,6 +72,41 @@ impl DocView {
         };
         self.name = name.into();
         self.save(cx);
+    }
+
+    /// ⌘P: the active sheet's pages as a PDF to print, handed to the page
+    /// as a download — the browser prints a PDF better than a canvas.
+    pub(super) fn print_sheet(&mut self, cx: &mut Context<Self>) {
+        let name = match self.name.rsplit_once('.') {
+            Some((stem, _)) => format!("{stem}.pdf"),
+            None => format!("{}.pdf", self.name),
+        };
+        self.download_pdf(name, cx);
+    }
+
+    fn download_pdf(&mut self, name: String, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        let fields = jade_web::print::PrintFields {
+            date: now_text(false),
+            time: now_text(true),
+            file: self.name.to_string(),
+        };
+        let Some(sheet) = self.sheet_ref() else {
+            return;
+        };
+        self.status = match sheet.book.pdf(&fields) {
+            Ok(bytes) => {
+                self.host.save(&name, &bytes);
+                i18n::format("web.downloaded", &[("name", &name)]).into()
+            }
+            Err(error) if error == jade_web::print::NOTHING_TO_PRINT => {
+                i18n::text("sheet.nothing_to_print").into()
+            }
+            Err(error) => i18n::format("sheet.print_failed", &[("error", &error)]).into(),
+        };
+        cx.notify();
     }
 
     /// The bar, while it is open.

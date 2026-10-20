@@ -1352,6 +1352,22 @@ impl<B: Backend> Workbook<B> {
             || ((near(y, top) || near(y, bottom)) && within_x)
     }
 
+    /// The painter backend, for the pages other modules of this crate paint.
+    pub(crate) fn backend(&self) -> &B {
+        &self.backend
+    }
+
+    /// The active sheet laid out through `end` at least, as printing needs
+    /// the whole of it rather than the part on screen.
+    pub(crate) fn print_layout(&self, end: CellRef) -> Result<SheetLayout, String> {
+        lay_out(
+            &self.book,
+            self.index,
+            (end.column + 1, end.row + 1),
+            &self.backend,
+        )
+    }
+
     /// The engine, for the editing other modules of this crate add.
     pub(crate) fn engine(&self) -> &HeadlessWorkbook {
         &self.book

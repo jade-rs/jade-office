@@ -96,6 +96,9 @@ menu.slideshow.from_beginning	From Beginning
 sheet.edit_failed	Cannot write the cell: {error}
 sheet.formula_problem	There's a problem with this formula. Text that starts with = is read as a formula
 sheet.saved	Saved to {name}
+sheet.exported_pdf	Exported {name}
+sheet.print_failed	Cannot print: {error}
+sheet.nothing_to_print	We didn't find anything to print.
 sheet.saved_csv	Saved {name}: the active sheet only, as CSV
 sheet.save_as	Save as
 sheet.save_as_hint	.xlsx saves the workbook, .csv the active sheet
