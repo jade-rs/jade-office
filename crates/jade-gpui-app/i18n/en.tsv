@@ -612,4 +612,66 @@ ribbon.distribute_columns	Distribute columns
 ribbon.split_cell	Split cells
 ribbon.split_size	{columns} col × {rows} row
 ribbon.repeat_header	Repeat as header row
+sheet.menu.format_cells	Format Cells…
+format.title	Format Cells
+format.tab.number	Number
+format.tab.alignment	Alignment
+format.tab.font	Font
+format.tab.border	Border
+format.tab.fill	Fill
+format.general	General
+format.number	Number
+format.currency	Currency
+format.accounting	Accounting
+format.date	Date
+format.time	Time
+format.percentage	Percentage
+format.fraction	Fraction
+format.scientific	Scientific
+format.text	Text
+format.custom	Custom
+format.sample	Sample
+format.decimals	Decimal places
+format.thousands	Use 1000 separator (,)
+format.symbol	Symbol
+format.negative	Negative numbers
+format.type	Type
+format.code	Type
+format.horizontal	Horizontal
+format.vertical	Vertical
+format.wrap	Wrap text
+format.align.general	General
+format.align.left	Left
+format.align.center	Center
+format.align.right	Right
+format.align.top	Top
+format.align.middle	Center
+format.align.bottom	Bottom
+format.font	Font
+format.size	Size
+format.style	Style
+format.bold	Bold
+format.italic	Italic
+format.underline	Underline
+format.strike	Strikethrough
+format.color	Color
+format.presets	Presets
+format.border.none	None
+format.border.outline	Outline
+format.edges	Border
+format.edge.top	Top
+format.edge.bottom	Bottom
+format.edge.left	Left
+format.edge.right	Right
+format.line	Style
+format.line.thin	Thin
+format.line.medium	Medium
+format.line.thick	Thick
+format.line.dashed	Dashed
+format.line.dotted	Dotted
+format.line.double	Double
+format.fill_color	Background color
+format.fill.none	No color
+format.ok	OK
+format.cancel	Cancel
 sheet.protected	The cell or sheet you are trying to change is protected.
