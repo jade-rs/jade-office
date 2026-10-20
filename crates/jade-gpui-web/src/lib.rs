@@ -112,7 +112,8 @@ fn inbox() -> UnboundedReceiver<Incoming> {
 
 /// Starts the app in a gpui window on the page.
 ///
-/// `scale` is the page's `devicePixelRatio`; `time_zone` and `language` are
+/// `regular` and `bold` are the bundled Noto Sans JP faces, and `thai` the
+/// Noto Sans Thai that Thai text falls back to. `scale` is the page's `devicePixelRatio`; `time_zone` and `language` are
 /// the browser's; `samples` are the files the explorer lists. `save(name,
 /// bytes)` offers a file as a download, `load(name)` fetches a sample and
 /// `pick()` lets the user choose a file; the last two answer through
@@ -122,6 +123,7 @@ fn inbox() -> UnboundedReceiver<Incoming> {
 pub fn run(
     regular: Vec<u8>,
     bold: Vec<u8>,
+    thai: Vec<u8>,
     scale: f64,
     time_zone: String,
     language: String,
@@ -132,8 +134,8 @@ pub fn run(
 ) -> Result<(), JsError> {
     console_error_panic_hook::set_once();
     i18n::init(&language);
-    let backend =
-        jade_web::backend(regular.clone(), Some(bold.clone())).map_err(|e| JsError::new(&e))?;
+    let backend = jade_web::backend_with(regular.clone(), Some(bold.clone()), Some(thai))
+        .map_err(|e| JsError::new(&e))?;
     let measurer =
         jade_web::document::measurer(&regular, Some(&bold)).map_err(|e| JsError::new(&e))?;
     let fonts = Rc::new(Fonts {

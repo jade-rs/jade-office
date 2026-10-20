@@ -28,8 +28,17 @@ pub type Workbook = sheet::Workbook<TinySkiaBackend>;
 /// A tiny-skia backend with the regular and bold faces under every alias the
 /// native app uses.
 pub fn backend(regular: Vec<u8>, bold: Option<Vec<u8>>) -> Result<TinySkiaBackend, String> {
-    TinySkiaBackend::new(&jade_office_model::aliased_faces(
-        Arc::new(regular),
-        bold.map(Arc::new),
-    ))
+    backend_with(regular, bold, None)
+}
+
+/// [`backend`], with Noto Sans Thai beside the Japanese faces for Thai text
+/// to fall back to.
+pub fn backend_with(
+    regular: Vec<u8>,
+    bold: Option<Vec<u8>>,
+    thai: Option<Vec<u8>>,
+) -> Result<TinySkiaBackend, String> {
+    let mut faces = jade_office_model::aliased_faces(Arc::new(regular), bold.map(Arc::new));
+    faces.extend(thai.map(|thai| jade_office_model::thai_face(Arc::new(thai))));
+    TinySkiaBackend::new(&faces)
 }

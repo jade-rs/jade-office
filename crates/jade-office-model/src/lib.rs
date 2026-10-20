@@ -102,6 +102,22 @@ pub fn aliased_faces(regular: Arc<Vec<u8>>, bold: Option<Arc<Vec<u8>>>) -> Vec<F
         .collect()
 }
 
+/// The bundled Noto Sans Thai (jade-core
+/// `fonts/Noto_Sans_Thai/NotoSansThai-VariableFont_wdth,wght.ttf`), in the
+/// path relative to the fonts directory.
+pub const THAI_FONT: &str = "Noto_Sans_Thai/NotoSansThai-VariableFont_wdth,wght.ttf";
+
+/// Noto Sans Thai as a face of its own: registered beside the Japanese
+/// faces, it is what Thai text falls back to, as a browser falls back, so it
+/// draws in Thai glyphs rather than the Japanese face's missing-glyph boxes.
+pub fn thai_face(data: Arc<Vec<u8>>) -> Face {
+    Face {
+        family: "Noto Sans Thai".to_string(),
+        weight: 400,
+        data,
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::path::PathBuf;
