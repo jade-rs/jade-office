@@ -27,6 +27,7 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
+mod word_page;
 mod workbook;
 mod workspace;
 
@@ -46,6 +47,7 @@ use gpui::{
     MouseUpEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
 use jade_docx_native_render::{CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit};
+use jade_office_model::word::page::{Story, WordPage};
 use jade_office_model::word::{
     CharacterFormat, FindOptions, FormatState, Found, TableCommand, WordFind, WordFormatting,
 };
@@ -1037,6 +1039,9 @@ struct DocumentView {
     /// The find bar, while it is open. Open, it takes the keyboard: typing goes
     /// into its field rather than into the document.
     find_bar: Option<FindBar>,
+    /// A header or footer being typed, in its bar over the pages; it takes
+    /// the keyboard as the find bar does.
+    story_bar: Option<word_page::StoryBar>,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1235,6 +1240,10 @@ impl DocumentView {
         }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
+        if self.story_bar.is_some() && self.handle_story_bar_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.find_bar.is_some() && self.handle_find_bar_key(event, cx) {
             // Taken: the platform must not also type it (Tab, Enter) into
             // the field through the input handler.
@@ -1669,6 +1678,7 @@ impl DocumentView {
             }
             RibbonTab::Insert => vec![
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
+                word_page::header_footer(&self.ribbon, cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -1758,6 +1768,12 @@ impl DocumentView {
                 .into_any_element(),
             ],
             RibbonTab::Layout => vec![
+                {
+                    let japanese = i18n::language() == i18n::Language::Japanese;
+                    let setup = self.document.page_setup();
+                    let preset = self.document.margin_preset(japanese);
+                    word_page::page_setup(&self.ribbon, &setup, preset, japanese, cx)
+                },
                 Self::ribbon_group(
                     t("doc.group.paragraph"),
                     vec![Self::ribbon_row(vec![
@@ -2104,9 +2120,121 @@ impl DocumentView {
         )
     }
 
+    /// The field a bar over the pages is taking typing into — a header's or
+    /// a footer's — while one is open.
+    fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        self.story_bar.as_ref().map(|bar| &bar.text)
+    }
+
+    fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        self.story_bar.as_mut().map(|bar| &mut bar.text)
+    }
+
+    /// ヘッダーの編集 / フッターの編集: the bar over the pages, holding the
+    /// story's first line (its tab-separated left, centre and right).
+    fn open_story_bar(&mut self, story: Story, cx: &mut Context<Self>) {
+        self.find_bar = None;
+        let text = self.document.story_text(story);
+        self.story_bar = Some(word_page::StoryBar {
+            story,
+            text: jade_office_model::text::TextEdit::new(text),
+        });
+        cx.notify();
+    }
+
+    /// Keys the header and footer bar takes: Enter puts the text in, Escape
+    /// leaves it as it was, Tab types the tab between Word's zones.
+    fn handle_story_bar_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let Some(bar) = self.story_bar.as_mut() else {
+            return false;
+        };
+        if bar.text.marked.is_some() {
+            return false;
+        }
+        match event.keystroke.key.as_str() {
+            "escape" => self.story_bar = None,
+            "enter" | "return" => {
+                let Some(bar) = self.story_bar.take() else {
+                    return false;
+                };
+                match self.document.set_story_text(bar.story, &bar.text.text) {
+                    Ok(()) => {
+                        self.dirty = true;
+                        self.caret = self
+                            .document
+                            .place_caret(self.insert_at.0, self.insert_at.1);
+                        self.rebuild_all_images();
+                    }
+                    Err(error) => self.table_status = Some(SharedString::from(error)),
+                }
+            }
+            "tab" => bar.text.insert("\t"),
+            "backspace" => bar.text.backspace(),
+            "delete" => bar.text.delete(),
+            "left" => bar.text.step(false),
+            "right" => bar.text.step(true),
+            "home" | "up" => bar.text.to_end(false),
+            "end" | "down" => bar.text.to_end(true),
+            _ => return false,
+        }
+        cx.notify();
+        true
+    }
+
+    /// The header or footer bar, over the pages while it is open.
+    fn story_bar_element(&self) -> Option<impl IntoElement> {
+        let bar = self.story_bar.as_ref()?;
+        let (before, after) = bar.text.split();
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .flex_none()
+                .px_4()
+                .py_2()
+                .bg(theme::panel())
+                .border_b_1()
+                .border_color(theme::border())
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme::text_faint())
+                        .child(bar.label()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .min_w(px(320.0))
+                        .px_3()
+                        .py_1()
+                        .rounded_md()
+                        .bg(theme::canvas())
+                        .border_1()
+                        .border_color(theme::accent())
+                        .text_sm()
+                        .text_color(theme::text())
+                        // A tab shows as Word's zone mark.
+                        .child(before.replace('\t', " ⇥ "))
+                        .child(div().w(px(1.0)).h(px(16.0)).bg(theme::accent()))
+                        .child(after.replace('\t', " ⇥ ")),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme::text_faint())
+                        .child(t("page.story_keys")),
+                ),
+        )
+    }
+
     /// The text the platform's input handler is editing: the find bar's field
     /// while it is open, otherwise the paragraph the caret is in.
     fn focused_text(&self) -> String {
+        if let Some(text) = self.text_bar() {
+            return text.text.clone();
+        }
         match self.find_bar.as_ref() {
             Some(bar) => bar.field().clone(),
             None => self.current_paragraph_text(),
@@ -2531,6 +2659,11 @@ impl DocumentView {
                 self.ribbon.read_styles(&self.document);
                 done
             }
+            Action::Page(command) => {
+                let japanese = i18n::language() == i18n::Language::Japanese;
+                WordPage::page_command(document, command, japanese)
+            }
+            Action::EditStory(story) => return self.open_story_bar(story, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -3370,6 +3503,13 @@ impl EntityInputHandler for DocumentView {
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
         let text = self.focused_text();
+        if let Some(field) = self.text_bar() {
+            let caret = byte_to_utf16(&text, field.caret());
+            return Some(UTF16Selection {
+                range: caret..caret,
+                reversed: false,
+            });
+        }
         // The bar has no caret model: typing appends, so the insertion point is
         // the end of the field.
         let caret = match self.find_bar.as_ref() {
@@ -3389,6 +3529,10 @@ impl EntityInputHandler for DocumentView {
         _cx: &mut Context<Self>,
     ) -> Option<Range<usize>> {
         let text = self.focused_text();
+        if let Some(field) = self.text_bar() {
+            let marked = field.marked.clone()?;
+            return Some(byte_to_utf16(&text, marked.start)..byte_to_utf16(&text, marked.end));
+        }
         let marked = match self.find_bar.as_ref() {
             Some(bar) => bar.marked.clone()?,
             None => self.marked.clone()?,
@@ -3397,6 +3541,10 @@ impl EntityInputHandler for DocumentView {
     }
 
     fn unmark_text(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
+        if let Some(field) = self.text_bar_mut() {
+            field.marked = None;
+            return;
+        }
         if let Some(bar) = self.find_bar.as_mut() {
             bar.marked = None;
             return;
@@ -3414,6 +3562,10 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(field) = self.text_bar_mut() {
+            field.replace(range, text, false);
+            return cx.notify();
+        }
         if self.find_bar.is_some() {
             self.replace_in_find_bar(range, text, false, cx);
             return;
@@ -3443,6 +3595,10 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(field) = self.text_bar_mut() {
+            field.replace(range, new_text, true);
+            return cx.notify();
+        }
         if self.find_bar.is_some() {
             self.replace_in_find_bar(range, new_text, true, cx);
             return;
@@ -3740,6 +3896,7 @@ impl Render for DocumentView {
                     .flex_col()
                     .size_full()
                     .child(self.ribbon(window, cx))
+                    .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
                     .child(
                         div()
@@ -4061,6 +4218,7 @@ fn document_view(
         find_query: None,
         find_status: None,
         find_bar: None,
+        story_bar: None,
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,
@@ -4583,6 +4741,49 @@ mod tests {
         let bytes = std::fs::read(&pdf).unwrap();
         assert!(bytes.starts_with(b"%PDF"));
         std::fs::remove_file(&pdf).ok();
+    }
+
+    /// The page tools: 余白 from the gallery, the page turned, the header
+    /// typed into its bar and put in with Enter, a page number in the
+    /// footer; Undo takes each back.
+    #[gpui::test]
+    fn the_page_tools_set_up_the_page_and_its_header(cx: &mut gpui::TestAppContext) {
+        use super::ribbon::Action;
+        use super::{Undo, WordPage};
+        use jade_office_model::word::page::{MarginPreset, NumberAlignment, PageCommand, Story};
+        let (view, cx) = open_contract(cx);
+        let before = view.read_with(cx, |view, _| view.document.page_setup());
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::Page(PageCommand::Margins(MarginPreset::Narrow)), cx);
+            assert_eq!(view.document.page_setup().margins.top, 36.0);
+            view.run_ribbon(Action::Page(PageCommand::Landscape(!before.landscape)), cx);
+            assert_eq!(view.document.page_setup().landscape, !before.landscape);
+            view.run_ribbon(Action::EditStory(Story::Header), cx);
+            assert!(view.story_bar.is_some());
+        });
+        view.update(cx, |view, _| {
+            view.story_bar.as_mut().unwrap().text =
+                jade_office_model::text::TextEdit::new(String::new());
+        });
+        cx.simulate_input("jade");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("header");
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, cx| {
+            assert!(view.story_bar.is_none());
+            assert_eq!(view.document.story_text(Story::Header), "jade\theader");
+            view.run_ribbon(
+                Action::Page(PageCommand::PageNumber(
+                    Story::Footer,
+                    NumberAlignment::Center,
+                )),
+                cx,
+            );
+        });
+        for _ in 0..4 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| assert_eq!(view.document.page_setup(), before));
     }
 
     #[test]
