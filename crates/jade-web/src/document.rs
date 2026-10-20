@@ -428,6 +428,17 @@ fn decode_data_uri(data_uri: &str) -> Option<Vec<u8>> {
 /// a family the measurer has not got falls back to the nearest weight, which
 /// is what the painter does too — and every registration copies the file.
 pub fn measurer(regular: &[u8], bold: Option<&[u8]>) -> Result<Rc<ShapingMeasurer>, String> {
+    measurer_with(regular, bold, None)
+}
+
+/// [`measurer`], with Noto Sans Thai registered too: a character the run's
+/// families lack — Thai in a Japanese run — is measured in a registered
+/// face that has it, as Chromium falls back to one.
+pub fn measurer_with(
+    regular: &[u8],
+    bold: Option<&[u8]>,
+    thai: Option<&[u8]>,
+) -> Result<Rc<ShapingMeasurer>, String> {
     let mut measurer = ShapingMeasurer::with_options(12.0, ShapingOptions::CHROMIUM_PARITY);
     measurer
         .register_font_bytes("Noto Sans JP", 400, RegisteredFontStyle::Normal, regular)
@@ -436,6 +447,11 @@ pub fn measurer(regular: &[u8], bold: Option<&[u8]>) -> Result<Rc<ShapingMeasure
         measurer
             .register_font_bytes("Noto Sans JP", 700, RegisteredFontStyle::Normal, bold)
             .map_err(|error| format!("the bold face: {error}"))?;
+    }
+    if let Some(thai) = thai {
+        measurer
+            .register_font_bytes("Noto Sans Thai", 400, RegisteredFontStyle::Normal, thai)
+            .map_err(|error| format!("the Thai face: {error}"))?;
     }
     Ok(Rc::new(measurer))
 }
