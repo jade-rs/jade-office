@@ -29,6 +29,7 @@
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -65,17 +66,74 @@ impl AsRef<[u8]> for SharedBytes {
     }
 }
 
+/// rustc's FxHash: a rotate, an xor and a multiply per word. The caches
+/// below are looked up for every glyph drawn, and the standard library's
+/// SipHash — made to resist keys chosen to collide, which glyph ids are not
+/// — was a twelfth of a keystroke's repaint.
+#[derive(Default, Clone, Copy)]
+struct FastHasher(u64);
+
+impl FastHasher {
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+}
+
+impl Hasher for FastHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.add(u64::from_le_bytes(word));
+        }
+    }
+
+    fn write_u8(&mut self, value: u8) {
+        self.add(u64::from(value));
+    }
+
+    fn write_u16(&mut self, value: u16) {
+        self.add(u64::from(value));
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        self.add(u64::from(value));
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.add(value);
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.add(value as u64);
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
+
+/// What a CSS font shorthand comes to: the face, the size in px, and the
+/// shorthand itself as the painter hands it back.
+type ResolvedFont = (usize, f32, Rc<str>);
+
 #[derive(Default)]
 pub struct FontBook {
     faces: Vec<Face>,
-    outlines: RefCell<HashMap<(usize, u16), Option<Path>>>,
+    outlines: RefCell<FastMap<(usize, u16), Option<Path>>>,
     /// Glyphs rasterised once, shared by every page: see [`GlyphCoverage`].
-    glyphs: RefCell<HashMap<GlyphKey, Option<Rc<GlyphCoverage>>>>,
+    glyphs: RefCell<FastMap<GlyphKey, Option<Rc<GlyphCoverage>>>>,
     /// Each character's glyph and advance per face, and the face a run
     /// starting with it falls back to. Asking the face means parsing its
     /// table directory, which per character was a tenth of a repaint.
-    characters: RefCell<HashMap<(usize, char), CharGlyph>>,
-    covering: RefCell<HashMap<(usize, char), usize>>,
+    characters: RefCell<FastMap<(usize, char), CharGlyph>>,
+    covering: RefCell<FastMap<(usize, char), usize>>,
+    /// Each font shorthand set, parsed and resolved to a face once: a
+    /// renderer sets one per run of text, and parsing it every time was a
+    /// twentieth of a keystroke's repaint.
+    resolved: RefCell<FastMap<Box<str>, ResolvedFont>>,
     /// The faces as a font database for SVG text, built on first use.
     svg_fonts: RefCell<Option<Arc<resvg::usvg::fontdb::Database>>>,
     /// Decoded pictures, shared by every page as the glyphs are: a slide's
@@ -1939,12 +1997,21 @@ impl Painter for TinySkiaPainter {
     fn set_blur_filter(&self, _radius_px: f64) {}
 
     fn set_font(&self, value: &str) {
-        let (weight, size, families) = parse_font(value);
-        let font = self.inner.fonts.resolve(&families, weight);
+        let fonts = &self.inner.fonts;
+        let cached = fonts.resolved.borrow().get(value).cloned();
+        let (font, size, descriptor) = cached.unwrap_or_else(|| {
+            let (weight, size, families) = parse_font(value);
+            let resolved = (fonts.resolve(&families, weight), size, Rc::from(value));
+            fonts
+                .resolved
+                .borrow_mut()
+                .insert(Box::from(value), resolved.clone());
+            resolved
+        });
         let mut state = self.inner.state.borrow_mut();
         state.font = font;
         state.font_size_px = size;
-        state.font_descriptor = Rc::from(value);
+        state.font_descriptor = descriptor;
     }
 
     fn set_text_baseline(&self, value: &str) {
