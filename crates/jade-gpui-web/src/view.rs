@@ -384,8 +384,13 @@ enum Document {
         selected: Option<u32>,
         /// The selected shape's name, for the status bar.
         selected_name: Option<SharedString>,
-        /// Text being typed into a shape, or a cell of a table.
+        /// Text being typed into a table's cell, in a box over it.
         edit: Option<(TextTarget, TextEdit)>,
+        /// Text being typed into a shape where it lies: its caret,
+        /// selection and an IME's composition.
+        typing: Option<jade_web::deck::ShapeText>,
+        /// A press in the text being typed into is being dragged, selecting.
+        selecting_text: bool,
         /// Cells selected across a table, as by Shift+click.
         cells: Option<CellSelection>,
         /// A shape being moved or resized with the mouse.
@@ -500,6 +505,8 @@ impl DocView {
                     selected: None,
                     selected_name: None,
                     edit: None,
+                    typing: None,
+                    selecting_text: false,
                     cells: None,
                     drag: None,
                     scale: 1.0,
@@ -714,12 +721,19 @@ impl DocView {
             Document::Deck {
                 deck,
                 edit,
+                typing,
                 selected,
                 current,
                 ..
             } => {
                 *edit = None;
                 let result = if undo { deck.undo() } else { deck.redo() };
+                // Text typed in place: Undo takes it back and the caret
+                // stays, as in PowerPoint.
+                if let Some(typing) = typing.as_mut() {
+                    typing.composition = None;
+                    typing.clamp(deck);
+                }
                 // The selection stays on a shape the step kept, as in
                 // PowerPoint; one it took away is deselected.
                 keep = (*selected).filter(|&id| deck.shape(*current, id).is_some());
@@ -1693,6 +1707,7 @@ impl DocView {
             }
             Document::Deck {
                 edit: None,
+                typing: None,
                 selected: Some(_),
                 ..
             } => self.begin_slide_text(None, cx),
@@ -1800,6 +1815,12 @@ impl EntityInputHandler for DocView {
             *adjusted = Some(byte_to_utf16(&text, start)..byte_to_utf16(&text, end));
             return Some(text.get(start..end)?.to_string());
         }
+        if let Some((text, _, _)) = self.slide_input() {
+            let start = utf16_to_byte(&text, range.start);
+            let end = utf16_to_byte(&text, range.end).max(start);
+            *adjusted = Some(byte_to_utf16(&text, start)..byte_to_utf16(&text, end));
+            return Some(text.get(start..end)?.to_string());
+        }
         let text = self
             .current_text()
             .map(|edit| edit.text.as_str())
@@ -1822,6 +1843,10 @@ impl EntityInputHandler for DocView {
                 range: caret..caret,
                 reversed: false,
             });
+        }
+        if let Some((_, range, marked)) = self.slide_input() {
+            let reversed = marked.is_none() && self.slide_input_reversed();
+            return Some(UTF16Selection { range, reversed });
         }
         let (text, caret, whole) = self
             .current_text()
@@ -1849,6 +1874,9 @@ impl EntityInputHandler for DocView {
             let marked = marked?;
             return Some(byte_to_utf16(&text, marked.start)..byte_to_utf16(&text, marked.end));
         }
+        if let Some((_, _, marked)) = self.slide_input() {
+            return marked;
+        }
         let edit = self.current_text()?;
         let marked = edit.marked.clone()?;
         Some(byte_to_utf16(&edit.text, marked.start)..byte_to_utf16(&edit.text, marked.end))
@@ -1859,6 +1887,10 @@ impl EntityInputHandler for DocView {
         if let Some((text, _, Some(marked))) = self.word_input() {
             let committed = text[marked].to_string();
             self.word_edit(cx, |document| document.commit_composition(&committed));
+            return;
+        }
+        if self.slide_input().is_some() {
+            self.edit_typing(cx, |typing, deck| typing.unmark(deck));
             return;
         }
         match &mut self.document {
@@ -1921,6 +1953,9 @@ impl EntityInputHandler for DocView {
             });
             return;
         }
+        if self.type_into_slide(range.clone(), text, false, cx) {
+            return;
+        }
         if let Some(edit) = self.typing_target(cx) {
             edit.replace(range, text, false);
             cx.notify();
@@ -1941,6 +1976,9 @@ impl EntityInputHandler for DocView {
         if matches!(self.document, Document::Pages { .. }) {
             let text = new_text.to_string();
             self.word_edit(cx, move |document| document.set_composition(&text));
+            return;
+        }
+        if self.type_into_slide(range.clone(), new_text, true, cx) {
             return;
         }
         if let Some(edit) = self.typing_target(cx) {
@@ -1980,6 +2018,9 @@ impl EntityInputHandler for DocView {
                     });
                 }
             }
+        }
+        if let Some(caret) = self.slide_caret_bounds() {
+            return Some(caret);
         }
         // The candidate window goes at the editing surface's top-left: never
         // off-screen, if not beside the caret yet.
