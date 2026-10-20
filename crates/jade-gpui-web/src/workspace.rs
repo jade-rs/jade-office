@@ -77,6 +77,22 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A picture picked from a deck's Insert goes into that deck.
+        let lower = name.to_lowercase();
+        if [".png", ".jpg", ".jpeg"]
+            .iter()
+            .any(|ext| lower.ends_with(ext))
+        {
+            let deck = self
+                .active
+                .and_then(|index| self.tabs.get(index))
+                .filter(|tab| tab.read(cx).kind == Kind::Deck)
+                .cloned();
+            if let Some(deck) = deck {
+                deck.update(cx, |view, cx| view.insert_picture(&bytes, cx));
+                return;
+            }
+        }
         // A template opens as a new document made from it, as a
         // double-click on one does in Word.
         if jade_web::word::new::is_template_name(&name) {

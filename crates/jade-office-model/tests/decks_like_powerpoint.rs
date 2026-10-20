@@ -12,7 +12,9 @@ use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
 use jade_office_model::deck::{
-    Deck, DragMode, ShapeDrag, ShapeRect, TableChange, TextTarget, MIN_SHAPE_PX,
+    step_size, Deck, DragMode, Insert, Motion, ParagraphAlignment, ParagraphSpacingState,
+    ShapeDrag, ShapeRect, ShapeText, TableChange, TextCommand, TextTarget, MIN_SHAPE_PX,
+    SHAPE_PRESETS,
 };
 use jade_office_model::tiny::TinySkiaBackend;
 
@@ -449,4 +451,595 @@ fn a_selected_range_merges_into_one_cell_and_splits_back() {
         .unwrap());
     assert_eq!(deck.cell_span(0, cell(4, 1, 1)), Some((1, 1)));
     assert_eq!(deck.text(0, cell(4, 2, 2)).as_deref(), Some(""));
+}
+
+fn backend() -> TinySkiaBackend {
+    let directory = core().join("fonts/Noto_Sans_JP/static");
+    TinySkiaBackend::new(&aliased_faces(
+        Arc::new(std::fs::read(directory.join("NotoSansJP-Regular.ttf")).unwrap()),
+        None,
+    ))
+    .unwrap()
+}
+
+/// One of the decks in jade-core's own fixtures, not POI's.
+fn open_own(name: &str) -> Deck<TinySkiaBackend> {
+    let bytes = std::fs::read(core().join("public/fixtures").join(name)).unwrap();
+    Deck::open(&bytes, backend()).unwrap()
+}
+
+/// The slides' first lines of text, in order: which slide is where.
+fn titles(deck: &mut Deck<TinySkiaBackend>) -> Vec<String> {
+    (0..deck.slide_count())
+        .map(|slide| {
+            let ids: Vec<u32> = deck.shapes(slide).iter().map(|shape| shape.id).collect();
+            ids.into_iter()
+                .filter_map(|id| deck.shape_text(slide, id))
+                .find(|text| !text.is_empty())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+#[test]
+fn slides_are_added_duplicated_moved_and_deleted_each_as_one_undoable_step() {
+    let mut deck = open_own("sample-deck.pptx");
+    let before = titles(&mut deck);
+    let count = before.len();
+    assert!(count >= 2);
+
+    // New Slide goes after the current one, on its layout, with nothing typed.
+    assert!(deck.insert_slide(1).unwrap());
+    assert_eq!(deck.slide_count(), count + 1);
+    assert_eq!(titles(&mut deck)[1], "");
+    assert!(deck.render_slide(1, 320).is_some());
+
+    // Duplicate puts the copy straight after its slide.
+    assert!(deck.duplicate_slide(0).unwrap());
+    let after = titles(&mut deck);
+    assert_eq!(after[0], after[1]);
+    assert_eq!(after[0], before[0]);
+
+    // A slide dragged to the end of the list goes last.
+    assert!(deck.move_slide(0, deck.slide_count() - 1).unwrap());
+    assert_eq!(titles(&mut deck).last(), Some(&before[0]));
+
+    assert!(deck.delete_slide(0).unwrap());
+    assert_eq!(deck.slide_count(), count + 1);
+
+    for _ in 0..4 {
+        assert!(deck.undo().unwrap());
+    }
+    assert_eq!(titles(&mut deck), before);
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn the_last_slide_is_not_deleted() {
+    let mut deck = open_own("sample-deck.pptx");
+    while deck.slide_count() > 1 {
+        assert!(deck.delete_slide(0).unwrap());
+    }
+    // PowerPoint leaves an empty deck; the views need a slide to show.
+    assert!(!deck.delete_slide(0).unwrap());
+    assert_eq!(deck.slide_count(), 1);
+}
+
+#[test]
+fn a_hidden_slide_is_skipped_by_the_slide_show() {
+    let mut deck = open_own("sample-deck.pptx");
+    let count = deck.slide_count();
+    assert!(count >= 3);
+    assert!(!deck.is_hidden(1));
+    assert!(deck.set_slide_hidden(1, true).unwrap());
+    assert!(deck.is_hidden(1));
+    assert_eq!(deck.next_shown(0, true), Some(2));
+    assert_eq!(deck.next_shown(2, false), Some(0));
+    assert_eq!(deck.next_shown(count - 1, true), None);
+    // The flag is written to the file, and read back as PowerPoint reads it.
+    let saved = deck.save_bytes();
+    let reopened = Deck::open(&saved, backend()).unwrap();
+    assert!(reopened.is_hidden(1));
+    // A show from the beginning starts on the first slide shown.
+    assert!(deck.set_slide_hidden(0, true).unwrap());
+    assert_eq!(deck.first_shown(), 2);
+    assert!(deck.set_slide_hidden(1, false).unwrap());
+    assert_eq!(deck.first_shown(), 1);
+}
+
+#[test]
+fn a_slide_takes_another_layout() {
+    let mut deck = open_own("sample-deck.pptx");
+    let layouts = deck.slide_layouts(1);
+    assert!(layouts.len() > 1, "{layouts:?}");
+    let current = layouts
+        .iter()
+        .find(|layout| layout.current)
+        .unwrap()
+        .clone();
+    let other = layouts
+        .iter()
+        .find(|layout| !layout.current)
+        .unwrap()
+        .clone();
+    assert!(deck.set_slide_layout(1, &other.part_name).unwrap());
+    let now = deck.slide_layouts(1);
+    assert_eq!(
+        now.iter()
+            .find(|layout| layout.current)
+            .map(|l| &l.part_name),
+        Some(&other.part_name)
+    );
+    assert!(deck.render_slide(1, 320).is_some());
+    assert!(deck.undo().unwrap());
+    assert_eq!(
+        deck.slide_layouts(1)
+            .iter()
+            .find(|layout| layout.current)
+            .map(|l| l.part_name.clone()),
+        Some(current.part_name)
+    );
+}
+
+/// The first shape on `slide` with text that may be edited, and its text.
+fn text_shape(deck: &mut Deck<TinySkiaBackend>, slide: usize) -> (u32, String) {
+    let ids: Vec<u32> = deck.shapes(slide).iter().map(|shape| shape.id).collect();
+    ids.into_iter()
+        .find_map(|id| {
+            deck.shape_text(slide, id)
+                .filter(|text| text.chars().count() >= 4)
+                .map(|text| (id, text))
+        })
+        .expect("the slide has a text shape")
+}
+
+#[test]
+fn typing_in_place_goes_in_at_the_caret_and_keeps_the_runs_formatting() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let first = before.chars().next().unwrap().to_string();
+    let format_before = deck.text_format(0, id, 0..1);
+
+    // A click at the text's start puts the caret there.
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    assert_eq!(text.focus, before.encode_utf16().count());
+    text.move_caret(&mut deck, Motion::Start, false);
+    assert_eq!(text.focus, 0);
+    text.move_caret(&mut deck, Motion::Right, false);
+    for ch in ["新", "し", "い"] {
+        assert!(text.type_text(&mut deck, ch).unwrap());
+    }
+    let after = deck.shape_text(0, id).unwrap();
+    assert_eq!(after, format!("{first}新しい{}", &before[first.len()..]));
+    assert_eq!(text.focus, first.encode_utf16().count() + 3);
+    // What was typed took the formatting of the run it went into.
+    assert_eq!(deck.text_format(0, id, 1..4), format_before);
+
+    // Backspace and Delete take one character each side.
+    assert!(text.backspace(&mut deck).unwrap());
+    assert!(text.delete(&mut deck).unwrap());
+    let shorter = deck.shape_text(0, id).unwrap();
+    assert_eq!(shorter.chars().count(), after.chars().count() - 2);
+
+    // The typing was one step of Undo, each deletion one more.
+    assert!(deck.undo().unwrap());
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shape_text(0, id).unwrap(), after);
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shape_text(0, id).unwrap(), before);
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn a_selection_is_made_with_shift_and_replaced_by_what_is_typed() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    text.move_caret(&mut deck, Motion::Start, false);
+    text.move_caret(&mut deck, Motion::Right, true);
+    text.move_caret(&mut deck, Motion::Right, true);
+    assert_eq!(text.selection(), 0..2);
+    // The selection is drawn over the first two characters, the caret after
+    // them.
+    let geometry = text.geometry(&mut deck).unwrap();
+    assert_eq!(geometry.highlights.len(), 1);
+    assert!(geometry.caret[0].x > geometry.highlights[0][0].x);
+    assert!(text.type_text(&mut deck, "X").unwrap());
+    let skip: String = before.chars().skip(2).collect();
+    assert_eq!(deck.shape_text(0, id).unwrap(), format!("X{skip}"));
+    // ⌘A, then Left: the caret at the start.
+    text.select_all(&deck);
+    assert_eq!(text.selection().start, 0);
+    text.move_caret(&mut deck, Motion::Left, false);
+    assert_eq!(text.focus, 0);
+}
+
+#[test]
+fn a_click_puts_the_caret_where_it_lands_and_arrows_go_down_a_line() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    text.move_caret(&mut deck, Motion::Start, false);
+    let start = text.geometry(&mut deck).unwrap().caret;
+    // A click a little right of the start of the text: a caret a character
+    // or so in.
+    let (x, y) = (start[0].x + 1.0, (start[0].y + start[1].y) / 2.0);
+    let mut clicked = ShapeText::begin(&mut deck, 0, id, Some((x, y))).unwrap();
+    assert!(clicked.focus <= 1, "{}", clicked.focus);
+    // End goes to the line's end; Start and End to the text's.
+    clicked.move_caret(&mut deck, Motion::LineEnd, false);
+    assert!(clicked.focus > 0);
+    clicked.move_caret(&mut deck, Motion::End, false);
+    assert_eq!(clicked.focus, before.encode_utf16().count());
+    clicked.move_caret(&mut deck, Motion::WordLeft, false);
+    assert!(clicked.focus < before.encode_utf16().count());
+}
+
+#[test]
+fn enter_starts_a_paragraph_and_a_new_slide_placeholder_takes_text() {
+    let mut deck = open_own("sample-deck.pptx");
+    assert!(deck.insert_slide(1).unwrap());
+    let ids: Vec<u32> = deck.shapes(1).iter().map(|shape| shape.id).collect();
+    let id = ids
+        .into_iter()
+        .find(|id| deck.shape_text(1, *id).is_some())
+        .expect("the new slide has a placeholder");
+    let mut text = ShapeText::begin(&mut deck, 1, id, None).unwrap();
+    assert!(text.type_text(&mut deck, "一行目").unwrap());
+    assert!(text.type_text(&mut deck, "\n").unwrap());
+    assert!(text.type_text(&mut deck, "二行目").unwrap());
+    assert_eq!(deck.shape_text(1, id).unwrap(), "一行目\n二行目");
+    let geometry = text.geometry(&mut deck).unwrap();
+    text.move_caret(&mut deck, Motion::Up, false);
+    let up = text.geometry(&mut deck).unwrap();
+    assert!(up.caret[0].y < geometry.caret[0].y);
+    assert!(text.focus <= 3);
+}
+
+#[test]
+fn an_input_methods_composition_shows_at_the_caret_and_goes_in_when_committed() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    text.compose(None, "にほ");
+    let (seen, selection, marked) = text.input_text(&deck);
+    assert_eq!(seen, format!("{before}にほ"));
+    let end = before.encode_utf16().count();
+    assert_eq!(marked, Some(end..end + 2));
+    assert_eq!(selection, end + 2..end + 2);
+    // Nothing is in the slide until the composition is committed.
+    assert_eq!(deck.shape_text(0, id).unwrap(), before);
+    assert!(text.commit(&mut deck, None, "日本").unwrap());
+    assert_eq!(deck.shape_text(0, id).unwrap(), format!("{before}日本"));
+    assert_eq!(text.composition, None);
+    assert_eq!(text.focus, end + 2);
+}
+
+/// `#C00000` and `c00000` alike.
+fn same_colour(a: Option<&str>, b: &str) -> bool {
+    a.is_some_and(|a| {
+        a.trim_start_matches('#')
+            .eq_ignore_ascii_case(b.trim_start_matches('#'))
+    })
+}
+
+#[test]
+fn a_selection_takes_character_formatting_and_its_paragraph_paragraph_formatting() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, _) = text_shape(&mut deck, 0);
+    let untouched = deck.text_format(0, id, 3..4);
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    text.move_caret(&mut deck, Motion::Start, false);
+    text.move_caret(&mut deck, Motion::Right, true);
+    text.move_caret(&mut deck, Motion::Right, true);
+    let before = text.format_strip(&deck);
+    let size = before.size.expect("one size");
+
+    assert!(text.format(&mut deck, &TextCommand::Bold).unwrap());
+    assert_eq!(text.format_strip(&deck).bold, !before.bold);
+    assert!(text.format(&mut deck, &TextCommand::Italic).unwrap());
+    assert!(text.format(&mut deck, &TextCommand::Grow).unwrap());
+    assert_eq!(text.format_strip(&deck).size, Some(step_size(size, true)));
+    assert!(text
+        .format(&mut deck, &TextCommand::Font("Meiryo".into()))
+        .unwrap());
+    assert_eq!(text.format_strip(&deck).font.as_deref(), Some("Meiryo"));
+    assert!(text
+        .format(&mut deck, &TextCommand::Color("#C00000".into()))
+        .unwrap());
+    assert!(same_colour(
+        text.format_strip(&deck).color.as_deref(),
+        "C00000"
+    ));
+    // Characters outside the selection keep theirs.
+    assert_eq!(deck.text_format(0, id, 3..4), untouched);
+
+    assert!(text
+        .format(&mut deck, &TextCommand::Align(ParagraphAlignment::Center))
+        .unwrap());
+    assert_eq!(
+        text.format_strip(&deck).alignment,
+        Some(ParagraphAlignment::Center)
+    );
+    assert!(text.format(&mut deck, &TextCommand::Bullets).unwrap());
+    assert!(text.format_strip(&deck).bullets);
+    assert!(text.format(&mut deck, &TextCommand::Numbering).unwrap());
+    let strip = text.format_strip(&deck);
+    assert!(strip.numbering && !strip.bullets);
+    assert!(text.format(&mut deck, &TextCommand::Numbering).unwrap());
+    assert!(!text.format_strip(&deck).numbering);
+    assert!(text
+        .format(&mut deck, &TextCommand::LineSpacing(1.5))
+        .unwrap());
+    assert!(text
+        .format(&mut deck, &TextCommand::SpaceAfter(12.0))
+        .unwrap());
+    let paragraph = deck.paragraph_format(0, id, text.selection()).unwrap();
+    assert_eq!(
+        paragraph.line_spacing,
+        Some(ParagraphSpacingState::Percent(150.0))
+    );
+    assert_eq!(
+        paragraph.space_after,
+        Some(ParagraphSpacingState::Points(12.0))
+    );
+    // Saved and reopened, the formatting is there.
+    let saved = deck.save_bytes();
+    let reopened = Deck::open(&saved, backend()).unwrap();
+    let strip = reopened.text_format(0, id, 0..2).unwrap();
+    assert_eq!(strip.font.as_deref(), Some("Meiryo"));
+}
+
+#[test]
+fn with_nothing_selected_formatting_goes_to_what_is_typed_next() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let end = before.encode_utf16().count();
+    let mut text = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    let bold = text.format_strip(&deck).bold;
+    // Nothing changes yet; the strip shows what typing will take.
+    assert!(!text.format(&mut deck, &TextCommand::Bold).unwrap());
+    assert_eq!(text.format_strip(&deck).bold, !bold);
+    assert!(!text.format(&mut deck, &TextCommand::Size(40.0)).unwrap());
+    assert!(text.type_text(&mut deck, "AB").unwrap());
+    let typed = deck.text_format(0, id, end..end + 2).unwrap();
+    assert_eq!(typed.bold, Some(!bold));
+    assert_eq!(typed.size_pt, Some(40.0));
+    // The text before keeps its own.
+    assert_eq!(deck.text_format(0, id, 0..1).unwrap().bold, Some(bold));
+}
+
+#[test]
+fn a_selected_shape_is_formatted_as_a_whole() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, before) = text_shape(&mut deck, 0);
+    let bold = deck.shape_format(0, id).unwrap().bold;
+    assert!(deck.format_shape(0, id, &TextCommand::Bold).unwrap());
+    let end = before.encode_utf16().count();
+    assert_eq!(deck.text_format(0, id, 0..end).unwrap().bold, Some(!bold));
+    assert_eq!(deck.shape_format(0, id).unwrap().bold, !bold);
+    assert!(deck.undo().unwrap());
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn font_sizes_step_through_powerpoints_list() {
+    assert_eq!(step_size(18.0, true), 20.0);
+    assert_eq!(step_size(18.0, false), 16.0);
+    assert_eq!(step_size(17.0, true), 18.0);
+    assert_eq!(step_size(72.0, true), 80.0);
+    assert_eq!(step_size(8.0, false), 8.0);
+}
+
+fn close(a: ShapeRect, b: ShapeRect) -> bool {
+    (a.x - b.x).abs() < 0.01
+        && (a.y - b.y).abs() < 0.01
+        && (a.width - b.width).abs() < 0.01
+        && (a.height - b.height).abs() < 0.01
+}
+
+#[test]
+fn a_text_box_drawn_on_a_slide_is_typed_into() {
+    let mut deck = open_own("sample-deck.pptx");
+    let before = deck.shapes(1).len();
+    let rect = Insert::TextBox.rect((400.0, 180.0), (100.0, 120.0));
+    assert!(close(
+        rect,
+        ShapeRect {
+            x: 100.0,
+            y: 120.0,
+            width: 300.0,
+            height: 60.0
+        }
+    ));
+    let id = deck.insert(1, Insert::TextBox, rect).unwrap();
+    assert_eq!(deck.shapes(1).len(), before + 1);
+    assert!(close(deck.shape_rect(1, id).unwrap(), rect));
+    // In front of everything: a click on it selects it.
+    assert_eq!(deck.shape_at(1, 250.0, 150.0), Some(id));
+    let mut text = ShapeText::begin(&mut deck, 1, id, None).unwrap();
+    assert!(text.type_text(&mut deck, "新しいテキスト").unwrap());
+    assert_eq!(deck.shape_text(1, id).as_deref(), Some("新しいテキスト"));
+    assert!(deck.render_slide(1, 320).is_some());
+    assert!(deck.undo().unwrap());
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shapes(1).len(), before);
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn a_click_drops_a_shape_at_its_usual_size() {
+    let mut deck = open_own("sample-deck.pptx");
+    for preset in SHAPE_PRESETS {
+        let rect = Insert::Shape(preset).rect((50.0, 60.0), (51.0, 60.0));
+        assert!(close(
+            rect,
+            ShapeRect {
+                x: 50.0,
+                y: 60.0,
+                width: 96.0,
+                height: 96.0
+            }
+        ));
+        let id = deck.insert(0, Insert::Shape(preset), rect).unwrap();
+        assert!(close(deck.shape_rect(0, id).unwrap(), rect));
+        // A shape takes text, as PowerPoint's do.
+        assert_eq!(deck.shape_text(0, id).as_deref(), Some(""));
+    }
+    assert!(deck.render_slide(0, 320).is_some());
+}
+
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, width, height);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().unwrap();
+        writer
+            .write_image_data(&vec![180u8; (width * height * 3) as usize])
+            .unwrap();
+    }
+    bytes
+}
+
+#[test]
+fn a_picture_goes_in_the_middle_of_the_slide_shrunk_to_fit() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (slide_width, slide_height) = deck.slide_size();
+    // Small enough: its own size, in the middle.
+    let id = deck.insert_picture(0, &png(120, 60)).unwrap();
+    let rect = deck.shape_rect(0, id).unwrap();
+    assert!(close(
+        rect,
+        ShapeRect {
+            x: (slide_width - 120.0) / 2.0,
+            y: (slide_height - 60.0) / 2.0,
+            width: 120.0,
+            height: 60.0
+        }
+    ));
+    // Too big: shrunk to fit, its shape kept.
+    let id = deck.insert_picture(0, &png(4000, 1000)).unwrap();
+    let rect = deck.shape_rect(0, id).unwrap();
+    assert!(rect.width <= slide_width * 0.9 + 0.01);
+    assert!((rect.width / rect.height - 4.0).abs() < 0.01);
+    assert!(deck.render_slide(0, 320).is_some());
+    // Saved and reopened, the picture is there.
+    let saved = deck.save_bytes();
+    let mut reopened = Deck::open(&saved, backend()).unwrap();
+    assert!(reopened.shape_rect(0, id).is_some());
+    // Anything but PNG or JPEG is refused, and nothing changes.
+    assert!(deck.insert_picture(0, b"GIF89a").is_err());
+}
+
+#[test]
+fn speaker_notes_are_typed_and_written_as_one_step() {
+    let mut deck = open_own("sample-deck.pptx");
+    let count = deck.slide_count();
+    let with_notes = (0..count).find(|&slide| deck.notes(slide).is_some());
+    // A slide without notes gets them.
+    let bare = (0..count)
+        .find(|&slide| deck.notes_text(slide).as_deref() == Some(""))
+        .expect("a slide without notes");
+    assert!(deck.set_notes(bare, "話すこと\n次の話").unwrap());
+    assert_eq!(deck.notes_text(bare).as_deref(), Some("話すこと\n次の話"));
+    assert_eq!(deck.notes(bare), Some("話すこと\n次の話"));
+    assert!(!deck.set_notes(bare, "話すこと\n次の話").unwrap());
+    // Notes that were there keep what is not changed.
+    if let Some(slide) = with_notes {
+        let before = deck.notes_text(slide).unwrap();
+        assert!(deck.set_notes(slide, &format!("{before} 追記")).unwrap());
+        assert_eq!(deck.notes_text(slide).unwrap(), format!("{before} 追記"));
+        assert!(deck.undo().unwrap());
+        assert_eq!(deck.notes_text(slide).unwrap(), before);
+    }
+    // Saved and reopened, the notes are there.
+    let saved = deck.save_bytes();
+    let reopened = Deck::open(&saved, backend()).unwrap();
+    assert_eq!(reopened.notes(bare), Some("話すこと\n次の話"));
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.notes_text(bare).as_deref(), Some(""));
+}
+
+/// Two shapes of `slide` that may move, be deleted and be copied.
+fn two_shapes(deck: &mut Deck<TinySkiaBackend>, slide: usize) -> Vec<u32> {
+    let ids: Vec<u32> = deck
+        .shapes(slide)
+        .iter()
+        .filter(|shape| {
+            shape.can_move && shape.can_delete && shape.can_duplicate && shape.transform.is_some()
+        })
+        .map(|shape| shape.id)
+        .take(2)
+        .collect();
+    assert_eq!(ids.len(), 2, "slide {slide} has two shapes to work on");
+    ids
+}
+
+#[test]
+fn shapes_copied_onto_another_slide_are_pasted_where_they_were() {
+    let mut deck = open_own("sample-deck.pptx");
+    let ids = two_shapes(&mut deck, 0);
+    let count = deck.shapes(1).len();
+    let copies = deck.paste_shapes(0, &ids, 1).unwrap();
+    assert_eq!(copies.len(), 2);
+    assert_eq!(deck.shapes(1).len(), count + 2);
+    for (id, copy) in ids.iter().zip(&copies) {
+        assert!(close(
+            deck.shape_rect(1, *copy).unwrap(),
+            deck.shape_rect(0, *id).unwrap()
+        ));
+        assert_eq!(deck.shape_text(1, *copy), deck.shape_text(0, *id));
+    }
+    assert!(deck.render_slide(1, 320).is_some());
+    // One step of Undo.
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shapes(1).len(), count);
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn a_duplicated_selection_is_offset_on_its_slide_as_one_step() {
+    let mut deck = open_own("sample-deck.pptx");
+    let ids = two_shapes(&mut deck, 1);
+    let copies = deck.duplicate_shapes(1, &ids).unwrap();
+    for (id, copy) in ids.iter().zip(&copies) {
+        let (original, copy) = (
+            deck.shape_rect(1, *id).unwrap(),
+            deck.shape_rect(1, *copy).unwrap(),
+        );
+        // PowerPoint's 10 pt.
+        assert!((copy.x - original.x - 127000.0 / 9525.0).abs() < 0.01);
+        assert!((copy.y - original.y - 127000.0 / 9525.0).abs() < 0.01);
+    }
+    assert!(deck.undo().unwrap());
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn a_selection_moves_drags_and_deletes_together() {
+    let mut deck = open_own("sample-deck.pptx");
+    let ids = two_shapes(&mut deck, 1);
+    let before: Vec<ShapeRect> = ids
+        .iter()
+        .map(|id| deck.shape_rect(1, *id).unwrap())
+        .collect();
+    assert!(deck.move_shapes(1, &ids, 10.0, 5.0).unwrap());
+    let mut drag = ShapeDrag::new(ids[1], DragMode::Move, (0.0, 0.0));
+    drag.drag_to(20.0, 0.0);
+    assert!(deck.drag_shapes(1, &drag, &ids).unwrap());
+    for (id, rect) in ids.iter().zip(&before) {
+        let now = deck.shape_rect(1, *id).unwrap();
+        assert!((now.x - rect.x - 30.0).abs() < 0.01 && (now.y - rect.y - 5.0).abs() < 0.01);
+    }
+    let count = deck.shapes(1).len();
+    assert!(deck.delete_shapes(1, &ids).unwrap());
+    assert_eq!(deck.shapes(1).len(), count - 2);
+    // Each of the three was one step.
+    for _ in 0..3 {
+        assert!(deck.undo().unwrap());
+    }
+    assert!(!deck.is_dirty());
+    assert_eq!(deck.selectable_shapes(1).len(), count);
 }
