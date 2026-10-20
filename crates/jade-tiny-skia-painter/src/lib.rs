@@ -913,7 +913,7 @@ impl TinySkiaPainter {
         let clip = self.inner.state.borrow().clip.clone();
         let rectangular = clip.as_deref().is_none_or(|clip| clip.path.is_none());
         if !rectangular || transform.has_skew() {
-            return self.clipped(rect, transform, |pixmap, mask| {
+            return self.clipped(rect, transform, |pixmap, transform, mask| {
                 pixmap.fill_rect(rect, paint, transform, mask);
             });
         }
@@ -992,23 +992,53 @@ impl TinySkiaPainter {
         }
     }
 
-    /// Runs `draw` with the mask the clip needs for drawing within `bounds`
-    /// (local, placed by `transform`), or not at all when the clip hides it.
+    /// Runs `draw` — onto a pixmap, under a transform and inside a mask it
+    /// is handed — for drawing within `bounds` (local, placed by
+    /// `transform`), or not at all when the clip hides it.
+    ///
+    /// Small drawing that crosses the edge of a rectangular clip is drawn on
+    /// a layer the size of the drawing, inside a mask that size. A mask the
+    /// size of the surface — made for every clip a drawing crossed, a
+    /// sheet's gridlines crossing every cell's — was a fifth of what
+    /// painting a sheet cost.
     fn clipped(
         &self,
         bounds: Rect,
         transform: Transform,
-        draw: impl FnOnce(&mut Pixmap, Option<&Mask>),
+        draw: impl FnOnce(&mut Pixmap, Transform, Option<&Mask>),
     ) {
         let clip = self.inner.state.borrow().clip.clone();
         let device = device_bounds(bounds, transform);
         let mut pixmap = self.inner.pixmap.borrow_mut();
         match clip.as_deref() {
-            None => draw(&mut pixmap, None),
+            None => draw(&mut pixmap, transform, None),
             Some(clip) => match clip.coverage(device) {
                 Coverage::Hidden => return,
-                Coverage::Whole => draw(&mut pixmap, None),
-                Coverage::Partial => draw(&mut pixmap, Some(clip.whole_mask())),
+                Coverage::Whole => draw(&mut pixmap, transform, None),
+                // Small drawing — a gridline, a crop mark — on a layer of its
+                // own; anything bigger through the clip's one mask, which
+                // every drawing under the clip shares.
+                Coverage::Partial
+                    if clip.path.is_none()
+                        && layer_area(device) * LAYER_SHARE
+                            <= (pixmap.width() * pixmap.height()) as f32 =>
+                {
+                    let size = (pixmap.width(), pixmap.height());
+                    let Some((x, y, mut layer, mask)) = layer_for(clip.rect, device, size) else {
+                        return;
+                    };
+                    // The surface's pixels under the layer go in first and
+                    // come back drawn on: every pixel is blended exactly as
+                    // drawing on the surface itself blends it.
+                    copy_region(&mut pixmap, &mut layer, (x, y), false);
+                    draw(
+                        &mut layer,
+                        transform.post_translate(-(x as f32), -(y as f32)),
+                        Some(&mask),
+                    );
+                    copy_region(&mut pixmap, &mut layer, (x, y), true);
+                }
+                Coverage::Partial => draw(&mut pixmap, transform, Some(clip.whole_mask())),
             },
         }
         drop(pixmap);
@@ -1017,7 +1047,7 @@ impl TinySkiaPainter {
 
     fn fill_path_with(&self, path: &Path, color: Color, transform: Transform) {
         let paint = self.paint(color);
-        self.clipped(path.bounds(), transform, |pixmap, mask| {
+        self.clipped(path.bounds(), transform, |pixmap, transform, mask| {
             pixmap.fill_path(path, &paint, FillRule::Winding, transform, mask);
         });
     }
@@ -1040,7 +1070,7 @@ impl TinySkiaPainter {
         let paint = self.paint(color);
         let stroke = self.stroke_style();
         let bounds = Self::stroke_bounds(path, stroke.width);
-        self.clipped(bounds, transform, |pixmap, mask| {
+        self.clipped(bounds, transform, |pixmap, transform, mask| {
             pixmap.stroke_path(path, &paint, &stroke, transform, mask);
         });
     }
@@ -1055,7 +1085,7 @@ impl TinySkiaPainter {
             ..Stroke::default()
         };
         let bounds = Self::stroke_bounds(path, stroke.width);
-        self.clipped(bounds, transform, |pixmap, mask| {
+        self.clipped(bounds, transform, |pixmap, transform, mask| {
             pixmap.stroke_path(path, &paint, &stroke, transform, mask);
         });
     }
@@ -1482,6 +1512,70 @@ impl TinySkiaPainter {
 
 /// Device-px bounds as `[left, top, right, bottom]`.
 type Bounds = [f32; 4];
+
+/// A transparent layer for drawing within `device` that crosses the edge of
+/// the clip rectangle `clip` (both device px), on a surface of `size`:
+/// where it goes on the surface, the layer, and the clip's coverage of it.
+/// The layer is the drawing's own extent, cut only by the surface — as the
+/// surface cuts it — so the rasteriser sees the same edges and draws the
+/// same pixels; the clip is the mask's to apply. `None` when there is
+/// nothing to draw.
+fn layer_for(clip: Bounds, device: Bounds, size: (u32, u32)) -> Option<(i32, i32, Pixmap, Mask)> {
+    // A pixel of anti-aliasing round the drawing, as `Clip::coverage` allows.
+    let left = (device[0].floor() - 1.0).max(0.0);
+    let top = (device[1].floor() - 1.0).max(0.0);
+    let right = (device[2].ceil() + 1.0).min(size.0 as f32);
+    let bottom = (device[3].ceil() + 1.0).min(size.1 as f32);
+    let apart = right <= clip[0].floor()
+        || left >= clip[2].ceil()
+        || bottom <= clip[1].floor()
+        || top >= clip[3].ceil();
+    if right <= left || bottom <= top || apart {
+        return None;
+    }
+    let (x, y) = (left as i32, top as i32);
+    let (width, height) = ((right - left) as u32, (bottom - top) as u32);
+    let layer = Pixmap::new(width, height)?;
+    let mut mask = Mask::new(width, height)?;
+    let inside = Rect::from_ltrb(clip[0] - left, clip[1] - top, clip[2] - left, clip[3] - top)?;
+    mask.fill_path(
+        &PathBuilder::from_rect(inside),
+        FillRule::Winding,
+        true,
+        Transform::identity(),
+    );
+    Some((x, y, layer, mask))
+}
+
+/// How many times smaller than the surface drawing must be to go on a layer
+/// of its own when it crosses a rectangle clip's edge: a layer is made, and
+/// the surface under it copied in and back, per drawing, so a large one is
+/// cheaper through the clip's shared mask.
+const LAYER_SHARE: f32 = 8.0;
+
+/// The area of `device` bounds, in device px.
+fn layer_area(device: Bounds) -> f32 {
+    ((device[2] - device[0]).max(0.0) + 3.0) * ((device[3] - device[1]).max(0.0) + 3.0)
+}
+
+/// Copies the pixels of the `layer`-sized region of `surface` at `at` into
+/// `layer`, or with `back` the layer's pixels onto that region.
+fn copy_region(surface: &mut Pixmap, layer: &mut Pixmap, at: (i32, i32), back: bool) {
+    let stride = surface.width() as usize * 4;
+    let span = layer.width() as usize * 4;
+    let first = at.1 as usize * stride + at.0 as usize * 4;
+    let rows = layer.data_mut().chunks_exact_mut(span);
+    let surface = surface.data_mut();
+    for (row, line) in rows.enumerate() {
+        let start = first + row * stride;
+        let region = &mut surface[start..start + span];
+        if back {
+            region.copy_from_slice(line);
+        } else {
+            line.copy_from_slice(region);
+        }
+    }
+}
 
 /// The bounds of `rect` once `transform` has placed it, in device px.
 fn device_bounds(rect: Rect, transform: Transform) -> Bounds {
@@ -2362,6 +2456,69 @@ mod tests {
             rect_of(&path, Transform::from_row(1.0, 0.1, 0.0, 1.0, 0.0, 0.0)),
             None
         );
+    }
+
+    /// A stroke and a fill across the edges of a rectangle clip, drawn on a
+    /// layer of their own, come out exactly as drawing them through a mask
+    /// of the clip over the whole surface does.
+    #[test]
+    fn drawing_across_a_rectangle_clip_matches_a_whole_mask() {
+        let (width, height) = (120, 90);
+        let clip = Rect::from_ltrb(10.5, 7.25, 50.3, 40.7).unwrap();
+        let scale = Transform::from_scale(2.0, 2.0);
+        let mut line = PathBuilder::new();
+        line.move_to(0.0, 20.0);
+        line.line_to(60.0, 30.0);
+        let line = line.finish().unwrap();
+        let disc = PathBuilder::from_circle(45.0, 38.0, 12.0).unwrap();
+
+        let painter = TinySkiaPainter::new(width, height, fonts()).unwrap();
+        painter.scale(2.0, 2.0).unwrap();
+        painter.begin_path();
+        painter.rect(
+            f64::from(clip.left()),
+            f64::from(clip.top()),
+            f64::from(clip.width()),
+            f64::from(clip.height()),
+        );
+        painter.clip();
+        painter.set_line_width(3.0);
+        painter.set_stroke_style_str("#204080");
+        painter.stroke_path_with(&line, parse_color("#204080"), scale);
+        painter.set_fill_style_str("rgba(200, 30, 30, 0.6)");
+        painter.fill_path_with(&disc, parse_color("rgba(200, 30, 30, 0.6)"), scale);
+
+        let mut expected = Pixmap::new(width, height).unwrap();
+        expected.fill(Color::WHITE);
+        let mut mask = Mask::new(width, height).unwrap();
+        mask.fill_path(
+            &PathBuilder::from_rect(clip),
+            FillRule::Winding,
+            true,
+            scale,
+        );
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Paint::default()
+        };
+        paint.set_color(parse_color("#204080"));
+        let stroke = Stroke {
+            width: 3.0,
+            ..Stroke::default()
+        };
+        expected.stroke_path(&line, &paint, &stroke, scale, Some(&mask));
+        paint.set_color(parse_color("rgba(200, 30, 30, 0.6)"));
+        expected.fill_path(&disc, &paint, FillRule::Winding, scale, Some(&mask));
+
+        let drawn = painter.rgba_premultiplied();
+        let far = drawn
+            .chunks_exact(4)
+            .zip(expected.data().chunks_exact(4))
+            .filter(|(a, b)| a.iter().zip(b.iter()).any(|(a, b)| a != b))
+            .count();
+        assert_eq!(far, 0, "{far} pixels differ");
+        let inked = drawn.chunks_exact(4).filter(|pixel| pixel[0] < 200).count();
+        assert!(inked > 100, "{inked} inked pixels");
     }
 
     #[test]
