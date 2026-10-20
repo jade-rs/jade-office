@@ -20,6 +20,7 @@ mod palette;
 mod ribbon;
 mod tooltip;
 mod view;
+mod word_page;
 mod workspace;
 
 use std::borrow::Cow;

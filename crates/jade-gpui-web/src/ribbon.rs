@@ -22,6 +22,8 @@ use jade_web::editing::{
     ParagraphBorders, TableBorders, TableCommand, WordFormatting,
 };
 
+use jade_web::word::page::{MarginPreset, PageCommand, PageSetup, Story};
+
 use crate::tooltip::Tooltip;
 use crate::view::DocView;
 use crate::{i18n, palette};
@@ -125,6 +127,12 @@ pub enum Popup {
     InsertTable,
     TableStyle,
     CellFormat,
+    /// レイアウト's ページ設定 and 挿入's ページ番号 (`word_page`).
+    Margins,
+    Paper,
+    Columns,
+    Breaks,
+    PageNumbers,
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -185,6 +193,10 @@ pub enum Action {
     Style(Option<String>),
     InsertTable(usize, usize),
     Table(TableCommand),
+    /// ページ設定 and ページ番号.
+    Page(PageCommand),
+    /// ヘッダーの編集 / フッターの編集: the bar over the pages.
+    EditStory(Story),
 }
 
 impl Action {
@@ -201,7 +213,7 @@ fn hex(color: u32) -> String {
     format!("{color:06X}")
 }
 
-fn listener(
+pub(crate) fn listener(
     action: Action,
     cx: &mut Context<DocView>,
 ) -> impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static {
@@ -389,7 +401,7 @@ fn combo_box(
 }
 
 /// A trigger with its list under it while open.
-fn dropdown(trigger: AnyElement, menu: Option<AnyElement>) -> AnyElement {
+pub(crate) fn dropdown(trigger: AnyElement, menu: Option<AnyElement>) -> AnyElement {
     div()
         .relative()
         .flex_none()
@@ -404,7 +416,7 @@ fn dropdown(trigger: AnyElement, menu: Option<AnyElement>) -> AnyElement {
 }
 
 /// The panel a list is drawn on.
-fn menu_panel(id: &'static str) -> gpui::Stateful<gpui::Div> {
+pub(crate) fn menu_panel(id: &'static str) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .occlude()
@@ -422,7 +434,7 @@ fn menu_panel(id: &'static str) -> gpui::Stateful<gpui::Div> {
 }
 
 /// One row of a list: a check for the current value, then the label.
-fn menu_row(
+pub(crate) fn menu_row(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     checked: bool,
@@ -454,7 +466,7 @@ fn menu_row(
         .into_any_element()
 }
 
-fn menu_caption(text: &'static str) -> AnyElement {
+pub(crate) fn menu_caption(text: &'static str) -> AnyElement {
     div()
         .px_1()
         .pt_1()
@@ -487,7 +499,7 @@ fn swatch(
 }
 
 /// A group of controls with its caption under it.
-fn group(caption: &'static str, rows: Vec<AnyElement>) -> AnyElement {
+pub(crate) fn group(caption: &'static str, rows: Vec<AnyElement>) -> AnyElement {
     div()
         .flex()
         .flex_col()
@@ -509,7 +521,7 @@ fn group(caption: &'static str, rows: Vec<AnyElement>) -> AnyElement {
         .into_any_element()
 }
 
-fn row(children: Vec<AnyElement>) -> AnyElement {
+pub(crate) fn row(children: Vec<AnyElement>) -> AnyElement {
     div()
         .flex()
         .items_center()
@@ -543,9 +555,18 @@ fn style_label(entry: &GalleryStyle) -> SharedString {
 
 /// The whole ribbon: the tab strip, with where the caret is on its right,
 /// and the selected tab's groups.
+/// The page the ページ設定 group shows: its setup, which 余白 preset its
+/// margins are, and whether Japanese Word's presets are meant.
+pub struct PageState {
+    pub setup: PageSetup,
+    pub preset: Option<MarginPreset>,
+    pub japanese: bool,
+}
+
 pub fn ribbon(
     ribbon: &Ribbon,
     state: &FormatState,
+    page: Option<&PageState>,
     position: String,
     dirty: bool,
     viewport: Size<Pixels>,
@@ -570,8 +591,25 @@ pub fn ribbon(
     });
     let groups = match ribbon.tab {
         Tab::Home => home(ribbon, state, cx),
-        Tab::Insert => insert(ribbon, cx),
-        Tab::Layout => layout(ribbon, state, cx),
+        Tab::Insert => {
+            let mut groups = insert(ribbon, cx);
+            groups.push(crate::word_page::header_footer(ribbon, cx));
+            groups
+        }
+        Tab::Layout => {
+            let mut groups = Vec::new();
+            if let Some(page) = page {
+                groups.push(crate::word_page::page_setup(
+                    ribbon,
+                    &page.setup,
+                    page.preset,
+                    page.japanese,
+                    cx,
+                ));
+            }
+            groups.extend(layout(ribbon, state, cx));
+            groups
+        }
     };
     div()
         .flex()
