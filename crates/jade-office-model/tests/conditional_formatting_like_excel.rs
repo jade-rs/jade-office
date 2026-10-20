@@ -9,13 +9,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use jade_office_model::{aliased_faces, Backend};
 use jade_office_model::conditional_formatting::{
     describe, AskKey, ConditionalStyle, NewConditionalRule, Preset, RuleAsk, RuleDialog,
     COLOR_SCALES, DATA_BARS,
 };
 use jade_office_model::sheet::{protected_refusal, CellRange, CellRef, Overlay, Workbook};
 use jade_office_model::tiny::TinySkiaBackend;
+use jade_office_model::{aliased_faces, Backend};
 
 fn open(fixture: &str) -> Workbook<TinySkiaBackend> {
     let core = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../jade-core"));
