@@ -32,7 +32,7 @@ deck.notes	Notes
 deck.print	Print
 deck.from_current	From Current Slide
 deck.slideshow	Slide Show
-deck.no_notes	No notes on this slide
+deck.add_notes	Click to add notes
 deck.print_failed	Cannot print: {error}
 deck.paint_failed	Cannot draw slide {n}
 deck.empty	{name}: the presentation has no slides
