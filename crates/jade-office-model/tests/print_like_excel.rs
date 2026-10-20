@@ -1,8 +1,10 @@
-//! Printing and PDF export as Excel's defaults print: the print area or
-//! the cells in use, A4 portrait at 100% with Normal margins, pages cut
-//! where columns and rows stop fitting and at the sheet's page breaks,
-//! numbered down then over; the header and footer with their fields; a PDF
-//! of those pages from either backend.
+//! Printing and PDF export as Excel prints: the print area or the cells in
+//! use, on the sheet's paper and orientation with its margins and scale or
+//! Fit to pages (A4 portrait at 100% with Normal margins by default), pages
+//! cut where columns and rows stop fitting and at the sheet's page breaks,
+//! numbered down then over unless the sheet says over then down, the print
+//! titles on every page; the header and footer with their fields; a PDF of
+//! those pages from either backend.
 
 #![cfg(all(feature = "tiny-skia", feature = "skia"))]
 
@@ -10,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
-use jade_office_model::print::{sections, Page, PrintFields, Section};
+use jade_office_model::print::{paper_size, sections, Page, PrintFields, Section, A4};
 use jade_office_model::sheet::{span, CellRef, Workbook};
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::tiny::TinySkiaBackend;
@@ -130,6 +132,130 @@ fn an_empty_sheet_has_nothing_to_print() {
     assert_eq!(book.print_area(), None);
     assert!(book.print_pages().unwrap().is_empty());
     assert!(book.pdf(&PrintFields::default()).is_err());
+}
+
+/// page-setup-workbook.xlsx with sheet `index` active. Its cells are the
+/// default 64px wide and 20px tall; Normal margins are 0.7" (67.2px) at the
+/// sides and 0.75" (72px) at the top and bottom.
+fn page_setup_sheet(index: usize) -> Workbook<TinySkiaBackend> {
+    let mut book = tiny("page-setup-workbook.xlsx");
+    book.select_sheet(index).unwrap();
+    book
+}
+
+fn ranges(book: &Workbook<TinySkiaBackend>) -> Vec<jade_office_model::sheet::CellRange> {
+    book.print_pages()
+        .unwrap()
+        .into_iter()
+        .map(|page| page.range)
+        .collect()
+}
+
+#[test]
+fn letter_landscape_with_narrow_margins_lays_out_a_wider_page() {
+    // Letter turned is 1056 × 816px; 0.25" sides and 0.75" top and bottom
+    // leave 1008 × 672: 15 columns by 33 rows of the 30 × 60 used.
+    let book = page_setup_sheet(0);
+    let format = book.page_format().unwrap();
+    assert_eq!(format.paper, (1056.0, 816.0));
+    assert_eq!((format.margins.left, format.margins.top), (24.0, 72.0));
+    assert_eq!(format.scale, 1.0);
+    assert_eq!(
+        ranges(&book),
+        vec![
+            span(at(0, 0), at(14, 32)),
+            span(at(0, 33), at(14, 59)),
+            span(at(15, 0), at(29, 32)),
+            span(at(15, 33), at(29, 59)),
+        ]
+    );
+    let pdf = book.pdf(&PrintFields::default()).unwrap();
+    assert_eq!(page_count(&pdf), 4);
+    assert!(String::from_utf8_lossy(&pdf).contains("/MediaBox [0 0 792.00 612.00]"));
+}
+
+#[test]
+fn paper_codes_are_excels() {
+    assert_eq!(paper_size(1), (816.0, 1056.0));
+    assert_eq!(paper_size(9), A4);
+    assert_eq!(paper_size(5), (816.0, 1344.0));
+    let a3 = paper_size(8);
+    assert!((a3.0 - A4.1).abs() < 0.01 && (a3.1 - 420.0 / 25.4 * 96.0).abs() < 0.01);
+    assert_eq!(paper_size(9999), A4);
+}
+
+#[test]
+fn half_scale_fits_twice_as_much_and_numbers_over_then_down() {
+    // A4 at 50% with Normal margins: 1318.6 × 1957px of cells, 20 columns
+    // by 97 rows of the 40 × 200 used, numbered across first.
+    let book = page_setup_sheet(1);
+    let format = book.page_format().unwrap();
+    assert_eq!(format.paper, A4);
+    assert_eq!(format.scale, 0.5);
+    assert_eq!(
+        ranges(&book),
+        vec![
+            span(at(0, 0), at(19, 96)),
+            span(at(20, 0), at(39, 96)),
+            span(at(0, 97), at(19, 193)),
+            span(at(20, 97), at(39, 193)),
+            span(at(0, 194), at(19, 199)),
+            span(at(20, 194), at(39, 199)),
+        ]
+    );
+    assert_eq!(page_count(&book.pdf(&PrintFields::default()).unwrap()), 6);
+}
+
+#[test]
+fn fit_to_one_page_wide_shrinks_until_the_columns_fit() {
+    // 30 columns are 1920px; 659.3px of A4 holds them at 34%, where a page
+    // is 2878px tall: 143 rows.
+    let book = page_setup_sheet(2);
+    assert_eq!(book.page_format().unwrap().scale, 0.34);
+    assert_eq!(
+        ranges(&book),
+        vec![
+            span(at(0, 0), at(29, 142)),
+            span(at(0, 143), at(29, 285)),
+            span(at(0, 286), at(29, 299)),
+        ]
+    );
+}
+
+#[test]
+fn fit_to_one_page_shrinks_until_everything_fits() {
+    // 300 rows are 6000px; 978.5px of A4 holds them at 16%.
+    let book = page_setup_sheet(3);
+    assert_eq!(book.page_format().unwrap().scale, 0.16);
+    assert_eq!(ranges(&book), vec![span(at(0, 0), at(29, 299))]);
+    assert_eq!(page_count(&book.pdf(&PrintFields::default()).unwrap()), 1);
+}
+
+#[test]
+fn print_titles_repeat_on_every_page_after_the_first() {
+    // Rows 1–2 and column A repeat. The first page holds them as its own
+    // cells: 10 columns and 48 rows. The rest give them their room: 9
+    // columns beside column A, 46 rows below rows 1–2.
+    let book = page_setup_sheet(4);
+    let pages = book.print_pages().unwrap();
+    let laid: Vec<_> = pages
+        .iter()
+        .map(|page| (page.range, page.title_columns, page.title_rows))
+        .collect();
+    let rows = Some((0, 1));
+    let column = Some((0, 0));
+    assert_eq!(
+        laid,
+        vec![
+            (span(at(0, 0), at(9, 47)), None, None),
+            (span(at(0, 48), at(9, 93)), None, rows),
+            (span(at(0, 94), at(9, 99)), None, rows),
+            (span(at(10, 0), at(14, 47)), column, None),
+            (span(at(10, 48), at(14, 93)), column, rows),
+            (span(at(10, 94), at(14, 99)), column, rows),
+        ]
+    );
+    assert_eq!(page_count(&book.pdf(&PrintFields::default()).unwrap()), 6);
 }
 
 #[test]
