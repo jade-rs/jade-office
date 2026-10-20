@@ -186,6 +186,30 @@ cf.describe.other	{rule}
 cf.invalid_value	値を入力してください。
 cf.invalid_rank	1 以上の整数を入力してください (% は 100 まで、項目数は 1000 まで)。
 sheet.tool.conditional	条件付き書式
+chart.insert	グラフの挿入
+chart.change_type	グラフの種類の変更
+chart.legend	凡例
+chart.title_menu	グラフ タイトル…
+chart.data_menu	データの選択…
+chart.delete	グラフの削除
+chart.title	グラフ タイトル (空にすると表示しません)
+chart.data	グラフ データの範囲
+chart.kind.column	集合縦棒
+chart.kind.stacked_column	積み上げ縦棒
+chart.kind.bar	集合横棒
+chart.kind.stacked_bar	積み上げ横棒
+chart.kind.line	折れ線
+chart.kind.line_markers	マーカー付き折れ線
+chart.kind.area	面
+chart.kind.pie	円
+chart.kind.doughnut	ドーナツ
+chart.kind.scatter	散布図
+chart.legend.none	なし
+chart.legend.right	右
+chart.legend.top	上
+chart.legend.left	左
+chart.legend.bottom	下
+sheet.tool.chart	グラフ
 sheet.tool.number_format	表示形式
 sheet.format.general_name	標準
 sheet.format.general	General
