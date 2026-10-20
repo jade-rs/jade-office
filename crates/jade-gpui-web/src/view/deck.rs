@@ -1,0 +1,1465 @@
+//! A deck in the browser, worked as PowerPoint is worked: the slide list,
+//! a shape selected with a click or Tab, moved by dragging or with the
+//! arrows, resized from its corners, typed into; tables typed into cell by
+//! cell, their rows and columns added and removed, their cells merged and
+//! split; a slide show.
+//!
+//! What each of those does to the deck is `jade-office-model`'s
+//! (`deck::Deck`), the same code the native app runs; this is the gpui
+//! around it.
+
+use super::*;
+
+/// A thumbnail being dragged to another place in the list.
+#[derive(Clone, Copy)]
+pub(super) struct DraggedSlide(usize);
+
+/// What follows the pointer while a thumbnail is dragged.
+struct DraggedSlideView(usize);
+
+impl Render for DraggedSlideView {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .bg(palette::accent())
+            .text_xs()
+            .text_color(gpui::white())
+            .font_family(UI_FONT)
+            .child(i18n::format("deck.slide_n", &[("n", &(self.0 + 1))]))
+    }
+}
+
+impl DocView {
+    pub(super) fn select_shape(&mut self, id: Option<u32>) {
+        if let Document::Deck {
+            deck,
+            current,
+            selected,
+            selected_name,
+            slides_focused,
+            ..
+        } = &mut self.document
+        {
+            if id.is_some() {
+                *slides_focused = false;
+            }
+            *selected = id;
+            *selected_name = id
+                .and_then(|id| deck.shape(*current, id))
+                .map(|shape| SharedString::from(shape.name));
+        }
+    }
+
+    pub(super) fn go_to_slide(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.commit_slide_text(cx);
+        self.select_shape(None);
+        if let Document::Deck {
+            deck,
+            current,
+            thumbnail_scroll,
+            drag,
+            ..
+        } = &mut self.document
+        {
+            *drag = None;
+            *current = index.min(deck.slide_count().saturating_sub(1));
+            thumbnail_scroll.scroll_to_item(*current);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn step_slide(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if let Document::Deck { current, .. } = &self.document {
+            let to = current.saturating_add_signed(delta);
+            self.go_to_slide(to, cx);
+        }
+    }
+
+    // ---- slides -----------------------------------------------------------
+
+    /// Runs a change to the deck's slides; when it changes something, shows
+    /// slide `then` with every thumbnail repainted, as slides have moved.
+    pub(super) fn change_slides(
+        &mut self,
+        then: usize,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut jade_web::Deck) -> Result<bool, String>,
+    ) {
+        self.commit_slide_text(cx);
+        let Document::Deck {
+            deck, layouts_open, ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        *layouts_open = false;
+        let result = change(deck);
+        let changed = matches!(result, Ok(true));
+        self.edited(result, cx);
+        if changed {
+            self.select_shape(None);
+            if let Document::Deck { cells, drag, .. } = &mut self.document {
+                *cells = None;
+                *drag = None;
+            }
+            self.go_to_slide(then, cx);
+        }
+    }
+
+    fn current_slide(&self) -> usize {
+        match &self.document {
+            Document::Deck { current, .. } => *current,
+            _ => 0,
+        }
+    }
+
+    /// New Slide: an empty one after the slide on show, on its layout.
+    pub(super) fn new_slide(&mut self, cx: &mut Context<Self>) {
+        let at = self.current_slide() + 1;
+        self.change_slides(at, cx, |deck| deck.insert_slide(at));
+    }
+
+    pub(super) fn duplicate_slide(&mut self, cx: &mut Context<Self>) {
+        let index = self.current_slide();
+        self.change_slides(index + 1, cx, |deck| deck.duplicate_slide(index));
+    }
+
+    /// Deletes the slide on show, showing the one after it — or before, for
+    /// the last.
+    pub(super) fn delete_slide(&mut self, cx: &mut Context<Self>) {
+        let index = self.current_slide();
+        self.change_slides(index, cx, |deck| deck.delete_slide(index));
+    }
+
+    /// A thumbnail dropped on another: the slide moves to its place.
+    pub(super) fn move_slide(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
+        self.change_slides(to, cx, |deck| deck.move_slide(from, to));
+    }
+
+    pub(super) fn toggle_slide_hidden(&mut self, cx: &mut Context<Self>) {
+        let index = self.current_slide();
+        self.change_slides(index, cx, |deck| {
+            let hidden = !deck.is_hidden(index);
+            deck.set_slide_hidden(index, hidden)
+        });
+    }
+
+    pub(super) fn set_slide_layout(&mut self, part_name: &str, cx: &mut Context<Self>) {
+        let index = self.current_slide();
+        self.change_slides(index, cx, |deck| deck.set_slide_layout(index, part_name));
+    }
+
+    pub(super) fn toggle_layouts(&mut self, cx: &mut Context<Self>) {
+        if let Document::Deck { layouts_open, .. } = &mut self.document {
+            *layouts_open = !*layouts_open;
+        }
+        cx.notify();
+    }
+
+    /// ⌘ shortcuts for slides: New Slide (⌘M, as PowerPoint for Windows
+    /// has it, or ⌘⇧N, as for Mac — browsers keep ⌘N) and Duplicate (⌘D)
+    /// when no shape is selected.
+    pub(super) fn deck_shortcut(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let Document::Deck { edit, selected, .. } = &self.document else {
+            return false;
+        };
+        if edit.is_some() {
+            return false;
+        }
+        let no_shape = selected.is_none();
+        match (
+            event.keystroke.key.as_str(),
+            event.keystroke.modifiers.shift,
+        ) {
+            ("m", false) | ("n", true) => self.new_slide(cx),
+            ("d", false) if no_shape => self.duplicate_slide(cx),
+            _ => return false,
+        }
+        true
+    }
+
+    /// The slide show's next slide, or the one before: hidden slides are
+    /// skipped, and past the last one the show is over, as in PowerPoint.
+    pub(super) fn step_show(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let Document::Deck { deck, current, .. } = &self.document else {
+            return;
+        };
+        match deck.next_shown(*current, forward) {
+            Some(next) => self.go_to_slide(next, cx),
+            None if forward => {
+                self.slideshow = false;
+                cx.notify();
+            }
+            None => {}
+        }
+    }
+
+    /// A show from the beginning starts on the first slide not hidden.
+    pub(super) fn start_slideshow(&mut self, from: Option<usize>, cx: &mut Context<Self>) {
+        if let Some(from) = from {
+            self.go_to_slide(from, cx);
+        } else {
+            self.commit_slide_text(cx);
+            self.select_shape(None);
+        }
+        self.slideshow = true;
+        cx.notify();
+    }
+
+    /// Writes the text being typed into a shape, if any.
+    pub(super) fn commit_slide_text(&mut self, cx: &mut Context<Self>) {
+        let Document::Deck {
+            deck,
+            edit,
+            current,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some((target, text)) = edit.take() else {
+            return;
+        };
+        let result = deck.set_text(*current, target, &text.text);
+        self.edited(result, cx);
+    }
+
+    /// Starts typing into the selected shape — in a table, into the cell at
+    /// `point`, or the first cell without one.
+    pub(super) fn begin_slide_text(&mut self, point: Option<(f64, f64)>, cx: &mut Context<Self>) {
+        let Document::Deck {
+            deck,
+            edit,
+            current,
+            selected,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(id) = *selected else {
+            return;
+        };
+        let target = deck.text_target(*current, id, point);
+        match deck.text(*current, target) {
+            Some(text) => *edit = Some((target, TextEdit::new(text))),
+            None => self.status = i18n::text("deck.text_locked").into(),
+        }
+        cx.notify();
+    }
+
+    /// Starts typing into `target` from the text it has — all of it
+    /// selected, when `whole`, so typing replaces it.
+    pub(super) fn edit_slide_text(
+        &mut self,
+        target: TextTarget,
+        whole: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Document::Deck {
+            deck,
+            edit,
+            current,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        if let Some(text) = deck.text(*current, target) {
+            let text = if whole {
+                TextEdit::selected(text)
+            } else {
+                TextEdit::new(text)
+            };
+            *edit = Some((target, text));
+        }
+        cx.notify();
+    }
+
+    /// The cell being typed into, if a table's.
+    pub(super) fn edited_cell(&self) -> Option<TextTarget> {
+        match &self.document {
+            Document::Deck {
+                edit: Some((target @ TextTarget::Cell { .. }, _)),
+                ..
+            } => Some(*target),
+            _ => None,
+        }
+    }
+
+    /// Tab in a table: the text written, then the next cell (⇧Tab: the one
+    /// before). Tab in the last cell adds a row and goes to its first, as
+    /// in PowerPoint.
+    pub(super) fn tab_in_table(&mut self, backwards: bool, cx: &mut Context<Self>) {
+        let Some(from @ TextTarget::Cell { id, row, .. }) = self.edited_cell() else {
+            return;
+        };
+        self.commit_slide_text(cx);
+        let Document::Deck { deck, current, .. } = &mut self.document else {
+            return;
+        };
+        let slide = *current;
+        match deck.next_cell(slide, from, backwards) {
+            // The next cell's text selected, as PowerPoint's Tab does.
+            Some(next) => self.edit_slide_text(next, true, cx),
+            None if !backwards => {
+                let result = deck.change_table(slide, id, TableChange::InsertRow(row + 1));
+                let added = matches!(result, Ok(true));
+                self.edited(result, cx);
+                if !added {
+                    return;
+                }
+                self.edit_slide_text(
+                    TextTarget::Cell {
+                        id,
+                        row: row + 1,
+                        column: 0,
+                    },
+                    false,
+                    cx,
+                );
+            }
+            None => self.edit_slide_text(from, true, cx),
+        }
+    }
+
+    /// Extends a cell selection — from the cell being typed into, or the
+    /// selection's first — to the cell at (`x`, `y`) of the same table.
+    pub(super) fn select_slide_cells_to(&mut self, x: f64, y: f64, cx: &mut Context<Self>) -> bool {
+        let Document::Deck {
+            deck,
+            current,
+            edit,
+            cells,
+            ..
+        } = &mut self.document
+        else {
+            return false;
+        };
+        let (id, from) = match (*cells, edit.as_ref().map(|(target, _)| *target)) {
+            (Some(cells), _) => (cells.id, cells.from),
+            (None, Some(TextTarget::Cell { id, row, column })) => (id, (row, column)),
+            _ => return false,
+        };
+        let TextTarget::Cell { row, column, .. } = deck.text_target(*current, id, Some((x, y)))
+        else {
+            return false;
+        };
+        let Some(rect) = deck.cell_range_rect(*current, id, from, (row, column)) else {
+            return false;
+        };
+        self.commit_slide_text(cx);
+        if let Document::Deck { cells, .. } = &mut self.document {
+            *cells = Some(CellSelection {
+                id,
+                from,
+                to: (row, column),
+                rect,
+            });
+        }
+        cx.notify();
+        true
+    }
+
+    /// Merge Cells: the selected cells become one, typed into next.
+    pub(super) fn merge_slide_cells(&mut self, cx: &mut Context<Self>) {
+        let Document::Deck {
+            deck,
+            current,
+            cells,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(selection) = cells.take() else {
+            return;
+        };
+        let change = jade_web::deck::merge_cells(selection.from, selection.to);
+        let result = deck.change_table(*current, selection.id, change);
+        let merged = matches!(result, Ok(true));
+        self.edited(result, cx);
+        if let (true, TableChange::MergeCells { row, column, .. }) = (merged, change) {
+            let target = TextTarget::Cell {
+                id: selection.id,
+                row,
+                column,
+            };
+            self.edit_slide_text(target, false, cx);
+        }
+        cx.notify();
+    }
+
+    /// Split Cells: the merged cell being typed into becomes its cells.
+    pub(super) fn split_slide_cell(&mut self, cx: &mut Context<Self>) {
+        let Some(target @ TextTarget::Cell { id, row, column }) = self.edited_cell() else {
+            return;
+        };
+        self.commit_slide_text(cx);
+        let Document::Deck { deck, current, .. } = &mut self.document else {
+            return;
+        };
+        let result = deck.change_table(*current, id, TableChange::SplitCell { row, column });
+        let split = matches!(result, Ok(true));
+        self.edited(result, cx);
+        if split {
+            self.edit_slide_text(target, false, cx);
+        }
+    }
+
+    /// A row or column added or removed beside the cell being typed into,
+    /// its text written first.
+    pub(super) fn change_slide_table(
+        &mut self,
+        change: impl FnOnce(usize, usize) -> TableChange,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(TextTarget::Cell { id, row, column }) = self.edited_cell() else {
+            return;
+        };
+        self.commit_slide_text(cx);
+        let Document::Deck { deck, current, .. } = &mut self.document else {
+            return;
+        };
+        let result = deck.change_table(*current, id, change(row, column));
+        self.edited(result, cx);
+        cx.notify();
+    }
+
+    pub(super) fn deck_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let modifiers = event.keystroke.modifiers;
+        let key = event.keystroke.key.as_str();
+        if self.slideshow {
+            match key {
+                "right" | "down" | "space" | "enter" | "pagedown" => self.step_show(true, cx),
+                "left" | "up" | "backspace" | "pageup" => self.step_show(false, cx),
+                "escape" => {
+                    self.slideshow = false;
+                    cx.notify();
+                }
+                _ => return false,
+            }
+            return true;
+        }
+        let (slides_focused, layouts_open) = match &self.document {
+            Document::Deck {
+                slides_focused,
+                layouts_open,
+                ..
+            } => (*slides_focused, *layouts_open),
+            _ => (false, false),
+        };
+        if let Document::Deck {
+            cells: cells @ Some(_),
+            ..
+        } = &mut self.document
+        {
+            if key == "escape" {
+                *cells = None;
+                cx.notify();
+                return true;
+            }
+        }
+        let Document::Deck {
+            deck,
+            current,
+            selected,
+            edit,
+            ..
+        } = &mut self.document
+        else {
+            return false;
+        };
+        if let Some((target, text)) = edit.as_mut() {
+            if text.marked.is_some() {
+                return false;
+            }
+            let in_table = matches!(target, TextTarget::Cell { .. });
+            match key {
+                // As in PowerPoint, Escape leaves the text, keeping it.
+                "escape" => self.commit_slide_text(cx),
+                "tab" if in_table => self.tab_in_table(modifiers.shift, cx),
+                "enter" => text.insert("\n"),
+                "backspace" => text.backspace(),
+                "delete" => text.delete(),
+                "left" => text.step(false),
+                "right" => text.step(true),
+                "home" => text.to_end(false),
+                "end" => text.to_end(true),
+                _ => return false,
+            }
+            cx.notify();
+            return true;
+        }
+        let slide = *current;
+        if let Some(id) = *selected {
+            let step = if modifiers.alt { 1.0 } else { NUDGE_PX };
+            let result = match key {
+                "left" => deck.move_shape(slide, id, -step, 0.0),
+                "right" => deck.move_shape(slide, id, step, 0.0),
+                "up" => deck.move_shape(slide, id, 0.0, -step),
+                "down" => deck.move_shape(slide, id, 0.0, step),
+                "delete" | "backspace" => {
+                    let result = deck.delete_shape(slide, id);
+                    self.select_shape(None);
+                    result
+                }
+                "enter" | "f2" => {
+                    self.begin_slide_text(None, cx);
+                    return true;
+                }
+                "escape" => {
+                    self.select_shape(None);
+                    cx.notify();
+                    return true;
+                }
+                "tab" => {
+                    let next = deck.next_shape(slide, Some(id), modifiers.shift);
+                    self.select_shape(next);
+                    cx.notify();
+                    return true;
+                }
+                _ => return false,
+            };
+            self.edited(result, cx);
+            return true;
+        }
+        match key {
+            // In the slide list, Delete deletes the slide.
+            "delete" | "backspace" if slides_focused => self.delete_slide(cx),
+            "escape" if layouts_open => self.toggle_layouts(cx),
+            "down" | "right" | "pagedown" => self.step_slide(1, cx),
+            "up" | "left" | "pageup" => self.step_slide(-1, cx),
+            "tab" => {
+                let next = deck.next_shape(slide, None, modifiers.shift);
+                self.select_shape(next);
+                cx.notify();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    pub(super) fn slide_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        cx.stop_propagation();
+        let Some((x, y)) = self.slide_point(event.position) else {
+            return;
+        };
+        // Shift+click in a table whose cell is being typed into, or whose
+        // cells are selected, selects the cells between, as in PowerPoint.
+        if event.modifiers.shift && self.select_slide_cells_to(x, y, cx) {
+            return;
+        }
+        let Document::Deck {
+            deck,
+            current,
+            edit,
+            cells,
+            slides_focused,
+            layouts_open,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        *cells = None;
+        *slides_focused = false;
+        *layouts_open = false;
+        // A click inside the shape or cell being typed into stays in the
+        // text.
+        if let Some((target, _)) = edit {
+            let inside = deck
+                .text_rect(*current, *target)
+                .is_some_and(|rect| rect.contains(x, y));
+            if inside {
+                return;
+            }
+        }
+        let hit = deck.shape_at(*current, x, y);
+        let movable = hit
+            .and_then(|id| deck.shape(*current, id))
+            .is_some_and(|shape| shape.can_move);
+        self.commit_slide_text(cx);
+        self.select_shape(hit);
+        match hit {
+            // In a table, the cell under the click.
+            Some(_) if event.click_count >= 2 => self.begin_slide_text(Some((x, y)), cx),
+            // Dragging the shape moves it.
+            Some(id) if movable => {
+                if let Document::Deck { drag, .. } = &mut self.document {
+                    *drag = Some(ShapeDrag::new(id, DragMode::Move, (x, y)));
+                }
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    /// A press on a corner handle of the selected shape: dragging it resizes
+    /// the shape from the opposite corner.
+    pub(super) fn start_slide_resize(
+        &mut self,
+        left: bool,
+        top: bool,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        cx.stop_propagation();
+        let Some(from) = self.slide_point(event.position) else {
+            return;
+        };
+        let Document::Deck {
+            deck,
+            current,
+            selected,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(id) = *selected else {
+            return;
+        };
+        if !deck
+            .shape(*current, id)
+            .is_some_and(|shape| shape.can_resize)
+        {
+            return;
+        }
+        self.commit_slide_text(cx);
+        if let Document::Deck { drag, .. } = &mut self.document {
+            *drag = Some(ShapeDrag::new(id, DragMode::Resize { left, top }, from));
+        }
+        cx.notify();
+    }
+
+    /// The pointer moving with the button down drags the shape along.
+    pub(super) fn slide_mouse_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if !event.dragging() {
+            return;
+        }
+        let Some((x, y)) = self.slide_point(event.position) else {
+            return;
+        };
+        if let Document::Deck {
+            drag: Some(drag), ..
+        } = &mut self.document
+        {
+            drag.drag_to(x, y);
+            cx.notify();
+        }
+    }
+
+    /// Letting go writes the drag, as one undoable change.
+    pub(super) fn slide_mouse_up(&mut self, cx: &mut Context<Self>) {
+        let Document::Deck {
+            deck,
+            current,
+            drag,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(drag) = drag.take() else {
+            return;
+        };
+        let result = deck.drag_shape(*current, &drag);
+        self.edited(result, cx);
+    }
+
+    /// A window point as a point on the slide on show, in slide px.
+    pub(super) fn slide_point(&self, position: gpui::Point<Pixels>) -> Option<(f64, f64)> {
+        let bounds = self.surface.get()?;
+        let Document::Deck { scale, .. } = &self.document else {
+            return None;
+        };
+        let to_slide = |value: Pixels| f64::from(value) / f64::from(*scale);
+        Some((
+            to_slide(position.x - bounds.origin.x),
+            to_slide(position.y - bounds.origin.y),
+        ))
+    }
+
+    /// Paints the current slide at `width` window px, unless it already is.
+    pub(super) fn paint_slide(&mut self, width: f32, scale: f32) {
+        let generation = self.generation;
+        let Document::Deck {
+            deck,
+            current,
+            slide,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let device_width = (width * scale).round() as u32;
+        let fresh = matches!(slide, Some((index, w, g, _))
+            if *index == *current && *w == device_width && *g == generation);
+        if fresh {
+            return;
+        }
+        match deck.render_slide(*current, device_width).and_then(image) {
+            Some(painted) => {
+                if let Some((_, _, _, old)) =
+                    slide.replace((*current, device_width, generation, painted))
+                {
+                    self.retired.push(old);
+                }
+            }
+            None => {
+                self.status = i18n::format("deck.paint_failed", &[("n", &(*current + 1))]).into()
+            }
+        }
+    }
+
+    /// The slide alone on black, filling the window, as a slideshow.
+    pub(super) fn slideshow_body(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let (area_width, area_height) = editor_area(window, cx);
+        let Document::Deck { deck, .. } = &self.document else {
+            unreachable!()
+        };
+        let (slide_width, slide_height) = deck.slide_size();
+        let fit = (area_width / slide_width as f32).min(area_height / slide_height as f32);
+        let (width, height) = (slide_width as f32 * fit, slide_height as f32 * fit);
+        self.paint_slide(width, window.scale_factor());
+        let Document::Deck { slide, .. } = &self.document else {
+            unreachable!()
+        };
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(gpui::black())
+            .cursor_pointer()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _event, _window, cx| view.step_show(true, cx)),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|view, _event, _window, cx| view.step_show(false, cx)),
+            )
+            .children(
+                slide
+                    .as_ref()
+                    .map(|(_, _, _, image)| img(image.clone()).w(px(width)).h(px(height))),
+            )
+    }
+
+    pub(super) fn deck_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::Div {
+        let scale = window.scale_factor();
+        let editing_cell = self.edited_cell().is_some();
+        let editing_merged = match (&self.document, self.edited_cell()) {
+            (Document::Deck { deck, current, .. }, Some(target)) => deck
+                .cell_span(*current, target)
+                .is_some_and(|span| span != (1, 1)),
+            _ => false,
+        };
+        let selected_cells = match &self.document {
+            Document::Deck { cells, .. } => cells.map(|cells| cells.rect),
+            _ => None,
+        };
+        let (area_width, area_height) = editor_area(window, cx);
+        let notes_height = if self.show_notes { NOTES_HEIGHT } else { 0.0 };
+        let Document::Deck {
+            deck, thumbnails, ..
+        } = &mut self.document
+        else {
+            unreachable!()
+        };
+        for (index, thumbnail) in thumbnails.iter_mut().enumerate() {
+            if thumbnail.is_none() {
+                *thumbnail = deck
+                    .render_slide(index, (SLIDE_THUMBNAIL_WIDTH * scale) as u32)
+                    .and_then(image);
+            }
+        }
+        let (slide_width, slide_height) = deck.slide_size();
+        let zoom = self.zoom.unwrap_or_else(|| {
+            deck_fit(deck.slide_size(), (area_width, area_height - notes_height))
+        });
+        self.shown_zoom = zoom;
+        let (width, height) = (slide_width as f32 * zoom, slide_height as f32 * zoom);
+        self.paint_slide(width, scale);
+
+        let Document::Deck {
+            deck,
+            current,
+            thumbnails,
+            thumbnail_scroll,
+            slide,
+            selected,
+            edit,
+            drag,
+            scale: shown_scale,
+            layouts_open,
+            ..
+        } = &mut self.document
+        else {
+            unreachable!()
+        };
+        *shown_scale = zoom;
+        let current_index = *current;
+        let count = deck.slide_count();
+        let thumbnail_height = SLIDE_THUMBNAIL_WIDTH * (slide_height / slide_width) as f32;
+        // One slide in the list: its number — struck through with an eye
+        // for a hidden slide, which is also dimmed, as PowerPoint marks it —
+        // and its picture. A click shows it; a drag onto another moves it.
+        let rows: Vec<_> = thumbnails
+            .iter()
+            .enumerate()
+            .map(|(index, thumbnail)| {
+                let selected = index == current_index;
+                let hidden = deck.is_hidden(index);
+                let number_color = if selected {
+                    palette::accent()
+                } else {
+                    palette::faint()
+                };
+                div()
+                    .id(("slide-thumbnail", index))
+                    .flex()
+                    .gap_2()
+                    .px_2()
+                    .py_1()
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |view, _event, window, cx| {
+                        window.focus(&view.focus, cx);
+                        view.go_to_slide(index, cx);
+                        if let Document::Deck { slides_focused, .. } = &mut view.document {
+                            *slides_focused = true;
+                        }
+                    }))
+                    .on_drag(DraggedSlide(index), |dragged, _offset, _window, cx| {
+                        let index = dragged.0;
+                        cx.new(|_| DraggedSlideView(index))
+                    })
+                    .drag_over::<DraggedSlide>(|style, _, _, _| style.bg(palette::hovered()))
+                    .on_drop(
+                        cx.listener(move |view, dragged: &DraggedSlide, _window, cx| {
+                            view.move_slide(dragged.0, index, cx)
+                        }),
+                    )
+                    .child(
+                        div()
+                            .w(px(16.0))
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap_1()
+                            .text_xs()
+                            .text_color(number_color)
+                            .child(
+                                div()
+                                    .when(hidden, |number| number.line_through())
+                                    .child(format!("{}", index + 1)),
+                            )
+                            .when(hidden, |column| {
+                                column.child(
+                                    svg()
+                                        .path("icons/eye-off.svg")
+                                        .size_3()
+                                        .text_color(number_color),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .w(px(SLIDE_THUMBNAIL_WIDTH))
+                            .h(px(thumbnail_height))
+                            .flex_none()
+                            .bg(gpui::white())
+                            .border_2()
+                            .rounded_sm()
+                            .overflow_hidden()
+                            .when(hidden, |thumbnail| thumbnail.opacity(0.45))
+                            .border_color(if selected {
+                                palette::accent()
+                            } else {
+                                palette::border()
+                            })
+                            .hover(|thumbnail| thumbnail.border_color(palette::faint()))
+                            .children(thumbnail.clone().map(|image| img(image).size_full())),
+                    )
+            })
+            .collect();
+        let current_hidden = deck.is_hidden(current_index);
+        let layouts = layouts_open.then(|| deck.slide_layouts(current_index));
+        let layouts_button = layouts_button(layouts, cx);
+        let slide_image = slide.as_ref().map(|(_, _, _, image)| image.clone());
+        let notes = deck
+            .notes(current_index)
+            .map(|notes| SharedString::from(notes.to_string()));
+        let show_notes = self.show_notes;
+
+        // The selection outline and its corner handles, or the text editor,
+        // over the slide; a shape being dragged where the drag has taken it.
+        let resizable = selected
+            .and_then(|id| deck.shape(current_index, id))
+            .is_some_and(|shape| shape.can_resize);
+        let overlay = selected.and_then(|id| {
+            let editing = edit.as_ref().filter(|(target, _)| target.id() == id);
+            let rect = match editing {
+                Some((target, _)) => deck.text_rect(current_index, *target)?,
+                None => {
+                    let rect = deck.shape_rect(current_index, id)?;
+                    match drag.as_ref().filter(|drag| drag.id == id) {
+                        Some(drag) => drag.rect(rect),
+                        None => rect,
+                    }
+                }
+            };
+            let (x, y, w, h) = (
+                rect.x as f32 * zoom,
+                rect.y as f32 * zoom,
+                rect.width as f32 * zoom,
+                rect.height as f32 * zoom,
+            );
+            Some(match editing {
+                Some((_, text)) => div()
+                    .absolute()
+                    .left(px(x))
+                    .top(px(y))
+                    .min_w(px(w))
+                    .min_h(px(h))
+                    .p(px(6.0))
+                    .bg(gpui::rgba(0xffffffee))
+                    .border_1()
+                    .border_color(palette::accent())
+                    .text_color(gpui::black())
+                    .text_size(px((18.0 * zoom).max(11.0)))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_end()
+                            .child(if text.whole {
+                                div()
+                                    .bg(palette::selected())
+                                    .child(text.split().0.to_string())
+                            } else {
+                                div().child(text.split().0.to_string())
+                            })
+                            .child(
+                                div()
+                                    .w(px(1.5))
+                                    .h(px((20.0 * zoom).max(12.0)))
+                                    .bg(gpui::black()),
+                            )
+                            .child(text.split().1.to_string()),
+                    ),
+                None => div()
+                    .absolute()
+                    .left(px(x))
+                    .top(px(y))
+                    .w(px(w))
+                    .h(px(h))
+                    .border_1()
+                    .border_color(palette::accent())
+                    .when(resizable, |outline| {
+                        outline.children(
+                            [(true, true), (false, true), (true, false), (false, false)]
+                                .into_iter()
+                                .enumerate()
+                                .map(|(index, (is_left, is_top))| {
+                                    let at = |near: bool, length: f32| {
+                                        px(if near { 0.0 } else { length } - HANDLE_SIZE / 2.0)
+                                    };
+                                    div()
+                                        .id(("resize-handle", index))
+                                        .absolute()
+                                        .left(at(is_left, w))
+                                        .top(at(is_top, h))
+                                        .size(px(HANDLE_SIZE))
+                                        .rounded_full()
+                                        .bg(gpui::white())
+                                        .border_1()
+                                        .border_color(palette::accent())
+                                        .cursor(if is_left == is_top {
+                                            gpui::CursorStyle::ResizeUpLeftDownRight
+                                        } else {
+                                            gpui::CursorStyle::ResizeUpRightDownLeft
+                                        })
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(move |view, event, window, cx| {
+                                                view.start_slide_resize(
+                                                    is_left, is_top, event, window, cx,
+                                                )
+                                            }),
+                                        )
+                                }),
+                        )
+                    }),
+            })
+        });
+
+        let store = Rc::clone(&self.surface);
+        let entity = cx.entity();
+        div()
+            .size_full()
+            .flex()
+            .bg(palette::window())
+            // A drag follows the pointer anywhere over the view, and ends
+            // wherever the button comes up.
+            .on_mouse_move(cx.listener(|view, event, _window, cx| view.slide_mouse_move(event, cx)))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _event, _window, cx| view.slide_mouse_up(cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|view, _event, _window, cx| view.slide_mouse_up(cx)),
+            )
+            .child(
+                div()
+                    .w(px(DECK_SIDEBAR_WIDTH))
+                    .h_full()
+                    .flex_none()
+                    .flex()
+                    .flex_col()
+                    .bg(palette::sidebar())
+                    .border_r_1()
+                    .border_color(palette::border())
+                    .child(
+                        div()
+                            .px_3()
+                            .pt_3()
+                            .pb_2()
+                            .text_xs()
+                            .text_color(palette::faint())
+                            .child(i18n::format("deck.slides", &[("n", &count)])),
+                    )
+                    .child(
+                        div()
+                            .id("slide-thumbnails")
+                            .flex_1()
+                            .overflow_y_scroll()
+                            .track_scroll(thumbnail_scroll)
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .pb_3()
+                            .children(rows),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        toolbar(i18n::format(
+                            "deck.position",
+                            &[("current", &(current_index + 1)), ("count", &count)],
+                        ))
+                        .child(
+                            toolbar_button(
+                                "new-slide",
+                                "icons/file-plus.svg",
+                                i18n::text("deck.new_slide"),
+                            )
+                            .on_click(cx.listener(|view, _event, _window, cx| view.new_slide(cx))),
+                        )
+                        .child(layouts_button)
+                        .child(
+                            toolbar_button(
+                                "duplicate-slide",
+                                "icons/files.svg",
+                                i18n::text("deck.duplicate_slide"),
+                            )
+                            .on_click(
+                                cx.listener(|view, _event, _window, cx| view.duplicate_slide(cx)),
+                            ),
+                        )
+                        .child(
+                            toolbar_button(
+                                "delete-slide",
+                                "icons/trash-2.svg",
+                                i18n::text("deck.delete_slide"),
+                            )
+                            .on_click(
+                                cx.listener(|view, _event, _window, cx| view.delete_slide(cx)),
+                            ),
+                        )
+                        .child(
+                            toolbar_button(
+                                "hide-slide",
+                                "icons/eye-off.svg",
+                                i18n::text(if current_hidden {
+                                    "deck.show_slide"
+                                } else {
+                                    "deck.hide_slide"
+                                }),
+                            )
+                            .when(current_hidden, |button| button.bg(palette::selected()))
+                            .on_click(
+                                cx.listener(|view, _event, _window, cx| {
+                                    view.toggle_slide_hidden(cx)
+                                }),
+                            ),
+                        )
+                        .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(palette::border()))
+                        // A table's layout, while one of its cells is typed
+                        // into: PowerPoint's Layout tab.
+                        .when(editing_cell, |bar| {
+                            bar.child(
+                                toolbar_button(
+                                    "row-below",
+                                    "icons/arrow-down-to-line.svg",
+                                    i18n::text("deck.row_below"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.change_slide_table(
+                                            |row, _| TableChange::InsertRow(row + 1),
+                                            cx,
+                                        )
+                                    },
+                                )),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "column-right",
+                                    "icons/arrow-right-to-line.svg",
+                                    i18n::text("deck.column_right"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.change_slide_table(
+                                            |_, column| TableChange::InsertColumn(column + 1),
+                                            cx,
+                                        )
+                                    },
+                                )),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "delete-row",
+                                    "icons/trash-2.svg",
+                                    i18n::text("deck.delete_row"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.change_slide_table(
+                                            |row, _| TableChange::DeleteRow(row),
+                                            cx,
+                                        )
+                                    },
+                                )),
+                            )
+                            .child(
+                                toolbar_button(
+                                    "delete-column",
+                                    "icons/trash-2.svg",
+                                    i18n::text("deck.delete_column"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| {
+                                        view.change_slide_table(
+                                            |_, column| TableChange::DeleteColumn(column),
+                                            cx,
+                                        )
+                                    },
+                                )),
+                            )
+                        })
+                        .when(selected_cells.is_some(), |bar| {
+                            bar.child(
+                                toolbar_button(
+                                    "merge-cells",
+                                    "icons/merge.svg",
+                                    i18n::text("deck.merge_cells"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| view.merge_slide_cells(cx),
+                                )),
+                            )
+                        })
+                        .when(editing_merged, |bar| {
+                            bar.child(
+                                toolbar_button(
+                                    "split-cell",
+                                    "icons/split.svg",
+                                    i18n::text("deck.split_cell"),
+                                )
+                                .on_click(cx.listener(
+                                    |view, _event, _window, cx| view.split_slide_cell(cx),
+                                )),
+                            )
+                        })
+                        .child(
+                            toolbar_button(
+                                "notes",
+                                "icons/file-text.svg",
+                                i18n::text("deck.notes"),
+                            )
+                            .when(show_notes, |button| button.bg(palette::selected()))
+                            .on_click(cx.listener(
+                                |view, _event, _window, cx| {
+                                    view.show_notes = !view.show_notes;
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                        .child(
+                            toolbar_button(
+                                "from-current",
+                                "icons/play.svg",
+                                i18n::text("deck.from_current"),
+                            )
+                            .on_click(cx.listener(
+                                |view, _event, _window, cx| view.start_slideshow(None, cx),
+                            )),
+                        )
+                        .child(
+                            div()
+                                .id("slideshow")
+                                .flex()
+                                .items_center()
+                                .gap_1p5()
+                                .ml_1()
+                                .px_3()
+                                .py_1()
+                                .rounded_md()
+                                .text_xs()
+                                .text_color(gpui::white())
+                                .bg(palette::accent())
+                                .cursor_pointer()
+                                .hover(|button| button.opacity(0.9))
+                                .child(
+                                    svg()
+                                        .path("icons/play.svg")
+                                        .size_3()
+                                        .text_color(gpui::white()),
+                                )
+                                .child(i18n::text("deck.slideshow"))
+                                .on_click(cx.listener(|view, _event, _window, cx| {
+                                    let first = match &view.document {
+                                        Document::Deck { deck, .. } => deck.first_shown(),
+                                        _ => 0,
+                                    };
+                                    view.start_slideshow(Some(first), cx)
+                                })),
+                        ),
+                    )
+                    .child(
+                        // Scrolls once a chosen zoom makes the slide bigger
+                        // than the space. A click off the slide clears the
+                        // selection.
+                        div()
+                            .id("slide-canvas")
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_scroll()
+                            .bg(palette::canvas())
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|view, _event, window, cx| {
+                                    window.focus(&view.focus, cx);
+                                    view.commit_slide_text(cx);
+                                    view.select_shape(None);
+                                    if let Document::Deck {
+                                        slides_focused,
+                                        layouts_open,
+                                        ..
+                                    } = &mut view.document
+                                    {
+                                        *slides_focused = false;
+                                        *layouts_open = false;
+                                    }
+                                    cx.notify();
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .min_w_full()
+                                    .min_h_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .p(px(SLIDE_MARGIN))
+                                    .child(
+                                        div()
+                                            .relative()
+                                            .flex_none()
+                                            .w(px(width))
+                                            .h(px(height))
+                                            .bg(gpui::white())
+                                            .shadow_lg()
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(Self::slide_mouse_down),
+                                            )
+                                            .children(
+                                                slide_image.map(|image| {
+                                                    img(image).w(px(width)).h(px(height))
+                                                }),
+                                            )
+                                            .children(overlay)
+                                            // The selected cells, shaded as
+                                            // PowerPoint shades them.
+                                            .children(selected_cells.map(|rect| {
+                                                div()
+                                                    .absolute()
+                                                    .left(px(rect.x as f32 * zoom))
+                                                    .top(px(rect.y as f32 * zoom))
+                                                    .w(px(rect.width as f32 * zoom))
+                                                    .h(px(rect.height as f32 * zoom))
+                                                    .bg(gpui::rgba(0x3b82f633))
+                                                    .border_1()
+                                                    .border_color(palette::accent())
+                                            }))
+                                            .child(
+                                                canvas(
+                                                    move |bounds, _window, _cx| {
+                                                        store.set(Some(bounds));
+                                                        bounds
+                                                    },
+                                                    move |_bounds, slide, window, cx| {
+                                                        let focus = entity.read(cx).focus.clone();
+                                                        window.handle_input(
+                                                            &focus,
+                                                            ElementInputHandler::new(
+                                                                slide,
+                                                                entity.clone(),
+                                                            ),
+                                                            cx,
+                                                        );
+                                                    },
+                                                )
+                                                .absolute()
+                                                .top_0()
+                                                .left_0()
+                                                .size_full(),
+                                            ),
+                                    ),
+                            ),
+                    )
+                    .when(show_notes, |column| {
+                        column.child(
+                            div()
+                                .id("slide-notes")
+                                .h(px(NOTES_HEIGHT))
+                                .flex_none()
+                                .overflow_y_scroll()
+                                .border_t_1()
+                                .border_color(palette::border())
+                                .bg(palette::panel())
+                                .px_4()
+                                .py_2()
+                                .text_sm()
+                                .child(match notes {
+                                    Some(notes) => div().child(notes),
+                                    None => div()
+                                        .text_color(palette::faint())
+                                        .child(i18n::text("deck.no_notes")),
+                                }),
+                        )
+                    }),
+            )
+    }
+}
+
+/// Layout ▾, and while open the layouts the slide can take, its own checked.
+fn layouts_button(
+    layouts: Option<Vec<jade_web::deck::SlideLayoutInfo>>,
+    cx: &mut Context<DocView>,
+) -> gpui::AnyElement {
+    let open = layouts.is_some();
+    let menu = layouts.map(|layouts| {
+        let rows: Vec<_> = layouts
+            .into_iter()
+            .enumerate()
+            .map(|(index, layout)| {
+                let part = layout.part_name.clone();
+                div()
+                    .id(("slide-layout", index))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .h(px(26.0))
+                    .pl_1()
+                    .pr_3()
+                    .rounded_md()
+                    .whitespace_nowrap()
+                    .cursor_pointer()
+                    .hover(|row| row.bg(palette::hovered()))
+                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                        view.set_slide_layout(&part, cx)
+                    }))
+                    .child(div().size_4().flex_none().when(layout.current, |cell| {
+                        cell.child(
+                            svg()
+                                .path("icons/check.svg")
+                                .size_4()
+                                .text_color(palette::accent()),
+                        )
+                    }))
+                    .child(if layout.name.is_empty() {
+                        layout.kind
+                    } else {
+                        layout.name
+                    })
+            })
+            .collect();
+        div()
+            .id("slide-layouts")
+            .occlude()
+            .mt_1()
+            .p_1()
+            .flex()
+            .flex_col()
+            .max_h(px(360.0))
+            .overflow_y_scroll()
+            .rounded_md()
+            .bg(palette::panel())
+            .border_1()
+            .border_color(palette::border())
+            .shadow_lg()
+            .text_xs()
+            .text_color(palette::text())
+            .children(rows)
+    });
+    div()
+        .relative()
+        .flex_none()
+        .child(
+            toolbar_button(
+                "slide-layout",
+                "icons/panels-top-left.svg",
+                i18n::text("deck.layout"),
+            )
+            .when(open, |button| button.bg(palette::hovered()))
+            .on_click(cx.listener(|view, _event, _window, cx| view.toggle_layouts(cx))),
+        )
+        .children(menu.map(|menu| {
+            div().absolute().top_full().left_0().child(
+                gpui::deferred(
+                    gpui::anchored()
+                        .snap_to_window_with_margin(px(8.0))
+                        .child(menu),
+                )
+                .with_priority(2),
+            )
+        }))
+        .into_any_element()
+}
