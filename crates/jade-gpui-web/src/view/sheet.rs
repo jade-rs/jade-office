@@ -11,6 +11,7 @@
 //! (`sheet::Workbook`, `grid::Selection`), the same code the native app
 //! runs; this is the gpui around it.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use gpui::{DispatchPhase, MouseUpEvent, Point};
@@ -55,6 +56,8 @@ pub(super) struct Sheet {
     pub edit: Option<CellEdit>,
     pub scroll: ScrollHandle,
     painted: Option<PaintedSheet>,
+    /// The cells as tiles and the header bands, kept between frames.
+    tiles: SheetTiles,
     /// The grid's size in window px, from the last frame.
     viewport: (f32, f32),
     drag: Option<SheetDrag>,
@@ -184,6 +187,285 @@ struct PaintedSheet {
     image: Arc<RenderImage>,
 }
 
+/// Side of a tile of cells, in device px.
+const SHEET_TILE: u32 = 512;
+
+/// The selection's wash and border, as `jade_xlsx_render`'s default
+/// `RenderOptions` paints them.
+const SELECTION_FILL: gpui::Rgba = gpui::Rgba {
+    r: 47.0 / 255.0,
+    g: 85.0 / 255.0,
+    b: 151.0 / 255.0,
+    a: 0.12,
+};
+const SELECTION_BORDER: u32 = 0x2f5597;
+
+/// What the cell tiles were painted for: a sheet, at so many device px per
+/// sheet px. Within that, an edit repaints the tiles it changed.
+#[derive(Clone, Copy, PartialEq)]
+struct TileKey {
+    sheet: usize,
+    scale: f64,
+}
+
+/// What the header bands were painted for.
+#[derive(Clone, Copy, PartialEq)]
+struct BandKey {
+    tiles: TileKey,
+    revision: u64,
+    scroll: (f64, f64),
+    device: (u32, u32),
+    selection: Selection,
+}
+
+/// The sheet in pieces that outlive a frame: its cells as tiles fixed in
+/// sheet space, which scrolling only moves, so a frame paints just the tiles
+/// it brings into view; and the header bands, small enough to repaint when
+/// they change. The selection is drawn over the tiles rather than into them,
+/// so moving it paints nothing but the bands' highlight.
+#[derive(Default)]
+struct SheetTiles {
+    key: Option<TileKey>,
+    tiles: HashMap<(i64, i64), Arc<RenderImage>>,
+    bands: Option<(BandKey, Arc<RenderImage>, Arc<RenderImage>)>,
+}
+
+impl SheetTiles {
+    /// The grid as layers over a viewport of `size` window px scrolled to
+    /// `scroll` device px: each pane's tiles with the selection over them,
+    /// then the header bands. Paints what is not painted yet, and lets go of
+    /// tiles well out of view.
+    #[allow(clippy::too_many_arguments)]
+    fn layers(
+        &mut self,
+        book: &mut jade_web::Workbook,
+        scroll: (f64, f64),
+        size: (f32, f32),
+        scale: f32,
+        zoom: f32,
+        selection: Selection,
+        retired: &mut Vec<Arc<RenderImage>>,
+    ) -> Option<Vec<gpui::AnyElement>> {
+        let (scale, zoom) = (f64::from(scale), f64::from(zoom));
+        // Device px per sheet px, and sheet px per tile.
+        let density = scale * zoom;
+        let span = f64::from(SHEET_TILE) / density;
+        let key = TileKey {
+            sheet: book.sheet_index(),
+            scale: density,
+        };
+        // What the sheet changed since the last frame: the tiles over it go.
+        let changes = book.take_changes();
+        if self.key != Some(key) || changes.is_none() {
+            retired.extend(self.tiles.drain().map(|(_, tile)| tile));
+            self.key = Some(key);
+        } else if let Some(changes) = changes.filter(|changes| !changes.is_empty()) {
+            let touched: Vec<_> = self
+                .tiles
+                .keys()
+                .copied()
+                .filter(|&(column, row)| {
+                    let (x, y) = (column as f64 * span, row as f64 * span);
+                    changes.iter().any(|&(cx, cy, cw, ch)| {
+                        cx < x + span && x < cx + cw && cy < y + span && y < cy + ch
+                    })
+                })
+                .collect();
+            for at in touched {
+                retired.extend(self.tiles.remove(&at));
+            }
+        }
+        let scroll = (scroll.0 / density, scroll.1 / density);
+        let view = (f64::from(size.0) / zoom, f64::from(size.1) / zoom);
+        let panes = book.panes(scroll, view);
+
+        // The tiles each pane shows, painting the ones missing.
+        let mut shown = Vec::new();
+        for &(_, (x, y, width, height)) in &panes {
+            let columns = (x / span).floor() as i64..=((x + width) / span).ceil() as i64 - 1;
+            let rows = (y / span).floor() as i64..=((y + height) / span).ceil() as i64 - 1;
+            for row in rows.clone() {
+                for column in columns.clone() {
+                    if let std::collections::hash_map::Entry::Vacant(slot) =
+                        self.tiles.entry((column, row))
+                    {
+                        slot.insert(
+                            book.render_cells(
+                                (column as f64 * span, row as f64 * span, span, span),
+                                SHEET_TILE,
+                                SHEET_TILE,
+                                density,
+                            )
+                            .and_then(image)?,
+                        );
+                    }
+                }
+            }
+            shown.push((columns, rows));
+        }
+        // A tile a scroll back would bring in again is kept; one further off
+        // goes.
+        let near = |&(column, row): &(i64, i64)| {
+            shown.iter().any(|(columns, rows)| {
+                (columns.start() - 1..=columns.end() + 1).contains(&column)
+                    && (rows.start() - 1..=rows.end() + 1).contains(&row)
+            })
+        };
+        let far: Vec<_> = self.tiles.keys().copied().filter(|at| !near(at)).collect();
+        for at in far {
+            retired.extend(self.tiles.remove(&at));
+        }
+
+        let shape = book.selection_shape(selection);
+        let tile_size = px((f64::from(SHEET_TILE) / scale) as f32);
+        let mut layers: Vec<gpui::AnyElement> = Vec::new();
+        for (&((left, top), (x, y, width, height)), (columns, rows)) in panes.iter().zip(&shown) {
+            // Sheet px → window px from the pane's top-left.
+            let at = |value: f64, origin: f64| px(((value - origin) * zoom) as f32);
+            let mut pane = div()
+                .absolute()
+                .left(px((left * zoom) as f32))
+                .top(px((top * zoom) as f32))
+                .w(px((width * zoom) as f32))
+                .h(px((height * zoom) as f32))
+                .overflow_hidden();
+            for row in rows.clone() {
+                for column in columns.clone() {
+                    if let Some(tile) = self.tiles.get(&(column, row)) {
+                        pane = pane.child(
+                            img(tile.clone())
+                                .absolute()
+                                .left(at(column as f64 * span, x))
+                                .top(at(row as f64 * span, y))
+                                .w(tile_size)
+                                .h(tile_size),
+                        );
+                    }
+                }
+            }
+            if let Some(((rx, ry, rw, rh), (ax, ay, aw, ah))) = shape {
+                // The wash, leaving the active cell clear.
+                let strips = [
+                    (rx, ry, rw, ay - ry),
+                    (rx, ay + ah, rw, ry + rh - (ay + ah)),
+                    (rx, ay, ax - rx, ah),
+                    (ax + aw, ay, rx + rw - (ax + aw), ah),
+                ];
+                for (sx, sy, sw, sh) in strips {
+                    if sw > 0.0 && sh > 0.0 {
+                        pane = pane.child(
+                            div()
+                                .absolute()
+                                .left(at(sx, x))
+                                .top(at(sy, y))
+                                .w(px((sw * zoom) as f32))
+                                .h(px((sh * zoom) as f32))
+                                .bg(SELECTION_FILL),
+                        );
+                    }
+                }
+                // A 2 px border centred on the range's edge, and the fill
+                // handle on its corner.
+                pane = pane
+                    .child(
+                        div()
+                            .absolute()
+                            .left(at(rx - 1.0, x))
+                            .top(at(ry - 1.0, y))
+                            .w(px(((rw + 2.0) * zoom) as f32))
+                            .h(px(((rh + 2.0) * zoom) as f32))
+                            .border(px((2.0 * zoom) as f32))
+                            .border_color(rgb(SELECTION_BORDER)),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .left(at(rx + rw - 3.0, x))
+                            .top(at(ry + rh - 3.0, y))
+                            .size(px((6.0 * zoom) as f32))
+                            .bg(rgb(SELECTION_BORDER)),
+                    );
+            }
+            layers.push(pane.into_any_element());
+        }
+
+        // The header bands, over the panes' edges: the rows', then the
+        // columns' with the corner over it.
+        let metrics = book.header_metrics();
+        let device = (
+            (f64::from(size.0) * scale).round() as u32,
+            (f64::from(size.1) * scale).round() as u32,
+        );
+        let below = (metrics.column_height * density).round() as u32;
+        let rows_height = device.1.saturating_sub(below).max(1);
+        let band_key = BandKey {
+            tiles: key,
+            revision: book.layout_revision(),
+            scroll,
+            device,
+            selection,
+        };
+        if self
+            .bands
+            .as_ref()
+            .is_none_or(|(known, ..)| *known != band_key)
+        {
+            let columns = book
+                .render_column_headers(scroll, view, device.0, density, Some(selection))
+                .and_then(image)?;
+            let rows = book
+                .render_row_headers(scroll, view, rows_height, density, Some(selection))
+                .and_then(image)?;
+            if let Some((_, old_columns, old_rows)) = self.bands.replace((band_key, columns, rows))
+            {
+                retired.push(old_columns);
+                retired.push(old_rows);
+            }
+        }
+        if let Some((_, columns, rows)) = &self.bands {
+            // Each band at its own pixel size.
+            let shown = |image: &Arc<RenderImage>| {
+                let size = image.size(0);
+                (
+                    px((f64::from(size.width.0) / scale) as f32),
+                    px((f64::from(size.height.0) / scale) as f32),
+                )
+            };
+            let (width, height) = shown(rows);
+            layers.push(
+                img(rows.clone())
+                    .absolute()
+                    .left_0()
+                    .top(px((f64::from(below) / scale) as f32))
+                    .w(width)
+                    .h(height)
+                    .into_any_element(),
+            );
+            let (width, height) = shown(columns);
+            layers.push(
+                img(columns.clone())
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .w(width)
+                    .h(height)
+                    .into_any_element(),
+            );
+        }
+        Some(layers)
+    }
+
+    /// Everything painted, to be let go of.
+    fn clear(&mut self, retired: &mut Vec<Arc<RenderImage>>) {
+        retired.extend(self.tiles.drain().map(|(_, tile)| tile));
+        if let Some((_, columns, rows)) = self.bands.take() {
+            retired.push(columns);
+            retired.push(rows);
+        }
+        self.key = None;
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Popup {
     NumberFormat,
@@ -265,6 +547,7 @@ impl Sheet {
             edit: None,
             scroll: ScrollHandle::new(),
             painted: None,
+            tiles: SheetTiles::default(),
             viewport: (1.0, 1.0),
             drag: None,
             pointer: None,
@@ -2426,35 +2709,63 @@ impl DocView {
             (size.1 * scale).round() as u32,
         );
         let overlay = sheet.overlay();
-        let fresh = sheet.painted.as_ref().is_some_and(|p| {
-            p.scroll == at
-                && p.device == device
-                && p.zoom == zoom
-                && p.overlay == overlay
-                && p.generation == generation
-        });
-        if !fresh {
-            let painter = sheet.book.render_viewport(
-                (f64::from(at.0 / zoom), f64::from(at.1 / zoom)),
-                device.0,
-                device.1,
-                f64::from(scale * zoom),
-                &overlay,
+        // The cells as tiles with the selection drawn over them; while a
+        // copy, a fill or a resize shows over the cells, one picture of the
+        // viewport with all of it painted in.
+        let tiled =
+            overlay.preview.is_none() && overlay.marquee.is_none() && overlay.resize.is_none();
+        let mut layers = None;
+        if tiled {
+            if let Some(old) = sheet.painted.take() {
+                self.retired.push(old.image);
+            }
+            layers = sheet.tiles.layers(
+                &mut sheet.book,
+                (
+                    (f64::from(at.0) * f64::from(scale)).round(),
+                    (f64::from(at.1) * f64::from(scale)).round(),
+                ),
+                size,
+                scale,
+                zoom,
+                sheet.selection,
+                &mut self.retired,
             );
-            match painter.and_then(image) {
-                Some(image) => {
-                    if let Some(old) = sheet.painted.replace(PaintedSheet {
-                        scroll: at,
-                        device,
-                        zoom,
-                        overlay,
-                        generation,
-                        image,
-                    }) {
-                        self.retired.push(old.image);
+            if layers.is_none() {
+                self.status = i18n::text("sheet.paint_failed").into();
+            }
+        } else {
+            sheet.tiles.clear(&mut self.retired);
+            let fresh = sheet.painted.as_ref().is_some_and(|p| {
+                p.scroll == at
+                    && p.device == device
+                    && p.zoom == zoom
+                    && p.overlay == overlay
+                    && p.generation == generation
+            });
+            if !fresh {
+                let painter = sheet.book.render_viewport(
+                    (f64::from(at.0 / zoom), f64::from(at.1 / zoom)),
+                    device.0,
+                    device.1,
+                    f64::from(scale * zoom),
+                    &overlay,
+                );
+                match painter.and_then(image) {
+                    Some(image) => {
+                        if let Some(old) = sheet.painted.replace(PaintedSheet {
+                            scroll: at,
+                            device,
+                            zoom,
+                            overlay,
+                            generation,
+                            image,
+                        }) {
+                            self.retired.push(old.image);
+                        }
                     }
+                    None => self.status = i18n::text("sheet.paint_failed").into(),
                 }
-                None => self.status = i18n::text("sheet.paint_failed").into(),
             }
         }
         let rule_dialog = self.rule_dialog(cx);
@@ -2467,7 +2778,20 @@ impl DocView {
             unreachable!()
         };
         let (sheet_width, sheet_height) = sheet.book.sheet_size();
-        let picture = sheet.painted.as_ref().map(|p| p.image.clone());
+        let grid: Vec<gpui::AnyElement> = match layers {
+            Some(layers) => layers,
+            None => sheet
+                .painted
+                .as_ref()
+                .map(|p| {
+                    img(p.image.clone())
+                        .w(px(size.0))
+                        .h(px(size.1))
+                        .into_any_element()
+                })
+                .into_iter()
+                .collect(),
+        };
         let current = sheet.book.sheet_index();
         let active = sheet.selection.active;
 
@@ -3083,10 +3407,7 @@ impl DocView {
                         // The painted window sits under the scroller, which
                         // is transparent and owns the scrollbars and the
                         // mouse.
-                        div()
-                            .absolute()
-                            .inset_0()
-                            .children(picture.map(|image| img(image).w(px(size.0)).h(px(size.1)))),
+                        div().absolute().inset_0().children(grid),
                     )
                     .child(
                         div()
