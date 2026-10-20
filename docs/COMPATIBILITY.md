@@ -29,6 +29,7 @@ A fix starts as a case that fails.
 | Japanese functions | LENB, MIDB, FINDB, REPLACEB, ASC, JIS and the rest, typed into a cell; PHONETIC reading the furigana Excel saved (ヤマダタロウ for 山田太郎), and text typed over a name reading as that text | 11 cases + 1 test | `crates/jade-office-model/tests/japanese_functions_like_excel.rs`; jade-core `crates/jade-xlsx-calc/tests/phonetic.rs`, `crates/jade-xlsx-headless-editor/tests/phonetic_readings.rs` |
 | Files people have | every fixture opens; damaged, protected, macro-enabled and template files say what they are and save as what they are | 3 suites | `crates/jade-office-model/tests/`, `crates/jade-web/tests/` |
 | Editing Word in the browser | caret (on the line clicked, at a wrap too), typing, IME, selection, arrows, Home/End, clipboard, undo, save | 13 tests | `crates/jade-web/tests/edits_documents.rs` |
+| By hand, in the deployed browser build | a slide table: a double-click types into a cell, Tab selects the next cell's text, a row inserted below, Shift+click selects cells that merge and split back, undo restoring each; a corner drag resizing a table and a SmartArt diagram (its shapes scaled inside), undo keeping the selection; a sheet: BAHTTEXT and PHONETIC typed in, ⌘C/⌘V through the system clipboard pasting once | checked on 2026-10-19 and 2026-10-20 | https://jade-rs.github.io/jade-office/ |
 
 ## What works
 
