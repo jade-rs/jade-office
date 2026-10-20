@@ -252,6 +252,17 @@ sheet.validation_refused	この値は、このセルに定義されているデ�
 sheet.menu.cut	切り取り
 sheet.menu.copy	コピー
 sheet.menu.paste	貼り付け
+sheet.menu.paste_special	形式を選択して貼り付け…
+sheet.paste_special.title	形式を選択して貼り付け
+sheet.paste_special.paste	貼り付け
+sheet.paste_special.all	すべて
+sheet.paste_special.formulas	数式
+sheet.paste_special.values	値
+sheet.paste_special.formats	書式
+sheet.paste_special.skip_blanks	空白セルを無視する
+sheet.paste_special.transpose	行列を入れ替える
+sheet.paste_special.ok	OK
+sheet.paste_special.cancel	キャンセル
 sheet.menu.clear	数式と値のクリア
 sheet.menu.fill_down	下方向へコピー
 sheet.menu.fill_right	右方向へコピー

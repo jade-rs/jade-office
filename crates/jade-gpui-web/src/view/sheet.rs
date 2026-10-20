@@ -28,11 +28,13 @@ use super::*;
 mod charts;
 mod conditional;
 mod find_bar;
+mod paste_special;
 use charts::ChartTool;
 use conditional::Conditional;
 use jade_web::charts::{ChartAsk, Handle};
 use jade_web::conditional_formatting::RuleAsk;
 use jade_web::find::FindBar;
+use jade_web::paste_special::PasteSpecial;
 
 /// How far past the grid's edge the pointer has to be for a drag to scroll
 /// it, and how often it scrolls while held there.
@@ -82,6 +84,8 @@ pub(super) struct Sheet {
     pub object: Option<u32>,
     /// Chart Title… or Select Data…, asking.
     pub chart_asking: Option<ChartAsk>,
+    /// The Paste Special dialog, open, with its choices.
+    pub pasting: Option<PasteSpecial>,
     /// The note under the pointer, and where its cell's top-right corner
     /// is in the grid's px.
     note: Option<(CellRef, (f32, f32))>,
@@ -509,6 +513,7 @@ enum MenuCommand {
     Cut,
     Copy,
     Paste,
+    PasteSpecial,
     Clear,
     InsertRows,
     DeleteRows,
@@ -556,6 +561,7 @@ impl Sheet {
             managing: false,
             object: None,
             chart_asking: None,
+            pasting: None,
             note: None,
             menu: None,
             filter: None,
@@ -1548,6 +1554,9 @@ impl DocView {
         if sheet.asking.is_some() {
             return self.rule_key(key, modifiers, cx);
         }
+        if sheet.pasting.is_some() {
+            return self.paste_special_key(key, modifiers, cx);
+        }
         if sheet.managing && key == "escape" {
             sheet.managing = false;
             cx.notify();
@@ -1795,6 +1804,10 @@ impl DocView {
             // Ctrl+H, as Excel: Find and Replace.
             "h" if modifiers.control && !modifiers.platform => self.open_sheet_find(true, cx),
             "x" if !shift => self.sheet_copy(true, cx),
+            // ⌃⌘V (Ctrl+Alt+V elsewhere): Paste Special.
+            "v" if modifiers.control && (modifiers.platform || modifiers.alt) => {
+                self.open_paste_special(cx)
+            }
             // ⌘A: the block of data round the active cell, then the sheet.
             "a" => {
                 let region = sheet.book.current_region(active);
@@ -2018,6 +2031,7 @@ impl DocView {
             MenuCommand::Cut => return self.sheet_copy(true, cx),
             MenuCommand::Copy => return self.sheet_copy(false, cx),
             MenuCommand::Paste => return self.sheet_paste(None, cx),
+            MenuCommand::PasteSpecial => return self.open_paste_special(cx),
             MenuCommand::Clear => sheet.book.clear(range),
             MenuCommand::InsertRows => sheet.book.insert_rows(range.start.row, rows),
             MenuCommand::DeleteRows => sheet.book.delete_rows(range.start.row, rows),
@@ -2759,6 +2773,7 @@ impl DocView {
         let chart_dialog = self.chart_dialog(cx);
         let object_frame = self.object_frame();
         let find_bar = self.sheet_find_bar(cx);
+        let paste_special = self.paste_special_dialog(cx);
         let Document::Workbook(sheet) = &mut self.document else {
             unreachable!()
         };
@@ -2946,6 +2961,9 @@ impl DocView {
                     ];
                     if sheet.book.copied().is_some() {
                         items.push((MenuCommand::Paste, "sheet.menu.paste"));
+                    }
+                    if sheet.book.can_paste_special(None) {
+                        items.push((MenuCommand::PasteSpecial, "sheet.menu.paste_special"));
                     }
                     items.extend([
                         (MenuCommand::Clear, "sheet.menu.clear"),
@@ -3440,6 +3458,7 @@ impl DocView {
                     .children(rules_manager)
                     .children(chart_dialog)
                     .children(object_frame)
+                    .children(paste_special)
                     .children(menu)
                     // Records where the grid is, registers the input handler
                     // so typing — an IME's included — reaches the cell, and

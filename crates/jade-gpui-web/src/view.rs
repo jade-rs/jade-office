@@ -2031,7 +2031,8 @@ impl DocView {
         match &self.document {
             // Typing into a selected cell replaces it, as in Excel.
             // A dialog over the grid takes no typing into the cells.
-            Document::Workbook(sheet) if sheet.asking.is_some() || sheet.managing => {}
+            Document::Workbook(sheet)
+                if sheet.asking.is_some() || sheet.managing || sheet.pasting.is_some() => {}
             Document::Workbook(sheet) if sheet.typed().is_none() => {
                 self.begin_cell_edit(Some(String::new()), false, cx)
             }
