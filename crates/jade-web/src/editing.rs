@@ -1286,6 +1286,46 @@ impl EditableDocument {
         self.dirty
     }
 
+    /// The document as a PDF of its pages as the editor paints them (see
+    /// [`crate::pdf`]), on its own paper, at the view's scale: each page
+    /// painted in turn, then the pages kept before put back.
+    pub fn export_pdf(&mut self) -> Result<Vec<u8>, String> {
+        let resident = self.resident.borrow().clone();
+        let dark = self.dark_paper.get();
+        // The document's own paper, whatever the view shows.
+        self.set_dark_paper(false)?;
+        let mut pages = Vec::with_capacity(self.page_count());
+        let mut result = Ok(());
+        for index in 0..self.page_count() {
+            if let Err(error) = self.set_resident_pages(index..index + 1) {
+                result = Err(error);
+                break;
+            }
+            let Some(page) = self.page(index) else {
+                result = Err(format!("page {} did not paint", index + 1));
+                break;
+            };
+            let (width, height) = self
+                .page_sizes
+                .borrow()
+                .get(index)
+                .copied()
+                .unwrap_or_else(|| self.page_size());
+            pages.push(crate::pdf::PdfPage {
+                // CSS px to points.
+                width_pt: width * 0.75,
+                height_pt: height * 0.75,
+                pixel_width: page.width(),
+                pixel_height: page.height(),
+                rgba: page.rgba_premultiplied(),
+            });
+        }
+        self.set_resident_pages(resident)?;
+        self.set_dark_paper(dark)?;
+        result?;
+        crate::pdf::pdf_of_pages(&pages)
+    }
+
     /// The document as `.docx` bytes, every edit in it; marks it saved.
     pub fn export_docx(&mut self) -> Result<Vec<u8>, String> {
         let bytes = self

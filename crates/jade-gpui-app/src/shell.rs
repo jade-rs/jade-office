@@ -124,6 +124,87 @@ pub fn open_paths(paths: &[PathBuf], cx: &mut App) {
         .ok();
 }
 
+/// A new document, `bytes`, as a tab titled `name` until it is saved.
+pub fn open_untitled(name: String, bytes: Vec<u8>, cx: &mut App) {
+    let handle = match workspace(cx) {
+        Ok(handle) => handle,
+        Err(error) => {
+            eprintln!("{error}");
+            return;
+        }
+    };
+    handle
+        .update(cx, |workspace, window, cx| {
+            if let Err(error) = workspace.open_untitled(&name, &bytes, window, cx) {
+                eprintln!("{error}");
+            }
+            window.activate_window();
+        })
+        .ok();
+}
+
+/// The next new document's name: 文書 1, 文書 2, … (Document1, … in
+/// English), as Word numbers them in a session.
+pub fn untitled_name(extension: &str) -> String {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static COUNT: AtomicUsize = AtomicUsize::new(0);
+    let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    format!(
+        "{}.{extension}",
+        crate::i18n::format("doc.untitled", &[("n", &n)])
+    )
+}
+
+/// ⌘N: a blank document, as this language's Word makes one.
+pub fn open_blank(cx: &mut App) {
+    use jade_office_model::word::new::{blank_document, Blank};
+    let blank = match crate::i18n::language() {
+        crate::i18n::Language::English => Blank::English,
+        _ => Blank::Japanese,
+    };
+    open_untitled(untitled_name("docx"), blank_document(blank), cx);
+}
+
+/// 新規テンプレートから: asks for a Word template, and opens a new document
+/// made from it.
+pub fn prompt_for_template(cx: &mut App) {
+    use jade_office_model::word::new::{document_from_template, is_macro_enabled};
+    let paths = cx.prompt_for_paths(PathPromptOptions {
+        files: true,
+        directories: false,
+        multiple: false,
+        prompt: Some(SharedString::from(crate::i18n::text(
+            "menu.file.new_from_template",
+        ))),
+    });
+    cx.spawn(async move |cx| {
+        let Ok(Ok(Some(paths))) = paths.await else {
+            return;
+        };
+        let Some(path) = paths.first() else {
+            return;
+        };
+        let made = std::fs::read(path)
+            .map_err(|error| format!("{}: {error}", path.display()))
+            .and_then(|template| {
+                let extension = if is_macro_enabled(&template) {
+                    "docm"
+                } else {
+                    "docx"
+                };
+                Ok((extension, document_from_template(&template)?))
+            });
+        match made {
+            Ok((extension, document)) => {
+                cx.update(|cx| open_untitled(untitled_name(extension), document, cx))
+                    .ok();
+            }
+            Err(error) => eprintln!("{error}"),
+        }
+    })
+    .detach();
+}
+
 /// Asks for files of any supported kind and opens each as a tab.
 pub fn prompt_and_open(cx: &mut App) {
     let paths = cx.prompt_for_paths(PathPromptOptions {

@@ -13,10 +13,11 @@
 use std::sync::Arc;
 
 pub use jade_office_model::tiny::TinySkiaBackend;
-pub use jade_office_model::{deck, grid, sheet, text, typing};
+pub use jade_office_model::{deck, grid, sheet, text, typing, word};
 
 pub mod document;
 pub mod editing;
+pub mod pdf;
 #[cfg(target_arch = "wasm32")]
 mod web;
 

@@ -68,6 +68,8 @@ actions!(
     jade,
     [
         Quit,
+        NewDocument,
+        NewFromTemplate,
         Open,
         CloseWindow,
         StartSlideshow,
@@ -82,6 +84,7 @@ actions!(
         Save,
         SaveAs,
         Print,
+        ExportPdf,
         Undo,
         Redo,
         Cut,
@@ -125,6 +128,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-q", Quit, None),
         // Opening and closing belong to the app, not to one kind of window:
         // they work from the start window and from every view.
+        KeyBinding::new("cmd-n", NewDocument, None),
+        // Word for Mac's 新規テンプレートから.
+        KeyBinding::new("cmd-shift-p", NewFromTemplate, None),
         KeyBinding::new("cmd-o", Open, None),
         KeyBinding::new("cmd-w", CloseWindow, None),
         KeyBinding::new("cmd-shift-o", OpenFolder, None),
@@ -142,6 +148,7 @@ fn key_bindings() -> Vec<KeyBinding> {
         // Unscoped so each view that can print answers it with its own
         // handler; a view without one leaves it alone.
         KeyBinding::new("cmd-p", Print, None),
+        KeyBinding::new("cmd-alt-p", ExportPdf, CONTEXT),
         KeyBinding::new("f5", StartSlideshow, Some("Deck")),
         KeyBinding::new("cmd-z", Undo, None),
         KeyBinding::new("cmd-shift-z", Redo, None),
@@ -214,6 +221,9 @@ fn menus() -> Vec<Menu> {
         Menu {
             name: t("menu.file").into(),
             items: vec![
+                MenuItem::action(t("menu.file.new"), NewDocument),
+                MenuItem::action(t("menu.file.new_from_template"), NewFromTemplate),
+                MenuItem::separator(),
                 MenuItem::action(t("menu.file.open"), Open),
                 MenuItem::action(t("menu.file.open_folder"), OpenFolder),
                 MenuItem::action(t("menu.file.close_tab"), CloseWindow),
@@ -222,6 +232,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.file.save_as"), SaveAs),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.print"), Print),
+                MenuItem::action(t("menu.file.export_pdf"), ExportPdf),
             ],
         },
         Menu {
@@ -413,6 +424,11 @@ pub(crate) fn skia_backend() -> Result<jade_office_model::skia::SkiaBackend, Str
 /// Opens `path` and paints it, ready to be edited.
 fn open_document(path: &str) -> Result<NativeDocument, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("{path}: {err}"))?;
+    open_document_bytes(&bytes)
+}
+
+/// `.docx` bytes, painted and ready to be edited.
+fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
     let regular = bundled_font("NotoSansJP-Regular.ttf");
     let bold = bundled_font("NotoSansJP-Bold.ttf");
     let mut faces = Vec::new();
@@ -446,12 +462,7 @@ fn open_document(path: &str) -> Result<NativeDocument, String> {
         weight: 400,
         path: &thai,
     });
-    NativeDocument::open(
-        &bytes,
-        INITIAL_PAGE_WIDTH_PX,
-        INITIAL_PAGE_HEIGHT_PX,
-        &faces,
-    )
+    NativeDocument::open(bytes, INITIAL_PAGE_WIDTH_PX, INITIAL_PAGE_HEIGHT_PX, &faces)
 }
 
 /// Reports what the text system resolves the shell's labels to.
@@ -1003,6 +1014,9 @@ struct DocumentView {
     insert_at: (usize, usize),
     /// The file the last save went to, shown so a save is visibly a save.
     saved_to: Option<SharedString>,
+    /// A new document, not saved anywhere yet: `path` is only its name,
+    /// and ⌘S asks where to save it.
+    untitled: bool,
     /// Whether edits are being recorded as revisions.
     tracking_changes: bool,
     /// Why the last table command did nothing, if it did nothing.
@@ -2764,8 +2778,12 @@ impl DocumentView {
         }
     }
 
-    /// Saves over the document that was opened, as Word does.
+    /// Saves over the document that was opened, as Word does; a new one
+    /// asks where to go first.
     fn save(&mut self, cx: &mut Context<Self>) {
+        if self.untitled {
+            return self.save_as(cx);
+        }
         let target = PathBuf::from(self.path.to_string());
         self.write_to(target, cx);
     }
@@ -2773,10 +2791,7 @@ impl DocumentView {
     /// Asks where to save, then saves there.
     fn save_as(&mut self, cx: &mut Context<Self>) {
         let source = PathBuf::from(self.path.to_string());
-        let directory = source
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."));
+        let directory = self.save_directory();
         // The name it has, extension and all: a .docm stays macro-enabled.
         let suggested = source
             .file_name()
@@ -2793,11 +2808,65 @@ impl DocumentView {
         .detach();
     }
 
+    /// Where a save prompt starts: the document's folder, or for a new
+    /// one, Documents.
+    fn save_directory(&self) -> PathBuf {
+        let source = PathBuf::from(self.path.to_string());
+        match source.parent() {
+            Some(parent) if !self.untitled && !parent.as_os_str().is_empty() => parent.into(),
+            _ => std::env::var_os("HOME")
+                .map(|home| PathBuf::from(home).join("Documents"))
+                .filter(|documents| documents.is_dir())
+                .unwrap_or_else(|| PathBuf::from(".")),
+        }
+    }
+
+    /// ファイル → PDF として書き出す: asks where, then writes the pages as
+    /// the editor paints them, their text searchable.
+    fn export_pdf(&mut self, cx: &mut Context<Self>) {
+        let source = PathBuf::from(self.path.to_string());
+        let suggested = format!(
+            "{}.pdf",
+            source
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "document".to_string())
+        );
+        let prompt = cx.prompt_for_new_path(&self.save_directory(), Some(&suggested));
+        cx.spawn(async move |view, cx| {
+            let Ok(Ok(Some(path))) = prompt.await else {
+                return;
+            };
+            view.update(cx, |view, cx| view.write_pdf_to(&path, cx))
+                .ok();
+        })
+        .detach();
+    }
+
+    fn write_pdf_to(&mut self, target: &std::path::Path, cx: &mut Context<Self>) {
+        let written = self
+            .document
+            .export_pdf()
+            .and_then(|pdf| std::fs::write(target, pdf).map_err(|error| error.to_string()));
+        match written {
+            Ok(()) => {
+                self.saved_to = Some(SharedString::from(crate::shell::file_name(target)));
+                cx.notify();
+            }
+            Err(error) => eprintln!("PDF export failed: {error}"),
+        }
+    }
+
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
         match self.document.export_docx() {
             Ok(bytes) => match crate::shell::write_in_place(&target, &bytes) {
                 Ok(()) => {
                     self.dirty = false;
+                    // Saved as, the document is that file from now on.
+                    if self.untitled {
+                        self.untitled = false;
+                        self.path = SharedString::from(target.to_string_lossy().into_owned());
+                    }
                     self.saved_to = Some(SharedString::from(
                         target
                             .file_name()
@@ -3563,6 +3632,7 @@ impl Render for DocumentView {
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
             .on_action(cx.listener(|view, _: &SaveAs, _window, cx| view.save_as(cx)))
             .on_action(cx.listener(|view, _: &Print, _window, _cx| view.print()))
+            .on_action(cx.listener(|view, _: &ExportPdf, _window, cx| view.export_pdf(cx)))
             .on_action(cx.listener(|view, _: &Undo, _window, cx| view.step_history(true, cx)))
             .on_action(cx.listener(|view, _: &Redo, _window, cx| view.step_history(false, cx)))
             .on_action(cx.listener(|view, _: &Cut, _window, cx| view.cut(cx)))
@@ -3928,21 +3998,49 @@ pub(crate) fn new_document_view(
     Ok(cx.new(|_| view))
 }
 
+/// A new document — blank, or made from a template — in a view of its own,
+/// `name` its title until it is saved somewhere.
+pub(crate) fn untitled_document_view(
+    bytes: &[u8],
+    name: &str,
+    cx: &mut App,
+) -> Result<gpui::Entity<DocumentView>, String> {
+    let view = untitled_view(bytes, name, cx)?;
+    Ok(cx.new(|_| view))
+}
+
+fn untitled_view(bytes: &[u8], name: &str, cx: &mut App) -> Result<DocumentView, String> {
+    let document = open_document_bytes(bytes)?;
+    let mut view = document_view(document, name.to_string(), bytes.len() as u64, cx);
+    view.untitled = true;
+    Ok(view)
+}
+
 /// Reads `path` and paints its pages, ready to be shown.
 fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentView, String> {
     let path_text = path.to_string_lossy().into_owned();
-    let mut document = open_document(&path_text)?;
+    let document = open_document(&path_text)?;
+    let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+    Ok(document_view(document, path_text, file_size, cx))
+}
+
+/// The view over a document just opened.
+fn document_view(
+    mut document: NativeDocument,
+    path_text: String,
+    file_size: u64,
+    cx: &mut App,
+) -> DocumentView {
     // Placed before the window opens so the caret is visible from the first
     // frame rather than only after the first click.
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
     let images: Vec<_> = (0..document.page_count())
         .filter_map(|index| page_image(&document, index))
         .collect();
-    let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
     let mut ribbon = ribbon::Ribbon::default();
     ribbon.read_styles(&document);
 
-    Ok(DocumentView {
+    DocumentView {
         path: SharedString::from(path_text),
         file_size,
         document,
@@ -3968,6 +4066,7 @@ fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentVi
         edits: 0,
         format: None,
         saved_to: None,
+        untitled: false,
         marked: None,
         page_bounds: Rc::new(RefCell::new(Vec::new())),
         last_repaint: None,
@@ -3977,7 +4076,7 @@ fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentVi
         dirty: false,
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
-    })
+    }
 }
 
 fn main() {
@@ -4026,6 +4125,8 @@ fn main() {
         // The actions no single window owns.
         cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
         cx.on_action(|_: &Open, cx: &mut App| shell::prompt_and_open(cx));
+        cx.on_action(|_: &NewDocument, cx: &mut App| shell::open_blank(cx));
+        cx.on_action(|_: &NewFromTemplate, cx: &mut App| shell::prompt_for_template(cx));
         cx.on_action(|_: &ToggleTheme, cx: &mut App| {
             let mode = if theme::is_dark() {
                 theme::Mode::Light
@@ -4454,6 +4555,34 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.document.paragraph_text(paragraph).unwrap(), before)
         });
+    }
+
+    /// ⌘N's blank document opens untitled, takes typing, and is written
+    /// out as a PDF of its pages.
+    #[gpui::test]
+    fn a_new_document_opens_untitled_and_exports_a_pdf(cx: &mut gpui::TestAppContext) {
+        use gpui::Focusable;
+        use jade_office_model::word::new::{blank_document, Blank};
+        let (view, cx) = cx.add_window_view(|_window, cx| {
+            super::untitled_view(&blank_document(Blank::Japanese), "文書 1.docx", cx).unwrap()
+        });
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        view.update(cx, |view, _| {
+            assert!(view.untitled);
+            view.insert_at = (0, 0);
+            view.caret = view.document.place_caret(0, 0);
+        });
+        cx.simulate_input("新しい文書");
+        let pdf = std::env::temp_dir().join(format!("jade-new-{}.pdf", std::process::id()));
+        view.update(cx, |view, cx| {
+            assert_eq!(view.current_paragraph_text(), "新しい文書");
+            assert!(view.dirty);
+            view.write_pdf_to(&pdf, cx);
+        });
+        let bytes = std::fs::read(&pdf).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+        std::fs::remove_file(&pdf).ok();
     }
 
     #[test]
