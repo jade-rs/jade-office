@@ -999,12 +999,11 @@ impl TinySkiaPainter {
     /// is handed — for drawing within `bounds` (local, placed by
     /// `transform`), or not at all when the clip hides it.
     ///
-    /// Drawing that crosses the edge of a rectangular clip is drawn on a
-    /// transparent layer the size of the part of it the clip lets through,
-    /// inside a mask that size, and laid over the surface. A mask the size
-    /// of the surface — made for every clip a drawing crossed, a sheet's
-    /// gridlines crossing every cell's — was a quarter of what painting a
-    /// sheet or a keystroke's band cost.
+    /// Small drawing that crosses the edge of a rectangular clip is drawn on
+    /// a layer the size of the drawing, inside a mask that size. A mask the
+    /// size of the surface — made for every clip a drawing crossed, a
+    /// sheet's gridlines crossing every cell's — was a fifth of what
+    /// painting a sheet cost.
     fn clipped(
         &self,
         bounds: Rect,
@@ -1019,7 +1018,14 @@ impl TinySkiaPainter {
             Some(clip) => match clip.coverage(device) {
                 Coverage::Hidden => return,
                 Coverage::Whole => draw(&mut pixmap, transform, None),
-                Coverage::Partial if clip.path.is_none() => {
+                // Small drawing — a gridline, a crop mark — on a layer of its
+                // own; anything bigger through the clip's one mask, which
+                // every drawing under the clip shares.
+                Coverage::Partial
+                    if clip.path.is_none()
+                        && layer_area(device) * LAYER_SHARE
+                            <= (pixmap.width() * pixmap.height()) as f32 =>
+                {
                     let size = (pixmap.width(), pixmap.height());
                     let Some((x, y, mut layer, mask)) = layer_for(clip.rect, device, size) else {
                         return;
@@ -1542,6 +1548,17 @@ fn layer_for(clip: Bounds, device: Bounds, size: (u32, u32)) -> Option<(i32, i32
         Transform::identity(),
     );
     Some((x, y, layer, mask))
+}
+
+/// How many times smaller than the surface drawing must be to go on a layer
+/// of its own when it crosses a rectangle clip's edge: a layer is made, and
+/// the surface under it copied in and back, per drawing, so a large one is
+/// cheaper through the clip's shared mask.
+const LAYER_SHARE: f32 = 8.0;
+
+/// The area of `device` bounds, in device px.
+fn layer_area(device: Bounds) -> f32 {
+    ((device[2] - device[0]).max(0.0) + 3.0) * ((device[3] - device[1]).max(0.0) + 3.0)
 }
 
 /// Copies the pixels of the `layer`-sized region of `surface` at `at` into
