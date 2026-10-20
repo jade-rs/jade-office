@@ -29,9 +29,11 @@ use jade_docx_headless_api::{
 pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
+pub mod clipboard;
 pub mod find;
 pub mod new;
 pub mod page;
+pub mod picture;
 pub mod review;
 
 pub use find::{FindOptions, Found, WordFind};

@@ -48,7 +48,9 @@ use gpui::{
     MouseUpEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
 use jade_docx_native_render::{CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit};
+use jade_office_model::word::clipboard::{RichClip, WordClipboard};
 use jade_office_model::word::page::{Story, WordPage};
+use jade_office_model::word::picture::{ObjectTarget, PlacedObject, WordPicture, Wrap};
 use jade_office_model::word::review::WordReview;
 use jade_office_model::word::{
     CharacterFormat, FindOptions, FormatState, Found, TableCommand, WordFind, WordFormatting,
@@ -529,6 +531,50 @@ fn page_image(document: &NativeDocument, page_index: usize) -> Option<Arc<Render
     let (bgra, width, height) = document.page_pixels(page_index)?;
     let buffer = image::ImageBuffer::from_raw(width as u32, height as u32, bgra)?;
     Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+}
+
+thread_local! {
+    /// The last copy's formatting, for a paste in any document view that
+    /// finds the copy's text still on the clipboard.
+    static RICH_CLIP: RefCell<Option<RichClip>> = const { RefCell::new(None) };
+}
+
+/// A picture or shape a click found, as the shared commands address it.
+fn placed_object(object: &ObjectHit) -> PlacedObject {
+    PlacedObject {
+        target: ObjectTarget {
+            paragraph_index: object.paragraph,
+            run_index: object.run,
+            kind: object.kind,
+        },
+        page: object.page.saturating_sub(1),
+        x: object.x,
+        y: object.y,
+        width: object.width,
+        height: object.height,
+    }
+}
+
+const WRAP_IDS: [&str; 7] = [
+    "wrap-inline",
+    "wrap-square",
+    "wrap-tight",
+    "wrap-through",
+    "wrap-top-bottom",
+    "wrap-behind",
+    "wrap-front",
+];
+
+fn wrap_label(wrap: Wrap) -> &'static str {
+    t(match wrap {
+        Wrap::Inline => "picture.wrap.inline",
+        Wrap::Square => "picture.wrap.square",
+        Wrap::Tight => "picture.wrap.tight",
+        Wrap::Through => "picture.wrap.through",
+        Wrap::TopAndBottom => "picture.wrap.top_bottom",
+        Wrap::BehindText => "picture.wrap.behind",
+        Wrap::InFrontOfText => "picture.wrap.front",
+    })
 }
 
 /// The palette, in one place, so a colour is named by its job rather than
@@ -1069,6 +1115,9 @@ struct DocumentView {
     /// Where a drag started, while the mouse is down. Selection is anchored
     /// here and extended to wherever the pointer is.
     drag_anchor: Option<(usize, usize)>,
+    /// The picture or shape last clicked, which 文字列の折り返し acts on and
+    /// an outline shows.
+    selected_object: Option<ObjectHit>,
     /// The picture or shape being dragged, if the mouse went down on one.
     /// Pictures are not in the text flow, so dragging one is a move, not a
     /// selection.
@@ -1692,6 +1741,7 @@ impl DocumentView {
             }
             RibbonTab::Insert => vec![
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
+                self.picture_group(cx),
                 word_page::header_footer(&self.ribbon, cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
@@ -1928,6 +1978,43 @@ impl DocumentView {
                 ]
             }
         }
+    }
+
+    /// 挿入's 図: a picture from a file, and the wrap of the one last
+    /// clicked.
+    fn picture_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let selected = self
+            .selected_object
+            .is_some_and(|object| placed_object(&object).is_picture());
+        let mut wraps = vec![self
+            .ribbon_button(
+                "insert-picture",
+                t("picture.insert"),
+                t("picture.insert_title"),
+                false,
+                cx,
+                |view, cx| view.prompt_for_picture(cx),
+            )
+            .into_any_element()];
+        if selected {
+            for (index, wrap) in jade_office_model::word::picture::WRAPS
+                .into_iter()
+                .enumerate()
+            {
+                wraps.push(
+                    self.ribbon_button(
+                        WRAP_IDS[index],
+                        wrap_label(wrap),
+                        t("picture.wrap"),
+                        false,
+                        cx,
+                        move |view, cx| view.wrap_picture(wrap, cx),
+                    )
+                    .into_any_element(),
+                );
+            }
+        }
+        Self::ribbon_group(t("picture.group"), vec![Self::ribbon_row(wraps)]).into_any_element()
     }
 
     /// The ホーム tab's clipboard, which only the native app can paste into
@@ -2758,10 +2845,15 @@ impl DocumentView {
         }
     }
 
+    /// The selection's text onto the clipboard, and its formatting beside it
+    /// for a paste in this app that finds that text still there.
     fn copy(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = self.document.selected_text() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
-        }
+        let Some(text) = self.document.selected_text() else {
+            return;
+        };
+        let clip = WordClipboard::copy_rich(&self.document);
+        RICH_CLIP.with(|kept| *kept.borrow_mut() = clip);
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
     }
 
     fn cut(&mut self, cx: &mut Context<Self>) {
@@ -2779,6 +2871,11 @@ impl DocumentView {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
+        // Copied here, and still what the clipboard holds: with its formatting.
+        let clip = RICH_CLIP.with(|kept| kept.borrow().clone());
+        if let Some(clip) = clip.filter(|clip| clip.matches(&text)) {
+            return self.paste_rich(&clip, cx);
+        }
         // Newlines become paragraph breaks, which is what they were when the
         // text was copied out of a document.
         let mut lines = text.split('\n');
@@ -2826,6 +2923,109 @@ impl DocumentView {
             .place_caret(self.insert_at.0, self.insert_at.1);
         self.rebuild_after_edit();
         cx.notify();
+    }
+
+    /// A paste that keeps the formatting, as one undo step.
+    fn paste_rich(&mut self, clip: &RichClip, cx: &mut Context<Self>) {
+        if self.document.selection().is_none() {
+            self.document
+                .place_caret(self.insert_at.0, self.insert_at.1);
+        }
+        match WordClipboard::paste_rich(&mut self.document, clip) {
+            Ok(caret) => {
+                self.selection_anchor = None;
+                self.insert_at = caret;
+                self.caret = self.document.place_caret(caret.0, caret.1);
+                self.rebuild_after_edit();
+                cx.notify();
+            }
+            Err(error) => eprintln!("paste failed: {error}"),
+        }
+    }
+
+    /// 挿入 → 画像: asks for a picture and puts it in at the caret.
+    fn prompt_for_picture(&mut self, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(SharedString::from(t("picture.insert"))),
+        });
+        cx.spawn(async move |view, cx| {
+            let Ok(Ok(Some(paths))) = paths.await else {
+                return;
+            };
+            let Some(path) = paths.first() else {
+                return;
+            };
+            match std::fs::read(path) {
+                Ok(bytes) => {
+                    view.update(cx, |view, cx| view.insert_picture(bytes, cx))
+                        .ok();
+                }
+                Err(error) => eprintln!("{}: {error}", path.display()),
+            }
+        })
+        .detach();
+    }
+
+    fn insert_picture(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
+        self.document
+            .place_caret(self.insert_at.0, self.insert_at.1);
+        match WordPicture::insert_picture(&mut self.document, bytes) {
+            Ok(()) => {
+                self.table_status = None;
+                self.caret = self
+                    .document
+                    .place_caret(self.insert_at.0, self.insert_at.1);
+                self.rebuild_after_edit();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
+    }
+
+    /// 文字列の折り返し for the picture last clicked.
+    fn wrap_picture(&mut self, wrap: Wrap, cx: &mut Context<Self>) {
+        let Some(object) = self.selected_object else {
+            return;
+        };
+        let placed = placed_object(&object);
+        match WordPicture::set_picture_wrap(&mut self.document, placed, wrap) {
+            Ok(()) => {
+                self.table_status = None;
+                self.rebuild_after_edit();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
+    }
+
+    /// The outline of the picture last clicked, on its page.
+    fn object_outline(&self, page_index: usize) -> Option<impl IntoElement> {
+        let object = self.selected_object?;
+        if object.page.saturating_sub(1) != page_index {
+            return None;
+        }
+        let zoom = self.zoom;
+        Some(
+            div()
+                .absolute()
+                .left(px(object.x as f32 * zoom))
+                .top(px(object.y as f32 * zoom))
+                .w(px(object.width as f32 * zoom))
+                .h(px(object.height as f32 * zoom))
+                .border_1()
+                .border_color(theme::accent())
+                .child(
+                    div()
+                        .absolute()
+                        .right(px(-4.0))
+                        .bottom(px(-4.0))
+                        .size(px(8.0))
+                        .bg(theme::accent()),
+                ),
+        )
     }
 
     /// Undo or redo, then repaint everything: history can move content onto
@@ -3201,6 +3401,7 @@ impl DocumentView {
             const HANDLE: f64 = 12.0;
             let resizing = local_x >= object.x + object.width - HANDLE
                 && local_y >= object.y + object.height - HANDLE;
+            self.selected_object = Some(object);
             self.object_drag = Some(ObjectDrag {
                 object,
                 start: (object.x, object.y, object.width, object.height),
@@ -3213,6 +3414,7 @@ impl DocumentView {
             return;
         }
 
+        self.selected_object = None;
         if let Some(position) = self.document.position_at(local_x, document_y) {
             self.insert_at = position;
             self.current_page = page_index;
@@ -3892,6 +4094,7 @@ impl Render for DocumentView {
                                             .h(px(page_height * zoom)),
                                     )
                                     .children(self.caret_overlay(index))
+                                    .children(self.object_outline(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
                                     // before the renderer can hit-test it.
@@ -4151,6 +4354,7 @@ fn document_view(
         caret,
         drag_anchor: None,
         object_drag: None,
+        selected_object: None,
         selection_anchor: None,
         zoom: 1.0,
         raster_scale: 1.0,
@@ -4791,6 +4995,61 @@ mod tests {
             assert_eq!(view.document.paragraph_text(paragraph).unwrap(), before);
             view.toggle_tracking(cx);
             assert!(!view.document.is_tracking_changes());
+        });
+    }
+
+    /// A copy keeps its formatting when it is pasted back; a picture goes
+    /// in at the caret, and a click on it lets its wrap be set.
+    #[gpui::test]
+    fn copies_keep_formatting_and_pictures_go_in(cx: &mut gpui::TestAppContext) {
+        use super::{Bold, Copy, Paste, Undo};
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "Bold plain ");
+        view.update(cx, |view, _| {
+            view.document
+                .select((paragraph, 0), (paragraph, 4), 1)
+                .unwrap();
+            view.insert_at = (paragraph, 4);
+        });
+        cx.dispatch_action(Bold);
+        cx.dispatch_action(Copy);
+        let end = view.update(cx, |view, _| {
+            let end = view.document.paragraph_text(paragraph).unwrap().len();
+            view.insert_at = (paragraph, end);
+            view.caret = view.document.place_caret(paragraph, end);
+            end
+        });
+        cx.dispatch_action(Paste);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.insert_at, (paragraph, end + 4));
+            let style = view.document.run_style_at(paragraph, end + 1).unwrap();
+            assert_eq!(style.bold, Some(true), "the paste kept the bold");
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.document.paragraph_text(paragraph).unwrap().len(), end)
+        });
+
+        // A 2×1 PNG.
+        let mut png = Vec::new();
+        image::RgbaImage::from_raw(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255])
+            .unwrap()
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        view.update(cx, |view, cx| {
+            view.insert_at = (paragraph, 0);
+            view.insert_picture(png, cx);
+            assert!(view.table_status.is_none(), "{:?}", view.table_status);
+            let images = view
+                .document
+                .word_document()
+                .paragraph(paragraph)
+                .unwrap()
+                .runs
+                .iter()
+                .filter(|run| run.image.is_some())
+                .count();
+            assert_eq!(images, 1);
         });
     }
 
