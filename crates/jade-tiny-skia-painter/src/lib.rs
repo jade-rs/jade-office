@@ -397,27 +397,26 @@ fn rasterize_glyph(
     let top = (bounds[1] - grow).floor() as i32;
     let width = ((bounds[2] + grow).ceil() as i32 - left).max(1) as u32;
     let height = ((bounds[3] + grow).ceil() as i32 - top).max(1) as u32;
-    let mut pixmap = Pixmap::new(width, height)?;
     let local = transform.post_translate(-left as f32, -top as f32);
-    let mut paint = Paint::default();
-    paint.set_color(Color::BLACK);
-    paint.anti_alias = true;
-    pixmap.fill_path(outline, &paint, FillRule::Winding, local, None);
-    if let Some(width) = bold_width {
-        let stroke = Stroke {
-            width,
-            line_join: LineJoin::Round,
-            ..Stroke::default()
-        };
-        pixmap.stroke_path(outline, &paint, &stroke, local, None);
-    }
+    let alpha = match bold_width {
+        None => area_coverage(outline, local, width as usize, height as usize),
+        Some(bold) => {
+            let mut pixmap = Pixmap::new(width, height)?;
+            let mut paint = Paint::default();
+            paint.set_color(Color::BLACK);
+            paint.anti_alias = true;
+            pixmap.fill_path(outline, &paint, FillRule::Winding, local, None);
+            let stroke = Stroke {
+                width: bold,
+                line_join: LineJoin::Round,
+                ..Stroke::default()
+            };
+            pixmap.stroke_path(outline, &paint, &stroke, local, None);
+            pixmap.data().iter().skip(3).step_by(4).copied().collect()
+        }
+    };
     // Trimmed to its ink: the margin left for anti-aliasing is mostly
     // empty, and every empty pixel kept is one more visited per draw.
-    let alpha: Vec<u8> = pixmap
-        .data()
-        .chunks_exact(4)
-        .map(|pixel| pixel[3])
-        .collect();
     let (columns, rows) = (width as usize, height as usize);
     let inked = |column: usize, row: usize| alpha[row * columns + column] != 0;
     let row_inked = |row: usize| (0..columns).any(|column| inked(column, row));
@@ -447,6 +446,179 @@ fn rasterize_glyph(
         height: (last_row - first_row + 1) as u32,
         alpha: trimmed,
     })
+}
+
+/// The coverage of `outline`, filled under `transform`, of each pixel of a
+/// `width` × `height` grid whose border the outline stays a pixel inside:
+/// the exact area each pixel has inside, by accumulating every edge's
+/// signed area along its rows (as font-rs and ab_glyph do) instead of the
+/// path rasteriser's sixteen samples. Rasterising glyphs was half of what
+/// opening a document cost.
+fn area_coverage(outline: &Path, transform: Transform, width: usize, height: usize) -> Vec<u8> {
+    let mut area = AreaAccumulator {
+        width,
+        height,
+        cells: vec![0.0; width * height + 2],
+    };
+    let place = |point: tiny_skia::Point| {
+        let mut point = point;
+        transform.map_point(&mut point);
+        (point.x, point.y)
+    };
+    let (mut start, mut last) = ((0.0, 0.0), (0.0, 0.0));
+    for segment in outline.segments() {
+        match segment {
+            PathSegment::MoveTo(point) => {
+                area.line(last, start);
+                start = place(point);
+                last = start;
+            }
+            PathSegment::LineTo(point) => {
+                let point = place(point);
+                area.line(last, point);
+                last = point;
+            }
+            PathSegment::QuadTo(control, point) => {
+                let (control, point) = (place(control), place(point));
+                area.quad(last, control, point);
+                last = point;
+            }
+            PathSegment::CubicTo(first, second, point) => {
+                let (first, second, point) = (place(first), place(second), place(point));
+                area.cubic(last, first, second, point);
+                last = point;
+            }
+            PathSegment::Close => {
+                area.line(last, start);
+                last = start;
+            }
+        }
+    }
+    area.line(last, start);
+    // Each row's signed areas sum to its winding: covered where it is not
+    // zero, as the non-zero rule fills.
+    let mut sum = 0.0_f32;
+    area.cells[..width * height]
+        .iter()
+        .map(|cell| {
+            sum += cell;
+            (sum.abs().min(1.0) * 255.0 + 0.5) as u8
+        })
+        .collect()
+}
+
+/// The signed area each edge adds to the pixels it crosses, row by row.
+struct AreaAccumulator {
+    width: usize,
+    height: usize,
+    cells: Vec<f32>,
+}
+
+impl AreaAccumulator {
+    fn line(&mut self, from: (f32, f32), to: (f32, f32)) {
+        if from.1 == to.1 {
+            return;
+        }
+        let (direction, from, to) = if from.1 < to.1 {
+            (1.0, from, to)
+        } else {
+            (-1.0, to, from)
+        };
+        let slope = (to.0 - from.0) / (to.1 - from.1);
+        let mut x = from.0;
+        let first = from.1.max(0.0);
+        if from.1 < 0.0 {
+            x -= from.1 * slope;
+        }
+        let last = (to.1.ceil().max(0.0) as usize).min(self.height);
+        for row in first as usize..last {
+            let start = row * self.width;
+            let height = (row as f32 + 1.0).min(to.1) - (row as f32).max(from.1);
+            let next = x + slope * height;
+            let signed = height * direction;
+            // Kept on the grid, should an edge stray off it.
+            let edge = self.width as f32;
+            let (left, right) = if x < next { (x, next) } else { (next, x) };
+            let (left, right) = (left.clamp(0.0, edge), right.clamp(0.0, edge));
+            let left_floor = left.floor();
+            let left_index = left_floor as usize;
+            let right_ceil = right.ceil();
+            let right_index = right_ceil as usize;
+            let cells = &mut self.cells;
+            if right_index <= left_index + 1 {
+                // Within one pixel: split by where the edge crosses it.
+                let middle = (0.5 * (x + next)).clamp(0.0, edge) - left_floor;
+                cells[start + left_index] += signed - signed * middle;
+                cells[start + left_index + 1] += signed * middle;
+            } else {
+                let step = (right - left).recip();
+                let left_fraction = left - left_floor;
+                let first_area = 0.5 * step * (1.0 - left_fraction) * (1.0 - left_fraction);
+                let right_fraction = right - right_ceil + 1.0;
+                let last_area = 0.5 * step * right_fraction * right_fraction;
+                cells[start + left_index] += signed * first_area;
+                if right_index == left_index + 2 {
+                    cells[start + left_index + 1] += signed * (1.0 - first_area - last_area);
+                } else {
+                    let second_area = step * (1.5 - left_fraction);
+                    cells[start + left_index + 1] += signed * (second_area - first_area);
+                    for index in left_index + 2..right_index - 1 {
+                        cells[start + index] += signed * step;
+                    }
+                    let before_last = second_area + (right_index - left_index - 3) as f32 * step;
+                    cells[start + right_index - 1] += signed * (1.0 - before_last - last_area);
+                }
+                cells[start + right_index] += signed * last_area;
+            }
+            x = next;
+        }
+    }
+
+    fn quad(&mut self, from: (f32, f32), control: (f32, f32), to: (f32, f32)) {
+        let deviation = (
+            from.0 - 2.0 * control.0 + to.0,
+            from.1 - 2.0 * control.1 + to.1,
+        );
+        let steps = curve_steps(deviation.0 * deviation.0 + deviation.1 * deviation.1);
+        let mut last = from;
+        for step in 1..=steps {
+            let t = step as f32 / steps as f32;
+            let u = 1.0 - t;
+            let point = (
+                u * u * from.0 + 2.0 * u * t * control.0 + t * t * to.0,
+                u * u * from.1 + 2.0 * u * t * control.1 + t * t * to.1,
+            );
+            self.line(last, point);
+            last = point;
+        }
+    }
+
+    fn cubic(&mut self, from: (f32, f32), first: (f32, f32), second: (f32, f32), to: (f32, f32)) {
+        let bend = |a: (f32, f32), b: (f32, f32), c: (f32, f32)| {
+            let (x, y) = (a.0 - 2.0 * b.0 + c.0, a.1 - 2.0 * b.1 + c.1);
+            x * x + y * y
+        };
+        let deviation = bend(from, first, second).max(bend(first, second, to));
+        let steps = curve_steps(deviation);
+        let mut last = from;
+        for step in 1..=steps {
+            let t = step as f32 / steps as f32;
+            let u = 1.0 - t;
+            let (a, b, c, d) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
+            let point = (
+                a * from.0 + b * first.0 + c * second.0 + d * to.0,
+                a * from.1 + b * first.1 + c * second.1 + d * to.1,
+            );
+            self.line(last, point);
+            last = point;
+        }
+    }
+}
+
+/// How many lines a curve whose second difference is `deviation` squared
+/// is flattened into, so none strays a fraction of a pixel from it.
+fn curve_steps(deviation: f32) -> usize {
+    1 + (3.0 * deviation).sqrt().sqrt().floor() as usize
 }
 
 /// A character's glyph in a face, its advance in font units, and the
@@ -2771,6 +2943,110 @@ mod tests {
             // rectangles take the exact area, so an edge pixel can differ
             // by a quarter of the ink's contrast with the paper.
             assert!(worst <= 64, "scale {scale}: worst difference {worst}");
+        }
+    }
+
+    /// A glyph's coverage is each pixel's exact area inside the outline:
+    /// whole inside, the fraction at an edge, nothing in a hole wound the
+    /// other way.
+    #[test]
+    fn area_coverage_is_the_area_inside() {
+        let mut ring = PathBuilder::new();
+        for (x, y) in [(1.25, 1.0), (9.75, 1.0), (9.75, 9.5), (1.25, 9.5)] {
+            if x == 1.25 && y == 1.0 {
+                ring.move_to(x, y);
+            } else {
+                ring.line_to(x, y);
+            }
+        }
+        ring.close();
+        // The hole, the other way round.
+        ring.move_to(4.0, 4.0);
+        ring.line_to(4.0, 7.0);
+        ring.line_to(7.0, 7.0);
+        ring.line_to(7.0, 4.0);
+        ring.close();
+        let ring = ring.finish().unwrap();
+        let alpha = area_coverage(&ring, Transform::identity(), 11, 11);
+        let at = |x: usize, y: usize| alpha[y * 11 + x];
+        assert_eq!(at(0, 5), 0);
+        assert_eq!(at(1, 5), 191, "three quarters of the left edge column");
+        assert_eq!(at(2, 5), 255);
+        assert_eq!(at(9, 5), 191);
+        assert_eq!(at(5, 9), 128, "half of the bottom edge row");
+        assert_eq!(at(5, 5), 0, "inside the hole");
+        assert_eq!(at(3, 5), 255);
+    }
+
+    /// Glyphs come out nearer their true coverage — the outline drawn
+    /// sixteen times finer and averaged — than the path rasteriser's
+    /// sixteen samples to a pixel put them, with the same ink.
+    #[test]
+    fn glyph_coverage_is_nearer_the_outline_than_the_rasteriser() {
+        let fonts = fonts();
+        let scale = 28.0 / 1000.0;
+        let (width, height, fine) = (36, 40, 16);
+        let paint = Paint {
+            anti_alias: true,
+            ..Paint::default()
+        };
+        for (index, ch) in "秘密保持契約書はAgé".chars().enumerate() {
+            let glyph = fonts
+                .with_face(0, |face| face.glyph_index(ch))
+                .flatten()
+                .unwrap();
+            let outline = fonts.outline(0, glyph).unwrap();
+            let transform =
+                Transform::from_row(scale, 0.0, 0.0, -scale, 2.0 + index as f32 / 4.0, 30.0);
+            let rasterised = {
+                let mut pixmap = Pixmap::new(width, height).unwrap();
+                pixmap.fill_path(&outline, &paint, FillRule::Winding, transform, None);
+                pixmap
+                    .data()
+                    .iter()
+                    .skip(3)
+                    .step_by(4)
+                    .copied()
+                    .collect::<Vec<u8>>()
+            };
+            let mut finer = Pixmap::new(width * fine, height * fine).unwrap();
+            let finer_transform = transform.post_scale(fine as f32, fine as f32);
+            finer.fill_path(&outline, &paint, FillRule::Winding, finer_transform, None);
+            let (width, fine) = (width as usize, fine as usize);
+            let truth: Vec<f64> = (0..width * height as usize)
+                .map(|index| {
+                    let (x, y) = (index % width, index / width);
+                    let rows = y * fine..(y + 1) * fine;
+                    let sum: f64 = rows
+                        .flat_map(|row| {
+                            let start = (row * width * fine + x * fine) * 4;
+                            finer.data()[start..start + fine * 4]
+                                .iter()
+                                .skip(3)
+                                .step_by(4)
+                        })
+                        .map(|&alpha| f64::from(alpha))
+                        .sum();
+                    sum / (fine * fine) as f64
+                })
+                .collect();
+            let error = |alpha: &[u8]| -> f64 {
+                alpha
+                    .iter()
+                    .zip(&truth)
+                    .map(|(alpha, truth)| (f64::from(*alpha) - truth).abs())
+                    .sum()
+            };
+            let drawn = area_coverage(&outline, transform, width, height as usize);
+            assert!(
+                error(&drawn) < error(&rasterised),
+                "{ch}: off by {} where the rasteriser is off by {}",
+                error(&drawn),
+                error(&rasterised)
+            );
+            let ink = drawn.iter().map(|&alpha| f64::from(alpha)).sum::<f64>();
+            let ratio = ink / truth.iter().sum::<f64>();
+            assert!((0.98..1.02).contains(&ratio), "{ch}: ink {ratio}");
         }
     }
 
