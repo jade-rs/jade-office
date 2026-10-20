@@ -656,6 +656,10 @@ impl DocView {
             }
             // An entry a data validation refuses: the rule's words, or
             // Excel's.
+            // A protected sheet: Excel's words.
+            Err(error) if jade_web::sheet::protected_refusal(&error) => {
+                self.status = i18n::text("sheet.protected").into();
+            }
             Err(error) if jade_web::sheet::validation_refusal(&error).is_some() => {
                 let message = jade_web::sheet::validation_refusal(&error).unwrap_or_default();
                 self.status = if message.is_empty() {
@@ -2874,6 +2878,8 @@ impl DocView {
         }
         match &self.document {
             // Typing into a selected cell replaces it, as in Excel.
+            // A dialog over the grid takes no typing into the cells.
+            Document::Workbook(sheet) if sheet.asking.is_some() || sheet.managing => {}
             Document::Workbook(sheet) if sheet.typed().is_none() => {
                 self.begin_cell_edit(Some(String::new()), false, cx)
             }
