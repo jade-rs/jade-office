@@ -932,3 +932,32 @@ fn a_picture_goes_in_the_middle_of_the_slide_shrunk_to_fit() {
     // Anything but PNG or JPEG is refused, and nothing changes.
     assert!(deck.insert_picture(0, b"GIF89a").is_err());
 }
+
+#[test]
+fn speaker_notes_are_typed_and_written_as_one_step() {
+    let mut deck = open_own("sample-deck.pptx");
+    let count = deck.slide_count();
+    let with_notes = (0..count).find(|&slide| deck.notes(slide).is_some());
+    // A slide without notes gets them.
+    let bare = (0..count)
+        .find(|&slide| deck.notes_text(slide).as_deref() == Some(""))
+        .expect("a slide without notes");
+    assert!(deck.set_notes(bare, "話すこと\n次の話").unwrap());
+    assert_eq!(deck.notes_text(bare).as_deref(), Some("話すこと\n次の話"));
+    assert_eq!(deck.notes(bare), Some("話すこと\n次の話"));
+    assert!(!deck.set_notes(bare, "話すこと\n次の話").unwrap());
+    // Notes that were there keep what is not changed.
+    if let Some(slide) = with_notes {
+        let before = deck.notes_text(slide).unwrap();
+        assert!(deck.set_notes(slide, &format!("{before} 追記")).unwrap());
+        assert_eq!(deck.notes_text(slide).unwrap(), format!("{before} 追記"));
+        assert!(deck.undo().unwrap());
+        assert_eq!(deck.notes_text(slide).unwrap(), before);
+    }
+    // Saved and reopened, the notes are there.
+    let saved = deck.save_bytes();
+    let reopened = Deck::open(&saved, backend()).unwrap();
+    assert_eq!(reopened.notes(bare), Some("話すこと\n次の話"));
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.notes_text(bare).as_deref(), Some(""));
+}

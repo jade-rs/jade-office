@@ -386,6 +386,8 @@ enum Document {
         selected_name: Option<SharedString>,
         /// Text being typed into a table's cell, in a box over it.
         edit: Option<(TextTarget, TextEdit)>,
+        /// The speaker notes being typed into, written when they are left.
+        notes_edit: Option<TextEdit>,
         /// Text being typed into a shape where it lies: its caret,
         /// selection and an IME's composition.
         typing: Option<jade_web::deck::ShapeText>,
@@ -511,6 +513,7 @@ impl DocView {
                     selected: None,
                     selected_name: None,
                     edit: None,
+                    notes_edit: None,
                     typing: None,
                     selecting_text: false,
                     cells: None,
@@ -1716,6 +1719,7 @@ impl DocView {
             }
             Document::Deck {
                 edit: None,
+                notes_edit: None,
                 typing: None,
                 selected: Some(_),
                 ..
@@ -1724,6 +1728,10 @@ impl DocView {
         }
         match &mut self.document {
             Document::Workbook(sheet) => sheet.typing(),
+            Document::Deck {
+                notes_edit: Some(notes),
+                ..
+            } => Some(notes),
             Document::Deck { edit, .. } => edit.as_mut().map(|(_, text)| text),
             Document::Pages { .. } => None,
         }
@@ -1732,6 +1740,10 @@ impl DocView {
     fn current_text(&self) -> Option<&TextEdit> {
         match &self.document {
             Document::Workbook(sheet) => sheet.typed(),
+            Document::Deck {
+                notes_edit: Some(notes),
+                ..
+            } => Some(notes),
             Document::Deck { edit, .. } => edit.as_ref().map(|(_, text)| text),
             Document::Pages { .. } => None,
         }
