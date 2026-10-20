@@ -32,7 +32,7 @@ deck.notes	ノート
 deck.print	印刷
 deck.from_current	このスライドから
 deck.slideshow	スライドショー
-deck.no_notes	このスライドにノートはありません
+deck.add_notes	クリックしてノートを入力
 deck.print_failed	印刷できません: {error}
 deck.paint_failed	スライド {n} を描画できません
 deck.empty	{name}: スライドがありません
@@ -112,6 +112,104 @@ sheet.tool.border_all	格子
 sheet.tool.border_outline	外枠
 sheet.tool.border_thick	太い外枠
 sheet.tool.border_none	枠なし
+cf.highlight	セルの強調表示ルール
+cf.top_bottom	上位/下位ルール
+cf.data_bars	データ バー
+cf.color_scales	カラー スケール
+cf.clear_selected	選択したセルからルールをクリア
+cf.clear_sheet	シート全体からルールをクリア
+cf.manage	ルールの管理…
+cf.manage_title	条件付き書式ルールの管理
+cf.no_rules	このシートに条件付き書式ルールはありません。
+cf.delete	ルールの削除
+cf.close	閉じる
+cf.ok	OK
+cf.cancel	キャンセル
+cf.with	書式
+cf.and	と
+cf.greater_than	指定の値より大きい…
+cf.less_than	指定の値より小さい…
+cf.between	指定の範囲内…
+cf.equal_to	指定の値に等しい…
+cf.text_contains	文字列…
+cf.duplicate_values	重複する値…
+cf.top_items	上位 10 項目…
+cf.top_percent	上位 10%…
+cf.bottom_items	下位 10 項目…
+cf.bottom_percent	下位 10%…
+cf.above_average	平均より上…
+cf.below_average	平均より下…
+cf.prompt.greater_than	次の値より大きいセルを書式設定:
+cf.prompt.less_than	次の値より小さいセルを書式設定:
+cf.prompt.between	次の範囲内の値を含むセルを書式設定:
+cf.prompt.equal_to	次の値に等しいセルを書式設定:
+cf.prompt.text_contains	次の文字列を含むセルを書式設定:
+cf.prompt.duplicate_values	重複する値を含むセルを書式設定します。
+cf.prompt.top_items	上位に入る値のセルを書式設定 (項目数):
+cf.prompt.top_percent	上位に入る値のセルを書式設定 (%):
+cf.prompt.bottom_items	下位に入る値のセルを書式設定 (項目数):
+cf.prompt.bottom_percent	下位に入る値のセルを書式設定 (%):
+cf.prompt.above_average	選択範囲内で平均より上の値のセルを書式設定します。
+cf.prompt.below_average	選択範囲内で平均より下の値のセルを書式設定します。
+cf.style.light_red_dark_red	濃い赤の文字、明るい赤の背景
+cf.style.yellow_dark_yellow	濃い黄色の文字、黄色の背景
+cf.style.green_dark_green	濃い緑の文字、緑の背景
+cf.style.light_red	明るい赤の背景
+cf.style.red_text	赤の文字
+cf.bar.blue	青のデータ バー
+cf.bar.green	緑のデータ バー
+cf.bar.red	赤のデータ バー
+cf.bar.orange	オレンジのデータ バー
+cf.bar.light_blue	水色のデータ バー
+cf.bar.purple	紫のデータ バー
+cf.scale.green_yellow_red	緑、黄、赤のカラー スケール
+cf.scale.red_yellow_green	赤、黄、緑のカラー スケール
+cf.scale.green_white_red	緑、白、赤のカラー スケール
+cf.scale.blue_white_red	青、白、赤のカラー スケール
+cf.scale.green_white	緑、白のカラー スケール
+cf.scale.white_red	白、赤のカラー スケール
+cf.describe.greater_than	セルの値 > {value}
+cf.describe.less_than	セルの値 < {value}
+cf.describe.between	セルの値が {low} と {high} の間
+cf.describe.equal_to	セルの値 = {value}
+cf.describe.text_contains	セルの値に "{text}" を含む
+cf.describe.duplicate_values	重複する値
+cf.describe.top_items	上位 {rank} 項目
+cf.describe.top_percent	上位 {rank}%
+cf.describe.bottom_items	下位 {rank} 項目
+cf.describe.bottom_percent	下位 {rank}%
+cf.describe.above_average	平均より上
+cf.describe.below_average	平均より下
+cf.describe.data_bar	データ バー
+cf.describe.color_scale	グラデーション カラー スケール
+cf.describe.other	{rule}
+cf.invalid_value	値を入力してください。
+cf.invalid_rank	1 以上の整数を入力してください (% は 100 まで、項目数は 1000 まで)。
+sheet.tool.conditional	条件付き書式
+chart.insert	グラフの挿入
+chart.change_type	グラフの種類の変更
+chart.legend	凡例
+chart.title_menu	グラフ タイトル…
+chart.data_menu	データの選択…
+chart.delete	グラフの削除
+chart.title	グラフ タイトル (空にすると表示しません)
+chart.data	グラフ データの範囲
+chart.kind.column	集合縦棒
+chart.kind.stacked_column	積み上げ縦棒
+chart.kind.bar	集合横棒
+chart.kind.stacked_bar	積み上げ横棒
+chart.kind.line	折れ線
+chart.kind.line_markers	マーカー付き折れ線
+chart.kind.area	面
+chart.kind.pie	円
+chart.kind.doughnut	ドーナツ
+chart.kind.scatter	散布図
+chart.legend.none	なし
+chart.legend.right	右
+chart.legend.top	上
+chart.legend.left	左
+chart.legend.bottom	下
+sheet.tool.chart	グラフ
 sheet.tool.number_format	表示形式
 sheet.format.general_name	標準
 sheet.format.general	General
@@ -169,6 +267,41 @@ deck.split_cell	セルの分割
 deck.saved	{name} に保存しました
 deck.save_failed	保存できません: {error}
 deck.selected_shape	選択: {name}
+deck.selected_count	{n} 個のオブジェクトを選択
+deck.nothing_to_paste	貼り付けるものがありません: コピーした図形がもうありません
+deck.new_slide	新しいスライド
+deck.layout	レイアウト
+deck.duplicate_slide	スライドの複製
+deck.delete_slide	スライドの削除
+deck.hide_slide	スライドを非表示
+deck.show_slide	スライドを再表示
+deck.slide_n	スライド {n}
+deck.font	フォント
+deck.font_size	フォントサイズ
+deck.grow_font	フォントサイズの拡大
+deck.shrink_font	フォントサイズの縮小
+deck.bold	太字
+deck.italic	斜体
+deck.underline	下線
+deck.font_color	フォントの色
+deck.align_left	左揃え
+deck.align_center	中央揃え
+deck.align_right	右揃え
+deck.justify	両端揃え
+deck.bullets	箇条書き
+deck.numbering	段落番号
+deck.line_spacing	行間
+deck.space_after	段落後 {n} pt
+deck.text_box	テキストボックス
+deck.shapes	図形
+deck.picture	画像
+deck.picture_failed	画像を挿入できません: {error}
+deck.shape.rect	正方形/長方形
+deck.shape.round_rect	四角形: 角を丸くする
+deck.shape.ellipse	楕円
+deck.shape.triangle	二等辺三角形
+deck.shape.diamond	ひし形
+deck.shape.hexagon	六角形
 doc.tab.home	ホーム
 doc.tab.insert	挿入
 doc.tab.design	デザイン
@@ -372,3 +505,4 @@ ribbon.distribute_columns	列の幅を揃える
 ribbon.split_cell	セルの分割
 ribbon.split_size	{columns} 列 × {rows} 行
 ribbon.repeat_header	タイトル行の繰り返し
+sheet.protected	変更しようとしているセルやグラフは保護されているシート上にあります。
