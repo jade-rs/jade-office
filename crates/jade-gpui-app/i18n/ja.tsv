@@ -210,7 +210,6 @@ chart.legend.top	上
 chart.legend.left	左
 chart.legend.bottom	下
 sheet.tool.chart	グラフ
-sheet.tool.number_format	表示形式
 sheet.format.general_name	標準
 sheet.format.general	General
 sheet.format.number_name	数値
@@ -228,6 +227,7 @@ sheet.format.scientific_name	指数
 sheet.format.scientific	0.00E+00
 sheet.format.text_name	文字列
 sheet.format.text	@
+sheet.format.custom_name	ユーザー定義
 sheet.menu.insert_note	メモの挿入
 sheet.menu.edit_note	メモの編集
 sheet.menu.delete_note	メモの削除

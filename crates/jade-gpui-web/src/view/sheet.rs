@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use gpui::{DispatchPhase, MouseUpEvent, Point};
 use jade_web::grid::{self, Direction, DragKind, Hit, Selection};
+use jade_web::number_formats::NUMBER_FORMATS;
 use jade_web::sheet::{
     column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
     CellRange, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay, ResizeGesture,
@@ -808,7 +809,14 @@ impl DocView {
                     Tool::Open(Popup::NumberFormat),
                 )
                 .gap_1()
-                .child(i18n::text("sheet.tool.number_format"))
+                .min_w(px(72.0))
+                .justify_between()
+                // Named for the active cell's format, as Excel's box is.
+                .child(i18n::text(
+                    sheet
+                        .book
+                        .number_format_name(sheet.selection.active, i18n::text),
+                ))
                 .child(icon("icons/chevron-down.svg").size_3()),
             ))
             .child(
@@ -888,6 +896,7 @@ impl DocView {
     /// A colour or borders dropdown under its toolbar button.
     fn toolbar_popup(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
         let popup = self.sheet_ref()?.popup?;
+        let sheet_active = self.sheet_ref()?.selection.active;
         let swatch = |index: usize, color: &'static str, tool: Tool| {
             div()
                 .id(("swatch", index))
@@ -948,50 +957,27 @@ impl DocView {
                         ))
                     })
             }
-            Popup::NumberFormat => div().py_1().children(
-                [
-                    (
-                        "nf-general",
-                        "sheet.format.general_name",
-                        "sheet.format.general",
-                    ),
-                    (
-                        "nf-number",
-                        "sheet.format.number_name",
-                        "sheet.format.number",
-                    ),
-                    (
-                        "nf-currency",
-                        "sheet.format.currency_name",
-                        "sheet.format.currency",
-                    ),
-                    ("nf-date", "sheet.format.date_name", "sheet.format.date"),
-                    (
-                        "nf-long-date",
-                        "sheet.format.long_date_name",
-                        "sheet.format.long_date",
-                    ),
-                    ("nf-time", "sheet.format.time_name", "sheet.format.time"),
-                    (
-                        "nf-percent",
-                        "sheet.format.percent_name",
-                        "sheet.format.percent",
-                    ),
-                    (
-                        "nf-fraction",
-                        "sheet.format.fraction_name",
-                        "sheet.format.fraction",
-                    ),
-                    (
-                        "nf-scientific",
-                        "sheet.format.scientific_name",
-                        "sheet.format.scientific",
-                    ),
-                    ("nf-text", "sheet.format.text_name", "sheet.format.text"),
-                ]
-                .into_iter()
-                .map(|(id, label, code)| item(id, label, Tool::NumberFormat(code))),
-            ),
+            Popup::NumberFormat => {
+                let active = sheet_active;
+                div().py_1().children(NUMBER_FORMATS.iter().map(|choice| {
+                    let code = i18n::text(choice.code);
+                    // Each with what the active cell would read as in it.
+                    let sample = self
+                        .sheet_ref()
+                        .and_then(|sheet| sheet.book.number_format_sample(active, code));
+                    item(choice.id, choice.name, Tool::NumberFormat(choice.code))
+                        .flex()
+                        .justify_between()
+                        .gap_4()
+                        .children(sample.map(|sample| {
+                            div()
+                                .max_w(px(140.0))
+                                .overflow_hidden()
+                                .text_color(palette::dim())
+                                .child(sample)
+                        }))
+                }))
+            }
             Popup::Borders => div()
                 .py_1()
                 .child(item(
