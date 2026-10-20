@@ -1,8 +1,8 @@
 //! Tables, charts and SmartArt in decks made in PowerPoint (Apache POI's test
 //! data) edit in the app as in PowerPoint: a double-click in a table types
 //! into the cell under it, a merged cell is typed into where it starts, a
-//! table or chart resizes with its frame, and a SmartArt diagram moves but
-//! keeps its size. A corner drag resizes from the opposite corner, and a body
+//! table or chart resizes with its frame, and a SmartArt diagram resizes with
+//! its drawing scaled to the frame. A corner drag resizes from the opposite corner, and a body
 //! drag moves the shape, each as one undoable step.
 
 #![cfg(feature = "tiny-skia")]
@@ -181,7 +181,7 @@ fn a_table_drawn_wider_has_its_cells_wider() {
 }
 
 #[test]
-fn a_smartart_diagram_moves_but_keeps_its_size() {
+fn a_smartart_diagram_moves_and_resizes_with_its_drawing() {
     let mut deck = open("SmartArt.pptx");
     let diagram = deck
         .shapes(0)
@@ -189,13 +189,40 @@ fn a_smartart_diagram_moves_but_keeps_its_size() {
         .find(|shape| shape.kind == "diagram")
         .cloned()
         .expect("the slide has a diagram");
-    assert!(diagram.can_move);
-    assert!(!diagram.can_resize);
+    assert!(diagram.can_move && diagram.can_resize);
     let before = deck.shape_rect(0, diagram.id).unwrap();
     assert!(deck.move_shape(0, diagram.id, 24.0, 0.0).unwrap());
-    let after = deck.shape_rect(0, diagram.id).unwrap();
-    assert!((after.x - before.x - 24.0).abs() < 0.01);
-    assert_eq!((after.width, after.height), (before.width, before.height));
+    let moved = deck.shape_rect(0, diagram.id).unwrap();
+    assert!((moved.x - before.x - 24.0).abs() < 0.01);
+    // Resized narrower and shorter: its shapes are drawn inside the new box.
+    let smaller = ShapeRect {
+        width: moved.width * 0.6,
+        height: moved.height * 0.5,
+        ..moved
+    };
+    assert!(deck.set_shape_rect(0, diagram.id, smaller).unwrap());
+    let layout = deck.layout(0).unwrap();
+    let placed: Vec<_> = layout
+        .shapes
+        .iter()
+        .filter(|shape| shape.group_ids.contains(&diagram.id))
+        .collect();
+    assert!(!placed.is_empty());
+    for shape in placed {
+        let rect = shape.rect;
+        assert!(rect.x >= smaller.x - 1.0, "{rect:?} in {smaller:?}");
+        assert!(
+            rect.x + rect.width <= smaller.x + smaller.width + 1.0,
+            "{rect:?}"
+        );
+        assert!(
+            rect.y + rect.height <= smaller.y + smaller.height + 1.0,
+            "{rect:?}"
+        );
+    }
+    assert!(deck.render_slide(0, 480).is_some());
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shape_rect(0, diagram.id), Some(moved));
     // Not a table: typed into as itself, as any other frame.
     assert_eq!(
         deck.text_target(0, diagram.id, None),
@@ -295,11 +322,10 @@ fn dragging_a_shape_moves_it() {
     assert_eq!(deck.shape_rect(0, 4), Some(before));
 }
 
-/// A SmartArt diagram's corner does not drag: it has no handles in
-/// PowerPoint's sense, so a resize drag changes nothing, while dragging its
-/// body moves it.
+/// A SmartArt diagram's corner drags as any frame's does, from the opposite
+/// corner, and dragging its body moves it.
 #[test]
-fn a_smartart_diagram_drags_but_does_not_resize() {
+fn a_smartart_diagram_corner_and_body_drag() {
     let mut deck = open("SmartArt.pptx");
     let id = deck
         .shapes(0)
@@ -317,7 +343,11 @@ fn a_smartart_diagram_drags_but_does_not_resize() {
         (before.x + before.width, before.y + before.height),
     );
     resize.drag_to(before.x + before.width + 50.0, before.y + before.height);
-    assert!(!deck.drag_shape(0, &resize).unwrap());
+    assert!(deck.drag_shape(0, &resize).unwrap());
+    let resized = deck.shape_rect(0, id).unwrap();
+    assert_eq!((resized.x, resized.y), (before.x, before.y));
+    assert!((resized.width - before.width - 50.0).abs() < 0.01);
+    assert!(deck.undo().unwrap());
     assert_eq!(deck.shape_rect(0, id), Some(before));
 
     let mut moving = ShapeDrag::new(id, DragMode::Move, (before.x, before.y));
