@@ -7,10 +7,13 @@ does it, so only the shells lack a button or key (**engine: yes**), or the
 engine needs work first (**engine: no**).
 
 **Blocker** marks what is required before a release: every High row, and
-the Format Cells dialog, conditional-format editing and chart editing.
-Word's blockers are closed by #74, #76, #78, #79, #81 and #82; the rows
-below them are what those leave. Table
-cell merge/split and SmartArt resizing were required and are done. Thai tone marks
+the Format Cells dialog, conditional-format editing and chart editing. Table
+cell merge/split and SmartArt resizing were required and are done. Every
+PowerPoint blocker is done, marked **Done** with the pull request that did
+it; copy and paste across slides needed the engine (jade-rs/jade-core#111).
+Every Word blocker is done the same way; tracked changes typed a key at a
+time needed the engine (jade-rs/jade-core#108).
+Thai tone marks
 (#56), Korean (#57) and Arabic (#58) are tracked as issues, not blockers.
 
 ## Excel
@@ -53,6 +56,16 @@ cell merge/split and SmartArt resizing were required and are done. Thai tone mar
 
 | | Gap | Hit | Engine |
 |---|---|---|---|
+| **Done** (#78) | New blank document, new from template | High | no |
+| **Done** (#78) | Save as / export PDF (native prints only; the browser has neither) | High | yes (`export_pdf`) |
+| **Done** (#82) | Copy and paste keeping formatting (plain text today, even within a document) | High | partly |
+| **Done** (#82) | Insert picture (and moving it in the browser; wrap options) | High | yes (`insert_image`) |
+| **Done** (#79) | Page setup: margins, orientation, size, columns, section breaks | High | yes |
+| **Done** (#79) | Headers and footers: edit; page numbers | High | yes (`set_header_footer_text`) |
+| **Done** (#81) | Comments: type the text, reply, resolve, delete, pane; none in the browser | High | yes |
+| **Done** (#81) | Tracked changes: accept or reject one, next and previous; none in the browser | High | partly |
+| **Done** (#76) | Find and Replace in the browser; options (case, whole word) in both | High | yes |
+| **Done** (#74) | Native keys: Home/End, word and line jumps, word delete, Tab (the browser has them) | High | yes |
 | | Headers and footers: first-page and odd/even variants, a story of more than one line, a header per section | Medium | partly (`SetHeaderFooterVariants`) |
 | | Page setup per section (the commands act on the default one) | Medium | partly |
 | | Paste with formatting from other apps (HTML, RTF); a copy keeps its formatting within the app only | Medium | no |
@@ -77,15 +90,18 @@ cell merge/split and SmartArt resizing were required and are done. Thai tone mar
 
 | | Gap | Hit | Engine |
 |---|---|---|---|
-| **Blocker** | Slides: new, duplicate, delete, reorder | High | yes |
-| **Blocker** | Layouts; hide a slide (hidden slides still play) | High | yes |
-| **Blocker** | Text: caret movement, selection, typing in place (native types at the end only) | High | yes (`apply_text_input`) |
-| **Blocker** | Character formatting: font, size, bold, italic, colour | High | yes (`format_text_range`) |
-| **Blocker** | Paragraph formatting: alignment, bullets, numbering, spacing | High | yes (`format_paragraphs`) |
-| **Blocker** | Insert text box, shape, picture | High | yes |
-| **Blocker** | Copy, paste, duplicate shapes; select several | High | partly (`duplicate_shape`) |
-| **Blocker** | Speaker notes: edit | High | yes (`set_slide_notes`) |
+| **Done** (#73) | Slides: new, duplicate, delete, reorder | High | yes |
+| **Done** (#73) | Layouts; hide a slide (hidden slides still play) | High | yes |
+| **Done** (#77) | Text: caret movement, selection, typing in place (native types at the end only) | High | yes (`apply_text_input`) |
+| **Done** (#80) | Character formatting: font, size, bold, italic, colour | High | yes (`format_text_range`) |
+| **Done** (#80) | Paragraph formatting: alignment, bullets, numbering, spacing | High | yes (`format_paragraphs`) |
+| **Done** (#84) | Insert text box, shape, picture | High | yes |
+| **Done** (#86) | Copy, paste, duplicate shapes; select several | High | yes (`copy_shapes`, jade-core#111) |
+| **Done** (#85) | Speaker notes: edit | High | yes (`set_slide_notes`) |
 | | Paste into text in the native app; copy and cut slide text | Medium | — |
+| | Cut shapes; paste pictures and shapes from other apps | Medium | partly |
+| | Table cells typed in a box over the cell, not in place | Medium | partly |
+| | Notes pane: caret put by a click, selection, formatting | Low | yes |
 | | Fill and outline; rotate and flip; z-order; group | Medium | yes |
 | | Ungroup, align and distribute, effects | Low–Medium | no |
 | | Table styles, borders, shading | Medium | no |
