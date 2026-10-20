@@ -18,7 +18,7 @@ Thai tone marks
 
 | | Gap | Hit | Engine |
 |---|---|---|---|
-| **Blocker** | Format Cells dialog (⌘1): number, alignment, font, border, fill tabs | High | partly — `format_at`/`set_format` cover font, fill, number format, alignment, wrap, borders; not indent, rotation, shrink-to-fit, pattern fills, super/subscript, protection flags |
+| **Done** (#71) | Format Cells dialog (⌘1): number, alignment, font, border, fill tabs | High | partly — `format_at`/`set_format` cover font, fill, number format, alignment, wrap, borders; not indent, rotation, shrink-to-fit, pattern fills, super/subscript, protection flags |
 | **Blocker** | Conditional formats: create, edit, delete rules | High | no writer; display also misses formula rules, top 10, above average, duplicates, dates, `cellIs` against a cell, icon sets |
 | **Blocker** | Charts: select, move, resize, edit type, data, titles, axes, legend | High | reads and draws bar/line/area/pie/doughnut/scatter; no chart authoring or anchor move/resize |
 | **Blocker** | Hidden sheets show as tabs | High (fidelity) | sheets carry visibility; the shells don't filter |
