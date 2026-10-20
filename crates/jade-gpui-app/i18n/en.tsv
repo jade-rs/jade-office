@@ -45,6 +45,9 @@ menu.file.close_tab	Close Tab
 menu.file.save	Save
 menu.file.save_as	Save As…
 menu.file.print	Print…
+menu.file.new	New Document
+menu.file.new_from_template	New from Template…
+menu.file.export_pdf	Export as PDF…
 menu.edit	Edit
 menu.edit.undo	Undo
 menu.edit.redo	Redo
@@ -93,12 +96,28 @@ menu.slideshow.from_beginning	From Beginning
 sheet.edit_failed	Cannot write the cell: {error}
 sheet.formula_problem	There's a problem with this formula. Text that starts with = is read as a formula
 sheet.saved	Saved to {name}
+sheet.exported_pdf	Exported {name}
+sheet.print_failed	Cannot print: {error}
+sheet.nothing_to_print	We didn't find anything to print.
+sheet.saved_csv	Saved {name}: the active sheet only, as CSV
+sheet.save_as	Save as
+sheet.save_as_hint	.xlsx saves the workbook, .csv the active sheet
 sheet.save_failed	Cannot save: {error}
 sheet.average	Average: {value}
 sheet.cell_count	Count: {n}
 sheet.sum	Sum: {value}
 sheet.find	Find
 sheet.not_found	No matches found
+sheet.replace_with	Replace with
+sheet.match_case	Match case
+sheet.entire_cell	Entire cell
+sheet.within_workbook	Workbook
+sheet.replace_toggle	Replace…
+sheet.replace	Replace
+sheet.replace_all	Replace All
+sheet.find_previous	Find Previous
+sheet.find_next	Find Next
+sheet.replaced	All done: {n} replacements
 sheet.filter.clear	Clear Filter
 sheet.filter.all	(Select All)
 sheet.filter.blank	(Blanks)
@@ -210,7 +229,6 @@ chart.legend.top	Top
 chart.legend.left	Left
 chart.legend.bottom	Bottom
 sheet.tool.chart	Chart
-sheet.tool.number_format	General
 sheet.format.general_name	General
 sheet.format.general	General
 sheet.format.number_name	Number
@@ -228,6 +246,7 @@ sheet.format.scientific_name	Scientific
 sheet.format.scientific	0.00E+00
 sheet.format.text_name	Text
 sheet.format.text	@
+sheet.format.custom_name	Custom
 sheet.menu.insert_note	New Note
 sheet.menu.edit_note	Edit Note
 sheet.menu.delete_note	Delete Note
@@ -239,6 +258,17 @@ sheet.validation_refused	This value doesn't match the data validation restrictio
 sheet.menu.cut	Cut
 sheet.menu.copy	Copy
 sheet.menu.paste	Paste
+sheet.menu.paste_special	Paste Special…
+sheet.paste_special.title	Paste Special
+sheet.paste_special.paste	Paste
+sheet.paste_special.all	All
+sheet.paste_special.formulas	Formulas
+sheet.paste_special.values	Values
+sheet.paste_special.formats	Formats
+sheet.paste_special.skip_blanks	Skip blanks
+sheet.paste_special.transpose	Transpose
+sheet.paste_special.ok	OK
+sheet.paste_special.cancel	Cancel
 sheet.menu.clear	Clear Contents
 sheet.menu.fill_down	Fill Down
 sheet.menu.fill_right	Fill Right
@@ -449,11 +479,88 @@ doc.info.saved	Saved
 doc.info.help	Drag to select · double-click a word · ⇧arrows extend · type over a selection to replace it · drag a picture to move it, its corner to size · in the find bar: ⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · esc close.
 doc.find.query	Find
 doc.find.replacement	Replace
-doc.find.keys	⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · esc close
+doc.find.keys	⇥ field · ⏎ next · ⇧⏎ replace · ⌘⏎ all · ⌥⌘C case · ⌥⌘W words · esc close
 doc.find.none	{query}: no matches
 doc.find.count	{query}: {n} matches
 doc.find.position	{query}: {n} of {count}
 doc.find.replaced	{query} → {replacement}: {n} replaced
+doc.find.match_case	Match case (⌥⌘C)
+doc.find.whole_word	Whole words only (⌥⌘W)
+doc.find.previous	Previous
+doc.find.next	Next
+doc.find.replace_one	Replace
+doc.find.replace_all	Replace All
+doc.find.close	Close (esc)
+doc.untitled	Document{n}
+workspace.new_document	New Document
+doc.export_pdf	PDF
+doc.export_pdf_title	Export as PDF
+page.group.setup	Page Setup
+page.margins	Margins
+page.margins.normal	Normal
+page.margins.narrow	Narrow
+page.margins.moderate	Moderate
+page.margins.wide	Wide
+page.margins.top_bottom	top/bottom
+page.margins.left_right	left/right
+page.orientation	Orientation
+page.portrait	Portrait
+page.landscape	Landscape
+page.size	Size
+page.columns	Columns
+page.columns.count	{n} columns
+page.breaks	Breaks
+page.break.sections	Section breaks
+page.break.next_page	Next Page
+page.break.continuous	Continuous
+page.break.even_page	Even Page
+page.break.odd_page	Odd Page
+page.group.header_footer	Header & Footer
+page.header	Header
+page.header_title	Edit Header
+page.footer	Footer
+page.footer_title	Edit Footer
+page.number	Page Number
+page.number.top_left	Top of Page (left)
+page.number.top_center	Top of Page (center)
+page.number.top_right	Top of Page (right)
+page.number.bottom_left	Bottom of Page (left)
+page.number.bottom_center	Bottom of Page (center)
+page.number.bottom_right	Bottom of Page (right)
+page.number.remove	Remove Page Numbers
+page.header_editing	Header
+page.footer_editing	Footer
+page.story_keys	⇥ left · center · right · ⏎ apply · esc cancel
+review.new_comment	New Comment
+review.show_comments	Show Comments
+review.comments	Comments
+review.no_comments	No comments
+review.reply	Reply
+review.edit	Edit
+review.resolve	Resolve
+review.reopen	Reopen
+review.delete	Delete
+review.previous	Previous
+review.previous_title	Previous change
+review.next	Next
+review.next_title	Next change
+review.accept	Accept
+review.accept_title	Accept and Move to Next
+review.reject	Reject
+review.reject_title	Reject and Move to Next
+review.no_changes	No tracked changes
+review.comment_keys	⏎ post · ⇧⏎ line break · esc cancel
+picture.group	Illustrations
+picture.insert	Picture
+picture.insert_title	Insert a picture from this device
+picture.wrap	Wrap Text
+picture.wrap.inline	In Line
+picture.wrap.square	Square
+picture.wrap.tight	Tight
+picture.wrap.through	Through
+picture.wrap.top_bottom	Top and Bottom
+picture.wrap.behind	Behind Text
+picture.wrap.front	In Front of Text
 web.samples	Samples
 web.read_only	Read-only
 web.download	Save (Download)

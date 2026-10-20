@@ -21,9 +21,16 @@ use jade_painter::Painter;
 pub mod charts;
 pub mod clipboard;
 pub mod conditional_formatting;
+pub mod csv;
 pub mod deck;
+pub mod find;
 pub mod format_cells;
 pub mod grid;
+pub mod number_formats;
+pub mod paste_special;
+#[cfg(feature = "tiny-skia")]
+pub mod pdf;
+pub mod print;
 pub mod sheet;
 pub mod text;
 pub mod typing;
@@ -48,6 +55,14 @@ pub trait Backend: Clone + 'static {
 
     /// The surface as PNG bytes.
     fn png(painter: &Self::Painter) -> Option<Vec<u8>>;
+
+    /// A `width` × `height` px page (96 to the inch) to print on, with the
+    /// backend's fonts: Skia records its drawing for a vector PDF; tiny-skia
+    /// paints pixels at twice the size.
+    fn page(&self, width: f64, height: f64) -> Option<Self::Painter>;
+
+    /// Pages from [`Backend::page`], each `size` px, as a PDF.
+    fn pdf(pages: &[Self::Painter], size: (f64, f64)) -> Result<Vec<u8>, String>;
 }
 
 /// The families documents ask for. A machine outside Office has none of

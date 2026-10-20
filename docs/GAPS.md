@@ -11,6 +11,8 @@ the Format Cells dialog, conditional-format editing and chart editing. Table
 cell merge/split and SmartArt resizing were required and are done. Every
 PowerPoint blocker is done, marked **Done** with the pull request that did
 it; copy and paste across slides needed the engine (jade-rs/jade-core#111).
+Every Word blocker is done the same way; tracked changes typed a key at a
+time needed the engine (jade-rs/jade-core#108).
 Thai tone marks
 (#56), Korean (#57) and Arabic (#58) are tracked as issues, not blockers.
 
@@ -21,7 +23,7 @@ Thai tone marks
 | **Done** (#71) | Format Cells dialog (⌘1): number, alignment, font, border, fill tabs | High | partly — `format_at`/`set_format` cover font, fill, number format, alignment, wrap, borders; not indent, rotation, shrink-to-fit, pattern fills, super/subscript, protection flags |
 | **Blocker** | Conditional formats: create, edit, delete rules | High | no writer; display also misses formula rules, top 10, above average, duplicates, dates, `cellIs` against a cell, icon sets |
 | **Blocker** | Charts: select, move, resize, edit type, data, titles, axes, legend | High | reads and draws bar/line/area/pie/doughnut/scatter; no chart authoring or anchor move/resize |
-| **Blocker** | Hidden sheets show as tabs | High (fidelity) | sheets carry visibility; the shells don't filter |
+| **Done** (#70) | Hidden sheets show as tabs | High (fidelity) | sheets carry visibility; the shells don't filter |
 | **Blocker** | Edits to a protected sheet are not blocked | High (fidelity) | protection not modelled |
 | **Blocker** | Print and export to PDF | High | no |
 | **Blocker** | CSV import and export; Save As writes xlsx whatever the name | High | no |
@@ -54,16 +56,20 @@ Thai tone marks
 
 | | Gap | Hit | Engine |
 |---|---|---|---|
-| **Blocker** | New blank document, new from template | High | no |
-| **Blocker** | Save as / export PDF (native prints only; the browser has neither) | High | yes (`export_pdf`) |
-| **Blocker** | Copy and paste keeping formatting (plain text today, even within a document) | High | partly |
-| **Blocker** | Insert picture (and moving it in the browser; wrap options) | High | yes (`insert_image`) |
-| **Blocker** | Page setup: margins, orientation, size, columns, section breaks | High | yes |
-| **Blocker** | Headers and footers: edit; page numbers | High | yes (`set_header_footer_text`) |
-| **Blocker** | Comments: type the text, reply, resolve, delete, pane; none in the browser | High | yes |
-| **Blocker** | Tracked changes: accept or reject one, next and previous; none in the browser | High | partly |
-| **Blocker** | Find and Replace in the browser; options (case, whole word) in both | High | yes |
-| **Blocker** | Native keys: Home/End, word and line jumps, word delete, Tab (the browser has them) | High | yes |
+| **Done** (#78) | New blank document, new from template | High | no |
+| **Done** (#78) | Save as / export PDF (native prints only; the browser has neither) | High | yes (`export_pdf`) |
+| **Done** (#82) | Copy and paste keeping formatting (plain text today, even within a document) | High | partly |
+| **Done** (#82) | Insert picture (and moving it in the browser; wrap options) | High | yes (`insert_image`) |
+| **Done** (#79) | Page setup: margins, orientation, size, columns, section breaks | High | yes |
+| **Done** (#79) | Headers and footers: edit; page numbers | High | yes (`set_header_footer_text`) |
+| **Done** (#81) | Comments: type the text, reply, resolve, delete, pane; none in the browser | High | yes |
+| **Done** (#81) | Tracked changes: accept or reject one, next and previous; none in the browser | High | partly |
+| **Done** (#76) | Find and Replace in the browser; options (case, whole word) in both | High | yes |
+| **Done** (#74) | Native keys: Home/End, word and line jumps, word delete, Tab (the browser has them) | High | yes |
+| | Headers and footers: first-page and odd/even variants, a story of more than one line, a header per section | Medium | partly (`SetHeaderFooterVariants`) |
+| | Page setup per section (the commands act on the default one) | Medium | partly |
+| | Paste with formatting from other apps (HTML, RTF); a copy keeps its formatting within the app only | Medium | no |
+| | PDF in the browser is a picture of each page: its text cannot be selected or searched | Medium | partly (`jade-docx-pdf-renderer`) |
 | | Shift+Enter line break | Medium | partly |
 | | Space before/after, paragraph dialog (first-line/hanging indent, keep with next) | Medium | yes (`set_paragraph_spacing`) |
 | | Fonts beyond a fixed list; custom colours; Font dialog | Medium | partly |

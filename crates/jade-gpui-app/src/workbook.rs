@@ -35,7 +35,12 @@ use gpui::{
     Focusable, KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
+use jade_office_model::csv;
+use jade_office_model::find::FindBar;
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
+use jade_office_model::number_formats::NUMBER_FORMATS;
+use jade_office_model::paste_special::PasteSpecial;
+use jade_office_model::print;
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
     CellFormat, CellRange, CellRef, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay,
@@ -55,9 +60,11 @@ use crate::editor::{self, Editor};
 
 mod charts;
 mod conditional;
+mod find_bar;
+mod paste_special;
 use crate::{
-    byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Redo, Save, SaveAs,
-    SelectAll, Undo, UI_FONT_FAMILY,
+    byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Print, Redo, Save,
+    SaveAs, SelectAll, Undo, UI_FONT_FAMILY,
 };
 use charts::ChartTool;
 use conditional::Conditional;
@@ -250,6 +257,7 @@ enum FilterCommand {
 /// A toolbar button's dropdown.
 #[derive(Clone, Copy, PartialEq)]
 enum Popup {
+    NumberFormat,
     Fill,
     Font,
     Borders,
@@ -267,6 +275,8 @@ enum Tool {
     Currency,
     Percent,
     Comma,
+    /// A Number Format dropdown entry: the i18n key of its code.
+    NumberFormat(&'static str),
     /// More decimals (true) or fewer.
     Decimals(bool),
     /// A size larger (true) or smaller.
@@ -287,6 +297,7 @@ enum MenuCommand {
     Cut,
     Copy,
     Paste,
+    PasteSpecial,
     Clear,
     InsertRows,
     DeleteRows,
@@ -346,8 +357,8 @@ pub struct WorkbookView {
     renaming: Option<(usize, TextEdit)>,
     /// The name box being typed into: a cell or range to go to.
     naming: Option<TextEdit>,
-    /// The find bar (⌘F) and what is typed into it.
-    finding: Option<TextEdit>,
+    /// Find and Replace (⌘F, ⌃H): what is typed into it, and its options.
+    finding: Option<FindBar>,
     /// A note being written on a cell.
     noting: Option<(CellRef, TextEdit)>,
     /// A conditional format's dialog, asking for its value.
@@ -358,6 +369,8 @@ pub struct WorkbookView {
     object: Option<u32>,
     /// Chart Title… or Select Data…, asking.
     chart_asking: Option<ChartAsk>,
+    /// The Paste Special dialog, open, with its choices.
+    pasting: Option<PasteSpecial>,
     /// The active cell's list of choices (its data validation), open.
     choices: Option<Vec<String>>,
     /// A hyperlink pressed: followed when the press lets go on it, as in
@@ -414,8 +427,8 @@ impl WorkbookView {
         if let Some(text) = self.naming.as_mut() {
             return Some(text);
         }
-        if let Some(text) = self.finding.as_mut() {
-            return Some(text);
+        if let Some(bar) = self.finding.as_mut() {
+            return Some(bar.field_mut());
         }
         if let Some((_, text)) = self.noting.as_mut() {
             return Some(text);
@@ -436,8 +449,8 @@ impl WorkbookView {
         if let Some(text) = self.naming.as_ref() {
             return Some(text);
         }
-        if let Some(text) = self.finding.as_ref() {
-            return Some(text);
+        if let Some(bar) = self.finding.as_ref() {
+            return Some(bar.field());
         }
         if let Some((_, text)) = self.noting.as_ref() {
             return Some(text);
@@ -617,26 +630,6 @@ impl WorkbookView {
         };
         let to = self.book.step(from, direction);
         self.select_cell(to, extend, cx);
-    }
-
-    /// Find Next (Enter in the find bar; Shift+Enter goes back): the next
-    /// cell showing what is typed, on this sheet or the next.
-    fn find_next(&mut self, back: bool, cx: &mut Context<Self>) {
-        let Some(needle) = self.finding.as_ref().map(|text| text.text.clone()) else {
-            return;
-        };
-        let from = (self.book.sheet_index(), self.selection.active);
-        match self.book.find_next(&needle, from, back) {
-            Some((index, cell)) => {
-                if index != self.book.sheet_index() {
-                    self.select_sheet(index, cx);
-                }
-                self.select_cell(cell, false, cx);
-                self.status = SharedString::from("");
-            }
-            None => self.status = SharedString::from(i18n::text("sheet.not_found")),
-        }
-        cx.notify();
     }
 
     /// AutoSum (⌘⇧T, or ⌥=): `=SUM(` round the numbers above or beside,
@@ -974,6 +967,7 @@ impl WorkbookView {
             MenuCommand::Cut => return self.sheet_copy(true, cx),
             MenuCommand::Copy => return self.sheet_copy(false, cx),
             MenuCommand::Paste => return self.sheet_paste(None, cx),
+            MenuCommand::PasteSpecial => return self.open_paste_special(cx),
             MenuCommand::Clear => self.book.clear(range),
             MenuCommand::InsertRows => self.book.insert_rows(range.start.row, rows),
             MenuCommand::DeleteRows => self.book.delete_rows(range.start.row, rows),
@@ -1167,6 +1161,7 @@ impl WorkbookView {
             }
             Tool::Percent => return self.number_format("0%", cx),
             Tool::Comma => return self.number_format("#,##0", cx),
+            Tool::NumberFormat(key) => return self.number_format(i18n::text(key), cx),
             Tool::Decimals(more) => self.book.decimals(range, active, more),
             Tool::FontSize(larger) => self.book.grow_font(range, active, larger),
             Tool::Fill(color) => self.book.fill_color(range, color),
@@ -1215,17 +1210,63 @@ impl WorkbookView {
         if !self.commit_cell(cx) {
             return;
         }
-        let result = self.book.save_bytes().and_then(|bytes| {
+        // By the name's extension, as Excel's Save As by its format: a
+        // .pdf exports the active sheet's pages, leaving the workbook as it
+        // was; a .csv holds the active sheet; anything else, the workbook.
+        let name = crate::shell::file_name(&target);
+        if print::is_pdf(&name) {
+            let result = self.book.pdf(&self.print_fields()).and_then(|bytes| {
+                crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
+            });
+            self.status = SharedString::from(match result {
+                Ok(()) => i18n::format("sheet.exported_pdf", &[("name", &name)]),
+                Err(error) => print_failure(&error),
+            });
+            cx.notify();
+            return;
+        }
+        let result = self.book.save_bytes_as(&name).and_then(|bytes| {
             crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
         });
         self.status = SharedString::from(match result {
-            Ok(()) => i18n::format(
-                "sheet.saved",
-                &[("name", &crate::shell::file_name(&target))],
-            ),
+            Ok(()) => {
+                // Saved as, it is that file from now on.
+                self.path = target;
+                let key = if csv::is_csv(&name) {
+                    "sheet.saved_csv"
+                } else {
+                    "sheet.saved"
+                };
+                i18n::format(key, &[("name", &name)])
+            }
             Err(error) => i18n::format("sheet.save_failed", &[("error", &error)]),
         });
         cx.notify();
+    }
+
+    /// What a header's or footer's fields print: today, now, the file.
+    fn print_fields(&self) -> print::PrintFields {
+        print::PrintFields {
+            date: now_text(false),
+            time: now_text(true),
+            file: crate::shell::file_name(&self.path),
+        }
+    }
+
+    /// ⌘P: the active sheet's pages, as Excel prints them at its defaults,
+    /// in the system's print dialog.
+    fn print(&mut self, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        let result = self
+            .book
+            .pdf(&self.print_fields())
+            .and_then(|pdf| crate::native_print::show_pdf_print_dialog(&pdf));
+        if let Err(error) = result {
+            self.status = SharedString::from(print_failure(&error));
+            cx.notify();
+        }
     }
 
     // ---- keys ------------------------------------------------------------
@@ -1286,6 +1327,9 @@ impl WorkbookView {
         if self.asking.is_some() {
             return self.rule_key(key, modifiers, cx);
         }
+        if self.pasting.is_some() {
+            return self.paste_special_key(key, modifiers, cx);
+        }
         if self.managing && key == "escape" {
             self.managing = false;
             cx.notify();
@@ -1294,18 +1338,10 @@ impl WorkbookView {
 
         // A tab being renamed, the name box or the find bar: Enter takes
         // it (or finds the next), Escape leaves it.
-        if self.renaming.is_some()
-            || self.naming.is_some()
-            || self.finding.is_some()
-            || self.noting.is_some()
-        {
-            if self.finding.is_some() && key == "enter" {
-                self.find_next(shift, cx);
-                return true;
-            }
-            if self.finding.is_some() && key == "f" && command {
-                return true;
-            }
+        if self.finding.is_some() && self.renaming.is_none() && self.naming.is_none() {
+            return self.find_key(key, modifiers, cx);
+        }
+        if self.renaming.is_some() || self.naming.is_some() || self.noting.is_some() {
             return self.name_key(key, modifiers, cx);
         }
 
@@ -1512,10 +1548,9 @@ impl WorkbookView {
                 let result = self.book.toggle_filter(range);
                 self.after_write(result, cx);
             }
-            "f" => {
-                self.finding = Some(TextEdit::new(String::new()));
-                cx.notify();
-            }
+            "f" => self.open_find(false, cx),
+            // ⌃H, as Excel for Mac: Find and Replace (⌘H hides the app).
+            "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
             "end" => {
                 let end = self.book.used_end();
                 self.select_cell(end, shift, cx);
@@ -1523,6 +1558,10 @@ impl WorkbookView {
             // ⌘C, ⌘X, ⌘V and ⌘A are actions; these are their Ctrl forms.
             "c" if !modifiers.platform => self.sheet_copy(false, cx),
             "x" if !shift && !modifiers.platform => self.sheet_copy(true, cx),
+            // ⌃⌘V, as Excel for Mac (Ctrl+Alt+V elsewhere): Paste Special.
+            "v" if modifiers.control && (modifiers.platform || modifiers.alt) => {
+                self.open_paste_special(cx)
+            }
             "v" if !modifiers.platform => self.paste(cx),
             "a" if !modifiers.platform => self.select_all(cx),
             "d" => {
@@ -2358,6 +2397,9 @@ impl WorkbookView {
                 if self.book.copied().is_some() {
                     items.push((MenuCommand::Paste, "sheet.menu.paste"));
                 }
+                if self.book.can_paste_special(None) {
+                    items.push((MenuCommand::PasteSpecial, "sheet.menu.paste_special"));
+                }
                 items.extend([
                     (MenuCommand::Clear, "sheet.menu.clear"),
                     (MenuCommand::FillDown, "sheet.menu.fill_down"),
@@ -2438,10 +2480,13 @@ impl WorkbookView {
     fn sheet_tabs(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let current = self.book.sheet_index();
         let renaming = self.renaming.as_ref().map(|(index, text)| (*index, text));
+        // A hidden sheet has no tab, as in Excel.
+        let visible = self.book.sheet_tabs();
         let mut tabs: Vec<gpui::AnyElement> = self
             .sheet_names
             .iter()
             .enumerate()
+            .filter(|(index, _)| visible.contains(index))
             .map(|(index, name)| {
                 let selected = index == current;
                 let label = match renaming {
@@ -2545,6 +2590,16 @@ impl WorkbookView {
     /// where the active cell has them.
     fn sheet_toolbar(&self, cx: &mut Context<Self>) -> gpui::Div {
         let look = self.book.format_at(self.active());
+        let open = self.popup;
+        // The open dropdown hangs under its button, painted over the grid.
+        let mut dropdown = self.toolbar_popup(cx).map(gpui::deferred);
+        let mut hang = move |which: Popup, button: gpui::Stateful<gpui::Div>| {
+            let button = button.relative();
+            match dropdown.take().filter(|_| open == Some(which)) {
+                Some(dropdown) => button.child(dropdown),
+                None => button,
+            }
+        };
         let button = |id: &'static str, on: bool, tool: Tool| {
             div()
                 .id(id)
@@ -2659,6 +2714,22 @@ impl WorkbookView {
             )
             .child(button("tool-merge", false, Tool::Merge).child(icon("icons/merge.svg")))
             .child(separator())
+            .child(hang(
+                Popup::NumberFormat,
+                // Named for the active cell's format, as Excel's box is.
+                button(
+                    "tool-number-format",
+                    popup == Some(Popup::NumberFormat),
+                    Tool::Open(Popup::NumberFormat),
+                )
+                .gap_1()
+                .min_w(px(72.0))
+                .justify_between()
+                .child(i18n::text(
+                    self.book.number_format_name(self.active(), i18n::text),
+                ))
+                .child(icon("icons/chevron-down.svg").size_3()),
+            ))
             .child(
                 button("tool-currency", false, Tool::Currency)
                     .child(i18n::text("sheet.tool.currency_symbol")),
@@ -2668,7 +2739,8 @@ impl WorkbookView {
             .child(button("tool-more-decimals", false, Tool::Decimals(true)).child(".0→"))
             .child(button("tool-fewer-decimals", false, Tool::Decimals(false)).child("←.0"))
             .child(separator())
-            .child(
+            .child(hang(
+                Popup::Fill,
                 // The colour under the bucket and the A is the active
                 // cell's, as Excel's buttons show theirs.
                 button(
@@ -2684,8 +2756,9 @@ impl WorkbookView {
                         .h(px(3.0))
                         .bg(fill.map_or(theme::text_dim(), gpui::rgb)),
                 ),
-            )
-            .child(
+            ))
+            .child(hang(
+                Popup::Font,
                 button(
                     "tool-font-color",
                     popup == Some(Popup::Font),
@@ -2699,31 +2772,34 @@ impl WorkbookView {
                         .h(px(3.0))
                         .bg(ink.map_or(theme::text(), gpui::rgb)),
                 ),
-            )
-            .child(
+            ))
+            .child(hang(
+                Popup::Borders,
                 button(
                     "tool-borders",
                     popup == Some(Popup::Borders),
                     Tool::Open(Popup::Borders),
                 )
                 .child(icon("icons/borders.svg")),
-            )
-            .child(
+            ))
+            .child(hang(
+                Popup::Conditional,
                 button(
                     "tool-conditional",
                     popup == Some(Popup::Conditional),
                     Tool::Open(Popup::Conditional),
                 )
                 .child(icon("icons/highlighter.svg")),
-            )
-            .child(
+            ))
+            .child(hang(
+                Popup::Chart,
                 button(
                     "tool-chart",
                     popup == Some(Popup::Chart),
                     Tool::Open(Popup::Chart),
                 )
                 .child(icon("icons/chart-column.svg")),
-            )
+            ))
             .child(separator())
             .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
     }
@@ -2820,9 +2896,11 @@ impl WorkbookView {
         )
     }
 
-    /// A colour or borders dropdown under its toolbar button.
+    /// A toolbar button's dropdown: number formats, colours, borders or
+    /// conditional formats.
     fn toolbar_popup(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
         let popup = self.popup?;
+        let active = self.active();
         let swatch = |index: usize, color: &'static str, tool: Tool| {
             div()
                 .id(("swatch", index))
@@ -2883,6 +2961,22 @@ impl WorkbookView {
                         ))
                     })
             }
+            Popup::NumberFormat => div().py_1().children(NUMBER_FORMATS.iter().map(|choice| {
+                let code = i18n::text(choice.code);
+                // Each with what the active cell would read as in it.
+                let sample = self.book.number_format_sample(active, code);
+                item(choice.id, choice.name, Tool::NumberFormat(choice.code))
+                    .flex()
+                    .justify_between()
+                    .gap_4()
+                    .children(sample.map(|sample| {
+                        div()
+                            .max_w(px(140.0))
+                            .overflow_hidden()
+                            .text_color(theme::text_dim())
+                            .child(sample)
+                    }))
+            })),
             Popup::Borders => div()
                 .py_1()
                 .child(item(
@@ -2913,19 +3007,13 @@ impl WorkbookView {
             Popup::Conditional => self.conditional_menu(cx),
             Popup::Chart => self.chart_menu(cx),
         };
-        // Under its button: the strip's buttons are laid out in a row.
-        let left = match popup {
-            Popup::Fill => 430.0,
-            Popup::Font => 456.0,
-            Popup::Borders => 482.0,
-            Popup::Conditional => 508.0,
-            Popup::Chart => 534.0,
-        };
         Some(
             div()
                 .absolute()
-                .top(px(SHEET_TOOLBAR_HEIGHT))
-                .left(px(left))
+                .top(px(26.0))
+                .left_0()
+                .min_w(px(150.0))
+                .whitespace_nowrap()
                 .rounded_md()
                 .border_1()
                 .border_color(theme::border())
@@ -3224,7 +3312,7 @@ impl EntityInputHandler for WorkbookView {
         // Typing into a selected cell replaces what is in it, as in Excel.
         if self.typed().is_none() {
             // A dialog over the grid takes no typing into the cells.
-            if self.asking.is_some() || self.managing {
+            if self.asking.is_some() || self.managing || self.pasting.is_some() {
                 return;
             }
             self.begin_edit(Some(String::new()), false, cx);
@@ -3246,7 +3334,7 @@ impl EntityInputHandler for WorkbookView {
     ) {
         if self.typed().is_none() {
             // A dialog over the grid takes no typing into the cells.
-            if self.asking.is_some() || self.managing {
+            if self.asking.is_some() || self.managing || self.pasting.is_some() {
                 return;
             }
             self.begin_edit(Some(String::new()), false, cx);
@@ -3363,35 +3451,7 @@ impl Render for WorkbookView {
                     .child(caret_line(text, gpui::black(), false)),
             )
         });
-        let find_bar = self.finding.as_ref().map(|text| {
-            div()
-                .absolute()
-                .top_2()
-                .right_4()
-                .w(px(260.0))
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .border_1()
-                .border_color(theme::accent())
-                .bg(theme::panel())
-                .shadow_lg()
-                .text_xs()
-                .text_color(theme::text())
-                .child(
-                    div()
-                        .text_color(theme::text_dim())
-                        .child(i18n::text("sheet.find")),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(caret_line(text, theme::accent().into(), false)),
-                )
-        });
+        let find_bar = self.find_bar(cx);
         let cursor = match self.hover {
             Hover::ResizeColumn => gpui::CursorStyle::ResizeLeftRight,
             Hover::ResizeRow => gpui::CursorStyle::ResizeUpDown,
@@ -3401,10 +3461,10 @@ impl Render for WorkbookView {
         };
         let dragging = self.drag.is_some();
         let toolbar = self.sheet_toolbar(cx);
-        let toolbar_popup = self.toolbar_popup(cx);
         let rule_dialog = self.rule_dialog(cx);
         let chart_dialog = self.chart_dialog(cx);
         let rules_manager = self.rules_manager(cx);
+        let paste_special = self.paste_special_dialog(cx);
         let filter_panel = self.filter_panel(cx);
 
         div()
@@ -3420,6 +3480,7 @@ impl Render for WorkbookView {
             .on_action(cx.listener(|view, _: &SelectAll, _window, cx| view.select_all(cx)))
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
             .on_action(cx.listener(|view, _: &SaveAs, _window, cx| view.save_as(cx)))
+            .on_action(cx.listener(|view, _: &Print, _window, cx| view.print(cx)))
             .relative()
             .flex()
             .flex_col()
@@ -3546,17 +3607,22 @@ impl Render for WorkbookView {
                     .border_color(theme::border())
                     .children(tabs),
             )
-            .children(toolbar_popup)
             .children(rule_dialog)
             .children(rules_manager)
             .children(chart_dialog)
+            .children(paste_special)
     }
 }
 
 impl WorkbookView {
     fn open(path: &Path, cx: &mut App) -> Result<Self, String> {
         let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-        let book = Workbook::open(&bytes, &system_time_zone(), crate::skia_backend()?)?;
+        let name = crate::shell::file_name(path);
+        let book = if csv::is_csv(&name) {
+            Workbook::open_csv(&name, &bytes, &system_time_zone(), crate::skia_backend()?)?
+        } else {
+            Workbook::open(&bytes, &system_time_zone(), crate::skia_backend()?)?
+        };
         let sheet_names = book
             .sheet_names()
             .into_iter()
@@ -3580,6 +3646,7 @@ impl WorkbookView {
             managing: false,
             object: None,
             chart_asking: None,
+            pasting: None,
             choices: None,
             pending_link: None,
             menu: None,
@@ -3599,6 +3666,16 @@ impl WorkbookView {
             focus: cx.focus_handle(),
             status: SharedString::from(""),
         })
+    }
+}
+
+/// Why printing failed, in the shell's words: an empty sheet as Excel
+/// says it, anything else as it came.
+fn print_failure(error: &str) -> String {
+    if error == print::NOTHING_TO_PRINT {
+        i18n::text("sheet.nothing_to_print").to_string()
+    } else {
+        i18n::format("sheet.print_failed", &[("error", &error)])
     }
 }
 
@@ -3742,6 +3819,60 @@ mod tests {
         )
         .unwrap();
         assert_eq!(book.edit_text(CellRef::new(1, 2)), "4242");
+    }
+
+    /// A CSV opens as a sheet named for the file, its fields read as typed;
+    /// ⌘S writes it back as CSV, and Save As to .xlsx writes a workbook
+    /// that is the file from then on.
+    #[gpui::test]
+    fn a_csv_opens_and_saves_as_csv(cx: &mut gpui::TestAppContext) {
+        let directory = std::env::temp_dir().join(format!("jade-csv-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("名簿.csv");
+        std::fs::write(&path, "氏名,年齢\r\n山田太郎,42\r\n\"佐藤, 花子\",7\r\n").unwrap();
+        let (view, cx) = cx.add_window_view(|_window, cx| WorkbookView::open(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.sheet_names(), vec!["名簿"]);
+            assert_eq!(view.book.display_text(at(0, 2)), "佐藤, 花子");
+            assert_eq!(view.book.number(at(1, 1)), Some(42.0));
+        });
+        cx.simulate_keystrokes("down down down");
+        cx.simulate_input("鈴木");
+        cx.simulate_keystrokes("enter");
+        cx.dispatch_action(Save);
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            saved,
+            "\u{feff}氏名,年齢\r\n山田太郎,42\r\n\"佐藤, 花子\",7\r\n鈴木,\r\n"
+        );
+        let xlsx = directory.join("名簿.xlsx");
+        view.update(cx, |view, cx| view.write_to(xlsx.clone(), cx));
+        assert!(std::fs::read(&xlsx).unwrap().starts_with(b"PK"));
+        view.read_with(cx, |view, _| assert_eq!(view.path, xlsx));
+        std::fs::remove_dir_all(&directory).ok();
+    }
+
+    /// Save As to a .pdf exports the sheet's pages and leaves the workbook
+    /// the file it was, unsaved changes and all.
+    #[gpui::test]
+    fn save_as_pdf_exports_the_pages(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_input("changed");
+        cx.simulate_keystrokes("enter");
+        let directory = std::env::temp_dir().join(format!("jade-pdf-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let pdf = directory.join("book.pdf");
+        let before = view.read_with(cx, |view, _| view.path.clone());
+        view.update(cx, |view, cx| view.write_to(pdf.clone(), cx));
+        let bytes = std::fs::read(&pdf).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.path, before);
+            assert!(view.book.is_dirty(), "exporting is not saving");
+        });
+        std::fs::remove_dir_all(&directory).ok();
     }
 
     /// A formula typed into a cell calculates, and Undo takes it back.
@@ -3940,6 +4071,47 @@ mod tests {
         view.read_with(cx, |view, _| assert!(view.book.copied().is_none()));
     }
 
+    /// ⌃⌘V opens Paste Special: arrows choose Values, Transpose ticked,
+    /// Return pastes the formulas' results turned on their side, as one
+    /// undo; typing does not reach the cells while it is open.
+    #[gpui::test]
+    fn control_command_v_pastes_values_transposed(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::paste_special::PasteWhat;
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down right right shift-down shift-down cmd-c");
+        cx.simulate_keystrokes("right right ctrl-cmd-v");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.pasting, Some(PasteSpecial::default()))
+        });
+        cx.simulate_keystrokes("down down");
+        cx.simulate_input("x");
+        view.update(cx, |view, _| {
+            assert!(view.edit.is_none(), "the dialog takes no typing");
+            let special = view.pasting.as_mut().unwrap();
+            assert_eq!(special.what, PasteWhat::Values);
+            special.transpose = true;
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.pasting.is_none());
+            // C2:C4's =B2*2… pasted from E2 across: 20, 40, 60.
+            assert_eq!(view.book.edit_text(at(4, 1)), "20");
+            assert_eq!(view.book.edit_text(at(6, 1)), "60");
+            assert_eq!(view.range(), span(at(4, 1), at(6, 1)));
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.edit_text(at(4, 1)), "");
+            assert_eq!(view.book.edit_text(at(6, 1)), "");
+        });
+        // Escape leaves the dialog without pasting.
+        cx.simulate_keystrokes("ctrl-cmd-v escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.pasting.is_none());
+            assert_eq!(view.book.edit_text(at(4, 1)), "");
+        });
+    }
+
     /// ⌘X then ⌘V moves the cells: they leave where they were.
     #[gpui::test]
     fn cut_and_paste_move_cells(cx: &mut gpui::TestAppContext) {
@@ -4116,6 +4288,85 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.book.display_text(at(1, 1)), "10")
         });
+    }
+
+    /// The Number Format dropdown, as the browser's: its entries format
+    /// the selection, and the button names the active cell's format.
+    #[gpui::test]
+    fn the_number_format_dropdown_formats_the_selection(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down right");
+        view.update(cx, |view, cx| {
+            assert_eq!(
+                view.book.number_format_name(at(1, 1), i18n::text),
+                "sheet.format.general_name"
+            );
+            view.tool(Tool::Open(Popup::NumberFormat), cx);
+            assert!(view.popup == Some(Popup::NumberFormat));
+            view.tool(Tool::NumberFormat("sheet.format.percent"), cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.popup.is_none(), "a choice closes the dropdown");
+            assert_eq!(view.book.display_text(at(1, 1)), "1000.00%");
+            assert_eq!(
+                view.book.number_format_name(at(1, 1), i18n::text),
+                "sheet.format.percent_name"
+            );
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at(1, 1)), "10")
+        });
+    }
+
+    /// ⌃H opens Find and Replace: what is typed goes into its fields, Tab
+    /// between them; Enter finds, Replace changes the found cell, Replace
+    /// All the rest in one undo; Escape closes the bar.
+    #[gpui::test]
+    fn control_h_finds_and_replaces(cx: &mut gpui::TestAppContext) {
+        use find_bar::FindCommand;
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("ctrl-h");
+        cx.simulate_input("20");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("25");
+        view.update(cx, |view, cx| {
+            let bar = view.finding.as_ref().expect("the bar is open");
+            assert!(bar.replacing);
+            assert_eq!(
+                (bar.find.text.as_str(), bar.replace.text.as_str()),
+                ("20", "25")
+            );
+            assert!(view.edit.is_none(), "typing goes into the bar");
+            view.find_command(FindCommand::EntireCell, cx);
+        });
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, cx| {
+            // Replace looks in formulas: C2 shows 20 but holds =B2*2.
+            assert_eq!(view.active(), at(1, 2));
+            view.find_command(FindCommand::Replace, cx);
+            assert_eq!(view.book.display_text(at(1, 2)), "25");
+            assert_eq!(view.book.display_text(at(2, 2)), "50");
+        });
+        cx.dispatch_action(Undo);
+        view.update(cx, |view, cx| {
+            assert_eq!(view.book.display_text(at(1, 2)), "20");
+            if let Some(bar) = view.finding.as_mut() {
+                bar.options.entire_cell = false;
+                bar.find.text = "0".into();
+                bar.replace.text = "5".into();
+            }
+            view.find_command(FindCommand::ReplaceAll, cx);
+            assert_eq!(view.book.display_text(at(1, 1)), "15");
+            assert_eq!(view.book.display_text(at(1, 2)), "25");
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at(1, 1)), "10", "one undo");
+            assert_eq!(view.book.display_text(at(1, 2)), "20");
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| assert!(view.finding.is_none()));
     }
 
     /// Conditional Formatting ▸ Greater Than asks for its value in a
