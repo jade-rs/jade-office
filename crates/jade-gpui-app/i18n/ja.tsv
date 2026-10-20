@@ -102,6 +102,16 @@ sheet.cell_count	データの個数: {n}
 sheet.sum	合計: {value}
 sheet.find	検索
 sheet.not_found	検索対象が見つかりません
+sheet.replace_with	置換後の文字列
+sheet.match_case	大文字と小文字を区別
+sheet.entire_cell	セル内容が完全に同一
+sheet.within_workbook	ブック全体
+sheet.replace_toggle	置換…
+sheet.replace	置換
+sheet.replace_all	すべて置換
+sheet.find_previous	前を検索
+sheet.find_next	次を検索
+sheet.replaced	{n} 件を置換しました
 sheet.filter.clear	フィルターをクリア
 sheet.filter.all	(すべて選択)
 sheet.filter.blank	(空白セル)
