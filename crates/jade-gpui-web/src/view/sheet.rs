@@ -2426,10 +2426,13 @@ impl DocView {
         });
 
         let renaming = sheet.renaming.as_ref().map(|(index, text)| (*index, text));
+        // A hidden sheet has no tab, as in Excel.
+        let visible = sheet.book.sheet_tabs();
         let mut tabs: Vec<gpui::AnyElement> = sheet
             .names
             .iter()
             .enumerate()
+            .filter(|(index, _)| visible.contains(index))
             .map(|(index, name)| {
                 let selected = index == current;
                 let label = match renaming {
