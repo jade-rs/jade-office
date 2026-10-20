@@ -26,10 +26,12 @@ use super::*;
 
 mod charts;
 mod conditional;
+mod find_bar;
 use charts::ChartTool;
 use conditional::Conditional;
 use jade_web::charts::{ChartAsk, Handle};
 use jade_web::conditional_formatting::RuleAsk;
+use jade_web::find::FindBar;
 
 /// How far past the grid's edge the pointer has to be for a drag to scroll
 /// it, and how often it scrolls while held there.
@@ -64,8 +66,9 @@ pub(super) struct Sheet {
     pub renaming: Option<(usize, TextEdit)>,
     /// The name box being typed into: a cell or range to go to.
     pub naming: Option<TextEdit>,
-    /// The find bar (⌘F) and what is being looked for.
-    pub finding: Option<TextEdit>,
+    /// Find and Replace (⌘F, Ctrl+H): what is typed into it, and its
+    /// options.
+    pub finding: Option<FindBar>,
     /// A note being written on a cell.
     pub noting: Option<(CellRef, TextEdit)>,
     /// A conditional format's dialog, asking for its value.
@@ -294,8 +297,8 @@ impl Sheet {
         if let Some(text) = self.naming.as_mut() {
             return Some(text);
         }
-        if let Some(text) = self.finding.as_mut() {
-            return Some(text);
+        if let Some(bar) = self.finding.as_mut() {
+            return Some(bar.field_mut());
         }
         if let Some((_, text)) = self.noting.as_mut() {
             return Some(text);
@@ -316,8 +319,8 @@ impl Sheet {
         if let Some(text) = self.naming.as_ref() {
             return Some(text);
         }
-        if let Some(text) = self.finding.as_ref() {
-            return Some(text);
+        if let Some(bar) = self.finding.as_ref() {
+            return Some(bar.field());
         }
         if let Some((_, text)) = self.noting.as_ref() {
             return Some(text);
@@ -531,33 +534,6 @@ impl DocView {
         };
         let to = sheet.book.step(from, direction);
         self.select_cell(to, extend, cx);
-    }
-
-    /// Find Next (Enter in the find bar; Shift+Enter goes back): the next
-    /// cell showing what is typed, on this sheet or the next.
-    fn find_next(&mut self, back: bool, cx: &mut Context<Self>) {
-        let Some(sheet) = self.sheet_mut() else {
-            return;
-        };
-        let Some(needle) = sheet.finding.as_ref().map(|text| text.text.clone()) else {
-            return;
-        };
-        let from = (sheet.book.sheet_index(), sheet.selection.active);
-        match sheet.book.find_next(&needle, from, back) {
-            Some((index, cell)) => {
-                if index != sheet.book.sheet_index() {
-                    let finding = sheet.finding.take();
-                    self.select_sheet(index, cx);
-                    if let Some(sheet) = self.sheet_mut() {
-                        sheet.finding = finding;
-                    }
-                }
-                self.select_cell(cell, false, cx);
-                self.status = SharedString::default();
-            }
-            None => self.status = i18n::text("sheet.not_found").into(),
-        }
-        cx.notify();
     }
 
     /// The filter dropdown's OK: only the ticked values show — or, all
@@ -1306,18 +1282,10 @@ impl DocView {
 
         // A tab being renamed, or the name box: Enter takes it, Escape
         // leaves it.
-        if sheet.renaming.is_some()
-            || sheet.naming.is_some()
-            || sheet.finding.is_some()
-            || sheet.noting.is_some()
-        {
-            if sheet.finding.is_some() && key == "enter" {
-                self.find_next(shift, cx);
-                return true;
-            }
-            if sheet.finding.is_some() && key == "f" && command {
-                return true;
-            }
+        if sheet.finding.is_some() && sheet.renaming.is_none() && sheet.naming.is_none() {
+            return self.find_key(key, modifiers, cx);
+        }
+        if sheet.renaming.is_some() || sheet.naming.is_some() || sheet.noting.is_some() {
             return self.name_key(key, modifiers, cx);
         }
 
@@ -1540,10 +1508,9 @@ impl DocView {
                 let result = sheet.book.toggle_filter(range);
                 self.edited(result, cx);
             }
-            "f" => {
-                sheet.finding = Some(TextEdit::new(String::new()));
-                cx.notify();
-            }
+            "f" => self.open_find(false, cx),
+            // Ctrl+H, as Excel: Find and Replace.
+            "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
             "x" if !shift => self.sheet_copy(true, cx),
             // ⌘A: the block of data round the active cell, then the sheet.
             "a" => {
@@ -1607,8 +1574,8 @@ impl DocView {
             text
         } else if let Some(text) = sheet.naming.as_mut() {
             text
-        } else if let Some(text) = sheet.finding.as_mut() {
-            text
+        } else if let Some(bar) = sheet.finding.as_mut() {
+            bar.field_mut()
         } else if let Some((_, text)) = sheet.noting.as_mut() {
             // A note takes line breaks: Enter on its own ends it.
             if key == "enter" && (modifiers.alt || modifiers.shift) {
@@ -2480,6 +2447,7 @@ impl DocView {
         let rules_manager = self.rules_manager(cx);
         let chart_dialog = self.chart_dialog(cx);
         let object_frame = self.object_frame();
+        let find_bar = self.find_bar(cx);
         let Document::Workbook(sheet) = &mut self.document else {
             unreachable!()
         };
@@ -2859,36 +2827,6 @@ impl DocView {
                     .child(caret_line(text, gpui::black(), false)),
             )
         });
-        let find_bar = sheet.finding.as_ref().map(|text| {
-            div()
-                .absolute()
-                .top_2()
-                .right_4()
-                .w(px(260.0))
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .border_1()
-                .border_color(palette::accent())
-                .bg(palette::panel())
-                .shadow_lg()
-                .text_xs()
-                .text_color(palette::text())
-                .child(
-                    div()
-                        .text_color(palette::dim())
-                        .child(i18n::text("sheet.find")),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(caret_line(text, palette::accent().into(), false)),
-                )
-        });
-
         let filter_panel = sheet.filter.as_ref().map(|panel| {
             let action = |id: &'static str, label: &'static str, command: FilterCommand| {
                 div()

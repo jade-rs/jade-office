@@ -22,6 +22,7 @@ pub mod charts;
 pub mod clipboard;
 pub mod conditional_formatting;
 pub mod deck;
+pub mod find;
 pub mod grid;
 pub mod number_formats;
 pub mod sheet;
