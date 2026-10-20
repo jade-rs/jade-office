@@ -274,6 +274,22 @@ deck.delete_slide	スライドの削除
 deck.hide_slide	スライドを非表示
 deck.show_slide	スライドを再表示
 deck.slide_n	スライド {n}
+deck.font	フォント
+deck.font_size	フォントサイズ
+deck.grow_font	フォントサイズの拡大
+deck.shrink_font	フォントサイズの縮小
+deck.bold	太字
+deck.italic	斜体
+deck.underline	下線
+deck.font_color	フォントの色
+deck.align_left	左揃え
+deck.align_center	中央揃え
+deck.align_right	右揃え
+deck.justify	両端揃え
+deck.bullets	箇条書き
+deck.numbering	段落番号
+deck.line_spacing	行間
+deck.space_after	段落後 {n} pt
 doc.tab.home	ホーム
 doc.tab.insert	挿入
 doc.tab.design	デザイン
