@@ -916,6 +916,11 @@ impl<B: Backend> Workbook<B> {
         }
     }
 
+    /// The workbook's date system: 1900, or the Mac's old 1904.
+    pub(crate) fn date_system(&self) -> jade_xlsx_reader::DateSystem {
+        self.book.workbook().date_system
+    }
+
     /// What a cell shows, through its number format.
     pub fn display_text(&self, reference: CellRef) -> String {
         self.book

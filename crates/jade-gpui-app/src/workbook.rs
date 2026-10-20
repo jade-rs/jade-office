@@ -36,6 +36,7 @@ use gpui::{
     Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
+use jade_office_model::number_formats::NUMBER_FORMATS;
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
     CellFormat, CellRange, CellRef, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay,
@@ -248,6 +249,7 @@ enum FilterCommand {
 /// A toolbar button's dropdown.
 #[derive(Clone, Copy, PartialEq)]
 enum Popup {
+    NumberFormat,
     Fill,
     Font,
     Borders,
@@ -265,6 +267,8 @@ enum Tool {
     Currency,
     Percent,
     Comma,
+    /// A Number Format dropdown entry: the i18n key of its code.
+    NumberFormat(&'static str),
     /// More decimals (true) or fewer.
     Decimals(bool),
     /// A size larger (true) or smaller.
@@ -1161,6 +1165,7 @@ impl WorkbookView {
             }
             Tool::Percent => return self.number_format("0%", cx),
             Tool::Comma => return self.number_format("#,##0", cx),
+            Tool::NumberFormat(key) => return self.number_format(i18n::text(key), cx),
             Tool::Decimals(more) => self.book.decimals(range, active, more),
             Tool::FontSize(larger) => self.book.grow_font(range, active, larger),
             Tool::Fill(color) => self.book.fill_color(range, color),
@@ -2533,6 +2538,16 @@ impl WorkbookView {
     /// where the active cell has them.
     fn sheet_toolbar(&self, cx: &mut Context<Self>) -> gpui::Div {
         let look = self.book.format_at(self.active());
+        let open = self.popup;
+        // The open dropdown hangs under its button, painted over the grid.
+        let mut dropdown = self.toolbar_popup(cx).map(gpui::deferred);
+        let mut hang = move |which: Popup, button: gpui::Stateful<gpui::Div>| {
+            let button = button.relative();
+            match dropdown.take().filter(|_| open == Some(which)) {
+                Some(dropdown) => button.child(dropdown),
+                None => button,
+            }
+        };
         let button = |id: &'static str, on: bool, tool: Tool| {
             div()
                 .id(id)
@@ -2647,6 +2662,22 @@ impl WorkbookView {
             )
             .child(button("tool-merge", false, Tool::Merge).child(icon("icons/merge.svg")))
             .child(separator())
+            .child(hang(
+                Popup::NumberFormat,
+                // Named for the active cell's format, as Excel's box is.
+                button(
+                    "tool-number-format",
+                    popup == Some(Popup::NumberFormat),
+                    Tool::Open(Popup::NumberFormat),
+                )
+                .gap_1()
+                .min_w(px(72.0))
+                .justify_between()
+                .child(i18n::text(
+                    self.book.number_format_name(self.active(), i18n::text),
+                ))
+                .child(icon("icons/chevron-down.svg").size_3()),
+            ))
             .child(
                 button("tool-currency", false, Tool::Currency)
                     .child(i18n::text("sheet.tool.currency_symbol")),
@@ -2656,7 +2687,8 @@ impl WorkbookView {
             .child(button("tool-more-decimals", false, Tool::Decimals(true)).child(".0→"))
             .child(button("tool-fewer-decimals", false, Tool::Decimals(false)).child("←.0"))
             .child(separator())
-            .child(
+            .child(hang(
+                Popup::Fill,
                 // The colour under the bucket and the A is the active
                 // cell's, as Excel's buttons show theirs.
                 button(
@@ -2672,8 +2704,9 @@ impl WorkbookView {
                         .h(px(3.0))
                         .bg(fill.map_or(theme::text_dim(), gpui::rgb)),
                 ),
-            )
-            .child(
+            ))
+            .child(hang(
+                Popup::Font,
                 button(
                     "tool-font-color",
                     popup == Some(Popup::Font),
@@ -2687,31 +2720,34 @@ impl WorkbookView {
                         .h(px(3.0))
                         .bg(ink.map_or(theme::text(), gpui::rgb)),
                 ),
-            )
-            .child(
+            ))
+            .child(hang(
+                Popup::Borders,
                 button(
                     "tool-borders",
                     popup == Some(Popup::Borders),
                     Tool::Open(Popup::Borders),
                 )
                 .child(icon("icons/borders.svg")),
-            )
-            .child(
+            ))
+            .child(hang(
+                Popup::Conditional,
                 button(
                     "tool-conditional",
                     popup == Some(Popup::Conditional),
                     Tool::Open(Popup::Conditional),
                 )
                 .child(icon("icons/highlighter.svg")),
-            )
-            .child(
+            ))
+            .child(hang(
+                Popup::Chart,
                 button(
                     "tool-chart",
                     popup == Some(Popup::Chart),
                     Tool::Open(Popup::Chart),
                 )
                 .child(icon("icons/chart-column.svg")),
-            )
+            ))
             .child(separator())
             .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
     }
@@ -2808,9 +2844,11 @@ impl WorkbookView {
         )
     }
 
-    /// A colour or borders dropdown under its toolbar button.
+    /// A toolbar button's dropdown: number formats, colours, borders or
+    /// conditional formats.
     fn toolbar_popup(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
         let popup = self.popup?;
+        let active = self.active();
         let swatch = |index: usize, color: &'static str, tool: Tool| {
             div()
                 .id(("swatch", index))
@@ -2871,6 +2909,22 @@ impl WorkbookView {
                         ))
                     })
             }
+            Popup::NumberFormat => div().py_1().children(NUMBER_FORMATS.iter().map(|choice| {
+                let code = i18n::text(choice.code);
+                // Each with what the active cell would read as in it.
+                let sample = self.book.number_format_sample(active, code);
+                item(choice.id, choice.name, Tool::NumberFormat(choice.code))
+                    .flex()
+                    .justify_between()
+                    .gap_4()
+                    .children(sample.map(|sample| {
+                        div()
+                            .max_w(px(140.0))
+                            .overflow_hidden()
+                            .text_color(theme::text_dim())
+                            .child(sample)
+                    }))
+            })),
             Popup::Borders => div()
                 .py_1()
                 .child(item(
@@ -2901,19 +2955,13 @@ impl WorkbookView {
             Popup::Conditional => self.conditional_menu(cx),
             Popup::Chart => self.chart_menu(cx),
         };
-        // Under its button: the strip's buttons are laid out in a row.
-        let left = match popup {
-            Popup::Fill => 430.0,
-            Popup::Font => 456.0,
-            Popup::Borders => 482.0,
-            Popup::Conditional => 508.0,
-            Popup::Chart => 534.0,
-        };
         Some(
             div()
                 .absolute()
-                .top(px(SHEET_TOOLBAR_HEIGHT))
-                .left(px(left))
+                .top(px(26.0))
+                .left_0()
+                .min_w(px(150.0))
+                .whitespace_nowrap()
                 .rounded_md()
                 .border_1()
                 .border_color(theme::border())
@@ -3388,7 +3436,6 @@ impl Render for WorkbookView {
         };
         let dragging = self.drag.is_some();
         let toolbar = self.sheet_toolbar(cx);
-        let toolbar_popup = self.toolbar_popup(cx);
         let rule_dialog = self.rule_dialog(cx);
         let chart_dialog = self.chart_dialog(cx);
         let rules_manager = self.rules_manager(cx);
@@ -3532,7 +3579,6 @@ impl Render for WorkbookView {
                     .border_color(theme::border())
                     .children(tabs),
             )
-            .children(toolbar_popup)
             .children(rule_dialog)
             .children(rules_manager)
             .children(chart_dialog)
@@ -4038,6 +4084,35 @@ mod tests {
             assert!(look.border_bottom.is_some() && look.border_left.is_some());
             assert!(view.popup.is_none(), "a choice closes the dropdown");
             assert_eq!(view.book.display_text(at(1, 1)), "10.0");
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at(1, 1)), "10")
+        });
+    }
+
+    /// The Number Format dropdown, as the browser's: its entries format
+    /// the selection, and the button names the active cell's format.
+    #[gpui::test]
+    fn the_number_format_dropdown_formats_the_selection(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("down right");
+        view.update(cx, |view, cx| {
+            assert_eq!(
+                view.book.number_format_name(at(1, 1), i18n::text),
+                "sheet.format.general_name"
+            );
+            view.tool(Tool::Open(Popup::NumberFormat), cx);
+            assert!(view.popup == Some(Popup::NumberFormat));
+            view.tool(Tool::NumberFormat("sheet.format.percent"), cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.popup.is_none(), "a choice closes the dropdown");
+            assert_eq!(view.book.display_text(at(1, 1)), "1000.00%");
+            assert_eq!(
+                view.book.number_format_name(at(1, 1), i18n::text),
+                "sheet.format.percent_name"
+            );
         });
         cx.dispatch_action(Undo);
         view.read_with(cx, |view, _| {

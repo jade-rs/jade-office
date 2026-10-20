@@ -23,6 +23,7 @@ pub mod clipboard;
 pub mod conditional_formatting;
 pub mod deck;
 pub mod grid;
+pub mod number_formats;
 pub mod sheet;
 pub mod text;
 pub mod typing;
