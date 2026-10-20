@@ -252,6 +252,17 @@ sheet.validation_refused	This value doesn't match the data validation restrictio
 sheet.menu.cut	Cut
 sheet.menu.copy	Copy
 sheet.menu.paste	Paste
+sheet.menu.paste_special	Paste Special…
+sheet.paste_special.title	Paste Special
+sheet.paste_special.paste	Paste
+sheet.paste_special.all	All
+sheet.paste_special.formulas	Formulas
+sheet.paste_special.values	Values
+sheet.paste_special.formats	Formats
+sheet.paste_special.skip_blanks	Skip blanks
+sheet.paste_special.transpose	Transpose
+sheet.paste_special.ok	OK
+sheet.paste_special.cancel	Cancel
 sheet.menu.clear	Clear Contents
 sheet.menu.fill_down	Fill Down
 sheet.menu.fill_right	Fill Right

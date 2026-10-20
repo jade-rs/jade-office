@@ -1280,6 +1280,13 @@ impl<B: Backend> Workbook<B> {
         self.clipboard.as_ref().map(|clip| (clip.sheet, clip.range))
     }
 
+    /// The last copy or cut: its sheet, its range, and whether it was a cut.
+    pub(crate) fn copied_cells(&self) -> Option<(usize, CellRange, bool)> {
+        self.clipboard
+            .as_ref()
+            .map(|clip| (clip.sheet, clip.range, clip.cut))
+    }
+
     /// The text the last copy put on the clipboard, for a paste from a menu.
     pub fn copied_text(&self) -> Option<String> {
         self.clipboard.as_ref().map(|clip| clip.text.clone())
