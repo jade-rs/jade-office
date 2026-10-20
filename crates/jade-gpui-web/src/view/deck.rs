@@ -8,9 +8,23 @@
 //! (`deck::Deck`), the same code the native app runs; this is the gpui
 //! around it.
 
-use jade_web::deck::{Motion, ShapeText};
+use jade_web::deck::{FormatStrip, Motion, ParagraphAlignment, ShapeText, TextCommand, FONT_SIZES};
+
+use crate::tooltip::Tooltip;
 
 use super::*;
+
+/// The format strip under the toolbar: font and paragraph.
+pub(super) const FORMAT_BAR_HEIGHT: f32 = 36.0;
+
+/// A list open under a format strip button.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Popup {
+    Font,
+    Size,
+    Color,
+    Spacing,
+}
 
 /// A thumbnail being dragged to another place in the list.
 #[derive(Clone, Copy)]
@@ -154,16 +168,121 @@ impl DocView {
     }
 
     pub(super) fn toggle_layouts(&mut self, cx: &mut Context<Self>) {
-        if let Document::Deck { layouts_open, .. } = &mut self.document {
+        if let Document::Deck {
+            layouts_open,
+            format_popup,
+            ..
+        } = &mut self.document
+        {
             *layouts_open = !*layouts_open;
+            *format_popup = None;
         }
         cx.notify();
+    }
+
+    // ---- formatting ---------------------------------------------------------
+
+    fn toggle_popup(&mut self, popup: Popup, cx: &mut Context<Self>) {
+        if let Document::Deck {
+            layouts_open,
+            format_popup,
+            ..
+        } = &mut self.document
+        {
+            *format_popup = (*format_popup != Some(popup)).then_some(popup);
+            *layouts_open = false;
+        }
+        cx.notify();
+    }
+
+    fn close_popups(&mut self) {
+        if let Document::Deck {
+            layouts_open,
+            format_popup,
+            ..
+        } = &mut self.document
+        {
+            *format_popup = None;
+            *layouts_open = false;
+        }
+    }
+
+    /// What the format strip shows: the text typed into, or all of the
+    /// selected shape's — `None` when neither has text to format.
+    fn format_strip(&mut self) -> Option<FormatStrip> {
+        let Document::Deck {
+            deck,
+            current,
+            selected,
+            typing,
+            edit,
+            cells,
+            ..
+        } = &mut self.document
+        else {
+            return None;
+        };
+        if let Some(typing) = typing {
+            return Some(typing.format_strip(deck));
+        }
+        let id = selected.filter(|_| edit.is_none() && cells.is_none())?;
+        deck.shape_format(*current, id)
+    }
+
+    /// A format strip command — or ⌘B and the rest — on the text typed
+    /// into, or on all of the selected shape's.
+    fn format_slide_text(&mut self, command: TextCommand, cx: &mut Context<Self>) {
+        self.close_popups();
+        if self.typing_state().is_some() {
+            self.edit_typing(cx, |typing, deck| typing.format(deck, &command));
+            return;
+        }
+        let Document::Deck {
+            deck,
+            current,
+            selected: Some(id),
+            edit: None,
+            cells: None,
+            ..
+        } = &mut self.document
+        else {
+            cx.notify();
+            return;
+        };
+        let result = deck.format_shape(*current, *id, &command);
+        self.typed(result, cx);
+    }
+
+    /// PowerPoint's formatting shortcuts: ⌘B, ⌘I, ⌘U, ⌘L, ⌘E, ⌘R, ⌘J, and
+    /// ⌘⇧> and ⌘⇧< for the font size.
+    fn format_shortcut(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let shift = event.keystroke.modifiers.shift;
+        let command = match (event.keystroke.key.as_str(), shift) {
+            ("b", false) => TextCommand::Bold,
+            ("i", false) => TextCommand::Italic,
+            ("u", false) => TextCommand::Underline,
+            ("l", false) => TextCommand::Align(ParagraphAlignment::Left),
+            ("e", false) => TextCommand::Align(ParagraphAlignment::Center),
+            ("r", false) => TextCommand::Align(ParagraphAlignment::Right),
+            ("j", false) => TextCommand::Align(ParagraphAlignment::Justify),
+            (".", true) | (">", _) => TextCommand::Grow,
+            (",", true) | ("<", _) => TextCommand::Shrink,
+            _ => return false,
+        };
+        if self.format_strip().is_none() {
+            return false;
+        }
+        self.format_slide_text(command, cx);
+        true
     }
 
     /// ⌘ shortcuts for slides: New Slide (⌘M, as PowerPoint for Windows
     /// has it, or ⌘⇧N, as for Mac — browsers keep ⌘N) and Duplicate (⌘D)
     /// when no shape is selected.
     pub(super) fn deck_shortcut(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        if self.format_shortcut(event, cx) {
+            return true;
+        }
         if let Some(composing) = self.typing_state() {
             let modifiers = event.keystroke.modifiers;
             return !composing && self.typing_key(&event.keystroke.key, modifiers, cx);
@@ -666,13 +785,14 @@ impl DocView {
             // An IME composing has the keys to itself.
             return !composing && self.typing_key(key, modifiers, cx);
         }
-        let (slides_focused, layouts_open) = match &self.document {
+        let (slides_focused, layouts_open, format_open) = match &self.document {
             Document::Deck {
                 slides_focused,
                 layouts_open,
+                format_popup,
                 ..
-            } => (*slides_focused, *layouts_open),
-            _ => (false, false),
+            } => (*slides_focused, *layouts_open, format_popup.is_some()),
+            _ => (false, false, false),
         };
         if let Document::Deck {
             cells: cells @ Some(_),
@@ -753,6 +873,10 @@ impl DocView {
             // In the slide list, Delete deletes the slide.
             "delete" | "backspace" if slides_focused => self.delete_slide(cx),
             "escape" if layouts_open => self.toggle_layouts(cx),
+            "escape" if format_open => {
+                self.close_popups();
+                cx.notify();
+            }
             "down" | "right" | "pagedown" => self.step_slide(1, cx),
             "up" | "left" | "pageup" => self.step_slide(-1, cx),
             "tab" => {
@@ -790,6 +914,7 @@ impl DocView {
             cells,
             slides_focused,
             layouts_open,
+            format_popup,
             ..
         } = &mut self.document
         else {
@@ -798,6 +923,7 @@ impl DocView {
         *cells = None;
         *slides_focused = false;
         *layouts_open = false;
+        *format_popup = None;
         // In the text being typed into, a click puts the caret, ⇧ or a drag
         // selects, and a double-click selects a word.
         let typed = typing.as_ref().map(|typing| typing.id);
@@ -1024,6 +1150,14 @@ impl DocView {
 
     pub(super) fn deck_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::Div {
         let scale = window.scale_factor();
+        let strip = self.format_strip();
+        let format_popup = match &self.document {
+            Document::Deck { format_popup, .. } => *format_popup,
+            _ => None,
+        };
+        let format_bar = self
+            .format_bar(&strip.clone().unwrap_or_default(), format_popup, cx)
+            .when(strip.is_none(), |bar| bar.opacity(0.5));
         let editing_cell = self.edited_cell().is_some();
         let editing_merged = match (&self.document, self.edited_cell()) {
             (Document::Deck { deck, current, .. }, Some(target)) => deck
@@ -1573,6 +1707,7 @@ impl DocView {
                                 })),
                         ),
                     )
+                    .child(format_bar)
                     .child(
                         // Scrolls once a chosen zoom makes the slide bigger
                         // than the space. A click off the slide clears the
@@ -1598,6 +1733,7 @@ impl DocView {
                                         *slides_focused = false;
                                         *layouts_open = false;
                                     }
+                                    view.close_popups();
                                     cx.notify();
                                 }),
                             )
@@ -1775,4 +1911,411 @@ fn layouts_button(
             )
         }))
         .into_any_element()
+}
+
+/// A click listener, as the format strip hands them round.
+type ClickHandler = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
+
+/// The font list the format strip offers, before the text's own.
+const FONT_FAMILIES: [&str; 9] = [
+    "游ゴシック",
+    "メイリオ",
+    "Hiragino Sans",
+    "Noto Sans JP",
+    "游明朝",
+    "Calibri",
+    "Arial",
+    "Georgia",
+    "Times New Roman",
+];
+/// PowerPoint's standard colours, under its font colour button.
+const FONT_COLORS: [u32; 12] = [
+    0x000000, 0x7f7f7f, 0xc00000, 0xff0000, 0xffc000, 0xffff00, 0x92d050, 0x00b050, 0x00b0f0,
+    0x0070c0, 0x002060, 0x7030a0,
+];
+/// Line spacing (multiples of single) and space after (points), PowerPoint's
+/// Line Spacing list.
+const LINE_SPACINGS: [f64; 4] = [1.0, 1.15, 1.5, 2.0];
+const SPACES_AFTER: [f64; 3] = [0.0, 6.0, 12.0];
+
+/// A format strip button: an icon, shaded while what it sets is on.
+fn format_button(
+    id: &'static str,
+    icon: &'static str,
+    tip: &'static str,
+    on: bool,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .size(px(26.0))
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .rounded_md()
+        .cursor_pointer()
+        .when(on, |button| button.bg(palette::selected()))
+        .hover(|button| button.bg(palette::hovered()))
+        .tooltip(Tooltip::text(i18n::text(tip)))
+        .child(svg().path(icon).size_4().text_color(palette::dim()))
+}
+
+/// A list trigger: its value and a chevron.
+fn format_list(
+    id: &'static str,
+    width: f32,
+    value: String,
+    open: bool,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_between()
+        .w(px(width))
+        .h(px(24.0))
+        .pl_2()
+        .pr_1()
+        .rounded_md()
+        .border_1()
+        .border_color(if open {
+            palette::accent()
+        } else {
+            palette::border()
+        })
+        .cursor_pointer()
+        .hover(|button| button.bg(palette::hovered()))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_xs()
+                .child(value),
+        )
+        .child(
+            svg()
+                .path("icons/chevron-down.svg")
+                .size_3()
+                .text_color(palette::dim()),
+        )
+}
+
+/// A trigger with its list under it while open.
+fn with_menu(trigger: gpui::AnyElement, menu: Option<gpui::AnyElement>) -> gpui::AnyElement {
+    div()
+        .relative()
+        .flex_none()
+        .child(trigger)
+        .children(menu.map(|menu| {
+            div().absolute().top_full().left_0().child(
+                gpui::deferred(
+                    gpui::anchored()
+                        .snap_to_window_with_margin(px(8.0))
+                        .child(menu),
+                )
+                .with_priority(2),
+            )
+        }))
+        .into_any_element()
+}
+
+/// The panel a list is drawn on.
+fn menu_panel(id: &'static str) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .occlude()
+        .mt_1()
+        .p_1()
+        .flex()
+        .flex_col()
+        .max_h(px(360.0))
+        .overflow_y_scroll()
+        .rounded_md()
+        .bg(palette::panel())
+        .border_1()
+        .border_color(palette::border())
+        .shadow_lg()
+        .text_xs()
+        .text_color(palette::text())
+}
+
+/// One row of a list, checked when it is the current value.
+fn menu_row(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    checked: bool,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_2()
+        .h(px(26.0))
+        .pl_1()
+        .pr_3()
+        .rounded_md()
+        .whitespace_nowrap()
+        .cursor_pointer()
+        .hover(|row| row.bg(palette::hovered()))
+        .child(div().size_4().flex_none().when(checked, |cell| {
+            cell.child(
+                svg()
+                    .path("icons/check.svg")
+                    .size_4()
+                    .text_color(palette::accent()),
+            )
+        }))
+        .child(label.into())
+}
+
+fn size_label(size: f32) -> String {
+    if size.fract() == 0.0 {
+        format!("{size:.0}")
+    } else {
+        format!("{size}")
+    }
+}
+
+impl DocView {
+    fn on_format(command: TextCommand, cx: &mut Context<Self>) -> ClickHandler {
+        Box::new(
+            cx.listener(move |view, _event: &gpui::ClickEvent, _window, cx| {
+                view.format_slide_text(command.clone(), cx)
+            }),
+        )
+    }
+
+    fn on_popup(popup: Popup, cx: &mut Context<Self>) -> ClickHandler {
+        Box::new(
+            cx.listener(move |view, _event: &gpui::ClickEvent, _window, cx| {
+                view.toggle_popup(popup, cx)
+            }),
+        )
+    }
+
+    /// The format strip, PowerPoint's Font and Paragraph groups, over the
+    /// text typed into or all of the selected shape's.
+    fn format_bar(
+        &self,
+        strip: &FormatStrip,
+        open: Option<Popup>,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let font = strip.font.clone().unwrap_or_default();
+        let font_menu = (open == Some(Popup::Font)).then(|| {
+            let mut fonts: Vec<String> = FONT_FAMILIES.iter().map(|f| f.to_string()).collect();
+            if !font.is_empty() && !fonts.contains(&font) {
+                fonts.insert(0, font.clone());
+            }
+            menu_panel("deck-fonts")
+                .children(fonts.into_iter().enumerate().map(|(index, name)| {
+                    menu_row(("deck-font", index), name.clone(), name == font)
+                        .font_family(SharedString::from(name.clone()))
+                        .on_click(Self::on_format(TextCommand::Font(name), cx))
+                }))
+                .into_any_element()
+        });
+        let size_menu = (open == Some(Popup::Size)).then(|| {
+            menu_panel("deck-sizes")
+                .children(FONT_SIZES.iter().enumerate().map(|(index, &size)| {
+                    menu_row(
+                        ("deck-size", index),
+                        size_label(size),
+                        strip.size == Some(size),
+                    )
+                    .on_click(Self::on_format(TextCommand::Size(size), cx))
+                }))
+                .into_any_element()
+        });
+        let color_menu = (open == Some(Popup::Color)).then(|| {
+            menu_panel("deck-colors")
+                .child(div().w(px(6.0 * 24.0)).flex().flex_wrap().gap_1().children(
+                    FONT_COLORS.iter().enumerate().map(|(index, &color)| {
+                        div()
+                            .id(("deck-color", index))
+                            .size(px(20.0))
+                            .rounded_sm()
+                            .bg(rgb(color))
+                            .border_1()
+                            .border_color(palette::border())
+                            .cursor_pointer()
+                            .hover(|square| square.border_color(palette::accent()))
+                            .on_click(Self::on_format(
+                                TextCommand::Color(format!("#{color:06X}")),
+                                cx,
+                            ))
+                    }),
+                ))
+                .into_any_element()
+        });
+        let spacing_menu = (open == Some(Popup::Spacing)).then(|| {
+            menu_panel("deck-spacing")
+                .children(LINE_SPACINGS.iter().enumerate().map(|(index, &lines)| {
+                    menu_row(
+                        ("deck-line-spacing", index),
+                        format!("{lines:.2}")
+                            .trim_end_matches('0')
+                            .trim_end_matches('.')
+                            .to_string(),
+                        false,
+                    )
+                    .on_click(Self::on_format(TextCommand::LineSpacing(lines), cx))
+                }))
+                .children(SPACES_AFTER.iter().enumerate().map(|(index, &points)| {
+                    menu_row(
+                        ("deck-space-after", index),
+                        i18n::format("deck.space_after", &[("n", &points)]),
+                        false,
+                    )
+                    .on_click(Self::on_format(TextCommand::SpaceAfter(points), cx))
+                }))
+                .into_any_element()
+        });
+        let separator = || div().w(px(1.0)).h(px(18.0)).mx_1().bg(palette::border());
+        let alignment = strip.alignment;
+        div()
+            .h(px(FORMAT_BAR_HEIGHT))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .px_3()
+            .bg(palette::panel())
+            .border_b_1()
+            .border_color(palette::border())
+            .text_color(palette::text())
+            .child(with_menu(
+                format_list("deck-font", 150.0, font, open == Some(Popup::Font))
+                    .tooltip(Tooltip::text(i18n::text("deck.font")))
+                    .on_click(Self::on_popup(Popup::Font, cx))
+                    .into_any_element(),
+                font_menu,
+            ))
+            .child(with_menu(
+                format_list(
+                    "deck-size",
+                    56.0,
+                    strip.size.map(size_label).unwrap_or_default(),
+                    open == Some(Popup::Size),
+                )
+                .tooltip(Tooltip::text(i18n::text("deck.font_size")))
+                .on_click(Self::on_popup(Popup::Size, cx))
+                .into_any_element(),
+                size_menu,
+            ))
+            .child(
+                format_button("deck-grow", "icons/a-arrow-up.svg", "deck.grow_font", false)
+                    .on_click(Self::on_format(TextCommand::Grow, cx)),
+            )
+            .child(
+                format_button(
+                    "deck-shrink",
+                    "icons/a-arrow-down.svg",
+                    "deck.shrink_font",
+                    false,
+                )
+                .on_click(Self::on_format(TextCommand::Shrink, cx)),
+            )
+            .child(separator())
+            .child(
+                format_button("deck-bold", "icons/bold.svg", "deck.bold", strip.bold)
+                    .on_click(Self::on_format(TextCommand::Bold, cx)),
+            )
+            .child(
+                format_button(
+                    "deck-italic",
+                    "icons/italic.svg",
+                    "deck.italic",
+                    strip.italic,
+                )
+                .on_click(Self::on_format(TextCommand::Italic, cx)),
+            )
+            .child(
+                format_button(
+                    "deck-underline",
+                    "icons/underline.svg",
+                    "deck.underline",
+                    strip.underline,
+                )
+                .on_click(Self::on_format(TextCommand::Underline, cx)),
+            )
+            .child(with_menu(
+                format_button(
+                    "deck-color",
+                    "icons/baseline.svg",
+                    "deck.font_color",
+                    open == Some(Popup::Color),
+                )
+                .on_click(Self::on_popup(Popup::Color, cx))
+                .into_any_element(),
+                color_menu,
+            ))
+            .child(separator())
+            .children(
+                [
+                    (
+                        ParagraphAlignment::Left,
+                        "deck-align-left",
+                        "icons/align-left.svg",
+                        "deck.align_left",
+                    ),
+                    (
+                        ParagraphAlignment::Center,
+                        "deck-align-center",
+                        "icons/align-center.svg",
+                        "deck.align_center",
+                    ),
+                    (
+                        ParagraphAlignment::Right,
+                        "deck-align-right",
+                        "icons/align-right.svg",
+                        "deck.align_right",
+                    ),
+                    (
+                        ParagraphAlignment::Justify,
+                        "deck-justify",
+                        "icons/align-justify.svg",
+                        "deck.justify",
+                    ),
+                ]
+                .into_iter()
+                .map(|(value, id, icon, tip)| {
+                    format_button(id, icon, tip, alignment == Some(value))
+                        .on_click(Self::on_format(TextCommand::Align(value), cx))
+                }),
+            )
+            .child(separator())
+            .child(
+                format_button(
+                    "deck-bullets",
+                    "icons/list.svg",
+                    "deck.bullets",
+                    strip.bullets,
+                )
+                .on_click(Self::on_format(TextCommand::Bullets, cx)),
+            )
+            .child(
+                format_button(
+                    "deck-numbering",
+                    "icons/list-ordered.svg",
+                    "deck.numbering",
+                    strip.numbering,
+                )
+                .on_click(Self::on_format(TextCommand::Numbering, cx)),
+            )
+            .child(with_menu(
+                format_button(
+                    "deck-line-spacing",
+                    "icons/chevrons-up-down.svg",
+                    "deck.line_spacing",
+                    open == Some(Popup::Spacing),
+                )
+                .on_click(Self::on_popup(Popup::Spacing, cx))
+                .into_any_element(),
+                spacing_menu,
+            ))
+    }
 }
