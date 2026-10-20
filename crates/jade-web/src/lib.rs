@@ -13,7 +13,9 @@
 use std::sync::Arc;
 
 pub use jade_office_model::tiny::TinySkiaBackend;
-pub use jade_office_model::{conditional_formatting, deck, grid, sheet, text, typing, word};
+pub use jade_office_model::{
+    charts, conditional_formatting, deck, grid, sheet, text, typing, word,
+};
 
 pub mod document;
 pub mod editing;
