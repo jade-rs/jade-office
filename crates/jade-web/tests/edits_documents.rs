@@ -971,3 +971,60 @@ fn an_edit_that_changes_nothing_is_not_an_undo_step() {
     assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
     assert!(!document.can_undo());
 }
+
+/// The document is edited where it lies, not copied first: undoing every
+/// edit brings back the pages it opened with, and redoing them the pages
+/// opening the edited result draws.
+#[test]
+fn undoing_and_redoing_edits_repaints_the_pages_they_leave() {
+    let mut document = open("contract.docx");
+    let original: Vec<Vec<u8>> = (0..document.page_count())
+        .map(|index| page_rgba(&document, index))
+        .collect();
+    for paragraph in (1..document.paragraph_count()).step_by(5) {
+        let Some(text) = document
+            .paragraph_text(paragraph)
+            .filter(|text| text.chars().count() > 3)
+        else {
+            continue;
+        };
+        document.place_caret(paragraph, char_offset(&text, 1));
+        document.insert_text("zあ").unwrap();
+        if paragraph % 2 == 0 {
+            document.insert_paragraph_break().unwrap();
+        }
+    }
+    let edited = document.export_docx().unwrap();
+    let compare = |document: &EditableDocument, pages: &[Vec<u8>], what: &str| {
+        assert_eq!(document.page_count(), pages.len(), "{what}: page count");
+        for (index, expected) in pages.iter().enumerate() {
+            let worst = page_rgba(document, index)
+                .iter()
+                .zip(expected)
+                .map(|(a, b)| a.abs_diff(*b))
+                .max()
+                .unwrap_or(0);
+            assert!(
+                worst <= 2,
+                "{what}: page {} is {worst} levels off",
+                index + 1
+            );
+        }
+    };
+    assert!(
+        (0..original.len()).any(|index| page_rgba(&document, index) != original[index]),
+        "the edits show"
+    );
+    while document.can_undo() {
+        document.undo().unwrap();
+    }
+    compare(&document, &original, "undone");
+    while document.can_redo() {
+        document.redo().unwrap();
+    }
+    let reopened = open_bytes(&edited);
+    let fresh: Vec<Vec<u8>> = (0..reopened.page_count())
+        .map(|index| page_rgba(&reopened, index))
+        .collect();
+    compare(&document, &fresh, "redone");
+}
