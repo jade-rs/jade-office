@@ -6,7 +6,7 @@ use jade_docx_editor::headless_api::apply_headless_commands_with_executor_to_doc
 use jade_docx_editor::word_document::WordDocument;
 use jade_docx_headless_api::{HeadlessCommand, HeadlessEditRequest};
 pub use jade_office_model::word::{
-    style_gallery, CellLayout, CharacterFormat, FormatState, GalleryStyle, ListKind,
+    style_gallery, CellLayout, CellStep, CharacterFormat, FormatState, GalleryStyle, ListKind,
     ParagraphBorders, ParagraphStyle, TableBorders, TableCell, TableCommand, WordFormatting,
     WordSession,
 };
