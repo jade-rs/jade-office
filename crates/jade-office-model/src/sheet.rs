@@ -44,6 +44,13 @@ pub fn validation_refusal(error: &str) -> Option<&str> {
     error.strip_prefix(VALIDATION_REFUSED)
 }
 
+/// Whether `error` is a protected sheet refusing the change — a locked
+/// cell typed into, or formatting it does not allow — which the shells say
+/// in their own words.
+pub fn protected_refusal(error: &str) -> bool {
+    error.starts_with("sheet `") && error.contains("` is protected: ")
+}
+
 /// Excel's limits.
 pub const MAX_COLUMN: u32 = 16_383;
 pub const MAX_ROW: u32 = 1_048_575;

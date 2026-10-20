@@ -372,3 +372,4 @@ ribbon.distribute_columns	Distribute columns
 ribbon.split_cell	Split cells
 ribbon.split_size	{columns} col × {rows} row
 ribbon.repeat_header	Repeat as header row
+sheet.protected	The cell or sheet you are trying to change is protected.
