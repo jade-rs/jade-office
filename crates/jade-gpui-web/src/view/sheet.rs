@@ -42,6 +42,8 @@ const AUTO_SCROLL_TICK: Duration = Duration::from_millis(40);
 /// The formatting strip over the formula bar: Excel's Home tab, short.
 const SHEET_TOOLBAR_HEIGHT: f32 = 34.0;
 
+mod format_dialog;
+
 /// Excel's standard colours, the ones under its colour buttons.
 const STANDARD_COLORS: &[&str] = &[
     "C00000", "FF0000", "FFC000", "FFFF00", "92D050", "00B050", "00B0F0", "0070C0", "002060",
@@ -96,6 +98,8 @@ pub(super) struct Sheet {
     choices: Option<Vec<String>>,
     /// A toolbar button's dropdown: colours or borders.
     popup: Option<Popup>,
+    /// The Format Cells dialog (⌘1), while it is open.
+    format_dialog: Option<jade_web::format_cells::FormatCellsDialog>,
     /// What the pointer is over, for its cursor.
     hover: Hover,
     /// A hyperlink pressed: followed when the press lets go on it, as in
@@ -231,6 +235,7 @@ enum FilterCommand {
 
 #[derive(Clone, Copy)]
 enum MenuCommand {
+    FormatCells,
     Cut,
     Copy,
     Paste,
@@ -288,6 +293,7 @@ impl Sheet {
             filter: None,
             choices: None,
             popup: None,
+            format_dialog: None,
             hover: Hover::Cells,
             pending_link: None,
         }
@@ -1258,6 +1264,12 @@ impl DocView {
             return false;
         };
         sheet.menu = None;
+        // The Format Cells dialog takes every key while it is open.
+        if sheet.format_dialog.is_some() {
+            let key_char = event.keystroke.key_char.clone();
+            self.format_dialog_key(key, key_char.as_deref(), cx);
+            return true;
+        }
         if sheet.choices.is_some() {
             if key == "escape" {
                 sheet.choices = None;
@@ -1566,6 +1578,8 @@ impl DocView {
                 let result = sheet.book.fill_right(range);
                 self.edited(result, cx);
             }
+            // ⌘1: Format Cells, as in Excel.
+            "1" if !shift => self.open_format_dialog(cx),
             "b" | "2" => self.sheet_toggle(FontToggle::Bold, cx),
             "i" | "3" => self.sheet_toggle(FontToggle::Italic, cx),
             "u" | "4" => self.sheet_toggle(FontToggle::Underline, cx),
@@ -1762,6 +1776,7 @@ impl DocView {
             command => command,
         };
         let result = match command {
+            MenuCommand::FormatCells => return self.open_format_dialog(cx),
             MenuCommand::Cut => return self.sheet_copy(true, cx),
             MenuCommand::Copy => return self.sheet_copy(false, cx),
             MenuCommand::Paste => return self.sheet_paste(None, cx),
@@ -2426,6 +2441,9 @@ impl DocView {
         let zoom = self.zoom.unwrap_or(1.0);
         self.shown_zoom = zoom;
         let toolbar = self.sheet_toolbar(cx);
+        let format_dialog = self
+            .format_dialog_element(cx)
+            .map(|dialog| dialog.into_any_element());
         let (area_width, area_height) = editor_area(window, cx);
         let scale = window.scale_factor();
         let Document::Workbook(sheet) = &mut self.document else {
@@ -2693,6 +2711,7 @@ impl DocView {
                     } else {
                         items.push((MenuCommand::EditNote, "sheet.menu.insert_note"));
                     }
+                    items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                     items
                 }
             };
@@ -3158,6 +3177,7 @@ impl DocView {
                     .children(object_frame)
                     .children(paste_special)
                     .children(menu)
+                    .children(format_dialog)
                     // Records where the grid is, registers the input handler
                     // so typing — an IME's included — reaches the cell, and
                     // while a drag is on follows the pointer anywhere in the
