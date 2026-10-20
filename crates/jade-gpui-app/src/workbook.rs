@@ -53,12 +53,15 @@ use std::time::Duration;
 
 use crate::editor::{self, Editor};
 
+mod charts;
 mod conditional;
 use crate::{
     byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Redo, Save, SaveAs,
     SelectAll, Undo, UI_FONT_FAMILY,
 };
+use charts::ChartTool;
 use conditional::Conditional;
+use jade_office_model::charts::{ChartAsk, Handle};
 use jade_office_model::conditional_formatting::RuleAsk;
 
 /// The formatting strip over the formula bar: Excel's Home tab, short.
@@ -189,6 +192,16 @@ enum SheetDrag {
         target: CellRange,
         copy: bool,
     },
+    /// A chart, picture or shape picked up by its border (no handle) or a
+    /// handle: where the press started, where the object was, and where
+    /// the drag has it (sheet px).
+    Object {
+        id: u32,
+        handle: Option<Handle>,
+        start: (f64, f64),
+        bounds: (f64, f64, f64, f64),
+        now: (f64, f64, f64, f64),
+    },
 }
 
 /// What the pointer is over, for its cursor.
@@ -239,6 +252,7 @@ enum Popup {
     Font,
     Borders,
     Conditional,
+    Chart,
 }
 
 /// What a toolbar button does to the selection.
@@ -262,6 +276,7 @@ enum Tool {
     Borders(Borders),
     Filter,
     Conditional(Conditional),
+    Chart(ChartTool),
 }
 
 #[derive(Clone, Copy)]
@@ -336,6 +351,10 @@ pub struct WorkbookView {
     asking: Option<RuleAsk>,
     /// The conditional formatting Rules Manager, open.
     managing: bool,
+    /// The selected chart, picture or shape, by id.
+    object: Option<u32>,
+    /// Chart Title… or Select Data…, asking.
+    chart_asking: Option<ChartAsk>,
     /// The active cell's list of choices (its data validation), open.
     choices: Option<Vec<String>>,
     /// A hyperlink pressed: followed when the press lets go on it, as in
@@ -378,6 +397,9 @@ impl WorkbookView {
 
     /// The text being typed into: a tab's new name, the name box, or a cell.
     fn typing(&mut self) -> Option<&mut TextEdit> {
+        if let Some(ask) = self.chart_asking.as_mut() {
+            return Some(&mut ask.text);
+        }
         if let Some(ask) = self.asking.as_mut() {
             return ask.typing();
         }
@@ -397,6 +419,9 @@ impl WorkbookView {
     }
 
     fn typed(&self) -> Option<&TextEdit> {
+        if let Some(ask) = self.chart_asking.as_ref() {
+            return Some(&ask.text);
+        }
         if let Some(ask) = self.asking.as_ref() {
             return ask.typed();
         }
@@ -472,6 +497,7 @@ impl WorkbookView {
             return;
         }
         if index != self.book.sheet_index() && index < self.sheet_names.len() {
+            self.object = None;
             if let Err(error) = self.book.select_sheet(index) {
                 self.status = SharedString::from(error);
             }
@@ -1142,6 +1168,7 @@ impl WorkbookView {
             Tool::Borders(borders) => self.book.borders(range, borders),
             Tool::Filter => self.book.toggle_filter(range),
             Tool::Conditional(tool) => return self.conditional(tool, cx),
+            Tool::Chart(tool) => return self.chart_tool(tool, cx),
             Tool::Open(_) => return,
         };
         self.after_write(result, cx);
@@ -1235,6 +1262,14 @@ impl WorkbookView {
             return true;
         }
 
+        // A chart's text dialog has the keys while it is open.
+        if self.chart_asking.is_some() {
+            return self.chart_key(key, modifiers, cx);
+        }
+        // A selected chart, picture or shape: Delete removes it.
+        if self.object.is_some() && self.object_key(key, cx) {
+            return true;
+        }
         // A conditional format's dialog has the keys while it is open.
         if self.asking.is_some() {
             return self.rule_key(key, modifiers, cx);
@@ -1620,6 +1655,12 @@ impl WorkbookView {
         }
         self.tab_start = None;
 
+        // A chart, picture or shape sits over the cells: a press on one
+        // selects it, and its border or a handle drags it.
+        if self.object_press(x, y, cx) {
+            return;
+        }
+
         // A filter button opens its dropdown.
         if let Some(button) = self.book.filter_button_at(x, y, scroll) {
             self.open_filter(button, scroll, cx);
@@ -1870,6 +1911,23 @@ impl WorkbookView {
                     cx.notify();
                 }
             }
+            SheetDrag::Object {
+                id,
+                handle,
+                start,
+                bounds,
+                ..
+            } => {
+                let now = self.object_drag(handle, start, bounds, x, y);
+                self.drag = Some(SheetDrag::Object {
+                    id,
+                    handle,
+                    start,
+                    bounds,
+                    now,
+                });
+                cx.notify();
+            }
             SheetDrag::Point => {
                 let anchor = self
                     .edit
@@ -1966,6 +2024,9 @@ impl WorkbookView {
                 }
                 self.after_write(result.map(|_| true), cx);
             }
+            SheetDrag::Object {
+                id, bounds, now, ..
+            } => self.object_drop(id, bounds, now, cx),
             SheetDrag::Point => cx.notify(),
         }
     }
@@ -2640,6 +2701,14 @@ impl WorkbookView {
                 )
                 .child(icon("icons/highlighter.svg")),
             )
+            .child(
+                button(
+                    "tool-chart",
+                    popup == Some(Popup::Chart),
+                    Tool::Open(Popup::Chart),
+                )
+                .child(icon("icons/chart-column.svg")),
+            )
             .child(separator())
             .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
     }
@@ -2827,6 +2896,7 @@ impl WorkbookView {
                     Tool::Borders(Borders::None),
                 )),
             Popup::Conditional => self.conditional_menu(cx),
+            Popup::Chart => self.chart_menu(cx),
         };
         // Under its button: the strip's buttons are laid out in a row.
         let left = match popup {
@@ -2834,6 +2904,7 @@ impl WorkbookView {
             Popup::Font => 456.0,
             Popup::Borders => 482.0,
             Popup::Conditional => 508.0,
+            Popup::Chart => 534.0,
         };
         Some(
             div()
@@ -3316,6 +3387,7 @@ impl Render for WorkbookView {
         let toolbar = self.sheet_toolbar(cx);
         let toolbar_popup = self.toolbar_popup(cx);
         let rule_dialog = self.rule_dialog(cx);
+        let chart_dialog = self.chart_dialog(cx);
         let rules_manager = self.rules_manager(cx);
         let filter_panel = self.filter_panel(cx);
 
@@ -3390,6 +3462,7 @@ impl Render for WorkbookView {
                             .child(div().w(px(sheet_width)).h(px(sheet_height)).flex_none()),
                     )
                     .children(editor)
+                    .children(self.object_frame())
                     .children(note)
                     .children(note_editor)
                     .children(list_button)
@@ -3459,6 +3532,7 @@ impl Render for WorkbookView {
             .children(toolbar_popup)
             .children(rule_dialog)
             .children(rules_manager)
+            .children(chart_dialog)
     }
 }
 
@@ -3487,6 +3561,8 @@ impl WorkbookView {
             noting: None,
             asking: None,
             managing: false,
+            object: None,
+            chart_asking: None,
             choices: None,
             pending_link: None,
             menu: None,
@@ -4013,6 +4089,68 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert!(view.asking.is_none());
             assert_eq!(view.book.conditional_formats().len(), 2);
+        });
+    }
+
+    /// The chart button inserts a chart over the selection and selects
+    /// it; a press on it picks it up and a drag moves it; Chart Title…
+    /// asks for its title; Delete removes it.
+    #[gpui::test]
+    fn a_chart_is_inserted_moved_retitled_and_deleted(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::charts::{ChartField, ChartKind};
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("shift-down shift-down shift-down shift-right shift-right");
+        let id = view.update(cx, |view, cx| {
+            view.tool(Tool::Open(Popup::Chart), cx);
+            view.tool(Tool::Chart(ChartTool::Insert(ChartKind::Column)), cx);
+            let id = view.object.expect("the new chart is selected");
+            assert_eq!(view.book.chart(id).unwrap().data.as_deref(), Some("A1:C4"));
+            id
+        });
+        // Picked up by a press inside it, then moved.
+        view.update(cx, |view, cx| {
+            view.object = None;
+            let (x, y, width, height) = view.book.object_rect(id, view.sheet_scroll()).unwrap();
+            let (x, y) = (x + width / 2.0, y + height / 2.0);
+            assert!(view.object_press(x, y, cx));
+            assert_eq!(view.object, Some(id));
+            let Some(SheetDrag::Object {
+                handle,
+                start,
+                bounds,
+                ..
+            }) = view.drag
+            else {
+                panic!("an object drag");
+            };
+            assert!(handle.is_none(), "inside it moves, not resizes");
+            let now = view.object_drag(handle, start, bounds, x + 64.0, y + 40.0);
+            view.drag = Some(SheetDrag::Object {
+                id,
+                handle,
+                start,
+                bounds,
+                now,
+            });
+            view.drag_end(cx);
+            let moved = view.book.object_bounds(id).unwrap();
+            assert!(
+                (moved.0 - bounds.0 - 64.0).abs() < 1.0 && (moved.1 - bounds.1 - 40.0).abs() < 1.0
+            );
+            view.chart_tool(ChartTool::Ask(ChartField::Title), cx);
+            assert!(view.chart_asking.is_some());
+        });
+        cx.simulate_input("Sales");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.chart_asking.is_none());
+            assert!(view.edit.is_none(), "typing went into the dialog");
+            assert_eq!(view.book.chart(id).unwrap().title, "Sales");
+        });
+        cx.simulate_keystrokes("delete");
+        view.read_with(cx, |view, _| {
+            assert!(view.object.is_none());
+            assert!(view.book.chart(id).is_none());
         });
     }
 
