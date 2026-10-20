@@ -450,3 +450,131 @@ fn a_selected_range_merges_into_one_cell_and_splits_back() {
     assert_eq!(deck.cell_span(0, cell(4, 1, 1)), Some((1, 1)));
     assert_eq!(deck.text(0, cell(4, 2, 2)).as_deref(), Some(""));
 }
+
+fn backend() -> TinySkiaBackend {
+    let directory = core().join("fonts/Noto_Sans_JP/static");
+    TinySkiaBackend::new(&aliased_faces(
+        Arc::new(std::fs::read(directory.join("NotoSansJP-Regular.ttf")).unwrap()),
+        None,
+    ))
+    .unwrap()
+}
+
+/// One of the decks in jade-core's own fixtures, not POI's.
+fn open_own(name: &str) -> Deck<TinySkiaBackend> {
+    let bytes = std::fs::read(core().join("public/fixtures").join(name)).unwrap();
+    Deck::open(&bytes, backend()).unwrap()
+}
+
+/// The slides' first lines of text, in order: which slide is where.
+fn titles(deck: &mut Deck<TinySkiaBackend>) -> Vec<String> {
+    (0..deck.slide_count())
+        .map(|slide| {
+            let ids: Vec<u32> = deck.shapes(slide).iter().map(|shape| shape.id).collect();
+            ids.into_iter()
+                .filter_map(|id| deck.shape_text(slide, id))
+                .find(|text| !text.is_empty())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+#[test]
+fn slides_are_added_duplicated_moved_and_deleted_each_as_one_undoable_step() {
+    let mut deck = open_own("sample-deck.pptx");
+    let before = titles(&mut deck);
+    let count = before.len();
+    assert!(count >= 2);
+
+    // New Slide goes after the current one, on its layout, with nothing typed.
+    assert!(deck.insert_slide(1).unwrap());
+    assert_eq!(deck.slide_count(), count + 1);
+    assert_eq!(titles(&mut deck)[1], "");
+    assert!(deck.render_slide(1, 320).is_some());
+
+    // Duplicate puts the copy straight after its slide.
+    assert!(deck.duplicate_slide(0).unwrap());
+    let after = titles(&mut deck);
+    assert_eq!(after[0], after[1]);
+    assert_eq!(after[0], before[0]);
+
+    // A slide dragged to the end of the list goes last.
+    assert!(deck.move_slide(0, deck.slide_count() - 1).unwrap());
+    assert_eq!(titles(&mut deck).last(), Some(&before[0]));
+
+    assert!(deck.delete_slide(0).unwrap());
+    assert_eq!(deck.slide_count(), count + 1);
+
+    for _ in 0..4 {
+        assert!(deck.undo().unwrap());
+    }
+    assert_eq!(titles(&mut deck), before);
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn the_last_slide_is_not_deleted() {
+    let mut deck = open_own("sample-deck.pptx");
+    while deck.slide_count() > 1 {
+        assert!(deck.delete_slide(0).unwrap());
+    }
+    // PowerPoint leaves an empty deck; the views need a slide to show.
+    assert!(!deck.delete_slide(0).unwrap());
+    assert_eq!(deck.slide_count(), 1);
+}
+
+#[test]
+fn a_hidden_slide_is_skipped_by_the_slide_show() {
+    let mut deck = open_own("sample-deck.pptx");
+    let count = deck.slide_count();
+    assert!(count >= 3);
+    assert!(!deck.is_hidden(1));
+    assert!(deck.set_slide_hidden(1, true).unwrap());
+    assert!(deck.is_hidden(1));
+    assert_eq!(deck.next_shown(0, true), Some(2));
+    assert_eq!(deck.next_shown(2, false), Some(0));
+    assert_eq!(deck.next_shown(count - 1, true), None);
+    // The flag is written to the file, and read back as PowerPoint reads it.
+    let saved = deck.save_bytes();
+    let reopened = Deck::open(&saved, backend()).unwrap();
+    assert!(reopened.is_hidden(1));
+    // A show from the beginning starts on the first slide shown.
+    assert!(deck.set_slide_hidden(0, true).unwrap());
+    assert_eq!(deck.first_shown(), 2);
+    assert!(deck.set_slide_hidden(1, false).unwrap());
+    assert_eq!(deck.first_shown(), 1);
+}
+
+#[test]
+fn a_slide_takes_another_layout() {
+    let mut deck = open_own("sample-deck.pptx");
+    let layouts = deck.slide_layouts(1);
+    assert!(layouts.len() > 1, "{layouts:?}");
+    let current = layouts
+        .iter()
+        .find(|layout| layout.current)
+        .unwrap()
+        .clone();
+    let other = layouts
+        .iter()
+        .find(|layout| !layout.current)
+        .unwrap()
+        .clone();
+    assert!(deck.set_slide_layout(1, &other.part_name).unwrap());
+    let now = deck.slide_layouts(1);
+    assert_eq!(
+        now.iter()
+            .find(|layout| layout.current)
+            .map(|l| &l.part_name),
+        Some(&other.part_name)
+    );
+    assert!(deck.render_slide(1, 320).is_some());
+    assert!(deck.undo().unwrap());
+    assert_eq!(
+        deck.slide_layouts(1)
+            .iter()
+            .find(|layout| layout.current)
+            .map(|l| l.part_name.clone()),
+        Some(current.part_name)
+    );
+}
