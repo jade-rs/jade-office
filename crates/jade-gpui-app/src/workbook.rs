@@ -732,6 +732,10 @@ impl WorkbookView {
             }
             // An entry a data validation refuses: the rule's words, or
             // Excel's.
+            // A protected sheet: Excel's words.
+            Err(error) if jade_office_model::sheet::protected_refusal(&error) => {
+                self.status = SharedString::from(i18n::text("sheet.protected"))
+            }
             Err(error) if jade_office_model::sheet::validation_refusal(&error).is_some() => {
                 let message =
                     jade_office_model::sheet::validation_refusal(&error).unwrap_or_default();
