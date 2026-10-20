@@ -15,7 +15,7 @@ use jade_pptx_layout::{layout_deck_slide, PlacedOrigin, PlacedShape, SlideLayout
 use jade_pptx_reader::{emu_to_px, Transform};
 use jade_pptx_render::{render_slide_with, PainterMeasure, RenderOptions};
 use jade_pptx_writer::EditSession;
-pub use jade_pptx_writer::{ShapeTransformInfo, TableChange};
+pub use jade_pptx_writer::{ShapeTransformInfo, SlideLayoutInfo, TableChange};
 
 use crate::Backend;
 
@@ -564,6 +564,95 @@ impl<B: Backend> Deck<B> {
             return Ok(false);
         };
         self.set_shape_rect(slide, drag.id, drag.rect(ShapeRect::of(&transform)))
+    }
+
+    // ---- slides --------------------------------------------------------------
+
+    /// Whether slide `index` is hidden: kept in the deck, skipped in a show.
+    pub fn is_hidden(&self, index: usize) -> bool {
+        self.deck
+            .slides
+            .get(index)
+            .is_some_and(|slide| slide.content.hidden)
+    }
+
+    /// The next slide after `from` (before, unless `forward`) that a slide
+    /// show plays: hidden ones are skipped. `None` past either end.
+    pub fn next_shown(&self, from: usize, forward: bool) -> Option<usize> {
+        let mut index = from;
+        loop {
+            index = if forward {
+                index + 1
+            } else {
+                index.checked_sub(1)?
+            };
+            if index >= self.slide_count() {
+                return None;
+            }
+            if !self.is_hidden(index) {
+                return Some(index);
+            }
+        }
+    }
+
+    /// Where a show from the beginning starts: the first slide not hidden,
+    /// or the first slide when every one is.
+    pub fn first_shown(&self) -> usize {
+        (0..self.slide_count())
+            .find(|&index| !self.is_hidden(index))
+            .unwrap_or(0)
+    }
+
+    /// New Slide: an empty slide at `index`, on the layout of the slide it
+    /// follows, its placeholders empty.
+    pub fn insert_slide(&mut self, index: usize) -> Result<bool, String> {
+        let index = index.min(self.slide_count());
+        let result = self.session.insert_slide(index);
+        self.after(result)
+    }
+
+    /// Duplicate Slide: a copy straight after slide `index`.
+    pub fn duplicate_slide(&mut self, index: usize) -> Result<bool, String> {
+        let result = self.session.duplicate_slide(index);
+        self.after(result)
+    }
+
+    /// Deletes slide `index` — not the last one left, which the views need
+    /// to show something.
+    pub fn delete_slide(&mut self, index: usize) -> Result<bool, String> {
+        if self.slide_count() <= 1 || index >= self.slide_count() {
+            return Ok(false);
+        }
+        let result = self.session.delete_slide(index);
+        self.after(result)
+    }
+
+    /// Moves slide `from` so it ends up at `to`.
+    pub fn move_slide(&mut self, from: usize, to: usize) -> Result<bool, String> {
+        let to = to.min(self.slide_count().saturating_sub(1));
+        if from == to {
+            return Ok(false);
+        }
+        let result = self.session.move_slide(from, to);
+        self.after(result)
+    }
+
+    /// Hide Slide, or show it again.
+    pub fn set_slide_hidden(&mut self, index: usize, hidden: bool) -> Result<bool, String> {
+        let result = self.session.set_slide_hidden(index, hidden);
+        self.after(result)
+    }
+
+    /// The layouts slide `index` can take, the one it has marked `current`.
+    pub fn slide_layouts(&self, index: usize) -> Vec<SlideLayoutInfo> {
+        jade_pptx_writer::slide_layouts(self.session.bytes(), index).unwrap_or_default()
+    }
+
+    /// Puts slide `index` on the layout `part_name` names, its placeholders
+    /// moved to the layout's.
+    pub fn set_slide_layout(&mut self, index: usize, part_name: &str) -> Result<bool, String> {
+        let result = self.session.set_slide_layout(index, part_name);
+        self.after(result)
     }
 
     pub fn delete_shape(&mut self, slide: usize, id: u32) -> Result<bool, String> {

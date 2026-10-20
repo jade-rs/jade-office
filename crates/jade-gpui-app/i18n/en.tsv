@@ -267,6 +267,13 @@ deck.split_cell	Split Cells
 deck.saved	Saved to {name}
 deck.save_failed	Cannot save: {error}
 deck.selected_shape	Selected: {name}
+deck.new_slide	New Slide
+deck.layout	Layout
+deck.duplicate_slide	Duplicate Slide
+deck.delete_slide	Delete Slide
+deck.hide_slide	Hide Slide
+deck.show_slide	Show Slide
+deck.slide_n	Slide {n}
 doc.tab.home	Home
 doc.tab.insert	Insert
 doc.tab.design	Design
