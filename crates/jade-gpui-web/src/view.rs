@@ -641,6 +641,10 @@ impl DocView {
             }
             // An entry a data validation refuses: the rule's words, or
             // Excel's.
+            // A protected sheet: Excel's words.
+            Err(error) if jade_web::sheet::protected_refusal(&error) => {
+                self.status = i18n::text("sheet.protected").into();
+            }
             Err(error) if jade_web::sheet::validation_refusal(&error).is_some() => {
                 let message = jade_web::sheet::validation_refusal(&error).unwrap_or_default();
                 self.status = if message.is_empty() {

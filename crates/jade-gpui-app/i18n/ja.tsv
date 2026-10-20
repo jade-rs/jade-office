@@ -372,3 +372,4 @@ ribbon.distribute_columns	列の幅を揃える
 ribbon.split_cell	セルの分割
 ribbon.split_size	{columns} 列 × {rows} 行
 ribbon.repeat_header	タイトル行の繰り返し
+sheet.protected	変更しようとしているセルやグラフは保護されているシート上にあります。
