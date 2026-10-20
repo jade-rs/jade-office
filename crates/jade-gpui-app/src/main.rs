@@ -45,10 +45,10 @@ use gpui::{
     KeyBinding, KeyDownEvent, Menu, MenuItem, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
-use jade_docx_native_render::{
-    CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit, SearchHit,
+use jade_docx_native_render::{CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit};
+use jade_office_model::word::{
+    CharacterFormat, FindOptions, FormatState, Found, TableCommand, WordFind, WordFormatting,
 };
-use jade_office_model::word::{CharacterFormat, FormatState, TableCommand, WordFormatting};
 use ribbon::Action;
 use std::cell::RefCell;
 use std::ops::Range;
@@ -925,6 +925,10 @@ struct FindBar {
     /// The composition in progress inside the focused field, as a byte range.
     /// The IME works here the same as it does in the document.
     marked: Option<Range<usize>>,
+    /// Word's two options: 大文字と小文字を区別する, 完全に一致する単語だけ.
+    options: FindOptions,
+    /// The match the last search landed on, which 置換 replaces.
+    current: Option<Found>,
 }
 
 impl FindBar {
@@ -1218,6 +1222,9 @@ impl DocumentView {
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
         if self.find_bar.is_some() && self.handle_find_bar_key(event, cx) {
+            // Taken: the platform must not also type it (Tab, Enter) into
+            // the field through the input handler.
+            cx.stop_propagation();
             return;
         }
         // Every command with a menu item is an action, bound in `key_bindings`
@@ -1973,8 +1980,42 @@ impl DocumentView {
     /// A caret bar after the focused field, because the field has no cursor of
     /// its own: without it there is no way to see which of the two fields the
     /// next keystroke goes into.
-    fn find_bar_element(&self) -> Option<impl IntoElement> {
+    fn find_bar_element(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let bar = self.find_bar.as_ref()?;
+        let option = |id: &'static str, glyph: &'static str, title: &'static str, on: bool| {
+            div()
+                .id(id)
+                .flex()
+                .items_center()
+                .justify_center()
+                .min_w(px(28.0))
+                .h(px(24.0))
+                .px_1()
+                .rounded_md()
+                .cursor_pointer()
+                .text_sm()
+                .when(on, |button| {
+                    button.bg(theme::selected()).text_color(theme::accent())
+                })
+                .when(!on, |button| button.text_color(theme::text_dim()))
+                .hover(|button| button.bg(theme::hovered()))
+                .tooltip(Tooltip::text(title))
+                .child(glyph)
+        };
+        let match_case = option(
+            "find-match-case",
+            "Aa",
+            t("doc.find.match_case"),
+            bar.options.match_case,
+        )
+        .on_click(cx.listener(|view, _event, _window, cx| view.toggle_find_option(false, cx)));
+        let whole_word = option(
+            "find-whole-word",
+            "ab|",
+            t("doc.find.whole_word"),
+            bar.options.whole_word,
+        )
+        .on_click(cx.listener(|view, _event, _window, cx| view.toggle_find_option(true, cx)));
         let field = |label: &str, value: &str, focused: bool| {
             div()
                 .flex()
@@ -2025,6 +2066,8 @@ impl DocumentView {
                     &bar.query,
                     !bar.editing_replacement,
                 ))
+                .child(match_case)
+                .child(whole_word)
                 .child(field(
                     t("doc.find.replacement"),
                     &bar.replacement,
@@ -2114,9 +2157,19 @@ impl DocumentView {
     fn handle_find_bar_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
         let platform = event.keystroke.modifiers.platform;
         let shift = event.keystroke.modifiers.shift;
+        let alt = event.keystroke.modifiers.alt;
         match event.keystroke.key.as_str() {
             "escape" => {
                 self.close_find_bar(cx);
+                true
+            }
+            // ⌥⌘C and ⌥⌘W: the bar's two options.
+            "c" if platform && alt => {
+                self.toggle_find_option(false, cx);
+                true
+            }
+            "w" if platform && alt => {
+                self.toggle_find_option(true, cx);
                 true
             }
             "tab" => {
@@ -2157,11 +2210,36 @@ impl DocumentView {
         }
     }
 
+    /// Turns 完全に一致する単語だけ (`whole_word`) or 大文字と小文字を区別する on
+    /// or off; what the query matches is counted again.
+    fn toggle_find_option(&mut self, whole_word: bool, cx: &mut Context<Self>) {
+        if let Some(bar) = self.find_bar.as_mut() {
+            if whole_word {
+                bar.options.whole_word = !bar.options.whole_word;
+            } else {
+                bar.options.match_case = !bar.options.match_case;
+            }
+            bar.current = None;
+        }
+        self.update_find_count();
+        cx.notify();
+    }
+
+    /// The bar's options, or Word's defaults with the bar closed.
+    fn find_options(&self) -> FindOptions {
+        self.find_bar
+            .as_ref()
+            .map(|bar| bar.options)
+            .unwrap_or_default()
+    }
+
     /// Puts what has been typed into the bar's query into effect.
     fn sync_find_query(&mut self, cx: &mut Context<Self>) {
-        let Some(bar) = self.find_bar.as_ref() else {
+        let Some(bar) = self.find_bar.as_mut() else {
             return;
         };
+        bar.current = None;
+        let bar = &*bar;
         self.find_query = (!bar.query.is_empty()).then(|| bar.query.clone());
         self.update_find_count();
         cx.notify();
@@ -2176,7 +2254,7 @@ impl DocumentView {
             self.find_status = None;
             return;
         };
-        let count = self.document.find(&query, false).len();
+        let count = self.document.find_all(&query, self.find_options()).len();
         self.find_status = Some(SharedString::from(if count == 0 {
             i18n::format("doc.find.none", &[("query", &query)])
         } else {
@@ -2204,21 +2282,15 @@ impl DocumentView {
         if query.is_empty() {
             return;
         }
-        // The selection is the match the last find jumped to. Without one there
-        // is nothing to replace yet, so find first.
-        let Some(((paragraph, start), (_, end))) = self.document.selection() else {
+        // The match the last find landed on. Without one there is nothing to
+        // replace yet, so find first.
+        let Some(hit) = bar.current else {
             self.find_query = Some(query);
             return self.find_next(cx);
         };
-        let hit = SearchHit {
-            paragraph,
-            start_offset: start.min(end),
-            end_offset: start.max(end),
-        };
-        let page = self.caret_page_1idx();
-        match self.document.replace_one(hit, &replacement, page) {
-            Ok(()) => {
-                self.insert_at = (paragraph, hit.start_offset + replacement.len());
+        match self.document.replace_found(hit, &replacement) {
+            Ok(after) => {
+                self.insert_at = after;
                 self.caret = self
                     .document
                     .place_caret(self.insert_at.0, self.insert_at.1);
@@ -2246,9 +2318,12 @@ impl DocumentView {
         if query.is_empty() {
             return;
         }
-        let page = self.caret_page_1idx();
-        match self.document.replace_all(&query, &replacement, page) {
+        let options = bar.options;
+        match WordFind::replace_all(&mut self.document, &query, &replacement, options) {
             Ok(replaced) => {
+                if let Some(bar) = self.find_bar.as_mut() {
+                    bar.current = None;
+                }
                 // Replacing re-flows text onto other pages, so every page is
                 // rebuilt rather than the one the caret is on.
                 self.rebuild_after_edit();
@@ -2284,7 +2359,7 @@ impl DocumentView {
         let Some(query) = self.find_query.clone() else {
             return;
         };
-        let hits = self.document.find(&query, false);
+        let hits = self.document.find_all(&query, self.find_options());
         if hits.is_empty() {
             self.find_status = Some(SharedString::from(i18n::format(
                 "doc.find.none",
@@ -2297,12 +2372,12 @@ impl DocumentView {
         // all. Strictly, so repeating does not land on the same match forever.
         let next = hits
             .iter()
-            .find(|hit| {
-                hit.paragraph > paragraph
-                    || (hit.paragraph == paragraph && hit.start_offset > offset)
-            })
+            .find(|hit| hit.start() > (paragraph, offset))
             .copied()
             .unwrap_or(hits[0]);
+        if let Some(bar) = self.find_bar.as_mut() {
+            bar.current = Some(next);
+        }
         let position = hits.iter().position(|hit| *hit == next).unwrap_or(0);
         self.find_status = Some(SharedString::from(i18n::format(
             "doc.find.position",
@@ -2314,17 +2389,12 @@ impl DocumentView {
         )));
 
         let page = self.caret_page_1idx();
-        if self
-            .document
-            .select(
-                (next.paragraph, next.start_offset),
-                (next.paragraph, next.end_offset),
-                page,
-            )
-            .is_ok()
-        {
-            self.insert_at = (next.paragraph, next.end_offset);
-            self.caret = self.document.place_caret(next.paragraph, next.end_offset);
+        if self.document.select(next.start(), next.end(), page).is_ok() {
+            self.insert_at = next.end();
+            // Where the caret is drawn, the selection kept: the replace acts
+            // on the match, and a typed key on the selection.
+            self.caret = self.document.place_caret(next.paragraph, next.end);
+            let _ = self.document.select(next.start(), next.end(), page);
             if let Some(caret) = self.caret {
                 let (page_of_hit, _) = self.document.page_and_offset(caret.document_y);
                 self.scroll.scroll_to_item(page_of_hit);
@@ -3600,7 +3670,7 @@ impl Render for DocumentView {
                     .flex_col()
                     .size_full()
                     .child(self.ribbon(window, cx))
-                    .children(self.find_bar_element())
+                    .children(self.find_bar_element(cx))
                     .child(
                         div()
                             .id("pages")
@@ -4338,6 +4408,51 @@ mod tests {
         view.update(cx, |view, _| {
             let cell = view.format_state().table.expect("in the table");
             assert_eq!((cell.rows, cell.row, cell.column), (2, 1, 0));
+        });
+    }
+
+    /// ⌥⌘W and ⌥⌘C turn the bar's options on, which narrow what is found;
+    /// ⌘⏎ replaces every match left, and one Undo takes them all back.
+    #[gpui::test]
+    fn find_options_narrow_and_replace_all_undoes_once(cx: &mut gpui::TestAppContext) {
+        use super::{FindAndReplace, Undo, WordFind};
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "Jade jade JADE jaded. ");
+        let before = view.read_with(cx, |view, _| view.current_paragraph_text());
+        cx.dispatch_action(FindAndReplace);
+        cx.simulate_input("jade");
+        let count = |view: &super::DocumentView| {
+            view.document
+                .find_all("jade", view.find_options())
+                .iter()
+                .filter(|found| found.paragraph == paragraph)
+                .count()
+        };
+        view.read_with(cx, |view, _| assert_eq!(count(view), 4));
+        cx.simulate_keystrokes("alt-cmd-w");
+        view.read_with(cx, |view, _| {
+            assert!(view.find_options().whole_word);
+            assert_eq!(count(view), 3);
+        });
+        cx.simulate_keystrokes("alt-cmd-c");
+        view.read_with(cx, |view, _| assert_eq!(count(view), 1));
+        cx.simulate_keystrokes("alt-cmd-c");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("Word");
+        cx.simulate_keystrokes("cmd-enter");
+        view.read_with(cx, |view, _| {
+            let text = view.document.paragraph_text(paragraph).unwrap();
+            assert!(text.starts_with("Word Word Word jaded. "), "{text}");
+            assert_eq!(
+                text.replacen("Word Word Word", "Jade jade JADE", 1),
+                before,
+                "only the whole words changed"
+            );
+        });
+        cx.simulate_keystrokes("escape");
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.document.paragraph_text(paragraph).unwrap(), before)
         });
     }
 
