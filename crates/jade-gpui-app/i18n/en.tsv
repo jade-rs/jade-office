@@ -32,7 +32,7 @@ deck.notes	Notes
 deck.print	Print
 deck.from_current	From Current Slide
 deck.slideshow	Slide Show
-deck.no_notes	No notes on this slide
+deck.add_notes	Click to add notes
 deck.print_failed	Cannot print: {error}
 deck.paint_failed	Cannot draw slide {n}
 deck.empty	{name}: the presentation has no slides
@@ -267,6 +267,41 @@ deck.split_cell	Split Cells
 deck.saved	Saved to {name}
 deck.save_failed	Cannot save: {error}
 deck.selected_shape	Selected: {name}
+deck.selected_count	{n} objects selected
+deck.nothing_to_paste	Nothing to paste: the copied shapes are no longer there
+deck.new_slide	New Slide
+deck.layout	Layout
+deck.duplicate_slide	Duplicate Slide
+deck.delete_slide	Delete Slide
+deck.hide_slide	Hide Slide
+deck.show_slide	Show Slide
+deck.slide_n	Slide {n}
+deck.font	Font
+deck.font_size	Font Size
+deck.grow_font	Increase Font Size
+deck.shrink_font	Decrease Font Size
+deck.bold	Bold
+deck.italic	Italic
+deck.underline	Underline
+deck.font_color	Font Color
+deck.align_left	Align Left
+deck.align_center	Center
+deck.align_right	Align Right
+deck.justify	Justify
+deck.bullets	Bullets
+deck.numbering	Numbering
+deck.line_spacing	Line Spacing
+deck.space_after	Space After {n} pt
+deck.text_box	Text Box
+deck.shapes	Shapes
+deck.picture	Picture
+deck.picture_failed	Cannot insert the picture: {error}
+deck.shape.rect	Rectangle
+deck.shape.round_rect	Rounded Rectangle
+deck.shape.ellipse	Oval
+deck.shape.triangle	Isosceles Triangle
+deck.shape.diamond	Diamond
+deck.shape.hexagon	Hexagon
 doc.tab.home	Home
 doc.tab.insert	Insert
 doc.tab.design	Design
