@@ -672,11 +672,8 @@ impl TinySkiaPainter {
     /// A `width` × `height` surface filled with opaque white, as the Skia
     /// backend starts.
     pub fn new(width: u32, height: u32, fonts: Rc<FontBook>) -> Option<Self> {
-        // Opaque white in one pass: a zeroed surface filled white wrote every
-        // pixel twice, a fifth of what opening a document cost.
-        let (width, height) = (width.max(1), height.max(1));
-        let bytes = vec![255; width as usize * height as usize * 4];
-        let pixmap = Pixmap::from_vec(bytes, tiny_skia::IntSize::from_wh(width, height)?)?;
+        let mut pixmap = Pixmap::new(width.max(1), height.max(1))?;
+        pixmap.fill(Color::WHITE);
         Some(Self {
             inner: Rc::new(Inner {
                 pixmap: RefCell::new(pixmap),
