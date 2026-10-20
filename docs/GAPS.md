@@ -24,10 +24,10 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | | Gap | Hit | Engine |
 |---|---|---|---|
 | **Done** (#71) | Format Cells dialog (⌘1): number, alignment, font, border, fill tabs | High | partly — `format_at`/`set_format` cover font, fill, number format, alignment, wrap, borders; not indent, rotation, shrink-to-fit, pattern fills, super/subscript, protection flags |
-| **Blocker** | Conditional formats: create, edit, delete rules | High | no writer; display also misses formula rules, top 10, above average, duplicates, dates, `cellIs` against a cell, icon sets |
-| **Blocker** | Charts: select, move, resize, edit type, data, titles, axes, legend | High | reads and draws bar/line/area/pie/doughnut/scatter; no chart authoring or anchor move/resize |
+| **Done** (#75) | Conditional formats: create, edit, delete rules | High | no writer; display also misses formula rules, top 10, above average, duplicates, dates, `cellIs` against a cell, icon sets |
+| **Done** (#89) | Charts: select, move, resize, edit type, data, titles, axes, legend | High | reads and draws bar/line/area/pie/doughnut/scatter; no chart authoring or anchor move/resize |
 | **Done** (#70) | Hidden sheets show as tabs | High (fidelity) | sheets carry visibility; the shells don't filter |
-| **Blocker** | Edits to a protected sheet are not blocked | High (fidelity) | protection not modelled |
+| **Done** (#72) | Edits to a protected sheet are not blocked | High (fidelity) | protection not modelled |
 | **Done** (#95) | Print and export to PDF | High | no — jade-office-model paginates; Skia records the PDF |
 | **Done** (#94) | CSV import and export; Save As writes xlsx whatever the name | High | no — jade-office-model reads and writes it |
 | **Done** (#93) | Paste Special (values, formats, transpose) | High | yes (`transpose_formula`, jade-core#119) |
