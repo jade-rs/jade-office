@@ -442,7 +442,47 @@ impl<B: Backend> Deck<B> {
             .map(|&(row, column)| TextTarget::Cell { id, row, column })
     }
 
-    /// Adds or removes a row or column of table `id`, as one undoable change.
+    /// The box, in slide px, of the cells from `from` to `to` (row, column)
+    /// of table `id`, either way round: what a selection across them covers.
+    pub fn cell_range_rect(
+        &mut self,
+        slide: usize,
+        id: u32,
+        from: (usize, usize),
+        to: (usize, usize),
+    ) -> Option<ShapeRect> {
+        let (rows, columns) = (
+            from.0.min(to.0)..=from.0.max(to.0),
+            from.1.min(to.1)..=from.1.max(to.1),
+        );
+        self.placed_cells(slide, id)
+            .into_iter()
+            .filter(|(row, column, _)| rows.contains(row) && columns.contains(column))
+            .map(|(_, _, rect)| rect)
+            .reduce(|a, b| {
+                let (x, y) = (a.x.min(b.x), a.y.min(b.y));
+                ShapeRect {
+                    x,
+                    y,
+                    width: (a.x + a.width).max(b.x + b.width) - x,
+                    height: (a.y + a.height).max(b.y + b.height) - y,
+                }
+            })
+    }
+
+    /// How many rows and columns a table cell spans; `None` for a shape, or
+    /// a cell a merge covers.
+    pub fn cell_span(&self, slide: usize, target: TextTarget) -> Option<(usize, usize)> {
+        let TextTarget::Cell { id, row, column } = target else {
+            return None;
+        };
+        let cells = jade_pptx_writer::table_cells(self.session.bytes(), slide, id).ok()?;
+        let cell = cells.get(row)?.get(column)?;
+        (!cell.merged).then_some((cell.row_span, cell.column_span))
+    }
+
+    /// Changes table `id`'s layout — a row or column added or removed, cells
+    /// merged or split — as one undoable change.
     pub fn change_table(
         &mut self,
         slide: usize,
@@ -626,6 +666,17 @@ impl Deck<crate::skia::SkiaBackend> {
             pages.push(page);
         }
         SkiaPainter::encode_pdf(&pages)
+    }
+}
+
+/// The merge of the cells from `from` to `to` (row, column), either way
+/// round: what Merge Cells does to a selection across them.
+pub fn merge_cells(from: (usize, usize), to: (usize, usize)) -> TableChange {
+    TableChange::MergeCells {
+        row: from.0.min(to.0),
+        column: from.1.min(to.1),
+        rows: from.0.abs_diff(to.0) + 1,
+        columns: from.1.abs_diff(to.1) + 1,
     }
 }
 
