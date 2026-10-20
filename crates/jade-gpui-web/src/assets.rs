@@ -32,6 +32,7 @@ impl gpui::AssetSource for Assets {
             "baseline",
             "bold",
             "borders",
+            "chart-column",
             "check",
             "chevron-down",
             "chevron-right",
