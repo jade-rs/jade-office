@@ -835,6 +835,11 @@ struct Inner {
     /// Whether colours are mapped onto a dark page as they are drawn. See
     /// [`TinySkiaPainter::set_dark_paper`].
     dark_paper: Cell<bool>,
+    /// Whether every pixel is still the paper — nothing drawn since the
+    /// surface was made or its paper changed — so clearing has nothing to
+    /// do. A new page was filled white, then cleared white again before
+    /// anything was drawn on it.
+    blank: Cell<bool>,
     /// The blends of the text colours drawn lately, newest first.
     blends: RefCell<Vec<Rc<BlendTable>>>,
 }
@@ -920,6 +925,7 @@ impl TinySkiaPainter {
                 svgs: RefCell::new(HashMap::new()),
                 damage: Cell::new(None),
                 dark_paper: Cell::new(false),
+                blank: Cell::new(true),
                 blends: RefCell::new(Vec::new()),
             }),
         })
@@ -928,6 +934,7 @@ impl TinySkiaPainter {
     /// Notes that drawing may have changed the pixels within `bounds`
     /// (device px), less whatever the clip hides of them.
     fn note_damage(&self, bounds: Bounds, clip: Option<&Clip>) {
+        self.inner.blank.set(false);
         let bounds = match clip {
             Some(clip) => [
                 bounds[0].max(clip.rect[0]),
@@ -1030,6 +1037,7 @@ impl TinySkiaPainter {
         let whole = [0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32];
         drop(pixmap);
         self.note_damage(whole, None);
+        self.inner.blank.set(true);
     }
 
     /// `source` (premultiplied) blended at every coverage, over this page's
@@ -2427,6 +2435,9 @@ impl Painter for TinySkiaPainter {
     /// canvas only gets away with transparency by having a white page behind
     /// it in CSS.
     fn clear_rect(&self, x: f64, y: f64, width: f64, height: f64) {
+        if self.inner.blank.get() {
+            return;
+        }
         let Some(rect) = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32) else {
             return;
         };
@@ -3147,6 +3158,28 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Clearing a surface nothing has been drawn on leaves it as it is,
+    /// and notes no damage; once something is drawn, clearing paints the
+    /// paper over it again.
+    #[test]
+    fn clearing_a_blank_surface_does_nothing() {
+        let painter = TinySkiaPainter::new(20, 20, fonts()).unwrap();
+        painter.take_damaged_rows();
+        painter.clear_rect(0.0, 0.0, 20.0, 20.0);
+        assert_eq!(painter.take_damaged_rows(), None);
+        painter.set_fill_style_str("#000000");
+        painter.fill_rect(5.0, 5.0, 4.0, 4.0);
+        assert_eq!(pixel(&painter, 6, 6), [0, 0, 0, 255]);
+        painter.clear_rect(0.0, 0.0, 20.0, 20.0);
+        assert_eq!(pixel(&painter, 6, 6), [255, 255, 255, 255]);
+        painter.set_dark_paper(true);
+        let dark = pixel(&painter, 6, 6);
+        assert_ne!(dark, [255, 255, 255, 255]);
+        painter.fill_rect(5.0, 5.0, 4.0, 4.0);
+        painter.clear_rect(0.0, 0.0, 20.0, 20.0);
+        assert_eq!(pixel(&painter, 6, 6), dark);
     }
 
     #[test]
