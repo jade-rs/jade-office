@@ -1128,12 +1128,44 @@ impl TinySkiaPainter {
     }
 
     fn stroke_path_with(&self, path: &Path, color: Color, transform: Transform) {
+        // Gridlines and cell borders are runs of separate straight,
+        // axis-aligned segments: each is its width's rectangle, filled
+        // without the path rasteriser.
+        let half = self.inner.state.borrow().line_width / 2.0;
+        if axis_segments(path, half)
+            .is_some_and(|rects| self.fill_stroke_rects(&rects, color, transform))
+        {
+            return;
+        }
         let paint = self.paint(color);
         let stroke = self.stroke_style();
         let bounds = Self::stroke_bounds(path, stroke.width);
         self.clipped(bounds, transform, |pixmap, transform, mask| {
             pixmap.stroke_path(path, &paint, &stroke, transform, mask);
         });
+    }
+
+    /// Fills the rectangles a plain stroke covers, if the stroke is one
+    /// they draw: solid, under a transform that keeps axes axes. Pieces
+    /// that cross (gridlines, a box's corners) would blend a translucent
+    /// colour twice where they meet, so only an opaque one draws them so.
+    fn fill_stroke_rects(&self, rects: &[Rect], color: Color, transform: Transform) -> bool {
+        {
+            let state = self.inner.state.borrow();
+            if !state.dash.is_empty() || state.line_width <= 0.0 || transform.has_skew() {
+                return false;
+            }
+        }
+        let paint = self.paint(color);
+        let color = self.color(color);
+        let opaque = (color.alpha() >= 1.0).then_some(color);
+        if opaque.is_none() && rects.len() > 1 {
+            return false;
+        }
+        for rect in rects {
+            self.fill_rect_clipped(*rect, &paint, transform, opaque);
+        }
+        true
     }
 
     /// A synthetic bold: the glyph outlined once more, a thirtieth of an em
@@ -1638,6 +1670,64 @@ fn copy_region(surface: &mut Pixmap, layer: &mut Pixmap, at: (i32, i32), back: b
     }
 }
 
+/// The rectangles a butt-capped stroke `half` a width either side of
+/// `path` covers, if the path is only separate straight segments along
+/// the axes — no joins, curves or closes to shape.
+fn axis_segments(path: &Path, half: f32) -> Option<Vec<Rect>> {
+    let mut rects = Vec::new();
+    let mut start = None;
+    for segment in path.segments() {
+        match segment {
+            PathSegment::MoveTo(point) => start = Some(point),
+            PathSegment::LineTo(end) => {
+                let from = start.take()?;
+                let rect = if from.x == end.x {
+                    Rect::from_ltrb(
+                        from.x - half,
+                        from.y.min(end.y),
+                        from.x + half,
+                        from.y.max(end.y),
+                    )
+                } else if from.y == end.y {
+                    Rect::from_ltrb(
+                        from.x.min(end.x),
+                        from.y - half,
+                        from.x.max(end.x),
+                        from.y + half,
+                    )
+                } else {
+                    return None;
+                };
+                // A segment of no length leaves no mark under butt caps.
+                rects.extend(rect.filter(|rect| rect.width() > 0.0 && rect.height() > 0.0));
+            }
+            _ => return None,
+        }
+    }
+    Some(rects)
+}
+
+/// The mitred outline of `rect` stroked `half` a width either side, as
+/// bands that cross at the corners: full-width top and bottom, full-height
+/// sides. Bands that only abut would each blend half of a pixel their edge
+/// splits, and leave it short of covered; crossing ones blend as one.
+fn rect_outline(rect: Rect, half: f32) -> Option<Vec<Rect>> {
+    if rect.width() <= 0.0 || rect.height() <= 0.0 || half <= 0.0 {
+        return None;
+    }
+    let [left, top, right, bottom] = [rect.left(), rect.top(), rect.right(), rect.bottom()];
+    let outer = Rect::from_ltrb(left - half, top - half, right + half, bottom + half)?;
+    if half * 2.0 >= rect.width() || half * 2.0 >= rect.height() {
+        return Some(vec![outer]);
+    }
+    Some(vec![
+        Rect::from_ltrb(outer.left(), outer.top(), outer.right(), top + half)?,
+        Rect::from_ltrb(outer.left(), bottom - half, outer.right(), outer.bottom())?,
+        Rect::from_ltrb(outer.left(), outer.top(), left + half, outer.bottom())?,
+        Rect::from_ltrb(right - half, outer.top(), outer.right(), outer.bottom())?,
+    ])
+}
+
 /// The bounds of `rect` once `transform` has placed it, in device px.
 fn device_bounds(rect: Rect, transform: Transform) -> Bounds {
     let corners = [
@@ -2113,6 +2203,12 @@ impl Painter for TinySkiaPainter {
             let state = self.inner.state.borrow();
             (state.stroke, state.transform)
         };
+        let half = self.inner.state.borrow().line_width / 2.0;
+        if rect_outline(rect, half)
+            .is_some_and(|rects| self.fill_stroke_rects(&rects, color, transform))
+        {
+            return;
+        }
         self.stroke_path_with(&PathBuilder::from_rect(rect), color, transform);
     }
 
@@ -2589,6 +2685,92 @@ mod tests {
         assert_eq!(far, 0, "{far} pixels differ");
         let inked = drawn.chunks_exact(4).filter(|pixel| pixel[0] < 200).count();
         assert!(inked > 100, "{inked} inked pixels");
+    }
+
+    /// Straight strokes along the axes — gridlines, cell borders, boxes —
+    /// are filled as rectangles, and land where the path rasteriser puts
+    /// them, at fractional scales too. A translucent box still goes
+    /// through the rasteriser, its corners blended once.
+    #[test]
+    fn axis_aligned_strokes_match_the_rasteriser() {
+        let (width, height) = (160, 120);
+        for scale in [1.0_f32, 1.5, 2.0] {
+            let painter = TinySkiaPainter::new(width, height, fonts()).unwrap();
+            painter.scale(f64::from(scale), f64::from(scale)).unwrap();
+            let mut expected = Pixmap::new(width, height).unwrap();
+            expected.fill(Color::WHITE);
+            let transform = Transform::from_scale(scale, scale);
+            let mut paint = Paint {
+                anti_alias: true,
+                ..Paint::default()
+            };
+
+            // A grid in one path, opaque, on the half pixel as sheets draw it.
+            let mut grid = PathBuilder::new();
+            painter.begin_path();
+            for step in 0..6 {
+                let at = 10.0 + step as f32 * 13.0 + 0.5;
+                for (from, to) in [((at, 5.0), (at, 75.0)), ((5.0, at), (90.0, at))] {
+                    grid.move_to(from.0, from.1);
+                    grid.line_to(to.0, to.1);
+                    painter.move_to(f64::from(from.0), f64::from(from.1));
+                    painter.line_to(f64::from(to.0), f64::from(to.1));
+                }
+            }
+            painter.set_line_width(1.0);
+            painter.set_stroke_style_str("#c0c0c0");
+            painter.stroke();
+            paint.set_color(parse_color("#c0c0c0"));
+            let stroke = Stroke::default();
+            expected.stroke_path(&grid.finish().unwrap(), &paint, &stroke, transform, None);
+
+            // A thick border off the pixel grid, then a translucent box.
+            let mut border = PathBuilder::new();
+            border.move_to(20.3, 40.0);
+            border.line_to(80.6, 40.0);
+            let border = border.finish().unwrap();
+            painter.begin_path();
+            painter.move_to(20.3, 40.0);
+            painter.line_to(80.6, 40.0);
+            painter.set_line_width(2.5);
+            painter.set_stroke_style_str("#102030");
+            painter.stroke();
+            let stroke = Stroke {
+                width: 2.5,
+                ..Stroke::default()
+            };
+            paint.set_color(parse_color("#102030"));
+            expected.stroke_path(&border, &paint, &stroke, transform, None);
+
+            let rect = Rect::from_xywh(30.0, 50.0, 40.0, 25.0).unwrap();
+            painter.set_line_width(3.0);
+            painter.set_stroke_style_str("rgba(200, 30, 30, 0.5)");
+            painter.stroke_rect(30.0, 50.0, 40.0, 25.0);
+            let stroke = Stroke {
+                width: 3.0,
+                ..Stroke::default()
+            };
+            paint.set_color(parse_color("rgba(200, 30, 30, 0.5)"));
+            expected.stroke_path(
+                &PathBuilder::from_rect(rect),
+                &paint,
+                &stroke,
+                transform,
+                None,
+            );
+
+            let drawn = painter.rgba_premultiplied();
+            let worst = drawn
+                .iter()
+                .zip(expected.data())
+                .map(|(a, b)| a.abs_diff(*b))
+                .max()
+                .unwrap();
+            // The rasteriser counts coverage in quarters of a pixel; filled
+            // rectangles take the exact area, so an edge pixel can differ
+            // by a quarter of the ink's contrast with the paper.
+            assert!(worst <= 64, "scale {scale}: worst difference {worst}");
+        }
     }
 
     #[test]
