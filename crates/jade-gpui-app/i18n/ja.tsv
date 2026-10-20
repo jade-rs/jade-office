@@ -243,6 +243,8 @@ deck.split_cell	セルの分割
 deck.saved	{name} に保存しました
 deck.save_failed	保存できません: {error}
 deck.selected_shape	選択: {name}
+deck.selected_count	{n} 個のオブジェクトを選択
+deck.nothing_to_paste	貼り付けるものがありません: コピーした図形がもうありません
 deck.new_slide	新しいスライド
 deck.layout	レイアウト
 deck.duplicate_slide	スライドの複製

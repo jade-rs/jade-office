@@ -42,8 +42,8 @@ use std::sync::Arc;
 use crate::editor::{self, Editor};
 use crate::tooltip::Tooltip;
 use crate::{
-    byte_to_utf16, i18n, native_print, theme, utf16_to_byte, workspace, Print, Redo, Save, SaveAs,
-    SelectAll, StartSlideshow, Undo, UI_FONT_FAMILY,
+    byte_to_utf16, i18n, native_print, theme, utf16_to_byte, workspace, Copy, Paste, Print, Redo,
+    Save, SaveAs, SelectAll, StartSlideshow, Undo, UI_FONT_FAMILY,
 };
 
 /// The thumbnail strip's width, and the width each thumbnail is shown at.
@@ -191,6 +191,10 @@ pub struct DeckView {
     /// selected, moved, resized.
     shapes: Vec<ShapeTransformInfo>,
     selected: Option<u32>,
+    /// Shapes selected along with `selected`, by ⇧- or ⌘-click or ⌘A.
+    more: Vec<u32>,
+    /// Shapes copied with ⌘C: their slide and ids, pasted from there.
+    clipboard: Option<(usize, Vec<u32>)>,
     drag: Option<ShapeDrag>,
     /// Text being typed into a shape where it lies: its caret, selection
     /// and an IME's composition.
@@ -487,6 +491,12 @@ impl DeckView {
                 self.selected = None;
             }
         }
+        let shapes = &self.shapes;
+        self.more
+            .retain(|id| shapes.iter().any(|shape| shape.id == *id));
+        if self.selected.is_none() {
+            self.more.clear();
+        }
     }
 
     fn shape(&self, id: u32) -> Option<&ShapeTransformInfo> {
@@ -585,10 +595,86 @@ impl DeckView {
         if id.is_some() {
             self.slides_focused = false;
         }
-        if self.selected != id {
+        if self.selected != id || !self.more.is_empty() {
             self.commit_text(cx);
             self.selected = id;
+            self.more.clear();
             cx.notify();
+        }
+    }
+
+    /// The shapes selected, the first one first.
+    fn selection(&self) -> Vec<u32> {
+        self.selected.into_iter().chain(self.more.clone()).collect()
+    }
+
+    /// Selects `ids`, the first as the one Tab and the status bar go by.
+    fn select_all_of(&mut self, ids: Vec<u32>, cx: &mut Context<Self>) {
+        self.commit_text(cx);
+        let mut ids = ids.into_iter();
+        self.selected = ids.next();
+        self.more = ids.collect();
+        self.slides_focused = false;
+        cx.notify();
+    }
+
+    /// ⇧- or ⌘-click: the shape joins the selection, or leaves it.
+    fn toggle_selected(&mut self, id: u32, cx: &mut Context<Self>) {
+        let mut ids = self.selection();
+        match ids.iter().position(|selected| *selected == id) {
+            Some(at) => {
+                ids.remove(at);
+            }
+            None => ids.push(id),
+        }
+        self.select_all_of(ids, cx);
+    }
+
+    // ---- copying ---------------------------------------------------------
+
+    /// ⌘C on shapes: kept to paste, as PowerPoint keeps them.
+    fn copy_shapes(&mut self, cx: &mut Context<Self>) {
+        let ids = self.selection();
+        if !ids.is_empty() {
+            self.clipboard = Some((self.current, ids));
+            cx.notify();
+        }
+    }
+
+    /// ⌘V: the copied shapes pasted onto the slide shown — where they were,
+    /// or offset on their own slide — and selected.
+    fn paste_shapes(&mut self, cx: &mut Context<Self>) {
+        let Some((from, ids)) = self.clipboard.clone() else {
+            return;
+        };
+        self.commit_text(cx);
+        let result = self.deck.paste_shapes(from, &ids, self.current);
+        self.copied(result, cx);
+    }
+
+    /// ⌘D on shapes: copies of them offset on the slide, selected.
+    fn duplicate_shapes(&mut self, cx: &mut Context<Self>) {
+        let ids = self.selection();
+        self.commit_text(cx);
+        let result = self.deck.duplicate_shapes(self.current, &ids);
+        self.copied(result, cx);
+    }
+
+    fn copied(&mut self, result: Result<Vec<u32>, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(copies) if copies.is_empty() => {
+                self.status = SharedString::from(i18n::text("deck.nothing_to_paste"));
+                cx.notify();
+            }
+            Ok(copies) => {
+                self.reload(false, cx);
+                self.select_all_of(copies, cx);
+            }
+            Err(error) => {
+                self.status =
+                    SharedString::from(i18n::format("deck.edit_failed", &[("error", &error)]));
+                cx.notify();
+            }
         }
     }
 
@@ -621,6 +707,11 @@ impl DeckView {
     }
 
     fn nudge(&mut self, dx: f64, dy: f64, cx: &mut Context<Self>) {
+        if !self.more.is_empty() {
+            let ids = self.selection();
+            self.write(cx, |deck, slide| deck.move_shapes(slide, &ids, dx, dy));
+            return;
+        }
         let Some(shape) = self.selected.and_then(|id| self.shape(id)) else {
             return;
         };
@@ -635,6 +726,13 @@ impl DeckView {
     }
 
     fn delete_selected(&mut self, cx: &mut Context<Self>) {
+        if !self.more.is_empty() {
+            let ids = self.selection();
+            self.selected = None;
+            self.more.clear();
+            self.write(cx, |deck, slide| deck.delete_shapes(slide, &ids));
+            return;
+        }
         let Some(shape) = self.selected.and_then(|id| self.shape(id)) else {
             return;
         };
@@ -693,7 +791,21 @@ impl DeckView {
         }
         self.commit_text(cx);
         let hit = self.shape_at(x, y);
-        self.select(hit, cx);
+        // ⇧- or ⌘-click adds a shape to the selection, or takes it out.
+        if let (Some(id), Some(_), true) = (
+            hit,
+            self.selected,
+            event.modifiers.shift || event.modifiers.platform,
+        ) {
+            self.toggle_selected(id, cx);
+            return;
+        }
+        // A press on a shape of the selection keeps it, to drag it all.
+        let in_selection =
+            hit.is_some_and(|id| self.more.contains(&id) || self.selected == Some(id));
+        if !(in_selection && event.click_count < 2) {
+            self.select(hit, cx);
+        }
         let Some(id) = hit else {
             return;
         };
@@ -766,7 +878,8 @@ impl DeckView {
             cx.notify();
             return;
         }
-        self.write(cx, |deck, slide| deck.drag_shape(slide, &drag));
+        let selection = self.selection();
+        self.write(cx, |deck, slide| deck.drag_shapes(slide, &drag, &selection));
     }
 
     // ---- text ------------------------------------------------------------
@@ -1114,6 +1227,7 @@ impl DeckView {
             match (key, modifiers.shift) {
                 ("n", true) => self.new_slide(cx),
                 ("d", false) if self.selected.is_none() => self.duplicate_slide(cx),
+                ("d", false) => self.duplicate_shapes(cx),
                 _ => return,
             }
             cx.stop_propagation();
@@ -1379,6 +1493,29 @@ impl DeckView {
                     .into_any_element(),
             );
         }
+        // The rest of a selection of several, outlined — where a drag of
+        // them has taken them.
+        let moving = self.drag.filter(|drag| drag.mode == DragMode::Move);
+        for shape in self.more.iter().filter_map(|id| self.shape(*id)) {
+            let Some(transform) = shape.transform else {
+                continue;
+            };
+            let mut rect = SlideRect::of(&transform);
+            if let Some(drag) = moving {
+                rect = drag.rect(rect);
+            }
+            out.push(
+                div()
+                    .absolute()
+                    .left(px(rect.x as f32 * scale))
+                    .top(px(rect.y as f32 * scale))
+                    .w(px(rect.width as f32 * scale))
+                    .h(px(rect.height as f32 * scale))
+                    .border_1()
+                    .border_color(theme::accent())
+                    .into_any_element(),
+            );
+        }
         let Some(id) = self.selected else {
             return out;
         };
@@ -1524,7 +1661,8 @@ impl DeckView {
                 .border_color(theme::accent())
                 .into_any_element(),
         );
-        if shape.can_resize {
+        // Corner handles on one shape alone, as PowerPoint's.
+        if shape.can_resize && self.more.is_empty() {
             for (index, (is_left, is_top)) in
                 [(true, true), (false, true), (true, false), (false, false)]
                     .into_iter()
@@ -2132,7 +2270,10 @@ impl Editor for DeckView {
             ],
         )
         .into()];
-        if let Some(shape) = self.selected.and_then(|id| self.shape(id)) {
+        if !self.more.is_empty() {
+            let count = self.more.len() + 1;
+            items.push(i18n::format("deck.selected_count", &[("n", &count)]).into());
+        } else if let Some(shape) = self.selected.and_then(|id| self.shape(id)) {
             items.push(i18n::format("deck.selected_shape", &[("name", &shape.name)]).into());
         }
         if !self.status.is_empty() {
@@ -2473,10 +2614,26 @@ impl Render for DeckView {
             }))
             .on_action(cx.listener(|view, _: &Undo, _window, cx| view.step_history(true, cx)))
             .on_action(cx.listener(|view, _: &SelectAll, _window, cx| {
-                view.edit_typing(cx, |typing, deck| {
-                    typing.select_all(deck);
-                    Ok(false)
-                })
+                if view.typing.is_some() {
+                    view.edit_typing(cx, |typing, deck| {
+                        typing.select_all(deck);
+                        Ok(false)
+                    });
+                } else if view.text_edit.is_none() && view.notes_edit.is_none() {
+                    // ⌘A off the text: every shape on the slide.
+                    let ids = view.deck.selectable_shapes(view.current);
+                    view.select_all_of(ids, cx);
+                }
+            }))
+            .on_action(cx.listener(|view, _: &Copy, _window, cx| {
+                if view.typing.is_none() && view.text_edit.is_none() && view.notes_edit.is_none() {
+                    view.copy_shapes(cx);
+                }
+            }))
+            .on_action(cx.listener(|view, _: &Paste, _window, cx| {
+                if view.typing.is_none() && view.text_edit.is_none() && view.notes_edit.is_none() {
+                    view.paste_shapes(cx);
+                }
             }))
             .on_action(cx.listener(|view, _: &Redo, _window, cx| view.step_history(false, cx)))
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
@@ -2907,6 +3064,8 @@ impl DeckView {
             current: 0,
             shapes: Vec::new(),
             selected: None,
+            more: Vec::new(),
+            clipboard: None,
             drag: None,
             typing: None,
             selecting_text: false,
@@ -3382,6 +3541,66 @@ mod tests {
         cx.dispatch_action(Undo);
         view.read_with(cx, |view, _| {
             assert_eq!(view.deck.notes_text(0).unwrap(), before);
+            assert!(!view.deck.is_dirty());
+        });
+    }
+
+    /// ⇧-click selects a second shape; ⌘C and, on another slide, ⌘V paste
+    /// both where they were, selected; the arrows move them together, ⌘D
+    /// duplicates them and Delete deletes them — each one step of Undo.
+    #[gpui::test]
+    fn shapes_are_selected_together_copied_pasted_and_duplicated(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let ids = view.read_with(cx, |view, _| {
+            view.shapes
+                .iter()
+                .filter(|shape| {
+                    shape.can_move
+                        && shape.can_delete
+                        && shape.can_duplicate
+                        && shape.transform.is_some()
+                })
+                .map(|shape| shape.id)
+                .take(2)
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(ids.len(), 2);
+        let first = view.update(cx, |view, cx| {
+            view.select(Some(ids[0]), cx);
+            view.toggle_selected(ids[1], cx);
+            assert_eq!(view.selection(), ids);
+            view.deck.shape_rect(0, ids[0]).unwrap()
+        });
+        cx.dispatch_action(Copy);
+        view.update(cx, |view, cx| view.go_to(1, cx));
+        let count = view.read_with(cx, |view, _| view.shapes.len());
+        cx.dispatch_action(Paste);
+        let copies = view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count + 2);
+            let copies = view.selection();
+            assert_eq!(copies.len(), 2);
+            let rect = SlideRect::of(&view.shape(copies[0]).unwrap().transform.unwrap());
+            assert!((rect.x - first.x).abs() < 0.01 && (rect.y - first.y).abs() < 0.01);
+            copies
+        });
+        cx.simulate_keystrokes("right");
+        view.read_with(cx, |view, _| {
+            let rect = SlideRect::of(&view.shape(copies[0]).unwrap().transform.unwrap());
+            assert!((rect.x - first.x - NUDGE_PX).abs() < 0.01);
+            assert_eq!(view.selection(), copies);
+        });
+        cx.simulate_keystrokes("cmd-d");
+        view.read_with(cx, |view, _| assert_eq!(view.shapes.len(), count + 4));
+        cx.simulate_keystrokes("delete");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count + 2);
+            assert!(view.selection().is_empty());
+        });
+        for _ in 0..4 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.shapes.len(), count);
             assert!(!view.deck.is_dirty());
         });
     }

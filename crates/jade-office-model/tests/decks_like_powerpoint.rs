@@ -961,3 +961,85 @@ fn speaker_notes_are_typed_and_written_as_one_step() {
     assert!(deck.undo().unwrap());
     assert_eq!(deck.notes_text(bare).as_deref(), Some(""));
 }
+
+/// Two shapes of `slide` that may move, be deleted and be copied.
+fn two_shapes(deck: &mut Deck<TinySkiaBackend>, slide: usize) -> Vec<u32> {
+    let ids: Vec<u32> = deck
+        .shapes(slide)
+        .iter()
+        .filter(|shape| {
+            shape.can_move && shape.can_delete && shape.can_duplicate && shape.transform.is_some()
+        })
+        .map(|shape| shape.id)
+        .take(2)
+        .collect();
+    assert_eq!(ids.len(), 2, "slide {slide} has two shapes to work on");
+    ids
+}
+
+#[test]
+fn shapes_copied_onto_another_slide_are_pasted_where_they_were() {
+    let mut deck = open_own("sample-deck.pptx");
+    let ids = two_shapes(&mut deck, 0);
+    let count = deck.shapes(1).len();
+    let copies = deck.paste_shapes(0, &ids, 1).unwrap();
+    assert_eq!(copies.len(), 2);
+    assert_eq!(deck.shapes(1).len(), count + 2);
+    for (id, copy) in ids.iter().zip(&copies) {
+        assert!(close(
+            deck.shape_rect(1, *copy).unwrap(),
+            deck.shape_rect(0, *id).unwrap()
+        ));
+        assert_eq!(deck.shape_text(1, *copy), deck.shape_text(0, *id));
+    }
+    assert!(deck.render_slide(1, 320).is_some());
+    // One step of Undo.
+    assert!(deck.undo().unwrap());
+    assert_eq!(deck.shapes(1).len(), count);
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn a_duplicated_selection_is_offset_on_its_slide_as_one_step() {
+    let mut deck = open_own("sample-deck.pptx");
+    let ids = two_shapes(&mut deck, 1);
+    let copies = deck.duplicate_shapes(1, &ids).unwrap();
+    for (id, copy) in ids.iter().zip(&copies) {
+        let (original, copy) = (
+            deck.shape_rect(1, *id).unwrap(),
+            deck.shape_rect(1, *copy).unwrap(),
+        );
+        // PowerPoint's 10 pt.
+        assert!((copy.x - original.x - 127000.0 / 9525.0).abs() < 0.01);
+        assert!((copy.y - original.y - 127000.0 / 9525.0).abs() < 0.01);
+    }
+    assert!(deck.undo().unwrap());
+    assert!(!deck.is_dirty());
+}
+
+#[test]
+fn a_selection_moves_drags_and_deletes_together() {
+    let mut deck = open_own("sample-deck.pptx");
+    let ids = two_shapes(&mut deck, 1);
+    let before: Vec<ShapeRect> = ids
+        .iter()
+        .map(|id| deck.shape_rect(1, *id).unwrap())
+        .collect();
+    assert!(deck.move_shapes(1, &ids, 10.0, 5.0).unwrap());
+    let mut drag = ShapeDrag::new(ids[1], DragMode::Move, (0.0, 0.0));
+    drag.drag_to(20.0, 0.0);
+    assert!(deck.drag_shapes(1, &drag, &ids).unwrap());
+    for (id, rect) in ids.iter().zip(&before) {
+        let now = deck.shape_rect(1, *id).unwrap();
+        assert!((now.x - rect.x - 30.0).abs() < 0.01 && (now.y - rect.y - 5.0).abs() < 0.01);
+    }
+    let count = deck.shapes(1).len();
+    assert!(deck.delete_shapes(1, &ids).unwrap());
+    assert_eq!(deck.shapes(1).len(), count - 2);
+    // Each of the three was one step.
+    for _ in 0..3 {
+        assert!(deck.undo().unwrap());
+    }
+    assert!(!deck.is_dirty());
+    assert_eq!(deck.selectable_shapes(1).len(), count);
+}
