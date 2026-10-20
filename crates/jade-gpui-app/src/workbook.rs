@@ -35,6 +35,7 @@ use gpui::{
     Focusable, KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
+use jade_office_model::find::FindBar;
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::number_formats::NUMBER_FORMATS;
 use jade_office_model::sheet::{
@@ -56,6 +57,7 @@ use crate::editor::{self, Editor};
 
 mod charts;
 mod conditional;
+mod find_bar;
 use crate::{
     byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Redo, Save, SaveAs,
     SelectAll, Undo, UI_FONT_FAMILY,
@@ -347,8 +349,8 @@ pub struct WorkbookView {
     renaming: Option<(usize, TextEdit)>,
     /// The name box being typed into: a cell or range to go to.
     naming: Option<TextEdit>,
-    /// The find bar (⌘F) and what is typed into it.
-    finding: Option<TextEdit>,
+    /// Find and Replace (⌘F, ⌃H): what is typed into it, and its options.
+    finding: Option<FindBar>,
     /// A note being written on a cell.
     noting: Option<(CellRef, TextEdit)>,
     /// A conditional format's dialog, asking for its value.
@@ -413,8 +415,8 @@ impl WorkbookView {
         if let Some(text) = self.naming.as_mut() {
             return Some(text);
         }
-        if let Some(text) = self.finding.as_mut() {
-            return Some(text);
+        if let Some(bar) = self.finding.as_mut() {
+            return Some(bar.field_mut());
         }
         if let Some((_, text)) = self.noting.as_mut() {
             return Some(text);
@@ -435,8 +437,8 @@ impl WorkbookView {
         if let Some(text) = self.naming.as_ref() {
             return Some(text);
         }
-        if let Some(text) = self.finding.as_ref() {
-            return Some(text);
+        if let Some(bar) = self.finding.as_ref() {
+            return Some(bar.field());
         }
         if let Some((_, text)) = self.noting.as_ref() {
             return Some(text);
@@ -616,26 +618,6 @@ impl WorkbookView {
         };
         let to = self.book.step(from, direction);
         self.select_cell(to, extend, cx);
-    }
-
-    /// Find Next (Enter in the find bar; Shift+Enter goes back): the next
-    /// cell showing what is typed, on this sheet or the next.
-    fn find_next(&mut self, back: bool, cx: &mut Context<Self>) {
-        let Some(needle) = self.finding.as_ref().map(|text| text.text.clone()) else {
-            return;
-        };
-        let from = (self.book.sheet_index(), self.selection.active);
-        match self.book.find_next(&needle, from, back) {
-            Some((index, cell)) => {
-                if index != self.book.sheet_index() {
-                    self.select_sheet(index, cx);
-                }
-                self.select_cell(cell, false, cx);
-                self.status = SharedString::from("");
-            }
-            None => self.status = SharedString::from(i18n::text("sheet.not_found")),
-        }
-        cx.notify();
     }
 
     /// AutoSum (⌘⇧T, or ⌥=): `=SUM(` round the numbers above or beside,
@@ -1287,18 +1269,10 @@ impl WorkbookView {
 
         // A tab being renamed, the name box or the find bar: Enter takes
         // it (or finds the next), Escape leaves it.
-        if self.renaming.is_some()
-            || self.naming.is_some()
-            || self.finding.is_some()
-            || self.noting.is_some()
-        {
-            if self.finding.is_some() && key == "enter" {
-                self.find_next(shift, cx);
-                return true;
-            }
-            if self.finding.is_some() && key == "f" && command {
-                return true;
-            }
+        if self.finding.is_some() && self.renaming.is_none() && self.naming.is_none() {
+            return self.find_key(key, modifiers, cx);
+        }
+        if self.renaming.is_some() || self.naming.is_some() || self.noting.is_some() {
             return self.name_key(key, modifiers, cx);
         }
 
@@ -1505,10 +1479,9 @@ impl WorkbookView {
                 let result = self.book.toggle_filter(range);
                 self.after_write(result, cx);
             }
-            "f" => {
-                self.finding = Some(TextEdit::new(String::new()));
-                cx.notify();
-            }
+            "f" => self.open_find(false, cx),
+            // ⌃H, as Excel for Mac: Find and Replace (⌘H hides the app).
+            "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
             "end" => {
                 let end = self.book.used_end();
                 self.select_cell(end, shift, cx);
@@ -3398,35 +3371,7 @@ impl Render for WorkbookView {
                     .child(caret_line(text, gpui::black(), false)),
             )
         });
-        let find_bar = self.finding.as_ref().map(|text| {
-            div()
-                .absolute()
-                .top_2()
-                .right_4()
-                .w(px(260.0))
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .border_1()
-                .border_color(theme::accent())
-                .bg(theme::panel())
-                .shadow_lg()
-                .text_xs()
-                .text_color(theme::text())
-                .child(
-                    div()
-                        .text_color(theme::text_dim())
-                        .child(i18n::text("sheet.find")),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(caret_line(text, theme::accent().into(), false)),
-                )
-        });
+        let find_bar = self.find_bar(cx);
         let cursor = match self.hover {
             Hover::ResizeColumn => gpui::CursorStyle::ResizeLeftRight,
             Hover::ResizeRow => gpui::CursorStyle::ResizeUpDown,
@@ -4118,6 +4063,56 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.book.display_text(at(1, 1)), "10")
         });
+    }
+
+    /// ⌃H opens Find and Replace: what is typed goes into its fields, Tab
+    /// between them; Enter finds, Replace changes the found cell, Replace
+    /// All the rest in one undo; Escape closes the bar.
+    #[gpui::test]
+    fn control_h_finds_and_replaces(cx: &mut gpui::TestAppContext) {
+        use find_bar::FindCommand;
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("ctrl-h");
+        cx.simulate_input("20");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("25");
+        view.update(cx, |view, cx| {
+            let bar = view.finding.as_ref().expect("the bar is open");
+            assert!(bar.replacing);
+            assert_eq!(
+                (bar.find.text.as_str(), bar.replace.text.as_str()),
+                ("20", "25")
+            );
+            assert!(view.edit.is_none(), "typing goes into the bar");
+            view.find_command(FindCommand::EntireCell, cx);
+        });
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, cx| {
+            // Replace looks in formulas: C2 shows 20 but holds =B2*2.
+            assert_eq!(view.active(), at(1, 2));
+            view.find_command(FindCommand::Replace, cx);
+            assert_eq!(view.book.display_text(at(1, 2)), "25");
+            assert_eq!(view.book.display_text(at(2, 2)), "50");
+        });
+        cx.dispatch_action(Undo);
+        view.update(cx, |view, cx| {
+            assert_eq!(view.book.display_text(at(1, 2)), "20");
+            if let Some(bar) = view.finding.as_mut() {
+                bar.options.entire_cell = false;
+                bar.find.text = "0".into();
+                bar.replace.text = "5".into();
+            }
+            view.find_command(FindCommand::ReplaceAll, cx);
+            assert_eq!(view.book.display_text(at(1, 1)), "15");
+            assert_eq!(view.book.display_text(at(1, 2)), "25");
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at(1, 1)), "10", "one undo");
+            assert_eq!(view.book.display_text(at(1, 2)), "20");
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| assert!(view.finding.is_none()));
     }
 
     /// Conditional Formatting ▸ Greater Than asks for its value in a
