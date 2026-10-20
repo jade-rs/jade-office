@@ -911,6 +911,8 @@ dependencies = [
 name = "jade-office-model"
 version = "0.1.0"
 dependencies = [
+ "encoding_rs",
+ "flate2",
  "jade-docx-editor",
  "jade-docx-headless-api",
  "jade-docx-layout",
@@ -1035,6 +1037,7 @@ name = "jade-web"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "flate2",
  "futures",
  "image",
  "jade-docx-editor",
