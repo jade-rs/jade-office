@@ -835,6 +835,66 @@ struct Inner {
     /// Whether colours are mapped onto a dark page as they are drawn. See
     /// [`TinySkiaPainter::set_dark_paper`].
     dark_paper: Cell<bool>,
+    /// The blends of the text colours drawn lately, newest first.
+    blends: RefCell<Vec<Rc<BlendTable>>>,
+}
+
+/// How many text colours keep their [`BlendTable`].
+const BLEND_TABLES: usize = 8;
+
+/// A text colour blended at every coverage, worked out once: the colour
+/// scaled by each, how much of the pixel under it each keeps, and the
+/// result over the paper, which lies under most of a glyph's edge pixels.
+/// Scaling every channel of every pixel as it was blended was most of
+/// what drawing text cost.
+struct BlendTable {
+    source: [u8; 4],
+    paper: [u8; 4],
+    scaled: [[u8; 4]; 256],
+    keep: [u8; 256],
+    over_paper: [[u8; 4]; 256],
+}
+
+impl BlendTable {
+    fn new(source: [u8; 4], paper: [u8; 4]) -> Self {
+        let mut table = Self {
+            source,
+            paper,
+            scaled: [[0; 4]; 256],
+            keep: [0; 256],
+            over_paper: [[0; 4]; 256],
+        };
+        for alpha in 0..=255u8 {
+            let index = usize::from(alpha);
+            table.scaled[index] = source.map(|channel| scale_u8(channel, alpha));
+            table.keep[index] = 255 - scale_u8(source[3], alpha);
+            let mut over = paper;
+            table.blend_with(&mut over, alpha);
+            table.over_paper[index] = over;
+        }
+        table
+    }
+
+    /// Source-over of the colour at `alpha` coverage onto `pixel`.
+    #[inline(always)]
+    fn blend(&self, pixel: &mut [u8; 4], alpha: u8) {
+        if *pixel == self.paper {
+            *pixel = self.over_paper[usize::from(alpha)];
+        } else {
+            self.blend_with(pixel, alpha);
+        }
+    }
+
+    #[inline(always)]
+    fn blend_with(&self, pixel: &mut [u8; 4], alpha: u8) {
+        let (scaled, keep) = (
+            &self.scaled[usize::from(alpha)],
+            self.keep[usize::from(alpha)],
+        );
+        for (value, scaled) in pixel.iter_mut().zip(scaled) {
+            *value = scaled.saturating_add(scale_u8(*value, keep));
+        }
+    }
 }
 
 /// A raster surface with a canvas-style painter on it. Cheap to clone: the
@@ -860,6 +920,7 @@ impl TinySkiaPainter {
                 svgs: RefCell::new(HashMap::new()),
                 damage: Cell::new(None),
                 dark_paper: Cell::new(false),
+                blends: RefCell::new(Vec::new()),
             }),
         })
     }
@@ -969,6 +1030,24 @@ impl TinySkiaPainter {
         let whole = [0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32];
         drop(pixmap);
         self.note_damage(whole, None);
+    }
+
+    /// `source` (premultiplied) blended at every coverage, over this page's
+    /// paper, from the last few colours' tables.
+    fn blend_table(&self, source: [u8; 4]) -> Rc<BlendTable> {
+        let paper = self.paper().premultiply().to_color_u8();
+        let paper = [paper.red(), paper.green(), paper.blue(), paper.alpha()];
+        let mut tables = self.inner.blends.borrow_mut();
+        let found = tables
+            .iter()
+            .position(|table| table.source == source && table.paper == paper);
+        let table = match found {
+            Some(index) => tables.remove(index),
+            None => Rc::new(BlendTable::new(source, paper)),
+        };
+        tables.insert(0, table.clone());
+        tables.truncate(BLEND_TABLES);
+        table
     }
 
     /// The colour a cleared page shows.
@@ -1569,17 +1648,8 @@ impl TinySkiaPainter {
         };
         let source = color.premultiply().to_color_u8();
         let source = [source.red(), source.green(), source.blue(), source.alpha()];
-        let opaque = source[3] == 255;
-        let blend = |pixel: &mut [u8], alpha: u8| {
-            if alpha == 255 && opaque {
-                pixel.copy_from_slice(&source);
-                return;
-            }
-            let keep = 255 - scale_u8(source[3], alpha);
-            for (channel, value) in pixel.iter_mut().enumerate() {
-                *value = scale_u8(source[channel], alpha).saturating_add(scale_u8(*value, keep));
-            }
-        };
+        let table = self.blend_table(source);
+        let blend = |pixel: &mut [u8; 4], alpha: u8| table.blend(pixel, alpha);
         if columns.is_empty() || rows.is_empty() {
             return;
         }
@@ -1599,11 +1669,13 @@ impl TinySkiaPainter {
             let surface_row = (row * surface_width) as usize;
             let alphas = &coverage.alpha[glyph_row + span.start..glyph_row + span.end];
             let first = surface_row + columns.start as usize;
-            let pixels = &mut data[first * 4..(surface_row + columns.end as usize) * 4];
+            let pixels = data[first * 4..(surface_row + columns.end as usize) * 4]
+                .as_chunks_mut::<4>()
+                .0;
             match (&edges, mask) {
                 // The usual case, kept free of per-pixel checks.
                 (None, None) => {
-                    for (&alpha, pixel) in alphas.iter().zip(pixels.chunks_exact_mut(4)) {
+                    for (&alpha, pixel) in alphas.iter().zip(pixels.iter_mut()) {
                         if alpha != 0 {
                             blend(pixel, alpha);
                         }
@@ -1612,7 +1684,7 @@ impl TinySkiaPainter {
                 (Some((rect, _, _)), _) => {
                     let row_cover = overlap(row, rect[1], rect[3]);
                     for ((column, &alpha), pixel) in
-                        columns.clone().zip(alphas).zip(pixels.chunks_exact_mut(4))
+                        columns.clone().zip(alphas).zip(pixels.iter_mut())
                     {
                         if alpha != 0 {
                             let cover = scale_u8(row_cover, overlap(column, rect[0], rect[2]));
@@ -1622,9 +1694,7 @@ impl TinySkiaPainter {
                 }
                 (None, Some(mask)) => {
                     let mask = &mask[first..first + alphas.len()];
-                    for ((&alpha, &clip), pixel) in
-                        alphas.iter().zip(mask).zip(pixels.chunks_exact_mut(4))
-                    {
+                    for ((&alpha, &clip), pixel) in alphas.iter().zip(mask).zip(pixels.iter_mut()) {
                         if alpha != 0 {
                             blend(pixel, scale_u8(alpha, clip));
                         }
@@ -3047,6 +3117,35 @@ mod tests {
             let ink = drawn.iter().map(|&alpha| f64::from(alpha)).sum::<f64>();
             let ratio = ink / truth.iter().sum::<f64>();
             assert!((0.98..1.02).contains(&ratio), "{ch}: ink {ratio}");
+        }
+    }
+
+    /// The table blends exactly as scaling each channel does, over the
+    /// paper and over anything else.
+    #[test]
+    fn blend_tables_blend_as_the_channels_scale() {
+        let paper = [255, 255, 255, 255];
+        let sources = [
+            [0, 0, 0, 255],
+            [32, 64, 128, 255],
+            [100, 15, 15, 128],
+            [0, 0, 0, 0],
+        ];
+        let unders = [paper, [0, 0, 0, 255], [17, 200, 90, 255], [40, 40, 40, 100]];
+        for source in sources {
+            let table = BlendTable::new(source, paper);
+            for under in unders {
+                for alpha in 0..=255u8 {
+                    let keep = 255 - scale_u8(source[3], alpha);
+                    let expected: [u8; 4] = std::array::from_fn(|channel| {
+                        scale_u8(source[channel], alpha)
+                            .saturating_add(scale_u8(under[channel], keep))
+                    });
+                    let mut pixel = under;
+                    table.blend(&mut pixel, alpha);
+                    assert_eq!(pixel, expected, "{source:?} at {alpha} over {under:?}");
+                }
+            }
         }
     }
 
