@@ -99,6 +99,16 @@ sheet.cell_count	Count: {n}
 sheet.sum	Sum: {value}
 sheet.find	Find
 sheet.not_found	No matches found
+sheet.replace_with	Replace with
+sheet.match_case	Match case
+sheet.entire_cell	Entire cell
+sheet.within_workbook	Workbook
+sheet.replace_toggle	Replace…
+sheet.replace	Replace
+sheet.replace_all	Replace All
+sheet.find_previous	Find Previous
+sheet.find_next	Find Next
+sheet.replaced	All done: {n} replacements
 sheet.filter.clear	Clear Filter
 sheet.filter.all	(Select All)
 sheet.filter.blank	(Blanks)
