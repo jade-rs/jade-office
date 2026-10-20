@@ -234,6 +234,22 @@ impl<B: Backend> Deck<B> {
         self.deck.slides.get(index)?.notes.as_deref()
     }
 
+    /// Slide `index`'s speaker notes as they are typed into — paragraphs
+    /// joined by `\n`, empty when it has none — or `None` when they may not
+    /// be edited.
+    pub fn notes_text(&self, index: usize) -> Option<String> {
+        let snapshot = jade_pptx_writer::notes_text(self.session.bytes(), index).ok()?;
+        (snapshot.can_edit && !snapshot.locked).then_some(snapshot.text)
+    }
+
+    /// Replaces slide `index`'s speaker notes, as one step of Undo: only
+    /// what changed is rewritten, so the rest keeps its formatting, and a
+    /// slide without notes gets its notes page.
+    pub fn set_notes(&mut self, index: usize, text: &str) -> Result<bool, String> {
+        let result = self.session.set_slide_notes(index, text);
+        self.after(result)
+    }
+
     /// The presentation's current bytes — what a slide show opens, or a save
     /// writes.
     pub fn bytes(&self) -> &[u8] {

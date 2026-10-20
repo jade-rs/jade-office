@@ -185,6 +185,86 @@ impl DocView {
         cx.notify();
     }
 
+    // ---- speaker notes --------------------------------------------------------
+
+    /// A click in the notes pane: typing into the slide's notes, the caret
+    /// at their end.
+    fn begin_notes(&mut self, cx: &mut Context<Self>) {
+        if let Document::Deck {
+            notes_edit: Some(_),
+            ..
+        } = &self.document
+        {
+            return;
+        }
+        self.commit_slide_text(cx);
+        self.select_shape(None);
+        let Document::Deck {
+            deck,
+            current,
+            notes_edit,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        match deck.notes_text(*current) {
+            Some(text) => *notes_edit = Some(TextEdit::new(text)),
+            None => self.status = i18n::text("deck.text_locked").into(),
+        }
+        cx.notify();
+    }
+
+    /// Writes the notes being typed, as one step of Undo.
+    fn commit_notes(&mut self, cx: &mut Context<Self>) {
+        let Document::Deck {
+            deck,
+            current,
+            notes_edit,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let Some(edit) = notes_edit.take() else {
+            return;
+        };
+        let result = deck.set_notes(*current, &edit.text);
+        self.edited(result, cx);
+    }
+
+    /// The keys of the notes being typed: Escape leaves them, Enter starts
+    /// a paragraph; the caret keys and deletion. `None` when no notes are
+    /// typed into.
+    fn notes_key(&mut self, key: &str, cx: &mut Context<Self>) -> Option<bool> {
+        let Document::Deck {
+            notes_edit: Some(edit),
+            ..
+        } = &mut self.document
+        else {
+            return None;
+        };
+        if edit.marked.is_some() {
+            return Some(false);
+        }
+        match key {
+            "escape" => {
+                self.commit_notes(cx);
+                return Some(true);
+            }
+            "enter" => edit.insert("\n"),
+            "backspace" => edit.backspace(),
+            "delete" => edit.delete(),
+            "left" => edit.step(false),
+            "right" => edit.step(true),
+            "home" | "up" => edit.to_end(false),
+            "end" | "down" => edit.to_end(true),
+            _ => return Some(false),
+        }
+        cx.notify();
+        Some(true)
+    }
+
     // ---- inserting ----------------------------------------------------------
 
     /// Text Box, or a shape from Shapes: the next drag on the slide draws it,
@@ -337,6 +417,13 @@ impl DocView {
     /// has it, or ⌘⇧N, as for Mac — browsers keep ⌘N) and Duplicate (⌘D)
     /// when no shape is selected.
     pub(super) fn deck_shortcut(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        if let Document::Deck {
+            notes_edit: Some(_),
+            ..
+        } = &self.document
+        {
+            return false;
+        }
         if self.format_shortcut(event, cx) {
             return true;
         }
@@ -394,6 +481,7 @@ impl DocView {
     /// place is in the deck already; it just stops being typed into, an
     /// IME's composition kept.
     pub(super) fn commit_slide_text(&mut self, cx: &mut Context<Self>) {
+        self.commit_notes(cx);
         let Document::Deck {
             deck,
             edit,
@@ -528,14 +616,19 @@ impl DocView {
         if self.slideshow {
             return false;
         }
-        if let Document::Deck {
-            edit: None,
-            typing: None,
-            selected: Some(_),
-            ..
-        } = &self.document
-        {
-            self.begin_slide_text(None, cx);
+        match &self.document {
+            // The notes take it, through the cells' route.
+            Document::Deck {
+                notes_edit: Some(_),
+                ..
+            } => return false,
+            Document::Deck {
+                edit: None,
+                typing: None,
+                selected: Some(_),
+                ..
+            } => self.begin_slide_text(None, cx),
+            _ => {}
         }
         let Document::Deck {
             typing: Some(typing),
@@ -837,6 +930,9 @@ impl DocView {
                 _ => return false,
             }
             return true;
+        }
+        if let Some(handled) = self.notes_key(key, cx) {
+            return handled;
         }
         if let Some(composing) = self.typing_state() {
             // An IME composing has the keys to itself.
@@ -1304,6 +1400,7 @@ impl DocView {
             selected,
             edit,
             typing,
+            notes_edit,
             drag,
             scale: shown_scale,
             layouts_open,
@@ -1405,7 +1502,9 @@ impl DocView {
         let slide_image = slide.as_ref().map(|(_, _, _, image)| image.clone());
         let notes = deck
             .notes(current_index)
+            .filter(|notes| !notes.is_empty())
             .map(|notes| SharedString::from(notes.to_string()));
+        let notes_lines = notes_edit.as_ref().map(notes_lines);
         let show_notes = self.show_notes;
 
         // Text typed in place: the shape's outline, the selection shaded over
@@ -1969,11 +2068,23 @@ impl DocView {
                                 .px_4()
                                 .py_2()
                                 .text_sm()
-                                .child(match notes {
-                                    Some(notes) => div().child(notes),
-                                    None => div()
+                                .cursor(gpui::CursorStyle::IBeam)
+                                .when(notes_lines.is_some(), |pane| {
+                                    pane.border_t_2().border_color(palette::accent())
+                                })
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _event, window, cx| {
+                                        window.focus(&view.focus, cx);
+                                        view.begin_notes(cx);
+                                    }),
+                                )
+                                .child(match (notes_lines, notes) {
+                                    (Some(lines), _) => div().children(lines),
+                                    (None, Some(notes)) => div().child(notes),
+                                    (None, None) => div()
                                         .text_color(palette::faint())
-                                        .child(i18n::text("deck.no_notes")),
+                                        .child(i18n::text("deck.add_notes")),
                                 }),
                         )
                     }),
@@ -2519,4 +2630,26 @@ fn shape_name(preset: ShapePreset) -> &'static str {
         ShapePreset::Diamond => "deck.shape.diamond",
         ShapePreset::Hexagon => "deck.shape.hexagon",
     }
+}
+
+/// The notes being typed, a row a line, the caret drawn in its line.
+fn notes_lines(edit: &TextEdit) -> Vec<gpui::AnyElement> {
+    let caret = edit.caret();
+    let mut start = 0;
+    let mut rows = Vec::new();
+    for line in edit.text.split('\n') {
+        let end = start + line.len();
+        let row = div().flex().min_h(px(18.0));
+        rows.push(if (start..=end).contains(&caret) {
+            let at = caret - start;
+            row.child(line[..at].to_string())
+                .child(div().w(px(1.5)).h(px(16.0)).bg(palette::text()))
+                .child(line[at..].to_string())
+                .into_any_element()
+        } else {
+            row.child(line.to_string()).into_any_element()
+        });
+        start = end + 1;
+    }
+    rows
 }
