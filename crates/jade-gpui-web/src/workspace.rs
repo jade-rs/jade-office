@@ -74,6 +74,22 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A picture picked from a deck's Insert goes into that deck.
+        let lower = name.to_lowercase();
+        if [".png", ".jpg", ".jpeg"]
+            .iter()
+            .any(|ext| lower.ends_with(ext))
+        {
+            let deck = self
+                .active
+                .and_then(|index| self.tabs.get(index))
+                .filter(|tab| tab.read(cx).kind == Kind::Deck)
+                .cloned();
+            if let Some(deck) = deck {
+                deck.update(cx, |view, cx| view.insert_picture(&bytes, cx));
+                return;
+            }
+        }
         if let Some(index) = self.tabs.iter().position(|tab| tab.read(cx).name == name) {
             self.activate(index, window, cx);
             return;
