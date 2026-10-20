@@ -23,8 +23,11 @@ use jade_web::sheet::{
 
 use super::*;
 
+mod charts;
 mod conditional;
+use charts::ChartTool;
 use conditional::Conditional;
+use jade_web::charts::{ChartAsk, Handle};
 use jade_web::conditional_formatting::RuleAsk;
 
 /// How far past the grid's edge the pointer has to be for a drag to scroll
@@ -68,6 +71,10 @@ pub(super) struct Sheet {
     pub asking: Option<RuleAsk>,
     /// The conditional formatting Rules Manager, open.
     pub managing: bool,
+    /// The selected chart, picture or shape, by id.
+    pub object: Option<u32>,
+    /// Chart Title… or Select Data…, asking.
+    pub chart_asking: Option<ChartAsk>,
     /// The note under the pointer, and where its cell's top-right corner
     /// is in the grid's px.
     note: Option<(CellRef, (f32, f32))>,
@@ -120,6 +127,16 @@ enum SheetDrag {
         target: CellRange,
         copy: bool,
     },
+    /// A chart, picture or shape picked up by its border (no handle) or a
+    /// handle: where the press started, where the object was, and where
+    /// the drag has it (sheet px).
+    Object {
+        id: u32,
+        handle: Option<Handle>,
+        start: (f64, f64),
+        bounds: (f64, f64, f64, f64),
+        now: (f64, f64, f64, f64),
+    },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -166,6 +183,7 @@ enum Popup {
     Font,
     Borders,
     Conditional,
+    Chart,
 }
 
 /// What a toolbar button does.
@@ -187,6 +205,7 @@ enum Tool {
     Borders(Borders),
     Filter,
     Conditional(Conditional),
+    Chart(ChartTool),
 }
 
 #[derive(Clone, Copy)]
@@ -248,6 +267,8 @@ impl Sheet {
             noting: None,
             asking: None,
             managing: false,
+            object: None,
+            chart_asking: None,
             note: None,
             menu: None,
             filter: None,
@@ -260,6 +281,9 @@ impl Sheet {
 
     /// The text being typed into: a tab's new name, the name box, or a cell.
     pub fn typing(&mut self) -> Option<&mut TextEdit> {
+        if let Some(ask) = self.chart_asking.as_mut() {
+            return Some(&mut ask.text);
+        }
         if let Some(ask) = self.asking.as_mut() {
             return ask.typing();
         }
@@ -279,6 +303,9 @@ impl Sheet {
     }
 
     pub fn typed(&self) -> Option<&TextEdit> {
+        if let Some(ask) = self.chart_asking.as_ref() {
+            return Some(&ask.text);
+        }
         if let Some(ask) = self.asking.as_ref() {
             return ask.typed();
         }
@@ -635,6 +662,7 @@ impl DocView {
             Tool::Borders(borders) => sheet.book.borders(range, borders),
             Tool::Filter => sheet.book.toggle_filter(range),
             Tool::Conditional(tool) => return self.conditional(tool, cx),
+            Tool::Chart(tool) => return self.chart_tool(tool, cx),
             Tool::Open(_) => unreachable!(),
         };
         self.edited(result, cx);
@@ -844,6 +872,15 @@ impl DocView {
                 )
                 .child(icon("icons/highlighter.svg")),
             ))
+            .child(hang(
+                Popup::Chart,
+                button(
+                    "tool-chart",
+                    popup == Some(Popup::Chart),
+                    Tool::Open(Popup::Chart),
+                )
+                .child(icon("icons/chart-column.svg")),
+            ))
             .child(separator())
             .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
     }
@@ -983,6 +1020,7 @@ impl DocView {
                     Tool::Borders(Borders::None),
                 )),
             Popup::Conditional => self.conditional_menu(cx),
+            Popup::Chart => self.chart_menu(cx),
         };
         Some(
             div()
@@ -1135,6 +1173,7 @@ impl DocView {
             return;
         };
         if index != sheet.book.sheet_index() && sheet.book.select_sheet(index).is_ok() {
+            sheet.object = None;
             sheet.selection = Selection::default();
             sheet.tab_start = None;
             if let Some(old) = sheet.painted.take() {
@@ -1249,6 +1288,17 @@ impl DocView {
             }
             sheet.choices = None;
         }
+        // A chart's text dialog has the keys while it is open.
+        if sheet.chart_asking.is_some() {
+            return self.chart_key(key, modifiers, cx);
+        }
+        // A selected chart, picture or shape: Delete removes it.
+        if sheet.object.is_some() && self.object_key(key, cx) {
+            return true;
+        }
+        let Some(sheet) = self.sheet_mut() else {
+            return false;
+        };
         // A conditional format's dialog has the keys while it is open.
         if sheet.asking.is_some() {
             return self.rule_key(key, modifiers, cx);
@@ -1853,6 +1903,11 @@ impl DocView {
         if !self.commit_cell(cx) {
             return;
         }
+        // A chart, picture or shape sits over the cells: a press on one
+        // selects it, and its border or a handle drags it.
+        if self.object_press(x, y, cx) {
+            return;
+        }
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
@@ -2181,6 +2236,23 @@ impl DocView {
                     cx.notify();
                 }
             }
+            SheetDrag::Object {
+                id,
+                handle,
+                start,
+                bounds,
+                ..
+            } => {
+                let now = charts::object_drag(handle, start, bounds, x, y);
+                sheet.drag = Some(SheetDrag::Object {
+                    id,
+                    handle,
+                    start,
+                    bounds,
+                    now,
+                });
+                cx.notify();
+            }
             SheetDrag::Point => {
                 let anchor = sheet
                     .edit
@@ -2277,6 +2349,9 @@ impl DocView {
                 }
                 self.edited(result.map(|_| true), cx);
             }
+            SheetDrag::Object {
+                id, bounds, now, ..
+            } => self.object_drop(id, bounds, now, cx),
             SheetDrag::Point => cx.notify(),
         }
     }
@@ -2417,6 +2492,8 @@ impl DocView {
         }
         let rule_dialog = self.rule_dialog(cx);
         let rules_manager = self.rules_manager(cx);
+        let chart_dialog = self.chart_dialog(cx);
+        let object_frame = self.object_frame();
         let Document::Workbook(sheet) = &mut self.document else {
             unreachable!()
         };
@@ -3113,6 +3190,8 @@ impl DocView {
                     .children(filter_panel)
                     .children(rule_dialog)
                     .children(rules_manager)
+                    .children(chart_dialog)
+                    .children(object_frame)
                     .children(menu)
                     // Records where the grid is, registers the input handler
                     // so typing — an IME's included — reaches the cell, and
