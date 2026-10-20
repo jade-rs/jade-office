@@ -1035,6 +1035,7 @@ name = "jade-web"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "flate2",
  "futures",
  "image",
  "jade-docx-editor",

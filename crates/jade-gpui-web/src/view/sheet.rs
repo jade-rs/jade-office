@@ -2529,10 +2529,13 @@ impl DocView {
         });
 
         let renaming = sheet.renaming.as_ref().map(|(index, text)| (*index, text));
+        // A hidden sheet has no tab, as in Excel.
+        let visible = sheet.book.sheet_tabs();
         let mut tabs: Vec<gpui::AnyElement> = sheet
             .names
             .iter()
             .enumerate()
+            .filter(|(index, _)| visible.contains(index))
             .map(|(index, name)| {
                 let selected = index == current;
                 let label = match renaming {
@@ -3245,7 +3248,7 @@ impl DocView {
 }
 
 /// Text being typed, with its caret drawn where it is and its lines kept.
-fn caret_line(text: &TextEdit, caret_color: gpui::Hsla, tall: bool) -> gpui::Div {
+pub(super) fn caret_line(text: &TextEdit, caret_color: gpui::Hsla, tall: bool) -> gpui::Div {
     if text.whole {
         let mut selected = caret_color;
         selected.a = 0.3;
