@@ -32,6 +32,9 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 
 mod deck;
 mod sheet;
+mod word_find;
+mod word_review;
+mod word_story;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -375,6 +378,17 @@ enum Document {
         /// Whether the caret is to be scrolled to once its page is painted:
         /// see `reveal_caret`.
         reveal_pending: bool,
+        /// The find bar (⌘F), while it is open: typing goes into it.
+        find: Option<Box<word_find::FindBar>>,
+        /// A header or footer being typed, in its bar over the pages.
+        story: Option<Box<crate::word_page::StoryBar>>,
+        /// A comment being typed — new, a reply, an edit — in its bar.
+        comment: Option<Box<word_review::CommentBar>>,
+        /// Whether the comments pane is open beside the pages.
+        show_comments: bool,
+        /// The picture or shape last pressed on, and the drag moving or
+        /// resizing it while the button is down.
+        object: Option<ObjectGrab>,
     },
     Deck {
         deck: jade_web::Deck,
@@ -417,6 +431,26 @@ enum Document {
         slides_focused: bool,
     },
     Workbook(Box<sheet::Sheet>),
+}
+
+/// A picture or shape taken hold of on a page: where it is, where the
+/// press was, and the box a drag has given it so far — drawn as an outline
+/// and put in on release, one undo step.
+#[derive(Clone, Copy)]
+struct ObjectGrab {
+    object: jade_web::word::picture::PlacedObject,
+    from: (f64, f64),
+    rect: (f64, f64, f64, f64),
+    resizing: bool,
+    /// Whether the button is still down.
+    dragging: bool,
+}
+
+thread_local! {
+    /// The last copy's formatting, for a paste — in any tab — that finds the
+    /// copy's text still on the clipboard.
+    static RICH_CLIP: RefCell<Option<jade_web::word::clipboard::RichClip>> =
+        const { RefCell::new(None) };
 }
 
 /// Cells selected across a table: what Merge Cells merges.
@@ -488,6 +522,11 @@ impl DocView {
                     highlight: None,
                     dragging: false,
                     reveal_pending: false,
+                    find: None,
+                    story: None,
+                    comment: None,
+                    show_comments: false,
+                    object: None,
                     pages: (0..opened.page_count())
                         .map(|index| {
                             opened
@@ -736,6 +775,43 @@ impl DocView {
         cx.notify();
     }
 
+    /// A picture the page's picker brought, put in at the Word document's
+    /// caret. Whether there was a document to take it.
+    pub fn insert_word_picture(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) -> bool {
+        if !matches!(self.document, Document::Pages { .. }) {
+            return false;
+        }
+        self.word_edit(cx, move |document| {
+            use jade_web::word::picture::WordPicture;
+            document.insert_picture(bytes)
+        });
+        true
+    }
+
+    /// PDF として書き出す: the Word document's pages, as the page shows
+    /// them, handed to the page to download.
+    pub fn export_pdf(&mut self, cx: &mut Context<Self>) {
+        let Document::Pages { document, .. } = &mut self.document else {
+            return;
+        };
+        let pdf = document.export_pdf();
+        self.refresh_repainted();
+        let name = format!(
+            "{}.pdf",
+            self.name
+                .rsplit_once('.')
+                .map_or(self.name.as_ref(), |(stem, _)| stem)
+        );
+        self.status = match pdf {
+            Ok(bytes) => {
+                self.host.save(&name, &bytes);
+                i18n::format("web.downloaded", &[("name", &name)]).into()
+            }
+            Err(error) => i18n::format("sheet.save_failed", &[("error", &error)]).into(),
+        };
+        cx.notify();
+    }
+
     pub fn step_history(&mut self, undo: bool, cx: &mut Context<Self>) {
         let keep;
         let result = match &mut self.document {
@@ -933,6 +1009,8 @@ impl DocView {
         let Some(text) = document.selected_text() else {
             return;
         };
+        let clip = jade_web::word::clipboard::WordClipboard::copy_rich(document.as_ref());
+        RICH_CLIP.with(|kept| *kept.borrow_mut() = clip);
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
         if cut {
             self.word_edit(cx, |document| document.delete(true));
@@ -984,12 +1062,38 @@ impl DocView {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.focus, cx);
+        if let Some(bar) = self.find_bar_mut() {
+            bar.active = false;
+        }
         let (Some((x, y)), Some(target)) = (
             self.page_point(index, event.position),
             self.page_position(index, event.position),
         ) else {
             return;
         };
+        // A picture is over the text: a press on one takes hold of it rather
+        // than putting the caret behind it. Its bottom-right corner resizes.
+        if let Document::Pages {
+            document, object, ..
+        } = &mut self.document
+        {
+            let page_y = y - document.document_y(index, 0.0);
+            let grabbed = document.object_at(x, y).filter(|found| found.page == index);
+            *object = grabbed.map(|found| {
+                const HANDLE: f64 = 12.0;
+                ObjectGrab {
+                    object: found,
+                    from: (x, page_y),
+                    rect: (found.x, found.y, found.width, found.height),
+                    resizing: x >= found.x + found.width - HANDLE
+                        && page_y >= found.y + found.height - HANDLE,
+                    dragging: true,
+                }
+            });
+            if object.is_some() {
+                return cx.notify();
+            }
+        }
         let extend = event.modifiers.shift;
         let clicks = event.click_count;
         if let Document::Pages { dragging, .. } = &mut self.document {
@@ -1069,6 +1173,9 @@ impl DocView {
     /// through the whole window, not only over a page, and past the top or
     /// the bottom of the view the pages scroll to meet the pointer.
     fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if self.drag_object(event, cx) {
+            return;
+        }
         let Document::Pages {
             document,
             dragging,
@@ -1116,8 +1223,90 @@ impl DocView {
         }
     }
 
+    /// Moves or resizes the picture held, as an outline: the pages are not
+    /// repainted until the release puts it there. Whether one was held.
+    fn drag_object(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) -> bool {
+        let zoom = self.shown_zoom.max(0.01);
+        let Document::Pages {
+            object: Some(grab),
+            page_bounds,
+            ..
+        } = &mut self.document
+        else {
+            return false;
+        };
+        if !grab.dragging {
+            return false;
+        }
+        if event.pressed_button != Some(MouseButton::Left) {
+            grab.dragging = false;
+            return true;
+        }
+        let Some(bounds) = page_bounds
+            .borrow()
+            .get(grab.object.page)
+            .copied()
+            .flatten()
+        else {
+            return true;
+        };
+        let x = f64::from((event.position.x - bounds.origin.x) / zoom);
+        let y = f64::from((event.position.y - bounds.origin.y) / zoom);
+        let (dx, dy) = (x - grab.from.0, y - grab.from.1);
+        let start = grab.object;
+        grab.rect = if grab.resizing {
+            (
+                start.x,
+                start.y,
+                (start.width + dx).max(8.0),
+                (start.height + dy).max(8.0),
+            )
+        } else {
+            (start.x + dx, start.y + dy, start.width, start.height)
+        };
+        cx.notify();
+        true
+    }
+
+    /// A release puts the picture held where the drag left it.
+    fn release_object(&mut self, cx: &mut Context<Self>) {
+        let Document::Pages {
+            object: Some(grab), ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        if !std::mem::take(&mut grab.dragging) {
+            return;
+        }
+        let start = grab.object;
+        let rect = grab.rect;
+        if rect == (start.x, start.y, start.width, start.height) {
+            return;
+        }
+        self.word_edit(cx, move |document| {
+            use jade_web::word::picture::WordPicture;
+            document.place_object(start, rect)
+        });
+        // Where the picture is now, for the outline and the next drag.
+        if let Document::Pages {
+            document, object, ..
+        } = &mut self.document
+        {
+            *object = object.and_then(|grab| {
+                let moved = document.object_region(grab.object.target)?;
+                Some(ObjectGrab {
+                    object: moved,
+                    rect: (moved.x, moved.y, moved.width, moved.height),
+                    ..grab
+                })
+            });
+        }
+    }
+
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
+        self.release_object(cx);
         if let Document::Pages { dragging, .. } = &mut self.document {
             if std::mem::take(dragging) {
                 cx.notify();
@@ -1261,6 +1450,30 @@ impl DocView {
         }
         ribbon.popup = None;
         window.focus(&self.focus, cx);
+        if let Action::EditStory(story) = action {
+            return self.open_story(story, cx);
+        }
+        if let Action::Review(review) = action {
+            return self.review_action(review, cx);
+        }
+        if action == Action::InsertPicture {
+            // The page's picker answers through `open_file`, which hands a
+            // picture to the Word document in front.
+            return self.host.pick();
+        }
+        if let Action::Wrap(wrap) = action {
+            let selected = match &self.document {
+                Document::Pages { object, .. } => object.map(|grab| grab.object),
+                _ => None,
+            };
+            if let Some(selected) = selected {
+                self.word_edit(cx, move |document| {
+                    use jade_web::word::picture::WordPicture;
+                    document.set_picture_wrap(selected, wrap)
+                });
+            }
+            return;
+        }
         if let Action::Style(style_id) = action {
             let result = document.set_paragraph_style(style_id.as_deref());
             ribbon.read_styles(document);
@@ -1294,7 +1507,14 @@ impl DocView {
             Action::Table(command) => document.table_command(command).map(|_| ()),
             Action::Undo => document.undo().map(|_| ()),
             Action::Redo => document.redo().map(|_| ()),
-            Action::Style(_)
+            Action::Page(command) => {
+                jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
+            }
+            Action::EditStory(_)
+            | Action::Review(_)
+            | Action::InsertPicture
+            | Action::Wrap(_)
+            | Action::Style(_)
             | Action::Tab(_)
             | Action::Popup(_)
             | Action::ClosePopup
@@ -1317,6 +1537,8 @@ impl DocView {
             pages,
             current,
             dragging,
+            show_comments,
+            object,
             ..
         } = &mut self.document
         else {
@@ -1337,7 +1559,34 @@ impl DocView {
             "doc.position",
             &[("current", &(*current + 1)), ("count", &pages.len())],
         );
-        ribbon::ribbon(ribbon, &state, position, document.is_dirty(), viewport, cx)
+        // Read only for the tab that shows it: a query of the section.
+        let page = (ribbon.tab == ribbon::Tab::Layout).then(|| {
+            use jade_web::word::page::WordPage;
+            let japanese = !i18n::is_english();
+            ribbon::PageState {
+                setup: document.page_setup(),
+                preset: document.margin_preset(japanese),
+                japanese,
+            }
+        });
+        let tabs = {
+            use jade_web::word::review::WordReview;
+            ribbon::TabState {
+                page,
+                tracking: document.is_tracking_changes(),
+                comments: *show_comments,
+                picture: object.is_some_and(|grab| grab.object.is_picture()),
+            }
+        };
+        ribbon::ribbon(
+            ribbon,
+            &state,
+            &tabs,
+            position,
+            document.is_dirty(),
+            viewport,
+            cx,
+        )
     }
 
     /// Keeps the pages on screen, one either side and as many more round
@@ -1395,6 +1644,10 @@ impl DocView {
         self.shown_zoom = zoom;
         self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
+        let story_bar = self.story_bar_element();
+        let comment_bar = self.comment_bar_element();
+        let comments_pane = self.comments_pane(cx);
+        let find_bar = self.find_bar_element(cx);
         let Document::Pages {
             document,
             pages,
@@ -1403,11 +1656,13 @@ impl DocView {
             current,
             page_bounds,
             highlight,
+            object,
             ..
         } = &mut self.document
         else {
             unreachable!()
         };
+        let object = *object;
         let (width, height) = (page_size.0 * zoom, page_size.1 * zoom);
         // The selection's highlight, read again only when the selection or
         // the text changed.
@@ -1419,6 +1674,17 @@ impl DocView {
             .as_ref()
             .map(|(_, rects)| rects.as_slice())
             .unwrap_or(&[]);
+        // The picture held, as a page and its box on it, zoomed.
+        let object_outline = object.map(|grab| {
+            let (x, y, width, height) = grab.rect;
+            (
+                grab.object.page,
+                x as f32 * zoom,
+                y as f32 * zoom,
+                width as f32 * zoom,
+                height as f32 * zoom,
+            )
+        });
         // The caret, as a page and a rectangle on it.
         let caret = document.caret_rect().map(|caret| {
             let (page, y) = document.page_and_offset(caret.document_y);
@@ -1528,6 +1794,26 @@ impl DocView {
                                     .border_color(rgba(0x584f_e8c7))
                             }),
                     )
+                    .children(object_outline.filter(|(page, ..)| *page == index).map(
+                        |(_, x, y, width, height)| {
+                            div()
+                                .absolute()
+                                .left(px(x))
+                                .top(px(y))
+                                .w(px(width))
+                                .h(px(height))
+                                .border_1()
+                                .border_color(palette::accent())
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .right(px(-4.0))
+                                        .bottom(px(-4.0))
+                                        .size(px(8.0))
+                                        .bg(palette::accent()),
+                                )
+                        },
+                    ))
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
                             div()
@@ -1633,6 +1919,9 @@ impl DocView {
                     .flex()
                     .flex_col()
                     .child(word_ribbon)
+                    .children(comment_bar)
+                    .children(story_bar)
+                    .children(find_bar)
                     .child(
                         div()
                             .id("pages")
@@ -1650,6 +1939,7 @@ impl DocView {
                             .children(surfaces),
                     ),
             )
+            .children(comments_pane)
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -1673,6 +1963,19 @@ impl DocView {
                 })
                 .ok();
             });
+        }
+        // The find bar over a Word document takes the keys it has.
+        if self.commenting() && self.comment_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        if self.story_editing() && self.story_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        if self.finding() && self.find_key(event, cx) {
+            cx.stop_propagation();
+            return;
         }
         // A sheet takes its own keys first: Excel's shortcuts, ⌘-arrows,
         // and the keys of a cell being typed into.
@@ -1700,6 +2003,9 @@ impl DocView {
                 "y" => self.step_history(false, cx),
                 "s" => self.save(cx),
                 "a" if pages => self.word_move(cx, |document| document.select_all()),
+                // Find, and Word for Mac's Find and Replace.
+                "f" if pages => self.open_find(false, cx),
+                "h" if pages && modifiers.shift => self.open_find(true, cx),
                 "c" if pages => self.word_copy(false, cx),
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.
@@ -1758,7 +2064,16 @@ impl DocView {
                 ..
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_mut().map(|(_, text)| text),
-            Document::Pages { .. } => None,
+            Document::Pages {
+                comment: Some(bar), ..
+            } => Some(&mut bar.text),
+            Document::Pages {
+                story: Some(bar), ..
+            } => Some(&mut bar.text),
+            Document::Pages { find, .. } => find
+                .as_deref_mut()
+                .filter(|bar| bar.active)
+                .map(|bar| bar.field_mut()),
         }
     }
 
@@ -1770,7 +2085,16 @@ impl DocView {
                 ..
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_ref().map(|(_, text)| text),
-            Document::Pages { .. } => None,
+            Document::Pages {
+                comment: Some(bar), ..
+            } => Some(&bar.text),
+            Document::Pages {
+                story: Some(bar), ..
+            } => Some(&bar.text),
+            Document::Pages { find, .. } => find
+                .as_deref()
+                .filter(|bar| bar.active)
+                .map(|bar| bar.field()),
         }
     }
 }
@@ -1834,6 +2158,10 @@ impl DocView {
     /// where in it the caret and the composition are, for the input
     /// handler.
     fn word_input(&self) -> Option<(String, usize, Option<Range<usize>>)> {
+        // While a bar has the keyboard, typing is the bar's.
+        if self.finding() || self.story_editing() || self.commenting() {
+            return None;
+        }
         let Document::Pages { document, .. } = &self.document else {
             return None;
         };
@@ -1949,6 +2277,15 @@ impl EntityInputHandler for DocView {
                 edit: Some((_, edit)),
                 ..
             } => edit.marked = None,
+            Document::Pages {
+                comment: Some(bar), ..
+            } => bar.text.marked = None,
+            Document::Pages {
+                story: Some(bar), ..
+            } => bar.text.marked = None,
+            Document::Pages {
+                find: Some(bar), ..
+            } if bar.active => bar.field_mut().marked = None,
             _ => {}
         }
     }
@@ -1959,6 +2296,40 @@ impl EntityInputHandler for DocView {
             return;
         };
         match &mut self.document {
+            // Into a bar, its first line.
+            Document::Pages { story: Some(_), .. }
+            | Document::Pages {
+                comment: Some(_), ..
+            } => {
+                let line = text.lines().next().unwrap_or_default().to_string();
+                self.replace_text_in_range(None, &line, window, cx);
+            }
+            Document::Pages {
+                find: Some(bar), ..
+            } if bar.active => {
+                let line = text.lines().next().unwrap_or_default().to_string();
+                self.replace_text_in_range(None, &line, window, cx);
+            }
+            // Copied here, and still what the clipboard holds: with its
+            // formatting, as one undo step.
+            Document::Pages { .. }
+                if RICH_CLIP.with(|kept| {
+                    kept.borrow()
+                        .as_ref()
+                        .is_some_and(|clip| clip.matches(&text))
+                }) =>
+            {
+                let clip = RICH_CLIP.with(|kept| kept.borrow().clone());
+                self.word_edit(cx, move |document| {
+                    use jade_web::word::clipboard::WordClipboard;
+                    let Some(clip) = clip else {
+                        return Ok(());
+                    };
+                    let caret = document.paste_rich(&clip)?;
+                    document.place_caret(caret.0, caret.1);
+                    Ok(())
+                });
+            }
             Document::Pages { .. } => {
                 // Lines become paragraphs, as they were when copied out.
                 self.word_edit(cx, move |document| document.paste(&text));
@@ -1993,7 +2364,11 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if matches!(self.document, Document::Pages { .. }) {
+        if matches!(self.document, Document::Pages { .. })
+            && !self.finding()
+            && !self.story_editing()
+            && !self.commenting()
+        {
             let text = text.to_string();
             let composing = self
                 .word_input()
@@ -2017,6 +2392,9 @@ impl EntityInputHandler for DocView {
         if let Document::Workbook(sheet) = &mut self.document {
             sheet.typed_into();
         }
+        if self.finding() {
+            self.typed_into_find(cx);
+        }
     }
 
     fn replace_and_mark_text_in_range(
@@ -2027,7 +2405,11 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if matches!(self.document, Document::Pages { .. }) {
+        if matches!(self.document, Document::Pages { .. })
+            && !self.finding()
+            && !self.story_editing()
+            && !self.commenting()
+        {
             let text = new_text.to_string();
             self.word_edit(cx, move |document| document.set_composition(&text));
             return;

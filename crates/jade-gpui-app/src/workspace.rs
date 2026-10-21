@@ -198,6 +198,28 @@ impl Workspace {
         Ok(())
     }
 
+    /// A new document — blank or from a template — as a tab of its own.
+    pub fn open_untitled(
+        &mut self,
+        name: &str,
+        bytes: &[u8],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let view = crate::untitled_document_view(bytes, name, cx)?;
+        let editor: Box<dyn EditorHandle> = Box::new(self.observed(view, cx));
+        self.tabs.push(Tab {
+            path: PathBuf::from(name),
+            kind: Kind::Document,
+            view: editor.view(),
+            focus: editor.focus_handle(cx),
+            editor,
+        });
+        self.error = None;
+        self.activate(self.tabs.len() - 1, window, cx);
+        Ok(())
+    }
+
     fn open_new(&mut self, path: &Path, cx: &mut Context<Self>) -> Result<(), String> {
         let kind = Kind::of(path).ok_or_else(|| {
             i18n::format(
@@ -1016,6 +1038,28 @@ impl Workspace {
                                 shell::prompt_and_open(cx)
                             }),
                         ),
+                    )
+                    .child(
+                        welcome_button(
+                            "welcome-new",
+                            "icons/file-text.svg",
+                            i18n::text("workspace.new_document"),
+                            false,
+                        )
+                        .on_click(
+                            cx.listener(|_workspace, _event, _window, cx| shell::open_blank(cx)),
+                        ),
+                    )
+                    .child(
+                        welcome_button(
+                            "welcome-template",
+                            "icons/file.svg",
+                            i18n::text("menu.file.new_from_template"),
+                            false,
+                        )
+                        .on_click(cx.listener(
+                            |_workspace, _event, _window, cx| shell::prompt_for_template(cx),
+                        )),
                     )
                     .child(
                         welcome_button(
