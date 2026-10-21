@@ -1472,10 +1472,47 @@ impl DocumentView {
         Some((x, self.document.document_y(page, y)))
     }
 
+    /// The handle at the caret table's top-left corner, as Word shows it:
+    /// a click on it selects the table.
+    fn table_handle(&self, page: usize) -> Option<gpui::Div> {
+        self.format.as_ref().and_then(|(_, state)| state.table)?;
+        let table_id = self
+            .document
+            .cell_id_for_paragraph(self.insert_at.0)
+            .and_then(|id| self.document.cell_layout(id))
+            .map(|cell| cell.table_id)?;
+        let geometry = self.document.table_geometry(table_id)?;
+        let (on, top) = self.document.page_and_offset(geometry.top());
+        if on != page {
+            return None;
+        }
+        let zoom = self.zoom;
+        Some(
+            div()
+                .absolute()
+                .left(px((geometry.left() as f32 - 20.0) * zoom))
+                .top(px((top as f32 - 20.0) * zoom))
+                .size(px(12.0 * zoom))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_sm()
+                .border_1()
+                .border_color(theme::text_dim())
+                .bg(theme::panel())
+                .text_size(px(9.0 * zoom))
+                .text_color(theme::text_dim())
+                .child("+"),
+        )
+    }
+
     /// What a drag in a table shows over `page`: the guide where a border
-    /// will land, the rectangle or line the pencil draws.
+    /// will land, the rectangle or line the pencil draws — or, with no drag,
+    /// the caret table's handle.
     pub(crate) fn table_overlay(&self, page: usize) -> Option<impl IntoElement> {
-        let (drag, drag_page, from, to) = self.tables.drag?;
+        let Some((drag, drag_page, from, to)) = self.tables.drag else {
+            return self.table_handle(page);
+        };
         let zoom = self.zoom;
         let local = |y: f64| {
             let (on, offset) = self.document.page_and_offset(y);
