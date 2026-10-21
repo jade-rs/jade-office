@@ -25,6 +25,9 @@ use gpui::{
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+#[path = "workspace_side_by_side.rs"]
+pub mod side_by_side;
+
 use crate::editor::{self, Editor, EditorHandle};
 use crate::shell::{self, recent, Kind};
 use crate::tooltip::Tooltip;
@@ -153,6 +156,8 @@ pub struct Workspace {
     focus: FocusHandle,
     /// A document with a password to open, waiting for it.
     pub password: Option<crate::word_protection::PasswordPrompt>,
+    /// 並べて比較 (`side_by_side`).
+    side: side_by_side::SideBySide,
 }
 
 impl Workspace {
@@ -167,6 +172,7 @@ impl Workspace {
             recent: recent::load(),
             error: None,
             focus: cx.focus_handle(),
+            side: Default::default(),
             password: None,
         }
     }
@@ -1286,6 +1292,21 @@ impl Render for Workspace {
             .on_action(cx.listener(|workspace, _: &CloseWindow, window, cx| {
                 workspace.close_active(window, cx)
             }))
+            .on_action(
+                cx.listener(|workspace, _: &side_by_side::ViewSideBySide, _, cx| {
+                    workspace.toggle_side_by_side(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|workspace, _: &side_by_side::SynchronousScrolling, _, cx| {
+                    workspace.toggle_sync(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|workspace, _: &side_by_side::ResetWindowPosition, _, cx| {
+                    workspace.reset_side_by_side(cx)
+                }),
+            )
             .on_action(cx.listener(|workspace, _: &ToggleExplorer, _window, cx| {
                 workspace.explorer_open = !workspace.explorer_open;
                 cx.notify();
@@ -1334,12 +1355,16 @@ impl Render for Workspace {
                             .flex_col()
                             .overflow_hidden()
                             .when(has_tabs, |editor| editor.child(self.tab_bar(cx)))
-                            .child(div().flex_1().min_h_0().overflow_hidden().map(|content| {
-                                match active_view {
-                                    Some(view) => content.child(view),
-                                    None => content.child(self.welcome(cx)),
-                                }
-                            })),
+                            .child(div().flex_1().min_h_0().overflow_hidden().map(
+                                |content| match (
+                                    self.editor_content(active_view.clone()),
+                                    active_view,
+                                ) {
+                                    (Some(pair), _) => content.child(pair),
+                                    (None, Some(view)) => content.child(view),
+                                    (None, None) => content.child(self.welcome(cx)),
+                                },
+                            )),
                     ),
             )
             .child(self.status_bar(cx))

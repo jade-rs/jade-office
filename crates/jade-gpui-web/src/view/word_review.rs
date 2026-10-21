@@ -194,6 +194,15 @@ impl DocView {
             | ReviewAction::MarkFinal
             | ReviewAction::EditAnyway => return self.protection_action(action, cx),
             ReviewAction::ReadAloud => return self.toggle_read_aloud(cx),
+            ReviewAction::SideBySide => {
+                return cx.dispatch_action(&crate::workspace::side_by_side::ViewSideBySide)
+            }
+            ReviewAction::SyncScroll => {
+                return cx.dispatch_action(&crate::workspace::side_by_side::SynchronousScrolling)
+            }
+            ReviewAction::ResetPosition => {
+                return cx.dispatch_action(&crate::workspace::side_by_side::ResetWindowPosition)
+            }
             ReviewAction::Immersive => return self.toggle_immersive(cx),
             ReviewAction::Inspect | ReviewAction::InspectRemove(_) => {
                 return self.inspect_action(action, cx)
@@ -954,6 +963,14 @@ impl DocView {
         }
         window.focus(&self.focus, cx);
         cx.notify();
+    }
+
+    /// The pages' scroll, for 並べて比較's 同時にスクロール.
+    pub(crate) fn page_scroll(&self) -> Option<ScrollHandle> {
+        match &self.document {
+            Document::Pages { scroll, .. } => Some(scroll.clone()),
+            _ => None,
+        }
     }
 
     /// The password the file was opened with: it is saved with it again.

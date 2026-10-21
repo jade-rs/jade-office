@@ -92,6 +92,10 @@ pub enum ReviewAction {
     ReadAloud,
     /// イマーシブ リーダー: open or close.
     Immersive,
+    /// 並べて比較, 同時にスクロール, ウィンドウの位置を元に戻す.
+    SideBySide,
+    SyncScroll,
+    ResetPosition,
     /// ドキュメント検査's すべて削除.
     InspectRemove(jade_web::word::inspect::InspectCategory),
 }
@@ -107,6 +111,8 @@ pub struct ReviewShown {
     pub inspect: bool,
     pub reading: bool,
     pub immersive: bool,
+    pub side_by_side: bool,
+    pub sync_scroll: bool,
     pub markup: MarkupOptions,
     pub reviewers: Vec<String>,
 }
@@ -492,6 +498,30 @@ pub fn review(
                     i18n::text("compare.combine_title"),
                     false,
                     act(ReviewAction::Compare(true)),
+                    cx,
+                ),
+                text_button(
+                    "review-side-by-side",
+                    i18n::text("side.button"),
+                    i18n::text("side.title"),
+                    shown.side_by_side,
+                    act(ReviewAction::SideBySide),
+                    cx,
+                ),
+                text_button(
+                    "review-sync-scroll",
+                    i18n::text("side.sync"),
+                    i18n::text("side.sync_title"),
+                    shown.side_by_side && shown.sync_scroll,
+                    act(ReviewAction::SyncScroll),
+                    cx,
+                ),
+                text_button(
+                    "review-reset-position",
+                    i18n::text("side.reset"),
+                    i18n::text("side.reset_title"),
+                    false,
+                    act(ReviewAction::ResetPosition),
                     cx,
                 ),
             ])],
