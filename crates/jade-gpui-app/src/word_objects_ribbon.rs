@@ -34,6 +34,8 @@ pub enum DrawTool {
     Connector(jade_office_model::word::connectors::ConnectorKind, bool),
     /// フリーフォーム: a click per point.
     Freeform,
+    /// 描画 → ペン: one of `jade_office_model::word::ink::PENS`.
+    Pen(usize),
 }
 
 /// The object tools' lists.
@@ -337,6 +339,7 @@ impl DocumentView {
                     ),
                 ]),
                 row(self.insert_diagram_buttons(cx)),
+                row(self.pen_buttons(cx)),
             ],
         )];
         if let Some(status) = self.objects.status.clone() {
@@ -973,7 +976,7 @@ impl DocumentView {
         self.object_edit(cx, |view| match tool {
             DrawTool::Shape(shape) => view.document.insert_shape(shape, Some(drawn), false),
             DrawTool::TextBox => view.document.insert_shape(TextBoxShape::Rectangle, Some(drawn), true),
-            DrawTool::Connector(..) | DrawTool::Freeform => Ok(()),
+            DrawTool::Connector(..) | DrawTool::Freeform | DrawTool::Pen(_) => Ok(()),
         });
         // Select what went in: the object drawn at that spot.
         let point_y = self.document.document_y(page_index, drawn.y + drawn.height / 2.0);
@@ -1336,5 +1339,64 @@ impl DocumentView {
             Ok(false) => {}
             Err(error) => self.objects.status = Some(error.into()),
         }
+    }
+}
+
+impl DocumentView {
+    /// 描画's pens: a drag on the page draws a stroke, put in as Word ink
+    /// when the mouse comes up.
+    fn pen_buttons(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let drawing = self.objects.drawing;
+        jade_office_model::word::ink::PENS
+            .iter()
+            .enumerate()
+            .map(|(index, (color, _, _, ja, en))| {
+                let value = u32::from_str_radix(color.trim_start_matches('#'), 16).unwrap_or(0);
+                let active = drawing == Some(DrawTool::Pen(index));
+                div()
+                    .id(("pen", index))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .h(px(26.0))
+                    .px_2()
+                    .rounded_md()
+                    .text_xs()
+                    .cursor_pointer()
+                    .when(active, |button| button.bg(theme::selected()))
+                    .hover(|button| button.bg(theme::hovered()))
+                    .tooltip(Tooltip::text(if japanese() { *ja } else { *en }))
+                    .child(div().size(px(10.0)).rounded_full().bg(gpui::rgb(value)).border_1().border_color(theme::border()))
+                    .child(t("objects.pen"))
+                    .on_click(listener(act(ObjectAction::Draw(DrawTool::Pen(index))), cx))
+                    .into_any_element()
+            })
+            .collect()
+    }
+
+    /// A pen stroke's drag ended: it goes in as ink.
+    pub(crate) fn finish_stroke(&mut self, cx: &mut Context<Self>) {
+        use jade_office_model::word::ink::WordInk;
+        let Some(DrawTool::Pen(index)) = self.objects.drawing else {
+            return;
+        };
+        let Some((page_index, points)) = self.objects.stroke.take() else {
+            return;
+        };
+        let (color, width, highlighter, _, _) = jade_office_model::word::ink::PENS[index];
+        let stroke = jade_docx_editor::document::InkStroke {
+            points: points.clone(),
+            color: color.to_string(),
+            width,
+            highlighter,
+        };
+        let document_y = self.document.document_y(page_index, points[0].1);
+        if let Some(position) = self.document.position_at(points[0].0, document_y) {
+            self.insert_at = position;
+        }
+        self.place_document_caret();
+        self.object_edit(cx, |view| view.document.insert_ink(vec![stroke]));
+        // The pen stays in hand for the next stroke.
+        self.objects.drawing = Some(DrawTool::Pen(index));
     }
 }

@@ -34,6 +34,7 @@ pub mod connectors;
 pub mod diagrams;
 pub mod find;
 pub mod group;
+pub mod ink;
 pub mod new;
 pub mod objects;
 pub mod page;

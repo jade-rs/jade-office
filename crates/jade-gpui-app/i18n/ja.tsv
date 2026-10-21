@@ -839,6 +839,9 @@ objects.legend.left	凡例: 左
 objects.legend.none	凡例なし
 objects.legend.right	凡例: 右
 objects.legend.top	凡例: 上
+objects.link	リンクの作成
+objects.link_hint	リンク先の空のテキスト ボックスをクリックします
+objects.link_title	あふれた文字を次のテキスト ボックスに流し込みます
 objects.no_clipboard_picture	クリップボードに図がありません
 objects.no_objects	このページにはオブジェクトがありません
 objects.nothing_selected	図や図形が選択されていません
@@ -847,6 +850,7 @@ objects.outline.arrows	矢印
 objects.outline.dash	実線/点線
 objects.outline.none	枠線なし
 objects.outline.weight	太さ
+objects.pen	ペン
 objects.position	位置
 objects.position.bottom_center	下中央に配置し、四角の枠に沿って文字列を折り返す
 objects.position.bottom_left	左下に配置し、四角の枠に沿って文字列を折り返す
