@@ -1363,8 +1363,6 @@ menu.file.save_template	テンプレートとして保存…
 files.too_old	{name} は Word 97 より前の形式のため開けません。
 files.damaged	{name} は壊れているため開けません: {error}
 files.failed	{name} を変換できませんでした: {error}
-files.cannot_write_doc	Word 97-2004 文書 (.doc) 形式では保存できません。Word 文書 (.docx) として保存してください。
-files.doc_title	Word 97-2004 文書
 files.save_failed	保存できませんでした
 files.copy_name	{name} のコピー
 files.encoding_title	ファイルの変換

@@ -110,10 +110,19 @@ impl DocumentView {
     /// Before saving a document in 互換モード: the checker, when there is
     /// something its version would lose. Whether it was shown.
     pub(crate) fn check_before_saving(&mut self, write: &Write, cx: &mut Context<Self>) -> bool {
-        if !self.files.check_on_save || !compat::is_compatibility_mode(self.files.mode) {
+        // Saving as Word 97-2004 checks against Word 97-2003 whatever the
+        // document's mode.
+        let legacy = WordFormat::of_name(&crate::shell::file_name(write.path()))
+            .is_some_and(WordFormat::is_legacy);
+        if !self.files.check_on_save || !(legacy || compat::is_compatibility_mode(self.files.mode))
+        {
             return false;
         }
-        let version = WordVersion::of_mode(self.files.mode);
+        let version = if legacy {
+            WordVersion::Word2003
+        } else {
+            WordVersion::of_mode(self.files.mode)
+        };
         let issues = self.compatibility_issues(version);
         if issues.is_empty() {
             return false;
@@ -449,6 +458,23 @@ mod tests {
             compat::compatibility_mode(&after),
             12,
             "saved in its own mode"
+        );
+        // Saved as Word 97-2004, it is checked against Word 97-2003.
+        let doc = directory.join("word2007.doc");
+        view.update(cx, |view, cx| {
+            view.write_file(Write::Save(doc.clone()), None, cx)
+        });
+        view.read_with(cx, |view, _| {
+            let Some(FileDialog::Compatibility(checker)) = &view.files.dialog else {
+                panic!("the checker stops the save");
+            };
+            assert_eq!(checker.version, WordVersion::Word2003);
+        });
+        assert!(!doc.exists());
+        cx.simulate_keystrokes("enter");
+        assert_eq!(
+            WordFormat::sniff(&std::fs::read(&doc).unwrap()),
+            Some(WordFormat::Doc)
         );
         std::fs::remove_dir_all(directory).ok();
     }

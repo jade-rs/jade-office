@@ -29,6 +29,7 @@ jade-docx-headless-api = { path = "../../jade-core/crates/jade-docx-headless-api
 # Word's other formats: .doc, RTF, text, ODT, HTML (word::formats).
 jade-docx-convert = { path = "../../jade-core/crates/jade-docx-convert" }
 jade-doc-reader = { path = "../../jade-core/crates/jade-doc-reader" }
+jade-doc-writer = { path = "../../jade-core/crates/jade-doc-writer" }
 # Embedded fonts' obfuscation and licences (word::embedding).
 jade-docx-reader = { path = "../../jade-core/crates/jade-docx-reader" }
 # Loading a .docx outside a renderer (word::printing's selection).
@@ -62,6 +63,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 
 [dev-dependencies]
 png = "0.17"
+cfb = "0.7"
 
 # tiny-skia's anti-aliased rect fill debug-asserts when a thin rule's inner
 # span comes out zero pixels wide, then skips it — what release builds do

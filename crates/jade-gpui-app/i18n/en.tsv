@@ -1363,8 +1363,6 @@ menu.file.save_template	Save as Template…
 files.too_old	{name} is from a Word older than Word 97 and cannot be opened.
 files.damaged	{name} is damaged and cannot be opened: {error}
 files.failed	{name} could not be converted: {error}
-files.cannot_write_doc	Documents cannot be saved as Word 97-2004 (.doc). Save as a Word Document (.docx).
-files.doc_title	Word 97-2004 Document
 files.save_failed	The document could not be saved
 files.copy_name	Copy of {name}
 files.encoding_title	File Conversion
