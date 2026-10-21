@@ -114,6 +114,9 @@ pub enum Popup {
     Columns,
     Breaks,
     PageNumbers,
+    /// レイアウト's 行番号 and 文字列の方向 (`word_page_setup`).
+    LineNumbers,
+    TextDirection,
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -182,6 +185,8 @@ pub enum Action {
     Page(PageCommand),
     /// ヘッダーの編集 / フッターの編集: the bar over the pages.
     EditStory(Story),
+    /// The ページ設定 dialogs and menus (`word_page_setup`).
+    Setup(crate::word_page_setup::SetupAction),
 }
 
 impl Action {
