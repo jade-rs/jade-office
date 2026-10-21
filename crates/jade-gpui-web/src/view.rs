@@ -35,6 +35,7 @@ mod sheet;
 mod word_find;
 mod word_review;
 mod word_story;
+mod word_table;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -389,6 +390,9 @@ enum Document {
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
+        /// The table tabs' dialogs, pen and tools, and a border being
+        /// dragged.
+        tables: Box<jade_web::word::table_ui::TableTools>,
     },
     Deck {
         deck: jade_web::Deck,
@@ -527,6 +531,7 @@ impl DocView {
                     comment: None,
                     show_comments: false,
                     object: None,
+                    tables: Box::default(),
                     pages: (0..opened.page_count())
                         .map(|index| {
                             opened
@@ -1102,6 +1107,9 @@ impl DocView {
                 return cx.notify();
             }
         }
+        if self.table_mouse_down(index, (x, y), event.click_count, cx) {
+            return;
+        }
         let extend = event.modifiers.shift;
         let clicks = event.click_count;
         if let Document::Pages { dragging, .. } = &mut self.document {
@@ -1182,6 +1190,9 @@ impl DocView {
     /// the bottom of the view the pages scroll to meet the pointer.
     fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
         if self.drag_object(event, cx) {
+            return;
+        }
+        if self.table_mouse_move(event, cx) {
             return;
         }
         let Document::Pages {
@@ -1315,6 +1326,7 @@ impl DocView {
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
         self.release_object(cx);
+        self.table_mouse_up(cx);
         if let Document::Pages { dragging, .. } = &mut self.document {
             if std::mem::take(dragging) {
                 cx.notify();
@@ -1482,6 +1494,9 @@ impl DocView {
             }
             return;
         }
+        if let Action::Tables(action) = action {
+            return self.table_action(action, cx);
+        }
         if let Action::Style(style_id) = action {
             let result = document.set_paragraph_style(style_id.as_deref());
             ribbon.read_styles(document);
@@ -1523,6 +1538,7 @@ impl DocView {
             | Action::InsertPicture
             | Action::Wrap(_)
             | Action::Style(_)
+            | Action::Tables(_)
             | Action::Tab(_)
             | Action::Popup(_)
             | Action::ClosePopup
@@ -1538,6 +1554,7 @@ impl DocView {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let generation = self.generation;
+        let table = self.table_tab_state();
         let Document::Pages {
             document,
             ribbon,
@@ -1584,6 +1601,7 @@ impl DocView {
                 tracking: document.is_tracking_changes(),
                 comments: *show_comments,
                 picture: object.is_some_and(|grab| grab.object.is_picture()),
+                table,
             }
         };
         ribbon::ribbon(
@@ -1656,6 +1674,15 @@ impl DocView {
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
         let find_bar = self.find_bar_element(cx);
+        let table_cursor = self.table_cursor();
+        let table_dialog = self.table_dialog_element(cx);
+        let mut table_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.table_overlay(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let Document::Pages {
             document,
             pages,
@@ -1768,6 +1795,7 @@ impl DocView {
             .map(|(index, page)| {
                 let store = Rc::clone(&bounds_store);
                 let entity = entity.clone();
+                let table_overlay = table_overlays.next().flatten();
                 div()
                     .relative()
                     .flex_none()
@@ -1775,7 +1803,7 @@ impl DocView {
                     .h(px(height))
                     .bg(palette::paper())
                     .shadow_lg()
-                    .cursor_text()
+                    .cursor(table_cursor)
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |view, event, window, cx| {
@@ -1822,6 +1850,7 @@ impl DocView {
                                 )
                         },
                     ))
+                    .children(table_overlay)
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
                             div()
@@ -1948,6 +1977,7 @@ impl DocView {
                     ),
             )
             .children(comments_pane)
+            .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -1971,6 +2001,11 @@ impl DocView {
                 })
                 .ok();
             });
+        }
+        // An open table dialog takes the keys it has.
+        if self.table_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
         }
         // The find bar over a Word document takes the keys it has.
         if self.commenting() && self.comment_key(event, cx) {
@@ -2372,6 +2407,9 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.table_dialog_typed(text, cx) {
+            return;
+        }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
             && !self.story_editing()
@@ -2413,6 +2451,9 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.table_dialog_open() {
+            return;
+        }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
             && !self.story_editing()
