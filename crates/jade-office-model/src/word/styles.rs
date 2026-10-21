@@ -226,7 +226,9 @@ fn on(element: Option<&Element>) -> Option<bool> {
 }
 
 fn twips(value: Option<String>) -> Option<f32> {
-    value.and_then(|value| value.parse::<f32>().ok()).map(|value| value / 20.0)
+    value
+        .and_then(|value| value.parse::<f32>().ok())
+        .map(|value| value / 20.0)
 }
 
 /// The format a `w:rPr` and a `w:pPr` set.
@@ -320,7 +322,10 @@ pub fn write_run_format(rpr: &mut Element, format: &StyleFormat) {
     }
     if let Some(color) = format.color.as_deref() {
         rpr.put(
-            Element::with_val("w:color", &color.trim_start_matches('#').to_ascii_uppercase()),
+            Element::with_val(
+                "w:color",
+                &color.trim_start_matches('#').to_ascii_uppercase(),
+            ),
             RPR_ORDER,
         );
     }
@@ -351,7 +356,9 @@ pub fn write_paragraph_format(ppr: &mut Element, format: &StyleFormat) {
             ppr.remove("w:pBdr");
         }
     }
-    if format.space_before.is_some() || format.space_after.is_some() || format.line_spacing.is_some()
+    if format.space_before.is_some()
+        || format.space_after.is_some()
+        || format.line_spacing.is_some()
     {
         let spacing = ppr.ensure("w:spacing", PPR_ORDER);
         if let Some(before) = format.space_before {
@@ -378,7 +385,12 @@ pub fn write_paragraph_format(ppr: &mut Element, format: &StyleFormat) {
             ind.set_attr("w:left", &twips_text(left));
         }
         if let Some(first) = format.first_line {
-            for name in ["w:firstLine", "w:hanging", "w:firstLineChars", "w:hangingChars"] {
+            for name in [
+                "w:firstLine",
+                "w:hanging",
+                "w:firstLineChars",
+                "w:hangingChars",
+            ] {
                 ind.remove_attr(name);
             }
             if first < 0.0 {
@@ -524,7 +536,10 @@ pub fn catalog_of(styles_xml: &str) -> Vec<StyleInfo> {
                 semi_hidden: on(style.find("w:semiHidden")).unwrap_or(false),
                 auto_update: on(style.find("w:autoRedefine")).unwrap_or(false),
                 is_default: matches!(style.get("w:default").as_deref(), Some("1" | "true" | "on")),
-                custom: matches!(style.get("w:customStyle").as_deref(), Some("1" | "true" | "on")),
+                custom: matches!(
+                    style.get("w:customStyle").as_deref(),
+                    Some("1" | "true" | "on")
+                ),
                 format: read_format(style.find("w:rPr"), style.find("w:pPr")),
                 id,
             })
@@ -603,7 +618,11 @@ pub fn quick_style_gallery(catalog: &[StyleInfo]) -> Vec<GalleryStyle> {
             ) && !style.is_default
         })
         .collect();
-    quick.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.name.cmp(&b.name)));
+    quick.sort_by(|a, b| {
+        a.priority
+            .cmp(&b.priority)
+            .then_with(|| a.name.cmp(&b.name))
+    });
     for style in quick {
         gallery.push(GalleryStyle {
             id: Some(style.id.clone()),
@@ -644,7 +663,11 @@ pub struct StyleChange {
 /// A style id from a name: its letters and digits, made unique.
 fn new_style_id(name: &str, taken: &[String]) -> String {
     let base: String = name.chars().filter(|ch| ch.is_alphanumeric()).collect();
-    let base = if base.is_empty() { "Style".to_string() } else { base };
+    let base = if base.is_empty() {
+        "Style".to_string()
+    } else {
+        base
+    };
     if !taken.iter().any(|id| id.eq_ignore_ascii_case(&base)) {
         return base;
     }
@@ -663,9 +686,9 @@ fn style_ids(styles: &Element) -> Vec<String> {
 }
 
 fn find_style_mut<'a>(styles: &'a mut Element, id: &str) -> Option<&'a mut Element> {
-    styles
-        .elements_mut()
-        .find(|element| element.name == "w:style" && element.get("w:styleId").as_deref() == Some(id))
+    styles.elements_mut().find(|element| {
+        element.name == "w:style" && element.get("w:styleId").as_deref() == Some(id)
+    })
 }
 
 /// The id of the style named `name` (case and spaces aside).
@@ -788,7 +811,10 @@ pub fn change_style(styles: &mut Element, id: &str, change: &StyleChange) -> Res
             }
             cursor = styles
                 .elements()
-                .find(|style| style.name == "w:style" && style.get("w:styleId").as_deref() == Some(current.as_str()))
+                .find(|style| {
+                    style.name == "w:style"
+                        && style.get("w:styleId").as_deref() == Some(current.as_str())
+                })
                 .and_then(|style| style.child_val("w:basedOn"));
         }
     }
@@ -844,7 +870,11 @@ fn builtin(name: &str) -> Option<(String, u8, Option<u8>, bool)> {
 
 /// Applies `format` to the built-in style named `name` (Normal, heading N,
 /// Title), adding Word's definition first when the document has none.
-pub fn edit_builtin_style(styles: &mut Element, name: &str, format: &StyleFormat) -> Result<(), String> {
+pub fn edit_builtin_style(
+    styles: &mut Element,
+    name: &str,
+    format: &StyleFormat,
+) -> Result<(), String> {
     let id = match style_id_named(styles, name) {
         Some(id) => id,
         None => {
@@ -903,7 +933,10 @@ pub fn copy_template_styles(styles: &mut Element, template: &Element) -> usize {
     // Template ids the document knows by another id, so references in the
     // copied styles (basedOn, next, link) can be renamed to match.
     let mut renamed: Vec<(String, String)> = Vec::new();
-    for style in template.elements().filter(|element| element.name == "w:style") {
+    for style in template
+        .elements()
+        .filter(|element| element.name == "w:style")
+    {
         let (Some(template_id), Some(name)) = (style.get("w:styleId"), style.child_val("w:name"))
         else {
             continue;
@@ -921,7 +954,10 @@ pub fn copy_template_styles(styles: &mut Element, template: &Element) -> usize {
             .map(|(_, to)| to.clone())
             .unwrap_or(value)
     };
-    for style in template.elements().filter(|element| element.name == "w:style") {
+    for style in template
+        .elements()
+        .filter(|element| element.name == "w:style")
+    {
         let (Some(template_id), Some(name)) = (style.get("w:styleId"), style.child_val("w:name"))
         else {
             continue;
@@ -972,8 +1008,12 @@ pub fn format_at_caret<S: WordSession + ?Sized>(session: &S) -> StyleFormat {
         _ => None,
     };
     let run = WordFormatting::run_style_at(session, (at, 0));
-    let spacing = paragraph.as_ref().and_then(|paragraph| paragraph.spacing.clone());
-    let indent = paragraph.as_ref().and_then(|paragraph| paragraph.indent.clone());
+    let spacing = paragraph
+        .as_ref()
+        .and_then(|paragraph| paragraph.spacing.clone());
+    let indent = paragraph
+        .as_ref()
+        .and_then(|paragraph| paragraph.indent.clone());
     StyleFormat {
         font: state.font_family.clone(),
         east_asia_font: state.font_family.clone(),
@@ -988,7 +1028,12 @@ pub fn format_at_caret<S: WordSession + ?Sized>(session: &S) -> StyleFormat {
         alignment: state.alignment.clone(),
         line_spacing: spacing
             .as_ref()
-            .filter(|spacing| spacing.line_rule.as_deref().is_none_or(|rule| rule == "auto"))
+            .filter(|spacing| {
+                spacing
+                    .line_rule
+                    .as_deref()
+                    .is_none_or(|rule| rule == "auto")
+            })
             .and_then(|spacing| spacing.line),
         space_before: spacing.as_ref().and_then(|spacing| spacing.before),
         space_after: spacing.as_ref().and_then(|spacing| spacing.after),
@@ -1060,26 +1105,35 @@ pub trait WordStyles: WordSession {
     /// 新しいスタイル: adds the style and applies it to the selection, as
     /// Word's dialog does. Returns the new style's id.
     fn create_style(&mut self, new: &NewStyle) -> Result<String, String> {
-        let current = self.word_document().related_part_xml("styles").unwrap_or_default();
-        let mut probe = Document::parse(&current).map(|document| document.root).unwrap_or_else(|_| Element::new("w:styles"));
+        let current = self
+            .word_document()
+            .related_part_xml("styles")
+            .unwrap_or_default();
+        let mut probe = Document::parse(&current)
+            .map(|document| document.root)
+            .unwrap_or_else(|_| Element::new("w:styles"));
         let id = add_style(&mut probe, new)?;
         let then = match new.kind {
             StyleKind::Paragraph | StyleKind::Linked => {
                 let (start, end) = paragraph_span(self);
-                vec![HeadlessStep::new(vec![HeadlessCommand::SetParagraphStyle {
-                    start_paragraph: start,
-                    end_paragraph: end,
-                    style_id: Some(id.clone()),
-                }])]
+                vec![HeadlessStep::new(vec![
+                    HeadlessCommand::SetParagraphStyle {
+                        start_paragraph: start,
+                        end_paragraph: end,
+                        style_id: Some(id.clone()),
+                    },
+                ])]
             }
             StyleKind::Character => match character_span(self) {
-                Some((start, end)) => vec![HeadlessStep::new(vec![HeadlessCommand::SetCharacterStyle {
-                    start_paragraph: start.0,
-                    start_offset: start.1,
-                    end_paragraph: end.0,
-                    end_offset: end.1,
-                    style_id: Some(id.clone()),
-                }])],
+                Some((start, end)) => vec![HeadlessStep::new(vec![
+                    HeadlessCommand::SetCharacterStyle {
+                        start_paragraph: start.0,
+                        start_offset: start.1,
+                        end_paragraph: end.0,
+                        end_offset: end.1,
+                        style_id: Some(id.clone()),
+                    },
+                ])],
                 None => Vec::new(),
             },
             _ => Vec::new(),
@@ -1088,7 +1142,9 @@ pub trait WordStyles: WordSession {
         edit_package(
             self,
             move |package| {
-                package.edit(PartKind::Styles, |styles| add_style(styles, &new).map(|_| ()))
+                package.edit(PartKind::Styles, |styles| {
+                    add_style(styles, &new).map(|_| ())
+                })
             },
             then,
         )?;
@@ -1101,7 +1157,11 @@ pub trait WordStyles: WordSession {
         let change = change.clone();
         edit_package(
             self,
-            move |package| package.edit(PartKind::Styles, |styles| change_style(styles, &id, &change)),
+            move |package| {
+                package.edit(PartKind::Styles, |styles| {
+                    change_style(styles, &id, &change)
+                })
+            },
             Vec::new(),
         )
     }
@@ -1139,7 +1199,12 @@ pub trait WordStyles: WordSession {
     /// bytes and file name) and, with `update`, copies its styles into the
     /// document (文書のスタイルを自動的に更新する). Returns how many
     /// styles were copied.
-    fn attach_template(&mut self, template: &[u8], path: &str, update: bool) -> Result<usize, String> {
+    fn attach_template(
+        &mut self,
+        template: &[u8],
+        path: &str,
+        update: bool,
+    ) -> Result<usize, String> {
         let source = Package::open(template)?;
         let source_main = source.main().to_string();
         let template_styles = source
@@ -1156,7 +1221,12 @@ pub trait WordStyles: WordSession {
                 let settings = package.part(PartKind::Settings)?;
                 let id = package.relate(&settings, "attachedTemplate", &file_url(&path), true)?;
                 let mut document = package.xml(&settings)?;
-                if !document.root.attributes.iter().any(|(key, _)| key == "xmlns:r") {
+                if !document
+                    .root
+                    .attributes
+                    .iter()
+                    .any(|(key, _)| key == "xmlns:r")
+                {
                     document.root.set_attr(
                         "xmlns:r",
                         "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
@@ -1211,7 +1281,9 @@ fn paragraph_span<S: WordSession + ?Sized>(session: &S) -> (usize, usize) {
 }
 
 /// The selection, or the word around a caret, as a character style takes it.
-fn character_span<S: WordSession + ?Sized>(session: &S) -> Option<((usize, usize), (usize, usize))> {
+fn character_span<S: WordSession + ?Sized>(
+    session: &S,
+) -> Option<((usize, usize), (usize, usize))> {
     let range = session.selection_range()?;
     if !range.is_collapsed() {
         let (start, end) = range.normalized();
@@ -1261,7 +1333,11 @@ mod tests {
         assert_eq!(heading.format.size, Some(16.0));
         assert_eq!(heading.format.outline_level, Some(0));
         assert_eq!(
-            catalog.iter().find(|style| style.id == "Strong").unwrap().kind,
+            catalog
+                .iter()
+                .find(|style| style.id == "Strong")
+                .unwrap()
+                .kind,
             StyleKind::Character
         );
         assert_eq!(display_name("heading 1", true), "見出し 1");
@@ -1271,7 +1347,11 @@ mod tests {
     #[test]
     fn the_gallery_follows_ui_priority() {
         let gallery = quick_style_gallery(&catalog_of(STYLES));
-        let names: Vec<Option<&str>> = gallery.iter().skip(4).map(|entry| entry.name.as_deref()).collect();
+        let names: Vec<Option<&str>> = gallery
+            .iter()
+            .skip(4)
+            .map(|entry| entry.name.as_deref())
+            .collect();
         assert_eq!(names, [Some("Title"), Some("Strong"), Some("Quote")]);
     }
 
@@ -1296,15 +1376,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(id, "MyHeading");
-        assert!(add_style(&mut document.root, &NewStyle {
-            name: "my heading".into(),
-            kind: StyleKind::Paragraph,
-            based_on: None,
-            next: None,
-            format: StyleFormat::default(),
-            quick: false,
-            auto_update: false,
-        })
+        assert!(add_style(
+            &mut document.root,
+            &NewStyle {
+                name: "my heading".into(),
+                kind: StyleKind::Paragraph,
+                based_on: None,
+                next: None,
+                format: StyleFormat::default(),
+                quick: false,
+                auto_update: false,
+            }
+        )
         .is_err());
         change_style(
             &mut document.root,

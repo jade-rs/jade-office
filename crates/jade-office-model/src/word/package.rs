@@ -16,16 +16,17 @@ use jade_docx_editor::commands::{
     Command, CommandContext, CommandError, CommandExecutor, CommandResult,
 };
 use jade_docx_editor::headless_api::apply_headless_commands_with_executor_to_document;
-use jade_docx_headless_api::{HeadlessCommand, HeadlessEditRequest};
 use jade_docx_editor::word_document::WordDocument;
 use jade_docx_editor::Options;
+use jade_docx_headless_api::{HeadlessCommand, HeadlessEditRequest};
 use jade_opc::OpcPackage;
 
 use super::xml::{Document, Element};
 use super::WordSession;
 
 const RELATIONSHIPS_NS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
-const RELATIONSHIP_BASE: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
+const RELATIONSHIP_BASE: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
 pub(crate) const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 /// The parts a Word package relates to its main document, by the last
@@ -92,7 +93,9 @@ impl PartKind {
             }
             PartKind::Theme => return super::design::OFFICE_THEME.to_string(),
         };
-        format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><{root} xmlns:w="{W_NS}"/>"#)
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><{root} xmlns:w="{W_NS}"/>"#
+        )
     }
 }
 
@@ -207,14 +210,23 @@ impl Package {
             .root
             .elements()
             .filter(|rel| rel.get("TargetMode").as_deref() != Some("External"))
-            .find(|rel| rel.get("Type").is_some_and(|value| value.ends_with(&suffix)))
+            .find(|rel| {
+                rel.get("Type")
+                    .is_some_and(|value| value.ends_with(&suffix))
+            })
             .and_then(|rel| rel.get("Target"))?;
         Some(resolve(part, &target))
     }
 
     /// Relates `target` (a part name) from `part` with type `kind`, unless it
     /// already is; returns the relationship id.
-    pub fn relate(&mut self, part: &str, kind: &str, target: &str, external: bool) -> Result<String, String> {
+    pub fn relate(
+        &mut self,
+        part: &str,
+        kind: &str,
+        target: &str,
+        external: bool,
+    ) -> Result<String, String> {
         let mut rels = self.relationships(part)?;
         let relative = if external {
             target.to_string()
@@ -228,7 +240,11 @@ impl Package {
         }) {
             return Ok(existing.get("Id").unwrap_or_default());
         }
-        let used: Vec<String> = rels.root.elements().filter_map(|rel| rel.get("Id")).collect();
+        let used: Vec<String> = rels
+            .root
+            .elements()
+            .filter_map(|rel| rel.get("Id"))
+            .collect();
         let id = (1..)
             .map(|n| format!("rId{n}"))
             .find(|id| !used.contains(id))
@@ -326,7 +342,9 @@ struct Sequence {
 
 impl Command for Sequence {
     fn name(&self) -> &'static str {
-        self.steps.first().map_or("edit_package", |step| step.name())
+        self.steps
+            .first()
+            .map_or("edit_package", |step| step.name())
     }
 
     fn apply(&mut self, ctx: &mut CommandContext<'_>) -> CommandResult<()> {
@@ -440,11 +458,26 @@ mod tests {
 
     #[test]
     fn targets_resolve_and_relativise() {
-        assert_eq!(resolve("word/document.xml", "styles.xml"), "word/styles.xml");
-        assert_eq!(resolve("word/document.xml", "../customXml/item1.xml"), "customXml/item1.xml");
+        assert_eq!(
+            resolve("word/document.xml", "styles.xml"),
+            "word/styles.xml"
+        );
+        assert_eq!(
+            resolve("word/document.xml", "../customXml/item1.xml"),
+            "customXml/item1.xml"
+        );
         assert_eq!(resolve("", "word/document.xml"), "word/document.xml");
-        assert_eq!(relative_target("word/document.xml", "word/theme/theme1.xml"), "theme/theme1.xml");
-        assert_eq!(relative_target("word/document.xml", "customXml/a.xml"), "../customXml/a.xml");
-        assert_eq!(rels_name("word/document.xml"), "word/_rels/document.xml.rels");
+        assert_eq!(
+            relative_target("word/document.xml", "word/theme/theme1.xml"),
+            "theme/theme1.xml"
+        );
+        assert_eq!(
+            relative_target("word/document.xml", "customXml/a.xml"),
+            "../customXml/a.xml"
+        );
+        assert_eq!(
+            rels_name("word/document.xml"),
+            "word/_rels/document.xml.rels"
+        );
     }
 }

@@ -65,7 +65,10 @@ impl TabAlignment {
     /// The next on the ruler's tab selector, which clicking steps through as
     /// Word's does.
     pub fn next(self) -> TabAlignment {
-        let index = TabAlignment::ALL.iter().position(|a| *a == self).unwrap_or(0);
+        let index = TabAlignment::ALL
+            .iter()
+            .position(|a| *a == self)
+            .unwrap_or(0);
         TabAlignment::ALL[(index + 1) % TabAlignment::ALL.len()]
     }
 }
@@ -353,6 +356,43 @@ pub fn options_of(props: &ParagraphProperties) -> ParagraphOptionsState {
     }
 }
 
+/// A paragraph's indents as the ruler shows them, in points from the
+/// margins: the left edge, the right edge, and the first line relative to
+/// the left edge (negative for a hanging indent).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RulerIndents {
+    pub left: f32,
+    pub right: f32,
+    pub first_line: f32,
+}
+
+/// The indents of `props`, a character being `char_width` points.
+pub fn ruler_indents_of(props: &ParagraphProperties, char_width: f32) -> RulerIndents {
+    let Some(indent) = props.indent.as_ref() else {
+        return RulerIndents::default();
+    };
+    let chars = |value: Option<i32>| value.map(|hundredths| hundredths as f32 / 100.0 * char_width);
+    let left = chars(indent.left_chars.or(indent.start_chars))
+        .or(indent.physical_left(false))
+        .unwrap_or(0.0);
+    let right = chars(indent.right_chars.or(indent.end_chars))
+        .or(indent.end.or(indent.right))
+        .unwrap_or(0.0);
+    let first_line = chars(indent.first_line_chars)
+        .or(indent.first_line)
+        .or_else(|| {
+            chars(indent.hanging_chars)
+                .or(indent.hanging)
+                .map(|hanging| -hanging)
+        })
+        .unwrap_or(0.0);
+    RulerIndents {
+        left,
+        right,
+        first_line,
+    }
+}
+
 /// The paragraph commands of this module, for every session.
 pub trait WordParagraphOptions: WordSession {
     /// The paragraphs the selection touches, or the caret's.
@@ -491,6 +531,41 @@ pub trait WordParagraphOptions: WordSession {
                     DropCapPosition::InMargin => HeadlessDropCapKind::Margin,
                 }),
                 lines: drop_cap.map_or(3, |(_, lines)| lines.clamp(1, 10)),
+            },
+            true,
+        )
+    }
+
+    /// The caret paragraph's indents, for the ruler.
+    fn ruler_indents(&self, char_width: f32) -> RulerIndents {
+        let (start, _) = self.option_span();
+        self.word_document()
+            .paragraph(start)
+            .and_then(|paragraph| paragraph.properties.as_ref())
+            .map(|props| ruler_indents_of(props, char_width))
+            .unwrap_or_default()
+    }
+
+    /// An indent marker dragged on the ruler: the paragraphs take these
+    /// indents, in points.
+    fn set_ruler_indents(&mut self, indents: RulerIndents) -> Result<(), String> {
+        let (start, end) = self.option_span();
+        let (first_line, hanging) = if indents.first_line < 0.0 {
+            (None, Some(-indents.first_line))
+        } else {
+            (Some(indents.first_line), None)
+        };
+        self.apply_command(
+            HeadlessCommand::SetParagraphMetrics {
+                start_paragraph: start,
+                end_paragraph: end,
+                left: Some(indents.left),
+                right: Some(indents.right),
+                before: None,
+                after: None,
+                first_line,
+                hanging,
+                clear_special: first_line == Some(0.0),
             },
             true,
         )

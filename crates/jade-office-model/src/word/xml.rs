@@ -101,10 +101,9 @@ impl Document {
                 Event::Text(text) => {
                     Node::Text(String::from_utf8_lossy(text.as_ref()).into_owned())
                 }
-                Event::GeneralRef(reference) => Node::Text(format!(
-                    "&{};",
-                    String::from_utf8_lossy(reference.as_ref())
-                )),
+                Event::GeneralRef(reference) => {
+                    Node::Text(format!("&{};", String::from_utf8_lossy(reference.as_ref())))
+                }
                 Event::CData(data) => Node::Raw(format!(
                     "<![CDATA[{}]]>",
                     String::from_utf8_lossy(data.as_ref())
