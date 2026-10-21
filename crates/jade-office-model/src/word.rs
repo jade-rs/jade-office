@@ -41,6 +41,8 @@ pub mod picture;
 pub mod platform;
 pub mod references;
 pub mod review;
+pub mod table;
+pub mod table_ui;
 
 pub use count::{WordCount, WordCounting};
 pub use find::{FindOptions, Found, WordFind};
@@ -97,6 +99,11 @@ pub trait WordSession {
     /// the last layout: a rectangle a line of each, in the document's
     /// coordinates.
     fn hyperlink_regions(&self) -> Vec<jade_docx_editor::canvas_renderer::HyperlinkRegion>;
+
+    /// Selects whole cells — the rectangle from one cell to another, by
+    /// their ids in the last paint's cell registry — and repaints so the
+    /// cells show selected, as Word's row, column and table selections do.
+    fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String>;
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
@@ -882,18 +889,39 @@ pub trait WordFormatting: WordSession {
                 (start.paragraph, start.offset)
             })
             .unwrap_or((0, 0));
+        let outer_table = self
+            .cell_id_for_paragraph(paragraph)
+            .and_then(|id| self.cell_layout(id))
+            .map(|cell| cell.table_id);
         // The caret moves into the table, so no highlight is to be painted.
         self.collapse_to((paragraph, offset));
-        self.apply_command(
-            HeadlessCommand::InsertTable {
-                after_paragraph: paragraph,
-                rows: rows.max(1),
-                columns: columns.max(1),
-                column_widths: Vec::new(),
-                caret_offset: Some(offset),
-            },
+        // With Word's 表 (格子) style, as Word's 挿入 ▸ 表 gives every table:
+        // without it Word shows the table with no lines.
+        self.execute_command(
+            Box::new(
+                jade_docx_editor::commands::insert_table::InsertTableCommand::at_caret(
+                    paragraph,
+                    offset,
+                    rows.max(1),
+                    columns.max(1),
+                    Vec::new(),
+                )
+                .with_style("TableGrid"),
+            ),
             false,
         )?;
+        // In a cell the new table is nested in it: its first cell is the
+        // first paragraph after the caret's laid out in another table.
+        if let Some(outer) = outer_table {
+            let inner = (paragraph + 1..paragraph + 256)
+                .find(|&candidate| {
+                    self.cell_id_for_paragraph(candidate)
+                        .and_then(|id| self.cell_layout(id))
+                        .is_some_and(|cell| cell.table_id != outer)
+                })
+                .unwrap_or(paragraph);
+            return Ok((inner, 0));
+        }
         // Above the paragraph at its start, after it otherwise: the first
         // cell is whichever of the two is now in a table.
         let first_cell = [paragraph, paragraph + 1]
