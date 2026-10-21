@@ -2102,14 +2102,18 @@ pub trait WordTables: WordSession {
         self.set_selection_range(Some(jade_selection::SelectionRange::collapsed(
             jade_selection::TextPosition::new(paragraph, offset),
         )));
-        self.apply_command(
-            HeadlessCommand::InsertTable {
-                after_paragraph: paragraph,
-                rows: 1,
-                columns: 1,
-                column_widths: vec![width],
-                caret_offset: Some(offset),
-            },
+        // A drawn table has Word's 表 (格子) lines, as one inserted does.
+        self.execute_command(
+            Box::new(
+                jade_docx_editor::commands::insert_table::InsertTableCommand::at_caret(
+                    paragraph,
+                    offset,
+                    1,
+                    1,
+                    vec![width],
+                )
+                .with_style("TableGrid"),
+            ),
             false,
         )?;
         let first = [paragraph, paragraph + 1]
