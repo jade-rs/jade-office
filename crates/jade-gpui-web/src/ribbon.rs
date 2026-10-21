@@ -18,8 +18,8 @@ use gpui::{
     ElementId, MouseButton, Pixels, SharedString, Size, Window,
 };
 use jade_web::editing::{
-    style_gallery, CharacterFormat, EditableDocument, FormatState, GalleryStyle, ListKind,
-    ParagraphBorders, TableBorders, TableCommand, WordFormatting,
+    CharacterFormat, EditableDocument, FormatState, GalleryStyle, ListKind, ParagraphBorders,
+    TableBorders, TableCommand,
 };
 
 use jade_web::word::page::{MarginPreset, PageCommand, PageSetup, Story};
@@ -98,17 +98,25 @@ pub enum Tab {
     #[default]
     Home,
     Insert,
+    Design,
     Layout,
     Review,
 }
 
 impl Tab {
-    const ALL: [Tab; 4] = [Tab::Home, Tab::Insert, Tab::Layout, Tab::Review];
+    const ALL: [Tab; 5] = [
+        Tab::Home,
+        Tab::Insert,
+        Tab::Design,
+        Tab::Layout,
+        Tab::Review,
+    ];
 
     fn label(self) -> &'static str {
         i18n::text(match self {
             Tab::Home => "doc.tab.home",
             Tab::Insert => "doc.tab.insert",
+            Tab::Design => "doc.tab.design",
             Tab::Layout => "doc.tab.layout",
             Tab::Review => "doc.tab.review",
         })
@@ -135,6 +143,8 @@ pub enum Popup {
     Columns,
     Breaks,
     PageNumbers,
+    /// The list, paragraph and design tools' lists (`word_tools`).
+    Word(crate::word_tools::ToolMenu),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -153,12 +163,15 @@ impl Ribbon {
     /// Reads the document's paragraph styles into the gallery. Again after a
     /// style is applied: a missing built-in is added on first use.
     pub fn read_styles(&mut self, document: &EditableDocument) {
-        let styles = document.paragraph_styles();
-        self.default_style = styles
+        // Word's gallery: the fixed head, then the quick styles in
+        // w:uiPriority order.
+        use jade_web::word::styles::WordStyles;
+        let catalog = document.style_catalog();
+        self.default_style = catalog
             .iter()
-            .find(|style| style.is_default)
+            .find(|style| style.is_default && style.is_paragraph())
             .map(|style| style.id.clone());
-        self.gallery = style_gallery(&styles);
+        self.gallery = jade_web::word::styles::quick_style_gallery(&catalog);
     }
 
     /// Opens a list, or closes it when it is the one open.
@@ -205,6 +218,8 @@ pub enum Action {
     InsertPicture,
     /// 文字列の折り返し for the picture selected.
     Wrap(jade_web::word::picture::Wrap),
+    /// The list, paragraph and design tools (`word_tools`).
+    Word(crate::word_tools::ToolCommand),
 }
 
 impl Action {
@@ -581,6 +596,8 @@ pub struct TabState {
     pub comments: bool,
     /// Whether a picture is selected, which 文字列の折り返し acts on.
     pub picture: bool,
+    /// What the list, paragraph and design tools' open list shows.
+    pub tools: crate::word_tools::ToolState,
 }
 
 pub fn ribbon(
@@ -610,9 +627,17 @@ pub fn ribbon(
             .on_click(listener(Action::Tab(tab), cx))
     });
     let groups = match ribbon.tab {
-        Tab::Home => home(ribbon, state, cx),
+        Tab::Home => {
+            let mut groups = home(ribbon, state, cx);
+            let lists =
+                crate::word_tools::list_group(ribbon, &shown.tools, state.alignment.as_deref(), cx);
+            groups.insert(2.min(groups.len()), lists);
+            groups
+        }
+        Tab::Design => crate::word_tools::design(ribbon, &shown.tools, cx),
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
+            groups.push(crate::word_tools::drop_cap_group(ribbon, &shown.tools, cx));
             groups.push(crate::word_page::pictures(shown.picture, cx));
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups
