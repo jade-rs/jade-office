@@ -660,7 +660,7 @@ impl DocumentView {
     }
 
     /// Which story's margin a point on `page` is in.
-    fn margin_story(&self, page: usize, y_on_page: f64) -> Option<Story> {
+    pub(crate) fn margin_story(&self, page: usize, y_on_page: f64) -> Option<Story> {
         let main = self.document.main();
         let section = main.renderer().section_index_for_zero_based_page(page);
         let layout = main.word_document().section_layout(Some(section));
