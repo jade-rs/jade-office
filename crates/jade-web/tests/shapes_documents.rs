@@ -5,14 +5,15 @@
 //! legend — each saved as Word reads it, and drawn.
 
 mod common;
-use common::{contract, typed};
-use jade_docx_editor::document::{ChartKind, TextBoxShape};
+use common::{contract, open_bytes, typed};
+use jade_docx_editor::document::{ChartKind, InkStroke, TextBoxShape};
 use jade_docx_editor::smartart::{self, DiagramNode};
 use jade_docx_editor::word_document::{FloatingObjectKind, FloatingObjectTarget};
 use jade_web::editing::{EditableDocument, WordSession};
 use jade_web::word::connectors::{ConnectorEnd, ConnectorKind, WordConnectors};
 use jade_web::word::diagrams::WordDiagrams;
 use jade_web::word::group::WordGroups;
+use jade_web::word::ink::WordInk;
 use jade_web::word::objects::WordObjects;
 use jade_web::word::shapes::{Drawn, ShapeStyle, WordArtStyle, WordShapes};
 
@@ -457,4 +458,82 @@ fn objects_are_drawn_on_the_page() {
         })
         .count();
     assert!(inked > 50, "the WordArt drew {inked} dark pixels");
+}
+
+#[test]
+fn pen_strokes_go_in_as_word_ink_and_are_drawn() {
+    let mut document = contract();
+    let paragraph = typed(&mut document, "ink ");
+    document.place_caret(paragraph, 0);
+    let strokes = vec![
+        InkStroke {
+            points: vec![(120.0, 200.0), (180.0, 160.0), (240.0, 200.0), (300.0, 160.0)],
+            color: "#E71224".into(),
+            width: 3.0,
+            highlighter: false,
+        },
+        InkStroke {
+            points: vec![(120.0, 240.0), (300.0, 240.0)],
+            color: "#FFFF00".into(),
+            width: 12.0,
+            highlighter: true,
+        },
+    ];
+    document.insert_ink(strokes).unwrap();
+    let target = objects(&document, paragraph)[0];
+    let read = |document: &EditableDocument| {
+        document.word_document().paragraph(target.paragraph_index).unwrap().runs[target.run_index]
+            .image
+            .clone()
+            .unwrap()
+    };
+    let ink = read(&document).format().ink.clone().expect("the ink part was read");
+    assert_eq!(ink.strokes.len(), 2);
+    assert!(ink.strokes[1].highlighter);
+    // Placed over the strokes, widened by the pen.
+    let region = document.object_region(target).unwrap();
+    assert!((region.x - 114.0).abs() < 1.5 && (region.width - 192.0).abs() < 1.5, "{region:?}");
+
+    // Saved as Word stores ink: a w14:contentPart relating an InkML part.
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    assert!(xml.contains("w14:contentPart"), "{xml}");
+    let inkml = package.part_str("word/ink/ink1.xml").unwrap().expect("ink part");
+    assert_eq!(inkml.matches("<inkml:trace ").count(), 2);
+    let types = package.part_str("[Content_Types].xml").unwrap().unwrap();
+    assert!(types.contains("application/inkml+xml"));
+
+    // Drawn: the red stroke inks the page.
+    let page = document.page(0).unwrap();
+    if let Ok(directory) = std::env::var("JADE_DUMP_OBJECTS") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("ink-page.png"),
+            page.encode_png().unwrap(),
+        )
+        .unwrap();
+    }
+    let rgba = page.rgba_premultiplied();
+    let width = page.width() as usize;
+    let scale = width as f64 / document.page_size().0;
+    let red = (150..200)
+        .flat_map(|y| (120..300).map(move |x| (x, y)))
+        .filter(|(x, y)| {
+            let at = (((*y as f64 * scale) as usize) * width + (*x as f64 * scale) as usize) * 4;
+            rgba.get(at..at + 3).is_some_and(|pixel| pixel[0] > 180 && pixel[1] < 80 && pixel[2] < 80)
+        })
+        .count();
+    assert!(red > 20, "the stroke drew {red} red pixels");
+
+    // And read back from the file.
+    let reopened = open_bytes(&saved);
+    let target = objects(&reopened, paragraph)
+        .into_iter()
+        .find(|target| target.kind == FloatingObjectKind::Image)
+        .unwrap();
+    let image = reopened.word_document().paragraph(target.paragraph_index).unwrap().runs[target.run_index]
+        .image
+        .clone()
+        .unwrap();
+    assert_eq!(image.format().ink.as_ref().map(|ink| ink.strokes.len()), Some(2));
 }

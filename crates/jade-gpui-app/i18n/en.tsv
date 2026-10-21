@@ -839,6 +839,9 @@ objects.legend.left	Legend: Left
 objects.legend.none	No Legend
 objects.legend.right	Legend: Right
 objects.legend.top	Legend: Top
+objects.link	Create Link
+objects.link_hint	Click an empty text box to link to
+objects.link_title	Flow the overflowing text into another text box
 objects.no_clipboard_picture	There is no picture on the clipboard
 objects.no_objects	There are no objects
 objects.nothing_selected	No picture or shape is selected
@@ -847,6 +850,7 @@ objects.outline.arrows	Arrows
 objects.outline.dash	Dashes
 objects.outline.none	No Outline
 objects.outline.weight	Weight
+objects.pen	Pen
 objects.position	Position
 objects.position.bottom_center	Position in Bottom Center with Square Text Wrapping
 objects.position.bottom_left	Position in Bottom Left with Square Text Wrapping
