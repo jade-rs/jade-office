@@ -4386,6 +4386,13 @@ fn document_view(
 
 fn main() {
     let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    // Documents are laid out like the Word of the machine the app runs on —
+    // Word for Mac here. The layout reads it per thread, and every document
+    // is opened and laid out on this one, gpui's main thread.
+    {
+        use jade_office_model::word::platform;
+        platform::set_word_layout_platform(platform::native_word_layout_platform());
+    }
 
     let application = Application::new().with_assets(Assets);
     // Files handed over by the platform — Finder's "Open With", a drop on the

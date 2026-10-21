@@ -34,6 +34,7 @@ pub mod find;
 pub mod new;
 pub mod page;
 pub mod picture;
+pub mod platform;
 pub mod review;
 
 pub use find::{FindOptions, Found, WordFind};

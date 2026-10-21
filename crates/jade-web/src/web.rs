@@ -10,6 +10,63 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(start)]
 pub fn start() {
     console_error_panic_hook::set_once();
+    set_word_layout_platform_from_page();
+}
+
+/// Lays the page's documents out like Word for Mac or Word for Windows:
+/// `"mac"`, `"windows"`, or `"auto"` for the browser's own platform. Call it
+/// before the first document is opened; until then the page follows its
+/// `?word_platform=` or, without one, the browser (see
+/// [`set_word_layout_platform_from_page`]).
+#[wasm_bindgen(js_name = setWordLayoutPlatform)]
+pub fn set_word_layout_platform(setting: &str) {
+    use jade_office_model::word::platform;
+    platform::set_word_layout_platform(platform::word_layout_platform_for(
+        setting,
+        &browser_platform(),
+    ));
+}
+
+/// Sets the Word the page's documents are laid out like from its
+/// `?word_platform=mac|windows|auto`, or from the browser's platform without
+/// one: a Mac lays documents out like Word for Mac.
+pub fn set_word_layout_platform_from_page() {
+    set_word_layout_platform(&query_parameter("word_platform").unwrap_or_default());
+}
+
+/// `navigator.userAgentData.platform`, else `navigator.platform`, else the
+/// user agent; empty where there is no navigator.
+fn browser_platform() -> String {
+    let navigator = property(&js_sys::global(), "navigator");
+    let user_agent_data = property(&navigator, "userAgentData");
+    let platform = [
+        (&user_agent_data, "platform"),
+        (&navigator, "platform"),
+        (&navigator, "userAgent"),
+    ]
+    .into_iter()
+    .find_map(|(object, name)| property(object, name).as_string().filter(|v| !v.is_empty()));
+    platform.unwrap_or_default()
+}
+
+/// The value of `name` in the page's query string, undecoded: the settings
+/// it carries are plain words.
+fn query_parameter(name: &str) -> Option<String> {
+    let search = property(&property(&js_sys::global(), "location"), "search").as_string()?;
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|pair| match pair.split_once('=') {
+            Some((key, value)) if key == name => Some(value.to_string()),
+            _ => None,
+        })
+}
+
+fn property(object: &JsValue, name: &str) -> JsValue {
+    if object.is_undefined() || object.is_null() {
+        return JsValue::UNDEFINED;
+    }
+    js_sys::Reflect::get(object, &JsValue::from_str(name)).unwrap_or(JsValue::UNDEFINED)
 }
 
 /// Font files, fetched by the page and handed over once: the painter's faces,
