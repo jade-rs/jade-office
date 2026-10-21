@@ -828,3 +828,60 @@ chars.paste.format.rtf	書式付きテキスト (RTF)
 chars.paste.format.html	HTML 形式
 chars.paste.format.text	書式なしテキスト
 chars.paste.format.unicode	書式なしの Unicode テキスト
+menu.insert	挿入
+menu.insert.symbol	記号と特殊文字...
+menu.insert.date_time	日付と時刻...
+chars.insert.group	記号と日付
+chars.symbol.title	記号と特殊文字
+chars.symbol.title_menu	記号と特殊文字
+chars.symbol.tab_symbols	記号
+chars.symbol.tab_special	特殊文字
+chars.symbol.subset	種類
+chars.symbol.recent	最近使用した記号
+chars.symbol.code	文字コード
+chars.symbol.subset.latin	基本ラテン
+chars.symbol.subset.latin1	ラテン 1 補助
+chars.symbol.subset.greek	ギリシャ文字
+chars.symbol.subset.cyrillic	キリル文字
+chars.symbol.subset.punctuation	一般句読点
+chars.symbol.subset.currency	通貨記号
+chars.symbol.subset.letterlike	文字様記号
+chars.symbol.subset.number_forms	数字の形
+chars.symbol.subset.arrows	矢印
+chars.symbol.subset.math	数学記号
+chars.symbol.subset.technical	その他の技術用記号
+chars.symbol.subset.enclosed	囲み英数字
+chars.symbol.subset.box	罫線素片
+chars.symbol.subset.shapes	幾何学模様
+chars.symbol.subset.misc	その他の記号
+chars.symbol.subset.cjk	CJK の記号及び句読点
+chars.symbol.subset.hiragana	ひらがな
+chars.symbol.subset.katakana	カタカナ
+chars.symbol.subset.enclosed_cjk	囲み CJK 文字/月
+chars.symbol.subset.fullwidth	半角・全角形
+chars.special.em_dash	全角ダッシュ
+chars.special.en_dash	半角ダッシュ
+chars.special.nonbreaking_hyphen	改行しないハイフン
+chars.special.optional_hyphen	任意指定のハイフン
+chars.special.em_space	全角スペース (Em)
+chars.special.en_space	半角スペース (En)
+chars.special.quarter_em_space	1/4 スペース
+chars.special.nonbreaking_space	改行しないスペース
+chars.special.copyright	著作権
+chars.special.registered	登録商標
+chars.special.trademark	商標
+chars.special.section	セクション
+chars.special.paragraph	段落
+chars.special.ellipsis	省略記号
+chars.special.no_width_break	幅のない任意改行
+chars.special.no_width_join	幅のない改行なし
+chars.date.title	日付と時刻
+chars.date.title_menu	日付と時刻
+chars.date.language	言語
+chars.date.japanese	日本語
+chars.date.english	英語 (米国)
+chars.date.calendar	カレンダーの種類
+chars.date.gregorian	グレゴリオ暦
+chars.date.era	和暦
+chars.date.formats	表示形式
+chars.date.auto_update	自動的に更新する

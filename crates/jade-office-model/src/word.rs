@@ -32,6 +32,7 @@ use jade_selection::{SelectionRange, TextPosition};
 pub mod clipboard;
 pub mod find;
 pub mod font;
+pub mod insert;
 pub mod new;
 pub mod page;
 pub mod picture;

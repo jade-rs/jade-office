@@ -436,3 +436,45 @@ pub fn paste_options(ribbon: &Ribbon, cx: &mut Context<DocumentView>) -> AnyElem
         menu,
     )
 }
+
+/// 挿入's 記号と特殊文字 and 日付と時刻.
+pub fn insert_group(cx: &mut Context<DocumentView>) -> AnyElement {
+    let button = |id: &'static str,
+                  label: &'static str,
+                  on_click: CharAction,
+                  cx: &mut Context<DocumentView>| {
+        div()
+            .id(id)
+            .flex()
+            .flex_none()
+            .items_center()
+            .h(px(26.0))
+            .px_2()
+            .rounded_md()
+            .text_xs()
+            .text_color(theme::text())
+            .whitespace_nowrap()
+            .cursor_pointer()
+            .hover(|button| button.bg(theme::hovered()))
+            .on_click(listener(action(on_click), cx))
+            .child(i18n::text(label))
+            .into_any_element()
+    };
+    crate::ribbon::group(
+        i18n::text("chars.insert.group"),
+        vec![row(vec![
+            button(
+                "insert-symbol",
+                "chars.symbol.title_menu",
+                CharAction::OpenSymbols,
+                cx,
+            ),
+            button(
+                "insert-date",
+                "chars.date.title_menu",
+                CharAction::OpenDateTime,
+                cx,
+            ),
+        ])],
+    )
+}

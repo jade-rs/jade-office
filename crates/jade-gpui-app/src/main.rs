@@ -126,6 +126,8 @@ actions!(
         TypographyDialog,
         PasteSpecial,
         PasteMatchFormatting,
+        InsertSymbol,
+        InsertDateTime,
     ]
 );
 
@@ -197,6 +199,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         // Word for Mac's 形式を選択して貼り付け and 貼り付けて書式を合わせる.
         KeyBinding::new("ctrl-cmd-v", PasteSpecial, CONTEXT),
         KeyBinding::new("alt-shift-cmd-v", PasteMatchFormatting, CONTEXT),
+        // 挿入's 記号と特殊文字 and 日付と時刻 (Word for Mac's ⌃⇧D).
+        KeyBinding::new("cmd-alt-shift-s", InsertSymbol, CONTEXT),
+        KeyBinding::new("ctrl-shift-d", InsertDateTime, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -289,6 +294,13 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.indent_more"), IndentMore),
                 MenuItem::action(t("menu.format.indent_less"), IndentLess),
+            ],
+        },
+        Menu {
+            name: t("menu.insert").into(),
+            items: vec![
+                MenuItem::action(t("menu.insert.symbol"), InsertSymbol),
+                MenuItem::action(t("menu.insert.date_time"), InsertDateTime),
             ],
         },
         Menu {
@@ -1315,11 +1327,12 @@ impl DocumentView {
         if self.marked.is_some() {
             return;
         }
-        // A dialog owns the keyboard while it is open.
-        if self.characters.is_open()
-            && word_characters::handle_key(self, event.keystroke.key.as_str(), cx)
-        {
-            cx.stop_propagation();
+        // A dialog owns the keyboard while it is open: its own keys stop
+        // here, and typing goes on to the input handler, into its field.
+        if self.characters.is_open() {
+            if word_characters::handle_key(self, event.keystroke.key.as_str(), cx) {
+                cx.stop_propagation();
+            }
             return;
         }
         // The bar owns the keyboard while it is open, so Enter means "next
@@ -1768,6 +1781,7 @@ impl DocumentView {
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
                 self.picture_group(cx),
                 word_page::header_footer(&self.ribbon, cx),
+                word_characters::insert_group(cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -4022,6 +4036,12 @@ impl Render for DocumentView {
             .on_action(cx.listener(|view, _: &TypographyDialog, _window, cx| {
                 word_characters::open_typography(view, cx)
             }))
+            .on_action(cx.listener(|view, _: &InsertSymbol, _window, cx| {
+                word_characters::open_symbols(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &InsertDateTime, _window, cx| {
+                word_characters::open_date_time(view, cx)
+            }))
             .on_action(cx.listener(|view, _: &PasteSpecial, _window, cx| {
                 word_characters::open_paste_special(view, cx)
             }))
@@ -4385,6 +4405,7 @@ fn document_view(
     file_size: u64,
     cx: &mut App,
 ) -> DocumentView {
+    word_characters::start_field_clock(&mut document);
     // Placed before the window opens so the caret is visible from the first
     // frame rather than only after the first click.
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
