@@ -132,7 +132,7 @@ fn view_page(cx: &Context<DocumentView>) -> AnyElement {
 
 fn edit_page(cx: &Context<DocumentView>) -> AnyElement {
     let overtype = check("options-overtype", t("options.overtype"), input::overtype())
-        .on_click(on(cx, |view, cx| input::toggle_overtype(view, cx)));
+        .on_click(on(cx, input::toggle_overtype));
     let insert_key = check(
         "options-insert-key",
         t("options.insert_key"),

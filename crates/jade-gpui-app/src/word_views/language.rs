@@ -134,7 +134,7 @@ pub fn review_group(cx: &mut Context<DocumentView>) -> AnyElement {
             .whitespace_nowrap()
             .cursor_pointer()
             .hover(|button| button.bg(theme::hovered()))
-            .on_click(on(cx, |view, cx| open(view, cx)))
+            .on_click(on(cx, open))
             .child(t("language.button"))
             .into_any_element()])],
     )

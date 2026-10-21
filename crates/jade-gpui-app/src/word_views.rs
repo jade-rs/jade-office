@@ -412,10 +412,8 @@ pub fn page_crop(view: &DocumentView, index: usize) -> Option<PageCrop> {
 /// several across (複数ページ), or a row turned sideways (横).
 pub fn arrange_pages(pages: gpui::Stateful<gpui::Div>, views: &Views) -> gpui::Stateful<gpui::Div> {
     let pages = pages.flex().size_full().overflow_scroll();
-    if !views.focus {
-        if layout::arranges(views.kind) {
-            return layout::arrange(pages, views.kind);
-        }
+    if !views.focus && layout::arranges(views.kind) {
+        return layout::arrange(pages, views.kind);
     }
     let pages = match (views.movement, views.fit) {
         (PageMovement::SideToSide, _) => pages.flex_row().items_center().gap_6().p_8(),

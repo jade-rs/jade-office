@@ -393,7 +393,7 @@ mod tests {
     #[gpui::test]
     fn a_split_pane_shows_and_takes_clicks(cx: &mut gpui::TestAppContext) {
         let (view, cx) = crate::word_views::tests::open_contract(cx);
-        view.update(cx, |view, cx| toggle_split(view, cx));
+        view.update(cx, toggle_split);
         cx.run_until_parked();
         view.update(cx, |view, cx| {
             let pane = view.views.split.clone().expect("split");
@@ -428,7 +428,7 @@ mod tests {
     fn a_new_window_shows_the_same_document(cx: &mut gpui::TestAppContext) {
         let (view, cx) = crate::word_views::tests::open_contract(cx);
         let windows = cx.update(|_, cx| cx.windows().len());
-        view.update(cx, |view, cx| open_new_window(view, cx));
+        view.update(cx, open_new_window);
         cx.run_until_parked();
         let after = cx.update(|_, cx| cx.windows().len());
         assert_eq!(after, windows + 1);

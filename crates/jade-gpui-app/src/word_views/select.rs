@@ -341,7 +341,7 @@ pub fn overlay(view: &DocumentView, index: usize) -> Option<AnyElement> {
                     .bg(if caret {
                         theme::caret()
                     } else {
-                        gpui::rgba(0x3f7fdf44).into()
+                        gpui::rgba(0x3f7fdf44)
                     })
             }))
             .into_any_element(),
@@ -393,7 +393,7 @@ mod tests {
     #[gpui::test]
     fn dragged_text_moves_or_copies(cx: &mut gpui::TestAppContext) {
         let (view, cx) = crate::word_views::tests::open_contract(cx);
-        view.update(cx, |view, cx| {
+        view.update(cx, |view, _| {
             let paragraph = view.insert_at.0;
             view.insert_at = (paragraph, 0);
             view.caret = view.document.place_caret(paragraph, 0);
