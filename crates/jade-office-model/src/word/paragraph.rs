@@ -226,6 +226,17 @@ pub trait WordParagraphs: WordSession {
         was: &ParagraphFormat,
         now: &ParagraphFormat,
     ) -> Result<(), String> {
+        let commands = self.paragraph_format_commands(was, now)?;
+        self.apply_commands(commands, true)
+    }
+
+    /// The commands that take the selected paragraphs from `was` to `now`:
+    /// none for what is the same.
+    fn paragraph_format_commands(
+        &self,
+        was: &ParagraphFormat,
+        now: &ParagraphFormat,
+    ) -> Result<Vec<HeadlessCommand>, String> {
         let (start_paragraph, end_paragraph) = self.paragraph_span();
         let width = self.character_width(start_paragraph);
         let unit = now.unit;
@@ -322,7 +333,7 @@ pub trait WordParagraphs: WordSession {
                 widow_control,
             });
         }
-        self.apply_commands(commands, true)
+        Ok(commands)
     }
 }
 

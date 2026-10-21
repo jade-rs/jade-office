@@ -623,6 +623,7 @@ impl DocView {
                 pages,
                 current,
                 document,
+                ribbon,
                 ..
             } => {
                 items.push(
@@ -633,6 +634,9 @@ impl DocView {
                     .into(),
                 );
                 items.push(self.word_count_status(document));
+                if ribbon.painter.is_some() {
+                    items.push(i18n::text("painter.armed").into());
+                }
             }
             Document::Deck {
                 deck,
@@ -1371,11 +1375,62 @@ impl DocView {
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
         self.release_object(cx);
+        // The brush paints what was just clicked or dragged over.
+        let painting = matches!(
+            &self.document,
+            Document::Pages { ribbon, object: None, .. } if ribbon.painter.is_some()
+        );
+        if painting {
+            self.paint_format(false, cx);
+        }
         if let Document::Pages { dragging, .. } = &mut self.document {
             if std::mem::take(dragging) {
                 cx.notify();
             }
         }
+    }
+
+    /// 書式のコピー: takes up the format at the caret or the selection, to
+    /// paint onto what is selected next; `sticky` (a double-click on the
+    /// brush) keeps it painting until Escape. A second click puts it down.
+    fn pick_up_format(&mut self, sticky: bool, cx: &mut Context<Self>) {
+        use jade_web::word::WordFormatPainter;
+        let Document::Pages {
+            document, ribbon, ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let copied = document.copy_format();
+        ribbon.copied_format = Some(copied.clone());
+        ribbon.painter = match &ribbon.painter {
+            // A double-click arrives as a single click first: it turns the
+            // brush sticky rather than off.
+            Some(_) if !sticky => None,
+            _ => Some((copied, sticky)),
+        };
+        cx.notify();
+    }
+
+    /// Paints the format the brush holds — or, from ⌘⇧V, the one ⌘⇧C took
+    /// up — onto the selection, or the word at the caret.
+    fn paint_format(&mut self, from_shortcut: bool, cx: &mut Context<Self>) {
+        use jade_web::word::WordFormatPainter;
+        let Document::Pages { ribbon, .. } = &mut self.document else {
+            return;
+        };
+        let copied = if from_shortcut {
+            ribbon.copied_format.clone()
+        } else {
+            ribbon.painter.as_ref().map(|(copied, _)| copied.clone())
+        };
+        let Some(copied) = copied else {
+            return;
+        };
+        if !from_shortcut && !ribbon.painter.as_ref().is_some_and(|(_, sticky)| *sticky) {
+            ribbon.painter = None;
+        }
+        self.word_edit(cx, move |document| document.paste_format(&copied));
     }
 
     /// The long moves of ⌘ (a Mac) and Ctrl (elsewhere) with an arrow, Home
@@ -1429,6 +1484,15 @@ impl DocView {
             return false;
         }
         let motion = match key {
+            "escape" => {
+                if let Document::Pages { ribbon, .. } = &mut self.document {
+                    if ribbon.painter.take().is_some() {
+                        cx.notify();
+                        return true;
+                    }
+                }
+                return false;
+            }
             // ⌥⌫ and ⌥⌦ delete a word, as on a Mac: the word is selected,
             // then deleted, in one edit.
             "backspace" | "delete" if alt && document.selection().is_none() => {
@@ -1529,6 +1593,9 @@ impl DocView {
         if action == Action::InsertLink {
             return self.open_link_dialog(cx);
         }
+        if let Action::FormatPainter(sticky) = action {
+            return self.pick_up_format(sticky, cx);
+        }
         if action == Action::ParagraphDialog {
             return self.open_paragraph_dialog(cx);
         }
@@ -1601,6 +1668,7 @@ impl DocView {
             | Action::InsertLink
             | Action::InsertNote(_)
             | Action::ParagraphDialog
+            | Action::FormatPainter(_)
             | Action::Wrap(_)
             | Action::Style(_)
             | Action::Tab(_)
@@ -2100,6 +2168,9 @@ impl DocView {
                 // Find, and Word for Mac's Find and Replace.
                 "f" if pages && !modifiers.alt => self.open_find(false, cx),
                 "h" if pages && modifiers.shift => self.open_find(true, cx),
+                // Word for Mac's 書式のコピー / 書式の貼り付け.
+                "c" if pages && modifiers.shift => self.pick_up_format(false, cx),
+                "v" if pages && modifiers.shift => self.paint_format(true, cx),
                 "c" if pages => self.word_copy(false, cx),
                 // ハイパーリンクの挿入.
                 "k" if pages => self.open_link_dialog(cx),

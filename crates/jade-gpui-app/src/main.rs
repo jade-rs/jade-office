@@ -123,6 +123,8 @@ actions!(
         InsertFootnote,
         InsertEndnote,
         ParagraphFormat,
+        CopyFormat,
+        PasteFormat,
         ZoomIn,
         ZoomOut,
         ZoomActual,
@@ -198,6 +200,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-alt-d", InsertEndnote, CONTEXT),
         // Word for Mac's 書式 → 段落.
         KeyBinding::new("cmd-alt-m", ParagraphFormat, CONTEXT),
+        // Word for Mac's 書式のコピー / 書式の貼り付け.
+        KeyBinding::new("cmd-shift-c", CopyFormat, CONTEXT),
+        KeyBinding::new("cmd-shift-v", PasteFormat, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -288,6 +293,9 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.format.indent_less"), IndentLess),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.paragraph"), ParagraphFormat),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.format.copy_format"), CopyFormat),
+                MenuItem::action(t("menu.format.paste_format"), PasteFormat),
             ],
         },
         Menu {
@@ -1126,6 +1134,11 @@ struct DocumentView {
     /// A dialog — a link, a note, the paragraph's format — over the pages;
     /// it takes the keyboard as the bars do.
     dialog: Option<word_dialogs::Dialog>,
+    /// 書式のコピー/貼り付け: the format taken up, and whether it keeps
+    /// painting (a double-click on the brush) until Escape.
+    painter: Option<(jade_office_model::word::CopiedFormat, bool)>,
+    /// The format ⌘⇧C took up, for ⌘⇧V.
+    copied_format: Option<jade_office_model::word::CopiedFormat>,
     /// Whether the comments pane is open beside the pages.
     show_comments: bool,
     /// Display scale. The pages are rasterised at their own size and drawn
@@ -1374,6 +1387,10 @@ impl DocumentView {
         let (paragraph, offset) = self.insert_at;
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        if key == "escape" && self.painter.take().is_some() {
+            cx.notify();
+            return;
+        }
         match key {
             // ⌥⌫ and ⌥⌦ take a word, ⌘⌫ the line up to the caret, as on a
             // Mac: what goes is selected, then deleted, in one edit.
@@ -2160,6 +2177,37 @@ impl DocumentView {
                     |view, cx| view.copy(cx),
                 )
                 .into_any_element(),
+                // One click paints once, a double-click until Escape.
+                div()
+                    .id("format-painter")
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .min_w(px(30.0))
+                    .h(px(28.0))
+                    .px_2()
+                    .rounded_md()
+                    .when(self.painter.is_some(), |button| {
+                        button.bg(theme::selected())
+                    })
+                    .hover(|button| button.bg(theme::hovered()))
+                    .cursor_pointer()
+                    .tooltip(Tooltip::text(t("painter.title")))
+                    .child(
+                        gpui::svg()
+                            .path("icons/paintbrush.svg")
+                            .size_4()
+                            .text_color(if self.painter.is_some() {
+                                theme::accent()
+                            } else {
+                                theme::text()
+                            }),
+                    )
+                    .on_click(cx.listener(|view, event: &gpui::ClickEvent, _window, cx| {
+                        view.pick_up_format(event.click_count() >= 2, cx)
+                    }))
+                    .into_any_element(),
             ])],
         )
         .into_any_element()
@@ -2787,6 +2835,61 @@ impl DocumentView {
         .into();
         *self.word_count.borrow_mut() = Some((key, status.clone()));
         status
+    }
+
+    /// 書式のコピー: takes up the format at the caret or the selection, to
+    /// paint onto what is selected next; `sticky` (a double-click on the
+    /// brush) keeps it painting until Escape. A second click puts it down.
+    fn pick_up_format(&mut self, sticky: bool, cx: &mut Context<Self>) {
+        use jade_office_model::word::WordFormatPainter;
+        if self.document.selection().is_none() {
+            self.document
+                .place_caret(self.insert_at.0, self.insert_at.1);
+        }
+        let copied = self.document.copy_format();
+        self.copied_format = Some(copied.clone());
+        self.painter = match &self.painter {
+            // A double-click arrives as a single click first: it turns the
+            // brush sticky rather than off.
+            Some(_) if !sticky => None,
+            _ => Some((copied, sticky)),
+        };
+        cx.notify();
+    }
+
+    /// Paints the format the brush holds — or, from ⌘⇧V, the one ⌘⇧C took
+    /// up — onto the selection, or the word at the caret.
+    fn paint_format(&mut self, from_shortcut: bool, cx: &mut Context<Self>) {
+        use jade_office_model::word::WordFormatPainter;
+        let copied = if from_shortcut {
+            self.copied_format.clone()
+        } else {
+            self.painter.as_ref().map(|(copied, _)| copied.clone())
+        };
+        let Some(copied) = copied else {
+            return;
+        };
+        if !from_shortcut && !self.painter.as_ref().is_some_and(|(_, sticky)| *sticky) {
+            self.painter = None;
+        }
+        if self.document.selection().is_none() {
+            self.document
+                .place_caret(self.insert_at.0, self.insert_at.1);
+        }
+        match self.document.paste_format(&copied) {
+            Ok(()) => {
+                self.dirty = true;
+                self.table_status = None;
+                if self.document.selection().is_none() {
+                    self.caret = self
+                        .document
+                        .place_caret(self.insert_at.0, self.insert_at.1);
+                }
+                self.rebuild_all_images();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
     }
 
     /// A ribbon control was clicked.
@@ -4014,6 +4117,9 @@ impl editor::Editor for DocumentView {
             ],
         ))];
         items.push(self.word_count_status());
+        if self.painter.is_some() {
+            items.push(i18n::text("painter.armed").into());
+        }
         let comments = self.document.comment_count();
         if comments > 0 {
             items.push(i18n::format("doc.comments", &[("n", &comments)]).into());
@@ -4157,6 +4263,12 @@ impl Render for DocumentView {
                 cx.listener(|view, _: &InsertHyperlink, _window, cx| view.open_link_dialog(cx)),
             )
             .on_action(
+                cx.listener(|view, _: &CopyFormat, _window, cx| view.pick_up_format(false, cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &PasteFormat, _window, cx| view.paint_format(true, cx)),
+            )
+            .on_action(
                 cx.listener(|view, _: &ParagraphFormat, _window, cx| {
                     view.open_paragraph_dialog(cx)
                 }),
@@ -4272,8 +4384,13 @@ impl Render for DocumentView {
                                     .on_mouse_up(
                                         MouseButton::Left,
                                         cx.listener(
-                                            move |view, _event: &MouseUpEvent, _window, _cx| {
+                                            move |view, _event: &MouseUpEvent, _window, cx| {
                                                 view.drag_anchor = None;
+                                                // The brush paints what was
+                                                // just clicked or dragged over.
+                                                if view.painter.is_some() {
+                                                    view.paint_format(false, cx);
+                                                }
                                             },
                                         ),
                                     )
@@ -4555,6 +4672,8 @@ fn document_view(
         story_bar: None,
         comment_bar: None,
         dialog: None,
+        painter: None,
+        copied_format: None,
         show_comments: false,
         ribbon_tab: RibbonTab::Home,
         ribbon,
@@ -5256,6 +5375,77 @@ mod tests {
             assert!(view.dialog.is_none());
             assert_eq!(view.document.paragraph_format(), was);
         });
+    }
+
+    /// The brush takes up the format at the caret; a click on a word
+    /// paints it and puts the brush down. Taken up with a double-click it
+    /// keeps painting, word after word, until Escape.
+    #[gpui::test]
+    fn the_format_painter_paints_once_or_until_escape(cx: &mut gpui::TestAppContext) {
+        use super::Bold;
+        use jade_office_model::word::WordFormatting;
+        let (view, cx) = open_contract(cx);
+        let source = type_at_start(&view, cx, "SRC ");
+        view.update(cx, |view, _| select_start(view));
+        cx.dispatch_action(Bold);
+        // Where the second character of a paragraph is drawn, in the window.
+        let point_in = |view: &mut super::DocumentView, paragraph: usize| {
+            let text = view.document.paragraph_text(paragraph).unwrap();
+            let offset = text.char_indices().nth(1).unwrap().0;
+            let rect = view.document.place_caret(paragraph, offset).unwrap();
+            let (page, y) = view.document.page_and_offset(rect.document_y);
+            let bounds = view.page_bounds.borrow()[page].unwrap();
+            bounds.origin
+                + gpui::point(
+                    gpui::px((rect.x as f32 + 1.0) * view.zoom),
+                    gpui::px((y + rect.height / 2.0) as f32 * view.zoom),
+                )
+        };
+        let bold_at = |view: &mut super::DocumentView, paragraph: usize| {
+            // Inside the word clicked: after its third character.
+            let text = view.document.paragraph_text(paragraph).unwrap();
+            let offset = text.char_indices().nth(3).unwrap().0;
+            view.document.place_caret(paragraph, offset);
+            WordFormatting::format_state(&view.document).bold
+        };
+        let targets: Vec<usize> = view.update(cx, |view, cx| {
+            view.insert_at = (source, 1);
+            view.document.place_caret(source, 1);
+            view.pick_up_format(false, cx);
+            assert!(view.painter.is_some());
+            (source + 1..view.document.paragraph_count())
+                .filter(|&paragraph| {
+                    view.document.paragraph_text(paragraph).is_some_and(|text| {
+                        text.chars().count() > 4 && text.chars().all(|ch| !ch.is_whitespace())
+                    }) && !bold_at(view, paragraph)
+                })
+                .take(3)
+                .collect()
+        });
+        assert_eq!(targets.len(), 3);
+        let point = view.update(cx, |view, _| point_in(view, targets[0]));
+        cx.simulate_click(point, gpui::Modifiers::none());
+        view.update(cx, |view, _| {
+            assert!(view.painter.is_none(), "one click paints once");
+            assert!(bold_at(view, targets[0]));
+        });
+
+        view.update(cx, |view, cx| {
+            view.document.place_caret(source, 1);
+            view.insert_at = (source, 1);
+            view.pick_up_format(false, cx);
+            view.pick_up_format(true, cx);
+        });
+        for &target in &targets[1..] {
+            let point = view.update(cx, |view, _| point_in(view, target));
+            cx.simulate_click(point, gpui::Modifiers::none());
+            view.update(cx, |view, _| {
+                assert!(view.painter.is_some(), "a double-click keeps painting");
+                assert!(bold_at(view, target));
+            });
+        }
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| assert!(view.painter.is_none()));
     }
 
     /// Tab goes from cell to cell with the cell's text selected, ⇧Tab

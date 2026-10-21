@@ -76,17 +76,18 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | | Page setup per section (the commands act on the default one) | Medium | partly |
 | | Paste with formatting from other apps (HTML, RTF); a copy keeps its formatting within the app only | Medium | no |
 | | PDF in the browser is a picture of each page: its text cannot be selected or searched | Medium | partly (`jade-docx-pdf-renderer`) |
-| **Done** | Shift+Enter line break | Medium | partly |
-| **Done** | Space before/after, paragraph dialog (first-line/hanging indent, keep with next) | Medium | yes (`set_paragraph_spacing`) |
+| **Done** (word-editing-gaps, PR #TBD) | Shift+Enter line break | Medium | partly |
+| **Done** (word-editing-gaps, PR #TBD) | Format Painter: one click paints once, a double-click until Escape; ⌘⇧C / ⌘⇧V | Medium | yes |
+| **Done** (word-editing-gaps, PR #TBD) | Space before/after, paragraph dialog (first-line/hanging indent, keep with next) | Medium | yes (`set_paragraph_spacing`) |
 | | Fonts beyond a fixed list; custom colours; Font dialog | Medium | partly |
 | | Modify and create styles; character styles | Medium | partly |
 | | List types, bullet glyphs, number formats, restart numbering | Medium | partly |
-| **Done** | Hyperlinks: insert, edit (⌘K), follow (⌘-click) | Medium | yes |
+| **Done** (word-editing-gaps, PR #TBD) | Hyperlinks: insert, edit (⌘K), follow (⌘-click) | Medium | yes |
 | | Page Break (native runs Blank Page), ⌘Enter | Medium | yes |
-| **Done** | Footnotes and endnotes: insert (⌥⌘F, ⌥⌘D) | Medium | yes |
-| **Done** | Table of contents: update; none in the browser | Medium | yes |
+| **Done** (word-editing-gaps, PR #TBD) | Footnotes and endnotes: insert (⌥⌘F, ⌥⌘D) | Medium | yes |
+| **Done** (word-editing-gaps, PR #TBD) | Table of contents: update; none in the browser | Medium | yes |
 | | Table column resizing by drag, AutoFit, table properties | Medium | yes |
-| | Word count (**done**: status bar, Japanese counted as Word counts it); spelling | Medium | no |
+| | Word count (done on word-editing-gaps: status bar, Japanese counted as Word counts it); spelling | Medium | no |
 | | Save failures only printed to the console (native) | Medium | — |
 | | Shapes, text boxes, symbols, equations, fields, bookmarks | Low–Medium | yes for most |
 | | Japanese word selection on double-click; drag-and-drop text | Low | no |
