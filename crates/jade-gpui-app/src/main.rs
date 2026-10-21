@@ -4618,6 +4618,8 @@ impl Render for DocumentView {
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
                     .children(ruler)
+                    // 分割: a second pane of the same pages.
+                    .children(word_views::split::pane(self, cx))
                     .child(
                         // Laid out as the view has them: one under another,
                         // several across, side by side (`word_views`).

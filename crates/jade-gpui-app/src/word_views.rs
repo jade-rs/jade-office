@@ -26,6 +26,7 @@ pub mod paste;
 pub mod prefs;
 pub mod select;
 pub mod settings;
+pub mod split;
 
 use crate::ribbon::{group, listener, row, Action};
 use crate::tooltip::Tooltip;
@@ -109,6 +110,10 @@ pub enum ViewAction {
     ToggleGridlines,
     /// ツール → オートコレクト….
     OpenAutoCorrect,
+    /// ウィンドウ → 分割.
+    Split,
+    /// ウィンドウ → 新しいウィンドウを開く.
+    NewWindow,
     /// 余白を表示しない / 余白を表示する.
     ToggleWhiteSpace,
 }
@@ -174,6 +179,10 @@ pub struct Views {
     pub mode_menu: bool,
     /// フォーカス.
     pub focus: bool,
+    /// 分割: the second pane, while the window is split.
+    pub split: Option<split::Pane>,
+    /// How many 新しいウィンドウ have been opened on the document.
+    pub windows: usize,
 }
 
 impl Views {
@@ -250,6 +259,8 @@ pub fn run(view: &mut DocumentView, action: ViewAction, cx: &mut Context<Documen
             view.set_zoom(percent as f32 / 100.0, cx);
         }
         ViewAction::OpenZoom => open_zoom(view),
+        ViewAction::Split => return split::toggle_split(view, cx),
+        ViewAction::NewWindow => return split::open_new_window(view, cx),
         ViewAction::OpenAutoCorrect => {
             view.views.dialog = Some(ViewDialog::AutoCorrect(Box::new(
                 options::AutoCorrectDialog::open(),
@@ -1023,6 +1034,27 @@ pub fn view_tab(view: &mut DocumentView, cx: &mut Context<DocumentView>) -> Vec<
             .into_any_element(),
         ])],
     );
+    let window_group = group(
+        t("views.group.window"),
+        vec![row(vec![
+            tab_button(
+                "views-new-window",
+                t("views.new_window"),
+                t("views.new_window"),
+                false,
+                ViewAction::NewWindow,
+                cx,
+            ),
+            tab_button(
+                "views-split",
+                t("views.split"),
+                t("views.split"),
+                view.views.split.is_some(),
+                ViewAction::Split,
+                cx,
+            ),
+        ])],
+    );
     vec![
         views_group,
         immersive,
@@ -1030,6 +1062,7 @@ pub fn view_tab(view: &mut DocumentView, cx: &mut Context<DocumentView>) -> Vec<
         view.ruler_group(cx),
         show,
         zoom,
+        window_group,
         pages,
     ]
 }
