@@ -89,3 +89,5 @@ Per-area detail behind the Word numbers above, in `docs/word/`:
   reference list, and the rows no test covers.
 - [enumerations.md](word/enumerations.md) — border, underline, highlight,
   shape, text-effect, emphasis and number-format values one by one.
+- [compatibility-modes.md](word/compatibility-modes.md) — compatibility modes,
+  legacy layout options and Word for Mac vs Windows, with jade's handling.
