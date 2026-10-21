@@ -204,6 +204,13 @@ pub(crate) struct WebReading {
 
 const TICK: Duration = Duration::from_millis(40);
 
+impl WebReading {
+    /// The word last read.
+    pub(crate) fn current_word(&self) -> Option<((usize, usize), (usize, usize))> {
+        self.reading.current_word()
+    }
+}
+
 impl DocView {
     fn reading_mut(&mut self) -> Option<&mut WebReading> {
         match &mut self.document {

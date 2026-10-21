@@ -154,6 +154,8 @@ pub enum ReviewAction {
     Inspect,
     /// 読み上げ: start or stop.
     ReadAloud,
+    /// 表示 › イマーシブ リーダー: open or close.
+    Immersive,
 }
 
 /// The dialog the tab opens.
@@ -206,6 +208,8 @@ pub struct ReviewTools {
     pub cleaning: jade_office_model::word::inspect::PackageCleaning,
     /// 読み上げ, while reading (`word_read_aloud`).
     pub read_aloud: Option<crate::word_read_aloud::ReadAloudUi>,
+    /// イマーシブ リーダー, while it is open (`word_immersive`).
+    pub immersive: Option<crate::word_immersive::ImmersiveUi>,
 }
 
 impl ReviewTools {
@@ -223,7 +227,7 @@ impl ReviewTools {
     }
 
     pub fn is_open(&self) -> bool {
-        self.dialog.is_some() || self.protection.password.is_some()
+        self.dialog.is_some() || self.protection.password.is_some() || self.immersive.is_some()
     }
 
     /// The field typing goes into while a dialog — or the 編集の制限 pane's
@@ -231,14 +235,21 @@ impl ReviewTools {
     pub fn text_field(&self) -> Option<&TextEdit> {
         match self.dialog.as_ref() {
             Some(dialog) => dialog.field(),
-            None => self.protection.password.as_ref(),
+            None => self
+                .protection
+                .password
+                .as_ref()
+                .or(self.immersive.as_ref().map(|ui| &ui.sink)),
         }
     }
 
     pub fn text_field_mut(&mut self) -> Option<&mut TextEdit> {
         match self.dialog.as_mut() {
             Some(dialog) => dialog.field_mut(),
-            None => self.protection.password.as_mut(),
+            None => match self.protection.password.as_mut() {
+                Some(field) => Some(field),
+                None => self.immersive.as_mut().map(|ui| &mut ui.sink),
+            },
         }
     }
 
@@ -310,6 +321,7 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
         ReviewAction::MarkFinal => return crate::word_protection::toggle_final(view, cx),
         ReviewAction::Inspect => return crate::word_inspect::toggle(view, cx),
         ReviewAction::ReadAloud => return crate::word_read_aloud::toggle(view, cx),
+        ReviewAction::Immersive => return crate::word_immersive::toggle(view, cx),
         ReviewAction::ProofingMarks => {
             let on = !view.document.proofing();
             return crate::word_proofing::set_marks(view, on, cx);
@@ -658,6 +670,13 @@ pub fn text_button(
 
 /// A key while the tab's dialog is open; `true` when it was taken.
 pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentView>) -> bool {
+    // The reader, when nothing over it has the keys.
+    if view.review.dialog.is_none()
+        && view.review.protection.password.is_none()
+        && view.review.immersive.is_some()
+    {
+        return crate::word_immersive::handle_key(view, key, cx);
+    }
     // The 編集の制限 pane's password box.
     if view.review.dialog.is_none() {
         let Some(field) = view.review.protection.password.as_mut() else {

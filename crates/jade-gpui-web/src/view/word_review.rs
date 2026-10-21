@@ -194,6 +194,7 @@ impl DocView {
             | ReviewAction::MarkFinal
             | ReviewAction::EditAnyway => return self.protection_action(action, cx),
             ReviewAction::ReadAloud => return self.toggle_read_aloud(cx),
+            ReviewAction::Immersive => return self.toggle_immersive(cx),
             ReviewAction::Inspect | ReviewAction::InspectRemove(_) => {
                 return self.inspect_action(action, cx)
             }

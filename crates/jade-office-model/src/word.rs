@@ -36,6 +36,7 @@ pub mod compare;
 pub mod count;
 pub mod find;
 pub mod font;
+pub mod immersive;
 pub mod insert;
 pub mod inspect;
 pub mod links;

@@ -90,6 +90,8 @@ pub enum ReviewAction {
     Inspect,
     /// 読み上げ: start or stop.
     ReadAloud,
+    /// イマーシブ リーダー: open or close.
+    Immersive,
     /// ドキュメント検査's すべて削除.
     InspectRemove(jade_web::word::inspect::InspectCategory),
 }
@@ -104,6 +106,7 @@ pub struct ReviewShown {
     pub final_: bool,
     pub inspect: bool,
     pub reading: bool,
+    pub immersive: bool,
     pub markup: MarkupOptions,
     pub reviewers: Vec<String>,
 }
@@ -301,14 +304,24 @@ pub fn review(
     vec![
         group(
             i18n::text("read.group"),
-            vec![row(vec![text_button(
-                "review-read-aloud",
-                i18n::text("read.button"),
-                i18n::text("read.title"),
-                shown.reading,
-                act(ReviewAction::ReadAloud),
-                cx,
-            )])],
+            vec![row(vec![
+                text_button(
+                    "review-read-aloud",
+                    i18n::text("read.button"),
+                    i18n::text("read.title"),
+                    shown.reading,
+                    act(ReviewAction::ReadAloud),
+                    cx,
+                ),
+                text_button(
+                    "review-immersive",
+                    i18n::text("immersive.button"),
+                    i18n::text("immersive.title"),
+                    shown.immersive,
+                    act(ReviewAction::Immersive),
+                    cx,
+                ),
+            ])],
         ),
         group(
             i18n::text("a11y.group"),
