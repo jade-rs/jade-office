@@ -2021,3 +2021,28 @@ views.zoom.percent	Percent
 views.one_page	One Page
 views.multiple_pages	Multiple Pages
 views.page_width	Page Width
+menu.tools	Tools
+menu.tools.autocorrect	AutoCorrect…
+autocorrect.title	AutoCorrect
+autocorrect.tab.correct	AutoCorrect
+autocorrect.tab.format	AutoFormat As You Type
+autocorrect.two_initial_capitals	Correct TWo INitial CApitals
+autocorrect.capitalize_sentences	Capitalize first letter of sentences
+autocorrect.capitalize_days	Capitalize names of days
+autocorrect.replace_text	Replace text as you type
+autocorrect.smart_quotes	"Straight quotes" with “smart quotes”
+autocorrect.ordinals	Ordinals (1st) with superscript
+autocorrect.fractions	Fractions (1/2) with fraction character (½)
+autocorrect.hyphens	Hyphens (--) with dash (—)
+autocorrect.bulleted_lists	Automatic bulleted lists
+autocorrect.numbered_lists	Automatic numbered lists
+autocorrect.borders	Border lines
+autocorrect.headings	Built-in Heading styles
+autocorrect.long_vowels	Use long vowels and dashes correctly
+autocorrect.brackets	Match parentheses correctly
+autocorrect.closing_phrases	Insert closing phrase to match salutation
+autocorrect.kiki	Insert "以上" to match "記"
+autocorrect.replace	Replace
+autocorrect.with	With
+autocorrect.add	Add
+autocorrect.delete	Delete

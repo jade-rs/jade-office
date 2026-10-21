@@ -2021,3 +2021,28 @@ views.zoom.percent	倍率
 views.one_page	1 ページ
 views.multiple_pages	複数ページ
 views.page_width	ページ幅
+menu.tools	ツール
+menu.tools.autocorrect	オートコレクト…
+autocorrect.title	オートコレクト
+autocorrect.tab.correct	オートコレクト
+autocorrect.tab.format	入力オートフォーマット
+autocorrect.two_initial_capitals	2 文字目を小文字にする [THe → The]
+autocorrect.capitalize_sentences	文の先頭文字を大文字にする [the → The]
+autocorrect.capitalize_days	曜日の先頭文字を大文字にする [monday → Monday]
+autocorrect.replace_text	入力中に自動修正する
+autocorrect.smart_quotes	左右の区別がない引用符を、区別がある引用符に変更する
+autocorrect.ordinals	序数 (1st, 2nd) を上付き文字に変更する
+autocorrect.fractions	分数 (1/2, 1/4, 3/4) を分数文字に変更する
+autocorrect.hyphens	ハイフンをダッシュに変更する
+autocorrect.bulleted_lists	箇条書き (行頭文字)
+autocorrect.numbered_lists	段落番号
+autocorrect.borders	罫線
+autocorrect.headings	組み込みの見出しスタイル
+autocorrect.long_vowels	長音とダッシュを正しく使い分ける
+autocorrect.brackets	かっこを正しく組み合わせる
+autocorrect.closing_phrases	頭語に対応する結語を挿入する
+autocorrect.kiki	記書きに対応する"以上"を挿入する
+autocorrect.replace	修正文字列
+autocorrect.with	修正後の文字列
+autocorrect.add	追加
+autocorrect.delete	削除

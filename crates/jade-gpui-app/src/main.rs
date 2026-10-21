@@ -264,6 +264,8 @@ fn key_bindings() -> Vec<KeyBinding> {
     ];
     // 参考資料's and ジャンプ's keys (`word_references`).
     bindings.extend(word_references::key_bindings());
+    // 表示, ツール and the input aids' keys (`word_views`).
+    bindings.extend(word_views::key_bindings());
     bindings
 }
 
@@ -455,6 +457,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.view.zoom_fit"), ZoomFit),
             ],
         },
+        word_views::tools_menu(),
         Menu {
             name: t("menu.slideshow").into(),
             items: vec![MenuItem::action(
@@ -1679,7 +1682,11 @@ impl DocumentView {
                 // repainted rather than the visible page.
                 let result = self.document.insert_paragraph_break(paragraph, offset);
                 self.rebuild_after_edit();
+                let split = result.is_ok();
                 self.after_edit(result, (paragraph + 1, 0), cx);
+                if split {
+                    word_views::input::after_enter(self, paragraph, cx);
+                }
             }
             // In a table, to the next or the previous cell; elsewhere a tab
             // typed, as in Word. Taken here, so the platform does not type
@@ -1763,6 +1770,7 @@ impl DocumentView {
                 let page = self.caret_page_1idx();
                 let result = self.document.insert_text(paragraph, offset, "\t", page);
                 self.after_edit(result, (paragraph, offset + 1), cx);
+                word_views::input::after_typing(self, "\t", cx);
             }
             Ok(CellStep::NotInTable) => {}
             Err(error) => eprintln!("tab failed: {error}"),
@@ -4142,6 +4150,8 @@ impl EntityInputHandler for DocumentView {
         };
         self.marked = None;
         self.replace_bytes(bytes, text, cx);
+        // オートコレクト and 入力オートフォーマット.
+        word_views::input::after_typing(self, text, cx);
     }
 
     fn replace_and_mark_text_in_range(
@@ -4362,7 +4372,7 @@ impl Render for DocumentView {
         let mini_toolbar = word_views::mini::toolbar(self, cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
-        word_references::on_actions(div().id("root"), cx)
+        word_views::on_actions(word_references::on_actions(div().id("root"), cx), cx)
             .relative()
             .track_focus(&self.focus)
             // What the shortcuts in `key_bindings` are scoped to, so they fire
