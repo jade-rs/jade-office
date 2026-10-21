@@ -11,8 +11,8 @@
 //! baked here too, with the original kept in `a14:imgLayer` so the picture
 //! can be reset.
 
-use jade_docx_editor::docx_xml::{XmlElement, XmlNode};
 use jade_docx_editor::document::{ImageCrop, TextBoxShape};
+use jade_docx_editor::docx_xml::{XmlElement, XmlNode};
 use jade_docx_editor::drawing_xml::{
     self, child, child_mut, descendant, descendant_mut, get_attr, put_shape_property,
     remove_children, set_attr,
@@ -351,7 +351,8 @@ pub fn apply_outline(sp_pr: &mut XmlElement, edit: &OutlineEdit) -> Result<(), S
     }
     let line = child_mut(sp_pr, "a:ln").expect("added above");
     const FILLS: [&str; 4] = ["a:noFill", "a:solidFill", "a:gradFill", "a:pattFill"];
-    let has_visible_fill = child(line, "a:solidFill").is_some() || child(line, "a:gradFill").is_some();
+    let has_visible_fill =
+        child(line, "a:solidFill").is_some() || child(line, "a:gradFill").is_some();
     let solid = |color: &str| {
         fragment(&format!(
             r#"<a:solidFill><a:srgbClr val="{}"/></a:solidFill>"#,
@@ -361,7 +362,8 @@ pub fn apply_outline(sp_pr: &mut XmlElement, edit: &OutlineEdit) -> Result<(), S
     match edit {
         OutlineEdit::None => {
             remove_children(line, &FILLS);
-            line.children.insert(0, XmlNode::Element(fragment("<a:noFill/>")?));
+            line.children
+                .insert(0, XmlNode::Element(fragment("<a:noFill/>")?));
         }
         OutlineEdit::Color(color) => {
             remove_children(line, &FILLS);
@@ -385,7 +387,14 @@ pub fn apply_outline(sp_pr: &mut XmlElement, edit: &OutlineEdit) -> Result<(), S
             remove_children(line, &["a:prstDash", "a:custDash"]);
             let at = drawing_xml::child_index(
                 line,
-                &["a:round", "a:bevel", "a:miter", "a:headEnd", "a:tailEnd", "a:extLst"],
+                &[
+                    "a:round",
+                    "a:bevel",
+                    "a:miter",
+                    "a:headEnd",
+                    "a:tailEnd",
+                    "a:extLst",
+                ],
             )
             .unwrap_or(line.children.len());
             line.children.insert(
@@ -493,7 +502,11 @@ fn baked_corrections(blip: &XmlElement) -> BakedCorrections {
 
 /// Bakes `baked` into a copy of the original picture, as Word does, and
 /// points the blip at it; with nothing to bake, back to the original.
-fn bake(document: &mut WordDocument, blip: &mut XmlElement, baked: &BakedCorrections) -> Result<(), String> {
+fn bake(
+    document: &mut WordDocument,
+    blip: &mut XmlElement,
+    baked: &BakedCorrections,
+) -> Result<(), String> {
     let original = original_relationship(blip).ok_or("the picture has no image")?;
     // Out with the old layer either way.
     if let Some(extensions) = child_mut(blip, "a:extLst") {
@@ -509,8 +522,8 @@ fn bake(document: &mut WordDocument, blip: &mut XmlElement, baked: &BakedCorrect
     let bytes = document
         .object_media(&original)
         .ok_or("the picture's image is missing")?;
-    let mut pixels = picture_effects::decode(&bytes)
-        .ok_or("only PNG and JPEG pictures can be adjusted")?;
+    let mut pixels =
+        picture_effects::decode(&bytes).ok_or("only PNG and JPEG pictures can be adjusted")?;
     let mut effects = Vec::new();
     if baked.background_removed {
         picture_effects::remove_background(&mut pixels, [0.0, 0.0, 1.0, 1.0]);
@@ -538,7 +551,8 @@ fn bake(document: &mut WordDocument, blip: &mut XmlElement, baked: &BakedCorrect
     let baked_relationship = document.add_object_media(&png, "png", "image/png")?;
     set_attr(blip, "r:embed", Some(baked_relationship));
     if child(blip, "a:extLst").is_none() {
-        blip.children.push(XmlNode::Element(fragment("<a:extLst/>")?));
+        blip.children
+            .push(XmlNode::Element(fragment("<a:extLst/>")?));
     }
     let extension = fragment(&format!(
         r#"<a:ext uri="{IMAGE_PROPERTIES_EXTENSION}"><a14:imgProps xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"><a14:imgLayer r:embed="{original}">{}</a14:imgLayer></a14:imgProps></a:ext>"#,
@@ -595,7 +609,11 @@ pub trait WordPictureFormat: WordSession + WordObjects {
     }
 
     /// 色 → 色の変更.
-    fn recolor_picture(&mut self, target: FloatingObjectTarget, recolor: Recolor) -> Result<(), String> {
+    fn recolor_picture(
+        &mut self,
+        target: FloatingObjectTarget,
+        recolor: Recolor,
+    ) -> Result<(), String> {
         require_picture(target)?;
         self.edit_object(target, "picture_recolor", move |_, drawing| {
             let blip = blip_mut(drawing)?;
@@ -615,7 +633,12 @@ pub trait WordPictureFormat: WordSession + WordObjects {
         self.edit_object(target, "picture_transparency", move |_, drawing| {
             let blip = blip_mut(drawing)?;
             let effect = (amount < 100_000.0)
-                .then(|| fragment(&format!(r#"<a:alphaModFix amt="{}"/>"#, amount.round() as i64)))
+                .then(|| {
+                    fragment(&format!(
+                        r#"<a:alphaModFix amt="{}"/>"#,
+                        amount.round() as i64
+                    ))
+                })
                 .transpose()?;
             put_blip_effects(blip, &["a:alphaModFix"], effect.into_iter().collect());
             Ok(())
@@ -657,13 +680,21 @@ pub trait WordPictureFormat: WordSession + WordObjects {
         })
     }
 
-    fn set_picture_saturation(&mut self, target: FloatingObjectTarget, saturation: f64) -> Result<(), String> {
+    fn set_picture_saturation(
+        &mut self,
+        target: FloatingObjectTarget,
+        saturation: f64,
+    ) -> Result<(), String> {
         self.bake_picture(target, "picture_saturation", move |baked| {
             baked.saturation = ((saturation - 1.0).abs() > 1e-6).then_some(saturation)
         })
     }
 
-    fn set_picture_temperature(&mut self, target: FloatingObjectTarget, kelvin: f64) -> Result<(), String> {
+    fn set_picture_temperature(
+        &mut self,
+        target: FloatingObjectTarget,
+        kelvin: f64,
+    ) -> Result<(), String> {
         self.bake_picture(target, "picture_temperature", move |baked| {
             baked.temperature = ((kelvin - 6500.0).abs() > 1.0).then_some(kelvin)
         })
@@ -680,33 +711,52 @@ pub trait WordPictureFormat: WordSession + WordObjects {
     }
 
     /// 背景の削除 (and 変更を破棄 with `false`).
-    fn remove_picture_background(&mut self, target: FloatingObjectTarget, remove: bool) -> Result<(), String> {
+    fn remove_picture_background(
+        &mut self,
+        target: FloatingObjectTarget,
+        remove: bool,
+    ) -> Result<(), String> {
         self.bake_picture(target, "picture_background", move |baked| {
             baked.background_removed = remove
         })
     }
 
     /// 図の枠線.
-    fn set_picture_outline(&mut self, target: FloatingObjectTarget, edit: OutlineEdit) -> Result<(), String> {
+    fn set_picture_outline(
+        &mut self,
+        target: FloatingObjectTarget,
+        edit: OutlineEdit,
+    ) -> Result<(), String> {
         self.edit_object(target, "object_outline", move |_, drawing| {
-            let sp_pr = drawing_xml::shape_properties_mut(drawing).ok_or("the object has no outline")?;
+            let sp_pr =
+                drawing_xml::shape_properties_mut(drawing).ok_or("the object has no outline")?;
             apply_outline(sp_pr, &edit)
         })
     }
 
     /// 図の効果 / 図形の効果.
-    fn set_object_effect(&mut self, target: FloatingObjectTarget, effect: Effect) -> Result<(), String> {
+    fn set_object_effect(
+        &mut self,
+        target: FloatingObjectTarget,
+        effect: Effect,
+    ) -> Result<(), String> {
         self.edit_object(target, "object_effect", move |_, drawing| {
-            let sp_pr = drawing_xml::shape_properties_mut(drawing).ok_or("the object has no effects")?;
+            let sp_pr =
+                drawing_xml::shape_properties_mut(drawing).ok_or("the object has no effects")?;
             apply_effect(sp_pr, &effect)
         })
     }
 
     /// トリミング: `crop` as fractions of the picture's edges.
-    fn crop_picture(&mut self, target: FloatingObjectTarget, crop: Option<ImageCrop>) -> Result<(), String> {
+    fn crop_picture(
+        &mut self,
+        target: FloatingObjectTarget,
+        crop: Option<ImageCrop>,
+    ) -> Result<(), String> {
         require_picture(target)?;
         self.edit_object(target, "picture_crop", move |_, drawing| {
-            let blip_fill = descendant_mut(drawing, "pic:blipFill").ok_or("the object is not a picture")?;
+            let blip_fill =
+                descendant_mut(drawing, "pic:blipFill").ok_or("the object is not a picture")?;
             remove_children(blip_fill, &["a:srcRect"]);
             if let Some(crop) = crop {
                 let value = |fraction: f64| (fraction * 100_000.0).round() as i64;
@@ -742,7 +792,8 @@ pub trait WordPictureFormat: WordSession + WordObjects {
             .then_some(crop);
         let (width, height) = (width.max(1.0), height.max(1.0));
         self.edit_object(target, "picture_crop", move |_, drawing| {
-            let blip_fill = descendant_mut(drawing, "pic:blipFill").ok_or("the object is not a picture")?;
+            let blip_fill =
+                descendant_mut(drawing, "pic:blipFill").ok_or("the object is not a picture")?;
             remove_children(blip_fill, &["a:srcRect"]);
             if let Some(crop) = crop {
                 let value = |fraction: f64| (fraction * 100_000.0).round() as i64;
@@ -826,10 +877,15 @@ pub trait WordPictureFormat: WordSession + WordObjects {
     }
 
     /// トリミング → 図形に合わせてトリミング: the picture's geometry.
-    fn crop_picture_to_shape(&mut self, target: FloatingObjectTarget, shape: TextBoxShape) -> Result<(), String> {
+    fn crop_picture_to_shape(
+        &mut self,
+        target: FloatingObjectTarget,
+        shape: TextBoxShape,
+    ) -> Result<(), String> {
         require_picture(target)?;
         self.edit_object(target, "picture_crop_to_shape", move |_, drawing| {
-            let sp_pr = drawing_xml::shape_properties_mut(drawing).ok_or("the object is not a picture")?;
+            let sp_pr =
+                drawing_xml::shape_properties_mut(drawing).ok_or("the object is not a picture")?;
             let geometry = fragment(&format!(
                 r#"<a:prstGeom prst="{}"><a:avLst/></a:prstGeom>"#,
                 shape.preset_name()
@@ -885,18 +941,42 @@ pub trait WordPictureFormat: WordSession + WordObjects {
             remove_children(
                 blip,
                 &[
-                    "a:lum", "a:grayscl", "a:duotone", "a:biLevel", "a:alphaModFix",
-                    "a:clrChange", "a:clrRepl", "a:tint", "a:hsl", "a:alphaBiLevel",
-                    "a:alphaCeiling", "a:alphaFloor", "a:alphaInv", "a:alphaMod",
-                    "a:alphaRepl", "a:blur", "a:fillOverlay",
+                    "a:lum",
+                    "a:grayscl",
+                    "a:duotone",
+                    "a:biLevel",
+                    "a:alphaModFix",
+                    "a:clrChange",
+                    "a:clrRepl",
+                    "a:tint",
+                    "a:hsl",
+                    "a:alphaBiLevel",
+                    "a:alphaCeiling",
+                    "a:alphaFloor",
+                    "a:alphaInv",
+                    "a:alphaMod",
+                    "a:alphaRepl",
+                    "a:blur",
+                    "a:fillOverlay",
                 ],
             );
             let relationship = get_attr(blip, "r:embed").map(str::to_string);
             if let Some(blip_fill) = descendant_mut(drawing, "pic:blipFill") {
                 remove_children(blip_fill, &["a:srcRect"]);
             }
-            let sp_pr = drawing_xml::shape_properties_mut(drawing).ok_or("the object is not a picture")?;
-            remove_children(sp_pr, &["a:ln", "a:effectLst", "a:effectDag", "a:scene3d", "a:sp3d", "a:custGeom"]);
+            let sp_pr =
+                drawing_xml::shape_properties_mut(drawing).ok_or("the object is not a picture")?;
+            remove_children(
+                sp_pr,
+                &[
+                    "a:ln",
+                    "a:effectLst",
+                    "a:effectDag",
+                    "a:scene3d",
+                    "a:sp3d",
+                    "a:custGeom",
+                ],
+            );
             put_shape_property(
                 sp_pr,
                 fragment(r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>"#)?,
@@ -912,8 +992,8 @@ pub trait WordPictureFormat: WordSession + WordObjects {
                     .as_deref()
                     .and_then(|id| document.object_media(id))
                     .ok_or("the picture's image is missing")?;
-                let (width, height) = super::picture::picture_size(&bytes)
-                    .ok_or("the picture's size is unknown")?;
+                let (width, height) =
+                    super::picture::picture_size(&bytes).ok_or("the picture's size is unknown")?;
                 resize_drawing(drawing, f64::from(width), f64::from(height))?;
             }
             Ok(())
@@ -922,7 +1002,11 @@ pub trait WordPictureFormat: WordSession + WordObjects {
 
     /// 図の変更: another picture in this one's place, keeping its size,
     /// position, wrap, outline and effects.
-    fn replace_picture(&mut self, target: FloatingObjectTarget, bytes: Vec<u8>) -> Result<(), String> {
+    fn replace_picture(
+        &mut self,
+        target: FloatingObjectTarget,
+        bytes: Vec<u8>,
+    ) -> Result<(), String> {
         require_picture(target)?;
         let picture = super::picture::prepare_picture(bytes)?;
         self.edit_object(target, "picture_replace", move |document, drawing| {
@@ -957,7 +1041,8 @@ pub fn set_svg(blip: &mut XmlElement, relationship: Option<&str>) -> Result<(), 
         return Ok(());
     };
     if child(blip, "a:extLst").is_none() {
-        blip.children.push(XmlNode::Element(fragment("<a:extLst/>")?));
+        blip.children
+            .push(XmlNode::Element(fragment("<a:extLst/>")?));
     }
     let extension = fragment(&format!(
         r#"<a:ext uri="{SVG_EXTENSION}"><asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="{relationship}"/></a:ext>"#

@@ -8,8 +8,8 @@ use jade_docx_editor::commands::edit_drawing::edit_drawing_command;
 use jade_docx_editor::commands::insert_shape::InsertShapeCommand;
 use jade_docx_editor::commands::transform_object::TransformObjectCommand;
 use jade_docx_editor::commands::Command;
-use jade_docx_editor::docx_xml::XmlNode;
 use jade_docx_editor::document::{GeometryPath, PathCommand, TextBoxShape};
+use jade_docx_editor::docx_xml::XmlNode;
 use jade_docx_editor::drawing_xml::{
     self, child_mut, descendant_mut, put_shape_property, remove_children, set_attr,
 };
@@ -101,13 +101,20 @@ fn connector_drawing_edit(
     arrow: bool,
     flips: (bool, bool),
     ends: [Option<(u32, u32)>; 2],
-) -> impl FnMut(&mut jade_docx_editor::word_document::WordDocument, &mut jade_docx_editor::docx_xml::XmlElement) -> Result<(), String> + 'static {
+) -> impl FnMut(
+    &mut jade_docx_editor::word_document::WordDocument,
+    &mut jade_docx_editor::docx_xml::XmlElement,
+) -> Result<(), String>
+       + 'static {
     move |_, drawing| {
         apply_style(drawing, &ShapeStyle::line())?;
         let sp_pr = drawing_xml::shape_properties_mut(drawing).ok_or("no shape")?;
         put_shape_property(
             sp_pr,
-            fragment(&format!(r#"<a:prstGeom prst="{}"><a:avLst/></a:prstGeom>"#, kind.preset()))?,
+            fragment(&format!(
+                r#"<a:prstGeom prst="{}"><a:avLst/></a:prstGeom>"#,
+                kind.preset()
+            ))?,
             &["a:custGeom", "a:prstGeom"],
         );
         if let Some(xfrm) = child_mut(sp_pr, "a:xfrm") {
@@ -117,7 +124,9 @@ fn connector_drawing_edit(
         if arrow {
             if let Some(line) = child_mut(sp_pr, "a:ln") {
                 remove_children(line, &["a:tailEnd"]);
-                line.children.push(XmlNode::Element(fragment(r#"<a:tailEnd type="triangle"/>"#)?));
+                line.children.push(XmlNode::Element(fragment(
+                    r#"<a:tailEnd type="triangle"/>"#,
+                )?));
             }
         }
         let shape = descendant_mut(drawing, "wps:wsp").ok_or("no shape")?;
@@ -208,13 +217,23 @@ pub trait WordConnectors: WordSession + WordObjects {
     /// last paint's). Returns whether any moved.
     fn reroute_connectors(&mut self, regions: &[PlacedObject]) -> Result<bool, String> {
         let region = |target: FloatingObjectTarget| {
-            regions.iter().find(|placed| placed.target == target).copied()
+            regions
+                .iter()
+                .find(|placed| placed.target == target)
+                .copied()
         };
         let objects = self.body_objects();
-        let by_id = |id: u32| objects.iter().find(|object| object.id == Some(id)).map(|o| o.target);
+        let by_id = |id: u32| {
+            objects
+                .iter()
+                .find(|object| object.id == Some(id))
+                .map(|o| o.target)
+        };
         let mut commands: Vec<Box<dyn Command>> = Vec::new();
         for object in &objects {
-            let Some(text_box) = object_run(self.word_document(), object.target).and_then(|run| run.text_box.as_ref()) else {
+            let Some(text_box) = object_run(self.word_document(), object.target)
+                .and_then(|run| run.text_box.as_ref())
+            else {
                 continue;
             };
             let Some(glue) = text_box.extras().connector else {
@@ -223,10 +242,15 @@ pub trait WordConnectors: WordSession + WordObjects {
             let Some(current) = region(object.target) else {
                 continue;
             };
-            let end_point = |reference: Option<jade_docx_editor::document::ConnectionReference>, fallback: (f64, f64)| {
+            let end_point = |reference: Option<jade_docx_editor::document::ConnectionReference>,
+                             fallback: (f64, f64)| {
                 reference
-                    .and_then(|reference| by_id(reference.id).map(|target| (target, reference.index)))
-                    .and_then(|(target, index)| region(target).map(|placed| connection_point(&placed, index)))
+                    .and_then(|reference| {
+                        by_id(reference.id).map(|target| (target, reference.index))
+                    })
+                    .and_then(|(target, index)| {
+                        region(target).map(|placed| connection_point(&placed, index))
+                    })
                     .unwrap_or(fallback)
             };
             // Where the ends are now, flips considered.
@@ -263,19 +287,26 @@ pub trait WordConnectors: WordSession + WordObjects {
                     rotation_deg: 0.0,
                 },
             )));
-            commands.push(Box::new(edit_drawing_command("reroute_connector", target, move |_, drawing| {
-                let sp_pr = drawing_xml::shape_properties_mut(drawing).ok_or("no shape")?;
-                if let Some(xfrm) = child_mut(sp_pr, "a:xfrm") {
-                    set_attr(xfrm, "flipH", flip_h.then(|| "1".into()));
-                    set_attr(xfrm, "flipV", flip_v.then(|| "1".into()));
-                }
-                Ok(())
-            })));
+            commands.push(Box::new(edit_drawing_command(
+                "reroute_connector",
+                target,
+                move |_, drawing| {
+                    let sp_pr = drawing_xml::shape_properties_mut(drawing).ok_or("no shape")?;
+                    if let Some(xfrm) = child_mut(sp_pr, "a:xfrm") {
+                        set_attr(xfrm, "flipH", flip_h.then(|| "1".into()));
+                        set_attr(xfrm, "flipV", flip_v.then(|| "1".into()));
+                    }
+                    Ok(())
+                },
+            )));
         }
         if commands.is_empty() {
             return Ok(false);
         }
-        self.execute_command(Box::new(Sequence::new("reroute_connectors", commands)), true)?;
+        self.execute_command(
+            Box::new(Sequence::new("reroute_connectors", commands)),
+            true,
+        )?;
         Ok(true)
     }
 
@@ -293,8 +324,15 @@ pub trait WordConnectors: WordSession + WordObjects {
         let bottom = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
         let (width, height) = ((right - left).max(12.0), (bottom - top).max(12.0));
         let emu = |value: f64| (value * 9525.0).round();
-        let mut commands = vec![PathCommand::MoveTo(emu(points[0].0 - left), emu(points[0].1 - top))];
-        commands.extend(points[1..].iter().map(|(x, y)| PathCommand::LineTo(emu(x - left), emu(y - top))));
+        let mut commands = vec![PathCommand::MoveTo(
+            emu(points[0].0 - left),
+            emu(points[0].1 - top),
+        )];
+        commands.extend(
+            points[1..]
+                .iter()
+                .map(|(x, y)| PathCommand::LineTo(emu(x - left), emu(y - top))),
+        );
         if closed {
             commands.push(PathCommand::Close);
         }
@@ -337,22 +375,28 @@ pub trait WordConnectors: WordSession + WordObjects {
                             rotation_deg: 0.0,
                         },
                     )) as Box<dyn Command>,
-                    Box::new(edit_drawing_command("insert_freeform", target, move |_, drawing| {
-                        apply_style(
-                            drawing,
-                            &if closed {
-                                ShapeStyle::default_shape()
-                            } else {
-                                ShapeStyle::line()
-                            },
-                        )?;
-                        set_geometry(drawing, &path)?;
-                        if let Some(doc_pr) = descendant_mut(drawing, "wp:docPr") {
-                            let id = drawing_xml::get_attr(doc_pr, "id").unwrap_or("1").to_string();
-                            set_attr(doc_pr, "name", Some(format!("フリーフォーム {id}")));
-                        }
-                        Ok(())
-                    })),
+                    Box::new(edit_drawing_command(
+                        "insert_freeform",
+                        target,
+                        move |_, drawing| {
+                            apply_style(
+                                drawing,
+                                &if closed {
+                                    ShapeStyle::default_shape()
+                                } else {
+                                    ShapeStyle::line()
+                                },
+                            )?;
+                            set_geometry(drawing, &path)?;
+                            if let Some(doc_pr) = descendant_mut(drawing, "wp:docPr") {
+                                let id = drawing_xml::get_attr(doc_pr, "id")
+                                    .unwrap_or("1")
+                                    .to_string();
+                                set_attr(doc_pr, "name", Some(format!("フリーフォーム {id}")));
+                            }
+                            Ok(())
+                        },
+                    )),
                 ]
             })),
             false,
@@ -361,21 +405,36 @@ pub trait WordConnectors: WordSession + WordObjects {
 
     /// 頂点の編集: the freeform's path becomes `path` (in its own
     /// coordinates).
-    fn set_freeform_path(&mut self, target: FloatingObjectTarget, path: GeometryPath) -> Result<(), String> {
+    fn set_freeform_path(
+        &mut self,
+        target: FloatingObjectTarget,
+        path: GeometryPath,
+    ) -> Result<(), String> {
         if target.kind != FloatingObjectKind::TextBox {
             return Err("only a shape has points to edit".into());
         }
-        self.edit_object(target, "edit_points", move |_, drawing| set_geometry(drawing, &path))
+        self.edit_object(target, "edit_points", move |_, drawing| {
+            set_geometry(drawing, &path)
+        })
     }
 }
 
 impl<T: WordSession + ?Sized> WordConnectors for T {}
 
 /// Writes `path` as the shape's `a:custGeom`.
-pub fn set_geometry(drawing: &mut jade_docx_editor::docx_xml::XmlElement, path: &GeometryPath) -> Result<(), String> {
+pub fn set_geometry(
+    drawing: &mut jade_docx_editor::docx_xml::XmlElement,
+    path: &GeometryPath,
+) -> Result<(), String> {
     let mut commands = String::new();
     for command in &path.commands {
-        let point = |x: f64, y: f64| format!(r#"<a:pt x="{}" y="{}"/>"#, x.round() as i64, y.round() as i64);
+        let point = |x: f64, y: f64| {
+            format!(
+                r#"<a:pt x="{}" y="{}"/>"#,
+                x.round() as i64,
+                y.round() as i64
+            )
+        };
         commands.push_str(&match command {
             PathCommand::MoveTo(x, y) => format!("<a:moveTo>{}</a:moveTo>", point(*x, *y)),
             PathCommand::LineTo(x, y) => format!("<a:lnTo>{}</a:lnTo>", point(*x, *y)),
@@ -386,7 +445,11 @@ pub fn set_geometry(drawing: &mut jade_docx_editor::docx_xml::XmlElement, path: 
                 point(*x, *y)
             ),
             PathCommand::QuadTo(x1, y1, x, y) => {
-                format!("<a:quadBezTo>{}{}</a:quadBezTo>", point(*x1, *y1), point(*x, *y))
+                format!(
+                    "<a:quadBezTo>{}{}</a:quadBezTo>",
+                    point(*x1, *y1),
+                    point(*x, *y)
+                )
             }
             PathCommand::ArcTo {
                 width_radius,
@@ -417,15 +480,25 @@ pub fn set_geometry(drawing: &mut jade_docx_editor::docx_xml::XmlElement, path: 
 /// The freeform's points on the page: each command's end point, mapped
 /// from the path's space into the shape's box.
 pub fn path_points(path: &GeometryPath, object: &PlacedObject) -> Vec<(f64, f64)> {
-    let scale_x = if path.width > 0.0 { object.width / path.width } else { 1.0 / 9525.0 };
-    let scale_y = if path.height > 0.0 { object.height / path.height } else { 1.0 / 9525.0 };
+    let scale_x = if path.width > 0.0 {
+        object.width / path.width
+    } else {
+        1.0 / 9525.0
+    };
+    let scale_y = if path.height > 0.0 {
+        object.height / path.height
+    } else {
+        1.0 / 9525.0
+    };
     path.commands
         .iter()
         .filter_map(|command| match command {
             PathCommand::MoveTo(x, y)
             | PathCommand::LineTo(x, y)
             | PathCommand::CubicTo(_, _, _, _, x, y)
-            | PathCommand::QuadTo(_, _, x, y) => Some((object.x + x * scale_x, object.y + y * scale_y)),
+            | PathCommand::QuadTo(_, _, x, y) => {
+                Some((object.x + x * scale_x, object.y + y * scale_y))
+            }
             _ => None,
         })
         .collect()
@@ -433,10 +506,26 @@ pub fn path_points(path: &GeometryPath, object: &PlacedObject) -> Vec<(f64, f64)
 
 /// `path` with its `index`th point (counting as [`path_points`] does) moved
 /// to `point` on the page; a curve's control points move with its end.
-pub fn move_path_point(path: &GeometryPath, object: &PlacedObject, index: usize, point: (f64, f64)) -> GeometryPath {
-    let scale_x = if path.width > 0.0 { object.width / path.width } else { 1.0 / 9525.0 };
-    let scale_y = if path.height > 0.0 { object.height / path.height } else { 1.0 / 9525.0 };
-    let (x, y) = ((point.0 - object.x) / scale_x, (point.1 - object.y) / scale_y);
+pub fn move_path_point(
+    path: &GeometryPath,
+    object: &PlacedObject,
+    index: usize,
+    point: (f64, f64),
+) -> GeometryPath {
+    let scale_x = if path.width > 0.0 {
+        object.width / path.width
+    } else {
+        1.0 / 9525.0
+    };
+    let scale_y = if path.height > 0.0 {
+        object.height / path.height
+    } else {
+        1.0 / 9525.0
+    };
+    let (x, y) = (
+        (point.0 - object.x) / scale_x,
+        (point.1 - object.y) / scale_y,
+    );
     let mut path = path.clone();
     let mut seen = 0;
     for command in &mut path.commands {

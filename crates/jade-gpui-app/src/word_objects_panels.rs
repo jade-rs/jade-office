@@ -174,9 +174,7 @@ impl LayoutDialog {
         };
         let v_relative = if self.moves_with_text {
             match self.v_relative {
-                RelativeTo::Page | RelativeTo::Margin
-                    if self.v_align.is_none() =>
-                {
+                RelativeTo::Page | RelativeTo::Margin if self.v_align.is_none() => {
                     RelativeTo::Paragraph
                 }
                 other => other,
@@ -190,7 +188,11 @@ impl LayoutDialog {
         LayoutSettings {
             wrap: Some(self.wrap),
             wrap_side: Some(self.wrap_side),
-            horizontal: Some(position(&self.h_align, self.h_relative, Field::HorizontalOffset)),
+            horizontal: Some(position(
+                &self.h_align,
+                self.h_relative,
+                Field::HorizontalOffset,
+            )),
             vertical: Some(position(&self.v_align, v_relative, Field::VerticalOffset)),
             locked: Some(self.locked),
             allow_overlap: Some(self.allow_overlap),
@@ -258,7 +260,11 @@ fn choice(
         .text_xs()
         .cursor_pointer()
         .border_1()
-        .border_color(if picked { theme::accent() } else { theme::border() })
+        .border_color(if picked {
+            theme::accent()
+        } else {
+            theme::border()
+        })
         .when(picked, |pill| pill.bg(theme::selected()))
         .hover(|pill| pill.bg(theme::hovered()))
         .child(label.into())
@@ -276,11 +282,17 @@ fn check(
     cx: &mut Context<DocumentView>,
     toggle: impl Fn(&mut LayoutDialog) + 'static,
 ) -> AnyElement {
-    choice(id, format!("{} {label}", if on { "☑" } else { "☐" }), false, cx, move |view| {
-        if let Some(dialog) = view.objects.panels.dialog.as_mut() {
-            toggle(dialog);
-        }
-    })
+    choice(
+        id,
+        format!("{} {label}", if on { "☑" } else { "☐" }),
+        false,
+        cx,
+        move |view| {
+            if let Some(dialog) = view.objects.panels.dialog.as_mut() {
+                toggle(dialog);
+            }
+        },
+    )
 }
 
 impl DocumentView {
@@ -302,15 +314,22 @@ impl DocumentView {
         };
         let (h_align, h_relative, h_offset) = position(&format.horizontal, RelativeTo::Column);
         let (v_align, v_relative, v_offset) = position(&format.vertical, RelativeTo::Paragraph);
-        let side = jade_office_model::word::objects::object_run(self.document.word_document(), format.target)
-            .and_then(|run| {
-                run.image
-                    .as_ref()
-                    .map(|image| image.layout.wrap_text)
-                    .or_else(|| run.text_box.as_ref().map(|text_box| text_box.layout.wrap_text))
-            })
-            .map(|side| side.as_ooxml())
-            .unwrap_or("bothSides");
+        let side = jade_office_model::word::objects::object_run(
+            self.document.word_document(),
+            format.target,
+        )
+        .and_then(|run| {
+            run.image
+                .as_ref()
+                .map(|image| image.layout.wrap_text)
+                .or_else(|| {
+                    run.text_box
+                        .as_ref()
+                        .map(|text_box| text_box.layout.wrap_text)
+                })
+        })
+        .map(|side| side.as_ooxml())
+        .unwrap_or("bothSides");
         let field = |field, value: String| (field, TextEdit::new(value));
         self.objects.panels.dialog = Some(LayoutDialog {
             target: format.target,
@@ -361,10 +380,12 @@ impl DocumentView {
         };
         match key {
             "escape" => self.objects.panels.dialog = None,
-            "enter" | "return" => return {
-                self.apply_layout_dialog(cx);
-                true
-            },
+            "enter" | "return" => {
+                return {
+                    self.apply_layout_dialog(cx);
+                    true
+                }
+            }
             "tab" => {
                 let fields: Vec<Field> = Field::ORDER
                     .into_iter()
@@ -408,14 +429,17 @@ impl DocumentView {
             (DialogTab::Wrapping, "objects.dialog.wrapping"),
             (DialogTab::Size, "objects.dialog.size"),
         ];
-        let tab_strip = div().flex().gap_1().children(tabs.into_iter().map(|(which, label)| {
-            choice(label, t(label), which == tab, cx, move |view| {
-                if let Some(dialog) = view.objects.panels.dialog.as_mut() {
-                    dialog.tab = which;
-                    dialog.focus = None;
-                }
-            })
-        }));
+        let tab_strip = div()
+            .flex()
+            .gap_1()
+            .children(tabs.into_iter().map(|(which, label)| {
+                choice(label, t(label), which == tab, cx, move |view| {
+                    if let Some(dialog) = view.objects.panels.dialog.as_mut() {
+                        dialog.tab = which;
+                        dialog.focus = None;
+                    }
+                })
+            }));
         let body = match tab {
             DialogTab::Position => self.position_tab(cx),
             DialogTab::Wrapping => self.wrapping_tab(cx),
@@ -425,9 +449,15 @@ impl DocumentView {
             .flex()
             .justify_end()
             .gap_2()
-            .child(choice("dialog-cancel", t("format.cancel"), false, cx, |view| {
-                view.objects.panels.dialog = None;
-            }))
+            .child(choice(
+                "dialog-cancel",
+                t("format.cancel"),
+                false,
+                cx,
+                |view| {
+                    view.objects.panels.dialog = None;
+                },
+            ))
             .child(
                 div()
                     .id("dialog-ok")
@@ -439,7 +469,9 @@ impl DocumentView {
                     .text_color(gpui::white())
                     .cursor_pointer()
                     .child(t("format.ok"))
-                    .on_click(cx.listener(|view, _event, _window, cx| view.apply_layout_dialog(cx))),
+                    .on_click(
+                        cx.listener(|view, _event, _window, cx| view.apply_layout_dialog(cx)),
+                    ),
             );
         Some(
             div()
@@ -466,7 +498,13 @@ impl DocumentView {
     }
 
     /// A text field of the dialog, which takes typing when clicked.
-    fn dialog_field(&self, field: Field, label: &'static str, unit: &'static str, cx: &mut Context<Self>) -> AnyElement {
+    fn dialog_field(
+        &self,
+        field: Field,
+        label: &'static str,
+        unit: &'static str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let dialog = self.objects.panels.dialog.as_ref();
         let focused = dialog.is_some_and(|dialog| dialog.focus == Some(field));
         let text = dialog
@@ -477,7 +515,12 @@ impl DocumentView {
             .items_center()
             .gap_2()
             .text_xs()
-            .child(div().w(px(110.0)).text_color(theme::text_dim()).child(label))
+            .child(
+                div()
+                    .w(px(110.0))
+                    .text_color(theme::text_dim())
+                    .child(label),
+            )
             .child(
                 div()
                     .id(SharedString::from(format!("field-{field:?}")))
@@ -488,7 +531,11 @@ impl DocumentView {
                     .items_center()
                     .rounded_sm()
                     .border_1()
-                    .border_color(if focused { theme::accent() } else { theme::border() })
+                    .border_color(if focused {
+                        theme::accent()
+                    } else {
+                        theme::border()
+                    })
                     .bg(theme::window())
                     .cursor_text()
                     .child(if focused { format!("{text}▏") } else { text })
@@ -522,17 +569,30 @@ impl DocumentView {
         );
         let inline = dialog.wrap == Wrap::Inline;
         let axis = |horizontal: bool, cx: &mut Context<Self>| {
-            let (align, relative, choices, relatives): (_, _, &[&str], &[RelativeTo]) = if horizontal {
-                (&h_align, h_relative, &["left", "center", "right", "inside", "outside"], &RelativeTo::HORIZONTAL)
-            } else {
-                (&v_align, v_relative, &["top", "center", "bottom", "inside", "outside"], &RelativeTo::VERTICAL)
-            };
+            let (align, relative, choices, relatives): (_, _, &[&str], &[RelativeTo]) =
+                if horizontal {
+                    (
+                        &h_align,
+                        h_relative,
+                        &["left", "center", "right", "inside", "outside"],
+                        &RelativeTo::HORIZONTAL,
+                    )
+                } else {
+                    (
+                        &v_align,
+                        v_relative,
+                        &["top", "center", "bottom", "inside", "outside"],
+                        &RelativeTo::VERTICAL,
+                    )
+                };
             let mut column = div().flex().flex_col().gap_1();
-            column = column.child(div().text_xs().text_color(theme::text_dim()).child(t(if horizontal {
-                "objects.dialog.horizontal"
-            } else {
-                "objects.dialog.vertical"
-            })));
+            column = column.child(div().text_xs().text_color(theme::text_dim()).child(t(
+                if horizontal {
+                    "objects.dialog.horizontal"
+                } else {
+                    "objects.dialog.vertical"
+                },
+            )));
             let mut modes = div().flex().flex_wrap().gap_1();
             for (index, value) in choices.iter().enumerate() {
                 let value = value.to_string();
@@ -571,14 +631,25 @@ impl DocumentView {
             column = column.child(modes);
             if align.is_none() {
                 column = column.child(self.dialog_field(
-                    if horizontal { Field::HorizontalOffset } else { Field::VerticalOffset },
-                    t(if horizontal { "objects.dialog.right_of" } else { "objects.dialog.below" }),
+                    if horizontal {
+                        Field::HorizontalOffset
+                    } else {
+                        Field::VerticalOffset
+                    },
+                    t(if horizontal {
+                        "objects.dialog.right_of"
+                    } else {
+                        "objects.dialog.below"
+                    }),
                     "mm",
                     cx,
                 ));
             }
             let mut relative_row = div().flex().flex_wrap().gap_1().items_center().child(
-                div().text_xs().text_color(theme::text_dim()).child(t("objects.dialog.relative_to")),
+                div()
+                    .text_xs()
+                    .text_color(theme::text_dim())
+                    .child(t("objects.dialog.relative_to")),
             );
             for (index, candidate) in relatives.iter().enumerate() {
                 let candidate = *candidate;
@@ -608,23 +679,41 @@ impl DocumentView {
             .flex()
             .flex_wrap()
             .gap_1()
-            .child(check("opt-move", t("objects.dialog.move_with_text"), moves, cx, |dialog| {
-                dialog.moves_with_text = !dialog.moves_with_text;
-                dialog.v_relative = if dialog.moves_with_text {
-                    RelativeTo::Paragraph
-                } else {
-                    RelativeTo::Page
-                };
-            }))
-            .child(check("opt-lock", t("objects.dialog.lock_anchor"), locked, cx, |dialog| {
-                dialog.locked = !dialog.locked
-            }))
-            .child(check("opt-overlap", t("objects.dialog.allow_overlap"), overlap, cx, |dialog| {
-                dialog.allow_overlap = !dialog.allow_overlap
-            }))
-            .child(check("opt-cell", t("objects.dialog.layout_in_cell"), in_cell, cx, |dialog| {
-                dialog.layout_in_cell = !dialog.layout_in_cell
-            }));
+            .child(check(
+                "opt-move",
+                t("objects.dialog.move_with_text"),
+                moves,
+                cx,
+                |dialog| {
+                    dialog.moves_with_text = !dialog.moves_with_text;
+                    dialog.v_relative = if dialog.moves_with_text {
+                        RelativeTo::Paragraph
+                    } else {
+                        RelativeTo::Page
+                    };
+                },
+            ))
+            .child(check(
+                "opt-lock",
+                t("objects.dialog.lock_anchor"),
+                locked,
+                cx,
+                |dialog| dialog.locked = !dialog.locked,
+            ))
+            .child(check(
+                "opt-overlap",
+                t("objects.dialog.allow_overlap"),
+                overlap,
+                cx,
+                |dialog| dialog.allow_overlap = !dialog.allow_overlap,
+            ))
+            .child(check(
+                "opt-cell",
+                t("objects.dialog.layout_in_cell"),
+                in_cell,
+                cx,
+                |dialog| dialog.layout_in_cell = !dialog.layout_in_cell,
+            ));
         div()
             .flex()
             .flex_col()
@@ -639,7 +728,12 @@ impl DocumentView {
             })
             .child(horizontal)
             .child(vertical)
-            .child(div().text_xs().text_color(theme::text_dim()).child(t("objects.dialog.options")))
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme::text_dim())
+                    .child(t("objects.dialog.options")),
+            )
             .child(options)
             .into_any_element()
     }
@@ -647,38 +741,82 @@ impl DocumentView {
     fn wrapping_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let dialog = self.objects.panels.dialog.as_ref().expect("open");
         let (wrap, side) = (dialog.wrap, dialog.wrap_side);
-        let styles = div().flex().flex_wrap().gap_1().children(WRAPS.iter().enumerate().map(|(index, candidate)| {
-            let candidate = *candidate;
-            choice(("wrap-style", index), crate::wrap_label(candidate), candidate == wrap, cx, move |view| {
-                if let Some(dialog) = view.objects.panels.dialog.as_mut() {
-                    dialog.wrap = candidate;
-                }
-            })
-        }));
+        let styles = div()
+            .flex()
+            .flex_wrap()
+            .gap_1()
+            .children(WRAPS.iter().enumerate().map(|(index, candidate)| {
+                let candidate = *candidate;
+                choice(
+                    ("wrap-style", index),
+                    crate::wrap_label(candidate),
+                    candidate == wrap,
+                    cx,
+                    move |view| {
+                        if let Some(dialog) = view.objects.panels.dialog.as_mut() {
+                            dialog.wrap = candidate;
+                        }
+                    },
+                )
+            }));
         let sides = [
             ("bothSides", "objects.dialog.both_sides"),
             ("left", "objects.dialog.left_only"),
             ("right", "objects.dialog.right_only"),
             ("largest", "objects.dialog.largest_only"),
         ];
-        let side_row = div().flex().flex_wrap().gap_1().children(sides.into_iter().enumerate().map(|(index, (value, label))| {
-            choice(("wrap-side", index), t(label), value == side, cx, move |view| {
-                if let Some(dialog) = view.objects.panels.dialog.as_mut() {
-                    dialog.wrap_side = value;
-                }
-            })
-        }));
+        let side_row =
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_1()
+                .children(
+                    sides
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, (value, label))| {
+                            choice(
+                                ("wrap-side", index),
+                                t(label),
+                                value == side,
+                                cx,
+                                move |view| {
+                                    if let Some(dialog) = view.objects.panels.dialog.as_mut() {
+                                        dialog.wrap_side = value;
+                                    }
+                                },
+                            )
+                        }),
+                );
         div()
             .flex()
             .flex_col()
             .gap_2()
-            .child(div().text_xs().text_color(theme::text_dim()).child(t("objects.dialog.wrap_style")))
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme::text_dim())
+                    .child(t("objects.dialog.wrap_style")),
+            )
             .child(styles)
-            .when(matches!(wrap, Wrap::Square | Wrap::Tight | Wrap::Through), |body| {
-                body.child(div().text_xs().text_color(theme::text_dim()).child(t("objects.dialog.wrap_text")))
+            .when(
+                matches!(wrap, Wrap::Square | Wrap::Tight | Wrap::Through),
+                |body| {
+                    body.child(
+                        div()
+                            .text_xs()
+                            .text_color(theme::text_dim())
+                            .child(t("objects.dialog.wrap_text")),
+                    )
                     .child(side_row)
-            })
-            .child(div().text_xs().text_color(theme::text_dim()).child(t("objects.dialog.distance")))
+                },
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme::text_dim())
+                    .child(t("objects.dialog.distance")),
+            )
             .child(self.dialog_field(Field::DistanceTop, t("objects.dialog.top"), "mm", cx))
             .child(self.dialog_field(Field::DistanceBottom, t("objects.dialog.bottom"), "mm", cx))
             .child(self.dialog_field(Field::DistanceLeft, t("objects.dialog.left"), "mm", cx))
@@ -687,7 +825,12 @@ impl DocumentView {
     }
 
     fn size_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let keep = self.objects.panels.dialog.as_ref().is_some_and(|dialog| dialog.keep_ratio);
+        let keep = self
+            .objects
+            .panels
+            .dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.keep_ratio);
         div()
             .flex()
             .flex_col()
@@ -695,9 +838,13 @@ impl DocumentView {
             .child(self.dialog_field(Field::Height, t("objects.size.height"), "mm", cx))
             .child(self.dialog_field(Field::Width, t("objects.size.width"), "mm", cx))
             .child(self.dialog_field(Field::Rotation, t("objects.dialog.rotation"), "°", cx))
-            .child(check("keep-ratio", t("objects.dialog.lock_ratio"), keep, cx, |dialog| {
-                dialog.keep_ratio = !dialog.keep_ratio
-            }))
+            .child(check(
+                "keep-ratio",
+                t("objects.dialog.lock_ratio"),
+                keep,
+                cx,
+                |dialog| dialog.keep_ratio = !dialog.keep_ratio,
+            ))
             .into_any_element()
     }
 
@@ -740,14 +887,25 @@ impl DocumentView {
         let mut objects = self.document.body_objects();
         // Front first, as Word lists them; in-line ones after.
         objects.sort_by_key(|object| {
-            std::cmp::Reverse(stacking_index(document, object.target).map(|index| index + 1).unwrap_or(0))
+            std::cmp::Reverse(
+                stacking_index(document, object.target)
+                    .map(|index| index + 1)
+                    .unwrap_or(0),
+            )
         });
         let selected = self.object_target();
-        let renaming = self.objects.panels.renaming.as_ref().map(|(target, edit)| (*target, edit.text.clone()));
+        let renaming = self
+            .objects
+            .panels
+            .renaming
+            .as_ref()
+            .map(|(target, edit)| (*target, edit.text.clone()));
         let rows: Vec<AnyElement> = objects
             .iter()
             .enumerate()
-            .map(|(index, object)| self.selection_row(index, object, selected, renaming.as_ref(), cx))
+            .map(|(index, object)| {
+                self.selection_row(index, object, selected, renaming.as_ref(), cx)
+            })
             .collect();
         div()
             .id("selection-pane")
@@ -768,14 +926,35 @@ impl DocumentView {
                 div()
                     .flex()
                     .gap_1()
-                    .child(choice("show-all", t("objects.show_all"), false, cx, |view| view.set_all_hidden(false)))
-                    .child(choice("hide-all", t("objects.hide_all"), false, cx, |view| view.set_all_hidden(true)))
-                    .child(choice("pane-forward", "▲", false, cx, |view| view.pane_arrange(Arrange::Forward)))
-                    .child(choice("pane-backward", "▼", false, cx, |view| view.pane_arrange(Arrange::Backward))),
+                    .child(choice(
+                        "show-all",
+                        t("objects.show_all"),
+                        false,
+                        cx,
+                        |view| view.set_all_hidden(false),
+                    ))
+                    .child(choice(
+                        "hide-all",
+                        t("objects.hide_all"),
+                        false,
+                        cx,
+                        |view| view.set_all_hidden(true),
+                    ))
+                    .child(choice("pane-forward", "▲", false, cx, |view| {
+                        view.pane_arrange(Arrange::Forward)
+                    }))
+                    .child(choice("pane-backward", "▼", false, cx, |view| {
+                        view.pane_arrange(Arrange::Backward)
+                    })),
             )
             .children(rows)
             .when(objects.is_empty(), |pane| {
-                pane.child(div().text_xs().text_color(theme::text_faint()).child(t("objects.no_objects")))
+                pane.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme::text_faint())
+                        .child(t("objects.no_objects")),
+                )
             })
             .into_any_element()
     }
@@ -819,39 +998,43 @@ impl DocumentView {
                     .text_color(theme::text_dim())
                     .child(if hidden { "—" } else { "👁" })
                     .on_click(cx.listener(move |view, _event, _window, cx| {
-                        view.object_edit(cx, |view| view.document.set_object_hidden(target, !hidden));
+                        view.object_edit(cx, |view| {
+                            view.document.set_object_hidden(target, !hidden)
+                        });
                         cx.stop_propagation();
                     })),
             )
-            .on_click(cx.listener(move |view, event: &gpui::ClickEvent, _window, cx| {
-                if event.click_count() >= 2 {
-                    let name = view
-                        .document
-                        .object_format(target)
-                        .map(|format| format.name)
-                        .unwrap_or_default();
-                    view.objects.panels.renaming = Some((target, TextEdit::selected(name)));
-                } else {
-                    view.objects.panels.renaming = None;
-                }
-                view.select_object(target, cx);
-                if view.selected_object.is_none() {
-                    // Hidden: still selectable from the pane, for its tools.
-                    view.selected_object = view.document.object_format(target).map(|format| {
-                        jade_docx_native_render::ObjectHit {
-                            kind: target.kind,
-                            paragraph: target.paragraph_index,
-                            run: target.run_index,
-                            page: 0,
-                            x: 0.0,
-                            y: 0.0,
-                            width: format.width,
-                            height: format.height,
-                        }
-                    });
-                }
-                cx.notify();
-            }))
+            .on_click(
+                cx.listener(move |view, event: &gpui::ClickEvent, _window, cx| {
+                    if event.click_count() >= 2 {
+                        let name = view
+                            .document
+                            .object_format(target)
+                            .map(|format| format.name)
+                            .unwrap_or_default();
+                        view.objects.panels.renaming = Some((target, TextEdit::selected(name)));
+                    } else {
+                        view.objects.panels.renaming = None;
+                    }
+                    view.select_object(target, cx);
+                    if view.selected_object.is_none() {
+                        // Hidden: still selectable from the pane, for its tools.
+                        view.selected_object = view.document.object_format(target).map(|format| {
+                            jade_docx_native_render::ObjectHit {
+                                kind: target.kind,
+                                paragraph: target.paragraph_index,
+                                run: target.run_index,
+                                page: 0,
+                                x: 0.0,
+                                y: 0.0,
+                                width: format.width,
+                                height: format.height,
+                            }
+                        });
+                    }
+                    cx.notify();
+                }),
+            )
             .into_any_element()
     }
 
@@ -933,11 +1116,19 @@ impl DocumentView {
             .child(div().text_sm().child(t("objects.format_pane")));
         let Some(format) = format else {
             return pane
-                .child(div().text_xs().text_color(theme::text_faint()).child(t("objects.nothing_selected")))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme::text_faint())
+                        .child(t("objects.nothing_selected")),
+                )
                 .into_any_element();
         };
         let target = format.target;
-        let shape = !matches!(format.sort, ObjectSort::Picture | ObjectSort::Chart | ObjectSort::SmartArt | ObjectSort::Group);
+        let shape = !matches!(
+            format.sort,
+            ObjectSort::Picture | ObjectSort::Chart | ObjectSort::SmartArt | ObjectSort::Group
+        );
         let section = |label: &'static str| {
             div()
                 .pt_2()
@@ -946,60 +1137,165 @@ impl DocumentView {
                 .child(t(label))
                 .into_any_element()
         };
-        let colors = |id: &'static str, cx: &mut Context<Self>, apply: fn(FloatingObjectTarget, &str) -> PaneEdit| {
+        let colors = |id: &'static str,
+                      cx: &mut Context<Self>,
+                      apply: fn(FloatingObjectTarget, &str) -> PaneEdit| {
             div()
                 .flex()
                 .flex_wrap()
                 .gap_1()
-                .children(crate::word_objects_ribbon::COLORS.iter().enumerate().map(|(index, (color, name))| {
-                    let value = u32::from_str_radix(color, 16).unwrap_or(0);
-                    let edit = apply(target, color);
-                    div()
-                        .id((id, index))
-                        .size(px(18.0))
-                        .rounded_sm()
-                        .bg(gpui::rgb(value))
-                        .border_1()
-                        .border_color(theme::border())
-                        .cursor_pointer()
-                        .tooltip(crate::tooltip::Tooltip::text(t(name)))
-                        .on_click(cx.listener(move |view, _event, _window, cx| view.pane_edit(edit.clone(), cx)))
-                }))
+                .children(crate::word_objects_ribbon::COLORS.iter().enumerate().map(
+                    |(index, (color, name))| {
+                        let value = u32::from_str_radix(color, 16).unwrap_or(0);
+                        let edit = apply(target, color);
+                        div()
+                            .id((id, index))
+                            .size(px(18.0))
+                            .rounded_sm()
+                            .bg(gpui::rgb(value))
+                            .border_1()
+                            .border_color(theme::border())
+                            .cursor_pointer()
+                            .tooltip(crate::tooltip::Tooltip::text(t(name)))
+                            .on_click(cx.listener(move |view, _event, _window, cx| {
+                                view.pane_edit(edit.clone(), cx)
+                            }))
+                    },
+                ))
                 .into_any_element()
         };
         if shape {
             pane = pane
                 .child(section("objects.fill"))
-                .child(colors("pane-fill", cx, |target, color| PaneEdit::Fill(target, Fill::Paint(Paint::Rgb(color.into())))))
+                .child(colors("pane-fill", cx, |target, color| {
+                    PaneEdit::Fill(target, Fill::Paint(Paint::Rgb(color.into())))
+                }))
                 .child(div().flex().gap_1().children([
-                    pane_button("pane-fill-none", t("objects.fill.none"), PaneEdit::Fill(target, Fill::None), cx),
-                    pane_button("pane-fill-50", "50%", PaneEdit::Fill(target, Fill::Transparency(0.5)), cx),
-                    pane_button("pane-fill-0", "0%", PaneEdit::Fill(target, Fill::Transparency(0.0)), cx),
+                    pane_button(
+                        "pane-fill-none",
+                        t("objects.fill.none"),
+                        PaneEdit::Fill(target, Fill::None),
+                        cx,
+                    ),
+                    pane_button(
+                        "pane-fill-50",
+                        "50%",
+                        PaneEdit::Fill(target, Fill::Transparency(0.5)),
+                        cx,
+                    ),
+                    pane_button(
+                        "pane-fill-0",
+                        "0%",
+                        PaneEdit::Fill(target, Fill::Transparency(0.0)),
+                        cx,
+                    ),
                 ]));
         }
         pane = pane
             .child(section("objects.outline"))
-            .child(colors("pane-line", cx, |target, color| PaneEdit::Outline(target, OutlineEdit::Color(color.into()))))
+            .child(colors("pane-line", cx, |target, color| {
+                PaneEdit::Outline(target, OutlineEdit::Color(color.into()))
+            }))
             .child(div().flex().flex_wrap().gap_1().children([
-                pane_button("pane-line-none", t("objects.outline.none"), PaneEdit::Outline(target, OutlineEdit::None), cx),
-                pane_button("pane-line-05", "0.5 pt", PaneEdit::Outline(target, OutlineEdit::Width(0.5)), cx),
-                pane_button("pane-line-1", "1 pt", PaneEdit::Outline(target, OutlineEdit::Width(1.0)), cx),
-                pane_button("pane-line-3", "3 pt", PaneEdit::Outline(target, OutlineEdit::Width(3.0)), cx),
-                pane_button("pane-line-solid", t("objects.dash.solid"), PaneEdit::Outline(target, OutlineEdit::Dash(Dash::Solid)), cx),
-                pane_button("pane-line-dash", t("objects.dash.dash"), PaneEdit::Outline(target, OutlineEdit::Dash(Dash::Dash)), cx),
+                pane_button(
+                    "pane-line-none",
+                    t("objects.outline.none"),
+                    PaneEdit::Outline(target, OutlineEdit::None),
+                    cx,
+                ),
+                pane_button(
+                    "pane-line-05",
+                    "0.5 pt",
+                    PaneEdit::Outline(target, OutlineEdit::Width(0.5)),
+                    cx,
+                ),
+                pane_button(
+                    "pane-line-1",
+                    "1 pt",
+                    PaneEdit::Outline(target, OutlineEdit::Width(1.0)),
+                    cx,
+                ),
+                pane_button(
+                    "pane-line-3",
+                    "3 pt",
+                    PaneEdit::Outline(target, OutlineEdit::Width(3.0)),
+                    cx,
+                ),
+                pane_button(
+                    "pane-line-solid",
+                    t("objects.dash.solid"),
+                    PaneEdit::Outline(target, OutlineEdit::Dash(Dash::Solid)),
+                    cx,
+                ),
+                pane_button(
+                    "pane-line-dash",
+                    t("objects.dash.dash"),
+                    PaneEdit::Outline(target, OutlineEdit::Dash(Dash::Dash)),
+                    cx,
+                ),
             ]))
             .child(section("objects.effects"))
             .child(div().flex().flex_wrap().gap_1().children([
-                pane_button("pane-shadow", t("objects.effect.shadow"), PaneEdit::Effect(target, Effect::Shadow(Some(ShadowPreset::OUTER[0]))), cx),
-                pane_button("pane-shadow-none", t("objects.effect.no_shadow"), PaneEdit::Effect(target, Effect::Shadow(None)), cx),
-                pane_button("pane-reflection", t("objects.effect.reflection"), PaneEdit::Effect(target, Effect::Reflection(Some(ReflectionPreset::Half))), cx),
-                pane_button("pane-reflection-none", t("objects.effect.no_reflection"), PaneEdit::Effect(target, Effect::Reflection(None)), cx),
-                pane_button("pane-glow", t("objects.effect.glow"), PaneEdit::Effect(target, Effect::Glow(Some((8.0, "4472C4".into())))), cx),
-                pane_button("pane-glow-none", t("objects.effect.no_glow"), PaneEdit::Effect(target, Effect::Glow(None)), cx),
-                pane_button("pane-soft", t("objects.effect.soft_edges"), PaneEdit::Effect(target, Effect::SoftEdge(Some(5.0))), cx),
-                pane_button("pane-soft-none", t("objects.effect.no_soft_edges"), PaneEdit::Effect(target, Effect::SoftEdge(None)), cx),
-                pane_button("pane-bevel", t("objects.effect.bevel"), PaneEdit::Effect(target, Effect::Bevel(Some("circle".into()))), cx),
-                pane_button("pane-bevel-none", t("objects.effect.no_bevel"), PaneEdit::Effect(target, Effect::Bevel(None)), cx),
+                pane_button(
+                    "pane-shadow",
+                    t("objects.effect.shadow"),
+                    PaneEdit::Effect(target, Effect::Shadow(Some(ShadowPreset::OUTER[0]))),
+                    cx,
+                ),
+                pane_button(
+                    "pane-shadow-none",
+                    t("objects.effect.no_shadow"),
+                    PaneEdit::Effect(target, Effect::Shadow(None)),
+                    cx,
+                ),
+                pane_button(
+                    "pane-reflection",
+                    t("objects.effect.reflection"),
+                    PaneEdit::Effect(target, Effect::Reflection(Some(ReflectionPreset::Half))),
+                    cx,
+                ),
+                pane_button(
+                    "pane-reflection-none",
+                    t("objects.effect.no_reflection"),
+                    PaneEdit::Effect(target, Effect::Reflection(None)),
+                    cx,
+                ),
+                pane_button(
+                    "pane-glow",
+                    t("objects.effect.glow"),
+                    PaneEdit::Effect(target, Effect::Glow(Some((8.0, "4472C4".into())))),
+                    cx,
+                ),
+                pane_button(
+                    "pane-glow-none",
+                    t("objects.effect.no_glow"),
+                    PaneEdit::Effect(target, Effect::Glow(None)),
+                    cx,
+                ),
+                pane_button(
+                    "pane-soft",
+                    t("objects.effect.soft_edges"),
+                    PaneEdit::Effect(target, Effect::SoftEdge(Some(5.0))),
+                    cx,
+                ),
+                pane_button(
+                    "pane-soft-none",
+                    t("objects.effect.no_soft_edges"),
+                    PaneEdit::Effect(target, Effect::SoftEdge(None)),
+                    cx,
+                ),
+                pane_button(
+                    "pane-bevel",
+                    t("objects.effect.bevel"),
+                    PaneEdit::Effect(target, Effect::Bevel(Some("circle".into()))),
+                    cx,
+                ),
+                pane_button(
+                    "pane-bevel-none",
+                    t("objects.effect.no_bevel"),
+                    PaneEdit::Effect(target, Effect::Bevel(None)),
+                    cx,
+                ),
             ]))
             .child(section("objects.dialog.size"))
             .child(
@@ -1015,16 +1311,23 @@ impl DocumentView {
                         ],
                     )),
             )
-            .child(pane_button("pane-layout", t("objects.layout_more"), PaneEdit::Dialog, cx));
+            .child(pane_button(
+                "pane-layout",
+                t("objects.layout_more"),
+                PaneEdit::Dialog,
+                cx,
+            ));
         pane.into_any_element()
     }
 
     fn pane_edit(&mut self, edit: PaneEdit, cx: &mut Context<Self>) {
         match edit {
-            PaneEdit::Fill(target, fill) => self.object_edit(cx, |view| view.document.set_shape_fill(target, fill)),
-            PaneEdit::Outline(target, outline) => {
-                self.object_edit(cx, |view| view.document.set_picture_outline(target, outline))
+            PaneEdit::Fill(target, fill) => {
+                self.object_edit(cx, |view| view.document.set_shape_fill(target, fill))
             }
+            PaneEdit::Outline(target, outline) => self.object_edit(cx, |view| {
+                view.document.set_picture_outline(target, outline)
+            }),
             PaneEdit::Effect(target, effect) => {
                 self.object_edit(cx, |view| view.document.set_object_effect(target, effect))
             }
@@ -1047,16 +1350,18 @@ impl DocumentView {
                 kind: jade_docx_editor::word_document::FloatingObjectKind::Image,
                 ..object.target
             };
-            self.document.object_format(target).map(|_| jade_docx_native_render::ObjectHit {
-                kind: target.kind,
-                paragraph: target.paragraph_index,
-                run: target.run_index,
-                page: object.page + 1,
-                x: object.x,
-                y: object.y,
-                width: object.width,
-                height: object.height,
-            })
+            self.document
+                .object_format(target)
+                .map(|_| jade_docx_native_render::ObjectHit {
+                    kind: target.kind,
+                    paragraph: target.paragraph_index,
+                    run: target.run_index,
+                    page: object.page + 1,
+                    x: object.x,
+                    y: object.y,
+                    width: object.width,
+                    height: object.height,
+                })
         });
         Ok(())
     }
@@ -1077,7 +1382,10 @@ impl DocumentView {
         if !self.objects.panels.wrap_points {
             return Vec::new();
         }
-        let Some(object) = self.selected_object.filter(|o| o.page.saturating_sub(1) == page_index) else {
+        let Some(object) = self
+            .selected_object
+            .filter(|o| o.page.saturating_sub(1) == page_index)
+        else {
             return Vec::new();
         };
         let points = self.wrap_points_on_page(&object);
@@ -1130,7 +1438,10 @@ impl DocumentView {
         if !self.objects.panels.wrap_points {
             return false;
         }
-        let Some(object) = self.selected_object.filter(|o| o.page.saturating_sub(1) == page_index) else {
+        let Some(object) = self
+            .selected_object
+            .filter(|o| o.page.saturating_sub(1) == page_index)
+        else {
             return false;
         };
         let points = self.wrap_points_on_page(&object);
@@ -1192,7 +1503,12 @@ enum PaneEdit {
     Dialog,
 }
 
-fn pane_button(id: &'static str, label: &'static str, edit: PaneEdit, cx: &mut Context<DocumentView>) -> AnyElement {
+fn pane_button(
+    id: &'static str,
+    label: &'static str,
+    edit: PaneEdit,
+    cx: &mut Context<DocumentView>,
+) -> AnyElement {
     div()
         .id(id)
         .px_2()
@@ -1213,7 +1529,13 @@ fn pane_button(id: &'static str, label: &'static str, edit: PaneEdit, cx: &mut C
 impl DocumentView {
     /// The text field one of the object tools has focused, if any.
     pub(crate) fn object_field(&self) -> Option<&TextEdit> {
-        if let Some(field) = self.objects.panels.dialog.as_ref().and_then(|dialog| dialog.focused()) {
+        if let Some(field) = self
+            .objects
+            .panels
+            .dialog
+            .as_ref()
+            .and_then(|dialog| dialog.focused())
+        {
             return Some(field);
         }
         if let Some((_, field)) = self.objects.panels.renaming.as_ref() {
@@ -1230,17 +1552,33 @@ impl DocumentView {
             .as_ref()
             .is_some_and(|dialog| dialog.focus.is_some())
         {
-            return self.objects.panels.dialog.as_mut().and_then(|dialog| dialog.focused_mut());
+            return self
+                .objects
+                .panels
+                .dialog
+                .as_mut()
+                .and_then(|dialog| dialog.focused_mut());
         }
         if self.objects.panels.renaming.is_some() {
-            return self.objects.panels.renaming.as_mut().map(|(_, field)| field);
+            return self
+                .objects
+                .panels
+                .renaming
+                .as_mut()
+                .map(|(_, field)| field);
         }
         self.objects.diagrams.focused_mut()
     }
 
     /// A key for the object tools: the dialog's, a rename's, the text pane's
     /// or the chart sheet's field, then the selected object.
-    pub(crate) fn object_tools_key(&mut self, key: &str, shift: bool, alt: bool, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn object_tools_key(
+        &mut self,
+        key: &str,
+        shift: bool,
+        alt: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
         (self.objects.panels.dialog.is_some() && self.dialog_key(key, shift, cx))
             || self.rename_key(key, cx)
             || self.chart_sheet_key(key, shift, cx)

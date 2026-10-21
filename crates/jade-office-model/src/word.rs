@@ -40,10 +40,10 @@ pub mod objects;
 pub mod page;
 pub mod picture;
 pub mod picture_format;
-pub mod shape_gallery;
-pub mod shapes;
 pub mod platform;
 pub mod review;
+pub mod shape_gallery;
+pub mod shapes;
 
 pub use find::{FindOptions, Found, WordFind};
 

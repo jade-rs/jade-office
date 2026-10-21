@@ -26,14 +26,16 @@ use super::WordSession;
 /// Word's default SmartArt frame: 15.24 cm × 8.89 cm.
 pub const SMARTART_EXTENT_EMU: (i64, i64) = (5_486_400, 3_200_400);
 
-const DIAGRAM_DATA: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData";
+const DIAGRAM_DATA: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData";
 const DIAGRAM_LAYOUT: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout";
 const DIAGRAM_STYLE: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle";
 const DIAGRAM_COLORS: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramColors";
-const DIAGRAM_DRAWING: &str = "http://schemas.microsoft.com/office/2007/relationships/diagramDrawing";
+const DIAGRAM_DRAWING: &str =
+    "http://schemas.microsoft.com/office/2007/relationships/diagramDrawing";
 
 /// The points a new graphic of `layout` starts with, as Word puts them in:
 /// empty, three of them (a root with three under it for a hierarchy).
@@ -58,11 +60,21 @@ pub fn sample_chart(kind: ChartKind, japanese: bool) -> ChartInsertSpec {
     } else {
         ("Category", "Series")
     };
-    let values = [[4.3, 2.4, 2.0], [2.5, 4.4, 2.0], [3.5, 1.8, 3.0], [4.5, 2.8, 5.0]];
+    let values = [
+        [4.3, 2.4, 2.0],
+        [2.5, 4.4, 2.0],
+        [3.5, 1.8, 3.0],
+        [4.5, 2.8, 5.0],
+    ];
     let series_count = if kind == ChartKind::Pie { 1 } else { 3 };
     ChartInsertSpec {
         kind,
-        title: if japanese { "グラフ タイトル" } else { "Chart Title" }.to_string(),
+        title: if japanese {
+            "グラフ タイトル"
+        } else {
+            "Chart Title"
+        }
+        .to_string(),
         categories: (1..=4).map(|index| format!("{category} {index}")).collect(),
         series: (0..series_count)
             .map(|column| ChartSeries {
@@ -76,7 +88,10 @@ pub fn sample_chart(kind: ChartKind, japanese: bool) -> ChartInsertSpec {
 }
 
 /// The diagram data relationship of the SmartArt graphic at `target`.
-fn diagram_relationship(session: &(impl WordSession + ?Sized), target: FloatingObjectTarget) -> Option<String> {
+fn diagram_relationship(
+    session: &(impl WordSession + ?Sized),
+    target: FloatingObjectTarget,
+) -> Option<String> {
     object_run(session.word_document(), target)?
         .image
         .as_ref()?
@@ -111,7 +126,11 @@ pub trait WordDiagrams: WordSession + WordObjects {
     /// 挿入 → SmartArt: a graphic of `layout` (a `layoutDef` id from
     /// [`smartart::LAYOUTS`]) in line at the caret, with `nodes` (or the
     /// layout's starter points).
-    fn insert_smartart(&mut self, layout: &str, nodes: Option<Vec<DiagramNode>>) -> Result<(), String> {
+    fn insert_smartart(
+        &mut self,
+        layout: &str,
+        nodes: Option<Vec<DiagramNode>>,
+    ) -> Result<(), String> {
         let range = self.selection_range().ok_or("no caret")?;
         let (start, _) = range.normalized();
         let diagram = Diagram {
@@ -184,8 +203,13 @@ pub trait WordDiagrams: WordSession + WordObjects {
     /// The text pane's edit: the graphic's points become `diagram`'s, and
     /// its drawing is laid out again (with `diagram.layout`, which may be a
     /// new one: レイアウトの変更).
-    fn set_smartart(&mut self, target: FloatingObjectTarget, diagram: Diagram) -> Result<(), String> {
-        let relationship = diagram_relationship(self, target).ok_or("the object is not a SmartArt graphic")?;
+    fn set_smartart(
+        &mut self,
+        target: FloatingObjectTarget,
+        diagram: Diagram,
+    ) -> Result<(), String> {
+        let relationship =
+            diagram_relationship(self, target).ok_or("the object is not a SmartArt graphic")?;
         let (width, height) = object_run(self.word_document(), target)
             .and_then(|run| run.image.as_ref())
             .map(|image| {
@@ -220,11 +244,15 @@ pub trait WordDiagrams: WordSession + WordObjects {
                 smartart::drawing_xml(&diagram, width, height).as_bytes(),
             )?;
             // A new layout goes into the layout part too.
-            if let Some(layout_rel) = jade_docx_editor::drawing_xml::descendant(drawing, "dgm:relIds")
-                .and_then(|ids| jade_docx_editor::drawing_xml::get_attr(ids, "r:lo"))
-                .map(str::to_string)
+            if let Some(layout_rel) =
+                jade_docx_editor::drawing_xml::descendant(drawing, "dgm:relIds")
+                    .and_then(|ids| jade_docx_editor::drawing_xml::get_attr(ids, "r:lo"))
+                    .map(str::to_string)
             {
-                document.replace_object_part(&layout_rel, smartart::layout_xml(&diagram.layout).as_bytes())?;
+                document.replace_object_part(
+                    &layout_rel,
+                    smartart::layout_xml(&diagram.layout).as_bytes(),
+                )?;
             }
             Ok(())
         })
@@ -242,7 +270,11 @@ pub trait WordDiagrams: WordSession + WordObjects {
 
     /// The chart's data, as データの編集 shows it.
     fn chart_data(&self, target: FloatingObjectTarget) -> Option<RunChart> {
-        object_run(self.word_document(), target)?.image.as_ref()?.chart.clone()
+        object_run(self.word_document(), target)?
+            .image
+            .as_ref()?
+            .chart
+            .clone()
     }
 
     /// データの編集 / グラフの種類の変更 / グラフ タイトル: the chart becomes
@@ -255,7 +287,11 @@ pub trait WordDiagrams: WordSession + WordObjects {
     }
 
     /// 凡例: where the chart's legend is (`r`, `t`, `l`, `b`), or none.
-    fn set_chart_legend(&mut self, target: FloatingObjectTarget, position: Option<&'static str>) -> Result<(), String> {
+    fn set_chart_legend(
+        &mut self,
+        target: FloatingObjectTarget,
+        position: Option<&'static str>,
+    ) -> Result<(), String> {
         let relationship = object_run(self.word_document(), target)
             .and_then(|run| run.image.as_ref())
             .filter(|image| image.chart.is_some())
@@ -277,15 +313,16 @@ impl<T: WordSession + ?Sized> WordDiagrams for T {}
 /// The chart XML with its legend at `position`, or without one.
 pub fn set_legend(xml: &str, position: Option<&str>) -> Result<String, String> {
     let without = match (xml.find("<c:legend>"), xml.find("</c:legend>")) {
-        (Some(start), Some(end)) => format!("{}{}", &xml[..start], &xml[end + "</c:legend>".len()..]),
+        (Some(start), Some(end)) => {
+            format!("{}{}", &xml[..start], &xml[end + "</c:legend>".len()..])
+        }
         _ => xml.to_string(),
     };
     let Some(position) = position else {
         return Ok(without);
     };
-    let legend = format!(
-        r#"<c:legend><c:legendPos val="{position}"/><c:overlay val="0"/></c:legend>"#
-    );
+    let legend =
+        format!(r#"<c:legend><c:legendPos val="{position}"/><c:overlay val="0"/></c:legend>"#);
     // The legend follows the plot area.
     let at = without
         .find("</c:plotArea>")

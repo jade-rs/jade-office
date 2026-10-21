@@ -21,7 +21,9 @@ use jade_office_model::word::shapes::{
 };
 
 use crate::i18n::{self, text as t};
-use crate::ribbon::{dropdown, group, listener, menu_caption, menu_panel, menu_row, row, Action, Popup};
+use crate::ribbon::{
+    dropdown, group, listener, menu_caption, menu_panel, menu_row, row, Action, Popup,
+};
 use crate::tooltip::Tooltip;
 use crate::{theme, DocumentView};
 
@@ -100,7 +102,10 @@ pub enum ObjectAction {
     CropToShape(TextBoxShape),
     Aspect(u32, u32),
     /// サイズ: the height and width steppers, in millimetres.
-    Size { width_mm: f64, height_mm: f64 },
+    Size {
+        width_mm: f64,
+        height_mm: f64,
+    },
     ShapeStyle(usize, usize),
     ShapeFill(Fill),
     TextFill(Paint),
@@ -112,6 +117,9 @@ pub enum ObjectAction {
     EditWrapPoints,
     /// 頂点の編集 for the selected freeform.
     EditPoints,
+    /// リンクの作成: the next text box clicked takes the selected one's
+    /// overflow.
+    LinkTextBox,
     /// SmartArt's and charts' controls (`word_objects_diagrams`).
     Diagram(crate::word_objects_diagrams::DiagramAction),
 }
@@ -409,21 +417,18 @@ impl DocumentView {
                 .w(px(330.0))
                 .child(menu_caption(t("objects.corrections.caption")));
             for contrast in CORRECTION_STEPS.iter().rev() {
-                panel = panel.child(
-                    div()
-                        .flex()
-                        .gap_1()
-                        .children(CORRECTION_STEPS.iter().enumerate().map(|(index, bright)| {
-                            text_button(
-                                SharedString::from(format!("correction-{index}-{contrast}")),
-                                format!("{} / {}", percent(*bright), percent(*contrast)),
-                                t("objects.corrections.cell"),
-                                false,
-                                ObjectAction::Corrections(*bright, *contrast),
-                                cx,
-                            )
-                        })),
-                );
+                panel = panel.child(div().flex().gap_1().children(
+                    CORRECTION_STEPS.iter().enumerate().map(|(index, bright)| {
+                        text_button(
+                            SharedString::from(format!("correction-{index}-{contrast}")),
+                            format!("{} / {}", percent(*bright), percent(*contrast)),
+                            t("objects.corrections.cell"),
+                            false,
+                            ObjectAction::Corrections(*bright, *contrast),
+                            cx,
+                        )
+                    }),
+                ));
             }
             panel.into_any_element()
         });
@@ -461,48 +466,154 @@ impl DocumentView {
                     })
                     .collect()))
                 .child(menu_caption(t("objects.color.recolor")))
-                .child(menu_row("recolor-none", t("objects.color.none"), false, act(ObjectAction::Recolor(Recolor::None)), cx))
-                .child(menu_row("recolor-gray", t("objects.color.grayscale"), false, act(ObjectAction::Recolor(Recolor::Grayscale)), cx))
-                .child(menu_row("recolor-sepia", t("objects.color.sepia"), false, act(ObjectAction::Recolor(Recolor::Sepia)), cx))
-                .child(menu_row("recolor-bw", t("objects.color.black_white"), false, act(ObjectAction::Recolor(Recolor::BlackAndWhite(0.5))), cx))
-                .children(["accent1", "accent2", "accent4", "accent6"].into_iter().enumerate().flat_map(|(index, slot)| {
-                    [
-                        menu_row(("recolor-dark", index), i18n::format("objects.color.accent_dark", &[("n", &slot[6..].to_string())]), false, act(ObjectAction::Recolor(Recolor::Accent { slot: slot.to_string(), light: false })), cx),
-                        menu_row(("recolor-light", index), i18n::format("objects.color.accent_light", &[("n", &slot[6..].to_string())]), false, act(ObjectAction::Recolor(Recolor::Accent { slot: slot.to_string(), light: true })), cx),
-                    ]
-                }))
-                .child(menu_row("transparent-white", t("objects.color.transparent_white"), false, act(ObjectAction::TransparentWhite), cx))
+                .child(menu_row(
+                    "recolor-none",
+                    t("objects.color.none"),
+                    false,
+                    act(ObjectAction::Recolor(Recolor::None)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "recolor-gray",
+                    t("objects.color.grayscale"),
+                    false,
+                    act(ObjectAction::Recolor(Recolor::Grayscale)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "recolor-sepia",
+                    t("objects.color.sepia"),
+                    false,
+                    act(ObjectAction::Recolor(Recolor::Sepia)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "recolor-bw",
+                    t("objects.color.black_white"),
+                    false,
+                    act(ObjectAction::Recolor(Recolor::BlackAndWhite(0.5))),
+                    cx,
+                ))
+                .children(
+                    ["accent1", "accent2", "accent4", "accent6"]
+                        .into_iter()
+                        .enumerate()
+                        .flat_map(|(index, slot)| {
+                            [
+                                menu_row(
+                                    ("recolor-dark", index),
+                                    i18n::format(
+                                        "objects.color.accent_dark",
+                                        &[("n", &slot[6..].to_string())],
+                                    ),
+                                    false,
+                                    act(ObjectAction::Recolor(Recolor::Accent {
+                                        slot: slot.to_string(),
+                                        light: false,
+                                    })),
+                                    cx,
+                                ),
+                                menu_row(
+                                    ("recolor-light", index),
+                                    i18n::format(
+                                        "objects.color.accent_light",
+                                        &[("n", &slot[6..].to_string())],
+                                    ),
+                                    false,
+                                    act(ObjectAction::Recolor(Recolor::Accent {
+                                        slot: slot.to_string(),
+                                        light: true,
+                                    })),
+                                    cx,
+                                ),
+                            ]
+                        }),
+                )
+                .child(menu_row(
+                    "transparent-white",
+                    t("objects.color.transparent_white"),
+                    false,
+                    act(ObjectAction::TransparentWhite),
+                    cx,
+                ))
                 .into_any_element()
         });
         let artistic = is_open(ObjectPopup::Artistic).then(|| {
             menu_panel("artistic-menu")
                 .w(px(200.0))
-                .child(menu_row("artistic-none", t("objects.artistic.none"), false, act(ObjectAction::Artistic(None)), cx))
+                .child(menu_row(
+                    "artistic-none",
+                    t("objects.artistic.none"),
+                    false,
+                    act(ObjectAction::Artistic(None)),
+                    cx,
+                ))
                 .children(ARTISTIC_EFFECTS.iter().enumerate().map(|(index, effect)| {
-                    menu_row(("artistic", index), t(artistic_label(effect)), false, act(ObjectAction::Artistic(Some(effect))), cx)
+                    menu_row(
+                        ("artistic", index),
+                        t(artistic_label(effect)),
+                        false,
+                        act(ObjectAction::Artistic(Some(effect))),
+                        cx,
+                    )
                 }))
                 .into_any_element()
         });
         let transparency = is_open(ObjectPopup::Transparency).then(|| {
             menu_panel("transparency-menu")
                 .w(px(160.0))
-                .children([0.0, 0.15, 0.3, 0.5, 0.65, 0.8, 0.95].into_iter().enumerate().map(|(index, value)| {
-                    menu_row(("transparency", index), format!("{:.0}%", value * 100.0), false, act(ObjectAction::Transparency(value)), cx)
-                }))
+                .children(
+                    [0.0, 0.15, 0.3, 0.5, 0.65, 0.8, 0.95]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, value)| {
+                            menu_row(
+                                ("transparency", index),
+                                format!("{:.0}%", value * 100.0),
+                                false,
+                                act(ObjectAction::Transparency(value)),
+                                cx,
+                            )
+                        }),
+                )
                 .into_any_element()
         });
         let change = is_open(ObjectPopup::ChangePicture).then(|| {
             menu_panel("change-picture-menu")
                 .w(px(200.0))
-                .child(menu_row("change-file", t("objects.change.file"), false, act(ObjectAction::ChangePicture), cx))
-                .child(menu_row("change-clipboard", t("objects.change.clipboard"), false, act(ObjectAction::ChangePictureFromClipboard), cx))
+                .child(menu_row(
+                    "change-file",
+                    t("objects.change.file"),
+                    false,
+                    act(ObjectAction::ChangePicture),
+                    cx,
+                ))
+                .child(menu_row(
+                    "change-clipboard",
+                    t("objects.change.clipboard"),
+                    false,
+                    act(ObjectAction::ChangePictureFromClipboard),
+                    cx,
+                ))
                 .into_any_element()
         });
         let reset = is_open(ObjectPopup::Reset).then(|| {
             menu_panel("reset-menu")
                 .w(px(200.0))
-                .child(menu_row("reset", t("objects.reset"), false, act(ObjectAction::Reset(false)), cx))
-                .child(menu_row("reset-size", t("objects.reset_size"), false, act(ObjectAction::Reset(true)), cx))
+                .child(menu_row(
+                    "reset",
+                    t("objects.reset"),
+                    false,
+                    act(ObjectAction::Reset(false)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "reset-size",
+                    t("objects.reset_size"),
+                    false,
+                    act(ObjectAction::Reset(true)),
+                    cx,
+                ))
                 .into_any_element()
         });
         let removed = self
@@ -525,20 +636,84 @@ impl DocumentView {
                 row(vec![
                     text_button(
                         "remove-background",
-                        t(if removed { "objects.background.restore" } else { "objects.background.remove" }),
+                        t(if removed {
+                            "objects.background.restore"
+                        } else {
+                            "objects.background.remove"
+                        }),
                         t("objects.background.title"),
                         removed,
                         ObjectAction::RemoveBackground(!removed),
                         cx,
                     ),
-                    dropdown(list_button("corrections", t("objects.corrections"), is_open(ObjectPopup::Corrections), ObjectPopup::Corrections, true, cx), corrections),
-                    dropdown(list_button("color", t("objects.color"), is_open(ObjectPopup::Color), ObjectPopup::Color, true, cx), color),
-                    dropdown(list_button("artistic", t("objects.artistic"), is_open(ObjectPopup::Artistic), ObjectPopup::Artistic, true, cx), artistic),
+                    dropdown(
+                        list_button(
+                            "corrections",
+                            t("objects.corrections"),
+                            is_open(ObjectPopup::Corrections),
+                            ObjectPopup::Corrections,
+                            true,
+                            cx,
+                        ),
+                        corrections,
+                    ),
+                    dropdown(
+                        list_button(
+                            "color",
+                            t("objects.color"),
+                            is_open(ObjectPopup::Color),
+                            ObjectPopup::Color,
+                            true,
+                            cx,
+                        ),
+                        color,
+                    ),
+                    dropdown(
+                        list_button(
+                            "artistic",
+                            t("objects.artistic"),
+                            is_open(ObjectPopup::Artistic),
+                            ObjectPopup::Artistic,
+                            true,
+                            cx,
+                        ),
+                        artistic,
+                    ),
                 ]),
                 row(vec![
-                    dropdown(list_button("transparency", t("objects.transparency"), is_open(ObjectPopup::Transparency), ObjectPopup::Transparency, true, cx), transparency),
-                    dropdown(list_button("change-picture", t("objects.change_picture"), is_open(ObjectPopup::ChangePicture), ObjectPopup::ChangePicture, true, cx), change),
-                    dropdown(list_button("reset-picture", t("objects.reset"), is_open(ObjectPopup::Reset), ObjectPopup::Reset, true, cx), reset),
+                    dropdown(
+                        list_button(
+                            "transparency",
+                            t("objects.transparency"),
+                            is_open(ObjectPopup::Transparency),
+                            ObjectPopup::Transparency,
+                            true,
+                            cx,
+                        ),
+                        transparency,
+                    ),
+                    dropdown(
+                        list_button(
+                            "change-picture",
+                            t("objects.change_picture"),
+                            is_open(ObjectPopup::ChangePicture),
+                            ObjectPopup::ChangePicture,
+                            true,
+                            cx,
+                        ),
+                        change,
+                    ),
+                    dropdown(
+                        list_button(
+                            "reset-picture",
+                            t("objects.reset"),
+                            is_open(ObjectPopup::Reset),
+                            ObjectPopup::Reset,
+                            true,
+                            cx,
+                        ),
+                        reset,
+                    ),
                 ]),
             ],
         )
@@ -549,17 +724,32 @@ impl DocumentView {
     fn picture_style_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let open = self.ribbon.popup;
         let is_open = |which| open == Some(popup(which));
-        let outline = is_open(ObjectPopup::Outline).then(|| outline_menu("outline-menu", false, cx));
+        let outline =
+            is_open(ObjectPopup::Outline).then(|| outline_menu("outline-menu", false, cx));
         let effects = is_open(ObjectPopup::Effects).then(|| effects_menu(cx));
         group(
             t("objects.group.picture_styles"),
             vec![
                 row(vec![dropdown(
-                    list_button("picture-outline", t("objects.outline"), is_open(ObjectPopup::Outline), ObjectPopup::Outline, true, cx),
+                    list_button(
+                        "picture-outline",
+                        t("objects.outline"),
+                        is_open(ObjectPopup::Outline),
+                        ObjectPopup::Outline,
+                        true,
+                        cx,
+                    ),
                     outline,
                 )]),
                 row(vec![dropdown(
-                    list_button("picture-effects", t("objects.effects"), is_open(ObjectPopup::Effects), ObjectPopup::Effects, true, cx),
+                    list_button(
+                        "picture-effects",
+                        t("objects.effects"),
+                        is_open(ObjectPopup::Effects),
+                        ObjectPopup::Effects,
+                        true,
+                        cx,
+                    ),
                     effects,
                 )]),
             ],
@@ -575,17 +765,34 @@ impl DocumentView {
             t("objects.group.insert_shapes"),
             vec![
                 row(vec![dropdown(
-                    list_button("change-shape", t("objects.change_shape"), open == Some(popup(ObjectPopup::Shapes(true))), ObjectPopup::Shapes(true), true, cx),
+                    list_button(
+                        "change-shape",
+                        t("objects.change_shape"),
+                        open == Some(popup(ObjectPopup::Shapes(true))),
+                        ObjectPopup::Shapes(true),
+                        true,
+                        cx,
+                    ),
                     gallery,
                 )]),
-                row(vec![text_button(
-                    "edit-points",
-                    t("objects.edit_points"),
-                    t("objects.edit_points_title"),
-                    self.objects.editing_points,
-                    ObjectAction::EditPoints,
-                    cx,
-                )]),
+                row(vec![
+                    text_button(
+                        "edit-points",
+                        t("objects.edit_points"),
+                        t("objects.edit_points_title"),
+                        self.objects.editing_points,
+                        ObjectAction::EditPoints,
+                        cx,
+                    ),
+                    text_button(
+                        "link-text-box",
+                        t("objects.link"),
+                        t("objects.link_title"),
+                        self.objects.linking.is_some(),
+                        ObjectAction::LinkTextBox,
+                        cx,
+                    ),
+                ]),
                 row(vec![text_button(
                     "format-pane",
                     t("objects.format_pane"),
@@ -605,37 +812,95 @@ impl DocumentView {
         let styles = is_open(ObjectPopup::ShapeStyles).then(|| {
             let mut panel = menu_panel("shape-styles-menu").w(px(7.0 * 34.0 + 12.0));
             for style_row in 0..ShapeStyle::GALLERY_ROWS {
-                panel = panel.child(
-                    div().flex().gap_1().py_0p5().children((0..STYLE_COLORS.len()).map(|column| {
-                        style_swatch(style_row, column, cx)
-                    })),
-                );
+                panel = panel.child(div().flex().gap_1().py_0p5().children(
+                    (0..STYLE_COLORS.len()).map(|column| style_swatch(style_row, column, cx)),
+                ));
             }
             panel.into_any_element()
         });
-        let fill = is_open(ObjectPopup::ShapeFill).then(|| {
-            menu_panel("shape-fill-menu")
-                .w(px(180.0))
-                .child(color_row("fill-color", |color| ObjectAction::ShapeFill(Fill::Paint(Paint::Rgb(color.to_string()))), cx))
-                .child(menu_row("fill-none", t("objects.fill.none"), false, act(ObjectAction::ShapeFill(Fill::None)), cx))
-                .child(menu_caption(t("objects.transparency")))
-                .children([0.0, 0.25, 0.5, 0.75].into_iter().enumerate().map(|(index, value)| {
-                    menu_row(("fill-transparency", index), format!("{:.0}%", value * 100.0), false, act(ObjectAction::ShapeFill(Fill::Transparency(value))), cx)
-                }))
-                .into_any_element()
-        });
-        let outline = is_open(ObjectPopup::Outline).then(|| outline_menu("shape-outline-menu", true, cx));
+        let fill =
+            is_open(ObjectPopup::ShapeFill).then(|| {
+                menu_panel("shape-fill-menu")
+                    .w(px(180.0))
+                    .child(color_row(
+                        "fill-color",
+                        |color| ObjectAction::ShapeFill(Fill::Paint(Paint::Rgb(color.to_string()))),
+                        cx,
+                    ))
+                    .child(menu_row(
+                        "fill-none",
+                        t("objects.fill.none"),
+                        false,
+                        act(ObjectAction::ShapeFill(Fill::None)),
+                        cx,
+                    ))
+                    .child(menu_caption(t("objects.transparency")))
+                    .children([0.0, 0.25, 0.5, 0.75].into_iter().enumerate().map(
+                        |(index, value)| {
+                            menu_row(
+                                ("fill-transparency", index),
+                                format!("{:.0}%", value * 100.0),
+                                false,
+                                act(ObjectAction::ShapeFill(Fill::Transparency(value))),
+                                cx,
+                            )
+                        },
+                    ))
+                    .into_any_element()
+            });
+        let outline =
+            is_open(ObjectPopup::Outline).then(|| outline_menu("shape-outline-menu", true, cx));
         let effects = is_open(ObjectPopup::Effects).then(|| effects_menu(cx));
         group(
             t("objects.group.shape_styles"),
             vec![
                 row(vec![
-                    dropdown(list_button("shape-styles", t("objects.shape_styles"), is_open(ObjectPopup::ShapeStyles), ObjectPopup::ShapeStyles, true, cx), styles),
-                    dropdown(list_button("shape-fill", t("objects.fill"), is_open(ObjectPopup::ShapeFill), ObjectPopup::ShapeFill, true, cx), fill),
+                    dropdown(
+                        list_button(
+                            "shape-styles",
+                            t("objects.shape_styles"),
+                            is_open(ObjectPopup::ShapeStyles),
+                            ObjectPopup::ShapeStyles,
+                            true,
+                            cx,
+                        ),
+                        styles,
+                    ),
+                    dropdown(
+                        list_button(
+                            "shape-fill",
+                            t("objects.fill"),
+                            is_open(ObjectPopup::ShapeFill),
+                            ObjectPopup::ShapeFill,
+                            true,
+                            cx,
+                        ),
+                        fill,
+                    ),
                 ]),
                 row(vec![
-                    dropdown(list_button("shape-outline", t("objects.shape_outline"), is_open(ObjectPopup::Outline), ObjectPopup::Outline, true, cx), outline),
-                    dropdown(list_button("shape-effects", t("objects.shape_effects"), is_open(ObjectPopup::Effects), ObjectPopup::Effects, true, cx), effects),
+                    dropdown(
+                        list_button(
+                            "shape-outline",
+                            t("objects.shape_outline"),
+                            is_open(ObjectPopup::Outline),
+                            ObjectPopup::Outline,
+                            true,
+                            cx,
+                        ),
+                        outline,
+                    ),
+                    dropdown(
+                        list_button(
+                            "shape-effects",
+                            t("objects.shape_effects"),
+                            is_open(ObjectPopup::Effects),
+                            ObjectPopup::Effects,
+                            true,
+                            cx,
+                        ),
+                        effects,
+                    ),
                 ]),
             ],
         )
@@ -648,7 +913,11 @@ impl DocumentView {
         let text_fill = is_open(ObjectPopup::TextFill).then(|| {
             menu_panel("text-fill-menu")
                 .w(px(180.0))
-                .child(color_row("text-color", |color| ObjectAction::TextFill(Paint::Rgb(color.to_string())), cx))
+                .child(color_row(
+                    "text-color",
+                    |color| ObjectAction::TextFill(Paint::Rgb(color.to_string())),
+                    cx,
+                ))
                 .into_any_element()
         });
         let effects = is_open(ObjectPopup::TextEffects).then(|| {
@@ -659,27 +928,78 @@ impl DocumentView {
                 .overflow_y_scroll()
                 .child(menu_caption(t("objects.warp")))
                 .children(TEXT_WARPS.iter().enumerate().map(|(index, preset)| {
-                    menu_row(("warp", index), t(warp_label(preset)), false, act(ObjectAction::TextWarp(preset)), cx)
+                    menu_row(
+                        ("warp", index),
+                        t(warp_label(preset)),
+                        false,
+                        act(ObjectAction::TextWarp(preset)),
+                        cx,
+                    )
                 }))
                 .into_any_element()
         });
         let align = is_open(ObjectPopup::TextAlign).then(|| {
             menu_panel("text-align-menu")
                 .w(px(140.0))
-                .child(menu_row("text-top", t("objects.text.top"), false, act(ObjectAction::TextAlign("top")), cx))
-                .child(menu_row("text-middle", t("objects.text.middle"), false, act(ObjectAction::TextAlign("center")), cx))
-                .child(menu_row("text-bottom", t("objects.text.bottom"), false, act(ObjectAction::TextAlign("bottom")), cx))
+                .child(menu_row(
+                    "text-top",
+                    t("objects.text.top"),
+                    false,
+                    act(ObjectAction::TextAlign("top")),
+                    cx,
+                ))
+                .child(menu_row(
+                    "text-middle",
+                    t("objects.text.middle"),
+                    false,
+                    act(ObjectAction::TextAlign("center")),
+                    cx,
+                ))
+                .child(menu_row(
+                    "text-bottom",
+                    t("objects.text.bottom"),
+                    false,
+                    act(ObjectAction::TextAlign("bottom")),
+                    cx,
+                ))
                 .into_any_element()
         });
         group(
             t("objects.group.wordart_styles"),
             vec![
                 row(vec![
-                    dropdown(list_button("text-fill", t("objects.text_fill"), is_open(ObjectPopup::TextFill), ObjectPopup::TextFill, true, cx), text_fill),
-                    dropdown(list_button("text-effects", t("objects.text_effects"), is_open(ObjectPopup::TextEffects), ObjectPopup::TextEffects, true, cx), effects),
+                    dropdown(
+                        list_button(
+                            "text-fill",
+                            t("objects.text_fill"),
+                            is_open(ObjectPopup::TextFill),
+                            ObjectPopup::TextFill,
+                            true,
+                            cx,
+                        ),
+                        text_fill,
+                    ),
+                    dropdown(
+                        list_button(
+                            "text-effects",
+                            t("objects.text_effects"),
+                            is_open(ObjectPopup::TextEffects),
+                            ObjectPopup::TextEffects,
+                            true,
+                            cx,
+                        ),
+                        effects,
+                    ),
                 ]),
                 row(vec![dropdown(
-                    list_button("text-align", t("objects.text_align"), is_open(ObjectPopup::TextAlign), ObjectPopup::TextAlign, true, cx),
+                    list_button(
+                        "text-align",
+                        t("objects.text_align"),
+                        is_open(ObjectPopup::TextAlign),
+                        ObjectPopup::TextAlign,
+                        true,
+                        cx,
+                    ),
                     align,
                 )]),
             ],
@@ -710,40 +1030,115 @@ impl DocumentView {
             ];
             menu_panel("position-menu")
                 .w(px(250.0))
-                .child(menu_row("position-inline", t("picture.wrap.inline"), !floating, act(ObjectAction::Wrap(Wrap::Inline)), cx))
+                .child(menu_row(
+                    "position-inline",
+                    t("picture.wrap.inline"),
+                    !floating,
+                    act(ObjectAction::Wrap(Wrap::Inline)),
+                    cx,
+                ))
                 .child(menu_caption(t("objects.position.with_wrapping")))
                 .children(spots.into_iter().enumerate().map(|(index, (h, v, label))| {
-                    menu_row(("position", index), t(label), false, act(ObjectAction::Place(h, v)), cx)
+                    menu_row(
+                        ("position", index),
+                        t(label),
+                        false,
+                        act(ObjectAction::Place(h, v)),
+                        cx,
+                    )
                 }))
-                .child(menu_row("layout-more", t("objects.layout_more"), false, act(ObjectAction::LayoutDialog), cx))
+                .child(menu_row(
+                    "layout-more",
+                    t("objects.layout_more"),
+                    false,
+                    act(ObjectAction::LayoutDialog),
+                    cx,
+                ))
                 .into_any_element()
         });
         let wrap = is_open(ObjectPopup::Wrap).then(|| {
             menu_panel("object-wrap-menu")
                 .w(px(220.0))
                 .children(WRAPS.iter().enumerate().map(|(index, wrap)| {
-                    menu_row(("object-wrap", index), crate::wrap_label(*wrap), format.wrap == *wrap, act(ObjectAction::Wrap(*wrap)), cx)
+                    menu_row(
+                        ("object-wrap", index),
+                        crate::wrap_label(*wrap),
+                        format.wrap == *wrap,
+                        act(ObjectAction::Wrap(*wrap)),
+                        cx,
+                    )
                 }))
-                .when(matches!(format.wrap, Wrap::Tight | Wrap::Through), |panel| {
-                    panel.child(menu_row("wrap-points", t("objects.wrap_points"), self.objects.panels.wrap_points, act(ObjectAction::EditWrapPoints), cx))
-                })
-                .child(menu_row("wrap-more", t("objects.layout_more"), false, act(ObjectAction::LayoutDialog), cx))
+                .when(
+                    matches!(format.wrap, Wrap::Tight | Wrap::Through),
+                    |panel| {
+                        panel.child(menu_row(
+                            "wrap-points",
+                            t("objects.wrap_points"),
+                            self.objects.panels.wrap_points,
+                            act(ObjectAction::EditWrapPoints),
+                            cx,
+                        ))
+                    },
+                )
+                .child(menu_row(
+                    "wrap-more",
+                    t("objects.layout_more"),
+                    false,
+                    act(ObjectAction::LayoutDialog),
+                    cx,
+                ))
                 .into_any_element()
         });
         let forward = is_open(ObjectPopup::Forward).then(|| {
             menu_panel("forward-menu")
                 .w(px(200.0))
-                .child(menu_row("forward", t("objects.forward"), false, act(ObjectAction::Arrange(Arrange::Forward)), cx))
-                .child(menu_row("to-front", t("objects.to_front"), false, act(ObjectAction::Arrange(Arrange::ToFront)), cx))
-                .child(menu_row("front-of-text", t("objects.in_front_of_text"), false, act(ObjectAction::Arrange(Arrange::InFrontOfText)), cx))
+                .child(menu_row(
+                    "forward",
+                    t("objects.forward"),
+                    false,
+                    act(ObjectAction::Arrange(Arrange::Forward)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "to-front",
+                    t("objects.to_front"),
+                    false,
+                    act(ObjectAction::Arrange(Arrange::ToFront)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "front-of-text",
+                    t("objects.in_front_of_text"),
+                    false,
+                    act(ObjectAction::Arrange(Arrange::InFrontOfText)),
+                    cx,
+                ))
                 .into_any_element()
         });
         let backward = is_open(ObjectPopup::Backward).then(|| {
             menu_panel("backward-menu")
                 .w(px(200.0))
-                .child(menu_row("backward", t("objects.backward"), false, act(ObjectAction::Arrange(Arrange::Backward)), cx))
-                .child(menu_row("to-back", t("objects.to_back"), false, act(ObjectAction::Arrange(Arrange::ToBack)), cx))
-                .child(menu_row("behind-text", t("objects.behind_text"), false, act(ObjectAction::Arrange(Arrange::BehindText)), cx))
+                .child(menu_row(
+                    "backward",
+                    t("objects.backward"),
+                    false,
+                    act(ObjectAction::Arrange(Arrange::Backward)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "to-back",
+                    t("objects.to_back"),
+                    false,
+                    act(ObjectAction::Arrange(Arrange::ToBack)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "behind-text",
+                    t("objects.behind_text"),
+                    false,
+                    act(ObjectAction::Arrange(Arrange::BehindText)),
+                    cx,
+                ))
                 .into_any_element()
         });
         let align_to = self.objects.panels.align_to;
@@ -760,46 +1155,194 @@ impl DocumentView {
             ];
             menu_panel("align-menu")
                 .w(px(230.0))
-                .children(aligns.into_iter().enumerate().map(|(index, (align, label))| {
-                    menu_row(("align", index), t(label), false, act(ObjectAction::Align(align)), cx)
-                }))
+                .children(
+                    aligns
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, (align, label))| {
+                            menu_row(
+                                ("align", index),
+                                t(label),
+                                false,
+                                act(ObjectAction::Align(align)),
+                                cx,
+                            )
+                        }),
+                )
                 .child(menu_caption(t("objects.align.relative")))
-                .child(menu_row("align-page", t("objects.align.page"), align_to == AlignTo::Page, act(ObjectAction::AlignTo(AlignTo::Page)), cx))
-                .child(menu_row("align-margin", t("objects.align.margin"), align_to == AlignTo::Margin, act(ObjectAction::AlignTo(AlignTo::Margin)), cx))
-                .child(menu_row("align-selection", t("objects.align.selection"), align_to == AlignTo::Selection, act(ObjectAction::AlignTo(AlignTo::Selection)), cx))
+                .child(menu_row(
+                    "align-page",
+                    t("objects.align.page"),
+                    align_to == AlignTo::Page,
+                    act(ObjectAction::AlignTo(AlignTo::Page)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "align-margin",
+                    t("objects.align.margin"),
+                    align_to == AlignTo::Margin,
+                    act(ObjectAction::AlignTo(AlignTo::Margin)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "align-selection",
+                    t("objects.align.selection"),
+                    align_to == AlignTo::Selection,
+                    act(ObjectAction::AlignTo(AlignTo::Selection)),
+                    cx,
+                ))
                 .into_any_element()
         });
         let group_menu = is_open(ObjectPopup::Group).then(|| {
             menu_panel("group-menu")
                 .w(px(180.0))
-                .child(menu_row("group", t("objects.group"), false, act(ObjectAction::Group(true)), cx))
-                .child(menu_row("ungroup", t("objects.ungroup"), false, act(ObjectAction::Group(false)), cx))
+                .child(menu_row(
+                    "group",
+                    t("objects.group"),
+                    false,
+                    act(ObjectAction::Group(true)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "ungroup",
+                    t("objects.ungroup"),
+                    false,
+                    act(ObjectAction::Group(false)),
+                    cx,
+                ))
                 .into_any_element()
         });
         let rotate = is_open(ObjectPopup::Rotate).then(|| {
             menu_panel("rotate-menu")
                 .w(px(220.0))
-                .child(menu_row("rotate-right", t("objects.rotate.right"), false, act(ObjectAction::Rotate(Rotate::Right90)), cx))
-                .child(menu_row("rotate-left", t("objects.rotate.left"), false, act(ObjectAction::Rotate(Rotate::Left90)), cx))
-                .child(menu_row("flip-vertical", t("objects.rotate.flip_v"), format.flip_vertical, act(ObjectAction::Rotate(Rotate::FlipVertical)), cx))
-                .child(menu_row("flip-horizontal", t("objects.rotate.flip_h"), format.flip_horizontal, act(ObjectAction::Rotate(Rotate::FlipHorizontal)), cx))
-                .child(menu_row("rotate-more", t("objects.rotate.more"), false, act(ObjectAction::LayoutDialog), cx))
+                .child(menu_row(
+                    "rotate-right",
+                    t("objects.rotate.right"),
+                    false,
+                    act(ObjectAction::Rotate(Rotate::Right90)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "rotate-left",
+                    t("objects.rotate.left"),
+                    false,
+                    act(ObjectAction::Rotate(Rotate::Left90)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "flip-vertical",
+                    t("objects.rotate.flip_v"),
+                    format.flip_vertical,
+                    act(ObjectAction::Rotate(Rotate::FlipVertical)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "flip-horizontal",
+                    t("objects.rotate.flip_h"),
+                    format.flip_horizontal,
+                    act(ObjectAction::Rotate(Rotate::FlipHorizontal)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "rotate-more",
+                    t("objects.rotate.more"),
+                    false,
+                    act(ObjectAction::LayoutDialog),
+                    cx,
+                ))
                 .into_any_element()
         });
         group(
             t("objects.group.arrange"),
             vec![
                 row(vec![
-                    dropdown(list_button("object-position", t("objects.position"), is_open(ObjectPopup::Position), ObjectPopup::Position, true, cx), position),
-                    dropdown(list_button("object-wrap", t("picture.wrap"), is_open(ObjectPopup::Wrap), ObjectPopup::Wrap, true, cx), wrap),
-                    dropdown(list_button("bring-forward", t("objects.forward"), is_open(ObjectPopup::Forward), ObjectPopup::Forward, floating, cx), forward),
-                    dropdown(list_button("send-backward", t("objects.backward"), is_open(ObjectPopup::Backward), ObjectPopup::Backward, floating, cx), backward),
+                    dropdown(
+                        list_button(
+                            "object-position",
+                            t("objects.position"),
+                            is_open(ObjectPopup::Position),
+                            ObjectPopup::Position,
+                            true,
+                            cx,
+                        ),
+                        position,
+                    ),
+                    dropdown(
+                        list_button(
+                            "object-wrap",
+                            t("picture.wrap"),
+                            is_open(ObjectPopup::Wrap),
+                            ObjectPopup::Wrap,
+                            true,
+                            cx,
+                        ),
+                        wrap,
+                    ),
+                    dropdown(
+                        list_button(
+                            "bring-forward",
+                            t("objects.forward"),
+                            is_open(ObjectPopup::Forward),
+                            ObjectPopup::Forward,
+                            floating,
+                            cx,
+                        ),
+                        forward,
+                    ),
+                    dropdown(
+                        list_button(
+                            "send-backward",
+                            t("objects.backward"),
+                            is_open(ObjectPopup::Backward),
+                            ObjectPopup::Backward,
+                            floating,
+                            cx,
+                        ),
+                        backward,
+                    ),
                 ]),
                 row(vec![
-                    text_button("selection-pane", t("objects.selection_pane"), t("objects.selection_pane_title"), self.objects.panels.selection_pane, ObjectAction::SelectionPane, cx),
-                    dropdown(list_button("align-objects", t("objects.align"), is_open(ObjectPopup::Align), ObjectPopup::Align, floating, cx), align),
-                    dropdown(list_button("group-objects", t("objects.group"), is_open(ObjectPopup::Group), ObjectPopup::Group, true, cx), group_menu),
-                    dropdown(list_button("rotate-objects", t("objects.rotate"), is_open(ObjectPopup::Rotate), ObjectPopup::Rotate, true, cx), rotate),
+                    text_button(
+                        "selection-pane",
+                        t("objects.selection_pane"),
+                        t("objects.selection_pane_title"),
+                        self.objects.panels.selection_pane,
+                        ObjectAction::SelectionPane,
+                        cx,
+                    ),
+                    dropdown(
+                        list_button(
+                            "align-objects",
+                            t("objects.align"),
+                            is_open(ObjectPopup::Align),
+                            ObjectPopup::Align,
+                            floating,
+                            cx,
+                        ),
+                        align,
+                    ),
+                    dropdown(
+                        list_button(
+                            "group-objects",
+                            t("objects.group"),
+                            is_open(ObjectPopup::Group),
+                            ObjectPopup::Group,
+                            true,
+                            cx,
+                        ),
+                        group_menu,
+                    ),
+                    dropdown(
+                        list_button(
+                            "rotate-objects",
+                            t("objects.rotate"),
+                            is_open(ObjectPopup::Rotate),
+                            ObjectPopup::Rotate,
+                            true,
+                            cx,
+                        ),
+                        rotate,
+                    ),
                 ]),
             ],
         )
@@ -820,24 +1363,52 @@ impl DocumentView {
                 .w(px(260.0))
                 .max_h(px(440.0))
                 .overflow_y_scroll()
-                .child(menu_row("crop", t("objects.crop"), self.objects.cropping, act(ObjectAction::ToggleCrop), cx))
+                .child(menu_row(
+                    "crop",
+                    t("objects.crop"),
+                    self.objects.cropping,
+                    act(ObjectAction::ToggleCrop),
+                    cx,
+                ))
                 .child(menu_caption(t("objects.crop.aspect")))
                 .children(ASPECT_RATIOS.iter().enumerate().map(|(index, (w, h))| {
-                    menu_row(("aspect", index), format!("{w}:{h}"), false, act(ObjectAction::Aspect(*w, *h)), cx)
+                    menu_row(
+                        ("aspect", index),
+                        format!("{w}:{h}"),
+                        false,
+                        act(ObjectAction::Aspect(*w, *h)),
+                        cx,
+                    )
                 }))
                 .child(menu_caption(t("objects.crop.shape")))
                 .children(crop_shapes().enumerate().map(|(index, (shape, ja, en))| {
-                    menu_row(("crop-shape", index), if japanese() { ja } else { en }, false, act(ObjectAction::CropToShape(shape)), cx)
+                    menu_row(
+                        ("crop-shape", index),
+                        if japanese() { ja } else { en },
+                        false,
+                        act(ObjectAction::CropToShape(shape)),
+                        cx,
+                    )
                 }))
                 .into_any_element()
         });
         let (width_mm, height_mm) = (format.width / PX_PER_MM, format.height / PX_PER_MM);
-        let stepper = |id: &'static str, label: &'static str, value: f64, width: bool, cx: &mut Context<Self>| {
+        let stepper = |id: &'static str,
+                       label: &'static str,
+                       value: f64,
+                       width: bool,
+                       cx: &mut Context<Self>| {
             let step = |delta: f64| {
                 if width {
-                    ObjectAction::Size { width_mm: (value + delta).max(1.0), height_mm }
+                    ObjectAction::Size {
+                        width_mm: (value + delta).max(1.0),
+                        height_mm,
+                    }
                 } else {
-                    ObjectAction::Size { width_mm, height_mm: (value + delta).max(1.0) }
+                    ObjectAction::Size {
+                        width_mm,
+                        height_mm: (value + delta).max(1.0),
+                    }
                 }
             };
             div()
@@ -846,16 +1417,37 @@ impl DocumentView {
                 .gap_1()
                 .text_xs()
                 .child(div().w(px(28.0)).text_color(theme::text_dim()).child(label))
-                .child(text_button((id, 0usize), "−", t("objects.size.smaller"), false, step(-1.0), cx))
+                .child(text_button(
+                    (id, 0usize),
+                    "−",
+                    t("objects.size.smaller"),
+                    false,
+                    step(-1.0),
+                    cx,
+                ))
                 .child(div().w(px(52.0)).child(format!("{value:.1} mm")))
-                .child(text_button((id, 1usize), "+", t("objects.size.larger"), false, step(1.0), cx))
+                .child(text_button(
+                    (id, 1usize),
+                    "+",
+                    t("objects.size.larger"),
+                    false,
+                    step(1.0),
+                    cx,
+                ))
                 .into_any_element()
         };
         group(
             t("objects.group.size"),
             vec![
                 row(vec![dropdown(
-                    list_button("crop-picture", t("objects.crop"), is_open(ObjectPopup::Crop), ObjectPopup::Crop, picture, cx),
+                    list_button(
+                        "crop-picture",
+                        t("objects.crop"),
+                        is_open(ObjectPopup::Crop),
+                        ObjectPopup::Crop,
+                        picture,
+                        cx,
+                    ),
                     crop,
                 )]),
                 stepper("height", t("objects.size.height"), height_mm, false, cx),
@@ -901,6 +1493,17 @@ impl DocumentView {
                 self.objects.editing_points = !self.objects.editing_points;
                 return cx.notify();
             }
+            ObjectAction::LinkTextBox => {
+                self.objects.linking = match self.objects.linking {
+                    Some(_) => None,
+                    None => self.object_target(),
+                };
+                self.objects.status = self
+                    .objects
+                    .linking
+                    .map(|_| SharedString::from(t("objects.link_hint")));
+                return cx.notify();
+            }
             ObjectAction::AlignTo(to) => {
                 self.objects.panels.align_to = to;
                 return cx.notify();
@@ -910,14 +1513,25 @@ impl DocumentView {
                 return cx.notify();
             }
             ObjectAction::ChangePicture => return self.prompt_to_change_picture(cx),
-            ObjectAction::ChangePictureFromClipboard => return self.change_picture_from_clipboard(cx),
+            ObjectAction::ChangePictureFromClipboard => {
+                return self.change_picture_from_clipboard(cx)
+            }
             ObjectAction::Align(align) => {
-                let objects: Vec<_> = self.selected_objects().iter().map(crate::word_objects::placed).collect();
+                let objects: Vec<_> = self
+                    .selected_objects()
+                    .iter()
+                    .map(crate::word_objects::placed)
+                    .collect();
                 let to = self.objects.panels.align_to;
-                return self.object_edit(cx, |view| view.document.align_objects(&objects, align, to));
+                return self
+                    .object_edit(cx, |view| view.document.align_objects(&objects, align, to));
             }
             ObjectAction::Group(group) => {
-                let objects: Vec<_> = self.selected_objects().iter().map(crate::word_objects::placed).collect();
+                let objects: Vec<_> = self
+                    .selected_objects()
+                    .iter()
+                    .map(crate::word_objects::placed)
+                    .collect();
                 return self.object_edit(cx, |view| {
                     if group {
                         view.group_selected(objects)
@@ -940,7 +1554,8 @@ impl DocumentView {
     /// Puts the document's selection where the view's caret is, for a
     /// command that inserts there.
     pub(crate) fn place_document_caret(&mut self) {
-        self.document.place_caret(self.insert_at.0, self.insert_at.1);
+        self.document
+            .place_caret(self.insert_at.0, self.insert_at.1);
     }
 
     /// The shape tool's drag ended: the shape, text box or WordArt goes in
@@ -963,9 +1578,19 @@ impl DocumentView {
                 DrawTool::TextBox => jade_office_model::word::shapes::DEFAULT_TEXT_BOX,
                 _ => jade_office_model::word::shapes::DEFAULT_SHAPE,
             };
-            Drawn { x, y, width: w, height: h }
+            Drawn {
+                x,
+                y,
+                width: w,
+                height: h,
+            }
         } else {
-            Drawn { x, y, width, height }
+            Drawn {
+                x,
+                y,
+                width,
+                height,
+            }
         };
         let document_y = self.document.document_y(page_index, y);
         if let Some(position) = self.document.position_at(x, document_y) {
@@ -975,12 +1600,20 @@ impl DocumentView {
         self.objects.status = None;
         self.object_edit(cx, |view| match tool {
             DrawTool::Shape(shape) => view.document.insert_shape(shape, Some(drawn), false),
-            DrawTool::TextBox => view.document.insert_shape(TextBoxShape::Rectangle, Some(drawn), true),
+            DrawTool::TextBox => {
+                view.document
+                    .insert_shape(TextBoxShape::Rectangle, Some(drawn), true)
+            }
             DrawTool::Connector(..) | DrawTool::Freeform | DrawTool::Pen(_) => Ok(()),
         });
         // Select what went in: the object drawn at that spot.
-        let point_y = self.document.document_y(page_index, drawn.y + drawn.height / 2.0);
-        if let Some(object) = self.document.object_at(drawn.x + drawn.width / 2.0, point_y) {
+        let point_y = self
+            .document
+            .document_y(page_index, drawn.y + drawn.height / 2.0);
+        if let Some(object) = self
+            .document
+            .object_at(drawn.x + drawn.width / 2.0, point_y)
+        {
             self.selected_object = Some(object);
             self.ribbon_tab = crate::RibbonTab::ObjectFormat;
         }
@@ -989,7 +1622,11 @@ impl DocumentView {
 }
 
 /// Runs one object control on `target`.
-fn run_on(view: &mut DocumentView, target: FloatingObjectTarget, action: ObjectAction) -> Result<(), String> {
+fn run_on(
+    view: &mut DocumentView,
+    target: FloatingObjectTarget,
+    action: ObjectAction,
+) -> Result<(), String> {
     let document = &mut view.document;
     match action {
         ObjectAction::ChangeShape(shape) => document.change_shape(target, shape),
@@ -1002,7 +1639,9 @@ fn run_on(view: &mut DocumentView, target: FloatingObjectTarget, action: ObjectA
         ObjectAction::Artistic(effect) => document.set_artistic_effect(target, effect),
         ObjectAction::Transparency(value) => document.set_picture_transparency(target, value),
         ObjectAction::TransparentWhite => document.set_transparent_color(target, "FFFFFF"),
-        ObjectAction::RemoveBackground(remove) => document.remove_picture_background(target, remove),
+        ObjectAction::RemoveBackground(remove) => {
+            document.remove_picture_background(target, remove)
+        }
         ObjectAction::Reset(size) => document.reset_picture(target, size),
         ObjectAction::Outline(edit) => document.set_picture_outline(target, edit),
         ObjectAction::Effect(effect) => document.set_object_effect(target, effect),
@@ -1011,10 +1650,13 @@ fn run_on(view: &mut DocumentView, target: FloatingObjectTarget, action: ObjectA
         ObjectAction::Arrange(arrange) => document.arrange_object(target, arrange),
         ObjectAction::Rotate(rotate) => document.rotate_object(target, rotate),
         ObjectAction::CropToShape(shape) => document.crop_picture_to_shape(target, shape),
-        ObjectAction::Aspect(width, height) => document.crop_picture_to_aspect(target, (width, height)),
-        ObjectAction::Size { width_mm, height_mm } => {
-            document.resize_object(target, width_mm * PX_PER_MM, height_mm * PX_PER_MM)
+        ObjectAction::Aspect(width, height) => {
+            document.crop_picture_to_aspect(target, (width, height))
         }
+        ObjectAction::Size {
+            width_mm,
+            height_mm,
+        } => document.resize_object(target, width_mm * PX_PER_MM, height_mm * PX_PER_MM),
         ObjectAction::ShapeStyle(row, column) => {
             document.apply_shape_style(target, ShapeStyle::gallery(row, column))
         }
@@ -1022,7 +1664,9 @@ fn run_on(view: &mut DocumentView, target: FloatingObjectTarget, action: ObjectA
         ObjectAction::TextFill(paint) => document.set_shape_text_color(target, paint),
         ObjectAction::TextWarp(preset) => document.set_text_warp(target, preset),
         ObjectAction::TextAlign(align) => {
-            use jade_docx_editor::commands::format_text_box::{FormatTextBoxCommand, TextBoxFormatSpec};
+            use jade_docx_editor::commands::format_text_box::{
+                FormatTextBoxCommand, TextBoxFormatSpec,
+            };
             use jade_docx_editor::document::TextBoxVerticalAlignment;
             use jade_office_model::word::WordSession;
             let alignment = match align {
@@ -1048,13 +1692,20 @@ fn run_on(view: &mut DocumentView, target: FloatingObjectTarget, action: ObjectA
 
 /// The shape gallery, by category; `change` changes the selected shape.
 fn shape_gallery(id: &'static str, change: bool, cx: &mut Context<DocumentView>) -> AnyElement {
-    let mut panel = menu_panel(id).w(px(300.0)).max_h(px(460.0)).overflow_y_scroll();
+    let mut panel = menu_panel(id)
+        .w(px(300.0))
+        .max_h(px(460.0))
+        .overflow_y_scroll();
     let mut index = 0usize;
     for category in CATEGORIES.iter() {
         if change && category.shapes.iter().all(|(shape, _, _)| shape.is_line()) {
             continue;
         }
-        panel = panel.child(menu_caption(if japanese() { category.ja } else { category.en }));
+        panel = panel.child(menu_caption(if japanese() {
+            category.ja
+        } else {
+            category.en
+        }));
         for (shape, ja, en) in category.shapes {
             use jade_office_model::word::connectors::ConnectorKind;
             let action = if change {
@@ -1112,23 +1763,83 @@ fn outline_menu(id: &'static str, arrows: bool, cx: &mut Context<DocumentView>) 
         .w(px(200.0))
         .max_h(px(460.0))
         .overflow_y_scroll()
-        .child(color_row("outline-color", |color| ObjectAction::Outline(OutlineEdit::Color(color.to_string())), cx))
-        .child(menu_row("outline-none", t("objects.outline.none"), false, act(ObjectAction::Outline(OutlineEdit::None)), cx))
+        .child(color_row(
+            "outline-color",
+            |color| ObjectAction::Outline(OutlineEdit::Color(color.to_string())),
+            cx,
+        ))
+        .child(menu_row(
+            "outline-none",
+            t("objects.outline.none"),
+            false,
+            act(ObjectAction::Outline(OutlineEdit::None)),
+            cx,
+        ))
         .child(menu_caption(t("objects.outline.weight")))
         .children(weights.into_iter().enumerate().map(|(index, weight)| {
-            menu_row(("outline-weight", index), format!("{weight} pt"), false, act(ObjectAction::Outline(OutlineEdit::Width(weight))), cx)
+            menu_row(
+                ("outline-weight", index),
+                format!("{weight} pt"),
+                false,
+                act(ObjectAction::Outline(OutlineEdit::Width(weight))),
+                cx,
+            )
         }))
         .child(menu_caption(t("objects.outline.dash")))
-        .children(dashes.into_iter().enumerate().map(|(index, (dash, label))| {
-            menu_row(("outline-dash", index), t(label), false, act(ObjectAction::Outline(OutlineEdit::Dash(dash))), cx)
-        }))
+        .children(
+            dashes
+                .into_iter()
+                .enumerate()
+                .map(|(index, (dash, label))| {
+                    menu_row(
+                        ("outline-dash", index),
+                        t(label),
+                        false,
+                        act(ObjectAction::Outline(OutlineEdit::Dash(dash))),
+                        cx,
+                    )
+                }),
+        )
         .when(arrows, |panel| {
             panel
                 .child(menu_caption(t("objects.outline.arrows")))
-                .child(menu_row("arrow-none", t("objects.arrow.none"), false, act(ObjectAction::Outline(OutlineEdit::Arrows(None, None))), cx))
-                .child(menu_row("arrow-end", t("objects.arrow.end"), false, act(ObjectAction::Outline(OutlineEdit::Arrows(None, Some("triangle".into())))), cx))
-                .child(menu_row("arrow-start", t("objects.arrow.start"), false, act(ObjectAction::Outline(OutlineEdit::Arrows(Some("triangle".into()), None))), cx))
-                .child(menu_row("arrow-both", t("objects.arrow.both"), false, act(ObjectAction::Outline(OutlineEdit::Arrows(Some("triangle".into()), Some("triangle".into())))), cx))
+                .child(menu_row(
+                    "arrow-none",
+                    t("objects.arrow.none"),
+                    false,
+                    act(ObjectAction::Outline(OutlineEdit::Arrows(None, None))),
+                    cx,
+                ))
+                .child(menu_row(
+                    "arrow-end",
+                    t("objects.arrow.end"),
+                    false,
+                    act(ObjectAction::Outline(OutlineEdit::Arrows(
+                        None,
+                        Some("triangle".into()),
+                    ))),
+                    cx,
+                ))
+                .child(menu_row(
+                    "arrow-start",
+                    t("objects.arrow.start"),
+                    false,
+                    act(ObjectAction::Outline(OutlineEdit::Arrows(
+                        Some("triangle".into()),
+                        None,
+                    ))),
+                    cx,
+                ))
+                .child(menu_row(
+                    "arrow-both",
+                    t("objects.arrow.both"),
+                    false,
+                    act(ObjectAction::Outline(OutlineEdit::Arrows(
+                        Some("triangle".into()),
+                        Some("triangle".into()),
+                    ))),
+                    cx,
+                ))
         })
         .into_any_element()
 }
@@ -1157,39 +1868,161 @@ fn effects_menu(cx: &mut Context<DocumentView>) -> AnyElement {
         .max_h(px(480.0))
         .overflow_y_scroll()
         .child(menu_caption(t("objects.effect.shadow")))
-        .child(menu_row("shadow-none", t("objects.effect.none"), false, act(ObjectAction::Effect(Effect::Shadow(None))), cx))
-        .children(ShadowPreset::OUTER.iter().zip(shadows).enumerate().map(|(index, (preset, label))| {
-            menu_row(("shadow", index), t(label), false, act(ObjectAction::Effect(Effect::Shadow(Some(*preset)))), cx)
-        }))
-        .children(ShadowPreset::INNER.iter().zip(inner).enumerate().map(|(index, (preset, label))| {
-            menu_row(("inner-shadow", index), t(label), false, act(ObjectAction::Effect(Effect::Shadow(Some(*preset)))), cx)
-        }))
+        .child(menu_row(
+            "shadow-none",
+            t("objects.effect.none"),
+            false,
+            act(ObjectAction::Effect(Effect::Shadow(None))),
+            cx,
+        ))
+        .children(ShadowPreset::OUTER.iter().zip(shadows).enumerate().map(
+            |(index, (preset, label))| {
+                menu_row(
+                    ("shadow", index),
+                    t(label),
+                    false,
+                    act(ObjectAction::Effect(Effect::Shadow(Some(*preset)))),
+                    cx,
+                )
+            },
+        ))
+        .children(ShadowPreset::INNER.iter().zip(inner).enumerate().map(
+            |(index, (preset, label))| {
+                menu_row(
+                    ("inner-shadow", index),
+                    t(label),
+                    false,
+                    act(ObjectAction::Effect(Effect::Shadow(Some(*preset)))),
+                    cx,
+                )
+            },
+        ))
         .child(menu_caption(t("objects.effect.reflection")))
-        .child(menu_row("reflection-none", t("objects.effect.none"), false, act(ObjectAction::Effect(Effect::Reflection(None))), cx))
-        .child(menu_row("reflection-tight", t("objects.reflection.tight"), false, act(ObjectAction::Effect(Effect::Reflection(Some(ReflectionPreset::Tight)))), cx))
-        .child(menu_row("reflection-half", t("objects.reflection.half"), false, act(ObjectAction::Effect(Effect::Reflection(Some(ReflectionPreset::Half)))), cx))
-        .child(menu_row("reflection-full", t("objects.reflection.full"), false, act(ObjectAction::Effect(Effect::Reflection(Some(ReflectionPreset::Full)))), cx))
+        .child(menu_row(
+            "reflection-none",
+            t("objects.effect.none"),
+            false,
+            act(ObjectAction::Effect(Effect::Reflection(None))),
+            cx,
+        ))
+        .child(menu_row(
+            "reflection-tight",
+            t("objects.reflection.tight"),
+            false,
+            act(ObjectAction::Effect(Effect::Reflection(Some(
+                ReflectionPreset::Tight,
+            )))),
+            cx,
+        ))
+        .child(menu_row(
+            "reflection-half",
+            t("objects.reflection.half"),
+            false,
+            act(ObjectAction::Effect(Effect::Reflection(Some(
+                ReflectionPreset::Half,
+            )))),
+            cx,
+        ))
+        .child(menu_row(
+            "reflection-full",
+            t("objects.reflection.full"),
+            false,
+            act(ObjectAction::Effect(Effect::Reflection(Some(
+                ReflectionPreset::Full,
+            )))),
+            cx,
+        ))
         .child(menu_caption(t("objects.effect.glow")))
-        .child(menu_row("glow-none", t("objects.effect.none"), false, act(ObjectAction::Effect(Effect::Glow(None))), cx))
-        .children([(5.0, "4472C4"), (8.0, "ED7D31"), (11.0, "70AD47"), (18.0, "FFC000")].into_iter().enumerate().map(|(index, (radius, color))| {
-            menu_row(("glow", index), i18n::format("objects.glow.size", &[("n", &radius)]), false, act(ObjectAction::Effect(Effect::Glow(Some((radius, color.to_string()))))), cx)
-        }))
+        .child(menu_row(
+            "glow-none",
+            t("objects.effect.none"),
+            false,
+            act(ObjectAction::Effect(Effect::Glow(None))),
+            cx,
+        ))
+        .children(
+            [
+                (5.0, "4472C4"),
+                (8.0, "ED7D31"),
+                (11.0, "70AD47"),
+                (18.0, "FFC000"),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, (radius, color))| {
+                menu_row(
+                    ("glow", index),
+                    i18n::format("objects.glow.size", &[("n", &radius)]),
+                    false,
+                    act(ObjectAction::Effect(Effect::Glow(Some((
+                        radius,
+                        color.to_string(),
+                    ))))),
+                    cx,
+                )
+            }),
+        )
         .child(menu_caption(t("objects.effect.soft_edges")))
-        .child(menu_row("soft-none", t("objects.effect.none"), false, act(ObjectAction::Effect(Effect::SoftEdge(None))), cx))
-        .children([1.0, 2.5, 5.0, 10.0, 25.0, 50.0].into_iter().enumerate().map(|(index, radius)| {
-            menu_row(("soft", index), format!("{radius} pt"), false, act(ObjectAction::Effect(Effect::SoftEdge(Some(radius)))), cx)
-        }))
+        .child(menu_row(
+            "soft-none",
+            t("objects.effect.none"),
+            false,
+            act(ObjectAction::Effect(Effect::SoftEdge(None))),
+            cx,
+        ))
+        .children(
+            [1.0, 2.5, 5.0, 10.0, 25.0, 50.0]
+                .into_iter()
+                .enumerate()
+                .map(|(index, radius)| {
+                    menu_row(
+                        ("soft", index),
+                        format!("{radius} pt"),
+                        false,
+                        act(ObjectAction::Effect(Effect::SoftEdge(Some(radius)))),
+                        cx,
+                    )
+                }),
+        )
         .child(menu_caption(t("objects.effect.bevel")))
-        .child(menu_row("bevel-none", t("objects.effect.none"), false, act(ObjectAction::Effect(Effect::Bevel(None))), cx))
-        .children([("circle", "objects.bevel.circle"), ("relaxedInset", "objects.bevel.relaxed_inset"), ("cross", "objects.bevel.cross"), ("coolSlant", "objects.bevel.cool_slant"), ("angle", "objects.bevel.angle"), ("softRound", "objects.bevel.soft_round")].into_iter().enumerate().map(|(index, (preset, label))| {
-            menu_row(("bevel", index), t(label), false, act(ObjectAction::Effect(Effect::Bevel(Some(preset.to_string())))), cx)
-        }))
+        .child(menu_row(
+            "bevel-none",
+            t("objects.effect.none"),
+            false,
+            act(ObjectAction::Effect(Effect::Bevel(None))),
+            cx,
+        ))
+        .children(
+            [
+                ("circle", "objects.bevel.circle"),
+                ("relaxedInset", "objects.bevel.relaxed_inset"),
+                ("cross", "objects.bevel.cross"),
+                ("coolSlant", "objects.bevel.cool_slant"),
+                ("angle", "objects.bevel.angle"),
+                ("softRound", "objects.bevel.soft_round"),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, (preset, label))| {
+                menu_row(
+                    ("bevel", index),
+                    t(label),
+                    false,
+                    act(ObjectAction::Effect(Effect::Bevel(Some(
+                        preset.to_string(),
+                    )))),
+                    cx,
+                )
+            }),
+        )
         .into_any_element()
 }
 
 /// One square of the style gallery, drawn in its fill and outline.
 fn style_swatch(row: usize, column: usize, cx: &mut Context<DocumentView>) -> AnyElement {
-    let accents = [0x404040, 0x4472C4, 0xED7D31, 0xA5A5A5, 0xFFC000, 0x5B9BD5, 0x70AD47];
+    let accents = [
+        0x404040, 0x4472C4, 0xED7D31, 0xA5A5A5, 0xFFC000, 0x5B9BD5, 0x70AD47,
+    ];
     let accent = accents[column];
     let tint = |color: u32, amount: f64| {
         let channel = |shift: u32| {
@@ -1274,7 +2107,9 @@ impl DocumentView {
         end: (f64, f64),
         cx: &mut Context<Self>,
     ) {
-        use jade_office_model::word::connectors::{nearest_connection, ConnectorEnd, WordConnectors};
+        use jade_office_model::word::connectors::{
+            nearest_connection, ConnectorEnd, WordConnectors,
+        };
         let end = if (end.0 - start.0).abs() + (end.1 - start.1).abs() < 4.0 {
             (start.0 + 96.0, start.1)
         } else {
@@ -1284,10 +2119,15 @@ impl DocumentView {
             let document_y = view.document.document_y(page_index, point.1);
             view.document
                 .object_at(point.0, document_y)
-                .filter(|object| object.kind == jade_docx_editor::word_document::FloatingObjectKind::TextBox)
+                .filter(|object| {
+                    object.kind == jade_docx_editor::word_document::FloatingObjectKind::TextBox
+                })
                 .map(|object| {
                     let placed = crate::word_objects::placed(&object);
-                    (crate::word_objects::target_of(&object), nearest_connection(&placed, point))
+                    (
+                        crate::word_objects::target_of(&object),
+                        nearest_connection(&placed, point),
+                    )
                 })
         };
         let first = ConnectorEnd {
@@ -1317,7 +2157,9 @@ impl DocumentView {
             self.insert_at = position;
         }
         self.place_document_caret();
-        self.object_edit(cx, |view| view.document.insert_connector(kind, arrow, first, last));
+        self.object_edit(cx, |view| {
+            view.document.insert_connector(kind, arrow, first, last)
+        });
         cx.notify();
     }
 
@@ -1366,7 +2208,14 @@ impl DocumentView {
                     .when(active, |button| button.bg(theme::selected()))
                     .hover(|button| button.bg(theme::hovered()))
                     .tooltip(Tooltip::text(if japanese() { *ja } else { *en }))
-                    .child(div().size(px(10.0)).rounded_full().bg(gpui::rgb(value)).border_1().border_color(theme::border()))
+                    .child(
+                        div()
+                            .size(px(10.0))
+                            .rounded_full()
+                            .bg(gpui::rgb(value))
+                            .border_1()
+                            .border_color(theme::border()),
+                    )
                     .child(t("objects.pen"))
                     .on_click(listener(act(ObjectAction::Draw(DrawTool::Pen(index))), cx))
                     .into_any_element()

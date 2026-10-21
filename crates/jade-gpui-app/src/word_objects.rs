@@ -110,6 +110,8 @@ pub struct ObjectTools {
     pub freeform: Option<(usize, Vec<(f64, f64)>)>,
     /// A pen stroke being drawn, on its page.
     pub stroke: Option<(usize, Vec<(f64, f64)>)>,
+    /// リンクの作成: the text box whose overflow the next one clicked takes.
+    pub linking: Option<FloatingObjectTarget>,
     /// 頂点の編集: the selected freeform's points are shown and dragged;
     /// the point being dragged.
     pub editing_points: bool,
@@ -129,7 +131,10 @@ fn hit(point: (f64, f64), center: (f64, f64), reach: f64) -> bool {
 }
 
 /// The object a hit test or the renderer's record found, as an `ObjectHit`.
-pub fn region_hit(document: &jade_docx_native_render::NativeDocument, target: FloatingObjectTarget) -> Option<ObjectHit> {
+pub fn region_hit(
+    document: &jade_docx_native_render::NativeDocument,
+    target: FloatingObjectTarget,
+) -> Option<ObjectHit> {
     let info = document.renderer().object_region(target)?;
     Some(ObjectHit {
         kind: info.kind,
@@ -233,7 +238,10 @@ impl DocumentView {
         if self.objects.drawing == Some(crate::word_objects_ribbon::DrawTool::Freeform) {
             // A click per point; a double click, or a click on the first
             // point, finishes it.
-            let points = self.objects.freeform.get_or_insert_with(|| (page_index, Vec::new()));
+            let points = self
+                .objects
+                .freeform
+                .get_or_insert_with(|| (page_index, Vec::new()));
             let closes = points.1.len() >= 3
                 && points
                     .1
@@ -248,7 +256,10 @@ impl DocumentView {
             cx.notify();
             return true;
         }
-        if matches!(self.objects.drawing, Some(crate::word_objects_ribbon::DrawTool::Pen(_))) {
+        if matches!(
+            self.objects.drawing,
+            Some(crate::word_objects_ribbon::DrawTool::Pen(_))
+        ) {
             self.objects.stroke = Some((page_index, vec![(x, y)]));
             self.selected_object = None;
             cx.notify();
@@ -268,7 +279,10 @@ impl DocumentView {
             return true;
         }
         // The selected object's handles first: they reach outside its box.
-        if let Some(object) = self.selected_object.filter(|o| o.page.saturating_sub(1) == page_index) {
+        if let Some(object) = self
+            .selected_object
+            .filter(|o| o.page.saturating_sub(1) == page_index)
+        {
             if let Some(grip) = self.grip_at(&object, (x, y)) {
                 self.start_drag(object, grip, (x, y), shift);
                 cx.notify();
@@ -284,6 +298,15 @@ impl DocumentView {
             }
             return false;
         };
+        // リンクの作成: the box clicked continues the one picked before.
+        if let Some(from) = self.objects.linking.take() {
+            if object.kind == FloatingObjectKind::TextBox && target_of(&object) != from {
+                use jade_office_model::word::shapes::WordShapes;
+                let to = target_of(&object);
+                self.object_edit(cx, |view| view.document.link_text_boxes(from, to));
+                return true;
+            }
+        }
         // In a text box, a second click (or a double click) is in its text.
         if object.kind == FloatingObjectKind::TextBox
             && (click_count >= 2 || self.selected_object == Some(object))
@@ -345,7 +368,11 @@ impl DocumentView {
         }
         for handle in Handle::ALL {
             let (fx, fy) = handle.anchor();
-            if hit(point, (left + width * fx, top + height * fy), HANDLE / 2.0 + 2.0) {
+            if hit(
+                point,
+                (left + width * fx, top + height * fy),
+                HANDLE / 2.0 + 2.0,
+            ) {
                 return Some(if self.objects.cropping {
                     Grip::Crop(handle)
                 } else {
@@ -359,15 +386,16 @@ impl DocumentView {
     fn start_drag(&mut self, object: ObjectHit, grip: Grip, from: (f64, f64), shift: bool) {
         let target = target_of(&object);
         let format = self.document.object_format(target);
-        let crop = jade_office_model::word::objects::object_run(self.document.word_document(), target)
-            .and_then(|run| run.image.as_ref())
-            .and_then(|image| image.crop)
-            .unwrap_or_default();
+        let crop =
+            jade_office_model::word::objects::object_run(self.document.word_document(), target)
+                .and_then(|run| run.image.as_ref())
+                .and_then(|image| image.crop)
+                .unwrap_or_default();
         let is_picture = format
             .as_ref()
             .is_some_and(|format| format.sort == ObjectSort::Picture);
-        let keep_ratio = shift
-            || matches!(grip, Grip::Resize(handle) if handle.is_corner() && is_picture);
+        let keep_ratio =
+            shift || matches!(grip, Grip::Resize(handle) if handle.is_corner() && is_picture);
         self.objects.drag = Some(Drag {
             object,
             grip,
@@ -400,7 +428,10 @@ impl DocumentView {
             return true;
         }
         if let Some((_, points)) = self.objects.stroke.as_mut() {
-            if points.last().is_none_or(|last| (last.0 - x).abs() + (last.1 - y).abs() >= 1.5) {
+            if points
+                .last()
+                .is_none_or(|last| (last.0 - x).abs() + (last.1 - y).abs() >= 1.5)
+            {
                 points.push((x, y));
             }
             cx.notify();
@@ -530,8 +561,19 @@ impl DocumentView {
     /// The selected freeform's path and box, when it is one.
     fn freeform_path(&self) -> Option<(jade_docx_editor::document::GeometryPath, ObjectHit)> {
         let object = self.selected_object?;
-        let run = jade_office_model::word::objects::object_run(self.document.word_document(), target_of(&object))?;
-        let path = run.text_box.as_ref()?.extras().custom_geometry.as_ref()?.paths.first()?.clone();
+        let run = jade_office_model::word::objects::object_run(
+            self.document.word_document(),
+            target_of(&object),
+        )?;
+        let path = run
+            .text_box
+            .as_ref()?
+            .extras()
+            .custom_geometry
+            .as_ref()?
+            .paths
+            .first()?
+            .clone();
         Some((path, object))
     }
 
@@ -680,7 +722,9 @@ impl DocumentView {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some(SharedString::from(crate::i18n::text("objects.change_picture"))),
+            prompt: Some(SharedString::from(crate::i18n::text(
+                "objects.change_picture",
+            ))),
         });
         cx.spawn(async move |view, cx| {
             let Ok(Ok(Some(paths))) = paths.await else {
@@ -714,9 +758,12 @@ impl DocumentView {
             })
         });
         match bytes {
-            Some(bytes) => self.object_edit(cx, |view| view.document.replace_picture(target, bytes)),
+            Some(bytes) => {
+                self.object_edit(cx, |view| view.document.replace_picture(target, bytes))
+            }
             None => {
-                self.objects.status = Some(crate::i18n::text("objects.no_clipboard_picture").into());
+                self.objects.status =
+                    Some(crate::i18n::text("objects.no_clipboard_picture").into());
                 cx.notify();
             }
         }
@@ -747,7 +794,10 @@ impl DocumentView {
                 elements.push(outline(object, false));
             }
         }
-        if let Some(object) = self.selected_object.filter(|o| o.page.saturating_sub(1) == page_index) {
+        if let Some(object) = self
+            .selected_object
+            .filter(|o| o.page.saturating_sub(1) == page_index)
+        {
             elements.push(outline(&object, true));
             let handle = |cx: f64, cy: f64, round: bool| {
                 div()
@@ -834,13 +884,18 @@ impl DocumentView {
         }
         if let Some((page, points)) = self.objects.stroke.as_ref() {
             if *page == page_index {
-                elements.extend(points.iter().map(|point| dot(*point, theme::accent().into())));
+                elements.extend(
+                    points
+                        .iter()
+                        .map(|point| dot(*point, theme::accent().into())),
+                );
             }
         }
         if self.objects.editing_points {
             if let Some((path, object)) = self.freeform_path() {
                 if object.page.saturating_sub(1) == page_index {
-                    let mut points = jade_office_model::word::connectors::path_points(&path, &placed(&object));
+                    let mut points =
+                        jade_office_model::word::connectors::path_points(&path, &placed(&object));
                     if let Some((index, point)) = self.objects.point_drag {
                         if let Some(dragged) = points.get_mut(index) {
                             *dragged = point;
@@ -871,7 +926,10 @@ impl DocumentView {
 }
 
 /// Removes objects, last first so the earlier targets stay valid.
-fn delete_objects(view: &mut DocumentView, mut targets: Vec<FloatingObjectTarget>) -> Result<(), String> {
+fn delete_objects(
+    view: &mut DocumentView,
+    mut targets: Vec<FloatingObjectTarget>,
+) -> Result<(), String> {
     use jade_docx_editor::commands::delete_object::DeleteObjectCommand;
     use jade_office_model::word::WordSession;
     targets.sort_by_key(|target| (target.paragraph_index, target.run_index));
@@ -977,11 +1035,21 @@ mod tests {
 
     #[test]
     fn corner_handles_keep_a_pictures_proportions() {
-        let rect = resize((10.0, 10.0, 100.0, 50.0), Handle::BottomRight, (100.0, 0.0), true);
+        let rect = resize(
+            (10.0, 10.0, 100.0, 50.0),
+            Handle::BottomRight,
+            (100.0, 0.0),
+            true,
+        );
         assert_eq!(rect, (10.0, 10.0, 200.0, 100.0));
         let rect = resize((10.0, 10.0, 100.0, 50.0), Handle::Right, (50.0, 0.0), true);
         assert_eq!(rect, (10.0, 10.0, 150.0, 50.0));
-        let rect = resize((10.0, 10.0, 100.0, 50.0), Handle::TopLeft, (-100.0, 0.0), true);
+        let rect = resize(
+            (10.0, 10.0, 100.0, 50.0),
+            Handle::TopLeft,
+            (-100.0, 0.0),
+            true,
+        );
         assert_eq!(rect, (-90.0, -40.0, 200.0, 100.0));
     }
 
@@ -1008,7 +1076,7 @@ mod tests {
 mod scenarios {
     use super::*;
     use crate::word_objects_ribbon::{DrawTool, ObjectAction};
-    use gpui::{Modifiers, MouseButton, Point, Pixels, VisualTestContext};
+    use gpui::{Modifiers, MouseButton, Pixels, Point, VisualTestContext};
     use jade_docx_editor::document::TextBoxShape;
     use jade_office_model::word::picture_format::{Effect, ShadowPreset};
 
@@ -1036,7 +1104,10 @@ mod scenarios {
                 image::Rgba([30, 30, 200, 255])
             }
         })
-        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
         .unwrap();
         bytes
     }
@@ -1077,7 +1148,10 @@ mod scenarios {
 
     /// A picture put in at the start of the first body paragraph, floating
     /// in front of the text so it can be dragged anywhere.
-    pub(crate) fn picture(view: &gpui::Entity<DocumentView>, cx: &mut VisualTestContext) -> ObjectHit {
+    pub(crate) fn picture(
+        view: &gpui::Entity<DocumentView>,
+        cx: &mut VisualTestContext,
+    ) -> ObjectHit {
         view.update(cx, |view, cx| {
             let paragraph = (0..view.document.paragraph_count())
                 .find(|&index| {
@@ -1103,16 +1177,27 @@ mod scenarios {
                 kind: FloatingObjectKind::Image,
             };
             view.document
-                .set_object_wrap(target, jade_office_model::word::picture::Wrap::InFrontOfText)
+                .set_object_wrap(
+                    target,
+                    jade_office_model::word::picture::Wrap::InFrontOfText,
+                )
                 .unwrap();
             view.rebuild_after_edit();
             region_hit(&view.document, target).unwrap()
         })
     }
 
-    fn image(view: &gpui::Entity<DocumentView>, cx: &mut VisualTestContext, object: ObjectHit) -> jade_docx_editor::document::RunImage {
+    fn image(
+        view: &gpui::Entity<DocumentView>,
+        cx: &mut VisualTestContext,
+        object: ObjectHit,
+    ) -> jade_docx_editor::document::RunImage {
         view.read_with(cx, |view, _| {
-            view.document.word_document().paragraph(object.paragraph).unwrap().runs[object.run]
+            view.document
+                .word_document()
+                .paragraph(object.paragraph)
+                .unwrap()
+                .runs[object.run]
                 .image
                 .clone()
                 .unwrap()
@@ -1127,14 +1212,19 @@ mod scenarios {
         let (view, cx) = open_contract(cx);
         let object = picture(&view, cx);
         cx.run_until_parked();
-        let center = (object.x + object.width / 2.0, object.y + object.height / 2.0);
+        let center = (
+            object.x + object.width / 2.0,
+            object.y + object.height / 2.0,
+        );
         let point = on_page(&view, cx, 0, center);
         cx.simulate_click(point, Modifiers::none());
         cx.run_until_parked();
         view.update(cx, |view, cx| {
             assert_eq!(view.object_target(), Some(target_of(&object)));
             let tabs = view.visible_tabs();
-            assert!(tabs.iter().any(|(tab, _)| *tab == crate::RibbonTab::ObjectFormat));
+            assert!(tabs
+                .iter()
+                .any(|(tab, _)| *tab == crate::RibbonTab::ObjectFormat));
             view.ribbon_tab = crate::RibbonTab::ObjectFormat;
             view.run_object_action(
                 ObjectAction::Effect(Effect::Shadow(Some(ShadowPreset::OUTER[0]))),
@@ -1148,15 +1238,27 @@ mod scenarios {
         // The rotation handle, dragged round to the right: a quarter turn.
         let object = view.read_with(cx, |view, _| view.selected_object.unwrap());
         let handle = (object.x + object.width / 2.0, object.y - ROTATE_REACH);
-        let right = (object.x + object.width + 80.0, object.y + object.height / 2.0);
+        let right = (
+            object.x + object.width + 80.0,
+            object.y + object.height / 2.0,
+        );
         drag(&view, cx, handle, right);
         let rotation = image(&view, cx, object).layout.rotation_deg.unwrap_or(0.0);
         assert!((rotation - 90.0).abs() < 2.0, "{rotation}");
         view.update(cx, |view, cx| view.step_history(true, cx));
-        assert!(image(&view, cx, object).layout.rotation_deg.unwrap_or(0.0).abs() < 0.5);
+        assert!(
+            image(&view, cx, object)
+                .layout
+                .rotation_deg
+                .unwrap_or(0.0)
+                .abs()
+                < 0.5
+        );
 
         // トリミング: the left handle moved in a quarter of the width.
-        view.update(cx, |view, cx| view.run_object_action(ObjectAction::ToggleCrop, cx));
+        view.update(cx, |view, cx| {
+            view.run_object_action(ObjectAction::ToggleCrop, cx)
+        });
         let object = view.read_with(cx, |view, _| view.selected_object.unwrap());
         let left = (object.x, object.y + object.height / 2.0);
         drag(&view, cx, left, (object.x + object.width / 4.0, left.1));
@@ -1179,12 +1281,17 @@ mod scenarios {
     fn a_shape_is_drawn_and_typed_into(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_contract(cx);
         view.update(cx, |view, cx| {
-            view.run_object_action(ObjectAction::Draw(DrawTool::Shape(TextBoxShape::Ellipse)), cx)
+            view.run_object_action(
+                ObjectAction::Draw(DrawTool::Shape(TextBoxShape::Ellipse)),
+                cx,
+            )
         });
         drag(&view, cx, (150.0, 300.0), (310.0, 380.0));
         let (target, shape) = view.read_with(cx, |view, _| {
             let target = view.object_target().expect("the drawn shape is selected");
-            let run = jade_office_model::word::objects::object_run(view.document.word_document(), target).unwrap();
+            let run =
+                jade_office_model::word::objects::object_run(view.document.word_document(), target)
+                    .unwrap();
             (target, run.text_box.clone().unwrap())
         });
         assert_eq!(shape.shape, TextBoxShape::Ellipse);
@@ -1193,7 +1300,10 @@ mod scenarios {
         view.read_with(cx, |view, _| {
             assert!(view.ribbon_tab == crate::RibbonTab::ObjectFormat);
             let region = view.selected_object.unwrap();
-            assert!((region.x - 150.0).abs() < 1.0 && (region.y - 300.0).abs() < 1.0, "{region:?}");
+            assert!(
+                (region.x - 150.0).abs() < 1.0 && (region.y - 300.0).abs() < 1.0,
+                "{region:?}"
+            );
         });
         // Into its text, and type.
         let middle = on_page(&view, cx, 0, (230.0, 340.0));
@@ -1202,8 +1312,14 @@ mod scenarios {
         cx.run_until_parked();
         cx.simulate_input("ab");
         view.read_with(cx, |view, _| {
-            let run = jade_office_model::word::objects::object_run(view.document.word_document(), target).unwrap();
-            assert!(run.text_box.as_ref().unwrap().text.contains("ab"), "{:?}", run.text_box.as_ref().unwrap().text);
+            let run =
+                jade_office_model::word::objects::object_run(view.document.word_document(), target)
+                    .unwrap();
+            assert!(
+                run.text_box.as_ref().unwrap().text.contains("ab"),
+                "{:?}",
+                run.text_box.as_ref().unwrap().text
+            );
         });
     }
 
@@ -1247,7 +1363,8 @@ mod scenarios {
             dialog.h_relative = jade_office_model::word::objects::RelativeTo::Margin;
             dialog.tab = DialogTab::Size;
             dialog.focus = Some(Field::Width);
-            *dialog.field_mut(Field::Width).unwrap() = jade_office_model::text::TextEdit::new("50".into());
+            *dialog.field_mut(Field::Width).unwrap() =
+                jade_office_model::text::TextEdit::new("50".into());
             view.dialog_typed();
             let height = view.objects.panels.dialog.as_ref().unwrap();
             assert_eq!(height_text(height), "25", "the proportions are kept");
@@ -1271,11 +1388,17 @@ mod scenarios {
         });
         cx.run_until_parked();
         let names: Vec<String> = view.read_with(cx, |view, _| {
-            view.document.body_objects().into_iter().map(|object| object.name).collect()
+            view.document
+                .body_objects()
+                .into_iter()
+                .map(|object| object.name)
+                .collect()
         });
         assert!(names.contains(&"ロゴ".to_string()), "{names:?}");
         view.update(cx, |view, cx| {
-            view.document.set_object_hidden(target_of(&object), true).unwrap();
+            view.document
+                .set_object_hidden(target_of(&object), true)
+                .unwrap();
             view.rebuild_after_edit();
             assert!(region_hit(&view.document, target_of(&object)).is_none());
             cx.notify();
@@ -1305,9 +1428,16 @@ mod more_scenarios {
     use jade_office_model::word::diagrams::WordDiagrams;
     use jade_office_model::word::objects::ObjectSort;
 
-    fn sorts(view: &gpui::Entity<DocumentView>, cx: &mut gpui::VisualTestContext) -> Vec<ObjectSort> {
+    fn sorts(
+        view: &gpui::Entity<DocumentView>,
+        cx: &mut gpui::VisualTestContext,
+    ) -> Vec<ObjectSort> {
         view.read_with(cx, |view, _| {
-            view.document.body_objects().into_iter().map(|object| object.sort).collect()
+            view.document
+                .body_objects()
+                .into_iter()
+                .map(|object| object.sort)
+                .collect()
         })
     }
 
@@ -1325,7 +1455,10 @@ mod more_scenarios {
                 cx,
             );
             assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
-            assert!(view.objects.diagrams.text_pane.is_some(), "the text pane opens");
+            assert!(
+                view.objects.diagrams.text_pane.is_some(),
+                "the text pane opens"
+            );
         });
         cx.simulate_input("企画");
         view.update(cx, |view, cx| {
@@ -1334,7 +1467,10 @@ mod more_scenarios {
         cx.simulate_input("実装");
         view.update(cx, |view, cx| {
             assert!(view.object_tools_key("down", false, false, cx));
-            assert!(view.object_tools_key("tab", false, false, cx), "demoted under 実装");
+            assert!(
+                view.object_tools_key("tab", false, false, cx),
+                "demoted under 実装"
+            );
         });
         let diagram = view.update(cx, |view, _| {
             let target = view.object_target().unwrap();
@@ -1348,7 +1484,10 @@ mod more_scenarios {
         view.update(cx, |view, cx| {
             view.objects.diagrams.text_pane = None;
             view.selected_object = None;
-            view.run_object_action(ObjectAction::Diagram(DiagramAction::InsertChart(ChartKind::Pie)), cx);
+            view.run_object_action(
+                ObjectAction::Diagram(DiagramAction::InsertChart(ChartKind::Pie)),
+                cx,
+            );
             assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
             assert!(view.object_target().is_some(), "the chart is selected");
             view.run_object_action(ObjectAction::Diagram(DiagramAction::EditData), cx);
@@ -1372,11 +1511,16 @@ mod more_scenarios {
             (TextBoxShape::Rectangle, (120.0, 300.0), (220.0, 360.0)),
             (TextBoxShape::Ellipse, (420.0, 300.0), (520.0, 360.0)),
         ] {
-            view.update(cx, |view, cx| view.run_object_action(ObjectAction::Draw(DrawTool::Shape(shape)), cx));
+            view.update(cx, |view, cx| {
+                view.run_object_action(ObjectAction::Draw(DrawTool::Shape(shape)), cx)
+            });
             drag(&view, cx, from, to);
         }
         view.update(cx, |view, cx| {
-            view.run_object_action(ObjectAction::Draw(DrawTool::Connector(ConnectorKind::Straight, true)), cx)
+            view.run_object_action(
+                ObjectAction::Draw(DrawTool::Connector(ConnectorKind::Straight, true)),
+                cx,
+            )
         });
         drag(&view, cx, (215.0, 330.0), (425.0, 330.0));
         let connector = view.read_with(cx, |view, _| {
@@ -1384,15 +1528,21 @@ mod more_scenarios {
                 .body_objects()
                 .into_iter()
                 .find(|object| {
-                    jade_office_model::word::objects::object_run(view.document.word_document(), object.target)
-                        .and_then(|run| run.text_box.as_ref())
-                        .is_some_and(|text_box| text_box.extras().connector.is_some())
+                    jade_office_model::word::objects::object_run(
+                        view.document.word_document(),
+                        object.target,
+                    )
+                    .and_then(|run| run.text_box.as_ref())
+                    .is_some_and(|text_box| text_box.extras().connector.is_some())
                 })
                 .expect("a glued connector")
                 .target
         });
         let line = view.read_with(cx, |view, _| region_hit(&view.document, connector).unwrap());
-        assert!((line.x - 220.0).abs() < 1.5 && (line.x + line.width - 420.0).abs() < 1.5, "{line:?}");
+        assert!(
+            (line.x - 220.0).abs() < 1.5 && (line.x + line.width - 420.0).abs() < 1.5,
+            "{line:?}"
+        );
         // Drag the ellipse down; the connector's end goes with it.
         let ellipse_center = (470.0, 330.0);
         let at = on_page(&view, cx, 0, (600.0, 700.0));
@@ -1410,7 +1560,10 @@ mod more_scenarios {
         });
         // Glued to the ellipse's left point, wherever the drag left it.
         assert!(ellipse.y > 380.0, "the ellipse moved down: {ellipse:?}");
-        assert!((line.y + line.height - (ellipse.y + ellipse.height / 2.0)).abs() < 2.0, "{line:?} {ellipse:?}");
+        assert!(
+            (line.y + line.height - (ellipse.y + ellipse.height / 2.0)).abs() < 2.0,
+            "{line:?} {ellipse:?}"
+        );
     }
 
     /// フリーフォーム: a click per point, a double click to finish; 頂点の
@@ -1418,7 +1571,9 @@ mod more_scenarios {
     #[gpui::test]
     fn a_freeform_is_drawn_and_its_points_dragged(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_contract(cx);
-        view.update(cx, |view, cx| view.run_object_action(ObjectAction::Draw(DrawTool::Freeform), cx));
+        view.update(cx, |view, cx| {
+            view.run_object_action(ObjectAction::Draw(DrawTool::Freeform), cx)
+        });
         for point in [(100.0, 400.0), (200.0, 300.0)] {
             let at = on_page(&view, cx, 0, point);
             cx.simulate_click(at, Modifiers::none());
@@ -1438,9 +1593,12 @@ mod more_scenarios {
                 .body_objects()
                 .into_iter()
                 .find(|object| {
-                    jade_office_model::word::objects::object_run(view.document.word_document(), object.target)
-                        .and_then(|run| run.text_box.as_ref())
-                        .is_some_and(|text_box| text_box.extras().custom_geometry.is_some())
+                    jade_office_model::word::objects::object_run(
+                        view.document.word_document(),
+                        object.target,
+                    )
+                    .and_then(|run| run.text_box.as_ref())
+                    .is_some_and(|text_box| text_box.extras().custom_geometry.is_some())
                 })
                 .expect("the freeform")
                 .target
@@ -1454,14 +1612,21 @@ mod more_scenarios {
             let (path, object) = view.freeform_path().unwrap();
             jade_office_model::word::connectors::path_points(&path, &placed(&object))
         });
-        assert!(points.iter().any(|(x, y)| (x - 200.0).abs() < 2.0 && (y - 250.0).abs() < 2.0), "{points:?}");
+        assert!(
+            points
+                .iter()
+                .any(|(x, y)| (x - 200.0).abs() < 2.0 && (y - 250.0).abs() < 2.0),
+            "{points:?}"
+        );
     }
 
     /// 描画 → ペン: a drag on the page goes in as Word ink, drawn there.
     #[gpui::test]
     fn a_pen_stroke_goes_in_as_ink(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_contract(cx);
-        view.update(cx, |view, cx| view.run_object_action(ObjectAction::Draw(DrawTool::Pen(1)), cx));
+        view.update(cx, |view, cx| {
+            view.run_object_action(ObjectAction::Draw(DrawTool::Pen(1)), cx)
+        });
         drag(&view, cx, (150.0, 420.0), (300.0, 460.0));
         let ink = view.read_with(cx, |view, _| {
             assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
@@ -1469,17 +1634,29 @@ mod more_scenarios {
                 .body_objects()
                 .into_iter()
                 .find_map(|object| {
-                    jade_office_model::word::objects::object_run(view.document.word_document(), object.target)
-                        .and_then(|run| run.image.as_ref())
-                        .and_then(|image| image.format().ink.clone())
-                        .map(|ink| (ink, region_hit(&view.document, object.target).expect("drawn")))
+                    jade_office_model::word::objects::object_run(
+                        view.document.word_document(),
+                        object.target,
+                    )
+                    .and_then(|run| run.image.as_ref())
+                    .and_then(|image| image.format().ink.clone())
+                    .map(|ink| {
+                        (
+                            ink,
+                            region_hit(&view.document, object.target).expect("drawn"),
+                        )
+                    })
                 })
                 .expect("the ink object")
         });
         let (ink, object) = ink;
         assert_eq!(ink.strokes.len(), 1);
         assert_eq!(ink.strokes[0].color, "#E71224");
-        assert!(ink.strokes[0].points.len() >= 3, "{:?}", ink.strokes[0].points);
+        assert!(
+            ink.strokes[0].points.len() >= 3,
+            "{:?}",
+            ink.strokes[0].points
+        );
         assert!(
             (object.x - 150.0).abs() < 4.0 && (object.width - 150.0).abs() < 6.0,
             "{} {}",
@@ -1487,7 +1664,54 @@ mod more_scenarios {
             object.width
         );
         // The pen stays in hand for the next stroke.
-        view.read_with(cx, |view, _| assert_eq!(view.objects.drawing, Some(DrawTool::Pen(1))));
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.objects.drawing, Some(DrawTool::Pen(1)))
+        });
+    }
+
+    /// テキスト ボックス → リンクの作成: the box clicked next continues the
+    /// selected one.
+    #[gpui::test]
+    fn text_boxes_are_linked_by_clicking(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        for (from, to) in [
+            ((120.0, 300.0), (320.0, 360.0)),
+            ((120.0, 420.0), (320.0, 480.0)),
+        ] {
+            view.update(cx, |view, cx| {
+                view.run_object_action(ObjectAction::Draw(DrawTool::TextBox), cx)
+            });
+            drag(&view, cx, from, to);
+        }
+        let at = on_page(&view, cx, 0, (125.0, 302.0));
+        cx.simulate_click(at, Modifiers::none());
+        cx.run_until_parked();
+        view.update(cx, |view, cx| {
+            assert!(view.object_target().is_some(), "the first box is selected");
+            view.run_object_action(ObjectAction::LinkTextBox, cx);
+            assert!(view.objects.linking.is_some());
+        });
+        let at = on_page(&view, cx, 0, (125.0, 422.0));
+        cx.simulate_click(at, Modifiers::none());
+        cx.run_until_parked();
+        view.update(cx, |view, _| {
+            assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
+            assert!(view.objects.linking.is_none());
+            let links: Vec<_> = view
+                .document
+                .body_objects()
+                .into_iter()
+                .filter_map(|object| {
+                    jade_office_model::word::objects::object_run(
+                        view.document.word_document(),
+                        object.target,
+                    )
+                    .and_then(|run| run.text_box.as_ref())
+                    .and_then(|text_box| text_box.extras().link)
+                })
+                .collect();
+            assert_eq!(links.len(), 2, "{links:?}");
+        });
     }
 
     /// 文字列の折り返し → 折り返し点の編集: a corner dragged is written as
@@ -1507,13 +1731,27 @@ mod more_scenarios {
         });
         cx.run_until_parked();
         let object = view.read_with(cx, |view, _| view.selected_object.expect("selected"));
-        drag(&view, cx, (object.x, object.y), (object.x + object.width / 4.0, object.y + object.height / 4.0));
-        let polygon = view.read_with(cx, |view, _| {
-            jade_office_model::word::objects::wrap_polygon(view.document.word_document(), target)
-        })
-        .expect("a wrap polygon was written");
+        drag(
+            &view,
+            cx,
+            (object.x, object.y),
+            (
+                object.x + object.width / 4.0,
+                object.y + object.height / 4.0,
+            ),
+        );
+        let polygon = view
+            .read_with(cx, |view, _| {
+                jade_office_model::word::objects::wrap_polygon(
+                    view.document.word_document(),
+                    target,
+                )
+            })
+            .expect("a wrap polygon was written");
         assert!(
-            polygon.iter().any(|(x, y)| (x - 5400).abs() < 400 && (y - 5400).abs() < 400),
+            polygon
+                .iter()
+                .any(|(x, y)| (x - 5400).abs() < 400 && (y - 5400).abs() < 400),
             "{polygon:?}"
         );
     }
@@ -1527,7 +1765,9 @@ mod more_scenarios {
             (TextBoxShape::Rectangle, (120.0, 300.0), (220.0, 360.0)),
             (TextBoxShape::Triangle, (300.0, 420.0), (380.0, 500.0)),
         ] {
-            view.update(cx, |view, cx| view.run_object_action(ObjectAction::Draw(DrawTool::Shape(shape)), cx));
+            view.update(cx, |view, cx| {
+                view.run_object_action(ObjectAction::Draw(DrawTool::Shape(shape)), cx)
+            });
             drag(&view, cx, from, to);
         }
         let at = on_page(&view, cx, 0, (170.0, 330.0));
@@ -1537,10 +1777,20 @@ mod more_scenarios {
         cx.run_until_parked();
         view.update(cx, |view, cx| {
             assert_eq!(view.selected_objects().len(), 2);
-            view.run_object_action(ObjectAction::AlignTo(jade_office_model::word::objects::AlignTo::Selection), cx);
-            view.run_object_action(ObjectAction::Align(jade_office_model::word::objects::Align::Left), cx);
+            view.run_object_action(
+                ObjectAction::AlignTo(jade_office_model::word::objects::AlignTo::Selection),
+                cx,
+            );
+            view.run_object_action(
+                ObjectAction::Align(jade_office_model::word::objects::Align::Left),
+                cx,
+            );
             assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
-            let lefts: Vec<f64> = view.selected_objects().iter().map(|object| object.x).collect();
+            let lefts: Vec<f64> = view
+                .selected_objects()
+                .iter()
+                .map(|object| object.x)
+                .collect();
             assert!((lefts[0] - lefts[1]).abs() < 1.0, "{lefts:?}");
             view.run_object_action(ObjectAction::Group(true), cx);
             assert!(view.objects.status.is_none(), "{:?}", view.objects.status);

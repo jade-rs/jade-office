@@ -14,13 +14,11 @@ use jade_docx_editor::commands::format_image::{FormatImageCommand, ImageFormatSp
 use jade_docx_editor::commands::format_text_box::{FormatTextBoxCommand, TextBoxFormatSpec};
 use jade_docx_editor::commands::transform_object::TransformObjectCommand;
 use jade_docx_editor::commands::Command;
-use jade_docx_editor::docx_xml::XmlElement;
 use jade_docx_editor::document::{
     ImagePosition, Run, RunImageKind, RunImageLayout, TextBoxShape, WrapMode,
 };
-use jade_docx_editor::drawing_xml::{
-    self, child, child_mut, container_mut, get_attr, set_attr,
-};
+use jade_docx_editor::docx_xml::XmlElement;
+use jade_docx_editor::drawing_xml::{self, child, child_mut, container_mut, get_attr, set_attr};
 use jade_docx_editor::word_document::objects::parse_element;
 use jade_docx_editor::word_document::{
     FloatingObjectKind, FloatingObjectTarget, FloatingObjectTransform, WordDocument,
@@ -230,7 +228,10 @@ pub fn object_run(document: &WordDocument, target: FloatingObjectTarget) -> Opti
 }
 
 /// What an object at `target` is and how it is laid out.
-pub fn object_format(document: &WordDocument, target: FloatingObjectTarget) -> Option<ObjectFormat> {
+pub fn object_format(
+    document: &WordDocument,
+    target: FloatingObjectTarget,
+) -> Option<ObjectFormat> {
     let run = object_run(document, target)?;
     let layout = layout_of(run)?;
     let (sort, width, height, default_name) = match (&run.image, &run.text_box) {
@@ -343,7 +344,10 @@ pub fn body_objects(document: &WordDocument) -> Vec<ObjectFormat> {
                 run_index,
                 kind,
             };
-            if document.text_box_host_for_surface(paragraph_index).is_some() {
+            if document
+                .text_box_host_for_surface(paragraph_index)
+                .is_some()
+            {
                 // A shape inside a text box is the box's, not the page's.
                 continue;
             }
@@ -583,9 +587,12 @@ pub trait WordObjects: WordSession + WordPage {
             ] {
                 if let Some(element) = child_mut(frame, wrap) {
                     let sides: &[(&str, f64)] = match wrap {
-                        "wp:wrapSquare" => {
-                            &[("distT", top), ("distB", bottom), ("distL", left), ("distR", right)]
-                        }
+                        "wp:wrapSquare" => &[
+                            ("distT", top),
+                            ("distB", bottom),
+                            ("distL", left),
+                            ("distR", right),
+                        ],
                         "wp:wrapTopAndBottom" => &[("distT", top), ("distB", bottom)],
                         _ => &[("distL", left), ("distR", right)],
                     };
@@ -687,8 +694,8 @@ pub trait WordObjects: WordSession + WordPage {
     ) -> Result<(), String> {
         let degrees = degrees.rem_euclid(360.0);
         self.edit_object(target, "object_rotation", move |_, drawing| {
-            let sp_pr = drawing_xml::shape_properties_mut(drawing)
-                .ok_or("the object cannot be rotated")?;
+            let sp_pr =
+                drawing_xml::shape_properties_mut(drawing).ok_or("the object cannot be rotated")?;
             let xfrm = child_mut(sp_pr, "a:xfrm").ok_or("the object has no transform")?;
             let value = (degrees * 60_000.0).round() as i64;
             set_attr(xfrm, "rot", (value != 0).then(|| value.to_string()));
@@ -697,7 +704,11 @@ pub trait WordObjects: WordSession + WordPage {
     }
 
     /// 回転 menu: 右へ 90 度回転, 左へ 90 度回転, 上下反転, 左右反転.
-    fn rotate_object(&mut self, target: FloatingObjectTarget, rotate: Rotate) -> Result<(), String> {
+    fn rotate_object(
+        &mut self,
+        target: FloatingObjectTarget,
+        rotate: Rotate,
+    ) -> Result<(), String> {
         let format = self.object_format(target).ok_or("the object is gone")?;
         match rotate {
             Rotate::Right90 => self.set_object_rotation(target, format.rotation + 90.0),
@@ -719,7 +730,11 @@ pub trait WordObjects: WordSession + WordPage {
 
     // ---- 前面へ・背面へ --------------------------------------------------------
 
-    fn arrange_object(&mut self, target: FloatingObjectTarget, arrange: Arrange) -> Result<(), String> {
+    fn arrange_object(
+        &mut self,
+        target: FloatingObjectTarget,
+        arrange: Arrange,
+    ) -> Result<(), String> {
         if matches!(arrange, Arrange::InFrontOfText | Arrange::BehindText) {
             let wrap = if arrange == Arrange::BehindText {
                 Wrap::BehindText
@@ -757,11 +772,15 @@ pub trait WordObjects: WordSession + WordPage {
             .filter_map(|(index, (target, height))| {
                 let wanted = BASE + STEP * index as u32;
                 (*height != wanted).then(|| {
-                    Box::new(edit_drawing_command("object_arrange", *target, move |_, drawing| {
-                        let frame = frame_mut(drawing)?;
-                        set_attr(frame, "relativeHeight", Some(wanted.to_string()));
-                        Ok(())
-                    })) as Box<dyn Command>
+                    Box::new(edit_drawing_command(
+                        "object_arrange",
+                        *target,
+                        move |_, drawing| {
+                            let frame = frame_mut(drawing)?;
+                            set_attr(frame, "relativeHeight", Some(wanted.to_string()));
+                            Ok(())
+                        },
+                    )) as Box<dyn Command>
                 })
             })
             .collect();
@@ -785,7 +804,11 @@ pub trait WordObjects: WordSession + WordPage {
     }
 
     /// The Selection Pane's eye: `wp:docPr@hidden`.
-    fn set_object_hidden(&mut self, target: FloatingObjectTarget, hidden: bool) -> Result<(), String> {
+    fn set_object_hidden(
+        &mut self,
+        target: FloatingObjectTarget,
+        hidden: bool,
+    ) -> Result<(), String> {
         self.edit_object(target, "object_visibility", move |_, drawing| {
             let frame = frame_mut(drawing)?;
             let doc_pr = child_mut(frame, "wp:docPr").ok_or("the object has no properties")?;
@@ -996,89 +1019,127 @@ pub struct LayoutSettings {
 
 /// The wrap polygon of a tight or through wrap, in DrawingML's
 /// 21600-square space; `None` when the object has none written.
-pub fn wrap_polygon(document: &WordDocument, target: FloatingObjectTarget) -> Option<Vec<(i64, i64)>> {
+pub fn wrap_polygon(
+    document: &WordDocument,
+    target: FloatingObjectTarget,
+) -> Option<Vec<(i64, i64)>> {
     let run = object_run(document, target)?;
     let layout = layout_of(run)?;
-    layout
-        .wrap_polygon
-        .as_ref()
-        .map(|polygon| polygon.points.iter().map(|point| (point.x, point.y)).collect())
+    layout.wrap_polygon.as_ref().map(|polygon| {
+        polygon
+            .points
+            .iter()
+            .map(|point| (point.x, point.y))
+            .collect()
+    })
 }
 
 /// What the Selection Pane and the ribbon need beside the session.
 pub trait WordObjectLayout: WordSession + WordObjects {
-    fn apply_layout(&mut self, target: FloatingObjectTarget, settings: LayoutSettings) -> Result<(), String> {
+    fn apply_layout(
+        &mut self,
+        target: FloatingObjectTarget,
+        settings: LayoutSettings,
+    ) -> Result<(), String> {
         let mut commands: Vec<Box<dyn Command>> = Vec::new();
         let current = self.object_format(target).ok_or("the object is gone")?;
         if let Some(wrap) = settings.wrap.filter(|wrap| *wrap != current.wrap) {
             commands.push(wrap_command(target, wrap));
         }
         let floating = settings.wrap.unwrap_or(current.wrap) != Wrap::Inline;
-        commands.push(Box::new(edit_drawing_command("object_layout", target, move |_, drawing| {
-            let frame = frame_mut(drawing)?;
-            let anchored = frame.name == "wp:anchor";
-            if anchored && floating {
-                if let Some(horizontal) = settings.horizontal.as_ref() {
-                    let element = position_element("wp:positionH", horizontal)?;
-                    drawing_xml::put_child(frame, element, &["wp:positionH"], &["wp:positionV", "wp:extent"]);
-                }
-                if let Some(vertical) = settings.vertical.as_ref() {
-                    let element = position_element("wp:positionV", vertical)?;
-                    drawing_xml::put_child(frame, element, &["wp:positionV"], &["wp:extent"]);
-                }
-                if settings.horizontal.is_some() || settings.vertical.is_some() {
-                    set_attr(frame, "simplePos", Some("0".into()));
-                }
-                for (name, value) in [
-                    ("locked", settings.locked),
-                    ("allowOverlap", settings.allow_overlap),
-                    ("layoutInCell", settings.layout_in_cell),
-                ] {
-                    if let Some(value) = value {
-                        set_attr(frame, name, Some(u8::from(value).to_string()));
+        commands.push(Box::new(edit_drawing_command(
+            "object_layout",
+            target,
+            move |_, drawing| {
+                let frame = frame_mut(drawing)?;
+                let anchored = frame.name == "wp:anchor";
+                if anchored && floating {
+                    if let Some(horizontal) = settings.horizontal.as_ref() {
+                        let element = position_element("wp:positionH", horizontal)?;
+                        drawing_xml::put_child(
+                            frame,
+                            element,
+                            &["wp:positionH"],
+                            &["wp:positionV", "wp:extent"],
+                        );
                     }
-                }
-                if let Some(side) = settings.wrap_side {
-                    for wrap in ["wp:wrapSquare", "wp:wrapTight", "wp:wrapThrough"] {
-                        if let Some(element) = child_mut(frame, wrap) {
-                            set_attr(element, "wrapText", Some(side.to_string()));
+                    if let Some(vertical) = settings.vertical.as_ref() {
+                        let element = position_element("wp:positionV", vertical)?;
+                        drawing_xml::put_child(frame, element, &["wp:positionV"], &["wp:extent"]);
+                    }
+                    if settings.horizontal.is_some() || settings.vertical.is_some() {
+                        set_attr(frame, "simplePos", Some("0".into()));
+                    }
+                    for (name, value) in [
+                        ("locked", settings.locked),
+                        ("allowOverlap", settings.allow_overlap),
+                        ("layoutInCell", settings.layout_in_cell),
+                    ] {
+                        if let Some(value) = value {
+                            set_attr(frame, name, Some(u8::from(value).to_string()));
                         }
                     }
-                }
-            }
-            if let Some([top, bottom, left, right]) = settings.distances {
-                for (name, value) in [("distT", top), ("distB", bottom), ("distL", left), ("distR", right)] {
-                    set_attr(frame, name, Some(emu(value.max(0.0)).to_string()));
-                }
-                for wrap in ["wp:wrapSquare", "wp:wrapTight", "wp:wrapThrough", "wp:wrapTopAndBottom"] {
-                    if let Some(element) = child_mut(frame, wrap) {
-                        for (name, value) in [("distT", top), ("distB", bottom), ("distL", left), ("distR", right)] {
-                            if get_attr(element, name).is_some() {
-                                set_attr(element, name, Some(emu(value.max(0.0)).to_string()));
+                    if let Some(side) = settings.wrap_side {
+                        for wrap in ["wp:wrapSquare", "wp:wrapTight", "wp:wrapThrough"] {
+                            if let Some(element) = child_mut(frame, wrap) {
+                                set_attr(element, "wrapText", Some(side.to_string()));
                             }
                         }
                     }
                 }
-            }
-            if let Some((width, height)) = settings.size {
-                super::picture_format::resize_drawing(drawing, width, height)?;
-            }
-            if let Some(degrees) = settings.rotation {
-                if let Some(sp_pr) = drawing_xml::shape_properties_mut(drawing) {
-                    if let Some(xfrm) = child_mut(sp_pr, "a:xfrm") {
-                        let value = (degrees.rem_euclid(360.0) * 60_000.0).round() as i64;
-                        set_attr(xfrm, "rot", (value != 0).then(|| value.to_string()));
+                if let Some([top, bottom, left, right]) = settings.distances {
+                    for (name, value) in [
+                        ("distT", top),
+                        ("distB", bottom),
+                        ("distL", left),
+                        ("distR", right),
+                    ] {
+                        set_attr(frame, name, Some(emu(value.max(0.0)).to_string()));
+                    }
+                    for wrap in [
+                        "wp:wrapSquare",
+                        "wp:wrapTight",
+                        "wp:wrapThrough",
+                        "wp:wrapTopAndBottom",
+                    ] {
+                        if let Some(element) = child_mut(frame, wrap) {
+                            for (name, value) in [
+                                ("distT", top),
+                                ("distB", bottom),
+                                ("distL", left),
+                                ("distR", right),
+                            ] {
+                                if get_attr(element, name).is_some() {
+                                    set_attr(element, name, Some(emu(value.max(0.0)).to_string()));
+                                }
+                            }
+                        }
                     }
                 }
-            }
-            Ok(())
-        })));
+                if let Some((width, height)) = settings.size {
+                    super::picture_format::resize_drawing(drawing, width, height)?;
+                }
+                if let Some(degrees) = settings.rotation {
+                    if let Some(sp_pr) = drawing_xml::shape_properties_mut(drawing) {
+                        if let Some(xfrm) = child_mut(sp_pr, "a:xfrm") {
+                            let value = (degrees.rem_euclid(360.0) * 60_000.0).round() as i64;
+                            set_attr(xfrm, "rot", (value != 0).then(|| value.to_string()));
+                        }
+                    }
+                }
+                Ok(())
+            },
+        )));
         self.execute_command(Box::new(Sequence::new("object_layout", commands)), true)
     }
 
     /// 折り返し点の編集: the tight or through wrap's polygon, in the
     /// 21600-square space, closed (Word repeats the start at the end).
-    fn set_wrap_polygon(&mut self, target: FloatingObjectTarget, points: Vec<(i64, i64)>) -> Result<(), String> {
+    fn set_wrap_polygon(
+        &mut self,
+        target: FloatingObjectTarget,
+        points: Vec<(i64, i64)>,
+    ) -> Result<(), String> {
         if points.len() < 3 {
             return Err("a wrap polygon needs three points".into());
         }
@@ -1086,14 +1147,17 @@ pub trait WordObjectLayout: WordSession + WordObjects {
             let frame = frame_mut(drawing)?;
             let wrap = drawing_xml::child_index(frame, &["wp:wrapTight", "wp:wrapThrough"])
                 .ok_or("only tight and through wrapping have wrap points")?;
-            let jade_docx_editor::docx_xml::XmlNode::Element(wrap) = &mut frame.children[wrap] else {
+            let jade_docx_editor::docx_xml::XmlNode::Element(wrap) = &mut frame.children[wrap]
+            else {
                 unreachable!()
             };
             let mut path = format!(r#"<wp:start x="{}" y="{}"/>"#, points[0].0, points[0].1);
             for (x, y) in points.iter().skip(1).chain(std::iter::once(&points[0])) {
                 path.push_str(&format!(r#"<wp:lineTo x="{x}" y="{y}"/>"#));
             }
-            let polygon = fragment(&format!(r#"<wp:wrapPolygon edited="1">{path}</wp:wrapPolygon>"#))?;
+            let polygon = fragment(&format!(
+                r#"<wp:wrapPolygon edited="1">{path}</wp:wrapPolygon>"#
+            ))?;
             drawing_xml::put_child(wrap, polygon, &["wp:wrapPolygon"], &[]);
             Ok(())
         })

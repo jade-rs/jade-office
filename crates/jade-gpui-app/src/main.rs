@@ -1729,11 +1729,13 @@ impl DocumentView {
         match self.selected_format() {
             Some(format) => tabs.push((
                 RibbonTab::ObjectFormat,
-                t(if format.sort == jade_office_model::word::objects::ObjectSort::Picture {
-                    "objects.tab.picture_format"
-                } else {
-                    "objects.tab.shape_format"
-                }),
+                t(
+                    if format.sort == jade_office_model::word::objects::ObjectSort::Picture {
+                        "objects.tab.picture_format"
+                    } else {
+                        "objects.tab.shape_format"
+                    },
+                ),
             )),
             None if self.ribbon_tab == RibbonTab::ObjectFormat => self.ribbon_tab = RibbonTab::Home,
             None => {}

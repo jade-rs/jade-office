@@ -16,14 +16,33 @@ use super::shapes::{InsertThen, Inserted};
 use super::WordSession;
 
 /// The relationship Word relates an ink part with.
-const INK_RELATIONSHIP: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml";
+const INK_RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml";
 
 /// The pens 描画 offers: colour, width in px, highlighter.
 pub const PENS: [(&str, f64, bool, &str, &str); 4] = [
-    ("#000000", 1.9, false, "ペン: 黒、0.5 mm", "Pen: Black, 0.5 mm"),
-    ("#E71224", 1.9, false, "ペン: 赤、0.5 mm", "Pen: Red, 0.5 mm"),
+    (
+        "#000000",
+        1.9,
+        false,
+        "ペン: 黒、0.5 mm",
+        "Pen: Black, 0.5 mm",
+    ),
+    (
+        "#E71224",
+        1.9,
+        false,
+        "ペン: 赤、0.5 mm",
+        "Pen: Red, 0.5 mm",
+    ),
     ("#0070C0", 3.8, false, "ペン: 青、1 mm", "Pen: Blue, 1 mm"),
-    ("#FFFF00", 22.7, true, "蛍光ペン: 黄、6 mm", "Highlighter: Yellow, 6 mm"),
+    (
+        "#FFFF00",
+        22.7,
+        true,
+        "蛍光ペン: 黄、6 mm",
+        "Highlighter: Yellow, 6 mm",
+    ),
 ];
 
 /// Ink, for every session.
