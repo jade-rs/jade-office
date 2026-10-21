@@ -496,6 +496,17 @@ fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
         weight: 400,
         path: &thai,
     });
+    // Complex-script text (Hebrew, Arabic) falls back to a system face that
+    // carries it, as Thai does to the bundled one; without it every letter
+    // was a tofu box.
+    let complex = word_characters::complex_script_fallback();
+    if let Some(path) = complex.as_ref() {
+        faces.push(FaceSpec {
+            family: "Complex Script Fallback",
+            weight: 400,
+            path,
+        });
+    }
     NativeDocument::open(bytes, INITIAL_PAGE_WIDTH_PX, INITIAL_PAGE_HEIGHT_PX, &faces)
 }
 
