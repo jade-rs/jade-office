@@ -14,13 +14,55 @@ use jade_office_model::word::view::{
     ZoomFit,
 };
 
+pub mod input;
 pub mod mini;
+pub mod options;
 pub mod select;
+pub mod settings;
 
 use crate::ribbon::{group, listener, row, Action};
 use crate::tooltip::Tooltip;
 use crate::word_dialog::{button, chip, on};
 use crate::{i18n, theme, workspace, DocumentView, Editor};
+
+gpui::actions!(
+    word_views,
+    [
+        /// ツール → オートコレクト….
+        AutoCorrect,
+    ]
+);
+
+/// The keys of this module's commands, in the document's context.
+pub fn key_bindings() -> Vec<gpui::KeyBinding> {
+    const CONTEXT: Option<&str> = Some("Document");
+    vec![gpui::KeyBinding::new(
+        "ctrl-alt-cmd-a",
+        AutoCorrect,
+        CONTEXT,
+    )]
+}
+
+/// Word for Mac's ツール menu, as far as this module has it.
+pub fn tools_menu() -> gpui::Menu {
+    gpui::Menu {
+        name: t("menu.tools").into(),
+        items: vec![gpui::MenuItem::action(
+            t("menu.tools.autocorrect"),
+            AutoCorrect,
+        )],
+    }
+}
+
+/// Routes the module's actions on the document's root.
+pub fn on_actions(
+    root: gpui::Stateful<gpui::Div>,
+    cx: &mut Context<DocumentView>,
+) -> gpui::Stateful<gpui::Div> {
+    root.on_action(
+        cx.listener(|view, _: &AutoCorrect, _, cx| run(view, ViewAction::OpenAutoCorrect, cx)),
+    )
+}
 
 /// What the 表示 tab's controls do.
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +79,8 @@ pub enum ViewAction {
     OpenZoom,
     /// グリッド線.
     ToggleGridlines,
+    /// ツール → オートコレクト….
+    OpenAutoCorrect,
     /// 余白を表示しない / 余白を表示する.
     ToggleWhiteSpace,
 }
@@ -59,6 +103,8 @@ pub enum ViewDialog {
         /// 複数ページ: how many across.
         pages: usize,
     },
+    /// ツール → オートコレクト.
+    AutoCorrect(Box<options::AutoCorrectDialog>),
 }
 
 /// The view's state of the 表示 tab.
@@ -100,12 +146,14 @@ impl Views {
     pub fn text_field(&self) -> Option<&TextEdit> {
         match self.dialog.as_ref()? {
             ViewDialog::Zoom { percent, .. } => Some(percent),
+            ViewDialog::AutoCorrect(dialog) => dialog.fields.get(dialog.focus),
         }
     }
 
     pub fn text_field_mut(&mut self) -> Option<&mut TextEdit> {
         match self.dialog.as_mut() {
             Some(ViewDialog::Zoom { percent, .. }) => Some(percent),
+            Some(ViewDialog::AutoCorrect(dialog)) => dialog.fields.get_mut(dialog.focus),
             None => None,
         }
     }
@@ -155,6 +203,11 @@ pub fn run(view: &mut DocumentView, action: ViewAction, cx: &mut Context<Documen
             view.set_zoom(percent as f32 / 100.0, cx);
         }
         ViewAction::OpenZoom => open_zoom(view),
+        ViewAction::OpenAutoCorrect => {
+            view.views.dialog = Some(ViewDialog::AutoCorrect(Box::new(
+                options::AutoCorrectDialog::open(),
+            )))
+        }
         ViewAction::ToggleGridlines => {
             view.views.gridlines = !view.views.gridlines;
             if view.views.gridlines && view.views.grid.is_none() {
@@ -503,6 +556,9 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
     {
         return false;
     }
+    if matches!(view.views.dialog, Some(ViewDialog::AutoCorrect(_))) {
+        return options::handle_key(view, key, cx);
+    }
     match key {
         "escape" => view.views.dialog = None,
         "enter" | "return" => {
@@ -527,11 +583,14 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
 
 /// The open dialog, over the window.
 pub fn overlay(view: &DocumentView, cx: &mut Context<DocumentView>) -> Option<AnyElement> {
-    let ViewDialog::Zoom {
-        choice,
-        percent,
-        pages,
-    } = view.views.dialog.as_ref()?;
+    let (choice, percent, pages) = match view.views.dialog.as_ref()? {
+        ViewDialog::Zoom {
+            choice,
+            percent,
+            pages,
+        } => (choice, percent, pages),
+        ViewDialog::AutoCorrect(dialog) => return Some(options::overlay(dialog, cx)),
+    };
     let (choice, pages) = (*choice, *pages);
     fn set(
         cx: &Context<DocumentView>,
@@ -640,22 +699,25 @@ pub fn overlay(view: &DocumentView, cx: &mut Context<DocumentView>) -> Option<An
                 )
                 .child("%"),
         );
-    Some(dialog_frame(
+    Some(dialog_frame_with(
         "views-zoom",
         t("views.zoom.title"),
         360.0,
         body.into_any_element(),
         cx,
+        confirm_zoom,
     ))
 }
 
-/// A dialog's frame: title, body, キャンセル and OK, over a dimmed window.
-fn dialog_frame(
+/// A dialog's frame: title, body, キャンセル and OK (which runs `ok`), over
+/// a dimmed window.
+pub fn dialog_frame_with(
     id: &'static str,
     title: &'static str,
     width: f32,
     body: AnyElement,
     cx: &mut Context<DocumentView>,
+    ok: fn(&mut DocumentView, &mut Context<DocumentView>),
 ) -> AnyElement {
     div()
         .id(id)
@@ -699,9 +761,7 @@ fn dialog_frame(
                         )
                         .child(
                             button("views-ok", t("format.ok"), true)
-                                .on_click(on(cx, |view: &mut DocumentView, cx| {
-                                    confirm_zoom(view, cx)
-                                })),
+                                .on_click(on(cx, move |view: &mut DocumentView, cx| ok(view, cx))),
                         ),
                 ),
         )
