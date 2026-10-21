@@ -155,6 +155,17 @@ impl TinySkiaRenderHost {
     }
 }
 
+/// Tracked changes as Word shows them: with their markup — insertions
+/// coloured and underlined, deletions struck through — unless the document
+/// was saved with a view that leaves them out.
+pub(crate) fn show_changes_as_saved(options: &mut Options, word_document: &WordDocument) {
+    let saved = word_document
+        .document
+        .as_ref()
+        .and_then(|document| document.display_content_revisions);
+    options.set_render_changes(saved.unwrap_or(true));
+}
+
 /// A page's surface while it is not kept as pixels: one pixel, which every
 /// draw lands outside of.
 pub(crate) fn placeholder(
@@ -500,7 +511,7 @@ impl Document {
         fonts: Rc<FontBook>,
         measurer: Rc<ShapingMeasurer>,
     ) -> Result<Self, String> {
-        let laid_out = lay_out(bytes, scale, fonts, measurer)?;
+        let laid_out = lay_out(bytes, scale, fonts, measurer, Changes::AsSaved)?;
         let page_count = laid_out.rendered.get().min(laid_out.pages.borrow().len());
         Ok(Self {
             pages: laid_out.pages,
@@ -529,12 +540,14 @@ impl Document {
 /// Every line of `bytes` laid out as [`Document::open`] lays it out, from
 /// page one, as the browser editor's `captureFullLayoutDebug()` reports it:
 /// what a Word glyph reference is compared with (`bin/word_glyph_sweep.rs`).
+/// Tracked changes are laid out without their markup, the view Word's
+/// references are printed in.
 pub fn full_layout_debug(
     bytes: &[u8],
     fonts: Rc<FontBook>,
     measurer: Rc<ShapingMeasurer>,
 ) -> Result<FullLayoutDebugSnapshot, String> {
-    lay_out(bytes, 1.0, fonts, measurer)?
+    lay_out(bytes, 1.0, fonts, measurer, Changes::Hidden)?
         .renderer
         .capture_full_layout_debug()
         .map_err(|_| "the layout capture failed".to_string())
@@ -549,23 +562,36 @@ struct LaidOut {
     page_size: (f64, f64),
 }
 
+/// How tracked changes are laid out.
+#[derive(Clone, Copy)]
+enum Changes {
+    /// As the document was saved to show them: see [`show_changes_as_saved`].
+    AsSaved,
+    /// The final document, without markup.
+    Hidden,
+}
+
 fn lay_out(
     bytes: &[u8],
     scale: f64,
     fonts: Rc<FontBook>,
     measurer: Rc<ShapingMeasurer>,
+    changes: Changes,
 ) -> Result<LaidOut, String> {
     let scale = if scale.is_finite() && scale > 0.0 {
         scale
     } else {
         1.0
     };
-    // A viewer: no formatting marks, which the bundled face cannot draw
-    // the arrows of anyway.
+    // A viewer: no formatting marks.
     let mut options = Options::default();
     options.show_formatting_marks = false;
     let word_document = futures::executor::block_on(WordDocument::load(bytes, &options))
         .map_err(|error| format!("cannot read the document: {error}"))?;
+    match changes {
+        Changes::AsSaved => show_changes_as_saved(&mut options, &word_document),
+        Changes::Hidden => options.set_render_changes(false),
+    }
     let document = word_document
         .document
         .as_ref()
