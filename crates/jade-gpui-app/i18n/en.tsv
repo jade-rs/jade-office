@@ -1586,3 +1586,8 @@ xref.type.bookmark	Bookmark
 xref.type.endnote	Endnote
 xref.type.footnote	Footnote
 xref.type.heading	Heading
+notes.separators	Separators
+notes.separator	Show separator
+notes.continuation_separator	Show continuation separator
+nav.collapse	Collapse
+nav.expand	Expand

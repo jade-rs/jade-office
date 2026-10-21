@@ -166,6 +166,13 @@ fn builtin_level(id: &str, name: &str) -> Option<u8> {
     })
 }
 
+/// Whether a `TOC` instruction builds a table of figures (`\\c` or `\\a`).
+pub fn is_table_of_figures(instruction: &str) -> bool {
+    jade_docx_editor::document::parse_toc_switches(instruction)
+        .caption_label
+        .is_some()
+}
+
 /// Tables of contents over every session.
 pub trait WordToc: WordSession {
     /// The table of contents (or figures) a paragraph is in, by its order.

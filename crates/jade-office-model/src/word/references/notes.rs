@@ -133,6 +133,10 @@ pub struct NoteDialog {
     /// The caret's section, and how many the document has.
     pub section: usize,
     pub sections: usize,
+    /// 境界線 and 継続境界線: whether the kind's separator and continuation
+    /// separator draw their rules.
+    pub separator: bool,
+    pub continuation_separator: bool,
 }
 
 impl NoteDialog {
@@ -367,6 +371,8 @@ pub trait WordNotes: WordSession {
             scope: NoteScope::WholeDocument,
             section,
             sections,
+            separator: true,
+            continuation_separator: true,
         };
         load_numbering(document, &mut dialog);
         dialog
@@ -416,6 +422,16 @@ pub trait WordNotes: WordSession {
                     }
                 }
             }
+            for (continuation, shown) in [
+                (false, dialog.separator),
+                (true, dialog.continuation_separator),
+            ] {
+                // A document without the note has Word's default rule, and
+                // nothing to empty.
+                if document.note_separator_shown(footnote, continuation) != shown {
+                    document.set_note_separator_shown(footnote, continuation, shown)?;
+                }
+            }
             Ok(())
         })
     }
@@ -455,6 +471,8 @@ fn load_numbering(document: &WordDocument, dialog: &mut NoteDialog) {
             EndnotePosition::DocumentEnd => EndnotePlace::DocumentEnd,
         };
     }
+    dialog.separator = document.note_separator_shown(footnote, false);
+    dialog.continuation_separator = document.note_separator_shown(footnote, true);
     dialog.footnote_place = if document.footnote_beneath_text(Some(dialog.section)) {
         FootnotePlace::BeneathText
     } else {

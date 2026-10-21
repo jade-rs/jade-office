@@ -752,7 +752,7 @@ pub(crate) fn text_field(
         .when(!label.is_empty(), |line| {
             line.child(
                 div()
-                    .w(px(96.0))
+                    .w(px(120.0))
                     .flex_none()
                     .text_color(theme::text_dim())
                     .child(t(label)),
@@ -829,7 +829,7 @@ pub(crate) fn line(label: &'static str) -> gpui::Div {
         .when(!label.is_empty(), |line| {
             line.child(
                 div()
-                    .w(px(96.0))
+                    .w(px(120.0))
                     .flex_none()
                     .text_color(theme::text_dim())
                     .child(t(label)),
@@ -875,7 +875,13 @@ pub(crate) fn select(
         .overflow_hidden()
         .whitespace_nowrap()
         .child(div().flex_1().min_w_0().overflow_hidden().child(value.into()))
-        .child("▾")
+        .child(
+            gpui::svg()
+                .path("icons/chevron-down.svg")
+                .size_3()
+                .flex_none()
+                .text_color(theme::text_dim()),
+        )
         .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
             let references = &mut view.references;
             references.list = (references.list != Some(list)).then_some(list);
