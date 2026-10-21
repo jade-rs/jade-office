@@ -208,7 +208,7 @@ evaluation shares one code path with fields that are tested
 | 137 | wrap: square | `jade-docx-reader/src/parser.rs::parses_floating_image_wrap_square_and_distances` <br> `jade-docx-layout/src/line_wrap.rs::both_sides_square_wrap_fills_both_gaps_of_a_band` |
 | 138 | wrap: tight / through | `jade-docx-reader/src/parser.rs::parses_edited_tight_wrap_polygon_points` <br> `jade-docx-layout/src/line_wrap.rs::tight_polygon_narrows_the_exclusion_toward_its_apex` |
 | 139 | wrap: top & bottom | `jade-docx-reader/src/parser.rs::parses_floating_image_wrap_top_and_bottom_and_none` <br> `jade-docx-editor/src/canvas_renderer.rs::top_and_bottom_exclusion_uses_resolved_vertical_position` |
-| 140 | wrap: behind / in front | **none** |
+| 140 | wrap: behind / in front | `core/jade-docx-native-render/tests/floating_layers.rs::a_shape_in_front_of_text_covers_the_paragraphs_after_its_anchor` <br> `core/jade-docx-native-render/tests/floating_layers.rs::a_shape_behind_text_lies_under_the_paragraphs_before_its_anchor` |
 | 141 | wrap points | `core/jade-docx-reader/src/parser.rs::parses_edited_tight_wrap_polygon_points` |
 | 142 | distance from text | `core/jade-docx-reader/src/parser.rs::parses_floating_image_wrap_square_and_distances` <br> `core/jade-docx-editor/src/canvas_renderer.rs::floating_object_exclusion_uses_resolved_position_rotation_and_distances` |
 | 143 | horizontal position | `jade-docx-reader/src/parser/table.rs::parses_floating_table_horizontal_position_and_text_distances` <br> `jade-docx-editor/src/canvas_renderer/table.rs::floating_table_horizontal_position_overrides_inline_alignment` |
@@ -217,7 +217,7 @@ evaluation shares one code path with fields that are tested
 | 146 | fixed on page | **none** |
 | 147 | lock anchor | **none** |
 | 148 | allow overlap | `core/jade-docx-reader/tests/generated_fixtures.rs::table_floating_overlap_fixture_preserves_pairwise_never_policy` |
-| 149 | z-order | **none** |
+| 149 | z-order | `core/jade-docx-editor/src/canvas_renderer/page_layers.rs::objects_stack_by_relative_height_across_paragraphs` |
 | 150 | align / distribute objects | **none** |
 | 151 | group / ungroup | `core/jade-docx-editor/src/canvas_renderer.rs::a_deferred_group_shares_one_transform_and_one_font_state` <br> `core/jade-docx-editor/src/canvas_renderer.rs::full_layout_capture_reports_nested_group_shape_text` |
 | 152 | selection pane | **none** |
