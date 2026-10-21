@@ -137,7 +137,12 @@ impl DocumentView {
     }
 
     /// Selects `start..end` and brings it into view.
-    fn select_range(&mut self, start: (usize, usize), end: (usize, usize), cx: &mut Context<Self>) {
+    pub(crate) fn select_range(
+        &mut self,
+        start: (usize, usize),
+        end: (usize, usize),
+        cx: &mut Context<Self>,
+    ) {
         self.caret = self.document.place_caret(end.0, end.1);
         self.insert_at = end;
         self.selection_anchor = Some(start);
@@ -240,7 +245,31 @@ impl DocumentView {
                 |view, cx| view.step_revision(true, cx),
             ),
         ]);
+        let proofing =
+            jade_office_model::word::proofing::WordProofingDisplay::proofing(&*self.document);
         vec![
+            Self::ribbon_group(
+                t("proof.group"),
+                vec![Self::ribbon_row(vec![
+                    tools::text_button(
+                        "review-proofing",
+                        "proof.button",
+                        "proof.title",
+                        self.review.proofing.pane.is_some(),
+                        ReviewAction::Proofing,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-proofing-marks",
+                        "proof.marks",
+                        "proof.marks_title",
+                        proofing,
+                        ReviewAction::ProofingMarks,
+                        cx,
+                    ),
+                ])],
+            )
+            .into_any_element(),
             Self::ribbon_group(
                 t("doc.comment"),
                 vec![

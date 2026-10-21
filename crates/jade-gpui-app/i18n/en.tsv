@@ -1388,3 +1388,20 @@ review.reject.visible	Reject All Changes Shown
 review.reject.all	Reject All Changes
 review.reject.all_stop	Reject All Changes and Stop Tracking
 menu.app.user_info	User Information…
+proof.group	Proofing
+proof.button	Spelling & Grammar
+proof.title	Spelling and Grammar
+proof.marks	Check as You Type
+proof.marks_title	Check spelling and grammar as you type
+proof.spelling	Spelling
+proof.grammar	Grammar
+proof.suggestions	Suggestions
+proof.no_suggestions	No suggestions
+proof.change	Change
+proof.change_all	Change All
+proof.ignore	Ignore
+proof.ignore_all	Ignore All
+proof.learn	Add to Dictionary
+proof.open_pane	Spelling and Grammar…
+proof.finished	The spelling and grammar check is complete.
+menu.review.spelling	Spelling and Grammar…

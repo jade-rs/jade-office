@@ -207,3 +207,26 @@ impl crate::word::markup::WordMarkupDisplay for jade_docx_native_render::documen
         NativeDocument::set_revision_display(self, markup, original, view)
     }
 }
+
+/// The native app's pages show proofing marks from whatever checker the
+/// shell brings.
+impl crate::word::proofing::WordProofingDisplay
+    for jade_docx_native_render::document::NativeDocument
+{
+    fn set_proofing(&mut self, on: bool) -> Result<(), String> {
+        NativeDocument::set_proofing(self, on)
+    }
+
+    fn proofing(&self) -> bool {
+        NativeDocument::proofing(self)
+    }
+
+    fn proof_with(
+        &mut self,
+        checker: &mut dyn crate::word::proofing::SpellChecker,
+    ) -> Result<bool, String> {
+        NativeDocument::proof_pending(self, &mut |text, start, end, language| {
+            checker.check(text, start, end, language)
+        })
+    }
+}

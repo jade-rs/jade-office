@@ -130,6 +130,10 @@ pub enum ReviewAction {
     DeleteComment,
     /// ユーザー情報….
     UserInfo,
+    /// スペル チェックと文章校正: the pane.
+    Proofing,
+    /// 入力時にスペル チェック: the marks on or off.
+    ProofingMarks,
 }
 
 /// The dialog the tab opens.
@@ -142,6 +146,8 @@ pub enum ReviewDialog {
 pub struct ReviewTools {
     pub markup: MarkupOptions,
     pub dialog: Option<ReviewDialog>,
+    /// スペル チェックと文章校正 (`word_proofing`).
+    pub proofing: crate::word_proofing::Proofing,
 }
 
 impl ReviewTools {
@@ -228,6 +234,11 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
         ReviewAction::UserInfo => {
             view.review.dialog = Some(ReviewDialog::User(ReviewerForm::new(&reviewer())));
             return cx.notify();
+        }
+        ReviewAction::Proofing => return crate::word_proofing::open_pane(view, cx),
+        ReviewAction::ProofingMarks => {
+            let on = !view.document.proofing();
+            return crate::word_proofing::set_marks(view, on, cx);
         }
     }
     refresh_markup(view);

@@ -31,6 +31,7 @@ mod word_characters;
 mod word_dialogs;
 mod word_page;
 mod word_page_setup;
+mod word_proofing;
 mod word_review;
 mod word_review_tools;
 mod word_story;
@@ -125,6 +126,7 @@ actions!(
         DeleteTableRow,
         AddComment,
         ToggleChangeTracking,
+        SpellingAndGrammar,
         InsertHyperlink,
         InsertFootnote,
         InsertEndnote,
@@ -208,6 +210,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
+        // Word for Mac's スペル チェックと文章校正.
+        KeyBinding::new("alt-cmd-l", SpellingAndGrammar, CONTEXT),
         // Word for Mac's 挿入 menu.
         KeyBinding::new("cmd-k", InsertHyperlink, CONTEXT),
         KeyBinding::new("cmd-alt-f", InsertFootnote, CONTEXT),
@@ -358,6 +362,7 @@ fn menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action(t("menu.review.add_comment"), AddComment),
                 MenuItem::action(t("menu.review.track_changes"), ToggleChangeTracking),
+                MenuItem::action(t("menu.review.spelling"), SpellingAndGrammar),
             ],
         },
         Menu {
@@ -4306,6 +4311,9 @@ impl Render for DocumentView {
         };
         let zoom = self.zoom;
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
+        word_proofing::start_once(self, cx);
+        let proofing_pane = word_proofing::pane(self, cx);
+        let proofing_menu = word_proofing::menu(self, cx);
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
         let dialog = word_characters::overlay(self, window, cx)
@@ -4369,6 +4377,9 @@ impl Render for DocumentView {
                 view.run_ribbon(Action::Table(TableCommand::DeleteRow), cx)
             }))
             .on_action(cx.listener(|view, _: &AddComment, _window, cx| view.add_comment(cx)))
+            .on_action(cx.listener(|view, _: &SpellingAndGrammar, _window, cx| {
+                word_proofing::open_pane(view, cx)
+            }))
             .on_action(cx.listener(|view, _: &UserInformation, _window, cx| {
                 word_review_tools::run(view, word_review_tools::ReviewAction::UserInfo, cx)
             }))
@@ -4499,6 +4510,10 @@ impl Render for DocumentView {
                                     .shadow_lg()
                                     .cursor(page_cursor)
                                     .on_mouse_down(
+                                        MouseButton::Right,
+                                        word_proofing::on_right_click(index, cx),
+                                    )
+                                    .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(
                                             move |view, event: &MouseDownEvent, _window, cx| {
@@ -4586,6 +4601,9 @@ impl Render for DocumentView {
             )
             // ---- the comments pane, beside the pages while it is open ----
             .children(comments_pane)
+            // ---- 文章校正, beside the pages while it is open ----
+            .children(proofing_pane)
+            .children(proofing_menu)
             // ---- a table dialog, over everything while it is open ----
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             // ---- a ページ設定 dialog, over everything while it is open ----

@@ -44,6 +44,7 @@ pub mod painter;
 pub mod paragraph;
 pub mod picture;
 pub mod platform;
+pub mod proofing;
 pub mod references;
 pub mod review;
 pub mod reviewer;
