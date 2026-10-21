@@ -1459,6 +1459,14 @@ impl EditableDocument {
         crate::pdf::pdf_of_pages(&pages)
     }
 
+    /// The document as `.docx` bytes, every edit in it, without marking it
+    /// saved: what a copy in another format is made from.
+    pub fn word_docx(&self) -> Result<Vec<u8>, String> {
+        self.word_document
+            .export_docx()
+            .map_err(|error| format!("cannot save: {error:?}"))
+    }
+
     /// The document as `.docx` bytes, every edit in it; marks it saved.
     pub fn export_docx(&mut self) -> Result<Vec<u8>, String> {
         let bytes = self
