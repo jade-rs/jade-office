@@ -201,6 +201,11 @@ impl NativeDeck {
             ];
             for tree in trees.into_iter().flatten() {
                 collect_media_parts(&tree.shapes, &mut wanted);
+                for part in tree.bullet_image_parts() {
+                    if !wanted.contains(&part) {
+                        wanted.push(part);
+                    }
+                }
                 if let Some(jade_pptx_reader::Fill::Picture {
                     image_part: Some(part),
                     ..
