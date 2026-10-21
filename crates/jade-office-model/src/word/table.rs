@@ -1466,13 +1466,31 @@ pub trait WordTables: WordSession {
 
     /// What the pointer at (`x`, `y`) in layout pixels is over.
     fn table_hit(&self, x: f64, y: f64) -> Option<TableHit> {
-        let mut tables: Vec<usize> = self
-            .cell_layouts()
-            .iter()
-            .map(|cell| cell.table_id)
+        // Only the tables whose box, with the room the selectors and the
+        // handle take round it, holds the point: a hit test runs on every
+        // move of the pointer.
+        const REACH: f64 = 26.0;
+        let mut boxes: std::collections::BTreeMap<usize, (f64, f64, f64, f64)> =
+            std::collections::BTreeMap::new();
+        for cell in self.cell_layouts() {
+            let entry = boxes.entry(cell.table_id).or_insert((
+                cell.left,
+                cell.top,
+                cell.right,
+                cell.bottom,
+            ));
+            entry.0 = entry.0.min(cell.left);
+            entry.1 = entry.1.min(cell.top);
+            entry.2 = entry.2.max(cell.right);
+            entry.3 = entry.3.max(cell.bottom);
+        }
+        let tables: Vec<usize> = boxes
+            .into_iter()
+            .filter(|(_, (left, top, right, bottom))| {
+                x >= left - REACH && x <= right + REACH && y >= top - REACH && y <= bottom + REACH
+            })
+            .map(|(table_id, _)| table_id)
             .collect();
-        tables.sort_unstable();
-        tables.dedup();
         // The innermost table first: a nested table sits inside its cell.
         let mut best: Option<(f64, TableHit)> = None;
         for table_id in tables {
