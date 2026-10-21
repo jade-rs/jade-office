@@ -1541,3 +1541,20 @@ read.pause	Pause
 read.slower	Slower
 read.faster	Faster
 read.stop	Close
+immersive.group	Immersive
+immersive.button	Immersive Reader
+immersive.title	Immersive Reader: read the document in a view that makes it easier to read
+immersive.column	Column Width
+immersive.column.narrow	Narrow
+immersive.column.moderate	Moderate
+immersive.column.wide	Wide
+immersive.page	Page Color
+immersive.page.white	White
+immersive.page.sepia	Sepia
+immersive.page.inverse	Inverse
+immersive.line_focus	Line Focus
+immersive.line_focus.off	None
+immersive.line_focus.lines	{n} lines
+immersive.spacing	Text Spacing
+immersive.syllables	Syllables
+immersive.close	Close Immersive Reader

@@ -1541,3 +1541,20 @@ read.pause	一時停止
 read.slower	読み上げの速度を下げる
 read.faster	読み上げの速度を上げる
 read.stop	閉じる
+immersive.group	イマーシブ
+immersive.button	イマーシブ リーダー
+immersive.title	イマーシブ リーダー: 読みやすさを高める表示で文書を読みます
+immersive.column	列幅
+immersive.column.narrow	狭い
+immersive.column.moderate	普通
+immersive.column.wide	広い
+immersive.page	ページの色
+immersive.page.white	白
+immersive.page.sepia	セピア
+immersive.page.inverse	反転
+immersive.line_focus	行フォーカス
+immersive.line_focus.off	なし
+immersive.line_focus.lines	{n} 行
+immersive.spacing	テキストの間隔
+immersive.syllables	音節
+immersive.close	イマーシブ リーダーを閉じる

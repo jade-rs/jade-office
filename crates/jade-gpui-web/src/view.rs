@@ -35,6 +35,7 @@ mod sheet;
 pub(crate) mod word_characters;
 mod word_dialogs;
 mod word_find;
+mod word_immersive;
 mod word_inspect;
 mod word_read_aloud;
 mod word_review;
@@ -405,6 +406,8 @@ enum Document {
         protection: Box<word_review::WebProtection>,
         /// 読み上げ, while reading.
         read_aloud: Option<Box<word_read_aloud::WebReading>>,
+        /// イマーシブ リーダー, while it is open.
+        immersive: Option<Box<word_immersive::WebImmersive>>,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
@@ -562,6 +565,7 @@ impl DocView {
                     revisions_pane: false,
                     protection: Box::new(word_review::WebProtection::opened(&mut opened)),
                     read_aloud: None,
+                    immersive: None,
                     object: None,
                     tables: Box::default(),
                     pages: (0..opened.page_count())
@@ -1757,6 +1761,7 @@ impl DocView {
             protection,
             object,
             read_aloud,
+            immersive,
             ..
         } = &mut self.document
         else {
@@ -1802,6 +1807,7 @@ impl DocView {
                         final_: protection.read_only == Some(word_review::ReadOnlyReason::Final),
                         inspect: protection.inspect,
                         reading: read_aloud.is_some(),
+                        immersive: immersive.is_some(),
                         markup: (**markup).clone(),
                         reviewers: document.reviewers(),
                     }
@@ -2239,6 +2245,11 @@ impl DocView {
         }
         // A dialog over a Word document is modal: it takes every key.
         if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        // イマーシブ リーダー reads; it does not edit.
+        if self.immersive_key(key, cx) {
             cx.stop_propagation();
             return;
         }
@@ -2695,6 +2706,9 @@ impl EntityInputHandler for DocView {
         if self.page_dialog.is_some() {
             return self.page_dialog_input(text, cx);
         }
+        if self.immersive_open() {
+            return;
+        }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
             && !self.story_editing()
@@ -2841,6 +2855,7 @@ impl Render for DocView {
             }
         };
         let dialog = word_characters::overlay(self, window, cx);
+        let immersive = self.immersive_overlay(window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -2849,5 +2864,6 @@ impl Render for DocView {
             .on_key_down(cx.listener(Self::handle_key))
             .child(body)
             .children(dialog)
+            .children(immersive)
     }
 }

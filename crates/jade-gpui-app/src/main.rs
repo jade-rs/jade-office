@@ -31,6 +31,7 @@ mod tooltip;
 mod word_accessibility;
 mod word_characters;
 mod word_compare;
+mod word_immersive;
 mod word_inspect;
 mod word_read_aloud;
 mod word_dialogs;
@@ -2130,6 +2131,7 @@ impl DocumentView {
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
+                    word_immersive::view_group(self, cx),
                     Self::ribbon_group(
                         t("doc.group.show"),
                         vec![Self::ribbon_row(vec![self
@@ -4348,6 +4350,7 @@ impl Render for DocumentView {
         let restrict_pane = word_protection::pane(self, cx);
         let read_only_bar = word_protection::banner(self, cx);
         let read_aloud_bar = word_read_aloud::bar(self, cx);
+        let immersive = word_immersive::overlay(self, window, cx);
         let proofing_menu = word_proofing::menu(self, cx);
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
@@ -4654,6 +4657,7 @@ impl Render for DocumentView {
             .children(self.page_dialog_element(cx))
             // ---- the open dialog, over everything ----
             .children(dialog)
+            .children(immersive)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
