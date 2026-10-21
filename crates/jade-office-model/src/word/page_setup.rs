@@ -1303,7 +1303,10 @@ pub trait WordPageSetup: WordSession {
                 }
             }
         };
-        commands.push(HeadlessCommand::SetSectionLayout { scope, patch });
+        commands.push(HeadlessCommand::SetSectionLayout {
+            scope,
+            patch: Box::new(patch),
+        });
         let keep = apply_to != ApplyTo::ThisPointForward;
         self.apply_commands(commands, keep)
     }
