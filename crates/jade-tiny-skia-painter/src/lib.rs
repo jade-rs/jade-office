@@ -23,8 +23,11 @@
 //! first registered face that has the run's first character. Font metrics
 //! come from `hhea`, rounded per half the way Chromium's canvas rounds them.
 //!
-//! Not drawn yet: canvas shadows and the blur filter (Word's shadow, emboss
-//! and glow effects), and SVG pictures. Those calls are accepted and ignored.
+//! Canvas shadows and the blur filter (Word's shadow, glow and soft edges)
+//! are drawn as the Skia backend's drop-shadow and blur image filters draw
+//! them: the drawing on a layer of its own, its alpha blurred (a Gaussian,
+//! as three box blurs), offset and tinted, under the drawing itself. Their
+//! offsets and radii are in user space, scaled by the transform.
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
@@ -820,6 +823,13 @@ struct State {
     font_descriptor: Rc<str>,
     baseline: TextBaseline,
     clip: Option<Rc<Clip>>,
+    /// The canvas shadow: colour, blur (twice the Gaussian's sigma) and
+    /// offset, in user space.
+    shadow_color: Color,
+    shadow_blur: f32,
+    shadow_offset: (f32, f32),
+    /// The blur filter's radius (the Gaussian's sigma), in user space.
+    blur_filter: f32,
 }
 
 impl Default for State {
@@ -836,6 +846,10 @@ impl Default for State {
             font_descriptor: Rc::from("16px sans-serif"),
             baseline: TextBaseline::Alphabetic,
             clip: None,
+            shadow_color: Color::TRANSPARENT,
+            shadow_blur: 0.0,
+            shadow_offset: (0.0, 0.0),
+            blur_filter: 0.0,
         }
     }
 }
@@ -2532,6 +2546,182 @@ fn decode(bytes: &[u8]) -> Option<Pixmap> {
     Pixmap::from_vec(data, tiny_skia::IntSize::from_wh(width, height)?)
 }
 
+/// Blurs an alpha channel `width` × `height` in place: three box blurs of
+/// `radius`, near enough a Gaussian, as browsers and Skia approximate one.
+fn box_blur(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
+    if radius == 0 || width == 0 || height == 0 {
+        return;
+    }
+    let mut scratch = vec![0u8; alpha.len().max(width).max(height)];
+    let pass = |line: &mut [u8], out: &mut [u8], length: usize, stride: usize| {
+        let window = (2 * radius + 1) as u32;
+        let at = |index: isize| -> u32 {
+            if index < 0 || index as usize >= length {
+                0
+            } else {
+                u32::from(line[index as usize * stride])
+            }
+        };
+        let mut sum: u32 = (-(radius as isize)..=radius as isize).map(at).sum();
+        for (index, value) in out.iter_mut().enumerate().take(length) {
+            *value = ((sum + window / 2) / window) as u8;
+            sum += at(index as isize + radius as isize + 1);
+            sum -= at(index as isize - radius as isize);
+        }
+    };
+    for _ in 0..3 {
+        for row in 0..height {
+            let line = &mut alpha[row * width..];
+            pass(line, &mut scratch[..width], width, 1);
+            line[..width].copy_from_slice(&scratch[..width]);
+        }
+        for column in 0..width {
+            pass(&mut alpha[column..], &mut scratch[..height], height, width);
+            for row in 0..height {
+                alpha[row * width + column] = scratch[row];
+            }
+        }
+    }
+}
+
+/// The box radius three passes of which make a Gaussian of `sigma`.
+fn box_radius(sigma: f32) -> usize {
+    if sigma <= 0.25 {
+        return 0;
+    }
+    let ideal = (12.0 * sigma * sigma / 3.0 + 1.0).sqrt();
+    ((ideal - 1.0) / 2.0).round().max(1.0) as usize
+}
+
+impl TinySkiaPainter {
+    /// Draws the canvas shadow and the blur filter of what `draw` draws, if
+    /// either is set: `draw` paints on a transparent layer with the current
+    /// state but no clip, and the layer's blurred, offset, tinted alpha goes
+    /// onto the surface through the clip. Returns whether drawing is done —
+    /// with the blur filter, the blurred layer stands for the drawing — or
+    /// whether the caller still draws it, over its shadow.
+    fn with_effects(&self, draw: impl FnOnce(&TinySkiaPainter)) -> bool {
+        let state = self.inner.state.borrow().clone();
+        let offset = state.shadow_offset;
+        let shadow = state.shadow_color.alpha() > 0.0
+            && (state.shadow_blur > 0.0 || offset.0 != 0.0 || offset.1 != 0.0);
+        let blur = state.blur_filter > 0.0;
+        if !shadow && !blur {
+            return false;
+        }
+        let (width, height) = (self.width(), self.height());
+        let Some(layer) = TinySkiaPainter::new(width, height, Rc::clone(&self.inner.fonts)) else {
+            return false;
+        };
+        layer.inner.unpainted.set(false);
+        layer.inner.blank.set(false);
+        *layer.inner.measure.borrow_mut() = self.inner.measure.borrow().clone();
+        *layer.inner.state.borrow_mut() = State {
+            clip: None,
+            shadow_color: Color::TRANSPARENT,
+            blur_filter: 0.0,
+            ..state.clone()
+        };
+        *layer.inner.path.borrow_mut() = self.inner.path.borrow().clone();
+        draw(&layer);
+        let Some(drawn) = layer.inner.damage.get() else {
+            return blur;
+        };
+        // Radii and offsets are in user space, as Skia's filters take them.
+        let t = state.transform;
+        let scale = ((t.sx * t.sx + t.ky * t.ky).sqrt() + (t.kx * t.kx + t.sy * t.sy).sqrt()) / 2.0;
+        let layer_pixels = layer.inner.pixmap.borrow();
+        let (w, h) = (width as i32, height as i32);
+        // A region of the layer, grown by `grow` and kept on the surface.
+        let region = |grow: f32| {
+            let left = ((drawn[0] - grow).floor() as i32).clamp(0, w);
+            let top = ((drawn[1] - grow).floor() as i32).clamp(0, h);
+            let right = ((drawn[2] + grow).ceil() as i32).clamp(0, w);
+            let bottom = ((drawn[3] + grow).ceil() as i32).clamp(0, h);
+            (left, top, right, bottom)
+        };
+        // `channel` of the layer within `bounds`, blurred by `sigma`.
+        let blurred = |bounds: (i32, i32, i32, i32), channel: usize, sigma: f32| {
+            let (left, top, right, bottom) = bounds;
+            let (rw, rh) = ((right - left) as usize, (bottom - top) as usize);
+            let data = layer_pixels.data();
+            let mut values = vec![0u8; rw * rh];
+            for row in 0..rh {
+                let from = ((top as usize + row) * width as usize + left as usize) * 4;
+                for column in 0..rw {
+                    values[row * rw + column] = data[from + column * 4 + channel];
+                }
+            }
+            box_blur(&mut values, rw, rh, box_radius(sigma));
+            values
+        };
+        let composite =
+            |bounds: (i32, i32, i32, i32), at: (f32, f32), pixel: &dyn Fn(usize) -> [u8; 4]| {
+                let (left, top, right, bottom) = bounds;
+                let (rw, rh) = ((right - left) as u32, (bottom - top) as u32);
+                let Some(mut tinted) = Pixmap::new(rw.max(1), rh.max(1)) else {
+                    return;
+                };
+                for (index, out) in tinted.data_mut().chunks_exact_mut(4).enumerate() {
+                    out.copy_from_slice(&pixel(index));
+                }
+                let Some(rect) = Rect::from_xywh(at.0, at.1, rw as f32, rh as f32) else {
+                    return;
+                };
+                self.clipped(rect, Transform::identity(), |surface, _, mask| {
+                    surface.draw_pixmap(
+                        at.0.round() as i32,
+                        at.1.round() as i32,
+                        tinted.as_ref(),
+                        &PixmapPaint::default(),
+                        Transform::identity(),
+                        mask,
+                    );
+                });
+            };
+        if shadow {
+            let sigma = state.shadow_blur / 2.0 * scale;
+            let bounds = region(3.0 * sigma + 1.0);
+            let alpha = blurred(bounds, 3, sigma);
+            let color = self.color(state.shadow_color);
+            let (dx, dy) = (
+                t.sx * offset.0 + t.kx * offset.1,
+                t.ky * offset.0 + t.sy * offset.1,
+            );
+            composite(
+                bounds,
+                (bounds.0 as f32 + dx, bounds.1 as f32 + dy),
+                &|index| {
+                    let a = color.alpha() * f32::from(alpha[index]) / 255.0;
+                    let premultiplied = |channel: f32| (channel * a * 255.0 + 0.5) as u8;
+                    [
+                        premultiplied(color.red()),
+                        premultiplied(color.green()),
+                        premultiplied(color.blue()),
+                        (a * 255.0 + 0.5) as u8,
+                    ]
+                },
+            );
+        }
+        if blur {
+            let sigma = state.blur_filter * scale;
+            let bounds = region(3.0 * sigma + 1.0);
+            let channels = [0, 1, 2, 3].map(|channel| blurred(bounds, channel, sigma));
+            composite(bounds, (bounds.0 as f32, bounds.1 as f32), &|index| {
+                let alpha = channels[3][index];
+                // Premultiplied channels blur apart; keep them within alpha.
+                [
+                    channels[0][index].min(alpha),
+                    channels[1][index].min(alpha),
+                    channels[2][index].min(alpha),
+                    alpha,
+                ]
+            });
+        }
+        blur
+    }
+}
+
 impl Painter for TinySkiaPainter {
     type Error = Infallible;
 
@@ -2541,6 +2731,11 @@ impl Painter for TinySkiaPainter {
         source: Option<[f64; 4]>,
         destination: ImageRect,
     ) -> Result<bool, Self::Error> {
+        if self.with_effects(|layer| {
+            layer.draw_encoded_image_rect(image.key, image.bytes, source, destination);
+        }) {
+            return Ok(true);
+        }
         Ok(self.draw_encoded_image_rect(image.key, image.bytes, source, destination))
     }
 
@@ -2603,12 +2798,21 @@ impl Painter for TinySkiaPainter {
             .collect();
     }
 
-    // Shadows and blur are not drawn yet; see the module docs.
-    fn set_shadow_color(&self, _value: &str) {}
-    fn set_shadow_blur(&self, _value: f64) {}
-    fn set_shadow_offset_x(&self, _value: f64) {}
-    fn set_shadow_offset_y(&self, _value: f64) {}
-    fn set_blur_filter(&self, _radius_px: f64) {}
+    fn set_shadow_color(&self, value: &str) {
+        self.inner.state.borrow_mut().shadow_color = parse_color(value);
+    }
+    fn set_shadow_blur(&self, value: f64) {
+        self.inner.state.borrow_mut().shadow_blur = (value as f32).max(0.0);
+    }
+    fn set_shadow_offset_x(&self, value: f64) {
+        self.inner.state.borrow_mut().shadow_offset.0 = value as f32;
+    }
+    fn set_shadow_offset_y(&self, value: f64) {
+        self.inner.state.borrow_mut().shadow_offset.1 = value as f32;
+    }
+    fn set_blur_filter(&self, radius_px: f64) {
+        self.inner.state.borrow_mut().blur_filter = (radius_px as f32).max(0.0);
+    }
 
     fn set_font(&self, value: &str) {
         let fonts = &self.inner.fonts;
@@ -2633,12 +2837,16 @@ impl Painter for TinySkiaPainter {
     }
 
     fn fill_text(&self, text: &str, x: f64, y: f64) -> Result<(), Self::Error> {
-        self.draw_text(text, x, y, false);
+        if !self.with_effects(|layer| layer.draw_text(text, x, y, false)) {
+            self.draw_text(text, x, y, false);
+        }
         Ok(())
     }
 
     fn stroke_text(&self, text: &str, x: f64, y: f64) -> Result<(), Self::Error> {
-        self.draw_text(text, x, y, true);
+        if !self.with_effects(|layer| layer.draw_text(text, x, y, true)) {
+            self.draw_text(text, x, y, true);
+        }
         Ok(())
     }
 
@@ -2697,6 +2905,9 @@ impl Painter for TinySkiaPainter {
     }
 
     fn fill_rect(&self, x: f64, y: f64, width: f64, height: f64) {
+        if self.with_effects(|layer| layer.fill_rect(x, y, width, height)) {
+            return;
+        }
         let Some(rect) = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32) else {
             return;
         };
@@ -2730,6 +2941,9 @@ impl Painter for TinySkiaPainter {
     }
 
     fn stroke_rect(&self, x: f64, y: f64, width: f64, height: f64) {
+        if self.with_effects(|layer| layer.stroke_rect(x, y, width, height)) {
+            return;
+        }
         let Some(rect) = Rect::from_xywh(x as f32, y as f32, width as f32, height as f32) else {
             return;
         };
@@ -2856,6 +3070,9 @@ impl Painter for TinySkiaPainter {
     }
 
     fn fill(&self) {
+        if self.with_effects(|layer| layer.fill()) {
+            return;
+        }
         let Some(path) = self.current_path() else {
             return;
         };
@@ -2867,6 +3084,9 @@ impl Painter for TinySkiaPainter {
     }
 
     fn stroke(&self) {
+        if self.with_effects(|layer| layer.stroke()) {
+            return;
+        }
         let Some(path) = self.current_path() else {
             return;
         };
@@ -3626,6 +3846,51 @@ mod tests {
         let metrics = painter.measure_text_metrics("Hg").unwrap();
         assert!(metrics.font_bounding_box_ascent > metrics.actual_bounding_box_descent);
         assert!(metrics.actual_bounding_box_descent > 0.0);
+    }
+
+    #[test]
+    fn shadows_are_cast_and_blurred_under_the_drawing() {
+        let painter = TinySkiaPainter::new(120, 80, fonts()).unwrap();
+        painter.set_fill_style_str("#ff0000");
+        painter.save();
+        painter.set_shadow_color("rgba(0, 0, 0, 1)");
+        painter.set_shadow_blur(0.0);
+        painter.set_shadow_offset_x(20.0);
+        painter.set_shadow_offset_y(10.0);
+        painter.fill_rect(10.0, 10.0, 30.0, 20.0);
+        painter.restore();
+        // The rectangle, then its hard shadow down and to the right.
+        assert_eq!(pixel(&painter, 15, 15), [255, 0, 0, 255]);
+        assert_eq!(pixel(&painter, 45, 35), [0, 0, 0, 255]);
+        assert_eq!(
+            pixel(&painter, 35, 25),
+            [255, 0, 0, 255],
+            "the drawing is over its shadow"
+        );
+        // A blurred one fades out past the edge.
+        let painter = TinySkiaPainter::new(120, 80, fonts()).unwrap();
+        painter.set_fill_style_str("#000000");
+        painter.set_shadow_color("#000000");
+        painter.set_shadow_blur(10.0);
+        painter.set_global_alpha(1.0);
+        painter.begin_path();
+        painter.rect(40.0, 30.0, 20.0, 20.0);
+        painter.set_shadow_offset_x(0.0);
+        painter.set_shadow_offset_y(0.0);
+        painter.fill();
+        let outside = pixel(&painter, 63, 40);
+        assert!(
+            outside[0] < 250 && outside[0] > 60,
+            "a soft edge: {outside:?}"
+        );
+        assert_eq!(pixel(&painter, 80, 40), [255, 255, 255, 255]);
+        // The blur filter blurs the drawing itself.
+        let painter = TinySkiaPainter::new(120, 80, fonts()).unwrap();
+        painter.set_fill_style_str("#000000");
+        painter.set_blur_filter(4.0);
+        painter.fill_rect(40.0, 30.0, 20.0, 20.0);
+        let edge = pixel(&painter, 40, 40);
+        assert!(edge[0] > 40 && edge[0] < 215, "{edge:?}");
     }
 
     #[test]
