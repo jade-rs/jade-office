@@ -28,19 +28,6 @@ use crate::tooltip::Tooltip;
 use crate::view::DocView;
 use crate::{i18n, palette};
 
-/// jade-ide's font list (`FONT_FAMILIES`).
-const FONT_FAMILIES: [&str; 10] = [
-    "ＭＳ 明朝",
-    "游明朝",
-    "Hiragino Mincho ProN",
-    "Hiragino Sans",
-    "Noto Sans JP",
-    "Yu Mincho",
-    "Noto Serif JP",
-    "MS Mincho",
-    "Times New Roman",
-    "Arial",
-];
 /// Word's ribbon sizes (`WORD_FONT_SIZES`).
 const FONT_SIZES: [f32; 17] = [
     8.0, 9.0, 10.0, 10.5, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0,
@@ -49,12 +36,6 @@ const FONT_SIZES: [f32; 17] = [
 /// What an empty size or family box falls back to, as in jade-ide.
 const DEFAULT_FAMILY: &str = "游明朝";
 const DEFAULT_SIZE: f32 = 12.0;
-/// The font colour swatches, jade-ide's `textColors`.
-const TEXT_COLORS: [u32; 22] = [
-    0x000000, 0x1a1a2e, 0x434343, 0x666666, 0x999999, 0xb7b7b7, 0xdc2626, 0xea580c, 0xca8a04,
-    0x16a34a, 0x0d9488, 0x2563eb, 0x7c3aed, 0xdb2777, 0xfca5a5, 0xfdba74, 0xfde047, 0x86efac,
-    0x5eead4, 0x93c5fd, 0xc4b5fd, 0xf9a8d4,
-];
 /// Word's highlight names and what they look like.
 const HIGHLIGHTS: [(&str, u32); 15] = [
     ("yellow", 0xffff00),
@@ -164,6 +145,8 @@ pub enum Popup {
     PageTextDirection,
     PageColor,
     Cover,
+    /// The font group's third row (`view::word_characters`).
+    Characters(crate::view::word_characters::CharPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -181,6 +164,8 @@ pub struct Ribbon {
     pub painter: Option<(jade_web::word::CopiedFormat, bool)>,
     /// The format ⌘⇧C took up, for ⌘⇧V.
     pub copied_format: Option<jade_web::word::CopiedFormat>,
+    /// The theme's colours, for the font colour's テーマの色.
+    pub theme_colors: Vec<(String, String)>,
 }
 
 impl Ribbon {
@@ -193,6 +178,7 @@ impl Ribbon {
             .find(|style| style.is_default)
             .map(|style| style.id.clone());
         self.gallery = style_gallery(&styles);
+        self.theme_colors = crate::view::word_characters::document_theme_colors(document);
     }
 
     /// Opens a list, or closes it when it is the one open.
@@ -214,7 +200,11 @@ pub enum Action {
     Redo,
     Toggle(CharacterFormat),
     ClearFormatting,
-    FontFamily(&'static str),
+    /// An installed font from the family list.
+    FontFamilyName(String),
+    /// The font group's third row, the colour lists and the dialogs
+    /// (`view::word_characters`).
+    Characters(crate::view::word_characters::CharAction),
     FontSize(f32),
     StepFontSize(bool),
     /// `RRGGBB`, or `auto`.
@@ -696,6 +686,7 @@ pub fn ribbon(
             ));
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
+            groups.push(crate::view::word_characters::insert_group(cx));
             groups
         }
         Tab::Layout => {
@@ -812,20 +803,8 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
         .unwrap_or_else(|| DEFAULT_FAMILY.to_string());
     let size = state.font_size.unwrap_or(DEFAULT_SIZE);
 
-    let family_menu = (open == Some(Popup::FontFamily)).then(|| {
-        menu_panel("family-menu")
-            .w(px(200.0))
-            .children(FONT_FAMILIES.iter().enumerate().map(|(index, name)| {
-                menu_row(
-                    ("family", index),
-                    *name,
-                    family == *name,
-                    Action::FontFamily(name),
-                    cx,
-                )
-            }))
-            .into_any_element()
-    });
+    let family_menu = (open == Some(Popup::FontFamily))
+        .then(|| crate::view::word_characters::font_family_menu(&family, cx));
     let size_menu = (open == Some(Popup::FontSize)).then(|| {
         menu_panel("size-menu")
             .w(px(72.0))
@@ -842,29 +821,8 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
             }))
             .into_any_element()
     });
-    let color_menu = (open == Some(Popup::FontColor)).then(|| {
-        menu_panel("color-menu")
-            .w(px(260.0))
-            .child(menu_row(
-                "color-auto",
-                i18n::text("doc.color.auto"),
-                false,
-                Action::FontColor("auto".to_string()),
-                cx,
-            ))
-            .child(div().flex().flex_wrap().gap_1().p_1().children(
-                TEXT_COLORS.iter().enumerate().map(|(index, color)| {
-                    swatch(
-                        ("color", index),
-                        *color,
-                        format!("#{}", hex(*color)),
-                        Action::FontColor(hex(*color)),
-                        cx,
-                    )
-                }),
-            ))
-            .into_any_element()
-    });
+    let color_menu = (open == Some(Popup::FontColor))
+        .then(|| crate::view::word_characters::font_color_menu(&ribbon.theme_colors, cx));
     let highlight_menu = (open == Some(Popup::Highlight)).then(|| {
         menu_panel("highlight-menu")
             .w(px(200.0))
@@ -1111,6 +1069,7 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         cx,
                     ),
                 ]),
+                crate::view::word_characters::font_row(ribbon, state, cx),
             ],
         ),
         group(

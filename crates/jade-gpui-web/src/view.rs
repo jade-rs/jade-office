@@ -33,6 +33,7 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 mod deck;
 mod sheet;
 mod word_dialogs;
+pub(crate) mod word_characters;
 mod word_find;
 mod word_review;
 pub(crate) mod word_setup;
@@ -495,6 +496,8 @@ pub struct DocView {
     /// The status bar's 文字カウント and the caret, selection and edit it
     /// was counted for: counting reads every paragraph.
     word_count: RefCell<Option<(FormatKey, SharedString)>>,
+    /// The フォント dialog and the other character tools' dialogs.
+    characters: word_characters::Characters,
     host: Host,
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
@@ -618,6 +621,7 @@ impl DocView {
             slideshow: false,
             paste_arrived: false,
             word_count: RefCell::new(None),
+            characters: word_characters::Characters::default(),
             host,
             page_dialog: None,
         })
@@ -1622,6 +1626,9 @@ impl DocView {
         if let Action::Setup(setup) = action {
             return self.setup_action(setup, cx);
         }
+        if let Action::Characters(action) = action {
+            return word_characters::run(self, action, cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1652,7 +1659,7 @@ impl DocView {
         self.word_edit(cx, move |document| match action {
             Action::Toggle(format) => document.toggle_format(format),
             Action::ClearFormatting => document.clear_formatting(),
-            Action::FontFamily(family) => document.set_font_family(family),
+            Action::FontFamilyName(family) => document.set_font_family(&family),
             Action::FontSize(points) => document.set_font_size(points),
             Action::StepFontSize(grow) => document.step_font_size(grow),
             Action::FontColor(color) => document.set_font_color(&color),
@@ -1687,6 +1694,7 @@ impl DocView {
             }
             Action::EditStory(_)
             | Action::Setup(_)
+            | Action::Characters(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -2175,6 +2183,14 @@ impl DocView {
             cx.stop_propagation();
             return;
         }
+        // A dialog takes the keyboard while it is open: its own keys stop
+        // here, and typing goes on to the input handler, into its field.
+        if self.characters.is_open() {
+            if word_characters::handle_key(self, key, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // The find bar over a Word document takes the keys it has.
         if self.dialog_open() && self.dialog_key(event, cx) {
             cx.stop_propagation();
@@ -2241,6 +2257,8 @@ impl DocView {
                 "d" | "∂" if pages && modifiers.alt => {
                     self.open_note_dialog(jade_web::word::NoteKind::Endnote, cx)
                 }
+                // Word for Mac's フォント… (書式 menu).
+                "d" if pages => word_characters::open_font_dialog(self, cx),
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.
                 "b" | "i" | "u" if pages => {
@@ -2273,6 +2291,9 @@ impl DocView {
     fn typing_target(&mut self, cx: &mut Context<Self>) -> Option<&mut TextEdit> {
         if self.slideshow {
             return None;
+        }
+        if self.characters.is_open() {
+            return self.characters.text_field_mut();
         }
         match &self.document {
             // Typing into a selected cell replaces it, as in Excel.
@@ -2316,6 +2337,9 @@ impl DocView {
     }
 
     fn current_text(&self) -> Option<&TextEdit> {
+        if let Some(field) = self.characters.text_field() {
+            return Some(field);
+        }
         match &self.document {
             Document::Workbook(sheet) => sheet.typed(),
             Document::Deck {
@@ -2757,6 +2781,7 @@ impl Render for DocView {
                 Document::Workbook(_) => self.workbook_body(window, cx),
             }
         };
+        let dialog = word_characters::overlay(self, window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -2764,5 +2789,6 @@ impl Render for DocView {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::handle_key))
             .child(body)
+            .children(dialog)
     }
 }

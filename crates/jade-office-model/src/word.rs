@@ -29,10 +29,13 @@ use jade_docx_headless_api::{
 pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
+pub mod asian;
 pub mod clipboard;
 pub mod count;
 pub mod find;
 pub mod links;
+pub mod font;
+pub mod insert;
 pub mod new;
 pub mod page;
 pub mod painter;
@@ -44,6 +47,7 @@ pub mod references;
 pub mod review;
 pub mod table;
 pub mod table_ui;
+pub mod typography;
 
 pub use count::{WordCount, WordCounting};
 pub use find::{FindOptions, Found, WordFind};
@@ -155,6 +159,9 @@ pub struct FormatState {
     pub list: Option<ListKind>,
     /// The cell the caret is in, when it is in a table.
     pub table: Option<TableCell>,
+    /// Everything else about the run: what the フォント dialog and the font
+    /// group's third row show (`font::WordCharacters`).
+    pub character: jade_docx_headless_api::HeadlessRunFormat,
 }
 
 /// What kind of list a paragraph is in, which decides what the ribbon's two
@@ -601,6 +608,7 @@ pub trait WordFormatting: WordSession {
             alignment: paragraph.and_then(|p| p.alignment),
             list,
             table: self.caret_table_cell(),
+            character: font::WordCharacters::run_format_at(self, at),
         }
     }
 
