@@ -198,7 +198,7 @@ impl DocumentView {
         match result {
             // A dialog that is not done (a value it cannot take) stays open.
             Err(DialogError::Stay(dialog, message)) => {
-                self.tools.dialog = Some(dialog);
+                self.tools.dialog = Some(*dialog);
                 self.tools.status = Some(SharedString::from(message));
                 cx.notify();
             }
@@ -404,7 +404,7 @@ pub(crate) fn on_event<E: ?Sized>(
 /// Why OK did not close the dialog.
 pub enum DialogError {
     /// A value it cannot take: the dialog stays open with the message.
-    Stay(WordDialog, String),
+    Stay(Box<WordDialog>, String),
     /// The edit failed: the dialog closes with the message.
     Failed(String),
 }
