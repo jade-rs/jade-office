@@ -99,17 +99,25 @@ pub enum Tab {
     Home,
     Insert,
     Layout,
+    References,
     Review,
 }
 
 impl Tab {
-    const ALL: [Tab; 4] = [Tab::Home, Tab::Insert, Tab::Layout, Tab::Review];
+    const ALL: [Tab; 5] = [
+        Tab::Home,
+        Tab::Insert,
+        Tab::Layout,
+        Tab::References,
+        Tab::Review,
+    ];
 
     fn label(self) -> &'static str {
         i18n::text(match self {
             Tab::Home => "doc.tab.home",
             Tab::Insert => "doc.tab.insert",
             Tab::Layout => "doc.tab.layout",
+            Tab::References => "doc.tab.references",
             Tab::Review => "doc.tab.review",
         })
     }
@@ -147,6 +155,11 @@ pub struct Ribbon {
     gallery: Vec<GalleryStyle>,
     /// The document's default paragraph style, which 標準 stands for.
     default_style: Option<String>,
+    /// 書式のコピー/貼り付け: the format the brush holds, and whether it
+    /// keeps painting (a double-click) until Escape.
+    pub painter: Option<(jade_web::word::CopiedFormat, bool)>,
+    /// The format ⌘⇧C took up, for ⌘⇧V.
+    pub copied_format: Option<jade_web::word::CopiedFormat>,
 }
 
 impl Ribbon {
@@ -203,6 +216,18 @@ pub enum Action {
     Review(crate::word_review::ReviewAction),
     /// 挿入 → 画像: a picture picked from the device.
     InsertPicture,
+    /// 挿入 → リンク (⌘K): the hyperlink dialog.
+    InsertLink,
+    /// 段落…: the paragraph dialog.
+    ParagraphDialog,
+    /// 書式のコピー/貼り付け: the brush taken up, sticky on a double-click.
+    FormatPainter(bool),
+    /// 参考資料 → 目次.
+    InsertContents,
+    /// 参考資料 → 目次の更新.
+    UpdateContents,
+    /// 参考資料 → 脚注の挿入 / 文末脚注の挿入: the note's bar.
+    InsertNote(jade_web::word::NoteKind),
     /// 文字列の折り返し for the picture selected.
     Wrap(jade_web::word::picture::Wrap),
 }
@@ -614,6 +639,17 @@ pub fn ribbon(
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
             groups.push(crate::word_page::pictures(shown.picture, cx));
+            groups.push(group(
+                i18n::text("link.group"),
+                vec![row(vec![crate::word_page::text_button(
+                    "hyperlink",
+                    i18n::text("link.button"),
+                    i18n::text("link.button_title"),
+                    false,
+                    Action::InsertLink,
+                    cx,
+                )])],
+            ));
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups
         }
@@ -631,6 +667,7 @@ pub fn ribbon(
             groups.extend(layout(ribbon, state, cx));
             groups
         }
+        Tab::References => references(cx),
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
     };
     div()
@@ -1113,6 +1150,15 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         ),
                         borders_menu,
                     ),
+                    icon_button(
+                        "paragraph-dialog",
+                        "icons/settings-2.svg",
+                        i18n::text("paragraph.button_title"),
+                        false,
+                        true,
+                        Action::ParagraphDialog,
+                        cx,
+                    ),
                 ]),
             ],
         ),
@@ -1138,9 +1184,46 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                     Action::Redo,
                     cx,
                 ),
+                painter_button(ribbon.painter.is_some(), cx),
             ])],
         ),
     ]
+}
+
+/// 書式のコピー/貼り付け: one click paints once, a double-click until
+/// Escape.
+fn painter_button(active: bool, cx: &mut Context<DocView>) -> AnyElement {
+    let view = cx.weak_entity();
+    div()
+        .id("format-painter")
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(26.0))
+        .rounded_md()
+        .when(active, |button| button.bg(palette::selected()))
+        .cursor_pointer()
+        .hover(|button| button.bg(palette::hovered()))
+        .tooltip(Tooltip::text(i18n::text("painter.title")))
+        .on_click(move |event: &ClickEvent, window, cx| {
+            let sticky = event.click_count() >= 2;
+            view.update(cx, |view, cx| {
+                view.ribbon_action(Action::FormatPainter(sticky), window, cx)
+            })
+            .ok();
+        })
+        .child(
+            svg()
+                .path("icons/paintbrush.svg")
+                .size_4()
+                .text_color(if active {
+                    palette::accent()
+                } else {
+                    palette::text()
+                }),
+        )
+        .into_any_element()
 }
 
 /// The style gallery: the first few entries as cards, the whole list
@@ -1323,6 +1406,57 @@ fn insert(ribbon: &Ribbon, cx: &mut Context<DocView>) -> Vec<AnyElement> {
             picker,
         )],
     )]
+}
+
+// ---- 参考資料 -------------------------------------------------------------------
+
+fn references(cx: &mut Context<DocView>) -> Vec<AnyElement> {
+    use crate::word_page::text_button;
+    use jade_web::word::NoteKind;
+    vec![
+        group(
+            i18n::text("doc.toc"),
+            vec![row(vec![
+                text_button(
+                    "toc",
+                    i18n::text("doc.toc"),
+                    i18n::text("doc.toc_title"),
+                    false,
+                    Action::InsertContents,
+                    cx,
+                ),
+                text_button(
+                    "toc-update",
+                    i18n::text("doc.toc_update"),
+                    i18n::text("doc.toc_update_title"),
+                    false,
+                    Action::UpdateContents,
+                    cx,
+                ),
+            ])],
+        ),
+        group(
+            i18n::text("note.group"),
+            vec![row(vec![
+                text_button(
+                    "footnote",
+                    i18n::text("note.footnote"),
+                    i18n::text("note.footnote_title"),
+                    false,
+                    Action::InsertNote(NoteKind::Footnote),
+                    cx,
+                ),
+                text_button(
+                    "endnote",
+                    i18n::text("note.endnote"),
+                    i18n::text("note.endnote_title"),
+                    false,
+                    Action::InsertNote(NoteKind::Endnote),
+                    cx,
+                ),
+            ])],
+        ),
+    ]
 }
 
 // ---- レイアウト (表ツール) -------------------------------------------------------

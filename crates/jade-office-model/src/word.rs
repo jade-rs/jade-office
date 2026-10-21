@@ -30,14 +30,27 @@ pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
 pub mod clipboard;
+pub mod count;
 pub mod find;
+pub mod links;
 pub mod new;
 pub mod page;
+pub mod painter;
+pub mod paragraph;
 pub mod picture;
 pub mod platform;
+pub mod references;
 pub mod review;
 
+pub use count::{WordCount, WordCounting};
 pub use find::{FindOptions, Found, WordFind};
+pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
+pub use painter::{CopiedFormat, WordFormatPainter};
+pub use paragraph::{
+    IndentUnit, LineSpacing, ParagraphField, ParagraphForm, ParagraphFormat, SpecialIndent,
+    WordParagraphs,
+};
+pub use references::{NoteForm, NoteKind, WordReferences};
 
 /// A paragraph and a byte offset into its text.
 pub type Position = (usize, usize);
@@ -80,6 +93,10 @@ pub trait WordSession {
     fn cell_layouts(&self) -> &[CellLayout];
     /// A laid-out table's order in the body, which table commands take.
     fn table_order_for(&self, table_id: usize) -> Option<usize>;
+    /// Where the pages show hyperlinks, from the document as it now is and
+    /// the last layout: a rectangle a line of each, in the document's
+    /// coordinates.
+    fn hyperlink_regions(&self) -> Vec<jade_docx_editor::canvas_renderer::HyperlinkRegion>;
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
@@ -753,12 +770,13 @@ pub trait WordFormatting: WordSession {
     }
 
     /// Line height as a multiple of a single line (1.0, 1.15, 1.5, …): Word's
-    /// `auto` rule in 240ths of a line.
+    /// `auto` rule, which the command takes as the multiple itself and
+    /// writes in 240ths of a line.
     fn set_line_spacing(&mut self, multiple: f32) -> Result<(), String> {
         self.run_on_paragraphs(|start, end| HeadlessCommand::SetParagraphLineSpacing {
             start_paragraph: start,
             end_paragraph: end,
-            line: Some(Some(multiple * 240.0)),
+            line: Some(Some(multiple)),
             line_rule: Some("auto".to_string()),
             before: None,
             after: None,

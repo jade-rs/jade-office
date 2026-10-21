@@ -122,6 +122,48 @@ fn enter_splits_the_paragraph_and_the_caret_follows() {
     assert_eq!(document.caret(), Some((paragraph + 1, 0)));
 }
 
+/// Shift+Enter breaks the line, not the paragraph: the paragraph count
+/// stays, the break is a `\n` in its text with the caret after it, the next
+/// line starts lower down, the save writes a `w:br`, and one undo takes it
+/// back. Over a selection it replaces the selection, still one undo.
+#[test]
+fn shift_enter_breaks_the_line_inside_the_paragraph() {
+    let mut document = open("contract.docx");
+    let (paragraph, before) = first_text_paragraph(&document);
+    let count = document.paragraph_count();
+    let split = before.char_indices().nth(2).map(|(at, _)| at).unwrap();
+    let line_before = document.place_caret(paragraph, split).unwrap();
+    document.insert_line_break().unwrap();
+    assert_eq!(document.paragraph_count(), count);
+    let text = document.paragraph_text(paragraph).unwrap();
+    assert_eq!(text, format!("{}\n{}", &before[..split], &before[split..]));
+    assert_eq!(document.caret(), Some((paragraph, split + 1)));
+    let line_after = document.caret_rect().unwrap();
+    assert!(
+        line_after.document_y > line_before.document_y,
+        "the text after the break is on the next line"
+    );
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    assert!(xml.contains("<w:br"), "the break is a w:br");
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+
+    // Over a selection: the selection goes, the break takes its place.
+    let end = before.char_indices().nth(4).map(|(at, _)| at).unwrap();
+    document
+        .select((paragraph, split), (paragraph, end))
+        .unwrap();
+    document.insert_line_break().unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("{}\n{}", &before[..split], &before[end..])
+    );
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+}
+
 #[test]
 fn a_click_lands_where_the_caret_is_drawn() {
     let mut document = open("contract.docx");
