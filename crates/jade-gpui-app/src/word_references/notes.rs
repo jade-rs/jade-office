@@ -9,7 +9,8 @@ use jade_office_model::word::references::notes::{
 use jade_office_model::word::NoteKind;
 
 use super::{
-    action_button, choice, edit, line, select, t, text_field, Dialog, RefList, References,
+    action_button, check_box, choice, edit, line, select, t, text_field, Dialog, RefList,
+    References,
 };
 use crate::DocumentView;
 
@@ -146,7 +147,6 @@ pub fn body(view: &DocumentView, cx: &mut Context<DocumentView>) -> AnyElement {
         .collect();
     let place = match kind {
         NoteKind::Footnote => line("notes.place")
-            .child(choice("place-footnote", t("notes.footnotes"), true))
             .child(select(
                 view,
                 RefList::Place,
@@ -171,7 +171,6 @@ pub fn body(view: &DocumentView, cx: &mut Context<DocumentView>) -> AnyElement {
                 },
             )),
         NoteKind::Endnote => line("notes.place")
-            .child(choice("place-endnote", t("notes.endnotes"), true))
             .child(select(
                 view,
                 RefList::Place,
@@ -265,6 +264,25 @@ pub fn body(view: &DocumentView, cx: &mut Context<DocumentView>) -> AnyElement {
             },
         )))
         .child(line("notes.scope").child(scope_choices))
+        .child(
+            line("notes.separators")
+                .child(check_box("notes-separator", "notes.separator", dialog.separator, cx, |references| {
+                    if let Some(dialog) = note_form(references) {
+                        dialog.separator = !dialog.separator;
+                    }
+                }))
+                .child(check_box(
+                    "notes-continuation-separator",
+                    "notes.continuation_separator",
+                    dialog.continuation_separator,
+                    cx,
+                    |references| {
+                        if let Some(dialog) = note_form(references) {
+                            dialog.continuation_separator = !dialog.continuation_separator;
+                        }
+                    },
+                )),
+        )
         .child(
             div()
                 .flex()
@@ -386,6 +404,7 @@ mod tests {
             dialog.format = "lowerRoman".to_string();
             dialog.restart = NoteRestart::EachPage;
             dialog.footnote_place = FootnotePlace::BeneathText;
+            dialog.separator = false;
             view.references.focus = 0;
         });
         cx.simulate_keystrokes("backspace");
@@ -404,6 +423,11 @@ mod tests {
             assert!(body.contains(r#"<w:numFmt w:val="lowerRoman"/>"#), "{body}");
             assert!(body.contains(r#"<w:numStart w:val="3"/>"#));
             assert!(body.contains(r#"<w:pos w:val="beneathText"/>"#));
+            // 境界線 off: the separator note is emptied.
+            assert!(!dialog.separator);
+            assert!(dialog.continuation_separator);
+            let notes = package.part_str("word/footnotes.xml").unwrap().unwrap();
+            assert!(!notes.contains("<w:separator/>"), "{notes}");
         });
         view.update(cx, |view, cx| {
             super::super::run(view, RefAction::OpenNotes, cx);

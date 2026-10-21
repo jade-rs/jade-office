@@ -62,9 +62,7 @@ pub fn update_figures(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         .iter()
         .enumerate()
         .filter(|(_, block)| {
-            jade_docx_editor::document::parse_toc_switches(&block.instruction)
-                .caption_label
-                .is_some()
+            jade_office_model::word::references::toc::is_table_of_figures(&block.instruction)
         })
         .map(|(index, _)| index)
         .collect();

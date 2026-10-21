@@ -1586,3 +1586,8 @@ xref.type.bookmark	ブックマーク
 xref.type.endnote	文末脚注
 xref.type.footnote	脚注
 xref.type.heading	見出し
+notes.separators	境界線
+notes.separator	境界線を表示する
+notes.continuation_separator	継続境界線を表示する
+nav.collapse	折りたたむ
+nav.expand	展開

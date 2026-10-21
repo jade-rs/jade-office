@@ -320,7 +320,16 @@ fn headings(view: &mut DocumentView, cx: &mut Context<DocumentView>) -> AnyEleme
                         .flex_none()
                         .when(heading.has_children, |toggle| {
                             toggle
-                                .child(if folded { "▸" } else { "▾" })
+                                .child(
+                                    gpui::svg()
+                                        .path(if folded {
+                                            "icons/chevron-right.svg"
+                                        } else {
+                                            "icons/chevron-down.svg"
+                                        })
+                                        .size_3()
+                                        .text_color(theme::text_dim()),
+                                )
                                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                                     cx.stop_propagation();
                                     if !view.references.pane_folded.remove(&paragraph) {
@@ -381,10 +390,10 @@ fn headings(view: &mut DocumentView, cx: &mut Context<DocumentView>) -> AnyEleme
                 .child(button("nav-demote", "→", "nav.demote", cx, |view, cx| shift(view, false, cx)))
                 .child(button("nav-up", "↑", "nav.move_up", cx, |view, cx| move_section(view, true, cx)))
                 .child(button("nav-down", "↓", "nav.move_down", cx, |view, cx| move_section(view, false, cx)))
-                .child(button("nav-collapse-all", "▸▸", "nav.collapse_all", cx, |view, cx| {
+                .child(button("nav-collapse-all", t("nav.collapse"), "nav.collapse_all", cx, |view, cx| {
                     set_all_collapsed(view, true, cx)
                 }))
-                .child(button("nav-expand-all", "▾▾", "nav.expand_all", cx, |view, cx| {
+                .child(button("nav-expand-all", t("nav.expand"), "nav.expand_all", cx, |view, cx| {
                     set_all_collapsed(view, false, cx)
                 })),
         )
@@ -799,7 +808,16 @@ pub fn page_marks(
                     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                         toggle_heading(view, heading, cx)
                     }))
-                    .child(if collapsed { "▸" } else { "▾" })
+                    .child(
+                        gpui::svg()
+                            .path(if collapsed {
+                                "icons/chevron-right.svg"
+                            } else {
+                                "icons/chevron-down.svg"
+                            })
+                            .size(px(10.0 * zoom.max(0.8)))
+                            .text_color(theme::text_dim()),
+                    )
                     .into_any_element(),
             ),
             _ => None,
