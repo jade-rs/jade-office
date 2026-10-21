@@ -699,3 +699,38 @@ note.text	内容
 note.keys	⏎ 挿入 · esc キャンセル
 doc.word_count	文字数: {characters} · 単語数: {words}
 doc.word_count_selection	文字数: {selected_characters}/{characters} · 単語数: {selected_words}/{words}
+menu.format.paragraph	段落…
+paragraph.title	段落
+paragraph.button_title	段落の設定 (⌥⌘M)
+paragraph.alignment	配置
+paragraph.align.left	左揃え
+paragraph.align.center	中央揃え
+paragraph.align.right	右揃え
+paragraph.align.both	両端揃え
+paragraph.indent	インデント
+paragraph.left	左
+paragraph.right	右
+paragraph.special	最初の行
+paragraph.special.none	(なし)
+paragraph.special.first_line	字下げ
+paragraph.special.hanging	ぶら下げ
+paragraph.by	幅
+paragraph.spacing	間隔
+paragraph.before	段落前
+paragraph.after	段落後
+paragraph.line	行間
+paragraph.line.single	1 行
+paragraph.line.one_and_half	1.5 行
+paragraph.line.double	2 行
+paragraph.line.at_least	最小値
+paragraph.line.exactly	固定値
+paragraph.line.multiple	倍数
+paragraph.unit.chars	字
+paragraph.unit.mm	mm
+paragraph.unit.lines	行
+paragraph.pagination	改ページと改行
+paragraph.widow_control	改ページ時 1 行残して段落を区切らない
+paragraph.keep_next	次の段落と分離しない
+paragraph.keep_lines	段落を分割しない
+paragraph.page_break_before	段落前で改ページする
+paragraph.keys	⇥ 次の項目 · ⏎ OK · esc キャンセル

@@ -213,6 +213,8 @@ pub enum Action {
     InsertPicture,
     /// 挿入 → リンク (⌘K): the hyperlink dialog.
     InsertLink,
+    /// 段落…: the paragraph dialog.
+    ParagraphDialog,
     /// 参考資料 → 目次.
     InsertContents,
     /// 参考資料 → 目次の更新.
@@ -1140,6 +1142,15 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                             cx,
                         ),
                         borders_menu,
+                    ),
+                    icon_button(
+                        "paragraph-dialog",
+                        "icons/settings-2.svg",
+                        i18n::text("paragraph.button_title"),
+                        false,
+                        true,
+                        Action::ParagraphDialog,
+                        cx,
                     ),
                 ]),
             ],

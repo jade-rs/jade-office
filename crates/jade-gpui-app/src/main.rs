@@ -122,6 +122,7 @@ actions!(
         InsertHyperlink,
         InsertFootnote,
         InsertEndnote,
+        ParagraphFormat,
         ZoomIn,
         ZoomOut,
         ZoomActual,
@@ -195,6 +196,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-k", InsertHyperlink, CONTEXT),
         KeyBinding::new("cmd-alt-f", InsertFootnote, CONTEXT),
         KeyBinding::new("cmd-alt-d", InsertEndnote, CONTEXT),
+        // Word for Mac's 書式 → 段落.
+        KeyBinding::new("cmd-alt-m", ParagraphFormat, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -283,6 +286,8 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.indent_more"), IndentMore),
                 MenuItem::action(t("menu.format.indent_less"), IndentLess),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.format.paragraph"), ParagraphFormat),
             ],
         },
         Menu {
@@ -2844,6 +2849,7 @@ impl DocumentView {
                 WordPage::page_command(document, command, japanese)
             }
             Action::EditStory(story) => return self.open_story_bar(story, cx),
+            Action::ParagraphDialog => return self.open_paragraph_dialog(cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -4150,6 +4156,11 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &InsertHyperlink, _window, cx| view.open_link_dialog(cx)),
             )
+            .on_action(
+                cx.listener(|view, _: &ParagraphFormat, _window, cx| {
+                    view.open_paragraph_dialog(cx)
+                }),
+            )
             .on_action(cx.listener(|view, _: &InsertFootnote, _window, cx| {
                 view.open_note_dialog(NoteKind::Footnote, cx)
             }))
@@ -4214,7 +4225,7 @@ impl Render for DocumentView {
                     .flex_col()
                     .size_full()
                     .child(self.ribbon(window, cx))
-                    .children(self.dialog_element())
+                    .children(self.dialog_element(cx))
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
@@ -5188,6 +5199,62 @@ mod tests {
                 ],
             );
             assert!(items.iter().any(|item| item.as_ref() == shown), "{items:?}");
+        });
+    }
+
+    /// ⌥⌘M opens 段落 on the caret paragraph's format; what is typed
+    /// replaces the left indent, Tab moves to the next field, a click on a
+    /// choice or a check box changes it, Enter applies it all as one undo
+    /// step and Escape leaves the paragraph as it was.
+    #[gpui::test]
+    fn the_paragraph_dialog_sets_indents_spacing_and_pagination(cx: &mut gpui::TestAppContext) {
+        use super::word_dialogs::Dialog;
+        use super::Undo;
+        use jade_office_model::word::{LineSpacing, ParagraphField, WordParagraphs};
+        let (view, cx) = open_contract(cx);
+        type_at_start(&view, cx, "段落");
+        let was = view.read_with(cx, |view, _| view.document.paragraph_format());
+        cx.update(|_, cx| cx.bind_keys(super::key_bindings()));
+        cx.simulate_keystrokes("cmd-alt-m");
+        cx.simulate_input("3");
+        cx.simulate_keystrokes("tab tab tab");
+        view.update(cx, |view, cx| {
+            match &view.dialog {
+                Some(Dialog::Paragraph(form)) => {
+                    assert_eq!(form.focus, ParagraphField::Before);
+                    assert_eq!(form.field(ParagraphField::Left).text, "3");
+                }
+                _ => panic!("the paragraph dialog is open"),
+            }
+            view.edit_paragraph_form(
+                |form| {
+                    form.format.keep_next = true;
+                    form.set_line_rule(LineSpacing::Double);
+                },
+                cx,
+            );
+        });
+        cx.simulate_input("12");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.dialog.is_none(), "{:?}", view.table_status);
+            let now = view.document.paragraph_format();
+            assert_eq!(now.left, 3.0);
+            assert_eq!(now.before, 12.0);
+            assert_eq!(now.line, LineSpacing::Double);
+            assert!(now.keep_next);
+            assert!(view.dirty);
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.document.paragraph_format(), was)
+        });
+        cx.simulate_keystrokes("cmd-alt-m");
+        cx.simulate_input("5");
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.dialog.is_none());
+            assert_eq!(view.document.paragraph_format(), was);
         });
     }
 

@@ -77,7 +77,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | | Paste with formatting from other apps (HTML, RTF); a copy keeps its formatting within the app only | Medium | no |
 | | PDF in the browser is a picture of each page: its text cannot be selected or searched | Medium | partly (`jade-docx-pdf-renderer`) |
 | **Done** | Shift+Enter line break | Medium | partly |
-| | Space before/after, paragraph dialog (first-line/hanging indent, keep with next) | Medium | yes (`set_paragraph_spacing`) |
+| **Done** | Space before/after, paragraph dialog (first-line/hanging indent, keep with next) | Medium | yes (`set_paragraph_spacing`) |
 | | Fonts beyond a fixed list; custom colours; Font dialog | Medium | partly |
 | | Modify and create styles; character styles | Medium | partly |
 | | List types, bullet glyphs, number formats, restart numbering | Medium | partly |
