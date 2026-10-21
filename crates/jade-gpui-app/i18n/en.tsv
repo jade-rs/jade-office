@@ -675,3 +675,119 @@ format.fill.none	No color
 format.ok	OK
 format.cancel	Cancel
 sheet.protected	The cell or sheet you are trying to change is protected.
+# ---- Character formatting and Japanese text (word_characters) ----
+menu.format.font	Font...
+chars.none	None
+chars.font.title	Font
+chars.font.tab_font	Font
+chars.font.tab_advanced	Advanced
+chars.font.japanese	Asian text font
+chars.font.latin	Latin text font
+chars.font.complex	Complex scripts font
+chars.font.complex_size	Complex scripts size
+chars.font.style	Font style
+chars.font.size	Size
+chars.font.all_text	All text
+chars.font.color	Font color
+chars.font.underline	Underline style
+chars.font.underline_color	Underline color
+chars.font.emphasis	Emphasis mark
+chars.font.decorations	Effects
+chars.font.preview	Preview
+chars.font.type_to_filter	Type to filter
+chars.font.launcher	Font... (⌘D)
+chars.font.all_fonts	All fonts
+chars.style.regular	Regular
+chars.style.italic	Italic
+chars.style.bold	Bold
+chars.style.bold_italic	Bold Italic
+chars.underline.none	(none)
+chars.underline.single	Single
+chars.underline.words	Words only
+chars.underline.double	Double
+chars.underline.thick	Thick
+chars.underline.dotted	Dotted
+chars.underline.dotted_heavy	Heavy dotted
+chars.underline.dash	Dash
+chars.underline.dash_heavy	Heavy dash
+chars.underline.dash_long	Long dash
+chars.underline.dash_long_heavy	Heavy long dash
+chars.underline.dot_dash	Dot dash
+chars.underline.dot_dash_heavy	Heavy dot dash
+chars.underline.dot_dot_dash	Dot dot dash
+chars.underline.dot_dot_dash_heavy	Heavy dot dot dash
+chars.underline.wave	Wave
+chars.underline.wave_heavy	Heavy wave
+chars.underline.wave_double	Double wave
+chars.emphasis.none	(none)
+chars.emphasis.dot	Dot
+chars.emphasis.comma	Comma
+chars.emphasis.circle	Circle
+chars.emphasis.under_dot	Under dot
+chars.effect.strike	Strikethrough
+chars.effect.double_strike	Double strikethrough
+chars.effect.superscript	Superscript
+chars.effect.subscript	Subscript
+chars.effect.small_caps	Small caps
+chars.effect.all_caps	All caps
+chars.effect.hidden	Hidden
+chars.effect.outline	Outline
+chars.effect.shadow	Shadow
+chars.effect.emboss	Emboss
+chars.effect.engrave	Engrave
+chars.advanced.spacing	Character spacing
+chars.advanced.scale	Scale
+chars.advanced.char_spacing	Spacing
+chars.advanced.position	Position
+chars.advanced.opentype	OpenType features
+chars.advanced.ligatures	Ligatures
+chars.advanced.number_spacing	Number spacing
+chars.advanced.number_form	Number forms
+chars.advanced.stylistic_set	Stylistic sets
+chars.advanced.alternates	Use contextual alternates
+chars.advanced.effects	Text effects
+chars.advanced.glow	Glow
+chars.advanced.text_outline	Text outline
+chars.spacing.normal	Normal
+chars.spacing.expanded	Expanded
+chars.spacing.condensed	Condensed
+chars.position.normal	Normal
+chars.position.raised	Raised
+chars.position.lowered	Lowered
+chars.kerning	Kerning for fonts
+chars.kerning_from	points and above
+chars.ligatures.none	None
+chars.ligatures.standard	Standard only
+chars.ligatures.standard_contextual	Standard and contextual
+chars.ligatures.historical	Historical and discretionary
+chars.ligatures.all	All
+chars.number.default	Default
+chars.number.proportional	Proportional
+chars.number.tabular	Tabular
+chars.number.lining	Lining
+chars.number.old_style	Old-style
+chars.color.title	Colors
+chars.color.theme	Theme colors
+chars.color.standard	Standard colors
+chars.color.more	More colors...
+chars.color.code	Hex code
+chars.case.title_tip	Change case
+chars.case.sentence	Sentence case.
+chars.case.lower	lowercase
+chars.case.upper	UPPERCASE
+chars.case.title	Capitalize Each Word
+chars.case.toggle	tOGGLE cASE
+chars.case.half_width	Half-width
+chars.case.full_width	Full-width
+chars.case.katakana	Katakana
+chars.case.hiragana	Hiragana
+chars.shading	Character shading
+chars.border	Character border
+chars.asian.title	Asian layout
+chars.asian.vertical	Horizontal in vertical
+chars.asian.vertical_fit	Horizontal in vertical (fit line)
+chars.asian.combine	Combine characters
+chars.asian.warichu	Two lines in one
+chars.asian.warichu_none	Two lines in one (no brackets)
+chars.asian.remove	Remove Asian layout
+chars.asian.scale	Character scale

@@ -675,3 +675,119 @@ format.fill.none	色なし
 format.ok	OK
 format.cancel	キャンセル
 sheet.protected	変更しようとしているセルやグラフは保護されているシート上にあります。
+# ---- 文字の書式と日本語の文字 (word_characters) ----
+menu.format.font	フォント...
+chars.none	なし
+chars.font.title	フォント
+chars.font.tab_font	フォント
+chars.font.tab_advanced	詳細設定
+chars.font.japanese	日本語用のフォント
+chars.font.latin	英数字用のフォント
+chars.font.complex	複合フォント (多言語用)
+chars.font.complex_size	複合フォントのサイズ
+chars.font.style	スタイル
+chars.font.size	サイズ
+chars.font.all_text	すべての文字列
+chars.font.color	フォントの色
+chars.font.underline	下線のスタイル
+chars.font.underline_color	下線の色
+chars.font.emphasis	傍点
+chars.font.decorations	文字飾り
+chars.font.preview	プレビュー
+chars.font.type_to_filter	入力して絞り込み
+chars.font.launcher	フォント... (⌘D)
+chars.font.all_fonts	すべてのフォント
+chars.style.regular	標準
+chars.style.italic	斜体
+chars.style.bold	太字
+chars.style.bold_italic	太字 斜体
+chars.underline.none	(下線なし)
+chars.underline.single	下線
+chars.underline.words	下線 (単語のみ)
+chars.underline.double	二重下線
+chars.underline.thick	太線の下線
+chars.underline.dotted	点線の下線
+chars.underline.dotted_heavy	太い点線の下線
+chars.underline.dash	破線の下線
+chars.underline.dash_heavy	太い破線の下線
+chars.underline.dash_long	長い破線の下線
+chars.underline.dash_long_heavy	太い長い破線の下線
+chars.underline.dot_dash	一点鎖線の下線
+chars.underline.dot_dash_heavy	太い一点鎖線の下線
+chars.underline.dot_dot_dash	二点鎖線の下線
+chars.underline.dot_dot_dash_heavy	太い二点鎖線の下線
+chars.underline.wave	波線の下線
+chars.underline.wave_heavy	太い波線の下線
+chars.underline.wave_double	二重波線の下線
+chars.emphasis.none	(傍点なし)
+chars.emphasis.dot	・
+chars.emphasis.comma	、
+chars.emphasis.circle	○
+chars.emphasis.under_dot	・ (下)
+chars.effect.strike	取り消し線
+chars.effect.double_strike	二重取り消し線
+chars.effect.superscript	上付き
+chars.effect.subscript	下付き
+chars.effect.small_caps	小型英大文字
+chars.effect.all_caps	すべて大文字
+chars.effect.hidden	隠し文字
+chars.effect.outline	中抜き
+chars.effect.shadow	影付き
+chars.effect.emboss	浮き出し
+chars.effect.engrave	浮き彫り
+chars.advanced.spacing	文字幅と間隔
+chars.advanced.scale	倍率
+chars.advanced.char_spacing	文字間隔
+chars.advanced.position	位置
+chars.advanced.opentype	OpenType の機能
+chars.advanced.ligatures	合字
+chars.advanced.number_spacing	数字の間隔
+chars.advanced.number_form	数字の書式
+chars.advanced.stylistic_set	スタイル セット
+chars.advanced.alternates	コンテキスト代替を使用する
+chars.advanced.effects	文字の効果
+chars.advanced.glow	光彩
+chars.advanced.text_outline	文字の輪郭
+chars.spacing.normal	標準
+chars.spacing.expanded	広く
+chars.spacing.condensed	狭く
+chars.position.normal	標準
+chars.position.raised	上げる
+chars.position.lowered	下げる
+chars.kerning	カーニングを行う
+chars.kerning_from	ポイント以上の文字
+chars.ligatures.none	なし
+chars.ligatures.standard	標準のみ
+chars.ligatures.standard_contextual	標準とコンテキスト
+chars.ligatures.historical	履歴と任意
+chars.ligatures.all	すべて
+chars.number.default	既定
+chars.number.proportional	プロポーショナル
+chars.number.tabular	等幅
+chars.number.lining	ライニング
+chars.number.old_style	オールド スタイル
+chars.color.title	色の設定
+chars.color.theme	テーマの色
+chars.color.standard	標準の色
+chars.color.more	その他の色...
+chars.color.code	カラーコード
+chars.case.title_tip	文字種の変換
+chars.case.sentence	文の先頭文字を大文字にする
+chars.case.lower	小文字にする
+chars.case.upper	大文字にする
+chars.case.title	各単語の先頭文字を大文字にする
+chars.case.toggle	大文字と小文字を入れ替える
+chars.case.half_width	半角
+chars.case.full_width	全角
+chars.case.katakana	カタカナ
+chars.case.hiragana	ひらがな
+chars.shading	文字の網かけ
+chars.border	囲み線
+chars.asian.title	拡張書式
+chars.asian.vertical	縦中横
+chars.asian.vertical_fit	縦中横 (行の幅に合わせる)
+chars.asian.combine	組み文字
+chars.asian.warichu	割注
+chars.asian.warichu_none	割注 (括弧なし)
+chars.asian.remove	拡張書式の解除
+chars.asian.scale	文字の拡大/縮小

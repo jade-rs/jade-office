@@ -27,6 +27,7 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
+mod word_characters;
 mod word_page;
 mod word_review;
 mod workbook;
@@ -121,6 +122,7 @@ actions!(
         ZoomOut,
         ZoomActual,
         ZoomFit,
+        FontDialog,
     ]
 );
 
@@ -185,6 +187,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
+        // Word for Mac's フォント… (書式 menu).
+        KeyBinding::new("cmd-d", FontDialog, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -266,6 +270,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.format.bold"), Bold),
                 MenuItem::action(t("menu.format.italic"), Italic),
                 MenuItem::action(t("menu.format.underline"), Underline),
+                MenuItem::action(t("menu.format.font"), FontDialog),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.align_left"), AlignLeft),
                 MenuItem::action(t("menu.format.center"), AlignCenter),
@@ -1098,6 +1103,8 @@ struct DocumentView {
     comment_bar: Option<word_review::CommentBar>,
     /// Whether the comments pane is open beside the pages.
     show_comments: bool,
+    /// The フォント dialog and the other character tools' dialogs.
+    characters: word_characters::Characters,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1295,6 +1302,13 @@ impl DocumentView {
         // A composition owns the keyboard while it is running; letting these
         // through would edit around the preedit.
         if self.marked.is_some() {
+            return;
+        }
+        // A dialog owns the keyboard while it is open.
+        if self.characters.is_open()
+            && word_characters::handle_key(self, event.keystroke.key.as_str(), cx)
+        {
+            cx.stop_propagation();
             return;
         }
         // The bar owns the keyboard while it is open, so Enter means "next
@@ -2173,6 +2187,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = self.characters.text_field() {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2181,6 +2198,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self.characters.is_open() {
+            return self.characters.text_field_mut();
+        }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
             (None, Some(bar)) => Some(&mut bar.text),
@@ -2671,7 +2691,6 @@ impl DocumentView {
             Action::Table(command) => document.table_command(command).map(|_| ()),
             Action::Toggle(format) => document.toggle_format(format),
             Action::ClearFormatting => document.clear_formatting(),
-            Action::FontFamily(family) => WordFormatting::set_font_family(document, family),
             Action::FontSize(points) => WordFormatting::set_font_size(document, points),
             Action::StepFontSize(grow) => document.step_font_size(grow),
             Action::FontColor(color) => WordFormatting::set_font_color(document, &color),
@@ -2696,6 +2715,8 @@ impl DocumentView {
                 WordPage::page_command(document, command, japanese)
             }
             Action::EditStory(story) => return self.open_story_bar(story, cx),
+            Action::FontFamilyName(name) => WordFormatting::set_font_family(document, &name),
+            Action::Characters(action) => return word_characters::run(self, action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -3920,6 +3941,7 @@ impl Render for DocumentView {
         };
         let zoom = self.zoom;
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
+        let dialog = word_characters::overlay(self, window, cx);
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -3982,6 +4004,9 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
             )
+            .on_action(cx.listener(|view, _: &FontDialog, _window, cx| {
+                word_characters::open_font_dialog(view, cx)
+            }))
             .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
                 view.show_inspector = !view.show_inspector;
                 cx.notify();
@@ -4140,6 +4165,8 @@ impl Render for DocumentView {
             )
             // ---- the comments pane, beside the pages while it is open ----
             .children(comments_pane)
+            // ---- the open dialog, over everything ----
+            .children(dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4366,6 +4393,7 @@ fn document_view(
         story_bar: None,
         comment_bar: None,
         show_comments: false,
+        characters: word_characters::Characters::default(),
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,
