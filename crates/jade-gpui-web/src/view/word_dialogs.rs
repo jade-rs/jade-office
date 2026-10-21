@@ -25,6 +25,15 @@ pub(super) enum Dialog {
     Reviewer(jade_web::word::reviewer::ReviewerForm),
     /// 代替テキスト: a picture's description, or 装飾用にする (Tab).
     AltText(jade_web::word::accessibility::AltTextForm),
+    /// 文書の比較 / 組み込み: this document as the original, the label
+    /// typed; Enter asks for the revised one, and the result opens as a new
+    /// document.
+    Compare {
+        form: Box<jade_web::word::compare::CompareForm>,
+        author: TextEdit,
+        /// Whether the picker is out for the revised document.
+        waiting: bool,
+    },
 }
 
 impl Dialog {
@@ -35,6 +44,7 @@ impl Dialog {
             Dialog::Paragraph(form) => Some(form.focused()),
             Dialog::Reviewer(form) => Some(form.focused()),
             Dialog::AltText(form) => Some(&form.description),
+            Dialog::Compare { author, .. } => Some(author),
         }
     }
 
@@ -45,6 +55,7 @@ impl Dialog {
             Dialog::Paragraph(form) => Some(form.focused_mut()),
             Dialog::Reviewer(form) => Some(form.focused_mut()),
             Dialog::AltText(form) => Some(&mut form.description),
+            Dialog::Compare { author, .. } => Some(author),
         }
     }
 }
@@ -264,6 +275,7 @@ impl DocView {
                 Dialog::Paragraph(form) => form.step_focus(!event.keystroke.modifiers.shift),
                 Dialog::Reviewer(form) => form.next_field(),
                 Dialog::AltText(form) => form.decorative = !form.decorative,
+                Dialog::Compare { form, .. } => form.options.by_word = !form.options.by_word,
             },
             _ => {
                 if !open.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -275,6 +287,85 @@ impl DocView {
         true
     }
 
+    /// 比較… / 組み込み…: this document as the original.
+    pub(super) fn open_compare_dialog(&mut self, combine: bool, cx: &mut Context<Self>) {
+        let mut form = jade_web::word::compare::CompareForm::new(
+            &super::word_review::reviewer().name,
+            combine,
+        );
+        let Document::Pages { document, .. } = &mut self.document else {
+            return;
+        };
+        form.original = document
+            .export_docx()
+            .ok()
+            .map(|bytes| (self.name.to_string(), bytes));
+        let author = TextEdit::new(form.options.author.clone());
+        self.open_dialog(
+            Dialog::Compare {
+                form: Box::new(form),
+                author,
+                waiting: false,
+            },
+            cx,
+        );
+    }
+
+    /// Whether a picked document is the revised one a 比較 waits for.
+    pub(crate) fn compare_waiting(&self) -> bool {
+        matches!(
+            &self.document,
+            Document::Pages { dialog: Some(dialog), .. }
+                if matches!(dialog.as_ref(), Dialog::Compare { waiting: true, .. })
+        )
+    }
+
+    /// The revised document arrived: the comparison, for the workspace to
+    /// open as a new document.
+    pub(crate) fn compare_with(
+        &mut self,
+        name: &str,
+        bytes: &[u8],
+        cx: &mut Context<Self>,
+    ) -> Option<Vec<u8>> {
+        let Document::Pages { dialog, .. } = &mut self.document else {
+            return None;
+        };
+        let open = dialog.take()?;
+        let Dialog::Compare {
+            mut form, author, ..
+        } = *open
+        else {
+            *dialog = Some(open);
+            return None;
+        };
+        form.revised = Some((name.to_string(), bytes.to_vec()));
+        form.options.author = author.text.trim().to_string();
+        if form.options.author.is_empty() {
+            form.options.author = super::word_review::reviewer().name;
+        }
+        match form.run(&super::word_review::now_iso()) {
+            Ok((result, summary)) => {
+                self.status = i18n::format(
+                    "compare.done",
+                    &[
+                        ("insertions", &summary.insertions),
+                        ("deletions", &summary.deletions),
+                        ("formatting", &summary.formatting),
+                    ],
+                )
+                .into();
+                cx.notify();
+                Some(result)
+            }
+            Err(error) => {
+                self.status = error.into();
+                cx.notify();
+                None
+            }
+        }
+    }
+
     /// OK: what the dialog says, done to the document as one undo step.
     fn submit_dialog(&mut self, cx: &mut Context<Self>) -> bool {
         let Document::Pages {
@@ -283,6 +374,13 @@ impl DocView {
         else {
             return false;
         };
+        // 比較: Enter asks for the revised document; the dialog waits.
+        if let Some(Dialog::Compare { waiting, .. }) = dialog.as_deref_mut() {
+            *waiting = true;
+            self.host.pick();
+            cx.notify();
+            return true;
+        }
         let Some(open) = dialog.take() else {
             return false;
         };
@@ -291,6 +389,7 @@ impl DocView {
             Dialog::Note(form) => form.submit(document.as_mut()).map(Some),
             // The caret, or the selection, stays where it is.
             Dialog::Paragraph(form) => form.submit(document.as_mut()).map(|()| None),
+            Dialog::Compare { .. } => Ok(None),
             Dialog::AltText(form) => {
                 use jade_web::word::accessibility::WordAccessibility;
                 document
@@ -370,6 +469,44 @@ impl DocView {
                 vec![field_box(i18n::text("note.text"), &form.text, true, 360.0)],
             ),
             Dialog::Paragraph(form) => self.paragraph_dialog(form, cx),
+            Dialog::Compare {
+                form,
+                author,
+                waiting,
+            } => bar(
+                i18n::text(if form.combine {
+                    "compare.combine_title"
+                } else {
+                    "compare.title"
+                }),
+                i18n::text(if *waiting {
+                    "compare.waiting"
+                } else {
+                    "compare.keys"
+                }),
+                vec![
+                    div()
+                        .text_color(palette::dim())
+                        .child(format!(
+                            "{}: {}",
+                            i18n::text("compare.original"),
+                            form.original
+                                .as_ref()
+                                .map(|(name, _)| name.as_str())
+                                .unwrap_or_default()
+                        ))
+                        .into_any_element(),
+                    field_box(i18n::text("compare.label"), author, true, 160.0),
+                    div()
+                        .text_color(palette::dim())
+                        .child(i18n::text(if form.options.by_word {
+                            "compare.by_word"
+                        } else {
+                            "compare.by_character"
+                        }))
+                        .into_any_element(),
+                ],
+            ),
             Dialog::AltText(form) => bar(
                 i18n::text("alt.title"),
                 i18n::text("alt.keys"),

@@ -141,6 +141,8 @@ pub enum ReviewAction {
     AltText,
     /// 変更履歴ウィンドウ.
     RevisionsPane,
+    /// 比較… (`false`) or 組み込み….
+    Compare(bool),
 }
 
 /// The dialog the tab opens.
@@ -148,6 +150,8 @@ pub enum ReviewDialog {
     User(ReviewerForm),
     /// 代替テキスト for a picture or shape.
     AltText(AltTextForm),
+    /// 文書の比較 / 組み込み (`word_compare`).
+    Compare(Box<crate::word_compare::CompareDialog>),
 }
 
 impl ReviewDialog {
@@ -155,6 +159,7 @@ impl ReviewDialog {
         match self {
             ReviewDialog::User(form) => Some(form.focused()),
             ReviewDialog::AltText(form) => Some(&form.description),
+            ReviewDialog::Compare(dialog) => Some(&dialog.author),
         }
     }
 
@@ -162,6 +167,7 @@ impl ReviewDialog {
         match self {
             ReviewDialog::User(form) => Some(form.focused_mut()),
             ReviewDialog::AltText(form) => Some(&mut form.description),
+            ReviewDialog::Compare(dialog) => Some(&mut dialog.author),
         }
     }
 }
@@ -264,6 +270,7 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
         ReviewAction::Accessibility => return crate::word_accessibility::toggle(view, cx),
         ReviewAction::AltText => return open_alt_text(view, cx),
         ReviewAction::RevisionsPane => return crate::word_revisions::toggle(view, cx),
+        ReviewAction::Compare(combine) => return crate::word_compare::open(view, combine, cx),
         ReviewAction::ProofingMarks => {
             let on = !view.document.proofing();
             return crate::word_proofing::set_marks(view, on, cx);
@@ -642,6 +649,9 @@ fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
             let result = view.document.set_alt_text(form.target, form.alt_text());
             view.reviewed(result, cx);
         }
+        Some(ReviewDialog::Compare(dialog)) => {
+            crate::word_compare::confirm(view, *dialog, cx);
+        }
         None => {}
     }
     cx.notify();
@@ -748,6 +758,14 @@ pub fn overlay(
                     cx,
                 ))
                 .into_any_element(),
+        ),
+        ReviewDialog::Compare(dialog) => (
+            if dialog.form.combine {
+                "compare.combine_title"
+            } else {
+                "compare.title"
+            },
+            crate::word_compare::body(dialog, cx),
         ),
         ReviewDialog::AltText(form) => {
             let decorative = form.decorative;

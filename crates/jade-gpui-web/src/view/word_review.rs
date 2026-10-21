@@ -83,6 +83,22 @@ pub(super) fn set_reviewer(reviewer: Reviewer) {
     REVIEWER.with(|slot| *slot.borrow_mut() = Some(reviewer));
 }
 
+/// Now, as the changes a comparison marks are dated.
+pub(crate) fn now_iso() -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::new_0()
+            .to_iso_string()
+            .as_string()
+            .map(|iso| format!("{}Z", iso.get(..19).unwrap_or_default()))
+            .unwrap_or_default()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        "1970-01-01T00:00:00Z".to_string()
+    }
+}
+
 /// The markup view a document was saved with.
 pub(super) fn markup_as_opened(document: &jade_web::editing::EditableDocument) -> MarkupOptions {
     let mut options = MarkupOptions::default();
@@ -168,6 +184,7 @@ impl DocView {
                 }
                 return cx.notify();
             }
+            ReviewAction::Compare(combine) => return self.open_compare_dialog(combine, cx),
             ReviewAction::RevisionsPane => {
                 if let Document::Pages { revisions_pane, .. } = &mut self.document {
                     *revisions_pane = !*revisions_pane;

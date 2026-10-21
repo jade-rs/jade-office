@@ -95,6 +95,20 @@ impl Workspace {
             }
             return;
         }
+        // The revised document a 比較 waits for: the comparison opens as a
+        // new document, as Word opens 比較結果.
+        let waiting = self
+            .active_tab()
+            .cloned()
+            .filter(|tab| tab.read(cx).compare_waiting());
+        if let Some(tab) = waiting {
+            let result = tab.update(cx, |view, cx| view.compare_with(&name, &bytes, cx));
+            if let Some(result) = result {
+                let name = self.untitled_name("docx");
+                self.open(name, Rc::new(result), window, cx);
+            }
+            return;
+        }
         // A template opens as a new document made from it, as a
         // double-click on one does in Word.
         if jade_web::word::new::is_template_name(&name) {
