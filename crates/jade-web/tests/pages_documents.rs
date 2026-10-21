@@ -97,3 +97,35 @@ fn headers_and_footers_take_text_and_a_page_number() {
     document.undo().unwrap();
     assert_eq!(footer_page_fields(&mut document), fields);
 }
+
+/// A page turned to landscape is laid out and painted as the same document
+/// opened landscape: every page's box, the pitch the shell stacks pages by,
+/// and each page's pixels — lines whole, none drawn over another.
+#[test]
+fn a_page_turned_to_landscape_paints_as_one_opened_landscape() {
+    let mut document = contract();
+    let portrait = (document.page_size(), document.page_count());
+    document.set_landscape(true).unwrap();
+    let reopened = common::open_bytes(&document.export_docx().unwrap());
+    let (width, height) = reopened.page_size();
+    assert!(width > height, "opened landscape: {width}x{height}");
+    assert_eq!(document.page_size(), (width, height));
+    assert_eq!(document.page_pitch(), reopened.page_pitch());
+    assert_eq!(document.page_count(), reopened.page_count());
+    for index in 0..reopened.page_count() {
+        let (turned, opened) = (document.page(index).unwrap(), reopened.page(index).unwrap());
+        assert_eq!(
+            (turned.width(), turned.height()),
+            (opened.width(), opened.height()),
+            "page {index}'s surface"
+        );
+        assert!(
+            turned.rgba_premultiplied() == opened.rgba_premultiplied(),
+            "page {index} is painted as the document opened landscape"
+        );
+    }
+
+    // Undone, the pages are as they were.
+    document.undo().unwrap();
+    assert_eq!((document.page_size(), document.page_count()), portrait);
+}
