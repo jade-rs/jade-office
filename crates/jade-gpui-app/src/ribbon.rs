@@ -182,6 +182,8 @@ pub enum Action {
     Page(PageCommand),
     /// ヘッダーの編集 / フッターの編集: the bar over the pages.
     EditStory(Story),
+    /// 段落…: the paragraph dialog.
+    ParagraphDialog,
 }
 
 impl Action {
@@ -980,6 +982,15 @@ pub fn home(
                             cx,
                         ),
                         borders_menu,
+                    ),
+                    icon_button(
+                        "paragraph-dialog",
+                        "icons/settings-2.svg",
+                        i18n::text("paragraph.button_title"),
+                        false,
+                        true,
+                        Action::ParagraphDialog,
+                        cx,
                     ),
                 ]),
             ],

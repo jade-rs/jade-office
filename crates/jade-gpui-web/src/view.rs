@@ -1529,6 +1529,9 @@ impl DocView {
         if action == Action::InsertLink {
             return self.open_link_dialog(cx);
         }
+        if action == Action::ParagraphDialog {
+            return self.open_paragraph_dialog(cx);
+        }
         if let Action::InsertNote(kind) = action {
             return self.open_note_dialog(kind, cx);
         }
@@ -1597,6 +1600,7 @@ impl DocView {
             | Action::InsertPicture
             | Action::InsertLink
             | Action::InsertNote(_)
+            | Action::ParagraphDialog
             | Action::Wrap(_)
             | Action::Style(_)
             | Action::Tab(_)
@@ -1729,7 +1733,7 @@ impl DocView {
         self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
         let story_bar = self.story_bar_element();
-        let dialog_bar = self.dialog_element();
+        let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
         let find_bar = self.find_bar_element(cx);
@@ -2099,6 +2103,8 @@ impl DocView {
                 "c" if pages => self.word_copy(false, cx),
                 // ハイパーリンクの挿入.
                 "k" if pages => self.open_link_dialog(cx),
+                // Word for Mac's 書式 → 段落 (⌥⌘M).
+                "m" | "µ" if pages && modifiers.alt => self.open_paragraph_dialog(cx),
                 // Word for Mac's ⌥⌘F and ⌥⌘D: 脚注の挿入, 文末脚注の挿入.
                 "f" | "ƒ" if pages && modifiers.alt => {
                     self.open_note_dialog(jade_web::word::NoteKind::Footnote, cx)
