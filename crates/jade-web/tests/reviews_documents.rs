@@ -123,3 +123,74 @@ fn a_word_typed_a_key_at_a_time_is_rejected_whole() {
     document.decide_and_step(false).unwrap();
     assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
 }
+
+/// The engine's markup colours: an insertion's, a deletion's.
+const INSERTED: [u8; 3] = [0x1b, 0x5e, 0x20];
+const DELETED: [u8; 3] = [0xb7, 0x1c, 0x1c];
+
+/// How many pixels of the document's pages are drawn in `color`, and the
+/// longest horizontal line of them — an underline or a strikethrough is far
+/// longer than any stroke of a glyph.
+fn painted_in(document: &jade_web::editing::EditableDocument, color: [u8; 3]) -> (usize, usize) {
+    let (mut count, mut longest) = (0, 0);
+    for index in 0..document.page_count() {
+        let page = document.page(index).unwrap();
+        let width = page.width() as usize;
+        for row in page.rgba_premultiplied().chunks(width * 4) {
+            let mut run = 0;
+            for pixel in row.chunks(4) {
+                let close = pixel[..3]
+                    .iter()
+                    .zip(color)
+                    .all(|(&have, want)| have.abs_diff(want) <= 24);
+                if close {
+                    count += 1;
+                    run += 1;
+                    longest = longest.max(run);
+                } else {
+                    run = 0;
+                }
+            }
+        }
+    }
+    (count, longest)
+}
+
+/// As Word's 変更内容の表示 shows them: typed with changes tracked, text is
+/// drawn in the insertion colour and underlined; deleted, it stays, struck
+/// through in the deletion colour. Accepted or rejected, the markup goes.
+#[test]
+fn tracked_changes_are_drawn_as_markup() {
+    let mut document = contract();
+    let paragraph = typed(&mut document, "");
+    assert_eq!(painted_in(&document, INSERTED).0, 0);
+    assert_eq!(painted_in(&document, DELETED).0, 0);
+    let before = document.paragraph_text(paragraph).unwrap();
+    document.set_tracking_changes(true, "jade").unwrap();
+
+    document.place_caret(paragraph, 0);
+    document.insert_text("Inserted words ").unwrap();
+    let (count, longest) = painted_in(&document, INSERTED);
+    assert!(count > 50, "the insertion is coloured: {count} pixels");
+    assert!(longest > 40, "and underlined: its longest line {longest}px");
+
+    // The paragraph's first three characters, deleted: still there, struck
+    // through.
+    let start = "Inserted words ".len();
+    let word = before.char_indices().nth(3).unwrap().0;
+    document
+        .select((paragraph, start), (paragraph, start + word))
+        .unwrap();
+    document.delete(true).unwrap();
+    let (count, longest) = painted_in(&document, DELETED);
+    assert!(count > 20, "the deletion is coloured: {count} pixels");
+    assert!(
+        longest > 15,
+        "and struck through: its longest line {longest}px"
+    );
+
+    document.decide_all_revisions(false).unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+    assert_eq!(painted_in(&document, INSERTED).0, 0, "rejected, no markup");
+    assert_eq!(painted_in(&document, DELETED).0, 0, "rejected, no markup");
+}

@@ -154,6 +154,17 @@ impl TinySkiaRenderHost {
     }
 }
 
+/// Tracked changes as Word shows them: with their markup — insertions
+/// coloured and underlined, deletions struck through — unless the document
+/// was saved with a view that leaves them out.
+pub(crate) fn show_changes_as_saved(options: &mut Options, word_document: &WordDocument) {
+    let saved = word_document
+        .document
+        .as_ref()
+        .and_then(|document| document.display_content_revisions);
+    options.set_render_changes(saved.unwrap_or(true));
+}
+
 /// A page's surface while it is not kept as pixels: one pixel, which every
 /// draw lands outside of.
 pub(crate) fn placeholder(fonts: &Rc<FontBook>, scale: f64) -> Option<TinySkiaPainter> {
@@ -484,6 +495,7 @@ impl Document {
         options.show_formatting_marks = false;
         let word_document = futures::executor::block_on(WordDocument::load(bytes, &options))
             .map_err(|error| format!("cannot read the document: {error}"))?;
+        show_changes_as_saved(&mut options, &word_document);
         let document = word_document
             .document
             .as_ref()
