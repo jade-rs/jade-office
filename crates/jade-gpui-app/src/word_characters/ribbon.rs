@@ -273,6 +273,14 @@ pub fn font_row(
             layout_menu,
         ),
         glyph_button(
+            "typography-dialog",
+            "体裁",
+            i18n::text("chars.typography.title"),
+            false,
+            action(CharAction::OpenTypography),
+            cx,
+        ),
+        glyph_button(
             "font-dialog",
             "…",
             i18n::text("chars.font.launcher"),

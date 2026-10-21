@@ -791,3 +791,23 @@ chars.asian.warichu	割注
 chars.asian.warichu_none	割注 (括弧なし)
 chars.asian.remove	拡張書式の解除
 chars.asian.scale	文字の拡大/縮小
+menu.format.typography	体裁...
+chars.typography.title	体裁 (文字体裁)
+chars.typography.paragraph	改行時の処理 (選択した段落)
+chars.typography.document	文字体裁 (文書全体)
+chars.typography.kinsoku	禁則処理を行う
+chars.typography.word_wrap	英単語の途中で改行する
+chars.typography.overflow_punct	句読点のぶら下げを行う
+chars.typography.top_line_punct	行頭の記号を 1/2 の幅にする
+chars.typography.auto_space_de	日本語と英字の間隔を自動調整する
+chars.typography.auto_space_dn	日本語と数字の間隔を自動調整する
+chars.kinsoku.level	禁則処理のレベル
+chars.kinsoku.standard	標準
+chars.kinsoku.strict	高レベル
+chars.kinsoku.custom	ユーザー設定
+chars.kinsoku.line_start	行頭禁則文字
+chars.kinsoku.line_end	行末禁則文字
+chars.compress.title	文字間隔の調整
+chars.compress.none	間隔を詰めない
+chars.compress.punctuation	句読点のみを詰める
+chars.compress.kana	句読点とかなを詰める
