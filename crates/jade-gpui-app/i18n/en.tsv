@@ -1357,3 +1357,64 @@ chars.enclose.title	Enclose Characters
 chars.enclose.text	Text
 chars.enclose.enclosure	Enclosure
 chars.font.complex_style	Complex scripts style
+equation.tab	Equation
+equation.group	Equation
+equation.insert	Equation
+equation.insert_title	Insert a new equation
+equation.placeholder	Type equation here.
+equation.builtin.caption	Built-In
+equation.builtin.quadratic	Quadratic Formula
+equation.builtin.binomial	Binomial Theorem
+equation.builtin.circle	Area of Circle
+equation.builtin.fourier	Fourier Series
+equation.builtin.pythagorean	Pythagorean Theorem
+equation.builtin.sum	Expansion of a Sum
+equation.builtin.taylor	Taylor Expansion
+equation.builtin.trig1	Trig Identity 1
+equation.builtin.trig2	Trig Identity 2
+equation.group.tools	Tools
+equation.group.convert	Conversions
+equation.group.symbols	Symbols
+equation.group.structures	Structures
+equation.group.close	Equation
+equation.unicode_title	Type and convert in UnicodeMath
+equation.latex_title	Type and convert in LaTeX
+equation.professional	Professional
+equation.professional_title	Convert the equation to its two-dimensional form
+equation.linear	Linear
+equation.linear_title	Convert the equation to its linear form
+equation.normal_text	Normal Text
+equation.normal_text_title	Type non-math text inside the equation
+equation.close	Close Equation
+equation.symbols.more	More symbols
+equation.symbols.basic	Basic Math
+equation.symbols.greek	Greek Letters
+equation.symbols.letterlike	Letter-Like Symbols
+equation.symbols.operators	Operators
+equation.symbols.arrows	Arrows
+equation.symbols.negated	Negated Relations
+equation.symbols.geometry	Geometry
+equation.structure.fraction	Fraction
+equation.structure.script	Script
+equation.structure.radical	Radical
+equation.structure.integral	Integral
+equation.structure.large_operator	Large Operator
+equation.structure.bracket	Bracket
+equation.structure.function	Function
+equation.structure.accent	Accent
+equation.structure.limit_log	Limit and Log
+equation.structure.operator	Operator
+equation.structure.matrix	Matrix
+equation.group.layout	Layout
+equation.line_break	Insert Manual Break
+equation.align_point	Align at This Character
+equation.group.matrix	Matrix
+equation.row_above	Insert Row Above
+equation.row_below	Insert Row Below
+equation.column_left	Insert Column Before
+equation.column_right	Insert Column After
+equation.delete_row	Delete Row
+equation.delete_column	Delete Column
+equation.justify_left	Align Left
+equation.justify_center	Center
+equation.justify_right	Align Right

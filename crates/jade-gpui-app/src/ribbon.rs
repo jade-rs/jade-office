@@ -113,6 +113,8 @@ pub enum Popup {
     Cover,
     /// The font group's third row (`word_characters`).
     Characters(crate::word_characters::CharPopup),
+    /// 数式's lists (`word_equation`).
+    Equation(crate::word_equation::EquationPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -196,6 +198,8 @@ pub enum Action {
     /// The font group's third row, the colour lists and the dialogs
     /// (`word_characters`).
     Characters(crate::word_characters::CharAction),
+    /// 挿入 > 数式 and the 数式 tab (`word_equation`).
+    Equation(crate::word_equation::EquationAction),
 }
 
 impl Action {
