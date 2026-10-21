@@ -88,6 +88,8 @@ pub enum ReviewAction {
     EditAnyway,
     /// ドキュメント検査: the pane.
     Inspect,
+    /// 読み上げ: start or stop.
+    ReadAloud,
     /// ドキュメント検査's すべて削除.
     InspectRemove(jade_web::word::inspect::InspectCategory),
 }
@@ -101,6 +103,7 @@ pub struct ReviewShown {
     pub restrict_pane: bool,
     pub final_: bool,
     pub inspect: bool,
+    pub reading: bool,
     pub markup: MarkupOptions,
     pub reviewers: Vec<String>,
 }
@@ -296,6 +299,17 @@ pub fn review(
             .into_any_element()
     });
     vec![
+        group(
+            i18n::text("read.group"),
+            vec![row(vec![text_button(
+                "review-read-aloud",
+                i18n::text("read.button"),
+                i18n::text("read.title"),
+                shown.reading,
+                act(ReviewAction::ReadAloud),
+                cx,
+            )])],
+        ),
         group(
             i18n::text("a11y.group"),
             vec![row(vec![text_button(

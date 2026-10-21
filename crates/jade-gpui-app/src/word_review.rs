@@ -272,6 +272,18 @@ impl DocumentView {
             )
             .into_any_element(),
             Self::ribbon_group(
+                t("read.group"),
+                vec![Self::ribbon_row(vec![tools::text_button(
+                    "review-read-aloud",
+                    "read.button",
+                    "read.title",
+                    self.review.read_aloud.is_some(),
+                    ReviewAction::ReadAloud,
+                    cx,
+                )])],
+            )
+            .into_any_element(),
+            Self::ribbon_group(
                 t("a11y.group"),
                 vec![Self::ribbon_row(vec![tools::text_button(
                     "review-accessibility",

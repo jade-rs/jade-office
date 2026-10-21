@@ -1530,3 +1530,14 @@ inspect.hidden_found	Found hidden text in {n} places.
 inspect.none	Nothing was found.
 inspect.remove_all	Remove All
 inspect.removed_on_save	Removed when the document is saved.
+read.group	Speech
+read.button	Read Aloud
+read.title	Read Aloud: read the document from the cursor, highlighting each word as it is read
+read.nothing	There is no text after the cursor to read.
+read.previous	Previous
+read.next	Next
+read.play	Play
+read.pause	Pause
+read.slower	Slower
+read.faster	Faster
+read.stop	Close
