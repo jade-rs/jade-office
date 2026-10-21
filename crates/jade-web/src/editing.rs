@@ -32,6 +32,7 @@ use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 
 use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, INITIAL_PAGE};
 
+mod autocorrect;
 mod formatting;
 pub use formatting::{
     style_gallery, CellStep, CharacterFormat, FindOptions, FormatState, Found, GalleryStyle,
@@ -507,18 +508,9 @@ impl EditableDocument {
     /// selects in Word. Elsewhere, the caret goes to `position`.
     pub fn select_word(&mut self, (paragraph, offset): (usize, usize)) -> Result<(), String> {
         let text = self.paragraph_text(paragraph).unwrap_or_default();
-        let offset = offset.min(text.len());
-        let start = text[..offset]
-            .char_indices()
-            .rev()
-            .take_while(|(_, ch)| ch.is_alphanumeric())
-            .last()
-            .map_or(offset, |(at, _)| at);
-        let end = text[offset..]
-            .char_indices()
-            .take_while(|(_, ch)| ch.is_alphanumeric())
-            .last()
-            .map_or(offset, |(at, ch)| offset + at + ch.len_utf8());
+        // A run of one script in Japanese, a word and the spaces after it in
+        // English, as Word's double-click takes them (the native app's too).
+        let (start, end) = jade_office_model::word::selection::word_at(&text, offset);
         self.select((paragraph, start), (paragraph, end))
     }
 

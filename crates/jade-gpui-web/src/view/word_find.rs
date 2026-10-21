@@ -8,6 +8,7 @@
 //! (`word::WordFind`), the code the native app runs; this is the bar.
 
 use jade_web::editing::{FindOptions, Found, WordFind};
+use jade_web::word::search::{Direction, SearchHit, SearchOptions, WordSearch};
 
 use super::sheet::caret_line;
 use super::*;
@@ -26,6 +27,13 @@ pub(super) struct FindBar {
     /// Whether typing goes into the bar: a click on a page gives it back to
     /// the document, a click on a field or ⌘F to the bar.
     pub active: bool,
+    /// 検索オプション beyond the two above — wildcards, prefix and suffix,
+    /// width and kana, punctuation and spaces — and whether their row shows.
+    pub more: SearchOptions,
+    pub show_more: bool,
+    /// The match the search is on when it was found with those options
+    /// (it can run across paragraphs).
+    pub hit: Option<SearchHit>,
 }
 
 impl FindBar {
@@ -38,6 +46,33 @@ impl FindBar {
             current: None,
             status: None,
             active: true,
+            more: SearchOptions::default(),
+            show_more: false,
+            hit: None,
+        }
+    }
+
+    /// Whether the search needs the full options: one of them is on, or the
+    /// query has a ^ code.
+    fn advanced(&self) -> bool {
+        let more = &self.more;
+        more.wildcards
+            || more.match_prefix
+            || more.match_suffix
+            || more.match_width
+            || more.match_kana
+            || more.ignore_punctuation
+            || more.ignore_whitespace
+            || self.query.text.contains('^')
+    }
+
+    /// The full options, with the bar's two.
+    fn search_options(&self, direction: Direction) -> SearchOptions {
+        SearchOptions {
+            match_case: self.options.match_case,
+            whole_word: self.options.whole_word,
+            direction,
+            ..self.more.clone()
         }
     }
 
@@ -69,6 +104,57 @@ enum FindCommand {
     MatchCase,
     WholeWord,
     Close,
+    /// オプション ▾: the row of the other options.
+    More,
+    Option(MoreOption),
+}
+
+/// The options on the bar's second row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MoreOption {
+    Wildcards,
+    Prefix,
+    Suffix,
+    Width,
+    Kana,
+    Punctuation,
+    Space,
+}
+
+impl MoreOption {
+    const ALL: [MoreOption; 7] = [
+        MoreOption::Wildcards,
+        MoreOption::Prefix,
+        MoreOption::Suffix,
+        MoreOption::Width,
+        MoreOption::Kana,
+        MoreOption::Punctuation,
+        MoreOption::Space,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            MoreOption::Wildcards => "find.wildcards",
+            MoreOption::Prefix => "find.match_prefix",
+            MoreOption::Suffix => "find.match_suffix",
+            MoreOption::Width => "find.match_width",
+            MoreOption::Kana => "find.match_kana",
+            MoreOption::Punctuation => "find.ignore_punctuation",
+            MoreOption::Space => "find.ignore_whitespace",
+        }
+    }
+
+    fn flag(self, options: &mut SearchOptions) -> &mut bool {
+        match self {
+            MoreOption::Wildcards => &mut options.wildcards,
+            MoreOption::Prefix => &mut options.match_prefix,
+            MoreOption::Suffix => &mut options.match_suffix,
+            MoreOption::Width => &mut options.match_width,
+            MoreOption::Kana => &mut options.match_kana,
+            MoreOption::Punctuation => &mut options.ignore_punctuation,
+            MoreOption::Space => &mut options.ignore_whitespace,
+        }
+    }
 }
 
 impl DocView {
@@ -174,6 +260,7 @@ impl DocView {
         if let Some(bar) = self.find_bar_mut() {
             if !bar.replacing {
                 bar.current = None;
+                bar.hit = None;
             }
         }
         self.count_matches();
@@ -189,6 +276,21 @@ impl DocView {
             return;
         };
         let query = bar.query.text.clone();
+        if bar.advanced() {
+            bar.status = (!query.is_empty()).then(|| {
+                match document.search(&query, &bar.search_options(Direction::Down)) {
+                    Ok(hits) if hits.is_empty() => {
+                        i18n::format("doc.find.none", &[("query", &query)])
+                    }
+                    Ok(hits) => {
+                        i18n::format("doc.find.count", &[("query", &query), ("n", &hits.len())])
+                    }
+                    Err(error) => i18n::format("find.bad_pattern", &[("why", &error.0)]),
+                }
+                .into()
+            });
+            return;
+        }
         bar.status = (!query.is_empty()).then(|| {
             let count = document.find_all(&query, bar.options).len();
             if count == 0 {
@@ -224,7 +326,22 @@ impl DocView {
                 self.count_matches();
                 return cx.notify();
             }
+            FindCommand::More => {
+                bar.show_more = !bar.show_more;
+                return cx.notify();
+            }
+            FindCommand::Option(option) => {
+                let flag = option.flag(&mut bar.more);
+                *flag = !*flag;
+                bar.current = None;
+                bar.hit = None;
+                self.count_matches();
+                return cx.notify();
+            }
             _ => {}
+        }
+        if bar.advanced() {
+            return self.advanced_command(run, cx);
         }
         let query = bar.query.text.clone();
         let replacement = bar.replacement.text.clone();
@@ -298,6 +415,82 @@ impl DocView {
         self.refresh_repainted();
         self.reveal_caret();
         self.word_result(edited.map(|_| ()).and(selected), cx);
+    }
+
+    /// 次を検索, 前を検索, 置換 and すべて置換 with the full options, over
+    /// the shared model's search (`word::search`).
+    fn advanced_command(&mut self, run: FindCommand, cx: &mut Context<Self>) {
+        let Document::Pages { document, find, .. } = &mut self.document else {
+            return;
+        };
+        let Some(bar) = find.as_deref_mut() else {
+            return;
+        };
+        let query = bar.query.text.clone();
+        if query.is_empty() {
+            return;
+        }
+        let template = bar.replacement.text.clone();
+        let caret = document.caret().unwrap_or((0, 0));
+        let mut current = bar.hit.clone();
+        let mut from = current.as_ref().map_or(caret, |hit| hit.end);
+        match run {
+            FindCommand::ReplaceAll => {
+                let options = bar.search_options(Direction::All);
+                let replaced = document.replace_every(&query, &template, &options);
+                bar.hit = None;
+                if let Ok(count) = &replaced {
+                    bar.status = Some(i18n::format("find.replaced_count", &[("n", count)]).into());
+                }
+                self.refresh_repainted();
+                return self.word_result(replaced.map(|_| ()), cx);
+            }
+            FindCommand::Replace => {
+                if let Some(hit) = current.take() {
+                    let options = bar.search_options(Direction::Down);
+                    match document.replace_hit(&hit, &template, &options) {
+                        Ok(end) => from = end,
+                        Err(error) => return self.word_result(Err(error), cx),
+                    }
+                }
+            }
+            _ => {}
+        }
+        let direction = if run == FindCommand::Previous {
+            from = current.as_ref().map_or(caret, |hit| hit.start);
+            Direction::Up
+        } else {
+            Direction::All
+        };
+        let options = bar.search_options(direction);
+        let found = document.search_next(&query, &options, from, current.as_ref());
+        let (selected, status) = match found {
+            Ok(Some(hit)) => {
+                let selected = document.select(hit.start, hit.end);
+                bar.hit = Some(hit);
+                (selected, None)
+            }
+            Ok(None) => {
+                bar.hit = None;
+                (
+                    Ok(()),
+                    Some(i18n::format("doc.find.none", &[("query", &query)])),
+                )
+            }
+            Err(error) => {
+                bar.hit = None;
+                (
+                    Ok(()),
+                    Some(i18n::format("find.bad_pattern", &[("why", &error.0)])),
+                )
+            }
+        };
+        if let Some(status) = status {
+            bar.status = Some(status.into());
+        }
+        self.refresh_repainted();
+        self.reveal_caret();
+        self.word_result(selected, cx);
     }
 
     /// The bar, drawn over the pages while it is open.
@@ -380,6 +573,14 @@ impl DocView {
                         .child(status),
                 )
                 .child(find_toggle(
+                    "find-more",
+                    "⋯",
+                    "find.more",
+                    bar.show_more,
+                    FindCommand::More,
+                    cx,
+                ))
+                .child(find_toggle(
                     "find-close",
                     "×",
                     "doc.find.close",
@@ -387,10 +588,36 @@ impl DocView {
                     FindCommand::Close,
                     cx,
                 ))
+                .when(bar.show_more, |row| {
+                    row.child(div().w_full().flex().flex_wrap().gap_1().children(
+                        MoreOption::ALL.iter().enumerate().map(|(index, option)| {
+                            let mut more = bar.more.clone();
+                            let on = *option.flag(&mut more);
+                            find_toggle(
+                                FIND_OPTION_IDS[index],
+                                i18n::text(option.label()),
+                                option.label(),
+                                on,
+                                FindCommand::Option(*option),
+                                cx,
+                            )
+                        }),
+                    ))
+                })
                 .into_any_element(),
         )
     }
 }
+
+const FIND_OPTION_IDS: [&str; 7] = [
+    "find-wildcards",
+    "find-prefix",
+    "find-suffix",
+    "find-width",
+    "find-kana",
+    "find-punctuation",
+    "find-space",
+];
 
 /// One of the bar's two fields; a click puts typing into it.
 fn find_field(
