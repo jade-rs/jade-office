@@ -2204,3 +2204,23 @@ views.group.window	ウィンドウ
 views.new_window	新しいウィンドウを開く
 views.split	分割
 views.window_hint	この文書の別のウィンドウです。ここでの編集は元のウィンドウにもすぐに反映されます。
+language.group	言語
+language.button	校正言語の設定…
+language.title	言語
+language.mark_as	選択した文字列の言語
+language.no_proof	スペル チェックと文章校正を行わない
+language.detect	言語を自動的に検出する
+language.ja_jp	日本語
+language.en_us	英語 (米国)
+language.en_gb	英語 (英国)
+language.zh_cn	中国語 (簡体字)
+language.zh_tw	中国語 (繁体字)
+language.ko_kr	韓国語
+language.fr_fr	フランス語
+language.de_de	ドイツ語
+language.es_es	スペイン語
+language.it_it	イタリア語
+language.pt_br	ポルトガル語 (ブラジル)
+language.ru_ru	ロシア語
+language.th_th	タイ語
+language.ar_sa	アラビア語

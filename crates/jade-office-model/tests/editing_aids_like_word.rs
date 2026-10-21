@@ -339,3 +339,35 @@ fn a_drop_moves_text_in_one_step() {
     assert_eq!(session.text(0), "def abc ghi");
     assert_eq!(end, (0, 8));
 }
+
+#[test]
+fn a_language_is_set_and_detected() {
+    use jade_office_model::word::language::{LanguageChoice, WordLanguage};
+    let mut session = Session::with(&["日本語 and English"]);
+    let length = session.text(0).len();
+    session
+        .set_language(
+            (0, 0),
+            (0, length),
+            &LanguageChoice {
+                language: "en-US".to_string(),
+                no_proof: false,
+                detect: true,
+            },
+        )
+        .unwrap();
+    assert_eq!(session.language_at((0, 0)).as_deref(), Some("ja-JP"));
+    assert_eq!(session.language_at((0, 12)).as_deref(), Some("en-US"));
+    session
+        .set_language(
+            (0, 0),
+            (0, length),
+            &LanguageChoice {
+                language: "en-GB".to_string(),
+                no_proof: true,
+                detect: false,
+            },
+        )
+        .unwrap();
+    assert_eq!(session.language_at((0, 12)).as_deref(), Some("en-GB"));
+}
