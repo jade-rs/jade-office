@@ -27,6 +27,8 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
+mod word_page;
+mod word_review;
 mod workbook;
 mod workspace;
 
@@ -45,10 +47,14 @@ use gpui::{
     KeyBinding, KeyDownEvent, Menu, MenuItem, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
-use jade_docx_native_render::{
-    CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit, SearchHit,
+use jade_docx_native_render::{CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit};
+use jade_office_model::word::clipboard::{RichClip, WordClipboard};
+use jade_office_model::word::page::{Story, WordPage};
+use jade_office_model::word::picture::{ObjectTarget, PlacedObject, WordPicture, Wrap};
+use jade_office_model::word::review::WordReview;
+use jade_office_model::word::{
+    CharacterFormat, FindOptions, FormatState, Found, TableCommand, WordFind, WordFormatting,
 };
-use jade_office_model::word::{CharacterFormat, FormatState, TableCommand, WordFormatting};
 use ribbon::Action;
 use std::cell::RefCell;
 use std::ops::Range;
@@ -68,6 +74,8 @@ actions!(
     jade,
     [
         Quit,
+        NewDocument,
+        NewFromTemplate,
         Open,
         CloseWindow,
         StartSlideshow,
@@ -82,6 +90,7 @@ actions!(
         Save,
         SaveAs,
         Print,
+        ExportPdf,
         Undo,
         Redo,
         Cut,
@@ -125,6 +134,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-q", Quit, None),
         // Opening and closing belong to the app, not to one kind of window:
         // they work from the start window and from every view.
+        KeyBinding::new("cmd-n", NewDocument, None),
+        // Word for Mac's 新規テンプレートから.
+        KeyBinding::new("cmd-shift-p", NewFromTemplate, None),
         KeyBinding::new("cmd-o", Open, None),
         KeyBinding::new("cmd-w", CloseWindow, None),
         KeyBinding::new("cmd-shift-o", OpenFolder, None),
@@ -142,6 +154,7 @@ fn key_bindings() -> Vec<KeyBinding> {
         // Unscoped so each view that can print answers it with its own
         // handler; a view without one leaves it alone.
         KeyBinding::new("cmd-p", Print, None),
+        KeyBinding::new("cmd-alt-p", ExportPdf, CONTEXT),
         KeyBinding::new("f5", StartSlideshow, Some("Deck")),
         KeyBinding::new("cmd-z", Undo, None),
         KeyBinding::new("cmd-shift-z", Redo, None),
@@ -214,6 +227,9 @@ fn menus() -> Vec<Menu> {
         Menu {
             name: t("menu.file").into(),
             items: vec![
+                MenuItem::action(t("menu.file.new"), NewDocument),
+                MenuItem::action(t("menu.file.new_from_template"), NewFromTemplate),
+                MenuItem::separator(),
                 MenuItem::action(t("menu.file.open"), Open),
                 MenuItem::action(t("menu.file.open_folder"), OpenFolder),
                 MenuItem::action(t("menu.file.close_tab"), CloseWindow),
@@ -222,6 +238,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.file.save_as"), SaveAs),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.print"), Print),
+                MenuItem::action(t("menu.file.export_pdf"), ExportPdf),
             ],
         },
         Menu {
@@ -413,6 +430,11 @@ pub(crate) fn skia_backend() -> Result<jade_office_model::skia::SkiaBackend, Str
 /// Opens `path` and paints it, ready to be edited.
 fn open_document(path: &str) -> Result<NativeDocument, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("{path}: {err}"))?;
+    open_document_bytes(&bytes)
+}
+
+/// `.docx` bytes, painted and ready to be edited.
+fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
     let regular = bundled_font("NotoSansJP-Regular.ttf");
     let bold = bundled_font("NotoSansJP-Bold.ttf");
     let mut faces = Vec::new();
@@ -446,12 +468,7 @@ fn open_document(path: &str) -> Result<NativeDocument, String> {
         weight: 400,
         path: &thai,
     });
-    NativeDocument::open(
-        &bytes,
-        INITIAL_PAGE_WIDTH_PX,
-        INITIAL_PAGE_HEIGHT_PX,
-        &faces,
-    )
+    NativeDocument::open(bytes, INITIAL_PAGE_WIDTH_PX, INITIAL_PAGE_HEIGHT_PX, &faces)
 }
 
 /// Reports what the text system resolves the shell's labels to.
@@ -514,6 +531,50 @@ fn page_image(document: &NativeDocument, page_index: usize) -> Option<Arc<Render
     let (bgra, width, height) = document.page_pixels(page_index)?;
     let buffer = image::ImageBuffer::from_raw(width as u32, height as u32, bgra)?;
     Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+}
+
+thread_local! {
+    /// The last copy's formatting, for a paste in any document view that
+    /// finds the copy's text still on the clipboard.
+    static RICH_CLIP: RefCell<Option<RichClip>> = const { RefCell::new(None) };
+}
+
+/// A picture or shape a click found, as the shared commands address it.
+fn placed_object(object: &ObjectHit) -> PlacedObject {
+    PlacedObject {
+        target: ObjectTarget {
+            paragraph_index: object.paragraph,
+            run_index: object.run,
+            kind: object.kind,
+        },
+        page: object.page.saturating_sub(1),
+        x: object.x,
+        y: object.y,
+        width: object.width,
+        height: object.height,
+    }
+}
+
+const WRAP_IDS: [&str; 7] = [
+    "wrap-inline",
+    "wrap-square",
+    "wrap-tight",
+    "wrap-through",
+    "wrap-top-bottom",
+    "wrap-behind",
+    "wrap-front",
+];
+
+fn wrap_label(wrap: Wrap) -> &'static str {
+    t(match wrap {
+        Wrap::Inline => "picture.wrap.inline",
+        Wrap::Square => "picture.wrap.square",
+        Wrap::Tight => "picture.wrap.tight",
+        Wrap::Through => "picture.wrap.through",
+        Wrap::TopAndBottom => "picture.wrap.top_bottom",
+        Wrap::BehindText => "picture.wrap.behind",
+        Wrap::InFrontOfText => "picture.wrap.front",
+    })
 }
 
 /// The palette, in one place, so a colour is named by its job rather than
@@ -931,6 +992,10 @@ struct FindBar {
     /// The composition in progress inside the focused field, as a byte range.
     /// The IME works here the same as it does in the document.
     marked: Option<Range<usize>>,
+    /// Word's two options: 大文字と小文字を区別する, 完全に一致する単語だけ.
+    options: FindOptions,
+    /// The match the last search landed on, which 置換 replaces.
+    current: Option<Found>,
 }
 
 impl FindBar {
@@ -1005,8 +1070,9 @@ struct DocumentView {
     insert_at: (usize, usize),
     /// The file the last save went to, shown so a save is visibly a save.
     saved_to: Option<SharedString>,
-    /// Whether edits are being recorded as revisions.
-    tracking_changes: bool,
+    /// A new document, not saved anywhere yet: `path` is only its name,
+    /// and ⌘S asks where to save it.
+    untitled: bool,
     /// Why the last table command did nothing, if it did nothing.
     table_status: Option<SharedString>,
     /// The last search query and where it got to, shown in the panel.
@@ -1025,6 +1091,13 @@ struct DocumentView {
     /// The find bar, while it is open. Open, it takes the keyboard: typing goes
     /// into its field rather than into the document.
     find_bar: Option<FindBar>,
+    /// A header or footer being typed, in its bar over the pages; it takes
+    /// the keyboard as the find bar does.
+    story_bar: Option<word_page::StoryBar>,
+    /// A comment being typed — new, a reply, an edit — in its bar.
+    comment_bar: Option<word_review::CommentBar>,
+    /// Whether the comments pane is open beside the pages.
+    show_comments: bool,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1042,6 +1115,9 @@ struct DocumentView {
     /// Where a drag started, while the mouse is down. Selection is anchored
     /// here and extended to wherever the pointer is.
     drag_anchor: Option<(usize, usize)>,
+    /// The picture or shape last clicked, which 文字列の折り返し acts on and
+    /// an outline shows.
+    selected_object: Option<ObjectHit>,
     /// The picture or shape being dragged, if the mouse went down on one.
     /// Pictures are not in the text flow, so dragging one is a move, not a
     /// selection.
@@ -1223,7 +1299,18 @@ impl DocumentView {
         }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
+        if self.comment_bar.is_some() && self.handle_comment_bar_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        if self.story_bar.is_some() && self.handle_story_bar_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.find_bar.is_some() && self.handle_find_bar_key(event, cx) {
+            // Taken: the platform must not also type it (Tab, Enter) into
+            // the field through the input handler.
+            cx.stop_propagation();
             return;
         }
         // Every command with a menu item is an action, bound in `key_bindings`
@@ -1251,7 +1338,37 @@ impl DocumentView {
         }
 
         let (paragraph, offset) = self.insert_at;
-        match event.keystroke.key.as_str() {
+        let modifiers = event.keystroke.modifiers;
+        let key = event.keystroke.key.as_str();
+        match key {
+            // ⌥⌫ and ⌥⌦ take a word, ⌘⌫ the line up to the caret, as on a
+            // Mac: what goes is selected, then deleted, in one edit.
+            "backspace" | "delete"
+                if modifiers.alt || (modifiers.platform && key == "backspace") =>
+            {
+                let to = if modifiers.platform {
+                    self.line_edge(false)
+                } else {
+                    self.word_step((paragraph, offset), key == "delete")
+                };
+                if to != self.insert_at {
+                    let page = self.caret_page_1idx();
+                    let edited = self
+                        .document
+                        .select(self.insert_at, to, page)
+                        .and_then(|()| self.document.replace_selection("", page));
+                    match edited {
+                        Ok(caret) => {
+                            self.selection_anchor = None;
+                            self.insert_at = caret;
+                            self.caret = self.document.place_caret(caret.0, caret.1);
+                            self.rebuild_after_edit();
+                            cx.notify();
+                        }
+                        Err(error) => eprintln!("delete failed: {error}"),
+                    }
+                }
+            }
             "backspace" if offset > 0 => {
                 let text = self.current_paragraph_text();
                 let removed = text[..offset].chars().next_back().map(char::len_utf8);
@@ -1260,6 +1377,17 @@ impl DocumentView {
                     let result = self.document.delete_text(paragraph, offset, true, 1, page);
                     self.after_edit(result, (paragraph, offset - removed), cx);
                 }
+            }
+            // At a paragraph's start, Backspace joins it to the one before.
+            "backspace" if paragraph > 0 => {
+                let joined_at = self
+                    .document
+                    .paragraph_text(paragraph - 1)
+                    .map_or(0, |text| text.len());
+                let page = self.caret_page_1idx();
+                let result = self.document.delete_text(paragraph, 0, true, 1, page);
+                self.rebuild_all_images();
+                self.after_edit(result, (paragraph - 1, joined_at), cx);
             }
             "delete" => {
                 let page = self.caret_page_1idx();
@@ -1273,8 +1401,15 @@ impl DocumentView {
                 self.rebuild_after_edit();
                 self.after_edit(result, (paragraph + 1, 0), cx);
             }
-            "left" | "right" | "up" | "down" => {
-                let extending = event.keystroke.modifiers.shift;
+            // In a table, to the next or the previous cell; elsewhere a tab
+            // typed, as in Word. Taken here, so the platform does not type
+            // the tab a second time through the input handler.
+            "tab" => {
+                cx.stop_propagation();
+                self.tab(modifiers.shift, cx);
+            }
+            "left" | "right" | "up" | "down" | "home" | "end" => {
+                let extending = modifiers.shift;
                 // Anchored where the caret was before this keystroke, unless a
                 // shift-selection is already running.
                 let anchor = if extending {
@@ -1283,10 +1418,31 @@ impl DocumentView {
                     self.selection_anchor = None;
                     self.insert_at
                 };
-                match event.keystroke.key.as_str() {
-                    "left" => self.step_caret(-1, cx),
-                    "right" => self.step_caret(1, cx),
-                    "up" => self.step_line(-1.0, cx),
+                // ⌘ with an arrow (Ctrl with Home or End elsewhere) goes to a
+                // line's or the document's ends, ⌥ a word along.
+                let long = modifiers.platform || modifiers.control;
+                match (key, long, modifiers.alt) {
+                    ("up", true, _) | ("home", true, _) => {
+                        self.jump_to(self.document_edge(false), cx)
+                    }
+                    ("down", true, _) | ("end", true, _) => {
+                        self.jump_to(self.document_edge(true), cx)
+                    }
+                    ("left", true, _) | ("home", false, _) => {
+                        self.jump_to(self.line_edge(false), cx)
+                    }
+                    ("right", true, _) | ("end", false, _) => {
+                        self.jump_to(self.line_edge(true), cx)
+                    }
+                    ("left", false, true) => {
+                        self.jump_to(self.word_step(self.insert_at, false), cx)
+                    }
+                    ("right", false, true) => {
+                        self.jump_to(self.word_step(self.insert_at, true), cx)
+                    }
+                    ("left", ..) => self.step_caret(-1, cx),
+                    ("right", ..) => self.step_caret(1, cx),
+                    ("up", ..) => self.step_line(-1.0, cx),
                     _ => self.step_line(1.0, cx),
                 }
                 if extending {
@@ -1295,6 +1451,131 @@ impl DocumentView {
             }
             _ => {}
         }
+    }
+
+    /// Tab: in a table, the next cell (⇧ the previous one) with its text
+    /// selected, a row added past the last; elsewhere a tab typed.
+    fn tab(&mut self, backwards: bool, cx: &mut Context<Self>) {
+        use jade_office_model::word::CellStep;
+        let (paragraph, offset) = self.insert_at;
+        self.document.place_caret(paragraph, offset);
+        let step = WordFormatting::step_cell(&mut self.document, !backwards);
+        match step {
+            Ok(CellStep::Select(from, to)) => {
+                // A row added is a re-flow: every page is re-read.
+                self.rebuild_all_images();
+                self.selection_anchor = Some(from);
+                self.insert_at = to;
+                self.caret = self.document.place_caret(to.0, to.1);
+                if from != to {
+                    let page = self.caret_page_1idx();
+                    if let Err(error) = self.document.select(from, to, page) {
+                        eprintln!("tab failed: {error}");
+                    }
+                }
+                self.refresh_caret_page_image();
+                cx.notify();
+            }
+            Ok(CellStep::Stay) => {}
+            Ok(CellStep::NotInTable) if !backwards => {
+                let page = self.caret_page_1idx();
+                let result = self.document.insert_text(paragraph, offset, "\t", page);
+                self.after_edit(result, (paragraph, offset + 1), cx);
+            }
+            Ok(CellStep::NotInTable) => {}
+            Err(error) => eprintln!("tab failed: {error}"),
+        }
+    }
+
+    /// The caret to `position`, drawn there.
+    fn jump_to(&mut self, position: (usize, usize), cx: &mut Context<Self>) {
+        self.insert_at = position;
+        self.caret = self.document.place_caret(position.0, position.1);
+        cx.notify();
+    }
+
+    /// One word along from `position`, as ⌥← and ⌥→ go; at a paragraph's
+    /// edge, into the paragraph beside it.
+    fn word_step(&self, (paragraph, offset): (usize, usize), forwards: bool) -> (usize, usize) {
+        use jade_office_model::text::{word_end_after, word_start_before};
+        let text = self.document.paragraph_text(paragraph).unwrap_or_default();
+        let offset = offset.min(text.len());
+        if forwards && offset < text.len() {
+            (paragraph, word_end_after(&text, offset))
+        } else if !forwards && offset > 0 {
+            (paragraph, word_start_before(&text, offset))
+        } else {
+            self.character_step((paragraph, offset), forwards)
+        }
+    }
+
+    /// One character along from `position`, across paragraph ends.
+    fn character_step(
+        &self,
+        (paragraph, offset): (usize, usize),
+        forwards: bool,
+    ) -> (usize, usize) {
+        let text = self.document.paragraph_text(paragraph).unwrap_or_default();
+        let offset = offset.min(text.len());
+        if forwards {
+            match text[offset..].chars().next() {
+                Some(next) => (paragraph, offset + next.len_utf8()),
+                None if paragraph + 1 < self.document.paragraph_count() => (paragraph + 1, 0),
+                None => (paragraph, offset),
+            }
+        } else {
+            match text[..offset].chars().next_back() {
+                Some(previous) => (paragraph, offset - previous.len_utf8()),
+                None if paragraph > 0 => (
+                    paragraph - 1,
+                    self.document
+                        .paragraph_text(paragraph - 1)
+                        .map_or(0, |text| text.len()),
+                ),
+                None => (paragraph, offset),
+            }
+        }
+    }
+
+    /// The start or the end of the line the caret is drawn on, along the
+    /// caret's own paragraph: in a table row the far side of the page is
+    /// another cell's text.
+    fn line_edge(&self, end: bool) -> (usize, usize) {
+        let Some(caret) = self.caret else {
+            return self.insert_at;
+        };
+        let paragraph = self.insert_at.0;
+        let x = if end { f64::MAX / 4.0 } else { f64::MIN / 4.0 };
+        self.document
+            .renderer()
+            .selection_manager()
+            .hit_test_matching(x, caret.document_y + caret.height / 2.0, |index| {
+                index == paragraph
+            })
+            .map_or(self.insert_at, |position| {
+                (position.paragraph, position.offset)
+            })
+    }
+
+    /// The start or the end of the document's body (⌘↑ and ⌘↓).
+    fn document_edge(&self, end: bool) -> (usize, usize) {
+        let word = self.document.word_document();
+        let count = self.document.paragraph_count();
+        let body = |index: &usize| word.is_body_paragraph_surface(*index);
+        let paragraph = if end {
+            (0..count).rev().find(body)
+        } else {
+            (0..count).find(body)
+        }
+        .unwrap_or(0);
+        let offset = if end {
+            self.document
+                .paragraph_text(paragraph)
+                .map_or(0, |text| text.len())
+        } else {
+            0
+        };
+        (paragraph, offset)
     }
 
     // ---- the ribbon ------------------------------------------------------
@@ -1460,6 +1741,8 @@ impl DocumentView {
             }
             RibbonTab::Insert => vec![
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
+                self.picture_group(cx),
+                word_page::header_footer(&self.ribbon, cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -1549,6 +1832,12 @@ impl DocumentView {
                 .into_any_element(),
             ],
             RibbonTab::Layout => vec![
+                {
+                    let japanese = i18n::language() == i18n::Language::Japanese;
+                    let setup = self.document.page_setup();
+                    let preset = self.document.margin_preset(japanese);
+                    word_page::page_setup(&self.ribbon, &setup, preset, japanese, cx)
+                },
                 Self::ribbon_group(
                     t("doc.group.paragraph"),
                     vec![Self::ribbon_row(vec![
@@ -1605,58 +1894,7 @@ impl DocumentView {
                     .into_any_element()])],
             )
             .into_any_element()],
-            RibbonTab::Review => {
-                let tracking = self.tracking_changes;
-                vec![
-                    Self::ribbon_group(
-                        t("doc.comment"),
-                        vec![Self::ribbon_row(vec![self
-                            .ribbon_button(
-                                "review-comment",
-                                t("doc.comment"),
-                                t("doc.comment"),
-                                false,
-                                cx,
-                                |view, cx| view.add_comment(cx),
-                            )
-                            .into_any_element()])],
-                    )
-                    .into_any_element(),
-                    Self::ribbon_group(
-                        t("doc.group.tracking"),
-                        vec![Self::ribbon_row(vec![
-                            self.ribbon_button(
-                                "track",
-                                t("doc.track"),
-                                t("doc.track_title"),
-                                tracking,
-                                cx,
-                                |view, cx| view.toggle_tracking(cx),
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "accept",
-                                t("doc.accept_all"),
-                                t("doc.accept_all"),
-                                false,
-                                cx,
-                                |view, cx| view.resolve_revisions(true, cx),
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "reject",
-                                t("doc.reject_all"),
-                                t("doc.reject_all_title"),
-                                false,
-                                cx,
-                                |view, cx| view.resolve_revisions(false, cx),
-                            )
-                            .into_any_element(),
-                        ])],
-                    )
-                    .into_any_element(),
-                ]
-            }
+            RibbonTab::Review => self.review_groups(cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
@@ -1742,6 +1980,43 @@ impl DocumentView {
         }
     }
 
+    /// 挿入's 図: a picture from a file, and the wrap of the one last
+    /// clicked.
+    fn picture_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let selected = self
+            .selected_object
+            .is_some_and(|object| placed_object(&object).is_picture());
+        let mut wraps = vec![self
+            .ribbon_button(
+                "insert-picture",
+                t("picture.insert"),
+                t("picture.insert_title"),
+                false,
+                cx,
+                |view, cx| view.prompt_for_picture(cx),
+            )
+            .into_any_element()];
+        if selected {
+            for (index, wrap) in jade_office_model::word::picture::WRAPS
+                .into_iter()
+                .enumerate()
+            {
+                wraps.push(
+                    self.ribbon_button(
+                        WRAP_IDS[index],
+                        wrap_label(wrap),
+                        t("picture.wrap"),
+                        false,
+                        cx,
+                        move |view, cx| view.wrap_picture(wrap, cx),
+                    )
+                    .into_any_element(),
+                );
+            }
+        }
+        Self::ribbon_group(t("picture.group"), vec![Self::ribbon_row(wraps)]).into_any_element()
+    }
+
     /// The ホーム tab's clipboard, which only the native app can paste into
     /// without asking.
     fn clipboard_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -1785,8 +2060,42 @@ impl DocumentView {
     /// A caret bar after the focused field, because the field has no cursor of
     /// its own: without it there is no way to see which of the two fields the
     /// next keystroke goes into.
-    fn find_bar_element(&self) -> Option<impl IntoElement> {
+    fn find_bar_element(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let bar = self.find_bar.as_ref()?;
+        let option = |id: &'static str, glyph: &'static str, title: &'static str, on: bool| {
+            div()
+                .id(id)
+                .flex()
+                .items_center()
+                .justify_center()
+                .min_w(px(28.0))
+                .h(px(24.0))
+                .px_1()
+                .rounded_md()
+                .cursor_pointer()
+                .text_sm()
+                .when(on, |button| {
+                    button.bg(theme::selected()).text_color(theme::accent())
+                })
+                .when(!on, |button| button.text_color(theme::text_dim()))
+                .hover(|button| button.bg(theme::hovered()))
+                .tooltip(Tooltip::text(title))
+                .child(glyph)
+        };
+        let match_case = option(
+            "find-match-case",
+            "Aa",
+            t("doc.find.match_case"),
+            bar.options.match_case,
+        )
+        .on_click(cx.listener(|view, _event, _window, cx| view.toggle_find_option(false, cx)));
+        let whole_word = option(
+            "find-whole-word",
+            "ab|",
+            t("doc.find.whole_word"),
+            bar.options.whole_word,
+        )
+        .on_click(cx.listener(|view, _event, _window, cx| view.toggle_find_option(true, cx)));
         let field = |label: &str, value: &str, focused: bool| {
             div()
                 .flex()
@@ -1837,6 +2146,8 @@ impl DocumentView {
                     &bar.query,
                     !bar.editing_replacement,
                 ))
+                .child(match_case)
+                .child(whole_word)
                 .child(field(
                     t("doc.find.replacement"),
                     &bar.replacement,
@@ -1859,9 +2170,130 @@ impl DocumentView {
         )
     }
 
+    /// The field a bar over the pages is taking typing into — a header's or
+    /// a footer's — while one is open.
+    fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        match (&self.comment_bar, &self.story_bar) {
+            (Some(bar), _) => Some(&bar.text),
+            (None, Some(bar)) => Some(&bar.text),
+            (None, None) => None,
+        }
+    }
+
+    fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        match (&mut self.comment_bar, &mut self.story_bar) {
+            (Some(bar), _) => Some(&mut bar.text),
+            (None, Some(bar)) => Some(&mut bar.text),
+            (None, None) => None,
+        }
+    }
+
+    /// ヘッダーの編集 / フッターの編集: the bar over the pages, holding the
+    /// story's first line (its tab-separated left, centre and right).
+    fn open_story_bar(&mut self, story: Story, cx: &mut Context<Self>) {
+        self.find_bar = None;
+        self.comment_bar = None;
+        let text = self.document.story_text(story);
+        self.story_bar = Some(word_page::StoryBar {
+            story,
+            text: jade_office_model::text::TextEdit::new(text),
+        });
+        cx.notify();
+    }
+
+    /// Keys the header and footer bar takes: Enter puts the text in, Escape
+    /// leaves it as it was, Tab types the tab between Word's zones.
+    fn handle_story_bar_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let Some(bar) = self.story_bar.as_mut() else {
+            return false;
+        };
+        if bar.text.marked.is_some() {
+            return false;
+        }
+        match event.keystroke.key.as_str() {
+            "escape" => self.story_bar = None,
+            "enter" | "return" => {
+                let Some(bar) = self.story_bar.take() else {
+                    return false;
+                };
+                match self.document.set_story_text(bar.story, &bar.text.text) {
+                    Ok(()) => {
+                        self.dirty = true;
+                        self.caret = self
+                            .document
+                            .place_caret(self.insert_at.0, self.insert_at.1);
+                        self.rebuild_all_images();
+                    }
+                    Err(error) => self.table_status = Some(SharedString::from(error)),
+                }
+            }
+            "tab" => bar.text.insert("\t"),
+            "backspace" => bar.text.backspace(),
+            "delete" => bar.text.delete(),
+            "left" => bar.text.step(false),
+            "right" => bar.text.step(true),
+            "home" | "up" => bar.text.to_end(false),
+            "end" | "down" => bar.text.to_end(true),
+            _ => return false,
+        }
+        cx.notify();
+        true
+    }
+
+    /// The header or footer bar, over the pages while it is open.
+    fn story_bar_element(&self) -> Option<impl IntoElement> {
+        let bar = self.story_bar.as_ref()?;
+        let (before, after) = bar.text.split();
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .flex_none()
+                .px_4()
+                .py_2()
+                .bg(theme::panel())
+                .border_b_1()
+                .border_color(theme::border())
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme::text_faint())
+                        .child(bar.label()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .min_w(px(320.0))
+                        .px_3()
+                        .py_1()
+                        .rounded_md()
+                        .bg(theme::canvas())
+                        .border_1()
+                        .border_color(theme::accent())
+                        .text_sm()
+                        .text_color(theme::text())
+                        // A tab shows as Word's zone mark.
+                        .child(before.replace('\t', " ⇥ "))
+                        .child(div().w(px(1.0)).h(px(16.0)).bg(theme::accent()))
+                        .child(after.replace('\t', " ⇥ ")),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme::text_faint())
+                        .child(t("page.story_keys")),
+                ),
+        )
+    }
+
     /// The text the platform's input handler is editing: the find bar's field
     /// while it is open, otherwise the paragraph the caret is in.
     fn focused_text(&self) -> String {
+        if let Some(text) = self.text_bar() {
+            return text.text.clone();
+        }
         match self.find_bar.as_ref() {
             Some(bar) => bar.field().clone(),
             None => self.current_paragraph_text(),
@@ -1926,9 +2358,19 @@ impl DocumentView {
     fn handle_find_bar_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
         let platform = event.keystroke.modifiers.platform;
         let shift = event.keystroke.modifiers.shift;
+        let alt = event.keystroke.modifiers.alt;
         match event.keystroke.key.as_str() {
             "escape" => {
                 self.close_find_bar(cx);
+                true
+            }
+            // ⌥⌘C and ⌥⌘W: the bar's two options.
+            "c" if platform && alt => {
+                self.toggle_find_option(false, cx);
+                true
+            }
+            "w" if platform && alt => {
+                self.toggle_find_option(true, cx);
                 true
             }
             "tab" => {
@@ -1969,11 +2411,36 @@ impl DocumentView {
         }
     }
 
+    /// Turns 完全に一致する単語だけ (`whole_word`) or 大文字と小文字を区別する on
+    /// or off; what the query matches is counted again.
+    fn toggle_find_option(&mut self, whole_word: bool, cx: &mut Context<Self>) {
+        if let Some(bar) = self.find_bar.as_mut() {
+            if whole_word {
+                bar.options.whole_word = !bar.options.whole_word;
+            } else {
+                bar.options.match_case = !bar.options.match_case;
+            }
+            bar.current = None;
+        }
+        self.update_find_count();
+        cx.notify();
+    }
+
+    /// The bar's options, or Word's defaults with the bar closed.
+    fn find_options(&self) -> FindOptions {
+        self.find_bar
+            .as_ref()
+            .map(|bar| bar.options)
+            .unwrap_or_default()
+    }
+
     /// Puts what has been typed into the bar's query into effect.
     fn sync_find_query(&mut self, cx: &mut Context<Self>) {
-        let Some(bar) = self.find_bar.as_ref() else {
+        let Some(bar) = self.find_bar.as_mut() else {
             return;
         };
+        bar.current = None;
+        let bar = &*bar;
         self.find_query = (!bar.query.is_empty()).then(|| bar.query.clone());
         self.update_find_count();
         cx.notify();
@@ -1988,7 +2455,7 @@ impl DocumentView {
             self.find_status = None;
             return;
         };
-        let count = self.document.find(&query, false).len();
+        let count = self.document.find_all(&query, self.find_options()).len();
         self.find_status = Some(SharedString::from(if count == 0 {
             i18n::format("doc.find.none", &[("query", &query)])
         } else {
@@ -2016,21 +2483,15 @@ impl DocumentView {
         if query.is_empty() {
             return;
         }
-        // The selection is the match the last find jumped to. Without one there
-        // is nothing to replace yet, so find first.
-        let Some(((paragraph, start), (_, end))) = self.document.selection() else {
+        // The match the last find landed on. Without one there is nothing to
+        // replace yet, so find first.
+        let Some(hit) = bar.current else {
             self.find_query = Some(query);
             return self.find_next(cx);
         };
-        let hit = SearchHit {
-            paragraph,
-            start_offset: start.min(end),
-            end_offset: start.max(end),
-        };
-        let page = self.caret_page_1idx();
-        match self.document.replace_one(hit, &replacement, page) {
-            Ok(()) => {
-                self.insert_at = (paragraph, hit.start_offset + replacement.len());
+        match self.document.replace_found(hit, &replacement) {
+            Ok(after) => {
+                self.insert_at = after;
                 self.caret = self
                     .document
                     .place_caret(self.insert_at.0, self.insert_at.1);
@@ -2058,9 +2519,12 @@ impl DocumentView {
         if query.is_empty() {
             return;
         }
-        let page = self.caret_page_1idx();
-        match self.document.replace_all(&query, &replacement, page) {
+        let options = bar.options;
+        match WordFind::replace_all(&mut self.document, &query, &replacement, options) {
             Ok(replaced) => {
+                if let Some(bar) = self.find_bar.as_mut() {
+                    bar.current = None;
+                }
                 // Replacing re-flows text onto other pages, so every page is
                 // rebuilt rather than the one the caret is on.
                 self.rebuild_after_edit();
@@ -2096,7 +2560,7 @@ impl DocumentView {
         let Some(query) = self.find_query.clone() else {
             return;
         };
-        let hits = self.document.find(&query, false);
+        let hits = self.document.find_all(&query, self.find_options());
         if hits.is_empty() {
             self.find_status = Some(SharedString::from(i18n::format(
                 "doc.find.none",
@@ -2109,12 +2573,12 @@ impl DocumentView {
         // all. Strictly, so repeating does not land on the same match forever.
         let next = hits
             .iter()
-            .find(|hit| {
-                hit.paragraph > paragraph
-                    || (hit.paragraph == paragraph && hit.start_offset > offset)
-            })
+            .find(|hit| hit.start() > (paragraph, offset))
             .copied()
             .unwrap_or(hits[0]);
+        if let Some(bar) = self.find_bar.as_mut() {
+            bar.current = Some(next);
+        }
         let position = hits.iter().position(|hit| *hit == next).unwrap_or(0);
         self.find_status = Some(SharedString::from(i18n::format(
             "doc.find.position",
@@ -2126,17 +2590,12 @@ impl DocumentView {
         )));
 
         let page = self.caret_page_1idx();
-        if self
-            .document
-            .select(
-                (next.paragraph, next.start_offset),
-                (next.paragraph, next.end_offset),
-                page,
-            )
-            .is_ok()
-        {
-            self.insert_at = (next.paragraph, next.end_offset);
-            self.caret = self.document.place_caret(next.paragraph, next.end_offset);
+        if self.document.select(next.start(), next.end(), page).is_ok() {
+            self.insert_at = next.end();
+            // Where the caret is drawn, the selection kept: the replace acts
+            // on the match, and a typed key on the selection.
+            self.caret = self.document.place_caret(next.paragraph, next.end);
+            let _ = self.document.select(next.start(), next.end(), page);
             if let Some(caret) = self.caret {
                 let (page_of_hit, _) = self.document.page_and_offset(caret.document_y);
                 self.scroll.scroll_to_item(page_of_hit);
@@ -2144,33 +2603,6 @@ impl DocumentView {
             }
             self.rebuild_all_images();
             cx.notify();
-        }
-    }
-
-    /// Leaves a comment on the selection, or on the caret's paragraph.
-    ///
-    /// The text is fixed until there is somewhere to type it. That is honest
-    /// about what this does — a placeholder comment is still a real comment in
-    /// the file, and the panel says how many there are.
-    fn add_comment(&mut self, cx: &mut Context<Self>) {
-        match self.document.add_comment(t("doc.comment"), "jade") {
-            Ok(()) => {
-                self.rebuild_after_edit();
-                cx.notify();
-            }
-            Err(error) => eprintln!("comment failed: {error}"),
-        }
-    }
-
-    fn toggle_tracking(&mut self, cx: &mut Context<Self>) {
-        let next = !self.tracking_changes;
-        match self.document.set_change_tracking(next, "jade") {
-            Ok(()) => {
-                self.tracking_changes = next;
-                self.rebuild_after_edit();
-                cx.notify();
-            }
-            Err(error) => eprintln!("change tracking failed: {error}"),
         }
     }
 
@@ -2259,6 +2691,11 @@ impl DocumentView {
                 self.ribbon.read_styles(&self.document);
                 done
             }
+            Action::Page(command) => {
+                let japanese = i18n::language() == i18n::Language::Japanese;
+                WordPage::page_command(document, command, japanese)
+            }
+            Action::EditStory(story) => return self.open_story_bar(story, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -2304,13 +2741,6 @@ impl DocumentView {
 
     fn insert_table_of_contents(&mut self, cx: &mut Context<Self>) {
         if self.document.insert_table_of_contents().is_ok() {
-            self.rebuild_after_edit();
-            cx.notify();
-        }
-    }
-
-    fn resolve_revisions(&mut self, accept: bool, cx: &mut Context<Self>) {
-        if self.document.resolve_revisions(accept).is_ok() {
             self.rebuild_after_edit();
             cx.notify();
         }
@@ -2415,10 +2845,15 @@ impl DocumentView {
         }
     }
 
+    /// The selection's text onto the clipboard, and its formatting beside it
+    /// for a paste in this app that finds that text still there.
     fn copy(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = self.document.selected_text() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
-        }
+        let Some(text) = self.document.selected_text() else {
+            return;
+        };
+        let clip = WordClipboard::copy_rich(&self.document);
+        RICH_CLIP.with(|kept| *kept.borrow_mut() = clip);
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
     }
 
     fn cut(&mut self, cx: &mut Context<Self>) {
@@ -2436,6 +2871,11 @@ impl DocumentView {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
+        // Copied here, and still what the clipboard holds: with its formatting.
+        let clip = RICH_CLIP.with(|kept| kept.borrow().clone());
+        if let Some(clip) = clip.filter(|clip| clip.matches(&text)) {
+            return self.paste_rich(&clip, cx);
+        }
         // Newlines become paragraph breaks, which is what they were when the
         // text was copied out of a document.
         let mut lines = text.split('\n');
@@ -2485,6 +2925,109 @@ impl DocumentView {
         cx.notify();
     }
 
+    /// A paste that keeps the formatting, as one undo step.
+    fn paste_rich(&mut self, clip: &RichClip, cx: &mut Context<Self>) {
+        if self.document.selection().is_none() {
+            self.document
+                .place_caret(self.insert_at.0, self.insert_at.1);
+        }
+        match WordClipboard::paste_rich(&mut self.document, clip) {
+            Ok(caret) => {
+                self.selection_anchor = None;
+                self.insert_at = caret;
+                self.caret = self.document.place_caret(caret.0, caret.1);
+                self.rebuild_after_edit();
+                cx.notify();
+            }
+            Err(error) => eprintln!("paste failed: {error}"),
+        }
+    }
+
+    /// 挿入 → 画像: asks for a picture and puts it in at the caret.
+    fn prompt_for_picture(&mut self, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(SharedString::from(t("picture.insert"))),
+        });
+        cx.spawn(async move |view, cx| {
+            let Ok(Ok(Some(paths))) = paths.await else {
+                return;
+            };
+            let Some(path) = paths.first() else {
+                return;
+            };
+            match std::fs::read(path) {
+                Ok(bytes) => {
+                    view.update(cx, |view, cx| view.insert_picture(bytes, cx))
+                        .ok();
+                }
+                Err(error) => eprintln!("{}: {error}", path.display()),
+            }
+        })
+        .detach();
+    }
+
+    fn insert_picture(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
+        self.document
+            .place_caret(self.insert_at.0, self.insert_at.1);
+        match WordPicture::insert_picture(&mut self.document, bytes) {
+            Ok(()) => {
+                self.table_status = None;
+                self.caret = self
+                    .document
+                    .place_caret(self.insert_at.0, self.insert_at.1);
+                self.rebuild_after_edit();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
+    }
+
+    /// 文字列の折り返し for the picture last clicked.
+    fn wrap_picture(&mut self, wrap: Wrap, cx: &mut Context<Self>) {
+        let Some(object) = self.selected_object else {
+            return;
+        };
+        let placed = placed_object(&object);
+        match WordPicture::set_picture_wrap(&mut self.document, placed, wrap) {
+            Ok(()) => {
+                self.table_status = None;
+                self.rebuild_after_edit();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
+    }
+
+    /// The outline of the picture last clicked, on its page.
+    fn object_outline(&self, page_index: usize) -> Option<impl IntoElement> {
+        let object = self.selected_object?;
+        if object.page.saturating_sub(1) != page_index {
+            return None;
+        }
+        let zoom = self.zoom;
+        Some(
+            div()
+                .absolute()
+                .left(px(object.x as f32 * zoom))
+                .top(px(object.y as f32 * zoom))
+                .w(px(object.width as f32 * zoom))
+                .h(px(object.height as f32 * zoom))
+                .border_1()
+                .border_color(theme::accent())
+                .child(
+                    div()
+                        .absolute()
+                        .right(px(-4.0))
+                        .bottom(px(-4.0))
+                        .size(px(8.0))
+                        .bg(theme::accent()),
+                ),
+        )
+    }
+
     /// Undo or redo, then repaint everything: history can move content onto
     /// pages this window is not looking at.
     fn step_history(&mut self, backwards: bool, cx: &mut Context<Self>) {
@@ -2506,8 +3049,12 @@ impl DocumentView {
         }
     }
 
-    /// Saves over the document that was opened, as Word does.
+    /// Saves over the document that was opened, as Word does; a new one
+    /// asks where to go first.
     fn save(&mut self, cx: &mut Context<Self>) {
+        if self.untitled {
+            return self.save_as(cx);
+        }
         let target = PathBuf::from(self.path.to_string());
         self.write_to(target, cx);
     }
@@ -2515,10 +3062,7 @@ impl DocumentView {
     /// Asks where to save, then saves there.
     fn save_as(&mut self, cx: &mut Context<Self>) {
         let source = PathBuf::from(self.path.to_string());
-        let directory = source
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."));
+        let directory = self.save_directory();
         // The name it has, extension and all: a .docm stays macro-enabled.
         let suggested = source
             .file_name()
@@ -2535,11 +3079,65 @@ impl DocumentView {
         .detach();
     }
 
+    /// Where a save prompt starts: the document's folder, or for a new
+    /// one, Documents.
+    fn save_directory(&self) -> PathBuf {
+        let source = PathBuf::from(self.path.to_string());
+        match source.parent() {
+            Some(parent) if !self.untitled && !parent.as_os_str().is_empty() => parent.into(),
+            _ => std::env::var_os("HOME")
+                .map(|home| PathBuf::from(home).join("Documents"))
+                .filter(|documents| documents.is_dir())
+                .unwrap_or_else(|| PathBuf::from(".")),
+        }
+    }
+
+    /// ファイル → PDF として書き出す: asks where, then writes the pages as
+    /// the editor paints them, their text searchable.
+    fn export_pdf(&mut self, cx: &mut Context<Self>) {
+        let source = PathBuf::from(self.path.to_string());
+        let suggested = format!(
+            "{}.pdf",
+            source
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "document".to_string())
+        );
+        let prompt = cx.prompt_for_new_path(&self.save_directory(), Some(&suggested));
+        cx.spawn(async move |view, cx| {
+            let Ok(Ok(Some(path))) = prompt.await else {
+                return;
+            };
+            view.update(cx, |view, cx| view.write_pdf_to(&path, cx))
+                .ok();
+        })
+        .detach();
+    }
+
+    fn write_pdf_to(&mut self, target: &std::path::Path, cx: &mut Context<Self>) {
+        let written = self
+            .document
+            .export_pdf()
+            .and_then(|pdf| std::fs::write(target, pdf).map_err(|error| error.to_string()));
+        match written {
+            Ok(()) => {
+                self.saved_to = Some(SharedString::from(crate::shell::file_name(target)));
+                cx.notify();
+            }
+            Err(error) => eprintln!("PDF export failed: {error}"),
+        }
+    }
+
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
         match self.document.export_docx() {
             Ok(bytes) => match crate::shell::write_in_place(&target, &bytes) {
                 Ok(()) => {
                     self.dirty = false;
+                    // Saved as, the document is that file from now on.
+                    if self.untitled {
+                        self.untitled = false;
+                        self.path = SharedString::from(target.to_string_lossy().into_owned());
+                    }
                     self.saved_to = Some(SharedString::from(
                         target
                             .file_name()
@@ -2591,25 +3189,11 @@ impl DocumentView {
         }
     }
 
-    /// Moves the caret one character along the current paragraph.
+    /// Moves the caret one character along, across paragraph ends.
     fn step_caret(&mut self, direction: i32, cx: &mut Context<Self>) {
-        let (paragraph, offset) = self.insert_at;
-        let text = self.current_paragraph_text();
-        let next = if direction < 0 {
-            text[..offset.min(text.len())]
-                .chars()
-                .next_back()
-                .map(|ch| offset - ch.len_utf8())
-        } else {
-            text[offset.min(text.len())..]
-                .chars()
-                .next()
-                .map(|ch| offset + ch.len_utf8())
-        };
-        if let Some(next) = next {
-            self.insert_at = (paragraph, next);
-            self.caret = self.document.place_caret(paragraph, next);
-            cx.notify();
+        let next = self.character_step(self.insert_at, direction > 0);
+        if next != self.insert_at {
+            self.jump_to(next, cx);
         }
     }
 
@@ -2817,6 +3401,7 @@ impl DocumentView {
             const HANDLE: f64 = 12.0;
             let resizing = local_x >= object.x + object.width - HANDLE
                 && local_y >= object.y + object.height - HANDLE;
+            self.selected_object = Some(object);
             self.object_drag = Some(ObjectDrag {
                 object,
                 start: (object.x, object.y, object.width, object.height),
@@ -2829,6 +3414,7 @@ impl DocumentView {
             return;
         }
 
+        self.selected_object = None;
         if let Some(position) = self.document.position_at(local_x, document_y) {
             self.insert_at = position;
             self.current_page = page_index;
@@ -3057,6 +3643,13 @@ impl EntityInputHandler for DocumentView {
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
         let text = self.focused_text();
+        if let Some(field) = self.text_bar() {
+            let caret = byte_to_utf16(&text, field.caret());
+            return Some(UTF16Selection {
+                range: caret..caret,
+                reversed: false,
+            });
+        }
         // The bar has no caret model: typing appends, so the insertion point is
         // the end of the field.
         let caret = match self.find_bar.as_ref() {
@@ -3076,6 +3669,10 @@ impl EntityInputHandler for DocumentView {
         _cx: &mut Context<Self>,
     ) -> Option<Range<usize>> {
         let text = self.focused_text();
+        if let Some(field) = self.text_bar() {
+            let marked = field.marked.clone()?;
+            return Some(byte_to_utf16(&text, marked.start)..byte_to_utf16(&text, marked.end));
+        }
         let marked = match self.find_bar.as_ref() {
             Some(bar) => bar.marked.clone()?,
             None => self.marked.clone()?,
@@ -3084,6 +3681,10 @@ impl EntityInputHandler for DocumentView {
     }
 
     fn unmark_text(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
+        if let Some(field) = self.text_bar_mut() {
+            field.marked = None;
+            return;
+        }
         if let Some(bar) = self.find_bar.as_mut() {
             bar.marked = None;
             return;
@@ -3101,6 +3702,10 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(field) = self.text_bar_mut() {
+            field.replace(range, text, false);
+            return cx.notify();
+        }
         if self.find_bar.is_some() {
             self.replace_in_find_bar(range, text, false, cx);
             return;
@@ -3130,6 +3735,10 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(field) = self.text_bar_mut() {
+            field.replace(range, new_text, true);
+            return cx.notify();
+        }
         if self.find_bar.is_some() {
             self.replace_in_find_bar(range, new_text, true, cx);
             return;
@@ -3235,7 +3844,7 @@ impl editor::Editor for DocumentView {
         if comments > 0 {
             items.push(i18n::format("doc.comments", &[("n", &comments)]).into());
         }
-        if self.tracking_changes {
+        if self.document.is_tracking_changes() {
             items.push(i18n::text("doc.tracking").into());
         }
         items
@@ -3310,6 +3919,7 @@ impl Render for DocumentView {
             (w as f32, h as f32)
         };
         let zoom = self.zoom;
+        let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -3319,6 +3929,7 @@ impl Render for DocumentView {
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
             .on_action(cx.listener(|view, _: &SaveAs, _window, cx| view.save_as(cx)))
             .on_action(cx.listener(|view, _: &Print, _window, _cx| view.print()))
+            .on_action(cx.listener(|view, _: &ExportPdf, _window, cx| view.export_pdf(cx)))
             .on_action(cx.listener(|view, _: &Undo, _window, cx| view.step_history(true, cx)))
             .on_action(cx.listener(|view, _: &Redo, _window, cx| view.step_history(false, cx)))
             .on_action(cx.listener(|view, _: &Cut, _window, cx| view.cut(cx)))
@@ -3426,7 +4037,9 @@ impl Render for DocumentView {
                     .flex_col()
                     .size_full()
                     .child(self.ribbon(window, cx))
-                    .children(self.find_bar_element())
+                    .children(self.comment_bar_element())
+                    .children(self.story_bar_element())
+                    .children(self.find_bar_element(cx))
                     .child(
                         div()
                             .id("pages")
@@ -3481,6 +4094,7 @@ impl Render for DocumentView {
                                             .h(px(page_height * zoom)),
                                     )
                                     .children(self.caret_overlay(index))
+                                    .children(self.object_outline(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
                                     // before the renderer can hit-test it.
@@ -3524,6 +4138,8 @@ impl Render for DocumentView {
                             })),
                     ),
             )
+            // ---- the comments pane, beside the pages while it is open ----
+            .children(comments_pane)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -3614,7 +4230,7 @@ impl Render for DocumentView {
                                     ("n", &self.document.comment_count()),
                                     (
                                         "tracking",
-                                        &t(if self.tracking_changes {
+                                        &t(if self.document.is_tracking_changes() {
                                             "doc.info.on"
                                         } else {
                                             "doc.info.off"
@@ -3684,21 +4300,49 @@ pub(crate) fn new_document_view(
     Ok(cx.new(|_| view))
 }
 
+/// A new document — blank, or made from a template — in a view of its own,
+/// `name` its title until it is saved somewhere.
+pub(crate) fn untitled_document_view(
+    bytes: &[u8],
+    name: &str,
+    cx: &mut App,
+) -> Result<gpui::Entity<DocumentView>, String> {
+    let view = untitled_view(bytes, name, cx)?;
+    Ok(cx.new(|_| view))
+}
+
+fn untitled_view(bytes: &[u8], name: &str, cx: &mut App) -> Result<DocumentView, String> {
+    let document = open_document_bytes(bytes)?;
+    let mut view = document_view(document, name.to_string(), bytes.len() as u64, cx);
+    view.untitled = true;
+    Ok(view)
+}
+
 /// Reads `path` and paints its pages, ready to be shown.
 fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentView, String> {
     let path_text = path.to_string_lossy().into_owned();
-    let mut document = open_document(&path_text)?;
+    let document = open_document(&path_text)?;
+    let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+    Ok(document_view(document, path_text, file_size, cx))
+}
+
+/// The view over a document just opened.
+fn document_view(
+    mut document: NativeDocument,
+    path_text: String,
+    file_size: u64,
+    cx: &mut App,
+) -> DocumentView {
     // Placed before the window opens so the caret is visible from the first
     // frame rather than only after the first click.
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
     let images: Vec<_> = (0..document.page_count())
         .filter_map(|index| page_image(&document, index))
         .collect();
-    let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
     let mut ribbon = ribbon::Ribbon::default();
     ribbon.read_styles(&document);
 
-    Ok(DocumentView {
+    DocumentView {
         path: SharedString::from(path_text),
         file_size,
         document,
@@ -3710,20 +4354,24 @@ fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentVi
         caret,
         drag_anchor: None,
         object_drag: None,
+        selected_object: None,
         selection_anchor: None,
         zoom: 1.0,
         raster_scale: 1.0,
         dark_pages: false,
-        tracking_changes: false,
         table_status: None,
         find_query: None,
         find_status: None,
         find_bar: None,
+        story_bar: None,
+        comment_bar: None,
+        show_comments: false,
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,
         format: None,
         saved_to: None,
+        untitled: false,
         marked: None,
         page_bounds: Rc::new(RefCell::new(Vec::new())),
         last_repaint: None,
@@ -3733,7 +4381,7 @@ fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentVi
         dirty: false,
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
-    })
+    }
 }
 
 fn main() {
@@ -3782,6 +4430,8 @@ fn main() {
         // The actions no single window owns.
         cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
         cx.on_action(|_: &Open, cx: &mut App| shell::prompt_and_open(cx));
+        cx.on_action(|_: &NewDocument, cx: &mut App| shell::open_blank(cx));
+        cx.on_action(|_: &NewFromTemplate, cx: &mut App| shell::prompt_for_template(cx));
         cx.on_action(|_: &ToggleTheme, cx: &mut App| {
             let mode = if theme::is_dark() {
                 theme::Mode::Light
@@ -4029,6 +4679,377 @@ mod tests {
                 !view.format_state().table.unwrap().can_unmerge,
                 "the merge is undone"
             );
+        });
+    }
+
+    /// Puts the caret at the start of the caret's paragraph and types
+    /// `text` there; returns the paragraph.
+    fn type_at_start(
+        view: &gpui::Entity<super::DocumentView>,
+        cx: &mut gpui::VisualTestContext,
+        text: &str,
+    ) -> usize {
+        let paragraph = view.update(cx, |view, _| {
+            let paragraph = view.insert_at.0;
+            view.insert_at = (paragraph, 0);
+            view.caret = view.document.place_caret(paragraph, 0);
+            paragraph
+        });
+        cx.simulate_input(text);
+        paragraph
+    }
+
+    /// ⌥← and ⌥→ go a word along, ⇧ extending; ⌘← and End go to the line's
+    /// ends, ⌘↑ and ⌘↓ to the document's — as on a Mac.
+    #[gpui::test]
+    fn word_line_and_document_keys_move_the_caret(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "one two, three ");
+        view.update(cx, |view, _| {
+            view.insert_at = (paragraph, 0);
+            view.caret = view.document.place_caret(paragraph, 0);
+        });
+        cx.simulate_keystrokes("alt-right");
+        view.read_with(cx, |view, _| assert_eq!(view.insert_at, (paragraph, 3)));
+        cx.simulate_keystrokes("alt-right");
+        view.read_with(cx, |view, _| assert_eq!(view.insert_at, (paragraph, 7)));
+        cx.simulate_keystrokes("alt-shift-left");
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.document.selection(),
+                Some(((paragraph, 7), (paragraph, 4)))
+            )
+        });
+        cx.simulate_keystrokes("end");
+        let line_end = view.read_with(cx, |view, _| {
+            assert!(view.document.selection().is_none());
+            view.insert_at
+        });
+        assert_eq!(line_end.0, paragraph);
+        assert!(line_end.1 > "one two, three ".len(), "{line_end:?}");
+        cx.simulate_keystrokes("cmd-left");
+        view.read_with(cx, |view, _| assert_eq!(view.insert_at, (paragraph, 0)));
+        cx.simulate_keystrokes("cmd-down");
+        let end = view.read_with(cx, |view, _| view.insert_at);
+        assert!(end.0 > paragraph, "{end:?}");
+        cx.simulate_keystrokes("cmd-up");
+        view.read_with(cx, |view, _| {
+            assert!(view.insert_at.0 < paragraph);
+            assert_eq!(view.insert_at.1, 0);
+        });
+    }
+
+    /// ⌥⌫ takes the word before the caret in one edit; Backspace at a
+    /// paragraph's start joins it to the one before.
+    #[gpui::test]
+    fn option_backspace_deletes_a_word_and_backspace_joins(cx: &mut gpui::TestAppContext) {
+        use super::Undo;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "alpha beta ");
+        let before = view.read_with(cx, |view, _| view.current_paragraph_text());
+        cx.simulate_keystrokes("alt-backspace");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.insert_at, (paragraph, "alpha ".len()));
+            assert_eq!(
+                view.current_paragraph_text(),
+                before.replacen("beta ", "", 1)
+            );
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.current_paragraph_text(), before)
+        });
+
+        view.update(cx, |view, _| {
+            view.insert_at = (paragraph, 0);
+            view.caret = view.document.place_caret(paragraph, 0);
+        });
+        let above = view.read_with(cx, |view, _| {
+            view.document.paragraph_text(paragraph - 1).unwrap()
+        });
+        cx.simulate_keystrokes("backspace");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.insert_at, (paragraph - 1, above.len()));
+            assert_eq!(view.current_paragraph_text(), format!("{above}{before}"));
+        });
+    }
+
+    /// Tab goes from cell to cell with the cell's text selected, ⇧Tab
+    /// back, and Tab in the last cell adds a row; outside a table it types
+    /// a tab.
+    #[gpui::test]
+    fn tab_goes_from_cell_to_cell(cx: &mut gpui::TestAppContext) {
+        use super::ribbon::Action;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "");
+        cx.simulate_keystrokes("tab");
+        view.read_with(cx, |view, _| {
+            assert!(view.current_paragraph_text().starts_with('\t'));
+            assert_eq!(view.insert_at, (paragraph, 1));
+        });
+
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::InsertTable(1, 2), cx)
+        });
+        let first = view.read_with(cx, |view, _| view.insert_at);
+        cx.simulate_input("one");
+        cx.simulate_keystrokes("tab");
+        let second = view.read_with(cx, |view, _| {
+            assert_ne!(view.insert_at.0, first.0);
+            view.insert_at.0
+        });
+        cx.simulate_input("two");
+        cx.simulate_keystrokes("shift-tab");
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.document.selection(),
+                Some(((first.0, 0), (first.0, 3)))
+            )
+        });
+        view.update(cx, |view, _| {
+            view.insert_at = (second, 3);
+            view.caret = view.document.place_caret(second, 3);
+        });
+        cx.simulate_keystrokes("tab");
+        view.update(cx, |view, _| {
+            let cell = view.format_state().table.expect("in the table");
+            assert_eq!((cell.rows, cell.row, cell.column), (2, 1, 0));
+        });
+    }
+
+    /// ⌥⌘W and ⌥⌘C turn the bar's options on, which narrow what is found;
+    /// ⌘⏎ replaces every match left, and one Undo takes them all back.
+    #[gpui::test]
+    fn find_options_narrow_and_replace_all_undoes_once(cx: &mut gpui::TestAppContext) {
+        use super::{FindAndReplace, Undo, WordFind};
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "Jade jade JADE jaded. ");
+        let before = view.read_with(cx, |view, _| view.current_paragraph_text());
+        cx.dispatch_action(FindAndReplace);
+        cx.simulate_input("jade");
+        let count = |view: &super::DocumentView| {
+            view.document
+                .find_all("jade", view.find_options())
+                .iter()
+                .filter(|found| found.paragraph == paragraph)
+                .count()
+        };
+        view.read_with(cx, |view, _| assert_eq!(count(view), 4));
+        cx.simulate_keystrokes("alt-cmd-w");
+        view.read_with(cx, |view, _| {
+            assert!(view.find_options().whole_word);
+            assert_eq!(count(view), 3);
+        });
+        cx.simulate_keystrokes("alt-cmd-c");
+        view.read_with(cx, |view, _| assert_eq!(count(view), 1));
+        cx.simulate_keystrokes("alt-cmd-c");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("Word");
+        cx.simulate_keystrokes("cmd-enter");
+        view.read_with(cx, |view, _| {
+            let text = view.document.paragraph_text(paragraph).unwrap();
+            assert!(text.starts_with("Word Word Word jaded. "), "{text}");
+            assert_eq!(
+                text.replacen("Word Word Word", "Jade jade JADE", 1),
+                before,
+                "only the whole words changed"
+            );
+        });
+        cx.simulate_keystrokes("escape");
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.document.paragraph_text(paragraph).unwrap(), before)
+        });
+    }
+
+    /// ⌘N's blank document opens untitled, takes typing, and is written
+    /// out as a PDF of its pages.
+    #[gpui::test]
+    fn a_new_document_opens_untitled_and_exports_a_pdf(cx: &mut gpui::TestAppContext) {
+        use gpui::Focusable;
+        use jade_office_model::word::new::{blank_document, Blank};
+        let (view, cx) = cx.add_window_view(|_window, cx| {
+            super::untitled_view(&blank_document(Blank::Japanese), "文書 1.docx", cx).unwrap()
+        });
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        view.update(cx, |view, _| {
+            assert!(view.untitled);
+            view.insert_at = (0, 0);
+            view.caret = view.document.place_caret(0, 0);
+        });
+        cx.simulate_input("新しい文書");
+        let pdf = std::env::temp_dir().join(format!("jade-new-{}.pdf", std::process::id()));
+        view.update(cx, |view, cx| {
+            assert_eq!(view.current_paragraph_text(), "新しい文書");
+            assert!(view.dirty);
+            view.write_pdf_to(&pdf, cx);
+        });
+        let bytes = std::fs::read(&pdf).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+        std::fs::remove_file(&pdf).ok();
+    }
+
+    /// The page tools: 余白 from the gallery, the page turned, the header
+    /// typed into its bar and put in with Enter, a page number in the
+    /// footer; Undo takes each back.
+    #[gpui::test]
+    fn the_page_tools_set_up_the_page_and_its_header(cx: &mut gpui::TestAppContext) {
+        use super::ribbon::Action;
+        use super::{Undo, WordPage};
+        use jade_office_model::word::page::{MarginPreset, NumberAlignment, PageCommand, Story};
+        let (view, cx) = open_contract(cx);
+        let before = view.read_with(cx, |view, _| view.document.page_setup());
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::Page(PageCommand::Margins(MarginPreset::Narrow)), cx);
+            assert_eq!(view.document.page_setup().margins.top, 36.0);
+            view.run_ribbon(Action::Page(PageCommand::Landscape(!before.landscape)), cx);
+            assert_eq!(view.document.page_setup().landscape, !before.landscape);
+            view.run_ribbon(Action::EditStory(Story::Header), cx);
+            assert!(view.story_bar.is_some());
+        });
+        view.update(cx, |view, _| {
+            view.story_bar.as_mut().unwrap().text =
+                jade_office_model::text::TextEdit::new(String::new());
+        });
+        cx.simulate_input("jade");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("header");
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, cx| {
+            assert!(view.story_bar.is_none());
+            assert_eq!(view.document.story_text(Story::Header), "jade\theader");
+            view.run_ribbon(
+                Action::Page(PageCommand::PageNumber(
+                    Story::Footer,
+                    NumberAlignment::Center,
+                )),
+                cx,
+            );
+        });
+        for _ in 0..4 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| assert_eq!(view.document.page_setup(), before));
+    }
+
+    /// ⌘M opens the comment bar; Enter puts the comment on the selection,
+    /// and the pane's reply and resolve work on it. With changes tracked,
+    /// typing is a revision that 元に戻す takes out again.
+    #[gpui::test]
+    fn comments_are_written_answered_and_changes_decided(cx: &mut gpui::TestAppContext) {
+        use super::word_review::CommentEntry;
+        use super::AddComment;
+        use jade_office_model::word::review::WordReview;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "Clause one. ");
+        view.update(cx, |view, _| {
+            view.document
+                .select((paragraph, 0), (paragraph, "Clause".len()), 1)
+                .unwrap();
+            view.insert_at = (paragraph, "Clause".len());
+        });
+        cx.dispatch_action(AddComment);
+        cx.simulate_input("Check this.");
+        cx.simulate_keystrokes("enter");
+        let id = view.read_with(cx, |view, _| {
+            assert!(view.comment_bar.is_none());
+            assert!(view.show_comments);
+            let comment = view
+                .document
+                .comments()
+                .into_iter()
+                .find(|comment| comment.text == "Check this.")
+                .expect("the comment went in");
+            assert_eq!(comment.anchor.map(|(start, _)| start), Some((paragraph, 0)));
+            comment.id
+        });
+        view.update(cx, |view, cx| {
+            view.open_comment_bar(CommentEntry::Reply(id.clone()), String::new(), cx)
+        });
+        cx.simulate_input("Done.");
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, cx| {
+            view.resolve_comment(&id, true, cx);
+            let comment = view
+                .document
+                .comments()
+                .into_iter()
+                .find(|comment| comment.id == id)
+                .unwrap();
+            assert_eq!(comment.replies.len(), 1);
+            assert!(comment.resolved);
+
+            view.toggle_tracking(cx);
+            assert!(view.document.is_tracking_changes());
+            view.insert_at = (paragraph, 0);
+            view.caret = view.document.place_caret(paragraph, 0);
+        });
+        let before = view.read_with(cx, |view, _| view.current_paragraph_text());
+        cx.simulate_input("new ");
+        view.update(cx, |view, cx| {
+            assert!(!view.document.revisions().is_empty());
+            view.insert_at = (paragraph, 1);
+            view.caret = view.document.place_caret(paragraph, 1);
+            view.decide_revision(false, cx);
+            assert_eq!(view.document.paragraph_text(paragraph).unwrap(), before);
+            view.toggle_tracking(cx);
+            assert!(!view.document.is_tracking_changes());
+        });
+    }
+
+    /// A copy keeps its formatting when it is pasted back; a picture goes
+    /// in at the caret, and a click on it lets its wrap be set.
+    #[gpui::test]
+    fn copies_keep_formatting_and_pictures_go_in(cx: &mut gpui::TestAppContext) {
+        use super::{Bold, Copy, Paste, Undo};
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "Bold plain ");
+        view.update(cx, |view, _| {
+            view.document
+                .select((paragraph, 0), (paragraph, 4), 1)
+                .unwrap();
+            view.insert_at = (paragraph, 4);
+        });
+        cx.dispatch_action(Bold);
+        cx.dispatch_action(Copy);
+        let end = view.update(cx, |view, _| {
+            let end = view.document.paragraph_text(paragraph).unwrap().len();
+            view.insert_at = (paragraph, end);
+            view.caret = view.document.place_caret(paragraph, end);
+            end
+        });
+        cx.dispatch_action(Paste);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.insert_at, (paragraph, end + 4));
+            let style = view.document.run_style_at(paragraph, end + 1).unwrap();
+            assert_eq!(style.bold, Some(true), "the paste kept the bold");
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.document.paragraph_text(paragraph).unwrap().len(), end)
+        });
+
+        // A 2×1 PNG.
+        let mut png = Vec::new();
+        image::RgbaImage::from_raw(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255])
+            .unwrap()
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        view.update(cx, |view, cx| {
+            view.insert_at = (paragraph, 0);
+            view.insert_picture(png, cx);
+            assert!(view.table_status.is_none(), "{:?}", view.table_status);
+            let images = view
+                .document
+                .word_document()
+                .paragraph(paragraph)
+                .unwrap()
+                .runs
+                .iter()
+                .filter(|run| run.image.is_some())
+                .count();
+            assert_eq!(images, 1);
         });
     }
 
