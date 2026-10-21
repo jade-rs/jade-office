@@ -1317,6 +1317,18 @@ impl EditableDocument {
         Ok(true)
     }
 
+    /// Hides the top-level body elements under collapsed headings (Word's
+    /// 見出しの折りたたみ) and repaints; empty shows them all again.
+    pub fn set_collapsed_blocks(&mut self, blocks: Vec<usize>) -> Result<(), String> {
+        self.options.set_collapsed_blocks(blocks);
+        self.repaint_all()
+    }
+
+    /// The top-level body elements collapsed headings hide.
+    pub fn collapsed_blocks(&self) -> &[usize] {
+        self.options.collapsed_blocks()
+    }
+
     /// Every page from scratch: undo can change content anywhere.
     fn repaint_all(&mut self) -> Result<(), String> {
         self.repainted_from = Some(0);

@@ -28,12 +28,21 @@ mod ribbon;
 mod shell;
 mod tooltip;
 mod word_characters;
+mod word_design;
+mod word_dialog;
 mod word_dialogs;
+mod word_fields;
+mod word_lists;
 mod word_page;
 mod word_page_setup;
+mod word_paragraph;
+mod word_references;
 mod word_review;
+mod word_ruler;
 mod word_story;
+mod word_styles;
 mod word_table;
+mod word_tools;
 mod workbook;
 mod workspace;
 
@@ -139,6 +148,15 @@ actions!(
         PasteMatchFormatting,
         InsertSymbol,
         InsertDateTime,
+        InsertField,
+        EditField,
+        UpdateFields,
+        ToggleFieldCodes,
+        ToggleFieldCode,
+        LockFields,
+        UnlockFields,
+        UnlinkFields,
+        DocumentProperties,
     ]
 );
 
@@ -148,7 +166,7 @@ actions!(
 /// window has no document focused rather than firing into an empty app.
 fn key_bindings() -> Vec<KeyBinding> {
     const CONTEXT: Option<&str> = Some("Document");
-    vec![
+    let mut bindings = vec![
         KeyBinding::new("cmd-q", Quit, None),
         // Opening and closing belong to the app, not to one kind of window:
         // they work from the start window and from every view.
@@ -229,7 +247,23 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd--", ZoomOut, None),
         KeyBinding::new("cmd-0", ZoomActual, None),
         KeyBinding::new("cmd-9", ZoomFit, None),
-    ]
+        // Word's field keys: ⌘F9 a new field, F9 update, ⌥F9 every code,
+        // ⇧F9 the selected ones', ⌘F11/⌘⇧F11 lock and unlock, ⌘⇧F9 unlink.
+        KeyBinding::new("cmd-f9", InsertField, CONTEXT),
+        KeyBinding::new("ctrl-f9", EditField, CONTEXT),
+        KeyBinding::new("f9", UpdateFields, CONTEXT),
+        KeyBinding::new("alt-f9", ToggleFieldCodes, CONTEXT),
+        KeyBinding::new("shift-f9", ToggleFieldCode, CONTEXT),
+        KeyBinding::new("cmd-f11", LockFields, CONTEXT),
+        KeyBinding::new("cmd-shift-f11", UnlockFields, CONTEXT),
+        KeyBinding::new("cmd-shift-f9", UnlinkFields, CONTEXT),
+        // プロパティ: Word has no key for it, and ⌥⇧⌘I is 引用文の登録
+        // (`word_references`).
+        KeyBinding::new("cmd-alt-shift-p", DocumentProperties, CONTEXT),
+    ];
+    // 参考資料's and ジャンプ's keys (`word_references`).
+    bindings.extend(word_references::key_bindings());
+    bindings
 }
 
 /// The menu bar.
@@ -277,6 +311,8 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.print"), Print),
                 MenuItem::action(t("menu.file.export_pdf"), ExportPdf),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.file.properties"), DocumentProperties),
             ],
         },
         Menu {
@@ -298,6 +334,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.edit.find_next"), FindNext),
                 MenuItem::action(t("menu.edit.replace"), Replace),
                 MenuItem::action(t("menu.edit.replace_all"), ReplaceAll),
+                MenuItem::action(t("goto.menu"), word_references::GoTo),
             ],
         },
         Menu {
@@ -329,6 +366,9 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.insert.footnote"), InsertFootnote),
                 MenuItem::action(t("menu.insert.endnote"), InsertEndnote),
+                MenuItem::action(t("bookmark.menu"), word_references::InsertBookmark),
+                MenuItem::action(t("index.mark.menu"), word_references::MarkIndexEntry),
+                MenuItem::action(t("toa.mark.menu"), word_references::MarkCitation),
             ],
         },
         Menu {
@@ -336,6 +376,20 @@ fn menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action(t("menu.insert.symbol"), InsertSymbol),
                 MenuItem::action(t("menu.insert.date_time"), InsertDateTime),
+            ],
+        },
+        Menu {
+            name: t("menu.insert").into(),
+            items: vec![
+                MenuItem::action(t("menu.insert.field"), InsertField),
+                MenuItem::action(t("menu.insert.edit_field"), EditField),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.insert.update_fields"), UpdateFields),
+                MenuItem::action(t("menu.insert.toggle_field_codes"), ToggleFieldCodes),
+                MenuItem::action(t("menu.insert.toggle_field_code"), ToggleFieldCode),
+                MenuItem::action(t("menu.insert.lock_fields"), LockFields),
+                MenuItem::action(t("menu.insert.unlock_fields"), UnlockFields),
+                MenuItem::action(t("menu.insert.unlink_fields"), UnlinkFields),
             ],
         },
         Menu {
@@ -357,6 +411,7 @@ fn menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action(t("menu.view.explorer"), ToggleExplorer),
                 MenuItem::action(t("menu.view.details"), ToggleInspector),
+                MenuItem::action(t("nav.menu"), word_references::ToggleNavigation),
                 MenuItem::submenu(Menu {
                     name: t("menu.view.appearance").into(),
                     items: vec![
@@ -1017,6 +1072,14 @@ impl gpui::AssetSource for Assets {
             "wrap-text",
             "x",
             "zap",
+            // The Word view's paragraph, list and design tools.
+            "align-distribute",
+            "blocks",
+            "list-tree",
+            "palette",
+            "ruler",
+            "sparkles",
+            "type-plus",
         );
         Ok(bytes.map(std::borrow::Cow::Borrowed))
     }
@@ -1211,6 +1274,10 @@ struct DocumentView {
     tables: word_table::TableUi,
     /// The フォント dialog and the other character tools' dialogs.
     characters: word_characters::Characters,
+    /// The paragraph, list, style and design tools' dialog, rulers and pane.
+    tools: word_tools::WordTools,
+    /// 参考資料's dialogs, the navigation pane and ブックマーク表示.
+    references: word_references::References,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1254,6 +1321,8 @@ struct DocumentView {
     show_inspector: bool,
     /// Whether there are edits since the document was opened or saved.
     dirty: bool,
+    /// The Field, prompt and Properties dialogs, and the user information.
+    fields: word_fields::FieldsUi,
     scroll: ScrollHandle,
     focus: FocusHandle,
 }
@@ -1423,6 +1492,21 @@ impl DocumentView {
             }
             return;
         }
+        // A dialog over the pages has every key while it is open.
+        if self.tools.dialog.is_some() {
+            if self.handle_tool_dialog_key(event, cx) {
+                cx.stop_propagation();
+            }
+            // Nothing reaches the document while a dialog is open.
+            return;
+        }
+        if self.references.is_open() || self.references.searching {
+            let shift = event.keystroke.modifiers.shift;
+            if word_references::handle_key(self, event.keystroke.key.as_str(), shift, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
         if self.dialog.is_some() && self.handle_dialog_key(event, cx) {
@@ -1431,6 +1515,12 @@ impl DocumentView {
         }
         if self.tables.dialog.is_some() && self.handle_table_dialog_key(event, cx) {
             cx.stop_propagation();
+            return;
+        }
+        if self.fields.dialog.is_some() {
+            if self.handle_fields_key(event, cx) {
+                cx.stop_propagation();
+            }
             return;
         }
         if self.comment_bar.is_some() && self.handle_comment_bar_key(event, cx) {
@@ -1508,8 +1598,9 @@ impl DocumentView {
                 }
             }
             "backspace" if offset > 0 => {
-                let text = self.current_paragraph_text();
-                let removed = text[..offset].chars().next_back().map(char::len_utf8);
+                // The caret's offset counts the note marks the paragraph's
+                // text does not hold.
+                let removed = word_references::removed_before(self, (paragraph, offset));
                 if let Some(removed) = removed {
                     let page = self.caret_page_1idx();
                     let result = self.document.delete_text(paragraph, offset, true, 1, page);
@@ -1648,6 +1739,8 @@ impl DocumentView {
                 cx.notify();
             }
             Ok(CellStep::Stay) => {}
+            // At a list item's start, a level down (or up), as in Word.
+            Ok(CellStep::NotInTable) if self.tab_in_list(backwards, cx) => {}
             Ok(CellStep::NotInTable) if !backwards => {
                 let page = self.caret_page_1idx();
                 let result = self.document.insert_text(paragraph, offset, "\t", page);
@@ -1925,10 +2018,17 @@ impl DocumentView {
             RibbonTab::Home => {
                 let mut groups = vec![self.clipboard_group(cx)];
                 groups.extend(ribbon::home(&self.ribbon, &state, cx));
+                // Lists and the paragraph's settings after 段落, the style
+                // tools after the gallery.
+                let lists = self.list_group(cx);
+                groups.insert(3.min(groups.len()), lists);
+                let styles = self.style_tools_group(cx);
+                groups.insert(5.min(groups.len()), styles);
                 groups
             }
             RibbonTab::Insert => vec![
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
+                self.quick_parts_group(cx),
                 self.picture_group(cx),
                 Self::ribbon_group(
                     t("link.group"),
@@ -1944,9 +2044,11 @@ impl DocumentView {
                         .into_any_element()])],
                 )
                 .into_any_element(),
+                word_references::links_group(cx),
                 word_page::header_footer(&self.ribbon, cx),
                 self.cover_group(cx),
                 word_characters::insert_group(cx),
+                self.fields_group(cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -1976,7 +2078,11 @@ impl DocumentView {
                 )
                 .into_any_element(),
             ],
-            RibbonTab::Design => self.design_groups(cx),
+            RibbonTab::Design => self
+                .design_groups(cx)
+                .into_iter()
+                .chain(self.page_background_groups(cx))
+                .collect(),
             RibbonTab::Layout => vec![{
                 let japanese = i18n::language() == i18n::Language::Japanese;
                 let setup = self.document.page_setup();
@@ -2040,65 +2146,17 @@ impl DocumentView {
                     .chain(after)
                     .collect()
             }
-            RibbonTab::References => vec![
-                Self::ribbon_group(
-                    t("doc.toc"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "toc",
-                            t("doc.toc"),
-                            t("doc.toc_title"),
-                            false,
-                            cx,
-                            |view, cx| view.insert_table_of_contents(cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "toc-update",
-                            t("doc.toc_update"),
-                            t("doc.toc_update_title"),
-                            false,
-                            cx,
-                            |view, cx| view.update_table_of_contents(cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-                Self::ribbon_group(
-                    t("note.group"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "footnote",
-                            t("note.footnote"),
-                            t("note.footnote_title"),
-                            false,
-                            cx,
-                            |view, cx| view.open_note_dialog(NoteKind::Footnote, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "endnote",
-                            t("note.endnote"),
-                            t("note.endnote_title"),
-                            false,
-                            cx,
-                            |view, cx| view.open_note_dialog(NoteKind::Endnote, cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-            ],
+            RibbonTab::References => word_references::ribbon_groups(self, cx),
             RibbonTab::Review => self.review_groups(cx),
             RibbonTab::HeaderFooter => self.story_groups(cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
+                    self.ruler_group(cx),
                     Self::ribbon_group(
                         t("doc.group.show"),
-                        vec![Self::ribbon_row(vec![self
-                            .ribbon_button(
+                        vec![Self::ribbon_row(vec![
+                            self.ribbon_button(
                                 "marks",
                                 t("doc.marks"),
                                 t("doc.marks_title"),
@@ -2106,7 +2164,12 @@ impl DocumentView {
                                 cx,
                                 |view, cx| view.toggle_formatting_marks(cx),
                             )
-                            .into_any_element()])],
+                            .into_any_element(),
+                            self.field_codes_button(cx),
+                        ])]
+                        .into_iter()
+                        .chain([Self::ribbon_row(word_references::view_buttons(self, cx))])
+                        .collect(),
                     )
                     .into_any_element(),
                     Self::ribbon_group(
@@ -2408,6 +2471,15 @@ impl DocumentView {
         if let Some(field) = self.characters.text_field() {
             return Some(field);
         }
+        if let Some(dialog) = self.fields.dialog.as_ref() {
+            return dialog.text();
+        }
+        if self.tools.dialog.is_some() {
+            return self.dialog_field();
+        }
+        if let Some(field) = self.references.text_field() {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2421,6 +2493,19 @@ impl DocumentView {
         }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
+        }
+        if self.fields.dialog.is_some() {
+            return self
+                .fields
+                .dialog
+                .as_mut()
+                .and_then(|dialog| dialog.text_mut());
+        }
+        if self.tools.dialog.is_some() {
+            return self.dialog_field_mut();
+        }
+        if self.references.is_open() || self.references.searching {
+            return self.references.text_field_mut();
         }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
@@ -2968,6 +3053,23 @@ impl DocumentView {
                 self.table_status = Some(SharedString::from(error));
             }
         }
+        // Direct formatting a self-updating style takes in (自動的に更新する).
+        let formats = matches!(
+            action,
+            Action::Toggle(_)
+                | Action::FontFamilyName(_)
+                | Action::FontSize(_)
+                | Action::StepFontSize(_)
+                | Action::FontColor(_)
+                | Action::Align(_)
+                | Action::LineSpacing(_)
+                | Action::Indent(_)
+                | Action::Shading(_)
+                | Action::ParagraphBorders(_)
+        );
+        if let Action::Word(command) = action {
+            return self.run_tool(command, cx);
+        }
         let document: &mut NativeDocument = &mut self.document;
         let done = match action {
             Action::Undo => return self.step_history(true, cx),
@@ -2998,7 +3100,14 @@ impl DocumentView {
                 WordFormatting::set_paragraph_borders(document, borders)
             }
             Action::Style(style_id) => {
-                let done = WordFormatting::set_paragraph_style(document, style_id.as_deref());
+                // A character or linked style from the gallery goes on as
+                // Word puts it (word_styles).
+                let done = match style_id.as_deref() {
+                    Some(id) => {
+                        jade_office_model::word::styles::WordStyles::apply_style(document, id)
+                    }
+                    None => WordFormatting::set_paragraph_style(document, None),
+                };
                 self.ribbon.read_styles(&self.document);
                 done
             }
@@ -3013,12 +3122,16 @@ impl DocumentView {
             Action::Tables(action) => return self.table_action(action, cx),
             Action::FontFamilyName(name) => WordFormatting::set_font_family(document, &name),
             Action::Characters(action) => return word_characters::run(self, action, cx),
-            Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
+            Action::References(action) => return word_references::run(self, action, cx),
+            Action::Popup(_) | Action::ClosePopup | Action::Grid(..) | Action::Word(_) => Ok(()),
         };
         match done {
             Ok(()) => {
                 self.dirty = true;
                 self.table_status = None;
+                if formats {
+                    self.auto_update_style();
+                }
                 // A bare caret stays put in its paragraph, but the line it is
                 // on may have moved; a selection hides the caret anyway.
                 if self.document.selection().is_none() {
@@ -3597,6 +3710,8 @@ impl DocumentView {
     /// Re-reads every page. Needed after a re-flow, where a later page's
     /// content may have moved even though the edit was on an earlier one.
     fn rebuild_all_images(&mut self) {
+        // Headings collapsed in the body follow edits that move them.
+        word_references::refresh_collapsed(self);
         self.edits += 1;
         self.dump_page_if_asked();
         let pages = self.document.page_count();
@@ -3719,6 +3834,9 @@ impl DocumentView {
     /// Turns a click into an insertion point.
     fn click_page(&mut self, page_index: usize, event: &MouseDownEvent, cx: &mut Context<Self>) {
         self.log_call(format!("click page {page_index}"));
+        // A click in the pages takes the keyboard back from the pane's
+        // search box.
+        self.references.searching = false;
         let Some(Some(bounds)) = self.page_bounds.borrow().get(page_index).copied() else {
             return;
         };
@@ -4285,8 +4403,19 @@ impl Render for DocumentView {
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
         let dialog = word_characters::overlay(self, window, cx);
-        div()
-            .id("root")
+        let fields_dialog = self.fields_dialog_element(cx);
+        let styles_pane = self.styles_pane(cx);
+        let ruler = self.horizontal_ruler(cx);
+        let tool_dialog = self.tool_dialog_element(cx);
+        let vertical_rulers: Vec<Option<AnyElement>> = (0..self.images.len())
+            .map(|index| self.vertical_ruler(index))
+            .collect();
+        let mut vertical_rulers = vertical_rulers.into_iter();
+        let reference_dialog = word_references::overlay(self, window, cx);
+        let navigation = word_references::navigation_pane(self, cx);
+        let marks = word_references::bookmark_marks(self);
+        word_references::on_actions(div().id("root"), cx)
+            .relative()
             .track_focus(&self.focus)
             // What the shortcuts in `key_bindings` are scoped to, so they fire
             // only while a document has the keyboard.
@@ -4389,6 +4518,27 @@ impl Render for DocumentView {
                     cx,
                 )
             }))
+            .on_action(
+                cx.listener(|view, _: &InsertField, _window, cx| view.open_field_dialog(None, cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &EditField, _window, cx| view.open_edit_field_dialog(cx)),
+            )
+            .on_action(cx.listener(|view, _: &UpdateFields, _window, cx| view.update_fields(cx)))
+            .on_action(cx.listener(|view, _: &ToggleFieldCodes, _window, cx| {
+                view.toggle_all_field_codes(cx)
+            }))
+            .on_action(cx.listener(|view, _: &ToggleFieldCode, _window, cx| {
+                view.toggle_selected_field_codes(cx)
+            }))
+            .on_action(cx.listener(|view, _: &LockFields, _window, cx| view.lock_fields(true, cx)))
+            .on_action(
+                cx.listener(|view, _: &UnlockFields, _window, cx| view.lock_fields(false, cx)),
+            )
+            .on_action(cx.listener(|view, _: &UnlinkFields, _window, cx| view.unlink_fields(cx)))
+            .on_action(cx.listener(|view, _: &DocumentProperties, _window, cx| {
+                view.open_properties_dialog(cx)
+            }))
             .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
                 view.show_inspector = !view.show_inspector;
                 cx.notify();
@@ -4405,6 +4555,8 @@ impl Render for DocumentView {
             // family — the only way to see this without a screen.
             .font_family(UI_FONT_FAMILY)
             .text_color(theme::text())
+            // ---- the navigation pane, while it is open ----------------------
+            .children(navigation)
             // ---- sidebar: the document's pages ----------------------------
             .child(
                 div()
@@ -4443,11 +4595,16 @@ impl Render for DocumentView {
                     .flex()
                     .flex_col()
                     .size_full()
+                    // Narrower than the ribbon's groups when the window is:
+                    // they scroll, rather than pushing the panes beside the
+                    // pages out of the window.
+                    .min_w_0()
                     .child(self.ribbon(window, cx))
                     .children(self.dialog_element(cx))
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
+                    .children(ruler)
                     .child(
                         div()
                             .id("pages")
@@ -4510,8 +4667,10 @@ impl Render for DocumentView {
                                             .h(px(page_height * zoom)),
                                     )
                                     .children(self.caret_overlay(index))
+                                    .children(word_references::page_marks(&marks, index, zoom, cx))
                                     .children(self.table_overlay(index))
                                     .children(self.story_label(index))
+                                    .children(vertical_rulers.next().flatten())
                                     .children(self.object_outline(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
@@ -4558,12 +4717,16 @@ impl Render for DocumentView {
             )
             // ---- the comments pane, beside the pages while it is open ----
             .children(comments_pane)
+            // ---- the styles pane, beside the pages while it is open ----
+            .children(styles_pane)
             // ---- a table dialog, over everything while it is open ----
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             // ---- a ページ設定 dialog, over everything while it is open ----
             .children(self.page_dialog_element(cx))
             // ---- the open dialog, over everything ----
             .children(dialog)
+            .children(tool_dialog)
+            .children(reference_dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4712,6 +4875,8 @@ impl Render for DocumentView {
                         ),
                 )
             })
+            // The Field, prompt and Properties dialogs, over everything.
+            .children(fields_dialog)
     }
 }
 
@@ -4760,6 +4925,8 @@ fn document_view(
     word_characters::start_field_clock(&mut document);
     // Placed before the window opens so the caret is visible from the first
     // frame rather than only after the first click.
+    // DATE and TIME show today, as Word updates them on opening.
+    word_fields::set_clock_on_open(&mut document);
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
     let images: Vec<_> = (0..document.page_count())
         .filter_map(|index| page_image(&document, index))
@@ -4797,6 +4964,8 @@ fn document_view(
         show_comments: false,
         tables: word_table::TableUi::default(),
         characters: word_characters::Characters::default(),
+        tools: word_tools::WordTools::default(),
+        references: word_references::References::default(),
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,
@@ -4811,6 +4980,7 @@ fn document_view(
         current_page: 0,
         show_inspector: false,
         dirty: false,
+        fields: word_fields::FieldsUi::default(),
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
     }
@@ -5585,6 +5755,25 @@ mod tests {
     fn tab_goes_from_cell_to_cell(cx: &mut gpui::TestAppContext) {
         use super::ribbon::Action;
         let (view, cx) = open_contract(cx);
+        // A paragraph that is not a list item: at an item's start Tab takes
+        // the item a level down instead, as in Word (word_tools).
+        view.update(cx, |view, _| {
+            let plain = (view.insert_at.0..view.document.paragraph_count())
+                .find(|&index| {
+                    view.document
+                        .word_document()
+                        .paragraph(index)
+                        .and_then(|paragraph| paragraph.properties.as_ref())
+                        .and_then(|props| props.numbering.as_ref())
+                        .is_none()
+                        && view
+                            .document
+                            .paragraph_text(index)
+                            .is_some_and(|text| text.chars().count() > 3)
+                })
+                .unwrap();
+            view.insert_at = (plain, 0);
+        });
         let paragraph = type_at_start(&view, cx, "");
         cx.simulate_keystrokes("tab");
         view.read_with(cx, |view, _| {

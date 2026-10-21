@@ -46,7 +46,10 @@ pub fn review(tracking: bool, showing: bool, cx: &mut Context<DocView>) -> Vec<A
                     review(ReviewAction::ToggleComments),
                     cx,
                 ),
-            ])],
+            ]
+            .into_iter()
+            .chain(crate::view::word_references::comment_steps(cx))
+            .collect())],
         ),
         group(
             i18n::text("doc.group.tracking"),

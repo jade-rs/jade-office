@@ -1357,3 +1357,643 @@ chars.enclose.title	囲い文字
 chars.enclose.text	文字
 chars.enclose.enclosure	囲い文字の種類
 chars.font.complex_style	複合フォントのスタイル
+# Fields: 挿入 › フィールド, F9 and its kin, ファイル › プロパティ
+menu.file.properties	プロパティ…
+menu.insert.field	フィールド…
+menu.insert.edit_field	フィールドの編集…
+menu.insert.update_fields	フィールドの更新
+menu.insert.toggle_field_codes	フィールド コードの表示/非表示
+menu.insert.toggle_field_code	選択したフィールドのコードの表示/非表示
+menu.insert.lock_fields	フィールドのロック
+menu.insert.unlock_fields	フィールドのロック解除
+menu.insert.unlink_fields	フィールドのリンク解除
+field.ok	OK
+field.cancel	キャンセル
+field.status.none	選択範囲にフィールドがありません。
+field.group	テキスト
+field.insert	フィールド
+field.insert_title	フィールドを挿入
+field.date_time	日付と時刻
+field.date_time_title	自動的に更新される日付と時刻を挿入
+field.update	フィールドの更新
+field.update_title	選択範囲のフィールドを更新 (F9)。すべて選択するとヘッダーやフッターも更新
+field.properties	プロパティ
+field.properties_title	文書のプロパティ
+field.codes	フィールド コード
+field.codes_title	フィールド コードの表示/非表示 (⌥F9)
+field.dialog.title	フィールド
+field.dialog.edit_title	フィールドの編集
+field.dialog.categories	分類
+field.dialog.names	フィールドの名前
+field.dialog.options	オプション
+field.dialog.code	フィールド コード
+field.dialog.preserve	更新時に書式を維持する
+field.switch.on	オン
+field.switch.add	追加
+field.prompt.ask	入力 (ASK)
+field.prompt.fillin	入力 (FILLIN)
+field.prompt.progress	{index} / {count}
+field.category.all	(すべて)
+field.category.date_time	日付と時刻
+field.category.automation	文書の自動化
+field.category.information	文書情報
+field.category.formulas	式と計算
+field.category.index	索引と目次
+field.category.links	リンクと参照
+field.category.mail_merge	差し込み印刷
+field.category.numbering	番号
+field.category.user	ユーザー情報
+field.properties.title_dialog	文書のプロパティ
+field.properties.summary	ファイルの概要
+field.properties.statistics	ファイルの情報
+field.properties.custom	ユーザー設定
+field.properties.user	ユーザー情報
+field.properties.title	タイトル
+field.properties.subject	サブタイトル
+field.properties.author	作成者
+field.properties.manager	管理者
+field.properties.company	会社名
+field.properties.category	分類
+field.properties.keywords	キーワード
+field.properties.comments	コメント
+field.properties.hyperlink_base	ハイパーリンクの基点
+field.properties.created	作成日時
+field.properties.modified	更新日時
+field.properties.printed	印刷日時
+field.properties.last_saved_by	最終更新者
+field.properties.revision	改訂番号
+field.properties.total_time	編集時間の合計 (分)
+field.properties.pages	ページ数
+field.properties.words	単語数
+field.properties.characters	文字数
+field.properties.custom_name	名前
+field.properties.custom_kind	種類
+field.properties.custom_value	値
+field.properties.kind_text	テキスト
+field.properties.kind_number	数値
+field.properties.kind_date	日付
+field.properties.kind_yes_no	はい/いいえ
+field.properties.add	追加
+field.properties.remove	削除
+field.properties.name_missing	名前を入力してください。
+field.properties.not_a_number	値が数値ではありません。
+field.properties.not_a_date	値が日付ではありません (例: 2026/10/21)。
+field.properties.user_name	名前
+field.properties.user_initials	イニシャル
+field.properties.user_address	住所
+field.operand.address	アドレス
+field.operand.autotext	定型句
+field.operand.bookmark	ブックマーク
+field.operand.character_code	文字コード
+field.operand.comparison	比較式
+field.operand.condition	条件
+field.operand.destination	ジャンプ先
+field.operand.display_text	表示文字列
+field.operand.equation	数式
+field.operand.file	ファイル名
+field.operand.formula	式
+field.operand.info_type	情報の種類
+field.operand.list_name	リスト名
+field.operand.macro	マクロ名
+field.operand.merge_field	差し込みフィールド
+field.operand.new_value	新しい値
+field.operand.prompt	メッセージ
+field.operand.property	プロパティ
+field.operand.sequence	識別子
+field.operand.source_tag	資料文献のタグ
+field.operand.style	スタイル名
+field.operand.text	文字列
+field.operand.variable	変数名
+field.switch.advance_down	下へ移動 (pt)
+field.switch.advance_up	上へ移動 (pt)
+field.switch.advance_left	左へ移動 (pt)
+field.switch.advance_right	右へ移動 (pt)
+field.switch.advance_x	段の左端から (pt)
+field.switch.advance_y	ページの上端から (pt)
+field.switch.bold	ページ番号を太字
+field.switch.category	分類
+field.switch.category_heading	分類の見出しを付ける
+field.switch.citation_page	ページ
+field.switch.columns	段数
+field.switch.cross_reference	相互参照の文字列
+field.switch.date_picture	日付と時刻の書式
+field.switch.default_response	既定の入力
+field.switch.entry_separator	項目とページの区切り
+field.switch.entry_type	項目の種類
+field.switch.font	フォント
+field.switch.format	書式
+field.switch.from_bottom	ページの下から検索
+field.switch.full_number	完全な段落番号
+field.switch.full_path	フル パス
+field.switch.hide	結果を表示しない
+field.switch.hide_web_pages	Web レイアウトでページ番号を隠す
+field.switch.hyperlink	ハイパーリンクにする
+field.switch.hyperlinks	項目をハイパーリンクにする
+field.switch.italic	ページ番号を斜体
+field.switch.keep_line_height	行の高さを変えない
+field.switch.kilobytes	KB 単位
+field.switch.language	言語 ID
+field.switch.level	レベル
+field.switch.location	文書内の位置
+field.switch.long_citation	長い引用
+field.switch.megabytes	MB 単位
+field.switch.new_window	新しいウィンドウで開く
+field.switch.next	次の番号
+field.switch.no_author	著者を表示しない
+field.switch.no_page	ページ番号を付けない
+field.switch.no_page_numbers	ページ番号を付けないレベル
+field.switch.no_period	末尾のピリオドを付けない
+field.switch.no_store	画像を文書に保存しない
+field.switch.no_update_inside	挿入した文書のフィールドを更新しない
+field.switch.no_year	年を表示しない
+field.switch.note_format	脚注の書式
+field.switch.number_picture	数値の書式
+field.switch.outline_levels	アウトライン レベル
+field.switch.outline_paragraphs	段落のアウトライン レベルを使う
+field.switch.page_range	ページ範囲のブックマーク
+field.switch.page_separator	ページ番号の区切り
+field.switch.paragraph_number	段落番号
+field.switch.passim	5 ページ以上は「passim」
+field.switch.prefix	前に付ける文字列
+field.switch.prompt_once	一度だけ確認する
+field.switch.reading	読み
+field.switch.relative	上/下を表示
+field.switch.relative_number	相対的な段落番号
+field.switch.repeat	直前の番号
+field.switch.reset_at_heading	見出しで振り直す
+field.switch.reset_to	開始番号
+field.switch.separator	区切り文字
+field.switch.sequence	図表番号の識別子
+field.switch.shift_jis	Shift_JIS
+field.switch.short_citation	短い引用
+field.switch.size	サイズ (pt)
+field.switch.start_at	開始番号
+field.switch.style	スタイル
+field.switch.styles	スタイル
+field.switch.suffix	後に付ける文字列
+field.switch.target	表示先
+field.switch.text_after	後に付ける文字列
+field.switch.text_before	前に付ける文字列
+field.switch.tip	ヒント
+field.switch.tooltip	ヒント
+field.switch.unicode	Unicode
+field.describe.=	式を計算した結果
+field.describe.ADVANCE	後に続く文字列を指定した位置に移動
+field.describe.ASK	ユーザーに入力を求め、ブックマークに割り当てる
+field.describe.AUTHOR	文書のプロパティの作成者
+field.describe.AUTONUM	段落に自動で番号を付ける
+field.describe.AUTONUMLGL	段落に法律文書形式の番号を付ける
+field.describe.AUTONUMOUT	段落にアウトライン形式の番号を付ける
+field.describe.AUTOTEXT	定型句を挿入
+field.describe.AUTOTEXTLIST	定型句の一覧から選ぶ文字列
+field.describe.BIBLIOGRAPHY	文書の資料文献から作る文献目録
+field.describe.CITATION	資料文献の引用
+field.describe.COMMENTS	文書のプロパティのコメント
+field.describe.COMPARE	2 つの値を比べ、真なら 1、偽なら 0
+field.describe.CREATEDATE	文書を作成した日時
+field.describe.DATE	今日の日付 (開くときと更新時に更新)
+field.describe.DOCPROPERTY	文書のプロパティの値
+field.describe.DOCVARIABLE	文書変数の値
+field.describe.EQ	数式を描く
+field.describe.FILENAME	文書のファイル名
+field.describe.FILESIZE	文書のファイル サイズ
+field.describe.FILLIN	ユーザーに入力を求め、その文字列を表示
+field.describe.GOTOBUTTON	クリックするとジャンプするボタン
+field.describe.HYPERLINK	別の文書や場所へのリンク
+field.describe.IF	条件によって 2 つの文字列のどちらかを表示
+field.describe.INCLUDEPICTURE	ファイルの画像を挿入
+field.describe.INCLUDETEXT	ファイルの文字列を挿入
+field.describe.INDEX	索引を作る
+field.describe.INFO	文書の情報
+field.describe.KEYWORDS	文書のプロパティのキーワード
+field.describe.LASTSAVEDBY	最後に保存した人の名前
+field.describe.LISTNUM	段落内の任意の位置に番号を挿入
+field.describe.MACROBUTTON	クリックするとマクロを実行するボタン
+field.describe.MERGEFIELD	差し込み印刷のフィールド
+field.describe.NOTEREF	脚注・文末脚注の番号への参照
+field.describe.NUMCHARS	文書の文字数
+field.describe.NUMPAGES	文書のページ数
+field.describe.NUMWORDS	文書の単語数
+field.describe.PAGE	現在のページ番号
+field.describe.PAGEREF	ブックマークのあるページの番号
+field.describe.PRINTDATE	最後に印刷した日時
+field.describe.QUOTE	指定した文字列
+field.describe.REF	ブックマークの文字列
+field.describe.REVNUM	文書を保存した回数
+field.describe.SAVEDATE	最後に保存した日時
+field.describe.SECTION	現在のセクション番号
+field.describe.SECTIONPAGES	セクションのページ数
+field.describe.SEQ	図表番号などの連番
+field.describe.SET	ブックマークに文字列を割り当てる
+field.describe.STYLEREF	指定したスタイルの段落の文字列
+field.describe.SUBJECT	文書のプロパティのサブタイトル
+field.describe.SYMBOL	記号を挿入
+field.describe.TA	引用文献一覧の項目
+field.describe.TC	目次の項目
+field.describe.TEMPLATE	文書のテンプレート名
+field.describe.TIME	現在の時刻 (開くときと更新時に更新)
+field.describe.TITLE	文書のプロパティのタイトル
+field.describe.TOA	引用文献一覧を作る
+field.describe.TOC	目次を作る
+field.describe.USERADDRESS	ユーザー情報の住所
+field.describe.USERINITIALS	ユーザー情報のイニシャル
+field.describe.USERNAME	ユーザー情報の名前
+field.describe.XE	索引の項目
+# Word: paragraph options, lists, styles, design, rulers (word_*.rs)
+word.align.distribute	均等割り付け
+word.borders.between	段落間
+word.borders.bottom	下罫線
+word.borders.box	囲む
+word.borders.color	色
+word.borders.kind	種類
+word.borders.left	左罫線
+word.borders.menu	線種とページ罫線と網かけの設定...
+word.borders.none	罫線なし
+word.borders.right	右罫線
+word.borders.section	罫線
+word.borders.space	文字列との間隔
+word.borders.style	線種
+word.borders.title	線種とページ罫線と網かけの設定
+word.borders.top	上罫線
+word.borders.width	線の太さ
+word.define_list.alignment	番号の配置
+word.define_list.format	番号の種類
+word.define_list.format_section	番号書式
+word.define_list.legal	正規形式の番号を使用する
+word.define_list.level	変更するレベル
+word.define_list.link	レベルと対応付ける見出しスタイル
+word.define_list.menu	新しいアウトラインの定義...
+word.define_list.position_section	位置
+word.define_list.start	開始番号
+word.define_list.text	番号書式 (%1 が番号)
+word.define_list.title	新しいアウトラインの定義
+word.design.colors	配色
+word.design.effects	効果
+word.design.fonts	フォント
+word.design.set_default	既定に設定
+word.design.spacing	段落の間隔
+word.design.style_sets	スタイル セット
+word.design.template	テンプレートとアドイン...
+word.design.themes	テーマ
+word.drop_cap.dropped	本文内に表示
+word.drop_cap.lines	ドロップする行数
+word.drop_cap.margin	余白に表示
+word.drop_cap.none	なし
+word.drop_cap.options	ドロップキャップのオプション...
+word.drop_cap.position	位置
+word.drop_cap.title	ドロップキャップ
+word.error.length	長さを数値で入力してください (例: 12.7 mm、2 字)。
+word.error.lines	行数は 1 から 10 で指定してください。
+word.error.name	名前を入力してください。
+word.error.not_in_list	カーソルの段落はリストではありません。
+word.error.value	数値を入力してください。
+word.group.defaults	既定
+word.group.document_format	ドキュメントの書式設定
+word.group.lists	リスト
+word.group.style_tools	スタイルの設定
+word.group.text	テキスト
+word.line.dash_small	破線 (細かい)
+word.line.dashed	破線
+word.line.dot_dash	一点鎖線
+word.line.dotted	点線
+word.line.double	二重線
+word.line.single	実線
+word.line.thick_thin	太線 - 細線
+word.line.wave	波線
+word.list.adjust_indent	リストのインデントの調整...
+word.list.bullet_library	箇条書き
+word.list.change_level	リストのレベルの変更
+word.list.continue	前のリストから継続
+word.list.level	レベル {n}  {sample}
+word.list.list_styles	リスト スタイル
+word.list.multilevel_library	アウトライン
+word.list.number_library	段落番号
+word.list.number_position	番号の位置
+word.list.preset.articles	第 I 条 / 第 1.01 節 / (a) (見出しスタイル)
+word.list.preset.bullets	● / ○ / ■
+word.list.preset.chapters	第1章 / 第1節 / 第1項 (見出しスタイル)
+word.list.preset.headings	1 見出し 1 / 1.1 見出し 2 / 1.1.1 見出し 3
+word.list.preset.outline	1. / 1.1. / 1.1.1.
+word.list.preset.paren	1) / a) / i)
+word.list.restart	新しいリストを開始
+word.list.set_value	番号の設定...
+word.list.start_new	新しいリストを開始する
+word.list.suffix	番号に続く空白の扱い
+word.list.suffix_nothing	なし
+word.list.suffix_space	スペース
+word.list.suffix_tab	タブ文字
+word.list.text_indent	インデント
+word.list.value	開始番号
+word.list_indent.title	リストのインデントの調整
+word.list_start.title	番号の設定
+word.list_style.menu	新しいリスト スタイルの定義...
+word.list_style.name	名前
+word.list_style.title	新しいリスト スタイルの定義
+word.paragraph.dialogs	設定
+word.paragraph.settings	段落の詳細設定
+word.quick_part.autotext	定型句
+word.quick_part.gallery	クイック パーツ
+word.quick_part.gallery_label	ギャラリー
+word.quick_part.menu	クイック パーツ
+word.quick_part.name	名前
+word.quick_part.save	選択範囲をギャラリーに保存...
+word.quick_part.title	新しい文書パーツの作成
+word.ruler.group	ルーラー
+word.ruler.show	ルーラー
+word.ruler.tab_kind	クリックで設定するタブの種類
+word.shading.clear	なし
+word.shading.diagonal	斜線
+word.shading.fill	背景の色
+word.shading.horizontal	横線
+word.shading.pattern	網かけの種類
+word.shading.section	網かけ
+word.shading.solid	塗りつぶし (100%)
+word.shading.vertical	縦線
+word.style.after	pt 後
+word.style.alignment	配置
+word.style.auto_update	自動的に更新する
+word.style.based_on	基準にするスタイル
+word.style.before	pt 前
+word.style.first_line	pt 1 行目
+word.style.format	書式
+word.style.indent	インデント
+word.style.kind	種類
+word.style.kind_character	文字
+word.style.kind_linked	リンク (段落と文字)
+word.style.kind_paragraph	段落
+word.style.left	pt 左
+word.style.line_spacing	行間
+word.style.modify_menu	スタイルの変更...
+word.style.modify_title	スタイルの変更
+word.style.name	名前
+word.style.new_menu	スタイルの作成...
+word.style.new_name	スタイル{n}
+word.style.new_short	新規
+word.style.new_title	書式から新しいスタイルを作成
+word.style.next	次の段落のスタイル
+word.style.no_style	(スタイルなし)
+word.style.pane	スタイル ウィンドウ
+word.style.properties	プロパティ
+word.style.quick	スタイル ギャラリーに追加
+word.style.sample	サンプル テキスト Sample Text
+word.style.spacing	段落の間隔
+word.style.tools	スタイル
+word.style.update_menu	選択個所と一致するように更新
+word.switch.contextual	同じスタイルの場合は段落間にスペースを追加しない
+word.switch.hyphenation	段落の自動ハイフネーションを行わない
+word.switch.line_numbers	行番号を表示しない
+word.tab.alignment	配置
+word.tab.bar	縦線
+word.tab.center	中央揃え
+word.tab.clear	クリア
+word.tab.clear_all	すべてクリア
+word.tab.decimal	小数点揃え
+word.tab.default	既定のタブ間隔
+word.tab.leader	リーダー
+word.tab.leader_none	なし
+word.tab.left	左揃え
+word.tab.position	タブ位置
+word.tab.right	右揃え
+word.tab.set	設定
+word.tabs.menu	タブとリーダー...
+word.tabs.title	タブとリーダー
+word.unit.char	字
+word.unit.cm	センチメートル (cm)
+word.unit.inch	インチ (")
+word.unit.mm	ミリメートル (mm)
+word.unit.pt	ポイント (pt)
+word.list.picture_bullet	図...
+bibliography.insert	文献目録の挿入
+bibliography.references	参考文献
+bibliography.title	文献目録
+bibliography.works_cited	引用文献
+bookmark.add	追加
+bookmark.delete	削除
+bookmark.go	ジャンプ
+bookmark.hidden	自動作成されたブックマークを表示する
+bookmark.menu	ブックマーク…
+bookmark.name	ブックマーク名
+bookmark.show	ブックマーク表示
+bookmark.sort	並べ替え
+bookmark.sort.location	位置
+bookmark.sort.name	名前
+bookmark.title	ブックマーク
+caption.above	選択した項目の上
+caption.below	選択した項目の下
+caption.caption	図表番号
+caption.chapter	章番号を含める
+caption.chapter_style	章タイトルのスタイル
+caption.exclude_label	ラベルを表示しない
+caption.format	書式
+caption.heading	見出し
+caption.insert	図表番号の挿入
+caption.label	ラベル
+caption.label_name	ラベル名
+caption.new_label	ラベル名…
+caption.new_label.title	ラベル名
+caption.numbering	番号付け
+caption.position	位置
+caption.sep.colon	コロン
+caption.sep.em_dash	エム ダッシュ
+caption.sep.en_dash	エン ダッシュ
+caption.sep.hyphen	ハイフン
+caption.sep.period	ピリオド
+caption.separator	区切り文字
+caption.title	図表番号
+captions.group	図表
+citations.group	引用文献と文献目録
+citations.insert	引用文献の挿入
+citations.style	スタイル
+comments.next	次のコメント
+comments.none	ほかにコメントはありません
+comments.previous	前のコメント
+goto.bookmark	ブックマーク
+goto.bookmark_name	ブックマーク名
+goto.comment	コメント
+goto.endnote	文末脚注
+goto.equation	数式
+goto.field	フィールド
+goto.footnote	脚注
+goto.go	ジャンプ
+goto.graphic	図
+goto.heading	見出し
+goto.hint	「+」「-」を付けると現在位置からの相対位置になります。番号を空欄にすると次の項目へ移動します。
+goto.line	行
+goto.menu	ジャンプ…
+goto.number	番号
+goto.page	ページ
+goto.section	セクション
+goto.table	表
+goto.target	移動先
+goto.title	ジャンプ
+index.bold	太字
+index.bookmark	ブックマークを選択
+index.columns	段数
+index.current_page	現在のページ
+index.english	英語
+index.group	索引
+index.headings	見出しを付ける
+index.indented	インデント
+index.insert	索引の挿入
+index.italic	斜体
+index.japanese	日本語
+index.language	言語
+index.layout	種類
+index.main	登録 (メイン)
+index.mark	登録
+index.mark.menu	索引登録…
+index.mark.title	索引登録
+index.mark_all	すべて登録
+index.marked	{n} か所を登録しました
+index.options	オプション
+index.page_format	ページ番号の書式
+index.page_range	ページ範囲
+index.reading	読み
+index.run_in	追い込み
+index.see	相互参照
+index.sub	登録 (サブ)
+index.title	索引
+index.update	索引の更新
+links.group	リンク
+nav.collapse_all	すべての見出しを折りたたむ
+nav.demote	レベル下げ
+nav.expand_all	すべての見出しを展開
+nav.headings	見出し
+nav.menu	ナビゲーション ウィンドウ
+nav.move_down	下へ移動
+nav.move_up	上へ移動
+nav.no_headings	この文書には見出しがありません。見出しスタイルを設定すると、ここに表示されます。
+nav.page	{n} ページ
+nav.pages	ページ
+nav.promote	レベル上げ
+nav.result_count	{n} 件の結果
+nav.results	結果
+nav.search	文書を検索
+nav.title	ナビゲーション
+notes.apply	適用
+notes.bad_start	開始番号には数字を入力してください
+notes.beneath_text	テキストの直後
+notes.convert	変換…
+notes.convert.swap	脚注と文末脚注を入れ替える
+notes.convert.title	注の変換
+notes.convert.to_endnotes	すべての脚注を文末脚注に変更する
+notes.convert.to_footnotes	すべての文末脚注を脚注に変更する
+notes.document_end	文書の最後
+notes.endnotes	文末脚注
+notes.footnotes	脚注
+notes.format	番号書式
+notes.insert	挿入
+notes.kind	場所
+notes.next_endnote	次の文末脚注
+notes.next_footnote	次の脚注
+notes.no_more_endnotes	ほかに文末脚注はありません
+notes.no_more_footnotes	ほかに脚注はありません
+notes.none	この文書には脚注も文末脚注もありません
+notes.page_bottom	ページの最後
+notes.place	位置
+notes.previous_endnote	前の文末脚注
+notes.previous_footnote	前の脚注
+notes.restart	番号の付け方
+notes.restart.continuous	連続
+notes.restart.page	ページごとに振り直し
+notes.restart.section	セクションごとに振り直し
+notes.scope	変更の対象
+notes.scope.section	このセクション
+notes.scope.whole	文書全体
+notes.section_end	セクションの最後
+notes.show	注の表示
+notes.show_title	参照マークと注の本文の間を移動します
+notes.start	開始番号
+notes.title	脚注と文末脚注
+sources.author	著者
+sources.cited_note	✓ 引用されている資料文献
+sources.close	閉じる
+sources.copy	コピー →
+sources.copy_back	← コピー
+sources.current	現在のリスト
+sources.delete	削除
+sources.edit	編集…
+sources.edit.title	資料文献の編集
+sources.manage	資料文献の管理
+sources.master	マスター リスト
+sources.need_author_title	著者とタイトルを入力してください
+sources.new	新しい資料文献の追加…
+sources.new.title	資料文献の作成
+sources.new_button	新規作成…
+sources.preview	プレビュー
+sources.publisher	発行元
+sources.tag	タグ名
+sources.title	資料文献の管理
+sources.title_field	タイトル
+sources.type	資料文献の種類
+sources.type.book	書籍
+sources.type.conference	会議録
+sources.type.journal	雑誌の記事
+sources.type.periodical	定期刊行物の記事
+sources.type.report	レポート
+sources.type.web	Web サイト
+sources.url	URL
+sources.year	年
+toa.all	(すべて)
+toa.category	分類
+toa.group	引用文献一覧
+toa.insert	引用文献一覧の挿入
+toa.long	引用文
+toa.mark	登録
+toa.mark.menu	引用文の登録…
+toa.mark.title	引用文の登録
+toa.none	更新する引用文献一覧がありません
+toa.passim	「前掲」を使用する
+toa.short	短い引用文
+toa.title	引用文献一覧
+toa.update	引用文献一覧の更新
+toc.automatic1	自動作成の目次 1
+toc.automatic2	自動作成の目次 2
+toc.custom	ユーザー設定の目次…
+toc.figures.include_label	ラベルと番号を含める
+toc.figures.insert	図表目次の挿入
+toc.figures.label	図表番号のラベル
+toc.figures.none	更新する図表目次がありません
+toc.figures.title	図表目次
+toc.figures.update	図表目次の更新
+toc.hyperlinks	ページ番号の代わりにハイパーリンクを使う
+toc.leader	タブ リーダー
+toc.levels	アウトライン レベル
+toc.manual	手動作成目次
+toc.none	更新する目次がありません
+toc.options	オプション…
+toc.options.title	目次オプション
+toc.outline_levels	アウトライン レベル
+toc.page_numbers	ページ番号を表示する
+toc.preview	印刷イメージ
+toc.right_align	ページ番号を右揃えにする
+toc.styles	スタイル と 目次レベル
+toc.title	目次
+toc.update.all	目次をすべて更新する
+toc.update.pages	ページ番号だけを更新する
+toc.update.prompt	目次の更新方法を選択してください:
+toc.update.title	目次の更新
+xref.hyperlink	ハイパーリンクとして挿入する
+xref.insert	挿入
+xref.pick	参照先を選んでください
+xref.targets	参照先
+xref.text	相互参照の文字列
+xref.text.bookmark	ブックマークの文字列
+xref.text.caption	図表番号全体
+xref.text.endnote	文末脚注番号
+xref.text.footnote	脚注番号
+xref.text.heading	見出し文字列
+xref.text.label_number	ラベルと番号のみ
+xref.text.number	番号
+xref.text.page	ページ番号
+xref.title	相互参照
+xref.type	参照する項目
+xref.type.bookmark	ブックマーク
+xref.type.endnote	文末脚注
+xref.type.footnote	脚注
+xref.type.heading	見出し
+notes.separators	境界線
+notes.separator	境界線を表示する
+notes.continuation_separator	継続境界線を表示する
+nav.collapse	折りたたむ
+nav.expand	展開
