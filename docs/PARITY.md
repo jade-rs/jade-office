@@ -55,12 +55,28 @@ PowerPoint 16), not by eye:
 
 ## Done in this push
 
-- Files are drawn in their own fonts: the faces Office ships and the
-  system's, found by any of their names (游明朝, ＭＳ Ｐゴシック, Calibri,
-  Helvetica Neue…), where every file used to be drawn in Noto Sans JP.
-  Italic is drawn (it was ignored natively), bold and italic are synthesised
-  for families without them, and a Japanese character after a Latin family
-  keeps the run's weight.
-- Saving: a part added without a content type gets one, and a sheet left
-  with rows out of order by another writer is put in order — both made Office
-  repair the file.
+Word moved from 70 to 165 of its 506 items being full.
+
+- **Fonts**: files are drawn in their own fonts — the faces Office ships and
+  the system's, found by any of their names (游明朝, ＭＳ Ｐゴシック, Calibri,
+  Helvetica Neue…) — where every file used to be drawn in Noto Sans JP.
+  Italic is drawn, bold and italic are synthesised for families without
+  them, and a Japanese character after a Latin family keeps the run's weight.
+- **Saving**: a part added without a content type gets one, and a sheet left
+  with rows out of order by another writer is put in order — both made
+  Office repair the file.
+- **Word editing**: Shift+Enter, hyperlinks (⌘K, ⌘-click), footnotes and
+  endnotes, TOC update, word count, the Paragraph dialog, Format Painter;
+  the Font dialog, underline styles, character spacing, effects, ruby,
+  emphasis marks, enclosed and combined characters, 縦中横, 体裁 options,
+  symbols, date and time fields, paste options, change case; the table
+  tabs and Table Properties (draw, convert, sort, formulas, AutoFit, borders,
+  floating tables); Page Setup per section (文字数と行数, margins, paper,
+  columns, line numbers, borders, colour, cover pages) and headers and
+  footers edited in place with first-page, odd/even and linked variants.
+- **Excel drawing**: formula conditional formats and icon sets, chart labels,
+  axes, trendlines, error bars, combos, radar and bubble, table styles,
+  shapes, rich text, sparklines, tab colours.
+- **PowerPoint drawing**: shadows, glow, reflection, soft edges, chart labels
+  and combos, all built-in table styles, picture bullets, arched WordArt;
+  autofit drawn at its recorded scale, as PowerPoint opens a deck.
