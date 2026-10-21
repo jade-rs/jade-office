@@ -93,3 +93,5 @@ Per-area detail behind the Word numbers above, in `docs/word/`:
   legacy layout options and Word for Mac vs Windows, with jade's handling.
 - [fields.md](word/fields.md) — every field type and switch: parsed,
   evaluated, insertable.
+- [japanese-typesetting.md](word/japanese-typesetting.md) — each Japanese
+  typesetting option against its element, JIS X 4051 rule, code and tests.
