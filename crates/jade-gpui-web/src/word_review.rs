@@ -68,6 +68,8 @@ pub enum ReviewAction {
     Accessibility,
     /// 代替テキスト… for the picture last pressed on.
     AltText,
+    /// 変更履歴ウィンドウ.
+    RevisionsPane,
 }
 
 /// What the tab shows as current.
@@ -75,6 +77,7 @@ pub struct ReviewShown {
     pub tracking: bool,
     pub comments: bool,
     pub accessibility: bool,
+    pub revisions_pane: bool,
     pub markup: MarkupOptions,
     pub reviewers: Vec<String>,
 }
@@ -348,6 +351,14 @@ pub fn review(
                         i18n::text("review.user.title"),
                         false,
                         act(ReviewAction::UserInfo),
+                        cx,
+                    ),
+                    text_button(
+                        "review-pane",
+                        i18n::text("review.pane"),
+                        i18n::text("review.pane_title"),
+                        shown.revisions_pane,
+                        act(ReviewAction::RevisionsPane),
                         cx,
                     ),
                 ]),

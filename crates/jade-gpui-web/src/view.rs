@@ -397,6 +397,8 @@ enum Document {
         markup: Box<jade_web::word::markup::MarkupOptions>,
         /// Whether the アクセシビリティ pane is open beside the pages.
         accessibility: bool,
+        /// Whether the 変更履歴ウィンドウ is open beside the pages.
+        revisions_pane: bool,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
@@ -551,6 +553,7 @@ impl DocView {
                     show_comments: false,
                     markup: Box::new(word_review::markup_as_opened(&opened)),
                     accessibility: false,
+                    revisions_pane: false,
                     object: None,
                     tables: Box::default(),
                     pages: (0..opened.page_count())
@@ -1736,6 +1739,7 @@ impl DocView {
             show_comments,
             markup,
             accessibility,
+            revisions_pane,
             object,
             ..
         } = &mut self.document
@@ -1777,6 +1781,7 @@ impl DocView {
                         tracking: document.is_tracking_changes(),
                         comments: *show_comments,
                         accessibility: *accessibility,
+                        revisions_pane: *revisions_pane,
                         markup: (**markup).clone(),
                         reviewers: document.reviewers(),
                     }
@@ -1858,6 +1863,7 @@ impl DocView {
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
         let accessibility_pane = self.accessibility_pane(cx);
+        let revisions_pane = self.revisions_pane(cx);
         let find_bar = self.find_bar_element(cx);
         let table_cursor = self.table_cursor();
         let table_dialog = self.table_dialog_element(cx);
@@ -2165,6 +2171,7 @@ impl DocView {
             )
             .children(comments_pane)
             .children(accessibility_pane)
+            .children(revisions_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
     }

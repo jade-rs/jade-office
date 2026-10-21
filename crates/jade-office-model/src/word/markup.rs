@@ -194,3 +194,101 @@ pub trait WordMarkup: WordSession + WordMarkupDisplay {
 }
 
 impl<T: WordSession + WordMarkupDisplay + ?Sized> WordMarkup for T {}
+
+/// What a formatting change changed, as the 変更履歴ウィンドウ and Word's
+/// balloons name it: i18n keys of each property that differs.
+pub fn formatting_changed(
+    before: &jade_docx_editor::document::RunProperties,
+    after: &jade_docx_editor::document::RunProperties,
+) -> Vec<&'static str> {
+    let on = |value: Option<bool>| value.unwrap_or(false);
+    let mut changed = Vec::new();
+    if on(before.bold) != on(after.bold) {
+        changed.push(if on(after.bold) {
+            "review.format.bold"
+        } else {
+            "review.format.not_bold"
+        });
+    }
+    if on(before.italic) != on(after.italic) {
+        changed.push(if on(after.italic) {
+            "review.format.italic"
+        } else {
+            "review.format.not_italic"
+        });
+    }
+    if on(before.underline) != on(after.underline) || before.underline_kind != after.underline_kind
+    {
+        changed.push("review.format.underline");
+    }
+    if on(before.strike) != on(after.strike) || on(before.double_strike) != on(after.double_strike)
+    {
+        changed.push("review.format.strike");
+    }
+    if before.font_size != after.font_size {
+        changed.push("review.format.size");
+    }
+    if before.fonts != after.fonts || before.font_family != after.font_family {
+        changed.push("review.format.font");
+    }
+    if before.color != after.color || before.theme_color != after.theme_color {
+        changed.push("review.format.color");
+    }
+    if before.highlight != after.highlight || before.shading != after.shading {
+        changed.push("review.format.highlight");
+    }
+    if before.baseline != after.baseline || before.text_position != after.text_position {
+        changed.push("review.format.position");
+    }
+    if before.style != after.style {
+        changed.push("review.format.style");
+    }
+    if changed.is_empty() && before != after {
+        changed.push("review.format.other");
+    }
+    changed
+}
+
+/// What the 変更履歴ウィンドウ says a formatting change changed: the
+/// properties of the first run in it that carries the change, or the
+/// paragraph's when it is the paragraph's own.
+pub fn describe_formatting<S: WordSession + ?Sized>(
+    session: &S,
+    revision: &Revision,
+) -> Vec<&'static str> {
+    if !revision.is_formatting() {
+        return Vec::new();
+    }
+    let Some(paragraph) = session.word_document().paragraph(revision.paragraph) else {
+        return Vec::new();
+    };
+    let mut offset = 0;
+    for run in &paragraph.runs {
+        let (start, end) = (offset, offset + run.text.len());
+        offset = end;
+        if end <= revision.start || start >= revision.end.max(revision.start + 1) {
+            continue;
+        }
+        if let Some(properties) = run.properties.as_ref() {
+            if let Some(change) = properties.change.as_deref() {
+                let mut after = properties.clone();
+                after.change = None;
+                return formatting_changed(&change.previous, &after);
+            }
+        }
+    }
+    vec!["review.format.paragraph"]
+}
+
+/// The i18n key of a change's kind, as the 変更履歴ウィンドウ names it.
+pub fn kind_key(revision: &Revision) -> &'static str {
+    match revision.kind.as_str() {
+        "inserted" => "review.kind.inserted",
+        "deleted" => "review.kind.deleted",
+        "movedFrom" => "review.kind.moved_from",
+        "movedTo" => "review.kind.moved_to",
+        "formatted" => "review.kind.formatted",
+        kind if kind.to_ascii_lowercase().starts_with("ins") => "review.kind.inserted",
+        _ => "review.kind.deleted",
+    }
+}

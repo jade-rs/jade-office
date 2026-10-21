@@ -1433,3 +1433,25 @@ a11y.fix.decorative	Mark as decorative
 a11y.fix.header	Use first row as header
 a11y.fix.inline	Place in line with text
 alt.keys	⇥ Mark as decorative · ⏎ OK · esc Cancel
+review.format.bold	Bold
+review.format.not_bold	Not Bold
+review.format.italic	Italic
+review.format.not_italic	Not Italic
+review.format.underline	Underline
+review.format.strike	Strikethrough
+review.format.size	Font size
+review.format.font	Font
+review.format.color	Font color
+review.format.highlight	Highlight or shading
+review.format.position	Position
+review.format.style	Character style
+review.format.other	Character formatting
+review.format.paragraph	Paragraph formatting
+review.kind.inserted	Inserted
+review.kind.deleted	Deleted
+review.kind.moved_from	Moved from
+review.kind.moved_to	Moved to
+review.kind.formatted	Formatted
+review.pane	Reviewing Pane
+review.pane_title	Reviewing Pane
+review.pane.count	{n} revisions

@@ -168,6 +168,12 @@ impl DocView {
                 }
                 return cx.notify();
             }
+            ReviewAction::RevisionsPane => {
+                if let Document::Pages { revisions_pane, .. } = &mut self.document {
+                    *revisions_pane = !*revisions_pane;
+                }
+                return cx.notify();
+            }
             ReviewAction::Markup(mode) => options.mode = mode,
             ReviewAction::ShowInsertionsDeletions => {
                 options.insertions_deletions = !options.insertions_deletions
@@ -673,6 +679,133 @@ impl DocView {
                         .child(i18n::text("a11y.title")),
                 )
                 .children(rows)
+                .into_any_element(),
+        )
+    }
+}
+
+impl DocView {
+    /// The 変更履歴ウィンドウ beside the pages, while it is open: every
+    /// change, what it is — a formatting change with what it changed — who
+    /// made it, and 承諾 / 元に戻す for it.
+    pub(super) fn revisions_pane(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        use jade_web::word::markup::{describe_formatting, kind_key};
+        let Document::Pages {
+            document,
+            revisions_pane: true,
+            ..
+        } = &self.document
+        else {
+            return None;
+        };
+        let revisions = document.revisions();
+        let count = revisions.len();
+        let cards: Vec<gpui::AnyElement> = revisions
+            .into_iter()
+            .enumerate()
+            .map(|(index, revision)| {
+                let changed: Vec<&str> = describe_formatting(document.as_ref(), &revision)
+                    .into_iter()
+                    .map(i18n::text)
+                    .collect();
+                let heading = if changed.is_empty() {
+                    i18n::text(kind_key(&revision)).to_string()
+                } else {
+                    format!(
+                        "{}: {}",
+                        i18n::text(kind_key(&revision)),
+                        changed.join(", ")
+                    )
+                };
+                let who = format!(
+                    "{}{}",
+                    revision.author.clone().unwrap_or_default(),
+                    revision
+                        .date
+                        .as_deref()
+                        .and_then(|date| date.get(..10))
+                        .map(|day| format!(" · {day}"))
+                        .unwrap_or_default()
+                );
+                let text: String = revision.text.chars().take(60).collect();
+                let (start, end) = (revision.start(), revision.end());
+                let (accept, reject) = (revision.clone(), revision);
+                div()
+                    .id(("revision-card", index))
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .p_2()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(palette::border())
+                    .bg(palette::canvas())
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                        view.word_move(cx, |document| document.select(start, end));
+                        view.reveal_caret();
+                    }))
+                    .child(div().text_color(palette::text()).child(heading))
+                    .child(div().text_color(palette::dim()).child(who))
+                    .when(!text.trim().is_empty(), |card| {
+                        card.child(div().text_color(palette::faint()).child(text))
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child(
+                                comment_action(("revision-accept", index), "review.accept")
+                                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                                        cx.stop_propagation();
+                                        let revision = accept.clone();
+                                        view.word_edit(cx, move |document| {
+                                            document.decide_revisions(&[revision], true)
+                                        })
+                                    })),
+                            )
+                            .child(
+                                comment_action(("revision-reject", index), "review.reject")
+                                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                                        cx.stop_propagation();
+                                        let revision = reject.clone();
+                                        view.word_edit(cx, move |document| {
+                                            document.decide_revisions(&[revision], false)
+                                        })
+                                    })),
+                            ),
+                    )
+                    .into_any_element()
+            })
+            .collect();
+        Some(
+            div()
+                .id("revisions-pane")
+                .flex()
+                .flex_col()
+                .flex_none()
+                .w(px(280.0))
+                .h_full()
+                .gap_2()
+                .px_3()
+                .pt_3()
+                .overflow_y_scroll()
+                .bg(palette::panel())
+                .border_l_1()
+                .border_color(palette::border())
+                .text_xs()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(palette::text())
+                        .child(i18n::text("review.pane_title")),
+                )
+                .child(
+                    div()
+                        .text_color(palette::dim())
+                        .child(i18n::format("review.pane.count", &[("n", &count)])),
+                )
+                .children(cards)
                 .into_any_element(),
         )
     }

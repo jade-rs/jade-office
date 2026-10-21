@@ -35,6 +35,7 @@ mod word_page_setup;
 mod word_proofing;
 mod word_review;
 mod word_review_tools;
+mod word_revisions;
 mod word_story;
 mod word_table;
 mod workbook;
@@ -4325,6 +4326,7 @@ impl Render for DocumentView {
         word_proofing::start_once(self, cx);
         let proofing_pane = word_proofing::pane(self, cx);
         let accessibility_pane = word_accessibility::pane(self, cx);
+        let revisions_pane = word_revisions::pane(self, cx);
         let proofing_menu = word_proofing::menu(self, cx);
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
@@ -4616,6 +4618,7 @@ impl Render for DocumentView {
             // ---- 文章校正, beside the pages while it is open ----
             .children(proofing_pane)
             .children(accessibility_pane)
+            .children(revisions_pane)
             .children(proofing_menu)
             // ---- a table dialog, over everything while it is open ----
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
