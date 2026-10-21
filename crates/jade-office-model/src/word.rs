@@ -38,6 +38,7 @@ pub mod fields;
 pub mod find;
 pub mod font;
 pub mod hyphenation;
+pub mod ink_tools;
 pub mod insert;
 pub mod links;
 pub mod lists;
@@ -141,6 +142,12 @@ pub trait WordSession {
     /// its x, its top in document coordinates and its height — without
     /// moving the selection.
     fn position_metrics(&self, _at: Position) -> Option<(f64, f64, f64)> {
+        None
+    }
+
+    /// Where the last layout put the floating object in run `run` of
+    /// paragraph `paragraph`: its page (0-based) and its box there, in px.
+    fn object_region(&self, _paragraph: usize, _run: usize) -> Option<(usize, f64, f64, f64, f64)> {
         None
     }
 }

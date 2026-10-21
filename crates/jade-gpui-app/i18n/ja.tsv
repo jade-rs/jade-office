@@ -2011,3 +2011,34 @@ hyphenation.no_limit	空欄で制限なし
 hyphenation.bad_zone	ハイフネーション ゾーンには 0 以上の長さを入力してください。
 hyphenation.bad_limit	連続するハイフンの制限には 0 以上の整数を入力してください。
 hyphenation.unlimited	制限なし
+draw.tab	描画
+draw.group.tools	描画ツール
+draw.group.mode	モード
+draw.group.convert	変換
+draw.group.selection	選択したインク
+draw.select	選択
+draw.lasso	なげなわ選択
+draw.eraser	消しゴム
+draw.eraser.stroke	ストローク消しゴム
+draw.eraser.point	ポイント消しゴム
+draw.pen	ペン
+draw.pencil	鉛筆
+draw.highlighter	蛍光ペン
+draw.effect	効果ペン
+draw.add_pen	ペンの追加
+draw.touch	タッチで描画
+draw.ink_to_shape	インクを図形に変換
+draw.ink_editor	インク エディター
+draw.delete	削除
+draw.to_shapes	図形に変換
+draw.thickness	太さ
+draw.color	色
+draw.effects	効果
+draw.effect.rainbow	虹
+draw.effect.galaxy	ギャラクシー
+draw.effect.lava	溶岩
+draw.effect.ocean	海
+draw.effect.gold	金
+draw.effect.silver	銀
+draw.effect.rosegold	ローズ ゴールド
+draw.effect.bronze	ブロンズ

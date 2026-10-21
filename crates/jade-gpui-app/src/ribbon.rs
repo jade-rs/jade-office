@@ -119,6 +119,8 @@ pub enum Popup {
     References(crate::word_references::RefPopup),
     /// レイアウト's ハイフネーション (`word_hyphenation`).
     Hyphenation,
+    /// 描画's lists (`word_draw`).
+    Draw(crate::word_draw::DrawPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.

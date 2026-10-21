@@ -34,6 +34,7 @@ mod deck;
 mod sheet;
 pub(crate) mod word_characters;
 mod word_dialogs;
+pub(crate) mod word_draw;
 mod word_fields;
 mod word_find;
 pub(crate) mod word_hyphenation;
@@ -514,6 +515,8 @@ pub struct DocView {
         jade_web::word::hyphenation::HyphenationDialog,
         Option<&'static str>,
     )>,
+    /// The 描画 tab's tools and the drawing under way (`word_draw`).
+    draw: jade_web::word::ink_tools::DrawController,
 }
 
 impl DocView {
@@ -638,6 +641,7 @@ impl DocView {
             host,
             page_dialog: None,
             hyphenation_dialog: None,
+            draw: Default::default(),
         })
     }
 
@@ -1168,6 +1172,15 @@ impl DocView {
         ) else {
             return;
         };
+        // With a pen, the eraser or the lasso in hand, the press draws
+        // (`word_draw`).
+        let page_top = match &self.document {
+            Document::Pages { document, .. } => document.document_y(index, 0.0),
+            _ => 0.0,
+        };
+        if self.ink_press(index, (x, y - page_top), cx) {
+            return;
+        }
         // A picture is over the text: a press on one takes hold of it rather
         // than putting the caret behind it. Its bottom-right corner resizes.
         if let Document::Pages {
@@ -1277,6 +1290,9 @@ impl DocView {
     /// through the whole window, not only over a page, and past the top or
     /// the bottom of the view the pages scroll to meet the pointer.
     fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if self.ink_drag(event.position, cx) {
+            return;
+        }
         if self.drag_object(event, cx) {
             return;
         }
@@ -1413,6 +1429,7 @@ impl DocView {
 
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
+        self.ink_release(cx);
         self.release_object(cx);
         // The brush paints what was just clicked or dragged over.
         let painting = matches!(
@@ -1815,6 +1832,7 @@ impl DocView {
                     .then(|| word_setup::LayoutState::read(document)),
                 hyphenation: (ribbon.tab == ribbon::Tab::Layout)
                     .then(|| word_hyphenation::current_choice(document)),
+                draw: (ribbon.tab == ribbon::Tab::Draw).then(|| self.draw.clone()),
                 references: (ribbon.tab == ribbon::Tab::References)
                     .then(|| word_references::ribbon_state(document, &self.references)),
             }
@@ -1895,6 +1913,13 @@ impl DocView {
         let mut table_overlays = match &self.document {
             Document::Pages { pages, .. } => (0..pages.len())
                 .map(|index| self.table_overlay(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
+        let mut ink_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.ink_overlay(index, zoom))
                 .collect::<Vec<_>>(),
             _ => Vec::new(),
         }
@@ -2016,6 +2041,7 @@ impl DocView {
                 let store = Rc::clone(&bounds_store);
                 let entity = entity.clone();
                 let table_overlay = table_overlays.next().flatten();
+                let ink_overlay = ink_overlays.next().flatten();
                 div()
                     .relative()
                     .flex_none()
@@ -2071,6 +2097,7 @@ impl DocView {
                         },
                     ))
                     .children(table_overlay)
+                    .children(ink_overlay)
                     .children(word_references::page_marks(&marks, index, zoom, cx))
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {

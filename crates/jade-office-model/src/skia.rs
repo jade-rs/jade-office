@@ -214,4 +214,23 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
             .map(|metrics| self.page_and_offset(metrics.absolute_top).0 + 1)
             .or_else(|| self.renderer().cached_paragraph_start_page(paragraph))
     }
+
+    fn object_region(&self, paragraph: usize, run: usize) -> Option<(usize, f64, f64, f64, f64)> {
+        use jade_docx_editor::word_document::{FloatingObjectKind, FloatingObjectTarget};
+        self.renderer()
+            .object_region(FloatingObjectTarget {
+                paragraph_index: paragraph,
+                run_index: run,
+                kind: FloatingObjectKind::Image,
+            })
+            .map(|region| {
+                (
+                    region.page.saturating_sub(1),
+                    region.x,
+                    region.y,
+                    region.width,
+                    region.height,
+                )
+            })
+    }
 }
