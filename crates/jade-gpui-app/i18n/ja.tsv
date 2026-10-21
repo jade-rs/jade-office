@@ -1558,3 +1558,13 @@ immersive.line_focus.lines	{n} 行
 immersive.spacing	テキストの間隔
 immersive.syllables	音節
 immersive.close	イマーシブ リーダーを閉じる
+review.kind.inserted_row	行の挿入
+review.kind.deleted_row	行の削除
+side.group	ウィンドウ
+side.button	並べて比較
+side.title	並べて比較: 2 つの文書を並べて表示し、比較しやすくします
+side.sync	同時にスクロール
+side.sync_title	同時にスクロール: 2 つの文書を一緒にスクロールします
+side.reset	ウィンドウの位置を元に戻す
+side.reset_title	ウィンドウの位置を元に戻す: 並べて比較している文書の表示位置をそろえます
+side.needs_two	並べて比較するには、Word 文書をもう 1 つ開いてください。

@@ -369,6 +369,30 @@ pub trait WordReview: WordSession {
         if revisions.is_empty() {
             return Ok(());
         }
+        // A move is decided whole, as Word does: its other half with it —
+        // the same text moved by the same reviewer at the same time.
+        let mut revisions = revisions.to_vec();
+        let partner = |kind: &str| match kind {
+            "movedFrom" => Some("movedTo"),
+            "movedTo" => Some("movedFrom"),
+            _ => None,
+        };
+        if revisions
+            .iter()
+            .any(|revision| partner(&revision.kind).is_some())
+        {
+            for other in self.revisions() {
+                let pairs = revisions.iter().any(|revision| {
+                    partner(&revision.kind) == Some(other.kind.as_str())
+                        && revision.author == other.author
+                        && revision.date == other.date
+                        && revision.text.trim() == other.text.trim()
+                });
+                if pairs && !revisions.contains(&other) {
+                    revisions.push(other);
+                }
+            }
+        }
         let revision_targets = Some(
             revisions
                 .iter()

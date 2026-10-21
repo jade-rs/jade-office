@@ -1558,3 +1558,13 @@ immersive.line_focus.lines	{n} lines
 immersive.spacing	Text Spacing
 immersive.syllables	Syllables
 immersive.close	Close Immersive Reader
+review.kind.inserted_row	Inserted Row
+review.kind.deleted_row	Deleted Row
+side.group	Window
+side.button	View Side by Side
+side.title	View Side by Side: view two documents next to each other to compare them
+side.sync	Synchronous Scrolling
+side.sync_title	Synchronous Scrolling: scroll both documents together
+side.reset	Reset Window Position
+side.reset_title	Reset Window Position: line up the documents being compared
+side.needs_two	Open another Word document to view side by side.
