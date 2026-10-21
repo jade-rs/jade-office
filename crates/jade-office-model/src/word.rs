@@ -52,6 +52,7 @@ pub mod platform;
 pub mod references;
 pub mod review;
 pub mod ruler;
+pub mod selection;
 pub mod styles;
 pub mod table;
 pub mod table_ui;

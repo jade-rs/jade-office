@@ -1482,8 +1482,10 @@ impl DocumentView {
     /// lets a composition exist — so this only handles the keys an IME never
     /// sees.
     fn handle_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
-        // The mini toolbar goes at the first key, as Word's does.
+        // The mini toolbar goes at the first key, as Word's does, and with
+        // it any ranges selected beside the selection.
         self.views.mini = false;
+        self.views.extra_ranges.clear();
         // A composition owns the keyboard while it is running; letting these
         // through would edit around the preedit.
         if self.marked.is_some() {
@@ -2976,6 +2978,10 @@ impl DocumentView {
         if word_views::mini::settle(self, &action, cx) {
             return;
         }
+        // Several ranges selected: formatting goes on each.
+        if word_views::select::run_on_ranges(self, &action, cx) {
+            return;
+        }
         if action.is_chrome() {
             match action {
                 Action::Popup(popup) => self.ribbon.toggle(popup),
@@ -3178,54 +3184,38 @@ impl DocumentView {
             return;
         };
         let page = self.caret_page_1idx();
+        self.caret = self.document.place_caret(paragraph, text.len());
         if self
             .document
             .select((paragraph, 0), (paragraph, text.len()), page)
             .is_ok()
         {
             self.insert_at = (paragraph, text.len());
-            self.caret = self.document.place_caret(paragraph, text.len());
             self.refresh_caret_page_image();
             cx.notify();
         }
     }
 
-    /// Selects the run of word characters around the caret.
-    ///
-    /// Word boundaries here are "letters and digits versus everything else",
-    /// which is right for Latin and wrong for Japanese, where a run has no
-    /// spaces to break on. Selecting the whole run is still more useful than
-    /// selecting nothing, and it is honest about what it does.
+    /// Selects the word around the caret, as a double-click does: a run of
+    /// one script in Japanese (漢字, ひらがな, カタカナ), a word and the
+    /// spaces after it in English (`word::selection::word_at`).
     fn select_word_at_caret(&mut self, cx: &mut Context<Self>) {
         let (paragraph, offset) = self.insert_at;
         let Some(text) = self.document.paragraph_text(paragraph) else {
             return;
         };
-        let is_word = |ch: char| ch.is_alphanumeric();
-        let start = text[..offset.min(text.len())]
-            .char_indices()
-            .rev()
-            .take_while(|(_, ch)| is_word(*ch))
-            .last()
-            .map(|(index, _)| index)
-            .unwrap_or(offset);
-        let end = text[offset.min(text.len())..]
-            .char_indices()
-            .take_while(|(_, ch)| is_word(*ch))
-            .last()
-            .map(|(index, ch)| offset + index + ch.len_utf8())
-            .unwrap_or(offset);
+        let (start, end) = jade_office_model::word::selection::word_at(&text, offset);
         if start == end {
             return;
         }
         let page = self.caret_page_1idx();
+        self.caret = self.document.place_caret(paragraph, end);
         if self
             .document
             .select((paragraph, start), (paragraph, end), page)
             .is_ok()
         {
             self.insert_at = (paragraph, end);
-            self.caret = self.document.place_caret(paragraph, end);
             self.refresh_caret_page_image();
             cx.notify();
         }
@@ -3234,6 +3224,9 @@ impl DocumentView {
     /// The selection's text onto the clipboard, and its formatting beside it
     /// for a paste in this app that finds that text still there.
     fn copy(&mut self, cx: &mut Context<Self>) {
+        if word_views::select::copy(self, cx) {
+            return;
+        }
         let Some(text) = self.document.selected_text() else {
             return;
         };
@@ -3695,6 +3688,9 @@ impl DocumentView {
         if self.object_drag.is_some() {
             return self.drag_object_to(page_index, event, cx);
         }
+        if word_views::select::drag(self, page_index, event, cx) {
+            return;
+        }
         let Some(anchor) = self.drag_anchor else {
             return;
         };
@@ -3707,9 +3703,11 @@ impl DocumentView {
             return;
         }
         let page = self.caret_page_1idx();
+        // The caret first: placing it collapses the selection, so the
+        // selection goes on after it.
+        self.caret = self.document.place_caret(focus.0, focus.1);
         if self.document.select(anchor, focus, page).is_ok() {
             self.insert_at = focus;
-            self.caret = self.document.place_caret(focus.0, focus.1);
             self.refresh_caret_page_image();
             cx.notify();
         }
@@ -3821,6 +3819,10 @@ impl DocumentView {
         self.selected_object = None;
         // ⌘-click follows a link, as Word does.
         if event.modifiers.platform && self.follow_link_at(local_x, document_y, cx) {
+            return;
+        }
+        // A selection dragged elsewhere, ⌥ for a block, ⌘ for another range.
+        if word_views::select::mouse_down(self, local_x, document_y, event, cx) {
             return;
         }
         if self.table_mouse_down(page_index, local_x, document_y, event, cx) {
@@ -4586,8 +4588,12 @@ impl Render for DocumentView {
                                     cx.listener(
                                         move |view, event: &MouseDownEvent, _window, cx| {
                                             view.click_page(index, event, cx);
-                                            if event.click_count >= 2 {
+                                            // A double-click takes the word,
+                                            // a triple-click the paragraph.
+                                            if event.click_count == 2 {
                                                 view.select_word_at_caret(cx);
+                                            } else if event.click_count >= 3 {
+                                                view.select_paragraph(cx);
                                             }
                                         },
                                     ),
@@ -4605,6 +4611,7 @@ impl Render for DocumentView {
                                     MouseButton::Left,
                                     cx.listener(move |view, _event: &MouseUpEvent, _window, cx| {
                                         view.drag_anchor = None;
+                                        word_views::select::mouse_up(view, cx);
                                         word_views::mini::after_mouse_up(view);
                                         // The brush paints what was
                                         // just clicked or dragged over.
@@ -4624,6 +4631,7 @@ impl Render for DocumentView {
                                                 .h(px(page_height * zoom)),
                                         )
                                         .children(word_views::grid_overlay(self, index))
+                                        .children(word_views::select::overlay(self, index))
                                         .children(self.caret_overlay(index))
                                         .children(word_references::page_marks(
                                             &marks, index, zoom, cx,
