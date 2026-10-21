@@ -14,6 +14,7 @@
 mod color;
 mod font;
 mod ribbon;
+mod typography;
 
 use gpui::{
     anchored, deferred, div, point, prelude::*, px, AnyElement, ClickEvent, Context, ElementId,
@@ -23,6 +24,7 @@ use jade_office_model::text::TextEdit;
 use jade_office_model::word::font::{
     AsianLayout, FontDialog, HeadlessChangeCaseMode, HeadlessRunFormat, WordCharacters,
 };
+use jade_office_model::word::typography::WordTypography;
 
 use crate::{i18n, theme, DocumentView};
 
@@ -59,6 +61,8 @@ pub enum CharAction {
     AsianLayout(AsianLayout),
     /// 文字の拡大/縮小.
     Scale(f32),
+    /// 体裁…: the Japanese typography dialog.
+    OpenTypography,
 }
 
 /// The open dialog.
@@ -66,6 +70,8 @@ pub enum Dialog {
     Font(Box<FontDialog>),
     /// その他の色: the picker, and what it colours.
     Color(color::ColorDialog),
+    /// 体裁: the paragraph's and the document's Japanese typography.
+    Typography(typography::TypographyState),
 }
 
 /// The lists a dialog drops over itself.
@@ -191,6 +197,7 @@ pub fn run(view: &mut DocumentView, action: CharAction, cx: &mut Context<Documen
     let document = &mut view.document;
     let done = match action {
         CharAction::OpenFontDialog => return open_font_dialog(view, cx),
+        CharAction::OpenTypography => return open_typography(view, cx),
         CharAction::MoreFontColors => {
             let current = WordCharacters::character_format(&view.document).color;
             view.characters
@@ -226,14 +233,33 @@ pub fn open_font_dialog(view: &mut DocumentView, cx: &mut Context<DocumentView>)
     cx.notify();
 }
 
+/// Opens 体裁 on the selected paragraphs.
+pub fn open_typography(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
+    if view.document.selection().is_none() {
+        view.document
+            .place_caret(view.insert_at.0, view.insert_at.1);
+    }
+    let dialog = WordTypography::typography_dialog(&view.document);
+    view.characters
+        .open(Dialog::Typography(typography::TypographyState {
+            dialog: Box::new(dialog),
+            editing: None,
+        }));
+    cx.notify();
+}
+
 /// OK: what the dialog says lands on the document, as one undo step.
 pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
+    typography::commit_field(view);
     let Some(dialog) = view.characters.dialog.take() else {
         return;
     };
     view.characters.close();
     let done = match dialog {
         Dialog::Font(dialog) => WordCharacters::apply_font_dialog(&mut view.document, &dialog),
+        Dialog::Typography(state) => {
+            WordTypography::apply_typography(&mut view.document, &state.dialog)
+        }
         Dialog::Color(dialog) => match dialog.back {
             // From the フォント dialog: back to it, with the colour chosen.
             Some(mut font) => {
@@ -318,10 +344,12 @@ pub fn overlay(
     let body = match view.characters.dialog.as_ref()? {
         Dialog::Font(_) => font::body(view, cx),
         Dialog::Color(_) => color::body(view, cx),
+        Dialog::Typography(_) => typography::body(view, cx),
     };
     let title = match view.characters.dialog.as_ref()? {
         Dialog::Font(_) => i18n::text("chars.font.title"),
         Dialog::Color(_) => i18n::text("chars.color.title"),
+        Dialog::Typography(_) => i18n::text("chars.typography.title"),
     };
     let viewport = window.viewport_size();
     Some(
@@ -779,6 +807,72 @@ mod tests {
         assert!(xml.contains(r#"w:val="wave""#));
         assert!(xml.contains(r#"w:themeColor="accent1""#));
         assert!(xml.contains(r#"w:vertCompress="1""#));
+    }
+
+    /// 体裁: turning off 日本語と英字の間隔を自動調整する closes the gap
+    /// between Japanese and Latin text on the page; the document's kinsoku
+    /// level goes into settings.xml; one undo takes both back.
+    #[gpui::test]
+    fn typography_relays_the_paragraph_and_writes_settings(cx: &mut gpui::TestAppContext) {
+        use crate::{TypographyDialog, Undo};
+        let (view, cx) = open_selected(cx);
+        let (paragraph, latin_x) = view.update(cx, |view, _| {
+            let paragraph = view.insert_at.0;
+            view.document
+                .insert_text(paragraph, 0, "日本語English", 1)
+                .unwrap();
+            view.document
+                .select((paragraph, 0), (paragraph, 3), 1)
+                .unwrap();
+            let x = view
+                .document
+                .place_caret(paragraph, "日本語E".len())
+                .unwrap()
+                .x;
+            view.document
+                .select((paragraph, 0), (paragraph, 3), 1)
+                .unwrap();
+            (paragraph, x)
+        });
+        cx.dispatch_action(TypographyDialog);
+        view.update(cx, |view, cx| {
+            let Some(Dialog::Typography(state)) = view.characters.dialog.as_mut() else {
+                panic!("the dialog opens");
+            };
+            assert_eq!(state.dialog.paragraph.auto_space_de, Some(true));
+            state.dialog.paragraph.auto_space_de = Some(false);
+            state.dialog.set_level("strict");
+            super::confirm(view, cx);
+            let x = view
+                .document
+                .place_caret(paragraph, "日本語E".len())
+                .unwrap()
+                .x;
+            assert!(x < latin_x - 0.5, "the gap closes: {x} vs {latin_x}");
+        });
+        let (xml, settings) = view.read_with(cx, |view, _| {
+            let bytes = view.document.export_docx().unwrap();
+            let package = jade_opc::OpcPackage::open(&bytes).unwrap();
+            (
+                package.part_str("word/document.xml").unwrap().unwrap(),
+                package.part_str("word/settings.xml").unwrap().unwrap(),
+            )
+        });
+        assert!(xml.contains(r#"<w:autoSpaceDE w:val="0"/>"#));
+        assert!(settings.contains("<w:strictFirstAndLastChars/>"));
+        cx.dispatch_action(Undo);
+        view.update(cx, |view, _| {
+            let x = view
+                .document
+                .place_caret(paragraph, "日本語E".len())
+                .unwrap()
+                .x;
+            assert!((x - latin_x).abs() < 0.5);
+            let bytes = view.document.export_docx().unwrap();
+            let package = jade_opc::OpcPackage::open(&bytes).unwrap();
+            let settings = package.part_str("word/settings.xml").unwrap().unwrap();
+            assert!(!settings.contains("strictFirstAndLastChars"));
+        });
     }
 
     /// 文字種の変換: 全角, then 半角, change the selected text.

@@ -123,6 +123,7 @@ actions!(
         ZoomActual,
         ZoomFit,
         FontDialog,
+        TypographyDialog,
     ]
 );
 
@@ -189,6 +190,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
         // Word for Mac's フォント… (書式 menu).
         KeyBinding::new("cmd-d", FontDialog, CONTEXT),
+        // 体裁 (the 段落 dialog's Japanese typography).
+        KeyBinding::new("cmd-alt-shift-k", TypographyDialog, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -271,6 +274,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.format.italic"), Italic),
                 MenuItem::action(t("menu.format.underline"), Underline),
                 MenuItem::action(t("menu.format.font"), FontDialog),
+                MenuItem::action(t("menu.format.typography"), TypographyDialog),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.align_left"), AlignLeft),
                 MenuItem::action(t("menu.format.center"), AlignCenter),
@@ -4006,6 +4010,9 @@ impl Render for DocumentView {
             )
             .on_action(cx.listener(|view, _: &FontDialog, _window, cx| {
                 word_characters::open_font_dialog(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &TypographyDialog, _window, cx| {
+                word_characters::open_typography(view, cx)
             }))
             .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
                 view.show_inspector = !view.show_inspector;

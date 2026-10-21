@@ -791,3 +791,23 @@ chars.asian.warichu	Two lines in one
 chars.asian.warichu_none	Two lines in one (no brackets)
 chars.asian.remove	Remove Asian layout
 chars.asian.scale	Character scale
+menu.format.typography	Asian Typography...
+chars.typography.title	Asian Typography
+chars.typography.paragraph	Line breaking (selected paragraphs)
+chars.typography.document	Typography (whole document)
+chars.typography.kinsoku	Use Asian rules for first and last characters
+chars.typography.word_wrap	Allow Latin text to wrap in the middle of a word
+chars.typography.overflow_punct	Allow hanging punctuation
+chars.typography.top_line_punct	Compress punctuation at the start of a line
+chars.typography.auto_space_de	Adjust space between Asian and Latin text
+chars.typography.auto_space_dn	Adjust space between Asian text and numbers
+chars.kinsoku.level	First and last characters
+chars.kinsoku.standard	Normal
+chars.kinsoku.strict	Strict
+chars.kinsoku.custom	Custom
+chars.kinsoku.line_start	Not at start of line
+chars.kinsoku.line_end	Not at end of line
+chars.compress.title	Character spacing control
+chars.compress.none	Don't compress
+chars.compress.punctuation	Compress punctuation only
+chars.compress.kana	Compress punctuation and Japanese kana
