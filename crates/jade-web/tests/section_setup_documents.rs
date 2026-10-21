@@ -196,3 +196,48 @@ fn a_paragraph_leaves_the_grid() {
     document.undo().unwrap();
     assert!(document.snap_to_grid());
 }
+
+#[test]
+fn page_borders_color_and_a_cover_page() {
+    use jade_web::word::page_setup::{BorderSetting, CoverPage, PageBorderDialog};
+    let mut document = contract();
+    let paragraphs = document.paragraph_count();
+
+    let setup = document.page_setup_dialog(SetupTab::Other);
+    let mut borders = PageBorderDialog::open(&setup);
+    borders.set_setting(BorderSetting::Box);
+    borders.style = "double".to_string();
+    borders.width = 1.5;
+    borders.color = "C00000".to_string();
+    borders.offset_from = "page".to_string();
+    document.apply_page_borders(&borders).unwrap();
+    let frame = document.section_layout().page_borders;
+    assert_eq!(frame.top.as_ref().unwrap().style.as_deref(), Some("double"));
+    assert!(frame.left.is_some() && frame.right.is_some() && frame.bottom.is_some());
+
+    document.set_page_color(Some("FFF9E6")).unwrap();
+    assert_eq!(document.page_color().as_deref(), Some("FFF9E6"));
+
+    document.insert_cover_page(CoverPage::Banner, true).unwrap();
+    assert!(document.paragraph_count() > paragraphs);
+    assert!(document
+        .paragraph_text(0)
+        .unwrap()
+        .contains("[文書のタイトル]"));
+    assert!(
+        document.section_layout().different_first_page,
+        "the cover page keeps the header and footer off it"
+    );
+
+    let bytes = document.export_docx().unwrap();
+    let xml = part(&bytes, "word/document.xml");
+    assert!(xml.contains("w:pgBorders"), "{xml}");
+    assert!(xml.contains(r#"w:offsetFrom="page""#));
+    assert!(xml.contains(r#"w:val="double""#));
+    assert!(xml.contains("FFF9E6"));
+    for _ in 0..3 {
+        document.undo().unwrap();
+    }
+    assert!(document.section_layout().page_borders.is_empty());
+    assert_eq!(document.paragraph_count(), paragraphs);
+}

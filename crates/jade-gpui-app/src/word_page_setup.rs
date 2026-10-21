@@ -7,9 +7,11 @@
 use gpui::{div, prelude::*, px, AnyElement, Context, KeyDownEvent, MouseButton, SharedString};
 use jade_office_model::word::page::Paper;
 use jade_office_model::word::page_setup::{
-    points_to_mm, ApplyTo, ColumnPreset, ColumnsDialog, Field, GridMode, LineNumbersPreset,
-    MultiplePages, PageBreak, PageNumberDialog, PageSetupDialog, SetupTab, WordPageSetup,
-    CHAPTER_SEPARATORS, LINE_RESTARTS, PAGE_NUMBER_FORMATS, SECTION_STARTS, VERTICAL_ALIGNMENTS,
+    points_to_mm, ApplyTo, BorderSetting, ColumnPreset, ColumnsDialog, CoverPage, Field, GridMode,
+    LineNumbersPreset, MultiplePages, PageBorderDialog, PageBreak, PageNumberDialog,
+    PageSetupDialog, SetupTab, WordPageSetup, CHAPTER_SEPARATORS, LINE_RESTARTS,
+    PAGE_BORDER_STYLES, PAGE_BORDER_WIDTHS, PAGE_COLORS, PAGE_NUMBER_FORMATS, SECTION_STARTS,
+    VERTICAL_ALIGNMENTS,
 };
 
 use crate::ribbon::{dropdown, group, listener, menu_panel, menu_row, row, Action, Popup};
@@ -34,6 +36,12 @@ pub enum SetupAction {
     RightToLeft(bool),
     /// グリッドに合わせる for the selected paragraphs.
     SnapToGrid(bool),
+    /// ページ罫線.
+    OpenBorders,
+    /// ページの色, `RRGGBB`, or 色なし.
+    PageColor(Option<&'static str>),
+    /// 表紙.
+    Cover(CoverPage),
 }
 
 /// A number field of one of the dialogs.
@@ -51,6 +59,7 @@ pub enum PageDialog {
     Setup(PageSetupDialog),
     Columns(ColumnsDialog),
     PageNumbers(PageNumberDialog),
+    Borders(PageBorderDialog),
 }
 
 /// The open dialog and the number being typed into one of its fields.
@@ -520,6 +529,25 @@ impl DocumentView {
             SetupAction::Vertical(vertical) => document.set_vertical_text(vertical),
             SetupAction::RightToLeft(rtl) => document.set_paragraph_rtl(rtl),
             SetupAction::SnapToGrid(snap) => document.set_snap_to_grid(snap),
+            SetupAction::OpenBorders => {
+                let setup = document.page_setup_dialog(SetupTab::Other);
+                self.page_dialog = Some(PageDialogState {
+                    dialog: PageDialog::Borders(PageBorderDialog::open(&setup)),
+                    typing: None,
+                    problem: None,
+                });
+                cx.notify();
+                Ok(())
+            }
+            SetupAction::PageColor(color) => document.set_page_color(color),
+            SetupAction::Cover(cover) => {
+                let japanese = i18n::language() == i18n::Language::Japanese;
+                let done = document.insert_cover_page(cover, japanese);
+                if done.is_ok() {
+                    self.insert_at = (0, 0);
+                }
+                done
+            }
         }
     }
 
@@ -540,6 +568,7 @@ impl DocumentView {
             }
             PageDialog::Columns(dialog) => self.document.apply_columns(dialog),
             PageDialog::PageNumbers(dialog) => self.document.apply_page_numbering(dialog),
+            PageDialog::Borders(dialog) => self.document.apply_page_borders(dialog),
         };
         match result {
             Ok(()) => {
@@ -757,6 +786,11 @@ impl DocumentView {
                     self.page_numbers_body(dialog, cx),
                     None,
                 ),
+                PageDialog::Borders(dialog) => (
+                    "setup.borders.title",
+                    self.borders_body(dialog, cx),
+                    Some((dialog.apply_to, dialog.apply_choices.clone())),
+                ),
             };
         let apply_row = apply_to.map(|(current, choices)| {
             line("setup.apply").children(choices.into_iter().enumerate().map(|(index, choice)| {
@@ -770,6 +804,7 @@ impl DocumentView {
                     view.edit_page_dialog(cx, |state| match &mut state.dialog {
                         PageDialog::Setup(dialog) => dialog.apply_to = choice,
                         PageDialog::Columns(dialog) => dialog.apply_to = choice,
+                        PageDialog::Borders(dialog) => dialog.apply_to = choice,
                         PageDialog::PageNumbers(_) => {}
                     })
                 }))
@@ -1289,6 +1324,285 @@ impl DocumentView {
                 );
         }
         tab
+    }
+
+    /// デザイン's ページの背景: ページの色 and ページ罫線.
+    pub(crate) fn design_groups(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let open = self.ribbon.popup;
+        let current = self.document.page_color();
+        let color_menu = (open == Some(Popup::PageColor)).then(|| {
+            menu_panel("page-color-menu")
+                .w(px(196.0))
+                .child(
+                    div().flex().flex_wrap().gap_1().p_1().children(
+                        PAGE_COLORS
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, (color, label))| {
+                                div()
+                                    .id(("page-color", index))
+                                    .size(px(20.0))
+                                    .rounded_sm()
+                                    .bg(gpui::rgb(
+                                        u32::from_str_radix(color, 16).unwrap_or(0xFFFFFF),
+                                    ))
+                                    .border_1()
+                                    .border_color(if current.as_deref() == Some(color) {
+                                        theme::accent()
+                                    } else {
+                                        theme::border()
+                                    })
+                                    .cursor_pointer()
+                                    .tooltip(Tooltip::text(t(label)))
+                                    .on_click(listener(
+                                        Action::Setup(SetupAction::PageColor(Some(color))),
+                                        cx,
+                                    ))
+                            }),
+                    ),
+                )
+                .child(menu_row(
+                    "page-color-none",
+                    t("setup.color.none"),
+                    current.is_none(),
+                    Action::Setup(SetupAction::PageColor(None)),
+                    cx,
+                ))
+                .into_any_element()
+        });
+        vec![group(
+            t("setup.group.background"),
+            vec![row(vec![
+                dropdown(
+                    list_button(
+                        "page-color",
+                        t("setup.page_color"),
+                        open == Some(Popup::PageColor),
+                        Popup::PageColor,
+                        cx,
+                    ),
+                    color_menu,
+                ),
+                text_button(
+                    "page-borders",
+                    t("setup.borders.open"),
+                    t("setup.borders.title"),
+                    false,
+                    Action::Setup(SetupAction::OpenBorders),
+                    cx,
+                ),
+            ])],
+        )]
+    }
+
+    /// 挿入's 表紙 gallery.
+    pub(crate) fn cover_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let open = self.ribbon.popup;
+        let menu = (open == Some(Popup::Cover)).then(|| {
+            menu_panel("cover-menu")
+                .w(px(180.0))
+                .children(
+                    CoverPage::ALL
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, cover)| {
+                            menu_row(
+                                ("cover", index),
+                                t(cover.label_key()),
+                                false,
+                                Action::Setup(SetupAction::Cover(cover)),
+                                cx,
+                            )
+                        }),
+                )
+                .into_any_element()
+        });
+        group(
+            t("setup.cover.group"),
+            vec![row(vec![dropdown(
+                list_button(
+                    "cover-page",
+                    t("setup.cover"),
+                    open == Some(Popup::Cover),
+                    Popup::Cover,
+                    cx,
+                ),
+                menu,
+            )])],
+        )
+    }
+
+    fn edit_borders(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut PageBorderDialog)) {
+        self.edit_page_dialog(cx, |state| {
+            state.commit();
+            if let PageDialog::Borders(dialog) = &mut state.dialog {
+                edit(dialog);
+            }
+        });
+    }
+
+    fn borders_body(&self, dialog: &PageBorderDialog, cx: &mut Context<Self>) -> AnyElement {
+        let setting = dialog.setting();
+        let sides = [
+            ("border-top", "setup.margin.top", 0usize),
+            ("border-bottom", "setup.margin.bottom", 1),
+            ("border-left", "setup.margin.left", 2),
+            ("border-right", "setup.margin.right", 3),
+        ];
+        let preview_color = if dialog.color == "auto" {
+            gpui::rgb(0x000000)
+        } else {
+            gpui::rgb(u32::from_str_radix(&dialog.color, 16).unwrap_or(0))
+        };
+        let width = dialog.width;
+        let stroke = move |on: bool| {
+            if on {
+                px(width.clamp(1.0, 4.0))
+            } else {
+                px(0.0)
+            }
+        };
+        let settings: Vec<_> = [
+            (BorderSetting::None, "setup.borders.none"),
+            (BorderSetting::Box, "setup.borders.box"),
+            (BorderSetting::Custom, "setup.borders.custom"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (entry, label))| {
+            chip(("border-setting", index), t(label), setting == entry, true).on_click(cx.listener(
+                move |view, _, _, cx| view.edit_borders(cx, |dialog| dialog.set_setting(entry)),
+            ))
+        })
+        .collect();
+        let styles: Vec<_> = PAGE_BORDER_STYLES
+            .into_iter()
+            .enumerate()
+            .map(|(index, (value, label))| {
+                chip(
+                    ("border-style", index),
+                    t(label),
+                    dialog.style == value,
+                    true,
+                )
+                .on_click(cx.listener(move |view, _, _, cx| {
+                    view.edit_borders(cx, |dialog| dialog.style = value.to_string())
+                }))
+            })
+            .collect();
+        let colors: Vec<_> = std::iter::once(("auto", "setup.borders.auto"))
+            .chain(PAGE_COLORS.into_iter().skip(7))
+            .enumerate()
+            .map(|(index, (value, label))| {
+                div()
+                    .id(("border-color", index))
+                    .size(px(18.0))
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(if dialog.color == value {
+                        theme::accent()
+                    } else {
+                        theme::border()
+                    })
+                    .bg(if value == "auto" {
+                        gpui::rgb(0x000000)
+                    } else {
+                        gpui::rgb(u32::from_str_radix(value, 16).unwrap_or(0))
+                    })
+                    .cursor_pointer()
+                    .tooltip(Tooltip::text(t(label)))
+                    .on_click(cx.listener(move |view, _, _, cx| {
+                        view.edit_borders(cx, |dialog| dialog.color = value.to_string())
+                    }))
+            })
+            .collect();
+        let widths: Vec<_> = PAGE_BORDER_WIDTHS
+            .into_iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                chip(
+                    ("border-width", index),
+                    format!("{entry} pt"),
+                    (dialog.width - entry).abs() < 0.01,
+                    true,
+                )
+                .on_click(cx.listener(move |view, _, _, cx| {
+                    view.edit_borders(cx, |dialog| dialog.width = entry)
+                }))
+            })
+            .collect();
+        let offsets: Vec<_> = [
+            ("text", "setup.borders.from_text"),
+            ("page", "setup.borders.from_page"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (value, label))| {
+            chip(
+                ("border-offset", index),
+                t(label),
+                dialog.offset_from == value,
+                true,
+            )
+            .on_click(cx.listener(move |view, _, _, cx| {
+                view.edit_borders(cx, |dialog| dialog.offset_from = value.to_string())
+            }))
+        })
+        .collect();
+        let side_chips: Vec<_> = sides
+            .into_iter()
+            .map(|(id, label, index)| {
+                chip(id, t(label), dialog.sides[index], true).on_click(cx.listener(
+                    move |view, _, _, cx| {
+                        view.edit_borders(cx, |dialog| dialog.sides[index] = !dialog.sides[index])
+                    },
+                ))
+            })
+            .collect();
+        div()
+            .flex()
+            .gap_4()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1p5()
+                    .flex_1()
+                    .child(line("setup.borders.setting").children(settings))
+                    .child(line("setup.borders.style").children(styles))
+                    .child(line("setup.borders.color").children(colors))
+                    .child(line("setup.borders.width").children(widths))
+                    .child(line("setup.borders.offset").children(offsets)),
+            )
+            .child(
+                // プレビュー: the sides can be turned on and off one by one.
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_1()
+                    .child(t("setup.borders.preview"))
+                    .child(
+                        div()
+                            .w(px(90.0))
+                            .h(px(120.0))
+                            .bg(gpui::rgb(0xFFFFFF))
+                            .border_color(preview_color)
+                            .border_t(stroke(dialog.sides[0]))
+                            .border_b(stroke(dialog.sides[1]))
+                            .border_l(stroke(dialog.sides[2]))
+                            .border_r(stroke(dialog.sides[3])),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap_1()
+                            .w(px(120.0))
+                            .children(side_chips),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn edit_columns(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut ColumnsDialog)) {

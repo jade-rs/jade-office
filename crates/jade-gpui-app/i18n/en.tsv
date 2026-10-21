@@ -839,3 +839,49 @@ setup.snap_title	Snap to grid when the document grid is defined
 story.field.heading	Heading Reference
 story.field.heading_title	Insert this page's Heading 1 (STYLEREF) at the caret
 story.field.heading_missing	Heading 1
+setup.borders.title	Borders and Shading (Page Border)
+setup.borders.open	Page Borders…
+setup.borders.setting	Setting
+setup.borders.none	None
+setup.borders.box	Box
+setup.borders.custom	Custom
+setup.borders.style	Style
+setup.borders.single	Single
+setup.borders.double	Double
+setup.borders.dotted	Dotted
+setup.borders.dashed	Dashed
+setup.borders.dot_dash	Dot dash
+setup.borders.triple	Triple
+setup.borders.thin_thick	Thin thick
+setup.borders.wave	Wave
+setup.borders.color	Color
+setup.borders.auto	Automatic
+setup.borders.width	Width
+setup.borders.offset	Measure from
+setup.borders.from_text	Text
+setup.borders.from_page	Edge of page
+setup.borders.preview	Preview
+setup.color.white	White
+setup.color.light_gray	Light Gray
+setup.color.cream	Cream
+setup.color.rose	Pale Rose
+setup.color.pale_green	Pale Green
+setup.color.pale_blue	Pale Blue
+setup.color.lavender	Lavender
+setup.color.dark_red	Dark Red
+setup.color.red	Red
+setup.color.orange	Orange
+setup.color.yellow	Yellow
+setup.color.light_green	Light Green
+setup.color.green	Green
+setup.color.light_blue	Light Blue
+setup.color.blue	Blue
+setup.color.purple	Purple
+setup.color.none	No Color
+setup.group.background	Page Background
+setup.page_color	Page Color
+setup.cover	Cover Page
+setup.cover.group	Pages
+setup.cover.simple	Simple
+setup.cover.banner	Banner
+setup.cover.lined	Lined

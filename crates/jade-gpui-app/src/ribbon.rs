@@ -117,6 +117,9 @@ pub enum Popup {
     /// レイアウト's 行番号 and 文字列の方向 (`word_page_setup`).
     LineNumbers,
     TextDirection,
+    /// デザイン's ページの色 and 挿入's 表紙.
+    PageColor,
+    Cover,
 }
 
 /// The ribbon's own state, kept with the document it formats.

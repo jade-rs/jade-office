@@ -9,8 +9,9 @@
 //! show them in millimetres, as Japanese Word does.
 
 use jade_docx_headless_api::{
-    HeadlessCommand, HeadlessDocGrid, HeadlessLineNumbering, HeadlessPageNumbering,
-    HeadlessSectionBreakType, HeadlessSectionColumn, HeadlessSectionColumns, HeadlessSectionLayout,
+    HeadlessBorderEdge, HeadlessCommand, HeadlessCoverParagraph, HeadlessDocGrid,
+    HeadlessLineNumbering, HeadlessPageBorderSet, HeadlessPageNumbering, HeadlessSectionBreakType,
+    HeadlessSectionColumn, HeadlessSectionColumns, HeadlessSectionLayout,
     HeadlessSectionLayoutPatch, HeadlessSectionScope,
 };
 
@@ -691,6 +692,7 @@ impl PageSetupDialog {
             text_direction: changed(&now.text_direction, &then.text_direction),
             bidi: changed(&now.bidi, &then.bidi),
             page_numbering: changed(&now.page_numbering, &then.page_numbering),
+            page_borders: changed(&now.page_borders, &then.page_borders),
         }
     }
 }
@@ -920,6 +922,296 @@ impl PageNumberDialog {
 
     pub fn changed(&self) -> bool {
         self.numbering != self.original
+    }
+}
+
+/// ページ罫線's line styles, as `w:val` names them, and their labels.
+pub const PAGE_BORDER_STYLES: [(&str, &str); 8] = [
+    ("single", "setup.borders.single"),
+    ("double", "setup.borders.double"),
+    ("dotted", "setup.borders.dotted"),
+    ("dashed", "setup.borders.dashed"),
+    ("dotDash", "setup.borders.dot_dash"),
+    ("triple", "setup.borders.triple"),
+    ("thinThickSmallGap", "setup.borders.thin_thick"),
+    ("wave", "setup.borders.wave"),
+];
+
+/// 線の太さ, in points.
+pub const PAGE_BORDER_WIDTHS: [f32; 9] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.25, 3.0, 4.5, 6.0];
+
+/// The colours the page tools offer: Word's standard colours, `RRGGBB`.
+pub const PAGE_COLORS: [(&str, &str); 16] = [
+    ("FFFFFF", "setup.color.white"),
+    ("F2F2F2", "setup.color.light_gray"),
+    ("FFF9E6", "setup.color.cream"),
+    ("FDE9D9", "setup.color.rose"),
+    ("EAF1DD", "setup.color.pale_green"),
+    ("DBE5F1", "setup.color.pale_blue"),
+    ("E5DFEC", "setup.color.lavender"),
+    ("C00000", "setup.color.dark_red"),
+    ("FF0000", "setup.color.red"),
+    ("FFC000", "setup.color.orange"),
+    ("FFFF00", "setup.color.yellow"),
+    ("92D050", "setup.color.light_green"),
+    ("00B050", "setup.color.green"),
+    ("00B0F0", "setup.color.light_blue"),
+    ("0070C0", "setup.color.blue"),
+    ("7030A0", "setup.color.purple"),
+];
+
+/// ページ罫線's 種類.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BorderSetting {
+    /// 罫線なし.
+    None,
+    /// 囲む.
+    Box,
+    /// 指定: the sides chosen one by one.
+    Custom,
+}
+
+/// The ページ罫線 dialog.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PageBorderDialog {
+    pub original: HeadlessPageBorderSet,
+    pub style: String,
+    /// 線の太さ, in points.
+    pub width: f32,
+    /// `RRGGBB`, or `auto`.
+    pub color: String,
+    /// Top, bottom, left, right.
+    pub sides: [bool; 4],
+    /// 基準: `text` (本文) or `page` (ページの端).
+    pub offset_from: String,
+    pub apply_to: ApplyTo,
+    pub apply_choices: Vec<ApplyTo>,
+}
+
+impl PageBorderDialog {
+    pub fn open(setup: &PageSetupDialog) -> Self {
+        let borders = setup.layout.page_borders.clone();
+        let first = [&borders.top, &borders.bottom, &borders.left, &borders.right]
+            .into_iter()
+            .flatten()
+            .next()
+            .cloned();
+        Self {
+            style: first
+                .as_ref()
+                .and_then(|edge| edge.style.clone())
+                .unwrap_or_else(|| "single".to_string()),
+            width: first.as_ref().and_then(|edge| edge.width).unwrap_or(0.5),
+            color: first
+                .as_ref()
+                .and_then(|edge| edge.color.clone())
+                .map(|color| color.trim_start_matches('#').to_string())
+                .unwrap_or_else(|| "auto".to_string()),
+            sides: [
+                borders.top.is_some(),
+                borders.bottom.is_some(),
+                borders.left.is_some(),
+                borders.right.is_some(),
+            ],
+            offset_from: borders
+                .offset_from
+                .clone()
+                .unwrap_or_else(|| "text".to_string()),
+            original: borders,
+            apply_to: if setup.layout.section_count > 1 {
+                ApplyTo::ThisSection
+            } else {
+                ApplyTo::WholeDocument
+            },
+            apply_choices: if setup.layout.section_count > 1 {
+                vec![ApplyTo::ThisSection, ApplyTo::WholeDocument]
+            } else {
+                vec![ApplyTo::WholeDocument]
+            },
+        }
+    }
+
+    pub fn setting(&self) -> BorderSetting {
+        match self.sides {
+            [false, false, false, false] => BorderSetting::None,
+            [true, true, true, true] => BorderSetting::Box,
+            _ => BorderSetting::Custom,
+        }
+    }
+
+    pub fn set_setting(&mut self, setting: BorderSetting) {
+        match setting {
+            BorderSetting::None => self.sides = [false; 4],
+            BorderSetting::Box => self.sides = [true; 4],
+            BorderSetting::Custom => {}
+        }
+    }
+
+    /// The frame as it would be written.
+    pub fn borders(&self) -> HeadlessPageBorderSet {
+        let edge = |on: bool| {
+            on.then(|| HeadlessBorderEdge {
+                style: Some(self.style.clone()),
+                width: Some(self.width),
+                color: Some(self.color.clone()),
+            })
+        };
+        HeadlessPageBorderSet {
+            top: edge(self.sides[0]),
+            bottom: edge(self.sides[1]),
+            left: edge(self.sides[2]),
+            right: edge(self.sides[3]),
+            offset_from: Some(self.offset_from.clone()),
+        }
+    }
+
+    pub fn changed(&self) -> bool {
+        let now = self.borders();
+        if now.is_empty() {
+            return !self.original.is_empty();
+        }
+        now != self.original
+    }
+}
+
+/// The 表紙 gallery's designs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoverPage {
+    /// Title and subtitle centred, the author and date below.
+    Simple,
+    /// A coloured band behind the title.
+    Banner,
+    /// Rules above and below a left-aligned title.
+    Lined,
+}
+
+impl CoverPage {
+    pub const ALL: [CoverPage; 3] = [CoverPage::Simple, CoverPage::Banner, CoverPage::Lined];
+
+    pub fn label_key(self) -> &'static str {
+        match self {
+            CoverPage::Simple => "setup.cover.simple",
+            CoverPage::Banner => "setup.cover.banner",
+            CoverPage::Lined => "setup.cover.lined",
+        }
+    }
+
+    /// The cover's paragraphs, with Word's placeholder texts (`japanese`
+    /// picks their language).
+    pub fn paragraphs(self, japanese: bool) -> Vec<HeadlessCoverParagraph> {
+        let (title, subtitle, author, date) = if japanese {
+            (
+                "[文書のタイトル]",
+                "[文書のサブタイトル]",
+                "[作成者名]",
+                "[日付]",
+            )
+        } else {
+            (
+                "[Document title]",
+                "[Document subtitle]",
+                "[Author name]",
+                "[Date]",
+            )
+        };
+        let paragraph = |text: &str| HeadlessCoverParagraph {
+            text: text.to_string(),
+            bold: false,
+            italic: false,
+            color: None,
+            font_size: None,
+            alignment: None,
+            space_before: None,
+            space_after: None,
+            shading_color: None,
+            border_top: false,
+            border_bottom: false,
+            border_left: false,
+            border_right: false,
+            indent_left: None,
+            indent_right: None,
+        };
+        match self {
+            CoverPage::Simple => vec![
+                HeadlessCoverParagraph {
+                    font_size: Some(36.0),
+                    bold: true,
+                    alignment: Some("center".to_string()),
+                    space_before: Some(200.0),
+                    space_after: Some(12.0),
+                    ..paragraph(title)
+                },
+                HeadlessCoverParagraph {
+                    font_size: Some(18.0),
+                    color: Some("595959".to_string()),
+                    alignment: Some("center".to_string()),
+                    space_after: Some(180.0),
+                    ..paragraph(subtitle)
+                },
+                HeadlessCoverParagraph {
+                    font_size: Some(14.0),
+                    alignment: Some("center".to_string()),
+                    ..paragraph(author)
+                },
+                HeadlessCoverParagraph {
+                    font_size: Some(14.0),
+                    alignment: Some("center".to_string()),
+                    ..paragraph(date)
+                },
+            ],
+            CoverPage::Banner => vec![
+                HeadlessCoverParagraph {
+                    font_size: Some(40.0),
+                    bold: true,
+                    color: Some("FFFFFF".to_string()),
+                    shading_color: Some("1F4E79".to_string()),
+                    space_before: Some(160.0),
+                    indent_left: Some(12.0),
+                    ..paragraph(title)
+                },
+                HeadlessCoverParagraph {
+                    font_size: Some(18.0),
+                    color: Some("FFFFFF".to_string()),
+                    shading_color: Some("1F4E79".to_string()),
+                    space_after: Some(200.0),
+                    indent_left: Some(12.0),
+                    ..paragraph(subtitle)
+                },
+                HeadlessCoverParagraph {
+                    font_size: Some(14.0),
+                    alignment: Some("right".to_string()),
+                    ..paragraph(author)
+                },
+                HeadlessCoverParagraph {
+                    font_size: Some(14.0),
+                    alignment: Some("right".to_string()),
+                    ..paragraph(date)
+                },
+            ],
+            CoverPage::Lined => vec![
+                HeadlessCoverParagraph {
+                    font_size: Some(34.0),
+                    border_top: true,
+                    space_before: Some(220.0),
+                    ..paragraph(title)
+                },
+                HeadlessCoverParagraph {
+                    font_size: Some(16.0),
+                    italic: true,
+                    border_bottom: true,
+                    space_after: Some(220.0),
+                    ..paragraph(subtitle)
+                },
+                HeadlessCoverParagraph {
+                    font_size: Some(12.0),
+                    ..paragraph(author)
+                },
+                HeadlessCoverParagraph {
+                    font_size: Some(12.0),
+                    ..paragraph(date)
+                },
+            ],
+        }
     }
 }
 
@@ -1176,6 +1468,56 @@ pub trait WordPageSetup: WordSession {
             .and_then(|paragraph| paragraph.properties.as_ref())
             .and_then(|properties| properties.snap_to_grid)
             .unwrap_or(true)
+    }
+
+    /// OK on the ページ罫線 dialog.
+    fn apply_page_borders(&mut self, dialog: &PageBorderDialog) -> Result<(), String> {
+        if !dialog.changed() {
+            return Ok(());
+        }
+        self.apply_section_layout(
+            HeadlessSectionLayoutPatch {
+                page_borders: Some(dialog.borders()),
+                ..Default::default()
+            },
+            dialog.apply_to,
+        )
+    }
+
+    /// ページの色: `RRGGBB`, or none.
+    fn set_page_color(&mut self, color: Option<&str>) -> Result<(), String> {
+        self.apply_command(
+            HeadlessCommand::SetPageBackgroundColor {
+                color: color.map(|color| format!("#{}", color.trim_start_matches('#'))),
+            },
+            true,
+        )
+    }
+
+    /// The page colour, `RRGGBB`.
+    fn page_color(&self) -> Option<String> {
+        self.word_document()
+            .document
+            .as_deref()
+            .and_then(|document| document.background_color.clone())
+            .map(|color| color.trim_start_matches('#').to_ascii_uppercase())
+    }
+
+    /// 表紙: a cover page before the first page, its header and footer
+    /// kept off it (先頭ページのみ別指定), as Word's built-in covers do.
+    fn insert_cover_page(&mut self, cover: CoverPage, japanese: bool) -> Result<(), String> {
+        let layout = self.word_document().section_layout(Some(0));
+        let mut commands = vec![HeadlessCommand::InsertCoverPage {
+            paragraphs: cover.paragraphs(japanese),
+        }];
+        if !layout.different_first_page {
+            commands.push(HeadlessCommand::SetHeaderFooterVariants {
+                different_first_page: true,
+                different_odd_even_pages: layout.different_odd_even,
+                section: Some(0),
+            });
+        }
+        self.apply_commands(commands, false)
     }
 
     /// 改ページ, 段区切り and 文字列の折り返し at the caret, over the

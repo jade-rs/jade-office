@@ -839,3 +839,49 @@ setup.snap_title	1 ページの行数を指定時に文字を行グリッド線�
 story.field.heading	見出しの参照
 story.field.heading_title	カーソルの位置にこのページの見出し 1 (STYLEREF) を挿入
 story.field.heading_missing	見出し 1
+setup.borders.title	線種とページ罫線と網かけの設定 (ページ罫線)
+setup.borders.open	ページ罫線…
+setup.borders.setting	種類
+setup.borders.none	罫線なし
+setup.borders.box	囲む
+setup.borders.custom	指定
+setup.borders.style	線種
+setup.borders.single	実線
+setup.borders.double	二重線
+setup.borders.dotted	点線
+setup.borders.dashed	破線
+setup.borders.dot_dash	一点鎖線
+setup.borders.triple	三重線
+setup.borders.thin_thick	太線と細線
+setup.borders.wave	波線
+setup.borders.color	色
+setup.borders.auto	自動
+setup.borders.width	線の太さ
+setup.borders.offset	基準
+setup.borders.from_text	本文
+setup.borders.from_page	ページの端
+setup.borders.preview	プレビュー
+setup.color.white	白
+setup.color.light_gray	薄い灰色
+setup.color.cream	クリーム
+setup.color.rose	薄いバラ色
+setup.color.pale_green	薄い緑
+setup.color.pale_blue	薄い青
+setup.color.lavender	ラベンダー
+setup.color.dark_red	濃い赤
+setup.color.red	赤
+setup.color.orange	オレンジ
+setup.color.yellow	黄
+setup.color.light_green	薄い緑 (濃)
+setup.color.green	緑
+setup.color.light_blue	水色
+setup.color.blue	青
+setup.color.purple	紫
+setup.color.none	色なし
+setup.group.background	ページの背景
+setup.page_color	ページの色
+setup.cover	表紙
+setup.cover.group	ページ
+setup.cover.simple	シンプル
+setup.cover.banner	帯
+setup.cover.lined	罫線
