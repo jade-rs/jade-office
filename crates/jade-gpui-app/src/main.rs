@@ -4370,6 +4370,7 @@ impl Render for DocumentView {
         let reference_dialog = word_references::overlay(self, window, cx);
         let views_dialog = word_views::overlay(self, cx);
         let mini_toolbar = word_views::mini::toolbar(self, cx);
+        let context_menu = word_views::context::overlay(self, cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
         word_views::on_actions(word_references::on_actions(div().id("root"), cx), cx)
@@ -4597,6 +4598,11 @@ impl Render for DocumentView {
                                     MouseButton::Left,
                                     cx.listener(
                                         move |view, event: &MouseDownEvent, _window, cx| {
+                                            // ⌃-click is a right-click on a Mac.
+                                            if event.modifiers.control {
+                                                word_views::context::open(view, index, event, cx);
+                                                return;
+                                            }
                                             view.click_page(index, event, cx);
                                             // A double-click takes the word,
                                             // a triple-click the paragraph.
@@ -4605,6 +4611,14 @@ impl Render for DocumentView {
                                             } else if event.click_count >= 3 {
                                                 view.select_paragraph(cx);
                                             }
+                                        },
+                                    ),
+                                )
+                                .on_mouse_down(
+                                    MouseButton::Right,
+                                    cx.listener(
+                                        move |view, event: &MouseDownEvent, _window, cx| {
+                                            word_views::context::open(view, index, event, cx);
                                         },
                                     ),
                                 )
@@ -4708,6 +4722,7 @@ impl Render for DocumentView {
             .children(reference_dialog)
             .children(views_dialog)
             .children(mini_toolbar)
+            .children(context_menu)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
