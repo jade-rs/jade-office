@@ -316,6 +316,21 @@ impl Workspace {
                 .when(kind == Some(Kind::Document), |bar| {
                     bar.child(
                         div()
+                            .id("print")
+                            .px_2()
+                            .py_0p5()
+                            .rounded_md()
+                            .text_xs()
+                            .text_color(palette::dim())
+                            .cursor_pointer()
+                            .hover(|button| button.bg(palette::hovered()))
+                            .child(i18n::text("print.title"))
+                            .on_click(cx.listener(|workspace, _event, _window, cx| {
+                                workspace.with_active(cx, |view, cx| view.open_print_panel(cx))
+                            })),
+                    )
+                    .child(
+                        div()
                             .id("export-pdf")
                             .px_2()
                             .py_0p5()

@@ -35,6 +35,7 @@ mod sheet;
 pub(crate) mod word_characters;
 mod word_dialogs;
 mod word_find;
+mod word_print;
 mod word_review;
 pub(crate) mod word_setup;
 mod word_story;
@@ -509,6 +510,8 @@ pub struct DocView {
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
     page_dialog: Option<Box<word_setup::PageDialogState>>,
+    /// The 印刷 panel over a Word document, while it is open (`word_print`).
+    print_panel: Option<Box<word_print::PrintPanel>>,
 }
 
 impl DocView {
@@ -655,6 +658,7 @@ impl DocView {
             characters: word_characters::Characters::default(),
             host,
             page_dialog: None,
+            print_panel: None,
         })
     }
 
@@ -1898,6 +1902,7 @@ impl DocView {
         }
         .into_iter();
         let page_dialog = self.page_dialog_element(cx);
+        let print_panel = self.print_panel_element(cx);
         let Document::Pages {
             document,
             pages,
@@ -2195,6 +2200,7 @@ impl DocView {
             .children(comments_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
+            .children(print_panel)
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -2218,6 +2224,11 @@ impl DocView {
                 })
                 .ok();
             });
+        }
+        // The 印刷 panel takes every key while it is open.
+        if self.print_panel_key(event, cx) {
+            cx.stop_propagation();
+            return;
         }
         // An open table dialog takes the keys it has.
         if self.table_dialog_key(event, cx) {
