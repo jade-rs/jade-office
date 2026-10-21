@@ -13,6 +13,7 @@
 
 mod color;
 mod font;
+mod insert;
 mod paste;
 mod ribbon;
 mod typography;
@@ -29,8 +30,9 @@ use jade_office_model::word::typography::WordTypography;
 
 use crate::{i18n, theme, DocumentView};
 
+pub use insert::{local_now, open_date_time, open_symbols, renderer_clock};
 pub use paste::{open as open_paste_special, paste_with};
-pub use ribbon::{font_color_menu, font_family_menu, font_row, paste_options};
+pub use ribbon::{font_color_menu, font_family_menu, font_row, insert_group, paste_options};
 
 /// The lists the font group's third row drops.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +72,10 @@ pub enum CharAction {
     Paste(jade_office_model::word::clipboard::PasteMode),
     /// 形式を選択して貼り付け….
     OpenPasteSpecial,
+    /// 記号と特殊文字….
+    OpenSymbols,
+    /// 日付と時刻….
+    OpenDateTime,
 }
 
 /// The open dialog.
@@ -81,6 +87,10 @@ pub enum Dialog {
     Typography(typography::TypographyState),
     /// 形式を選択して貼り付け.
     PasteSpecial(paste::PasteSpecial),
+    /// 記号と特殊文字.
+    Symbol(insert::SymbolDialog),
+    /// 日付と時刻.
+    DateTime(insert::DateTimeDialog),
 }
 
 /// The lists a dialog drops over itself.
@@ -110,6 +120,8 @@ pub struct Characters {
     /// Where typing goes while a dialog is open: a font list's filter, a
     /// colour's hex code.
     pub field: TextEdit,
+    /// 記号と特殊文字's 最近使用した記号, most recent first.
+    pub recent_symbols: Vec<char>,
 }
 
 impl Default for Characters {
@@ -118,6 +130,7 @@ impl Default for Characters {
             dialog: None,
             list: None,
             field: TextEdit::new(String::new()),
+            recent_symbols: Vec::new(),
         }
     }
 }
@@ -209,6 +222,8 @@ pub fn run(view: &mut DocumentView, action: CharAction, cx: &mut Context<Documen
         CharAction::OpenTypography => return open_typography(view, cx),
         CharAction::Paste(mode) => return paste::paste_with(view, mode, cx),
         CharAction::OpenPasteSpecial => return paste::open(view, cx),
+        CharAction::OpenSymbols => return insert::open_symbols(view, cx),
+        CharAction::OpenDateTime => return insert::open_date_time(view, cx),
         CharAction::MoreFontColors => {
             let current = WordCharacters::character_format(&view.document).color;
             view.characters
@@ -262,9 +277,16 @@ pub fn open_typography(view: &mut DocumentView, cx: &mut Context<DocumentView>) 
 /// OK: what the dialog says lands on the document, as one undo step.
 pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
     typography::commit_field(view);
-    let Some(dialog) = view.characters.dialog.take() else {
+    let typed = std::mem::replace(&mut view.characters.field, TextEdit::new(String::new()));
+    let Some(mut dialog) = view.characters.dialog.take() else {
         return;
     };
+    // A code typed into 文字コード wins over the grid.
+    if let Dialog::Symbol(symbol) = &mut dialog {
+        if let Some(code) = jade_office_model::word::insert::character_from_code(&typed.text) {
+            symbol.chosen = Some(code);
+        }
+    }
     view.characters.close();
     let done = match dialog {
         Dialog::Font(dialog) => WordCharacters::apply_font_dialog(&mut view.document, &dialog),
@@ -272,6 +294,8 @@ pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
             WordTypography::apply_typography(&mut view.document, &state.dialog)
         }
         Dialog::PasteSpecial(dialog) => return paste::confirm(view, dialog, cx),
+        Dialog::Symbol(dialog) => return insert::confirm_symbol(view, dialog, cx),
+        Dialog::DateTime(dialog) => return insert::confirm_date_time(view, dialog, cx),
         Dialog::Color(dialog) => match dialog.back {
             // From the フォント dialog: back to it, with the colour chosen.
             Some(mut font) => {
@@ -340,9 +364,9 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
             view.characters.field.step(true);
             cx.notify();
         }
-        // Everything else a dialog leaves alone, rather than the document
-        // getting it behind the dialog.
-        _ => {}
+        // Typing reaches the field through the input handler; the
+        // document behind the dialog gets nothing.
+        _ => return false,
     }
     true
 }
@@ -358,12 +382,16 @@ pub fn overlay(
         Dialog::Color(_) => color::body(view, cx),
         Dialog::Typography(_) => typography::body(view, cx),
         Dialog::PasteSpecial(_) => paste::body(view, cx),
+        Dialog::Symbol(_) => insert::symbol_body(view, cx),
+        Dialog::DateTime(_) => insert::date_time_body(view, cx),
     };
     let title = match view.characters.dialog.as_ref()? {
         Dialog::Font(_) => i18n::text("chars.font.title"),
         Dialog::Color(_) => i18n::text("chars.color.title"),
         Dialog::Typography(_) => i18n::text("chars.typography.title"),
         Dialog::PasteSpecial(_) => i18n::text("chars.paste.title"),
+        Dialog::Symbol(_) => i18n::text("chars.symbol.title"),
+        Dialog::DateTime(_) => i18n::text("chars.date.title"),
     };
     let viewport = window.viewport_size();
     Some(
@@ -696,6 +724,18 @@ impl DocumentView {
     }
 }
 
+/// At open: a document with `DATE` or `TIME` fields shows today's date and
+/// time in them, as Word does, rather than the result it was saved with.
+pub fn start_field_clock(document: &mut jade_docx_native_render::NativeDocument) {
+    if !jade_office_model::word::insert::has_clock_fields(document.word_document()) {
+        return;
+    }
+    document.set_field_clock(Some(renderer_clock(&local_now())));
+    if let Err(error) = document.repaint_all() {
+        eprintln!("repaint with the clock failed: {error}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CharAction, Dialog};
@@ -964,6 +1004,45 @@ mod tests {
         view.insert_at = (paragraph, end);
         view.document.place_caret(paragraph, end);
         (paragraph, end)
+    }
+
+    /// 記号と特殊文字: a code typed into 文字コード goes in over the
+    /// selection and joins the recently used row; 日付と時刻 puts today in as
+    /// text, or with 自動的に更新する as a DATE field.
+    #[gpui::test]
+    fn symbols_and_dates_go_in_at_the_caret(cx: &mut gpui::TestAppContext) {
+        use crate::{InsertDateTime, InsertSymbol};
+        let (view, cx) = open_selected(cx);
+        cx.dispatch_action(InsertSymbol);
+        cx.simulate_input("2603");
+        cx.simulate_keystrokes("enter");
+        let paragraph = view.update(cx, |view, _| {
+            assert!(view.characters.dialog.is_none());
+            assert!(view.current_paragraph_text().starts_with('☃'));
+            assert_eq!(view.characters.recent_symbols, ['☃']);
+            view.insert_at.0
+        });
+        cx.dispatch_action(InsertDateTime);
+        let today = view.update(cx, |view, cx| {
+            let Some(Dialog::DateTime(dialog)) = view.characters.dialog.as_mut() else {
+                panic!("the dialog opens");
+            };
+            dialog.english = false;
+            dialog.chosen = 1;
+            dialog.auto_update = true;
+            let today =
+                jade_office_model::word::insert::format_date(dialog.formats()[1], &dialog.now);
+            super::confirm(view, cx);
+            today
+        });
+        view.update(cx, |view, _| {
+            let text = view.document.paragraph_text(paragraph).unwrap();
+            assert!(text.contains(&today), "{text}");
+            let bytes = view.document.export_docx().unwrap();
+            let package = jade_opc::OpcPackage::open(&bytes).unwrap();
+            let xml = package.part_str("word/document.xml").unwrap().unwrap();
+            assert!(xml.contains("DATE \\@ &quot;yyyy年M月d日&quot;"), "{xml}");
+        });
     }
 
     /// 文字種の変換: 全角, then 半角, change the selected text.
