@@ -1946,8 +1946,8 @@ impl DocumentView {
                 vec![
                     Self::ribbon_group(
                         t("doc.group.show"),
-                        vec![Self::ribbon_row(vec![self
-                            .ribbon_button(
+                        vec![Self::ribbon_row(vec![
+                            self.ribbon_button(
                                 "marks",
                                 t("doc.marks"),
                                 t("doc.marks_title"),
@@ -1955,7 +1955,9 @@ impl DocumentView {
                                 cx,
                                 |view, cx| view.toggle_formatting_marks(cx),
                             )
-                            .into_any_element(), self.field_codes_button(cx)])],
+                            .into_any_element(),
+                            self.field_codes_button(cx),
+                        ])],
                     )
                     .into_any_element(),
                     Self::ribbon_group(
@@ -4035,10 +4037,12 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
             )
-            .on_action(cx.listener(|view, _: &InsertField, _window, cx| {
-                view.open_field_dialog(None, cx)
-            }))
-            .on_action(cx.listener(|view, _: &EditField, _window, cx| view.open_edit_field_dialog(cx)))
+            .on_action(
+                cx.listener(|view, _: &InsertField, _window, cx| view.open_field_dialog(None, cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &EditField, _window, cx| view.open_edit_field_dialog(cx)),
+            )
             .on_action(cx.listener(|view, _: &UpdateFields, _window, cx| view.update_fields(cx)))
             .on_action(cx.listener(|view, _: &ToggleFieldCodes, _window, cx| {
                 view.toggle_all_field_codes(cx)
@@ -4047,7 +4051,9 @@ impl Render for DocumentView {
                 view.toggle_selected_field_codes(cx)
             }))
             .on_action(cx.listener(|view, _: &LockFields, _window, cx| view.lock_fields(true, cx)))
-            .on_action(cx.listener(|view, _: &UnlockFields, _window, cx| view.lock_fields(false, cx)))
+            .on_action(
+                cx.listener(|view, _: &UnlockFields, _window, cx| view.lock_fields(false, cx)),
+            )
             .on_action(cx.listener(|view, _: &UnlinkFields, _window, cx| view.unlink_fields(cx)))
             .on_action(cx.listener(|view, _: &DocumentProperties, _window, cx| {
                 view.open_properties_dialog(cx)

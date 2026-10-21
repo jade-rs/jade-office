@@ -330,7 +330,7 @@ impl PropertiesDialog {
 pub(crate) enum FieldsDialog {
     Field(FieldDialog),
     Prompt(PromptDialog),
-    Properties(PropertiesDialog),
+    Properties(Box<PropertiesDialog>),
 }
 
 impl FieldsDialog {
@@ -568,10 +568,10 @@ impl DocumentView {
     /// ファイル › プロパティ.
     pub(crate) fn open_properties_dialog(&mut self, cx: &mut Context<Self>) {
         let properties = self.document.document_properties();
-        self.fields.dialog = Some(FieldsDialog::Properties(PropertiesDialog::open(
+        self.fields.dialog = Some(FieldsDialog::Properties(Box::new(PropertiesDialog::open(
             properties,
             &self.fields.user,
-        )));
+        ))));
         cx.notify();
     }
 
@@ -963,12 +963,7 @@ impl DocumentView {
                             let label = if name == "\\@" {
                                 // A picture shows as what it gives today.
                                 let (now, _) = local_now();
-                                format!(
-                                    "{}",
-                                    jade_docx_editor::field_datetime::format_word_date(
-                                        choice, &now
-                                    )
-                                )
+                                jade_docx_editor::field_datetime::format_word_date(choice, &now)
                             } else {
                                 choice.to_string()
                             };

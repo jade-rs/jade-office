@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use jade_docx_editor::field_datetime::FieldDateTime;
+pub use jade_docx_editor::field_datetime::FieldDateTime;
 use jade_docx_editor::fields::{self, FieldCommand, FieldEnvironment, FieldScope};
 pub use jade_docx_editor::fields::{
     CustomProperty, CustomValue, DocumentProperties, FieldCodeView, FieldInfo, FieldPrompt,
@@ -902,8 +902,6 @@ fn parse_code(code: &str) -> ParsedCode {
             } else {
                 parsed.switches.push((token, None));
             }
-        } else if parsed.switches.is_empty() {
-            parsed.operands.push(token);
         } else {
             parsed.operands.push(token);
         }
@@ -1002,6 +1000,9 @@ pub fn set_operand(code: &str, index: usize, value: &str, quoted: bool) -> Strin
     unparse(&parsed)
 }
 
+/// Reads a file a field names (INCLUDETEXT, INCLUDEPICTURE).
+type FileReader = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
+
 /// What the host tells field evaluation: the clock, the user, the file.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FieldHost {
@@ -1082,15 +1083,14 @@ pub trait WordFields: WordSession {
             .file
             .as_ref()
             .and_then(|file| file.parent().map(PathBuf::from));
-        let read_file: Option<Box<dyn Fn(&str) -> Option<Vec<u8>>>> =
-            Some(Box::new(move |path: &str| {
-                let path = std::path::Path::new(path);
-                let path = match (&folder, path.is_absolute()) {
-                    (Some(folder), false) => folder.join(path),
-                    _ => path.to_path_buf(),
-                };
-                std::fs::read(path).ok()
-            }));
+        let read_file: Option<FileReader> = Some(Box::new(move |path: &str| {
+            let path = std::path::Path::new(path);
+            let path = match (&folder, path.is_absolute()) {
+                (Some(folder), false) => folder.join(path),
+                _ => path.to_path_buf(),
+            };
+            std::fs::read(path).ok()
+        }));
         FieldEnvironment {
             now: host.now,
             utc_offset_seconds: host.utc_offset_seconds,

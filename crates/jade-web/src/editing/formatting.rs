@@ -116,6 +116,14 @@ impl WordSession for EditableDocument {
     fn table_order_for(&self, table_id: usize) -> Option<usize> {
         self.renderer.table_order_for(table_id)
     }
+
+    fn page_count(&self) -> Option<usize> {
+        Some(EditableDocument::page_count(self))
+    }
+
+    fn paragraph_page(&self, paragraph: usize) -> Option<usize> {
+        self.renderer.cached_paragraph_start_page(paragraph)
+    }
 }
 
 impl EditableDocument {
