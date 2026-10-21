@@ -32,6 +32,7 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 
 mod deck;
 mod sheet;
+mod word_dialogs;
 mod word_find;
 mod word_review;
 mod word_story;
@@ -384,6 +385,9 @@ enum Document {
         story: Option<Box<crate::word_page::StoryBar>>,
         /// A comment being typed — new, a reply, an edit — in its bar.
         comment: Option<Box<word_review::CommentBar>>,
+        /// A dialog — a link, a note, the paragraph's format — over the
+        /// pages; it takes the keyboard as the bars do.
+        dialog: Option<Box<word_dialogs::Dialog>>,
         /// Whether the comments pane is open beside the pages.
         show_comments: bool,
         /// The picture or shape last pressed on, and the drag moving or
@@ -483,6 +487,9 @@ pub struct DocView {
     slideshow: bool,
     /// Whether the browser's paste event came after the last ⌘V.
     paste_arrived: bool,
+    /// The status bar's 文字カウント and the caret, selection and edit it
+    /// was counted for: counting reads every paragraph.
+    word_count: RefCell<Option<(FormatKey, SharedString)>>,
     host: Host,
 }
 
@@ -525,6 +532,7 @@ impl DocView {
                     find: None,
                     story: None,
                     comment: None,
+                    dialog: None,
                     show_comments: false,
                     object: None,
                     pages: (0..opened.page_count())
@@ -600,6 +608,7 @@ impl DocView {
             show_notes: true,
             slideshow: false,
             paste_arrived: false,
+            word_count: RefCell::new(None),
             host,
         })
     }
@@ -610,13 +619,25 @@ impl DocView {
     pub fn status_items(&self) -> Vec<SharedString> {
         let mut items: Vec<SharedString> = Vec::new();
         match &self.document {
-            Document::Pages { pages, current, .. } => items.push(
-                i18n::format(
-                    "doc.position",
-                    &[("current", &(current + 1)), ("count", &pages.len())],
-                )
-                .into(),
-            ),
+            Document::Pages {
+                pages,
+                current,
+                document,
+                ribbon,
+                ..
+            } => {
+                items.push(
+                    i18n::format(
+                        "doc.position",
+                        &[("current", &(current + 1)), ("count", &pages.len())],
+                    )
+                    .into(),
+                );
+                items.push(self.word_count_status(document));
+                if ribbon.painter.is_some() {
+                    items.push(i18n::text("painter.armed").into());
+                }
+            }
             Document::Deck {
                 deck,
                 current,
@@ -640,6 +661,41 @@ impl DocView {
             items.push(self.status.clone());
         }
         items
+    }
+
+    /// 文字カウント for the status bar, as Word shows it: the document's
+    /// words and characters, and the selection's out of them.
+    fn word_count_status(&self, document: &jade_web::editing::EditableDocument) -> SharedString {
+        use jade_web::word::count::grouped;
+        use jade_web::word::WordCounting;
+        let key = (document.caret(), document.selection(), self.generation);
+        if let Some((cached, status)) = self.word_count.borrow().as_ref() {
+            if *cached == key {
+                return status.clone();
+            }
+        }
+        let whole = document.document_count();
+        let status: SharedString = match document.selection_count() {
+            Some(selected) => i18n::format(
+                "doc.word_count_selection",
+                &[
+                    ("selected_words", &grouped(selected.words)),
+                    ("words", &grouped(whole.words)),
+                    ("selected_characters", &grouped(selected.characters)),
+                    ("characters", &grouped(whole.characters)),
+                ],
+            ),
+            None => i18n::format(
+                "doc.word_count",
+                &[
+                    ("words", &grouped(whole.words)),
+                    ("characters", &grouped(whole.characters)),
+                ],
+            ),
+        }
+        .into();
+        *self.word_count.borrow_mut() = Some((key, status.clone()));
+        status
     }
 
     /// The chosen zoom, or the fitted one last shown: the workspace's status
@@ -1102,6 +1158,10 @@ impl DocView {
                 return cx.notify();
             }
         }
+        // ⌘-click follows a link, as Word does.
+        if (event.modifiers.platform || event.modifiers.control) && self.follow_link_at(x, y, cx) {
+            return;
+        }
         let extend = event.modifiers.shift;
         let clicks = event.click_count;
         if let Document::Pages { dragging, .. } = &mut self.document {
@@ -1315,11 +1375,62 @@ impl DocView {
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
         self.release_object(cx);
+        // The brush paints what was just clicked or dragged over.
+        let painting = matches!(
+            &self.document,
+            Document::Pages { ribbon, object: None, .. } if ribbon.painter.is_some()
+        );
+        if painting {
+            self.paint_format(false, cx);
+        }
         if let Document::Pages { dragging, .. } = &mut self.document {
             if std::mem::take(dragging) {
                 cx.notify();
             }
         }
+    }
+
+    /// 書式のコピー: takes up the format at the caret or the selection, to
+    /// paint onto what is selected next; `sticky` (a double-click on the
+    /// brush) keeps it painting until Escape. A second click puts it down.
+    fn pick_up_format(&mut self, sticky: bool, cx: &mut Context<Self>) {
+        use jade_web::word::WordFormatPainter;
+        let Document::Pages {
+            document, ribbon, ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let copied = document.copy_format();
+        ribbon.copied_format = Some(copied.clone());
+        ribbon.painter = match &ribbon.painter {
+            // A double-click arrives as a single click first: it turns the
+            // brush sticky rather than off.
+            Some(_) if !sticky => None,
+            _ => Some((copied, sticky)),
+        };
+        cx.notify();
+    }
+
+    /// Paints the format the brush holds — or, from ⌘⇧V, the one ⌘⇧C took
+    /// up — onto the selection, or the word at the caret.
+    fn paint_format(&mut self, from_shortcut: bool, cx: &mut Context<Self>) {
+        use jade_web::word::WordFormatPainter;
+        let Document::Pages { ribbon, .. } = &mut self.document else {
+            return;
+        };
+        let copied = if from_shortcut {
+            ribbon.copied_format.clone()
+        } else {
+            ribbon.painter.as_ref().map(|(copied, _)| copied.clone())
+        };
+        let Some(copied) = copied else {
+            return;
+        };
+        if !from_shortcut && !ribbon.painter.as_ref().is_some_and(|(_, sticky)| *sticky) {
+            ribbon.painter = None;
+        }
+        self.word_edit(cx, move |document| document.paste_format(&copied));
     }
 
     /// The long moves of ⌘ (a Mac) and Ctrl (elsewhere) with an arrow, Home
@@ -1373,6 +1484,15 @@ impl DocView {
             return false;
         }
         let motion = match key {
+            "escape" => {
+                if let Document::Pages { ribbon, .. } = &mut self.document {
+                    if ribbon.painter.take().is_some() {
+                        cx.notify();
+                        return true;
+                    }
+                }
+                return false;
+            }
             // ⌥⌫ and ⌥⌦ delete a word, as on a Mac: the word is selected,
             // then deleted, in one edit.
             "backspace" | "delete" if alt && document.selection().is_none() => {
@@ -1396,6 +1516,12 @@ impl DocView {
             }
             "delete" => {
                 self.word_edit(cx, |document| document.delete(false));
+                return true;
+            }
+            // ⇧Enter breaks the line inside the paragraph (`w:br`), as in
+            // Word; Enter splits the paragraph.
+            "enter" if extend => {
+                self.word_edit(cx, |document| document.insert_line_break());
                 return true;
             }
             "enter" => {
@@ -1464,6 +1590,18 @@ impl DocView {
         if let Action::Review(review) = action {
             return self.review_action(review, cx);
         }
+        if action == Action::InsertLink {
+            return self.open_link_dialog(cx);
+        }
+        if let Action::FormatPainter(sticky) = action {
+            return self.pick_up_format(sticky, cx);
+        }
+        if action == Action::ParagraphDialog {
+            return self.open_paragraph_dialog(cx);
+        }
+        if let Action::InsertNote(kind) = action {
+            return self.open_note_dialog(kind, cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1518,9 +1656,19 @@ impl DocView {
             Action::Page(command) => {
                 jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
             }
+            Action::InsertContents => {
+                jade_web::word::WordReferences::insert_table_of_contents(document)
+            }
+            Action::UpdateContents => {
+                jade_web::word::WordReferences::update_table_of_contents(document)
+            }
             Action::EditStory(_)
             | Action::Review(_)
             | Action::InsertPicture
+            | Action::InsertLink
+            | Action::InsertNote(_)
+            | Action::ParagraphDialog
+            | Action::FormatPainter(_)
             | Action::Wrap(_)
             | Action::Style(_)
             | Action::Tab(_)
@@ -1653,6 +1801,7 @@ impl DocView {
         self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
         let story_bar = self.story_bar_element();
+        let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
         let find_bar = self.find_bar_element(cx);
@@ -1927,6 +2076,7 @@ impl DocView {
                     .flex()
                     .flex_col()
                     .child(word_ribbon)
+                    .children(dialog_bar)
                     .children(comment_bar)
                     .children(story_bar)
                     .children(find_bar)
@@ -1973,6 +2123,10 @@ impl DocView {
             });
         }
         // The find bar over a Word document takes the keys it has.
+        if self.dialog_open() && self.dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.commenting() && self.comment_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -2012,9 +2166,23 @@ impl DocView {
                 "s" => self.save(cx),
                 "a" if pages => self.word_move(cx, |document| document.select_all()),
                 // Find, and Word for Mac's Find and Replace.
-                "f" if pages => self.open_find(false, cx),
+                "f" if pages && !modifiers.alt => self.open_find(false, cx),
                 "h" if pages && modifiers.shift => self.open_find(true, cx),
+                // Word for Mac's 書式のコピー / 書式の貼り付け.
+                "c" if pages && modifiers.shift => self.pick_up_format(false, cx),
+                "v" if pages && modifiers.shift => self.paint_format(true, cx),
                 "c" if pages => self.word_copy(false, cx),
+                // ハイパーリンクの挿入.
+                "k" if pages => self.open_link_dialog(cx),
+                // Word for Mac's 書式 → 段落 (⌥⌘M).
+                "m" | "µ" if pages && modifiers.alt => self.open_paragraph_dialog(cx),
+                // Word for Mac's ⌥⌘F and ⌥⌘D: 脚注の挿入, 文末脚注の挿入.
+                "f" | "ƒ" if pages && modifiers.alt => {
+                    self.open_note_dialog(jade_web::word::NoteKind::Footnote, cx)
+                }
+                "d" | "∂" if pages && modifiers.alt => {
+                    self.open_note_dialog(jade_web::word::NoteKind::Endnote, cx)
+                }
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.
                 "b" | "i" | "u" if pages => {
@@ -2073,6 +2241,10 @@ impl DocView {
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_mut().map(|(_, text)| text),
             Document::Pages {
+                dialog: Some(dialog),
+                ..
+            } => dialog.field_mut(),
+            Document::Pages {
                 comment: Some(bar), ..
             } => Some(&mut bar.text),
             Document::Pages {
@@ -2093,6 +2265,10 @@ impl DocView {
                 ..
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_ref().map(|(_, text)| text),
+            Document::Pages {
+                dialog: Some(dialog),
+                ..
+            } => dialog.field(),
             Document::Pages {
                 comment: Some(bar), ..
             } => Some(&bar.text),

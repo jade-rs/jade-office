@@ -27,6 +27,7 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
+mod word_dialogs;
 mod word_page;
 mod word_review;
 mod workbook;
@@ -55,6 +56,7 @@ use jade_office_model::word::review::WordReview;
 use jade_office_model::word::{
     CharacterFormat, FindOptions, FormatState, Found, TableCommand, WordFind, WordFormatting,
 };
+use jade_office_model::word::{NoteKind, WordReferences};
 use ribbon::Action;
 use std::cell::RefCell;
 use std::ops::Range;
@@ -117,6 +119,12 @@ actions!(
         DeleteTableRow,
         AddComment,
         ToggleChangeTracking,
+        InsertHyperlink,
+        InsertFootnote,
+        InsertEndnote,
+        ParagraphFormat,
+        CopyFormat,
+        PasteFormat,
         ZoomIn,
         ZoomOut,
         ZoomActual,
@@ -171,7 +179,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-f", FindAndReplace, CONTEXT),
         KeyBinding::new("cmd-e", FindSelection, CONTEXT),
         KeyBinding::new("cmd-g", FindNext, CONTEXT),
-        KeyBinding::new("cmd-alt-f", Replace, CONTEXT),
+        // Word for Mac's ⌃H: ⌥⌘F is 脚注の挿入 there.
+        KeyBinding::new("ctrl-h", Replace, CONTEXT),
         KeyBinding::new("cmd-alt-shift-f", ReplaceAll, CONTEXT),
         KeyBinding::new("cmd-b", Bold, CONTEXT),
         KeyBinding::new("cmd-i", Italic, CONTEXT),
@@ -185,6 +194,15 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
+        // Word for Mac's 挿入 menu.
+        KeyBinding::new("cmd-k", InsertHyperlink, CONTEXT),
+        KeyBinding::new("cmd-alt-f", InsertFootnote, CONTEXT),
+        KeyBinding::new("cmd-alt-d", InsertEndnote, CONTEXT),
+        // Word for Mac's 書式 → 段落.
+        KeyBinding::new("cmd-alt-m", ParagraphFormat, CONTEXT),
+        // Word for Mac's 書式のコピー / 書式の貼り付け.
+        KeyBinding::new("cmd-shift-c", CopyFormat, CONTEXT),
+        KeyBinding::new("cmd-shift-v", PasteFormat, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -273,6 +291,20 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.indent_more"), IndentMore),
                 MenuItem::action(t("menu.format.indent_less"), IndentLess),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.format.paragraph"), ParagraphFormat),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.format.copy_format"), CopyFormat),
+                MenuItem::action(t("menu.format.paste_format"), PasteFormat),
+            ],
+        },
+        Menu {
+            name: t("menu.insert").into(),
+            items: vec![
+                MenuItem::action(t("menu.insert.hyperlink"), InsertHyperlink),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.insert.footnote"), InsertFootnote),
+                MenuItem::action(t("menu.insert.endnote"), InsertEndnote),
             ],
         },
         Menu {
@@ -1106,6 +1138,9 @@ struct DocumentView {
     /// The formatting at the caret, and the caret, selection and edit it was
     /// read for: reading it runs queries, so not on every frame.
     format: Option<(FormatKey, FormatState)>,
+    /// The status bar's 文字カウント and what it was counted for: counting
+    /// reads every paragraph, so not on every frame.
+    word_count: RefCell<Option<(FormatKey, SharedString)>>,
     /// The find bar, while it is open. Open, it takes the keyboard: typing goes
     /// into its field rather than into the document.
     find_bar: Option<FindBar>,
@@ -1114,6 +1149,14 @@ struct DocumentView {
     story_bar: Option<word_page::StoryBar>,
     /// A comment being typed — new, a reply, an edit — in its bar.
     comment_bar: Option<word_review::CommentBar>,
+    /// A dialog — a link, a note, the paragraph's format — over the pages;
+    /// it takes the keyboard as the bars do.
+    dialog: Option<word_dialogs::Dialog>,
+    /// 書式のコピー/貼り付け: the format taken up, and whether it keeps
+    /// painting (a double-click on the brush) until Escape.
+    painter: Option<(jade_office_model::word::CopiedFormat, bool)>,
+    /// The format ⌘⇧C took up, for ⌘⇧V.
+    copied_format: Option<jade_office_model::word::CopiedFormat>,
     /// Whether the comments pane is open beside the pages.
     show_comments: bool,
     /// Display scale. The pages are rasterised at their own size and drawn
@@ -1317,6 +1360,10 @@ impl DocumentView {
         }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
+        if self.dialog.is_some() && self.handle_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.comment_bar.is_some() && self.handle_comment_bar_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -1358,6 +1405,10 @@ impl DocumentView {
         let (paragraph, offset) = self.insert_at;
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        if key == "escape" && self.painter.take().is_some() {
+            cx.notify();
+            return;
+        }
         match key {
             // ⌥⌫ and ⌥⌦ take a word, ⌘⌫ the line up to the caret, as on a
             // Mac: what goes is selected, then deleted, in one edit.
@@ -1411,6 +1462,32 @@ impl DocumentView {
                 let page = self.caret_page_1idx();
                 let result = self.document.delete_text(paragraph, offset, false, 1, page);
                 self.after_edit(result, (paragraph, offset), cx);
+            }
+            // ⇧Enter: a line break (`w:br`) inside the paragraph, as in Word.
+            // The break is one character of the paragraph's text; the lines
+            // after it move down, so every page is re-read.
+            "enter" if modifiers.shift => {
+                // Taken here: the platform would also type the `\n` through
+                // the input handler.
+                cx.stop_propagation();
+                // Bounded to the last page, as a split is: the new line can
+                // push text onto any page after it.
+                let page = self.document.page_count().max(1);
+                let result = if self.document.selection().is_some() {
+                    self.document
+                        .replace_selection("\n", page)
+                        .map(|caret| (caret, Duration::ZERO))
+                } else {
+                    self.document
+                        .insert_text(paragraph, offset, "\n", page)
+                        .map(|elapsed| ((paragraph, offset + 1), elapsed))
+                };
+                self.selection_anchor = None;
+                self.rebuild_after_edit();
+                match result {
+                    Ok((caret, elapsed)) => self.after_edit(Ok(elapsed), caret, cx),
+                    Err(error) => self.after_edit(Err(error), (paragraph, offset), cx),
+                }
             }
             "enter" => {
                 // The split re-flows everything below, so the whole document is
@@ -1760,6 +1837,20 @@ impl DocumentView {
             RibbonTab::Insert => vec![
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
                 self.picture_group(cx),
+                Self::ribbon_group(
+                    t("link.group"),
+                    vec![Self::ribbon_row(vec![self
+                        .ribbon_button(
+                            "hyperlink",
+                            t("link.button"),
+                            t("link.button_title"),
+                            false,
+                            cx,
+                            |view, cx| view.open_link_dialog(cx),
+                        )
+                        .into_any_element()])],
+                )
+                .into_any_element(),
                 word_page::header_footer(&self.ribbon, cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
@@ -1898,20 +1989,56 @@ impl DocumentView {
             .into_iter()
             .chain(ribbon::table_tools(&self.ribbon, &state, cx))
             .collect(),
-            RibbonTab::References => vec![Self::ribbon_group(
-                t("doc.toc"),
-                vec![Self::ribbon_row(vec![self
-                    .ribbon_button(
-                        "toc",
-                        t("doc.toc"),
-                        t("doc.toc_title"),
-                        false,
-                        cx,
-                        |view, cx| view.insert_table_of_contents(cx),
-                    )
-                    .into_any_element()])],
-            )
-            .into_any_element()],
+            RibbonTab::References => vec![
+                Self::ribbon_group(
+                    t("doc.toc"),
+                    vec![Self::ribbon_row(vec![
+                        self.ribbon_button(
+                            "toc",
+                            t("doc.toc"),
+                            t("doc.toc_title"),
+                            false,
+                            cx,
+                            |view, cx| view.insert_table_of_contents(cx),
+                        )
+                        .into_any_element(),
+                        self.ribbon_button(
+                            "toc-update",
+                            t("doc.toc_update"),
+                            t("doc.toc_update_title"),
+                            false,
+                            cx,
+                            |view, cx| view.update_table_of_contents(cx),
+                        )
+                        .into_any_element(),
+                    ])],
+                )
+                .into_any_element(),
+                Self::ribbon_group(
+                    t("note.group"),
+                    vec![Self::ribbon_row(vec![
+                        self.ribbon_button(
+                            "footnote",
+                            t("note.footnote"),
+                            t("note.footnote_title"),
+                            false,
+                            cx,
+                            |view, cx| view.open_note_dialog(NoteKind::Footnote, cx),
+                        )
+                        .into_any_element(),
+                        self.ribbon_button(
+                            "endnote",
+                            t("note.endnote"),
+                            t("note.endnote_title"),
+                            false,
+                            cx,
+                            |view, cx| view.open_note_dialog(NoteKind::Endnote, cx),
+                        )
+                        .into_any_element(),
+                    ])],
+                )
+                .into_any_element(),
+            ],
             RibbonTab::Review => self.review_groups(cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
@@ -2068,6 +2195,37 @@ impl DocumentView {
                     |view, cx| view.copy(cx),
                 )
                 .into_any_element(),
+                // One click paints once, a double-click until Escape.
+                div()
+                    .id("format-painter")
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .min_w(px(30.0))
+                    .h(px(28.0))
+                    .px_2()
+                    .rounded_md()
+                    .when(self.painter.is_some(), |button| {
+                        button.bg(theme::selected())
+                    })
+                    .hover(|button| button.bg(theme::hovered()))
+                    .cursor_pointer()
+                    .tooltip(Tooltip::text(t("painter.title")))
+                    .child(
+                        gpui::svg()
+                            .path("icons/paintbrush.svg")
+                            .size_4()
+                            .text_color(if self.painter.is_some() {
+                                theme::accent()
+                            } else {
+                                theme::text()
+                            }),
+                    )
+                    .on_click(cx.listener(|view, event: &gpui::ClickEvent, _window, cx| {
+                        view.pick_up_format(event.click_count() >= 2, cx)
+                    }))
+                    .into_any_element(),
             ])],
         )
         .into_any_element()
@@ -2191,6 +2349,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = self.dialog.as_ref().and_then(|dialog| dialog.field()) {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2199,6 +2360,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self.dialog.is_some() {
+            return self.dialog.as_mut().and_then(|dialog| dialog.field_mut());
+        }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
             (None, Some(bar)) => Some(&mut bar.text),
@@ -2211,6 +2375,7 @@ impl DocumentView {
     fn open_story_bar(&mut self, story: Story, cx: &mut Context<Self>) {
         self.find_bar = None;
         self.comment_bar = None;
+        self.dialog = None;
         let text = self.document.story_text(story);
         self.story_bar = Some(word_page::StoryBar {
             story,
@@ -2362,6 +2527,7 @@ impl DocumentView {
             }
         }
         self.find_query = (!bar.query.is_empty()).then(|| bar.query.clone());
+        self.dialog = None;
         self.find_bar = Some(bar);
         self.update_find_count();
         cx.notify();
@@ -2654,6 +2820,96 @@ impl DocumentView {
         }
     }
 
+    /// 文字カウント for the status bar, as Word shows it: the document's
+    /// words and characters, and the selection's out of them.
+    fn word_count_status(&self) -> SharedString {
+        use jade_office_model::word::count::grouped;
+        use jade_office_model::word::WordCounting;
+        let key = (self.insert_at, self.document.selection(), self.edits);
+        if let Some((cached, status)) = self.word_count.borrow().as_ref() {
+            if *cached == key {
+                return status.clone();
+            }
+        }
+        let document = self.document.document_count();
+        let status: SharedString = match self.document.selection_count() {
+            Some(selected) => i18n::format(
+                "doc.word_count_selection",
+                &[
+                    ("selected_words", &grouped(selected.words)),
+                    ("words", &grouped(document.words)),
+                    ("selected_characters", &grouped(selected.characters)),
+                    ("characters", &grouped(document.characters)),
+                ],
+            ),
+            None => i18n::format(
+                "doc.word_count",
+                &[
+                    ("words", &grouped(document.words)),
+                    ("characters", &grouped(document.characters)),
+                ],
+            ),
+        }
+        .into();
+        *self.word_count.borrow_mut() = Some((key, status.clone()));
+        status
+    }
+
+    /// 書式のコピー: takes up the format at the caret or the selection, to
+    /// paint onto what is selected next; `sticky` (a double-click on the
+    /// brush) keeps it painting until Escape. A second click puts it down.
+    fn pick_up_format(&mut self, sticky: bool, cx: &mut Context<Self>) {
+        use jade_office_model::word::WordFormatPainter;
+        if self.document.selection().is_none() {
+            self.document
+                .place_caret(self.insert_at.0, self.insert_at.1);
+        }
+        let copied = self.document.copy_format();
+        self.copied_format = Some(copied.clone());
+        self.painter = match &self.painter {
+            // A double-click arrives as a single click first: it turns the
+            // brush sticky rather than off.
+            Some(_) if !sticky => None,
+            _ => Some((copied, sticky)),
+        };
+        cx.notify();
+    }
+
+    /// Paints the format the brush holds — or, from ⌘⇧V, the one ⌘⇧C took
+    /// up — onto the selection, or the word at the caret.
+    fn paint_format(&mut self, from_shortcut: bool, cx: &mut Context<Self>) {
+        use jade_office_model::word::WordFormatPainter;
+        let copied = if from_shortcut {
+            self.copied_format.clone()
+        } else {
+            self.painter.as_ref().map(|(copied, _)| copied.clone())
+        };
+        let Some(copied) = copied else {
+            return;
+        };
+        if !from_shortcut && !self.painter.as_ref().is_some_and(|(_, sticky)| *sticky) {
+            self.painter = None;
+        }
+        if self.document.selection().is_none() {
+            self.document
+                .place_caret(self.insert_at.0, self.insert_at.1);
+        }
+        match self.document.paste_format(&copied) {
+            Ok(()) => {
+                self.dirty = true;
+                self.table_status = None;
+                if self.document.selection().is_none() {
+                    self.caret = self
+                        .document
+                        .place_caret(self.insert_at.0, self.insert_at.1);
+                }
+                self.rebuild_all_images();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
+    }
+
     /// A ribbon control was clicked.
     fn ribbon_action(&mut self, action: Action, _window: &mut Window, cx: &mut Context<Self>) {
         self.run_ribbon(action, cx);
@@ -2714,6 +2970,7 @@ impl DocumentView {
                 WordPage::page_command(document, command, japanese)
             }
             Action::EditStory(story) => return self.open_story_bar(story, cx),
+            Action::ParagraphDialog => return self.open_paragraph_dialog(cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -2762,6 +3019,21 @@ impl DocumentView {
             self.rebuild_after_edit();
             cx.notify();
         }
+    }
+
+    /// 目次の更新: the contents made again from the headings.
+    fn update_table_of_contents(&mut self, cx: &mut Context<Self>) {
+        match WordReferences::update_table_of_contents(&mut self.document) {
+            Ok(()) => {
+                self.table_status = None;
+                self.caret = self
+                    .document
+                    .place_caret(self.insert_at.0, self.insert_at.1);
+                self.rebuild_after_edit();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
     }
 
     fn toggle_formatting_marks(&mut self, cx: &mut Context<Self>) {
@@ -3433,6 +3705,10 @@ impl DocumentView {
         }
 
         self.selected_object = None;
+        // ⌘-click follows a link, as Word does.
+        if event.modifiers.platform && self.follow_link_at(local_x, document_y, cx) {
+            return;
+        }
         if let Some(position) = self.document.position_at(local_x, document_y) {
             self.insert_at = position;
             self.current_page = page_index;
@@ -3858,6 +4134,10 @@ impl editor::Editor for DocumentView {
                 ("count", &self.images.len()),
             ],
         ))];
+        items.push(self.word_count_status());
+        if self.painter.is_some() {
+            items.push(i18n::text("painter.armed").into());
+        }
         let comments = self.document.comment_count();
         if comments > 0 {
             items.push(i18n::format("doc.comments", &[("n", &comments)]).into());
@@ -3998,6 +4278,26 @@ impl Render for DocumentView {
             }))
             .on_action(cx.listener(|view, _: &AddComment, _window, cx| view.add_comment(cx)))
             .on_action(
+                cx.listener(|view, _: &InsertHyperlink, _window, cx| view.open_link_dialog(cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &CopyFormat, _window, cx| view.pick_up_format(false, cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &PasteFormat, _window, cx| view.paint_format(true, cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &ParagraphFormat, _window, cx| {
+                    view.open_paragraph_dialog(cx)
+                }),
+            )
+            .on_action(cx.listener(|view, _: &InsertFootnote, _window, cx| {
+                view.open_note_dialog(NoteKind::Footnote, cx)
+            }))
+            .on_action(cx.listener(|view, _: &InsertEndnote, _window, cx| {
+                view.open_note_dialog(NoteKind::Endnote, cx)
+            }))
+            .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
             )
             .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
@@ -4055,6 +4355,7 @@ impl Render for DocumentView {
                     .flex_col()
                     .size_full()
                     .child(self.ribbon(window, cx))
+                    .children(self.dialog_element(cx))
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
@@ -4101,8 +4402,13 @@ impl Render for DocumentView {
                                     .on_mouse_up(
                                         MouseButton::Left,
                                         cx.listener(
-                                            move |view, _event: &MouseUpEvent, _window, _cx| {
+                                            move |view, _event: &MouseUpEvent, _window, cx| {
                                                 view.drag_anchor = None;
+                                                // The brush paints what was
+                                                // just clicked or dragged over.
+                                                if view.painter.is_some() {
+                                                    view.paint_format(false, cx);
+                                                }
                                             },
                                         ),
                                     )
@@ -4383,11 +4689,15 @@ fn document_view(
         find_bar: None,
         story_bar: None,
         comment_bar: None,
+        dialog: None,
+        painter: None,
+        copied_format: None,
         show_comments: false,
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,
         format: None,
+        word_count: RefCell::new(None),
         saved_to: None,
         untitled: false,
         marked: None,
@@ -4805,6 +5115,363 @@ mod tests {
             assert_eq!(view.insert_at, (paragraph - 1, above.len()));
             assert_eq!(view.current_paragraph_text(), format!("{above}{before}"));
         });
+    }
+
+    /// ⇧Enter breaks the line inside the paragraph (`w:br`), where Enter
+    /// would split it: the paragraph count stays, the caret follows the
+    /// break, typing continues on the new line, and Undo takes it back.
+    #[gpui::test]
+    fn shift_enter_breaks_the_line_not_the_paragraph(cx: &mut gpui::TestAppContext) {
+        use super::Undo;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "one");
+        let (count, before) = view.read_with(cx, |view, _| {
+            (
+                view.document.paragraph_count(),
+                view.current_paragraph_text(),
+            )
+        });
+        cx.simulate_keystrokes("shift-enter");
+        cx.simulate_input("two");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.document.paragraph_count(), count);
+            assert_eq!(view.insert_at, (paragraph, "one\ntwo".len()));
+            assert_eq!(
+                view.current_paragraph_text(),
+                before.replacen("one", "one\ntwo", 1)
+            );
+            let xml = view.document.export_docx().unwrap();
+            let package = jade_opc::OpcPackage::open(&xml).unwrap();
+            let body = package.part_str("word/document.xml").unwrap().unwrap();
+            assert!(body.contains("<w:br"), "the break is a w:br");
+        });
+        for _ in 0.."two".len() + 1 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.current_paragraph_text(), before)
+        });
+    }
+
+    /// ⌘K opens ハイパーリンクの挿入 on the selection with its text filled
+    /// in; the address typed goes in with Enter (`www.` gaining `http://`),
+    /// a ⌘-click on the link hands the address to the system, a plain click
+    /// only places the caret, and ⌘K in the link opens it for editing.
+    #[gpui::test]
+    fn command_k_links_the_selection_and_command_click_follows_it(cx: &mut gpui::TestAppContext) {
+        use super::word_dialogs::Dialog;
+        use super::InsertHyperlink;
+        use jade_office_model::word::WordLinks;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "jade ");
+        view.update(cx, |view, _| {
+            view.document
+                .select((paragraph, 0), (paragraph, 4), 1)
+                .unwrap();
+            view.insert_at = (paragraph, 4);
+        });
+        cx.dispatch_action(InsertHyperlink);
+        view.read_with(cx, |view, _| match &view.dialog {
+            Some(Dialog::Link(form)) => {
+                assert_eq!(form.display.text, "jade");
+                assert!(!form.draft.editing);
+            }
+            _ => panic!("the link dialog is open"),
+        });
+        cx.simulate_input("www.example.com");
+        cx.simulate_keystrokes("enter");
+        let point = view.update(cx, |view, _| {
+            assert!(view.dialog.is_none(), "{:?}", view.table_status);
+            let link = view.document.hyperlink_at((paragraph, 1)).expect("a link");
+            assert_eq!(link.address, "http://www.example.com");
+            assert_eq!(view.insert_at, (paragraph, 4));
+            // Where the link's second letter is drawn, in the window.
+            let rect = view.document.place_caret(paragraph, 1).unwrap();
+            let (page, y) = view.document.page_and_offset(rect.document_y);
+            let bounds = view.page_bounds.borrow()[page].unwrap();
+            let zoom = view.zoom;
+            bounds.origin
+                + gpui::point(
+                    gpui::px((rect.x as f32 + 2.0) * zoom),
+                    gpui::px((y + rect.height / 2.0) as f32 * zoom),
+                )
+        });
+        cx.simulate_click(point, gpui::Modifiers::none());
+        assert_eq!(cx.opened_url(), None, "a plain click only places the caret");
+        cx.simulate_click(point, gpui::Modifiers::command());
+        assert_eq!(cx.opened_url().as_deref(), Some("http://www.example.com"));
+
+        view.update(cx, |view, _| {
+            view.insert_at = (paragraph, 2);
+            view.caret = view.document.place_caret(paragraph, 2);
+        });
+        cx.dispatch_action(InsertHyperlink);
+        view.read_with(cx, |view, _| match &view.dialog {
+            Some(Dialog::Link(form)) => {
+                assert!(form.draft.editing);
+                assert_eq!(form.address.text, "http://www.example.com");
+            }
+            _ => panic!("the link dialog is open"),
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| assert!(view.dialog.is_none()));
+    }
+
+    /// ⌥⌘F opens the footnote bar; the text typed goes in with its
+    /// reference at the caret on Enter, one undo step. ⌥⌘D does the same
+    /// for an endnote; Escape leaves the bar without one.
+    #[gpui::test]
+    fn notes_go_in_from_their_shortcuts(cx: &mut gpui::TestAppContext) {
+        use super::word_dialogs::Dialog;
+        use super::{InsertEndnote, InsertFootnote, Undo};
+        use jade_office_model::word::{NoteKind, WordReferences};
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "claim ");
+        let footnotes = view.read_with(cx, |view, _| {
+            view.document.note_texts(NoteKind::Footnote).len()
+        });
+        // Word for Mac's own keys, as the app binds them.
+        cx.update(|_, cx| cx.bind_keys(super::key_bindings()));
+        cx.simulate_keystrokes("cmd-alt-f");
+        view.read_with(cx, |view, _| {
+            assert!(matches!(view.dialog, Some(Dialog::Note(_))));
+        });
+        cx.simulate_input("See the annex.");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.dialog.is_none(), "{:?}", view.table_status);
+            let notes = view.document.note_texts(NoteKind::Footnote);
+            assert_eq!(notes.len(), footnotes + 1);
+            assert!(notes.iter().any(|note| note.contains("See the annex.")));
+            assert_eq!(view.insert_at.0, paragraph);
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.document.note_texts(NoteKind::Footnote).len(),
+                footnotes
+            );
+        });
+        let endnotes = view.read_with(cx, |view, _| {
+            view.document.note_texts(NoteKind::Endnote).len()
+        });
+        cx.dispatch_action(InsertEndnote);
+        cx.simulate_input("巻末");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.document.note_texts(NoteKind::Endnote).len(),
+                endnotes + 1
+            );
+        });
+        // Escape leaves the bar without a note.
+        cx.dispatch_action(InsertFootnote);
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.dialog.is_none());
+            assert_eq!(
+                view.document.note_texts(NoteKind::Footnote).len(),
+                footnotes
+            );
+        });
+    }
+
+    /// 目次の更新 rebuilds an inserted table of contents from a heading
+    /// added after it.
+    #[gpui::test]
+    fn the_contents_update_from_the_headings(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::word::WordFormatting;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "claim ");
+        view.update(cx, |view, cx| {
+            view.document.place_caret(paragraph, 0);
+            WordFormatting::set_paragraph_style(&mut view.document, Some("Heading1")).unwrap();
+            view.insert_at = (0, 0);
+            view.document.place_caret(0, 0);
+            view.insert_table_of_contents(cx);
+            let last = view.document.paragraph_count() - 1;
+            let end = view.document.paragraph_text(last).unwrap().len();
+            view.document.insert_paragraph_break(last, end).unwrap();
+            view.document
+                .insert_text(last + 1, 0, "新しい見出し", 1)
+                .unwrap();
+            view.document.place_caret(last + 1, 0);
+            WordFormatting::set_paragraph_style(&mut view.document, Some("Heading1")).unwrap();
+            let contents = |view: &super::DocumentView| {
+                (0..30)
+                    .filter_map(|index| view.document.paragraph_text(index))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            assert!(!contents(view).contains("新しい見出し"));
+            view.update_table_of_contents(cx);
+            assert!(view.table_status.is_none(), "{:?}", view.table_status);
+            assert!(contents(view).contains("新しい見出し"));
+        });
+    }
+
+    /// The status bar counts the document's words and characters as Word
+    /// does — a Japanese character a word — and a selection's out of them.
+    #[gpui::test]
+    fn the_status_bar_counts_words_and_characters(cx: &mut gpui::TestAppContext) {
+        use super::Editor;
+        use jade_office_model::word::count::grouped;
+        use jade_office_model::word::WordCounting;
+        let (view, cx) = open_contract(cx);
+        let before = view.read_with(cx, |view, _| view.document.document_count());
+        let paragraph = type_at_start(&view, cx, "jade 文書 ");
+        view.update(cx, |view, _| {
+            let items = view.status_items();
+            let shown = super::i18n::format(
+                "doc.word_count",
+                &[
+                    ("words", &grouped(before.words + 3)),
+                    ("characters", &grouped(before.characters + 6)),
+                ],
+            );
+            assert!(items.iter().any(|item| item.as_ref() == shown), "{items:?}");
+            view.document
+                .select((paragraph, 0), (paragraph, "jade 文書".len()), 1)
+                .unwrap();
+            let items = view.status_items();
+            let shown = super::i18n::format(
+                "doc.word_count_selection",
+                &[
+                    ("selected_words", &"3"),
+                    ("words", &grouped(before.words + 3)),
+                    ("selected_characters", &"6"),
+                    ("characters", &grouped(before.characters + 6)),
+                ],
+            );
+            assert!(items.iter().any(|item| item.as_ref() == shown), "{items:?}");
+        });
+    }
+
+    /// ⌥⌘M opens 段落 on the caret paragraph's format; what is typed
+    /// replaces the left indent, Tab moves to the next field, a click on a
+    /// choice or a check box changes it, Enter applies it all as one undo
+    /// step and Escape leaves the paragraph as it was.
+    #[gpui::test]
+    fn the_paragraph_dialog_sets_indents_spacing_and_pagination(cx: &mut gpui::TestAppContext) {
+        use super::word_dialogs::Dialog;
+        use super::Undo;
+        use jade_office_model::word::{LineSpacing, ParagraphField, WordParagraphs};
+        let (view, cx) = open_contract(cx);
+        type_at_start(&view, cx, "段落");
+        let was = view.read_with(cx, |view, _| view.document.paragraph_format());
+        cx.update(|_, cx| cx.bind_keys(super::key_bindings()));
+        cx.simulate_keystrokes("cmd-alt-m");
+        cx.simulate_input("3");
+        cx.simulate_keystrokes("tab tab tab");
+        view.update(cx, |view, cx| {
+            match &view.dialog {
+                Some(Dialog::Paragraph(form)) => {
+                    assert_eq!(form.focus, ParagraphField::Before);
+                    assert_eq!(form.field(ParagraphField::Left).text, "3");
+                }
+                _ => panic!("the paragraph dialog is open"),
+            }
+            view.edit_paragraph_form(
+                |form| {
+                    form.format.keep_next = true;
+                    form.set_line_rule(LineSpacing::Double);
+                },
+                cx,
+            );
+        });
+        cx.simulate_input("12");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.dialog.is_none(), "{:?}", view.table_status);
+            let now = view.document.paragraph_format();
+            assert_eq!(now.left, 3.0);
+            assert_eq!(now.before, 12.0);
+            assert_eq!(now.line, LineSpacing::Double);
+            assert!(now.keep_next);
+            assert!(view.dirty);
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.document.paragraph_format(), was)
+        });
+        cx.simulate_keystrokes("cmd-alt-m");
+        cx.simulate_input("5");
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.dialog.is_none());
+            assert_eq!(view.document.paragraph_format(), was);
+        });
+    }
+
+    /// The brush takes up the format at the caret; a click on a word
+    /// paints it and puts the brush down. Taken up with a double-click it
+    /// keeps painting, word after word, until Escape.
+    #[gpui::test]
+    fn the_format_painter_paints_once_or_until_escape(cx: &mut gpui::TestAppContext) {
+        use super::Bold;
+        use jade_office_model::word::WordFormatting;
+        let (view, cx) = open_contract(cx);
+        let source = type_at_start(&view, cx, "SRC ");
+        view.update(cx, |view, _| select_start(view));
+        cx.dispatch_action(Bold);
+        // Where the second character of a paragraph is drawn, in the window.
+        let point_in = |view: &mut super::DocumentView, paragraph: usize| {
+            let text = view.document.paragraph_text(paragraph).unwrap();
+            let offset = text.char_indices().nth(1).unwrap().0;
+            let rect = view.document.place_caret(paragraph, offset).unwrap();
+            let (page, y) = view.document.page_and_offset(rect.document_y);
+            let bounds = view.page_bounds.borrow()[page].unwrap();
+            bounds.origin
+                + gpui::point(
+                    gpui::px((rect.x as f32 + 1.0) * view.zoom),
+                    gpui::px((y + rect.height / 2.0) as f32 * view.zoom),
+                )
+        };
+        let bold_at = |view: &mut super::DocumentView, paragraph: usize| {
+            // Inside the word clicked: after its third character.
+            let text = view.document.paragraph_text(paragraph).unwrap();
+            let offset = text.char_indices().nth(3).unwrap().0;
+            view.document.place_caret(paragraph, offset);
+            WordFormatting::format_state(&view.document).bold
+        };
+        let targets: Vec<usize> = view.update(cx, |view, cx| {
+            view.insert_at = (source, 1);
+            view.document.place_caret(source, 1);
+            view.pick_up_format(false, cx);
+            assert!(view.painter.is_some());
+            (source + 1..view.document.paragraph_count())
+                .filter(|&paragraph| {
+                    view.document.paragraph_text(paragraph).is_some_and(|text| {
+                        text.chars().count() > 4 && text.chars().all(|ch| !ch.is_whitespace())
+                    }) && !bold_at(view, paragraph)
+                })
+                .take(3)
+                .collect()
+        });
+        assert_eq!(targets.len(), 3);
+        let point = view.update(cx, |view, _| point_in(view, targets[0]));
+        cx.simulate_click(point, gpui::Modifiers::none());
+        view.update(cx, |view, _| {
+            assert!(view.painter.is_none(), "one click paints once");
+            assert!(bold_at(view, targets[0]));
+        });
+
+        view.update(cx, |view, cx| {
+            view.document.place_caret(source, 1);
+            view.insert_at = (source, 1);
+            view.pick_up_format(false, cx);
+            view.pick_up_format(true, cx);
+        });
+        for &target in &targets[1..] {
+            let point = view.update(cx, |view, _| point_in(view, target));
+            cx.simulate_click(point, gpui::Modifiers::none());
+            view.update(cx, |view, _| {
+                assert!(view.painter.is_some(), "a double-click keeps painting");
+                assert!(bold_at(view, target));
+            });
+        }
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| assert!(view.painter.is_none()));
     }
 
     /// Tab goes from cell to cell with the cell's text selected, ⇧Tab

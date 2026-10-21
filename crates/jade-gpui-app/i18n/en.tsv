@@ -675,3 +675,66 @@ format.fill.none	No color
 format.ok	OK
 format.cancel	Cancel
 sheet.protected	The cell or sheet you are trying to change is protected.
+menu.insert	Insert
+menu.insert.hyperlink	Link…
+link.group	Links
+link.button	Link
+link.button_title	Insert Hyperlink (⌘K)
+link.insert	Insert Hyperlink
+link.edit	Edit Hyperlink
+link.display	Text to display
+link.address	Address
+link.keys	⇥ next field · ⏎ OK · esc cancel · an empty address removes the link
+link.missing_bookmark	The bookmark this link goes to is not in the document
+menu.insert.footnote	Footnote
+menu.insert.endnote	Endnote
+doc.toc_update	Update Table
+doc.toc_update_title	Rebuild the table of contents from the headings
+note.group	Footnotes
+note.footnote	Insert Footnote
+note.footnote_title	Insert Footnote (⌥⌘F)
+note.endnote	Insert Endnote
+note.endnote_title	Insert Endnote (⌥⌘D)
+note.text	Text
+note.keys	⏎ insert · esc cancel
+doc.word_count	{words} words · {characters} characters
+doc.word_count_selection	{selected_words} of {words} words · {selected_characters} of {characters} characters
+menu.format.paragraph	Paragraph…
+paragraph.title	Paragraph
+paragraph.button_title	Paragraph settings (⌥⌘M)
+paragraph.alignment	Alignment
+paragraph.align.left	Left
+paragraph.align.center	Centered
+paragraph.align.right	Right
+paragraph.align.both	Justified
+paragraph.indent	Indentation
+paragraph.left	Left
+paragraph.right	Right
+paragraph.special	Special
+paragraph.special.none	(none)
+paragraph.special.first_line	First line
+paragraph.special.hanging	Hanging
+paragraph.by	By
+paragraph.spacing	Spacing
+paragraph.before	Before
+paragraph.after	After
+paragraph.line	Line spacing
+paragraph.line.single	Single
+paragraph.line.one_and_half	1.5 lines
+paragraph.line.double	Double
+paragraph.line.at_least	At least
+paragraph.line.exactly	Exactly
+paragraph.line.multiple	Multiple
+paragraph.unit.chars	ch
+paragraph.unit.mm	mm
+paragraph.unit.lines	lines
+paragraph.pagination	Line and Page Breaks
+paragraph.widow_control	Widow/Orphan control
+paragraph.keep_next	Keep with next
+paragraph.keep_lines	Keep lines together
+paragraph.page_break_before	Page break before
+paragraph.keys	⇥ next field · ⏎ OK · esc cancel
+menu.format.copy_format	Copy Formatting
+menu.format.paste_format	Paste Formatting
+painter.title	Format Painter (double-click to keep painting)
+painter.armed	Format Painter: select the text to format · esc to stop
