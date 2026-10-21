@@ -230,6 +230,14 @@ impl<B: Backend> Workbook<B> {
             .collect()
     }
 
+    /// The colour of sheet `index`'s tab (`sheetPr/tabColor`) as RGB, theme
+    /// colours and tints resolved; `None` for an uncoloured tab.
+    pub fn tab_color(&self, index: usize) -> Option<[u8; 3]> {
+        let color = self.book.workbook().sheets.get(index)?.tab_color?;
+        let [r, g, b, _] = jade_xlsx_layout::color::rgba(color)?;
+        Some([r, g, b])
+    }
+
     pub fn sheet_index(&self) -> usize {
         self.index
     }
@@ -2937,6 +2945,8 @@ fn layout_changes(old: &SheetLayout, new: &SheetLayout) -> Option<Vec<Rect>> {
         || old.blank_conditional_rules != new.blank_conditional_rules
         || old.blank_row_styles != new.blank_row_styles
         || old.blank_column_styles != new.blank_column_styles
+        || old.tables != new.tables
+        || old.sparklines != new.sparklines
         || old.shapes != new.shapes
     {
         return None;
@@ -3177,6 +3187,7 @@ fn lay_out<B: Backend>(
             min_column_count: extent.0,
             min_row_count: extent.1,
             date_system: workbook.date_system,
+            time_zone: Some(book.calculation_time_zone().to_string()),
             measure: Rc::new(PainterMeasure::new(measuring)),
             ..LayoutOptions::default()
         }

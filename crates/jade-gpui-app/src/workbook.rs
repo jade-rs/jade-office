@@ -2489,6 +2489,14 @@ impl WorkbookView {
             .filter(|(index, _)| visible.contains(index))
             .map(|(index, name)| {
                 let selected = index == current;
+                // A coloured tab (sheetPr/tabColor) is filled with its colour,
+                // and underlined with it when selected, as in Excel.
+                let tab_color = self.book.tab_color(index);
+                let tab_fill =
+                    tab_color.map(|[r, g, b]| gpui::rgb(u32::from_be_bytes([0, r, g, b])));
+                let light_tab = tab_color.is_some_and(|[r, g, b]| {
+                    u32::from(r) * 299 + u32::from(g) * 587 + u32::from(b) * 114 > 128_000
+                });
                 let label = match renaming {
                     Some((renamed, text)) if renamed == index => {
                         caret_line(text, theme::accent().into(), false)
@@ -2507,9 +2515,18 @@ impl WorkbookView {
                     .border_r_1()
                     .border_color(theme::border())
                     .text_color(if selected {
-                        theme::accent()
+                        theme::accent().into()
+                    } else if tab_fill.is_some() {
+                        if light_tab {
+                            gpui::black()
+                        } else {
+                            gpui::white()
+                        }
                     } else {
-                        theme::text_dim()
+                        theme::text_dim().into()
+                    })
+                    .when(!selected, |tab| {
+                        tab.when_some(tab_fill, |tab, fill| tab.bg(fill))
                     })
                     .when(selected, |tab| {
                         tab.bg(theme::window()).child(
@@ -2518,9 +2535,10 @@ impl WorkbookView {
                                 .bottom_0()
                                 .left_1()
                                 .right_1()
-                                .h(px(2.0))
+                                .h(px(if tab_fill.is_some() { 3.0 } else { 2.0 }))
                                 .rounded_t_sm()
-                                .bg(theme::accent()),
+                                .bg(tab_fill
+                                    .map_or_else(|| theme::accent().into(), gpui::Hsla::from)),
                         )
                     })
                     .hover(|tab| tab.bg(theme::hovered()))
