@@ -30,6 +30,7 @@ pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
 pub mod asian;
+pub mod borders;
 pub mod building_blocks;
 pub mod clipboard;
 pub mod count;

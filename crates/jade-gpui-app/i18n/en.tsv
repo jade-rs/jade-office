@@ -1997,3 +1997,37 @@ notes.separator	Show separator
 notes.continuation_separator	Show continuation separator
 nav.collapse	Collapse
 nav.expand	Expand
+word.line.dot_dot_dash	Dot dot dash
+word.line.triple	Triple
+word.line.thick	Thick
+word.line.thin_thick_small	Thin-thick, small gap
+word.line.thin_thick_thin_small	Thin-thick-thin, small gap
+word.line.thin_thick_medium	Thin-thick, medium gap
+word.line.thick_thin_medium	Thick-thin, medium gap
+word.line.thin_thick_thin_medium	Thin-thick-thin, medium gap
+word.line.thin_thick_large	Thin-thick, large gap
+word.line.thick_thin_large	Thick-thin, large gap
+word.line.thin_thick_thin_large	Thin-thick-thin, large gap
+word.line.double_wave	Double wave
+word.line.dash_dot_stroked	Dash dot stroked
+word.line.emboss	3-D emboss
+word.line.engrave	3-D engrave
+word.line.outset	Outset
+word.line.inset	Inset
+setup.borders.art	Art
+word.art.apples	Apples
+word.art.hearts	Hearts
+word.art.stars	Stars
+word.art.stars_black	Black stars
+word.art.dots	Dots
+word.art.squares	Squares
+word.art.dashes	Dashes
+word.art.thin_lines	Thin lines
+word.art.checkered	Checkered
+word.art.christmas_tree	Christmas trees
+word.art.flowers	Tiny flowers
+word.art.balloons	Balloons
+word.art.sun	Suns
+word.art.snowflakes	Snowflakes
+word.art.zigzag	Zigzag
+word.art.triangles	Triangles

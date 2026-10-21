@@ -925,17 +925,12 @@ impl PageNumberDialog {
     }
 }
 
-/// ページ罫線's line styles, as `w:val` names them, and their labels.
-pub const PAGE_BORDER_STYLES: [(&str, &str); 8] = [
-    ("single", "setup.borders.single"),
-    ("double", "setup.borders.double"),
-    ("dotted", "setup.borders.dotted"),
-    ("dashed", "setup.borders.dashed"),
-    ("dotDash", "setup.borders.dot_dash"),
-    ("triple", "setup.borders.triple"),
-    ("thinThickSmallGap", "setup.borders.thin_thick"),
-    ("wave", "setup.borders.wave"),
-];
+/// ページ罫線's line styles, as `w:val` names them, and their labels: Word's
+/// whole line list.
+pub const PAGE_BORDER_STYLES: [(&str, &str); 24] = super::borders::LINE_STYLES;
+
+/// ページ罫線's 絵柄 (art borders), and their labels.
+pub const PAGE_BORDER_ARTS: [(&str, &str); 16] = super::borders::ART_STYLES;
 
 /// 線の太さ, in points.
 pub const PAGE_BORDER_WIDTHS: [f32; 9] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.25, 3.0, 4.5, 6.0];
@@ -1028,6 +1023,34 @@ impl PageBorderDialog {
             } else {
                 vec![ApplyTo::WholeDocument]
             },
+        }
+    }
+
+    /// Picks a line style or an art border. Their widths mean different
+    /// things — a line's in points up to 6, an art tile's in points 1–31 —
+    /// so switching between them starts from Word's default for the kind.
+    pub fn set_style(&mut self, style: &str) {
+        let was_art = super::borders::is_art(&self.style);
+        let is_art = super::borders::is_art(style);
+        self.style = style.to_string();
+        if is_art && !was_art {
+            self.width = super::borders::DEFAULT_ART_WIDTH;
+        } else if was_art && !is_art {
+            self.width = 0.5;
+        }
+    }
+
+    /// Whether the chosen style is an art border.
+    pub fn is_art(&self) -> bool {
+        super::borders::is_art(&self.style)
+    }
+
+    /// The widths offered for the chosen style, in points.
+    pub fn widths(&self) -> &'static [f32] {
+        if self.is_art() {
+            &super::borders::ART_WIDTHS
+        } else {
+            &PAGE_BORDER_WIDTHS
         }
     }
 
@@ -1604,6 +1627,27 @@ pub fn a4_layout() -> HeadlessSectionLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_art_page_border_takes_art_widths_and_switching_back_restores_a_line() {
+        let setup = PageSetupDialog::open(a4_layout(), None, SetupTab::Margins);
+        let mut dialog = PageBorderDialog::open(&setup);
+        dialog.set_setting(BorderSetting::Box);
+        dialog.set_style("thinThickMediumGap");
+        assert_eq!(
+            dialog.borders().top.unwrap().style.as_deref(),
+            Some("thinThickMediumGap")
+        );
+        dialog.set_style("hearts");
+        assert!(dialog.is_art());
+        assert_eq!(dialog.width, crate::word::borders::DEFAULT_ART_WIDTH);
+        assert!(dialog.widths().contains(&31.0));
+        let frame = dialog.borders();
+        assert_eq!(frame.left.unwrap().width, Some(20.0));
+        dialog.set_style("double");
+        assert_eq!(dialog.width, 0.5);
+        assert_eq!(PAGE_BORDER_STYLES.len(), 24);
+    }
 
     #[test]
     fn only_what_changed_is_applied() {
