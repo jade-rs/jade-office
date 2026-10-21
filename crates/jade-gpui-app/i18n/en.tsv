@@ -1427,3 +1427,8 @@ print.pdf	Save as PDF…
 print.print	Print
 print.fit	Fit
 print.sheet_of	{n} of {count}
+pdf.title	Save as PDF
+pdf.accessible	Best for electronic distribution and accessibility
+pdf.accessible_detail	Includes structure tags for headings, paragraphs, tables and figures (with alt text), and bookmarks from the headings. Text is written as vectors.
+pdf.appearance	Match the screen
+pdf.appearance_detail	Writes the pages as the screen shows them. Text is searchable, but there are no structure tags.

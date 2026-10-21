@@ -3469,10 +3469,21 @@ impl DocumentView {
         .detach();
     }
 
+    /// Asks how the PDF is made (tagged for accessibility, or as the
+    /// screen shows it), then writes it (`word_files`).
     fn write_pdf_to(&mut self, target: &std::path::Path, cx: &mut Context<Self>) {
+        self.ask_pdf_options(target.to_path_buf(), cx);
+    }
+
+    pub(crate) fn write_pdf_with(
+        &mut self,
+        target: &std::path::Path,
+        options: jade_docx_native_render::PdfExportOptions,
+        cx: &mut Context<Self>,
+    ) {
         let written = self
             .document
-            .export_pdf()
+            .export_pdf_with_options(options)
             .and_then(|pdf| std::fs::write(target, pdf).map_err(|error| error.to_string()));
         match written {
             Ok(()) => {
@@ -5695,8 +5706,12 @@ mod tests {
             assert!(view.dirty);
             view.write_pdf_to(&pdf, cx);
         });
+        // PDF として保存 asks how: tagged for accessibility, the default.
+        cx.simulate_keystrokes("enter");
         let bytes = std::fs::read(&pdf).unwrap();
         assert!(bytes.starts_with(b"%PDF"));
+        let document = lopdf::Document::load_mem(&bytes).unwrap();
+        assert!(document.catalog().unwrap().get(b"StructTreeRoot").is_ok());
         std::fs::remove_file(&pdf).ok();
     }
 

@@ -108,6 +108,9 @@ pub enum FileDialog {
     },
     /// 環境設定 → 保存, being changed.
     Preferences(Preferences),
+    /// How a PDF is written: tagged for accessibility (the default, as
+    /// Word's 電子配布とアクセシビリティに最適), or as the screen shows it.
+    PdfOptions { target: PathBuf, tagged: bool },
 }
 
 /// The 保存 preferences as the dialog holds them until OK.
@@ -352,6 +355,15 @@ impl DocumentView {
         docx
     }
 
+    /// Asks how the PDF at `target` is to be made.
+    pub(crate) fn ask_pdf_options(&mut self, target: PathBuf, cx: &mut Context<Self>) {
+        self.files.dialog = Some(FileDialog::PdfOptions {
+            target,
+            tagged: true,
+        });
+        cx.notify();
+    }
+
     /// 環境設定 → 保存.
     pub(crate) fn open_save_preferences(&mut self, cx: &mut Context<Self>) {
         self.files.dialog = Some(FileDialog::Preferences(Preferences {
@@ -508,6 +520,14 @@ fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
             cx,
         ),
         FileDialog::Message { .. } => {}
+        FileDialog::PdfOptions { target, tagged } => view.write_pdf_with(
+            &target,
+            jade_docx_native_render::PdfExportOptions {
+                tagged,
+                ..Default::default()
+            },
+            cx,
+        ),
         FileDialog::Preferences(preferences) => {
             crate::autorecover::set_settings(preferences.settings);
             if view.files.embed_fonts != preferences.embed_fonts
@@ -540,6 +560,52 @@ pub fn overlay(
                 i18n::format("files.encoding_title_named", &[("name", &name)]).into();
             let body = encoding_body(view, purpose.clone(), *selected, *line_ending, cx);
             (title, body, ok_cancel(cx))
+        }
+        FileDialog::PdfOptions { tagged, .. } => {
+            let tagged = *tagged;
+            let choices = [
+                (true, "pdf.accessible", "pdf.accessible_detail"),
+                (false, "pdf.appearance", "pdf.appearance_detail"),
+            ];
+            (
+                t("pdf.title").into(),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .w(px(420.0))
+                    .children(choices.into_iter().map(|(value, label, detail)| {
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_0p5()
+                            .child(
+                                check(
+                                    SharedString::from(format!("pdf-{label}")),
+                                    t(label),
+                                    tagged == value,
+                                )
+                                .on_click(cx.listener(
+                                    move |view, _: &ClickEvent, _, cx| {
+                                        if let Some(FileDialog::PdfOptions { tagged, .. }) =
+                                            view.files.dialog.as_mut()
+                                        {
+                                            *tagged = value;
+                                        }
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                            .child(
+                                div()
+                                    .pl_5()
+                                    .text_color(theme::text_faint())
+                                    .child(t(detail)),
+                            )
+                    }))
+                    .into_any_element(),
+                ok_cancel(cx),
+            )
         }
         FileDialog::Preferences(preferences) => (
             t("prefs.save_title").into(),
