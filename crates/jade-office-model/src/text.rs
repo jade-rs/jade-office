@@ -21,7 +21,12 @@ pub fn utf16_to_byte(text: &str, offset: usize) -> usize {
 
 /// Byte offset → UTF-16 offset in `text`.
 pub fn byte_to_utf16(text: &str, byte: usize) -> usize {
-    text[..byte.min(text.len())].encode_utf16().count()
+    // An offset inside a character counts up to the character's start.
+    let mut byte = byte.min(text.len());
+    while !text.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    text[..byte].encode_utf16().count()
 }
 
 /// Where ⌥→ (Ctrl+→ elsewhere) goes in `text` from `offset`: past any

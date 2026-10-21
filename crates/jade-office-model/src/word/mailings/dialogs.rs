@@ -424,10 +424,8 @@ impl ListEditor {
                     160.0,
                 ),
                 FormRow::Buttons(vec![
-                    FormButton::new(ADD_COLUMN, t("mail.list.add_column"))
-                        .enabled(!self.column_name.text.trim().is_empty()),
-                    FormButton::new(RENAME_COLUMN, t("mail.list.rename_column"))
-                        .enabled(!self.column_name.text.trim().is_empty()),
+                    FormButton::new(ADD_COLUMN, t("mail.list.add_column")),
+                    FormButton::new(RENAME_COLUMN, t("mail.list.rename_column")),
                     FormButton::new(REMOVE_COLUMN, t("mail.list.remove_column"))
                         .enabled(self.data.columns.len() > 1),
                 ]),
