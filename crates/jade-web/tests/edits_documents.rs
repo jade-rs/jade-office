@@ -338,6 +338,47 @@ fn arrows_home_and_end_move_the_caret_and_shift_extends_the_selection() {
     assert_eq!(document.selection(), None);
 }
 
+/// Up and down cross from page to page — over the bottom margin, the gap and
+/// the next top margin, which still hit-test to the line nearest them — and
+/// stay put at the document's two ends.
+#[test]
+fn up_and_down_cross_page_breaks() {
+    let mut document = open("contract.docx");
+    assert!(document.page_count() >= 3);
+    let x = 200.0;
+    let caret_page = |document: &EditableDocument| {
+        let rect = document.caret_rect().unwrap();
+        document.page_and_offset(rect.document_y).0
+    };
+    for page in 0..document.page_count() - 1 {
+        let bottom = document.document_y(page, document.page_size().1 - 1.0);
+        let last = document.body_position_at(x, bottom).unwrap();
+        document.place_caret_at(x, bottom).unwrap();
+        assert_eq!(caret_page(&document), page);
+        // Down keeps to the caret's column: an empty line's is its start.
+        let column = document.caret_rect().unwrap().x;
+
+        document.move_caret(Motion::Down, false).unwrap();
+        let first = document.document_y(page + 1, 0.0);
+        assert_eq!(caret_page(&document), page + 1, "down from {last:?}");
+        assert_eq!(document.caret(), document.body_position_at(column, first));
+
+        document.move_caret(Motion::Up, false).unwrap();
+        assert_eq!(caret_page(&document), page);
+        assert_eq!(document.caret(), Some(last));
+    }
+
+    document.place_caret_at(x, 0.0).unwrap();
+    let top = document.caret();
+    document.move_caret(Motion::Up, false).unwrap();
+    assert_eq!(document.caret(), top);
+    let end = document.document_y(document.page_count() - 1, document.page_size().1 - 1.0);
+    document.place_caret_at(x, end).unwrap();
+    let bottom = document.caret();
+    document.move_caret(Motion::Down, false).unwrap();
+    assert_eq!(document.caret(), bottom);
+}
+
 #[test]
 fn select_all_takes_every_paragraph() {
     let mut document = open("contract.docx");
