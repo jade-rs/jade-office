@@ -799,3 +799,38 @@ setup.numbers.separator	Use separator
 setup.numbers.numbering	Page numbering
 setup.numbers.continue	Continue from previous section
 setup.numbers.start	Start at
+story.tab	Header & Footer
+story.header	Header
+story.header.first	First Page Header
+story.header.even	Even Page Header
+story.footer	Footer
+story.footer.first	First Page Footer
+story.footer.even	Even Page Footer
+story.section	Section {n}
+story.linked	Same as Previous
+story.group.insert	Insert
+story.field.page	Page Number
+story.field.page_title	Insert the page number (PAGE) at the caret
+story.field.pages	Page Count
+story.field.pages_title	Insert the number of pages (NUMPAGES) at the caret
+story.field.date	Date
+story.field.date_title	Insert the date (DATE) at the caret
+story.field.file	File Name
+story.field.file_title	Insert the file name (FILENAME) at the caret
+story.group.navigation	Navigation
+story.goto.header	Go to Header
+story.goto.footer	Go to Footer
+story.previous	Previous
+story.previous_title	The previous section's header or footer
+story.next	Next
+story.next_title	The next section's header or footer
+story.link	Link to Previous
+story.link_title	Use the previous section's header or footer
+story.group.options	Options
+story.group.position	Position
+story.distance_title	Move it a millimetre from the page edge
+story.distance.header	Header from Top {mm} mm
+story.distance.footer	Footer from Bottom {mm} mm
+story.group.close	Close
+story.close	Close Header and Footer
+story.close_title	Back to the body (or double-click it)

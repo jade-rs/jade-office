@@ -187,6 +187,8 @@ pub enum Action {
     EditStory(Story),
     /// The ページ設定 dialogs and menus (`word_page_setup`).
     Setup(crate::word_page_setup::SetupAction),
+    /// The ヘッダーとフッター tab (`word_story`).
+    Story(crate::word_story::StoryAction),
 }
 
 impl Action {
