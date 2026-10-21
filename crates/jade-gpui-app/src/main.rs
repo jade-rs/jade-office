@@ -32,6 +32,7 @@ mod word_controls;
 mod word_design;
 mod word_dialog;
 mod word_dialogs;
+mod word_equation;
 mod word_fields;
 mod word_form;
 mod word_lists;
@@ -1110,6 +1111,8 @@ pub(crate) enum RibbonTab {
     ObjectFormat,
     /// 開発: content controls and forms (`word_controls`).
     Developer,
+    /// 数式, while an equation is being edited.
+    Equation,
 }
 
 impl RibbonTab {
@@ -1140,6 +1143,7 @@ impl RibbonTab {
             RibbonTab::HeaderFooter => t("story.tab"),
             RibbonTab::ObjectFormat => t("objects.tab.shape_format"),
             RibbonTab::Developer => t("cc.tab"),
+            RibbonTab::Equation => t("equation.tab"),
         }
     }
 }
@@ -1275,6 +1279,8 @@ struct DocumentView {
     /// The 差し込み文書 tab's merge: its recipients, the record previewed,
     /// its dialogs.
     mailings: jade_office_model::word::mailings::MailMerge,
+    /// The equation being edited, if one is (`word_equation`).
+    equation: word_equation::EquationUi,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1565,6 +1571,12 @@ impl DocumentView {
             event.keystroke.modifiers.alt,
             cx,
         ) {
+            cx.stop_propagation();
+            return;
+        }
+        // An equation being edited takes its keys: arrows walk its
+        // structure, Backspace edits it, Escape leaves it.
+        if word_equation::handle_key(self, event, cx) {
             cx.stop_propagation();
             return;
         }
@@ -1973,6 +1985,9 @@ impl DocumentView {
                 ),
             ));
         }
+        if self.equation.editor.is_some() {
+            tabs.push((RibbonTab::Equation, RibbonTab::Equation.label()));
+        }
         tabs
     }
 
@@ -2102,6 +2117,7 @@ impl DocumentView {
                 self.cover_group(cx),
                 word_characters::insert_group(cx),
                 self.fields_group(cx),
+                word_equation::insert_group(self, cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -2204,6 +2220,7 @@ impl DocumentView {
             RibbonTab::HeaderFooter => self.story_groups(cx),
             RibbonTab::Developer => self.developer_groups(cx),
             RibbonTab::Mailings => self.mailings_groups(cx),
+            RibbonTab::Equation => word_equation::tab_groups(self, cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
@@ -3100,6 +3117,12 @@ impl DocumentView {
                 self.table_status = Some(SharedString::from(error));
             }
         }
+        // ホーム's size, colour and bold format the equation being edited.
+        if self.equation.editor.is_some() {
+            if let Some(format) = word_equation::home_format(&action) {
+                return word_equation::format(self, format, cx);
+            }
+        }
         // Direct formatting a self-updating style takes in (自動的に更新する).
         let formats = matches!(
             action,
@@ -3171,6 +3194,7 @@ impl DocumentView {
             Action::Characters(action) => return word_characters::run(self, action, cx),
             Action::References(action) => return word_references::run(self, action, cx),
             Action::Object(action) => return self.run_object_action(action, cx),
+            Action::Equation(action) => return word_equation::run(self, action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) | Action::Word(_) => Ok(()),
         };
         match done {
@@ -3495,6 +3519,7 @@ impl DocumentView {
                 self.insert_at = caret;
                 self.caret = self.document.place_caret(caret.0, caret.1);
                 self.rebuild_after_edit();
+                word_equation::after_history(self);
                 cx.notify();
             }
             // Nothing on the stack: not an error, just nothing to do.
@@ -3842,6 +3867,9 @@ impl DocumentView {
         if event.modifiers.platform && self.follow_link_at(local_x, document_y, cx) {
             return;
         }
+        if word_equation::click(self, page_index, local_x, local_y, cx) {
+            return;
+        }
         if self.table_mouse_down(page_index, local_x, document_y, event, cx) {
             return;
         }
@@ -3921,6 +3949,10 @@ impl DocumentView {
     /// Drawn here rather than painted into the page so moving it costs nothing:
     /// the document bitmap is untouched, which is also what will let it blink.
     fn caret_overlay(&self, page_index: usize) -> Option<impl IntoElement> {
+        // Inside an equation its own caret is drawn (`word_equation`).
+        if self.equation.editor.is_some() {
+            return None;
+        }
         let caret = self.caret?;
         let zoom = self.zoom;
         let (page_of_caret, local_y) = self.document.page_and_offset(caret.document_y);
@@ -4151,6 +4183,11 @@ impl EntityInputHandler for DocumentView {
         }
         if self.find_bar.is_some() {
             self.replace_in_find_bar(range, text, false, cx);
+            return;
+        }
+        if self.equation.editor.is_some() {
+            self.marked = None;
+            word_equation::type_text(self, text, cx);
             return;
         }
         let paragraph_text = self.current_paragraph_text();
@@ -4657,6 +4694,7 @@ impl Render for DocumentView {
                                     )
                                     .children(self.caret_overlay(index))
                                     .children(word_references::page_marks(&marks, index, zoom, cx))
+                                    .children(word_equation::overlay(self, index))
                                     .children(self.table_overlay(index))
                                     .children(self.story_label(index))
                                     .children(vertical_rulers.next().flatten())
@@ -4965,6 +5003,7 @@ fn document_view(
         references: word_references::References::default(),
         controls: word_controls::ControlsUi::default(),
         mailings,
+        equation: Default::default(),
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,
