@@ -21,6 +21,9 @@ use jade_docx_headless_api::{
 
 use super::{CellLayout, Position, TableCell, WordFormatting, WordSession};
 
+/// What a 並べ替え key is made of, for the shells.
+pub use jade_docx_headless_api::{HeadlessTableSortKey as SortKey, HeadlessTableSortKind as SortKind};
+
 /// Points per layout pixel: the renderer lays pages out at 96 per inch.
 const PT_PER_PX: f64 = 0.75;
 /// Millimetres per point, for the dialogs' lengths.
@@ -1637,6 +1640,23 @@ pub trait WordTables: WordSession {
         self.apply_commands(commands, true)
     }
 
+    /// 網かけ: the selected cells filled, or cleared with `None`.
+    fn shade_cells(&mut self, color: Option<&str>) -> Result<(), String> {
+        let span = self.cell_span().ok_or("the caret is not in a table")?;
+        let mut commands = Vec::new();
+        for row in span.rows.0..=span.rows.1 {
+            for column in span.columns.0..=span.columns.1 {
+                commands.push(HeadlessCommand::SetTableCellShading {
+                    table_order_index: span.table_order_index,
+                    row,
+                    column,
+                    color: color.map(|color| format!("#{}", color.trim_start_matches('#'))),
+                });
+            }
+        }
+        self.apply_commands(commands, true)
+    }
+
     // ---- rows, columns and cells ---------------------------------------------
 
     /// セルの挿入 before the caret's cell.
@@ -1774,6 +1794,8 @@ pub trait WordTables: WordSession {
         self.set_text_direction(next)
     }
 
+    /// 文字列の方向 of the selected cells: `tbRl`, `btLr`, or `None` for
+    /// horizontal text.
     fn set_text_direction(&mut self, direction: Option<&str>) -> Result<(), String> {
         let span = self.cell_span().ok_or("the caret is not in a table")?;
         let mut commands = Vec::new();
