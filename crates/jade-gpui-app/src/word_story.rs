@@ -139,6 +139,14 @@ impl WordSession for WordDoc {
         WordSession::hyperlink_regions(&**self)
     }
 
+    fn text_regions(
+        &self,
+        start: (usize, usize),
+        end: (usize, usize),
+    ) -> Vec<jade_docx_editor::canvas_renderer::TextRegion> {
+        WordSession::text_regions(&**self, start, end)
+    }
+
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
         WordSession::select_cells(&mut **self, anchor_cell, focus_cell)
     }

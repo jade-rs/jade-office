@@ -33,8 +33,10 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 mod deck;
 mod sheet;
 pub(crate) mod word_characters;
+pub(crate) mod word_controls;
 mod word_dialogs;
 mod word_find;
+mod word_form;
 mod word_review;
 pub(crate) mod word_setup;
 mod word_story;
@@ -498,6 +500,9 @@ pub struct DocView {
     word_count: RefCell<Option<(FormatKey, SharedString)>>,
     /// The フォント dialog and the other character tools' dialogs.
     characters: word_characters::Characters,
+    /// The 開発 tab's dialogs and the list or calendar dropped under a
+    /// content control.
+    controls: word_controls::ControlsUi,
     host: Host,
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
@@ -622,6 +627,7 @@ impl DocView {
             paste_arrived: false,
             word_count: RefCell::new(None),
             characters: word_characters::Characters::default(),
+            controls: word_controls::ControlsUi::default(),
             host,
             page_dialog: None,
         })
@@ -850,6 +856,10 @@ impl DocView {
     pub fn insert_word_picture(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) -> bool {
         if !matches!(self.document, Document::Pages { .. }) {
             return false;
+        }
+        // One a picture content control asked for goes into it.
+        if word_controls::take_picture(self, &bytes, cx) {
+            return true;
         }
         self.word_edit(cx, move |document| {
             use jade_web::word::picture::WordPicture;
@@ -1204,6 +1214,11 @@ impl DocView {
                 }
             }
         });
+        // A press on a content control or a form field: a box ticked, a
+        // list or a calendar dropped, a placeholder selected.
+        if !extend && clicks == 1 {
+            word_controls::click(self, index, cx);
+        }
     }
 
     /// The text position nearest a window point while dragging from
@@ -1629,6 +1644,9 @@ impl DocView {
         if let Action::Characters(action) = action {
             return word_characters::run(self, action, cx);
         }
+        if let Action::Controls(action) = action {
+            return word_controls::run(self, action, cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1695,6 +1713,7 @@ impl DocView {
             Action::EditStory(_)
             | Action::Setup(_)
             | Action::Characters(_)
+            | Action::Controls(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -1720,6 +1739,9 @@ impl DocView {
     ) -> gpui::AnyElement {
         let generation = self.generation;
         let table = self.table_tab_state();
+        let developer = matches!(&self.document,
+            Document::Pages { ribbon, .. } if ribbon.tab == ribbon::Tab::Developer)
+        .then(|| word_controls::state(self));
         let Document::Pages {
             document,
             ribbon,
@@ -1769,6 +1791,7 @@ impl DocView {
                 table,
                 layout: (ribbon.tab == ribbon::Tab::Layout)
                     .then(|| word_setup::LayoutState::read(document)),
+                developer,
             }
         };
         ribbon::ribbon(
@@ -1852,6 +1875,13 @@ impl DocView {
         }
         .into_iter();
         let page_dialog = self.page_dialog_element(cx);
+        let mut control_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| word_controls::overlay(self, index, zoom, cx))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let Document::Pages {
             document,
             pages,
@@ -1965,6 +1995,7 @@ impl DocView {
                 let store = Rc::clone(&bounds_store);
                 let entity = entity.clone();
                 let table_overlay = table_overlays.next().flatten();
+                let control_overlay = control_overlays.next().unwrap_or_default();
                 div()
                     .relative()
                     .flex_none()
@@ -2020,6 +2051,7 @@ impl DocView {
                         },
                     ))
                     .children(table_overlay)
+                    .children(control_overlay)
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
                             div()
@@ -2183,6 +2215,13 @@ impl DocView {
             cx.stop_propagation();
             return;
         }
+        // A content control's dialog takes the keyboard the same way.
+        if self.controls.is_open() {
+            if word_controls::handle_key(self, key, event.keystroke.modifiers.shift, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // A dialog takes the keyboard while it is open: its own keys stop
         // here, and typing goes on to the input handler, into its field.
         if self.characters.is_open() {
@@ -2292,6 +2331,9 @@ impl DocView {
         if self.slideshow {
             return None;
         }
+        if self.controls.is_open() {
+            return self.controls.field_mut();
+        }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
         }
@@ -2337,6 +2379,9 @@ impl DocView {
     }
 
     fn current_text(&self) -> Option<&TextEdit> {
+        if let Some(field) = self.controls.field() {
+            return Some(field);
+        }
         if let Some(field) = self.characters.text_field() {
             return Some(field);
         }
@@ -2630,6 +2675,12 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.controls.is_open() {
+            if let Some(field) = self.controls.field_mut() {
+                field.replace(range, text, false);
+            }
+            return cx.notify();
+        }
         if self.table_dialog_typed(text, cx) {
             return;
         }
@@ -2677,6 +2728,12 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.controls.is_open() {
+            if let Some(field) = self.controls.field_mut() {
+                field.replace(range, new_text, true);
+            }
+            return cx.notify();
+        }
         if self.table_dialog_open() || self.page_dialog.is_some() {
             return;
         }
@@ -2782,6 +2839,7 @@ impl Render for DocView {
             }
         };
         let dialog = word_characters::overlay(self, window, cx);
+        let controls_dialog = word_controls::dialog(self, window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -2790,5 +2848,6 @@ impl Render for DocView {
             .on_key_down(cx.listener(Self::handle_key))
             .child(body)
             .children(dialog)
+            .children(controls_dialog)
     }
 }

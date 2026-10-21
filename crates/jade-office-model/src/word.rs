@@ -31,9 +31,11 @@ use jade_selection::{SelectionRange, TextPosition};
 
 pub mod asian;
 pub mod clipboard;
+pub mod controls;
 pub mod count;
 pub mod find;
 pub mod font;
+pub mod form_view;
 pub mod insert;
 pub mod links;
 pub mod new;
@@ -113,6 +115,16 @@ pub trait WordSession {
     /// their ids in the last paint's cell registry — and repaints so the
     /// cells show selected, as Word's row, column and table selections do.
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String>;
+
+    /// Where the last layout drew the text from `start` to `end` (rendered
+    /// positions): a rectangle a line, in the document's coordinates.
+    fn text_regions(
+        &self,
+        _start: Position,
+        _end: Position,
+    ) -> Vec<jade_docx_editor::canvas_renderer::TextRegion> {
+        Vec::new()
+    }
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
