@@ -144,7 +144,7 @@ fn swatch_box(id: impl Into<gpui::ElementId>, color: &str, on: bool) -> gpui::St
 
 fn label(text: &'static str) -> gpui::Div {
     div()
-        .w(px(112.0))
+        .w(px(132.0))
         .flex_none()
         .text_color(palette::dim())
         .child(t(text))
@@ -260,7 +260,7 @@ pub fn design_groups(
             let on = option.is_on(&look);
             checkbox(("look", slot), t(look_key(option)), on)
                 .w(px(96.0))
-                .text_xs()
+                .text_size(px(11.0))
                 .when(in_table, |check| {
                     check.on_click(listener(tables(TableAction::Look(option, !on)), cx))
                 })
@@ -269,7 +269,7 @@ pub fn design_groups(
         div()
             .flex()
             .gap_2()
-            .h(px(18.0))
+            .h(px(15.0))
             .child(check(left, index * 2, cx))
             .child(check(right, index * 2 + 1, cx))
             .into_any_element()
@@ -2015,7 +2015,7 @@ fn sort_body(
             body =
                 body.child(
                     line()
-                        .child(div().w(px(112.0)))
+                        .child(div().w(px(132.0)))
                         .children(kinds.into_iter().enumerate().map(
                             |(index, (choice, key_name))| {
                                 chip(
