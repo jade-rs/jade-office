@@ -368,6 +368,17 @@ impl DocumentView {
         }
     }
 
+    /// Tab in a document protected for forms: the next field selected.
+    pub(crate) fn tab_to_form_field(&mut self, backwards: bool, cx: &mut Context<Self>) -> bool {
+        if !self.document.tab_to_form_field(backwards) {
+            return false;
+        }
+        self.show_document_selection();
+        self.refresh_caret_page_image();
+        cx.notify();
+        true
+    }
+
     /// グループ解除: the group the caret is in taken away.
     fn ungroup(&mut self, cx: &mut Context<Self>) {
         self.sync_control_selection();
