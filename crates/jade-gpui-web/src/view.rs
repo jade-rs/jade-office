@@ -1557,7 +1557,14 @@ impl DocView {
                 return true;
             }
             "enter" => {
-                self.word_edit(cx, |document| document.insert_paragraph_break());
+                self.word_edit(cx, |document| {
+                    let ended = document.caret().map(|(paragraph, _)| paragraph);
+                    document.insert_paragraph_break()?;
+                    match ended {
+                        Some(ended) => document.autocorrect_enter(ended, &autocorrect_options()),
+                        None => Ok(()),
+                    }
+                });
                 return true;
             }
             // In a table, to the next or the previous cell; elsewhere a tab
@@ -1572,7 +1579,8 @@ impl DocView {
                     if document.step_cell(!backwards)? || backwards {
                         Ok(())
                     } else {
-                        document.insert_text("\t")
+                        document.insert_text("\t")?;
+                        document.autocorrect_typed(&autocorrect_options())
                     }
                 });
                 return true;
@@ -2725,10 +2733,13 @@ impl EntityInputHandler for DocView {
                 .is_some_and(|(_, _, marked)| marked.is_some());
             self.word_edit(cx, move |document| {
                 if composing {
-                    document.commit_composition(&text)
+                    document.commit_composition(&text)?;
                 } else {
-                    document.insert_text(&text)
+                    document.insert_text(&text)?;
                 }
+                // オートコレクト and 入力オートフォーマット, as the native app
+                // makes them.
+                document.autocorrect_typed(&autocorrect_options())
             });
             return;
         }
@@ -2875,4 +2886,9 @@ impl Render for DocView {
             .children(dialog)
             .children(reference_dialog)
     }
+}
+
+/// The AutoCorrect settings the browser types with: Word's own.
+fn autocorrect_options() -> jade_web::word::autocorrect::AutoCorrectOptions {
+    jade_web::word::autocorrect::AutoCorrectOptions::default()
 }
