@@ -12,6 +12,7 @@
 //! keyboard — typing goes into its field, not the document.
 
 mod color;
+mod enclose;
 mod font;
 mod insert;
 mod paste;
@@ -79,6 +80,8 @@ pub enum CharAction {
     OpenDateTime,
     /// ルビ….
     OpenRuby,
+    /// 囲い文字….
+    OpenEnclose,
 }
 
 /// The open dialog.
@@ -96,6 +99,8 @@ pub enum Dialog {
     DateTime(insert::DateTimeDialog),
     /// ルビ.
     Ruby(ruby::RubyState),
+    /// 囲い文字.
+    Enclose(enclose::EncloseDialog),
 }
 
 /// The lists a dialog drops over itself.
@@ -230,6 +235,7 @@ pub fn run(view: &mut DocumentView, action: CharAction, cx: &mut Context<Documen
         CharAction::OpenSymbols => return insert::open_symbols(view, cx),
         CharAction::OpenDateTime => return insert::open_date_time(view, cx),
         CharAction::OpenRuby => return ruby::open(view, cx),
+        CharAction::OpenEnclose => return enclose::open(view, cx),
         CharAction::MoreFontColors => {
             let current = WordCharacters::character_format(&view.document).color;
             view.characters
@@ -304,6 +310,7 @@ pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         Dialog::Symbol(dialog) => return insert::confirm_symbol(view, dialog, cx),
         Dialog::DateTime(dialog) => return insert::confirm_date_time(view, dialog, cx),
         Dialog::Ruby(state) => return ruby::confirm(view, state, cx),
+        Dialog::Enclose(dialog) => return enclose::confirm(view, dialog, typed.text, cx),
         Dialog::Color(dialog) => match dialog.back {
             // From the フォント dialog: back to it, with the colour chosen.
             Some(mut font) => {
@@ -393,6 +400,7 @@ pub fn overlay(
         Dialog::Symbol(_) => insert::symbol_body(view, cx),
         Dialog::DateTime(_) => insert::date_time_body(view, cx),
         Dialog::Ruby(_) => ruby::body(view, cx),
+        Dialog::Enclose(_) => enclose::body(view, cx),
     };
     let title = match view.characters.dialog.as_ref()? {
         Dialog::Font(_) => i18n::text("chars.font.title"),
@@ -402,6 +410,7 @@ pub fn overlay(
         Dialog::Symbol(_) => i18n::text("chars.symbol.title"),
         Dialog::DateTime(_) => i18n::text("chars.date.title"),
         Dialog::Ruby(_) => i18n::text("chars.ruby.title"),
+        Dialog::Enclose(_) => i18n::text("chars.enclose.title"),
     };
     let viewport = window.viewport_size();
     Some(
@@ -1106,6 +1115,31 @@ mod tests {
         cx.dispatch_action(Undo);
         let xml = view.read_with(cx, |view, _| document_xml(view));
         assert!(!xml.contains("<w:ruby>"));
+    }
+
+    /// 囲い文字 on the selection's first character: □ round it, written
+    /// as Word's EQ field.
+    #[gpui::test]
+    fn an_enclosed_character_replaces_the_selection(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_selected(cx);
+        let first = view.update(cx, |view, cx| {
+            let first: String = view.current_paragraph_text().chars().take(1).collect();
+            let paragraph = view.insert_at.0;
+            let end = first.len();
+            view.document
+                .select((paragraph, 0), (paragraph, end), 1)
+                .unwrap();
+            view.run_ribbon(Action::Characters(CharAction::OpenEnclose), cx);
+            assert_eq!(view.characters.field.text, first);
+            let Some(Dialog::Enclose(dialog)) = view.characters.dialog.as_mut() else {
+                panic!("the dialog opens");
+            };
+            dialog.enclosure = 1;
+            super::confirm(view, cx);
+            first
+        });
+        let xml = view.read_with(cx, |view, _| document_xml(view));
+        assert!(xml.contains(&format!("EQ \\o\\ac(□,{first})")), "{xml}");
     }
 
     /// 文字種の変換: 全角, then 半角, change the selected text.

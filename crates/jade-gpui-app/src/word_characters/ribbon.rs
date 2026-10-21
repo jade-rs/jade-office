@@ -281,6 +281,14 @@ pub fn font_row(
             cx,
         ),
         glyph_button(
+            "enclose-dialog",
+            "㊀",
+            i18n::text("chars.enclose.title"),
+            false,
+            action(CharAction::OpenEnclose),
+            cx,
+        ),
+        glyph_button(
             "typography-dialog",
             "体裁",
             i18n::text("chars.typography.title"),

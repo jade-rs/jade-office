@@ -903,3 +903,6 @@ chars.ruby.font_same	(対象文字列と同じ)
 chars.ruby.size	サイズ
 chars.ruby.offset	オフセット
 chars.ruby.auto	自動
+chars.enclose.title	囲い文字
+chars.enclose.text	文字
+chars.enclose.enclosure	囲い文字の種類
