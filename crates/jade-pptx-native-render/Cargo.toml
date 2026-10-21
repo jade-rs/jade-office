@@ -24,3 +24,5 @@ jade-pptx-layout = { path = "../../jade-core/crates/jade-pptx-layout" }
 jade-pptx-reader = { path = "../../jade-core/crates/jade-pptx-reader" }
 jade-pptx-render = { path = "../../jade-core/crates/jade-pptx-render" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter" }
+# The installed fonts a deck names (`system_fonts`).
+jade-docx-native-render = { path = "../../jade-core/crates/jade-docx-native-render" }

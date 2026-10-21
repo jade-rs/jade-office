@@ -3273,14 +3273,18 @@ dependencies = [
 name = "jade-docx-native-render"
 version = "0.1.0"
 dependencies = [
+ "fontdb 0.23.0",
  "futures",
  "jade-docx-editor",
  "jade-docx-headless-api",
  "jade-docx-layout",
+ "jade-docx-reader",
+ "jade-opc",
  "jade-painter",
  "jade-selection",
  "jade-skia-painter",
  "js-sys",
+ "ttf-parser 0.25.1",
  "wasm-bindgen",
  "web-sys",
 ]

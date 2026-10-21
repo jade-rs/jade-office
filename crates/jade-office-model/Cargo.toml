@@ -55,3 +55,13 @@ png = "0.17"
 # anyway. Debug builds and tests should not panic on it.
 [profile.dev.package.tiny-skia]
 debug-assertions = false
+
+# Corpus tools: save every file as the app saves it, and print it as the
+# native app prints it, to set beside what Office makes of the same files.
+[[example]]
+name = "resave"
+required-features = ["tiny-skia"]
+
+[[example]]
+name = "oracle_pdf"
+required-features = ["skia"]
