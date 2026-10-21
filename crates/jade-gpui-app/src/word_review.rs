@@ -245,7 +245,10 @@ impl DocumentView {
                             cx.notify();
                         },
                     ),
-                ])],
+                ]
+                .into_iter()
+                .chain(crate::word_references::comment_steps(cx))
+                .collect())],
             )
             .into_any_element(),
             Self::ribbon_group(

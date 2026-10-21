@@ -113,6 +113,8 @@ pub enum Popup {
     Cover,
     /// The font group's third row (`word_characters`).
     Characters(crate::word_characters::CharPopup),
+    /// 参考資料's lists (`word_references`).
+    References(crate::word_references::RefPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -196,6 +198,8 @@ pub enum Action {
     /// The font group's third row, the colour lists and the dialogs
     /// (`word_characters`).
     Characters(crate::word_characters::CharAction),
+    /// 参考資料, ジャンプ and the navigation pane (`word_references`).
+    References(crate::word_references::RefAction),
 }
 
 impl Action {
