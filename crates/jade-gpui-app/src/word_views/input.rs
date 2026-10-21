@@ -90,6 +90,52 @@ pub fn after_enter(view: &mut DocumentView, ended: usize, cx: &mut Context<Docum
     }
 }
 
+/// 上書き入力: on or off (the Insert key, the status bar, Word のオプション).
+pub fn toggle_overtype(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
+    let on = !overtype();
+    settings::set_value("options.txt", "overtype", if on { "1" } else { "0" });
+    view.views.mini = false;
+    cx.notify();
+}
+
+/// Whether typing replaces the characters after the caret.
+pub fn overtype() -> bool {
+    settings::value("options.txt", "overtype").as_deref() == Some("1")
+}
+
+/// Whether the Insert key switches 上書き入力 (挿入キーで上書き入力を切り替える).
+pub fn insert_key_toggles() -> bool {
+    settings::value("options.txt", "insert_key").as_deref() != Some("0")
+}
+
+/// In 上書き入力, the bytes `text` replaces from a caret at `range`: as
+/// many characters as it has, not past the paragraph's end. Unchanged
+/// otherwise, and while a composition or a selection is under way.
+pub fn overtype_range(
+    view: &DocumentView,
+    range: std::ops::Range<usize>,
+    text: &str,
+) -> std::ops::Range<usize> {
+    if !overtype()
+        || !range.is_empty()
+        || view.marked.is_some()
+        || view.document.selection().is_some()
+    {
+        return range;
+    }
+    let paragraph = view
+        .document
+        .paragraph_text(view.insert_at.0)
+        .unwrap_or_default();
+    let start = range.start.min(paragraph.len());
+    let count = text.chars().count();
+    let end = paragraph[start..]
+        .char_indices()
+        .nth(count)
+        .map_or(paragraph.len(), |(at, _)| start + at);
+    start..end
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::settings;
@@ -215,5 +261,31 @@ mod tests {
             assert_eq!(view.document.paragraph_text(paragraph).unwrap(), "teh ");
         });
         settings::set_autocorrect(AutoCorrectOptions::default());
+    }
+
+    /// 上書き入力: typing replaces what is after the caret, a character for
+    /// a character, and stops at the paragraph's end.
+    #[gpui::test]
+    fn overtype_replaces_what_follows(cx: &mut gpui::TestAppContext) {
+        let (view, cx, paragraph) = open_at_start(cx);
+        cx.simulate_input("abcdef");
+        view.update(cx, |view, cx| {
+            view.insert_at = (paragraph, 1);
+            view.caret = view.document.place_caret(paragraph, 1);
+            super::toggle_overtype(view, cx);
+            assert!(super::overtype());
+        });
+        cx.simulate_input("XY");
+        view.update(cx, |view, cx| {
+            assert_eq!(view.document.paragraph_text(paragraph).unwrap(), "aXYdef");
+            view.insert_at = (paragraph, 5);
+            view.caret = view.document.place_caret(paragraph, 5);
+            let _ = cx;
+        });
+        cx.simulate_input("123");
+        view.update(cx, |view, cx| {
+            assert_eq!(view.document.paragraph_text(paragraph).unwrap(), "aXYde123");
+            super::toggle_overtype(view, cx);
+        });
     }
 }

@@ -1098,7 +1098,7 @@ impl gpui::AssetSource for Assets {
 ///
 /// The browser shell shows these seven, and a tab that is present but empty is
 /// worse than one that is not: each of these has something under it.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RibbonTab {
     Home,
     Insert,
@@ -1943,6 +1943,8 @@ impl DocumentView {
     /// footer is open, and the two table tabs while the caret is in a table.
     fn ribbon_tabs(&mut self) -> Vec<RibbonTab> {
         let mut tabs = RibbonTab::ALL.to_vec();
+        // リボンのユーザー設定: the tabs the user hid.
+        tabs.retain(|tab| word_views::customize::tab_shown(*tab));
         if self.editing_story() {
             tabs.push(RibbonTab::HeaderFooter);
         }
@@ -1956,7 +1958,7 @@ impl DocumentView {
         let tabs = self.ribbon_tabs();
         // A table tab goes when the caret leaves the table.
         if !tabs.contains(&self.ribbon_tab) {
-            self.ribbon_tab = RibbonTab::Home;
+            self.ribbon_tab = tabs.first().copied().unwrap_or(RibbonTab::Home);
         }
         let active = self.ribbon_tab;
         div()
@@ -1973,6 +1975,8 @@ impl DocumentView {
                     .gap_1()
                     .px_4()
                     .pt(px(8.0))
+                    // クイック アクセス ツール バー.
+                    .child(word_views::customize::toolbar(cx))
                     .children(tabs.into_iter().map(|tab| {
                         div()
                             .id(tab.label())
@@ -2051,6 +2055,8 @@ impl DocumentView {
                 groups.insert(3.min(groups.len()), lists);
                 let styles = self.style_tools_group(cx);
                 groups.insert(5.min(groups.len()), styles);
+                // リボンのユーザー設定: the user's own group.
+                groups.extend(word_views::customize::custom_group(cx));
                 groups
             }
             RibbonTab::Insert => vec![
@@ -3233,6 +3239,7 @@ impl DocumentView {
     /// The selection's text onto the clipboard, and its formatting beside it
     /// for a paste in this app that finds that text still there.
     fn copy(&mut self, cx: &mut Context<Self>) {
+        word_views::paste::note_copy(self);
         if word_views::select::copy(self, cx) {
             return;
         }
@@ -3261,6 +3268,11 @@ impl DocumentView {
         };
         // Copied here, and still what the clipboard holds: with its formatting.
         let clip = RICH_CLIP.with(|kept| kept.borrow().clone());
+        // 貼り付けの既定 (Word のオプション → 編集).
+        let rich = clip.as_ref().is_some_and(|clip| clip.matches(&text));
+        if word_views::paste::default_paste(self, rich, cx) {
+            return;
+        }
         if let Some(clip) = clip.filter(|clip| clip.matches(&text)) {
             return self.paste_rich(&clip, cx);
         }
@@ -4149,6 +4161,8 @@ impl EntityInputHandler for DocumentView {
                 .clone()
                 .unwrap_or(self.insert_at.1..self.insert_at.1),
         };
+        // 上書き入力: what follows the caret goes as the text comes.
+        let bytes = word_views::input::overtype_range(self, bytes, text);
         self.marked = None;
         self.replace_bytes(bytes, text, cx);
         // オートコレクト and 入力オートフォーマット.
@@ -4282,6 +4296,7 @@ impl editor::Editor for DocumentView {
         if self.document.is_tracking_changes() {
             items.push(i18n::text("doc.tracking").into());
         }
+        items.extend(word_views::status_items());
         items
     }
 

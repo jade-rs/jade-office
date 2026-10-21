@@ -15,10 +15,14 @@ use jade_office_model::word::view::{
 };
 
 pub mod context;
+pub mod customize;
 pub mod find;
 pub mod input;
+pub mod marks;
 pub mod mini;
 pub mod options;
+pub mod paste;
+pub mod prefs;
 pub mod select;
 pub mod settings;
 
@@ -34,6 +38,10 @@ gpui::actions!(
         AutoCorrect,
         /// 編集 → 検索 → 高度な検索と置換….
         AdvancedFind,
+        /// Word のオプション (環境設定, ⌘,).
+        WordOptions,
+        /// 上書き入力 (the Insert key).
+        ToggleOvertype,
     ]
 );
 
@@ -43,6 +51,8 @@ pub fn key_bindings() -> Vec<gpui::KeyBinding> {
     vec![
         gpui::KeyBinding::new("ctrl-alt-cmd-a", AutoCorrect, CONTEXT),
         gpui::KeyBinding::new("cmd-alt-shift-h", AdvancedFind, CONTEXT),
+        gpui::KeyBinding::new("cmd-,", WordOptions, CONTEXT),
+        gpui::KeyBinding::new("insert", ToggleOvertype, CONTEXT),
     ]
 }
 
@@ -50,10 +60,11 @@ pub fn key_bindings() -> Vec<gpui::KeyBinding> {
 pub fn tools_menu() -> gpui::Menu {
     gpui::Menu {
         name: t("menu.tools").into(),
-        items: vec![gpui::MenuItem::action(
-            t("menu.tools.autocorrect"),
-            AutoCorrect,
-        )],
+        items: vec![
+            gpui::MenuItem::action(t("menu.tools.autocorrect"), AutoCorrect),
+            gpui::MenuItem::action(t("options.menu"), WordOptions),
+            gpui::MenuItem::action(t("options.overtype"), ToggleOvertype),
+        ],
     }
 }
 
@@ -68,6 +79,15 @@ pub fn on_actions(
     .on_action(cx.listener(|view, _: &AdvancedFind, _, cx| {
         find::open(view, false);
         cx.notify();
+    }))
+    .on_action(cx.listener(|view, _: &WordOptions, _, cx| {
+        prefs::open(view, prefs::OptionsPage::View);
+        cx.notify();
+    }))
+    .on_action(cx.listener(|view, _: &ToggleOvertype, _, cx| {
+        if input::insert_key_toggles() {
+            input::toggle_overtype(view, cx);
+        }
     }))
 }
 
@@ -114,6 +134,8 @@ pub enum ViewDialog {
     AutoCorrect(Box<options::AutoCorrectDialog>),
     /// 高度な検索と置換.
     Find(Box<find::FindDialog>),
+    /// Word のオプション, at one of its pages.
+    Options(prefs::OptionsPage),
 }
 
 /// The view's state of the 表示 tab.
@@ -159,6 +181,7 @@ impl Views {
             ViewDialog::Zoom { percent, .. } => Some(percent),
             ViewDialog::AutoCorrect(dialog) => dialog.fields.get(dialog.focus),
             ViewDialog::Find(dialog) => dialog.fields.get(dialog.focus),
+            ViewDialog::Options(_) => None,
         }
     }
 
@@ -171,6 +194,7 @@ impl Views {
                 dialog.current = None;
                 dialog.fields.get_mut(focus)
             }
+            Some(ViewDialog::Options(_)) => None,
             None => None,
         }
     }
@@ -308,6 +332,17 @@ pub fn before_render(view: &mut DocumentView, window: &Window, cx: &mut Context<
     let area = workspace::editor_area(window, cx);
     AREA.with(|cell| cell.set(Some(area)));
     apply_fit(view);
+    // The marks Word のオプション shows by kind, in every document.
+    marks::apply(view);
+}
+
+/// What the status bar adds: 上書き while typing replaces.
+pub fn status_items() -> Vec<gpui::SharedString> {
+    if input::overtype() {
+        vec![t("views.status.overtype").into()]
+    } else {
+        Vec::new()
+    }
 }
 
 /// The band between the margins of page `index`, from its section.
@@ -579,6 +614,13 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
     if matches!(view.views.dialog, Some(ViewDialog::Find(_))) {
         return find::handle_key(view, key, cx);
     }
+    if matches!(view.views.dialog, Some(ViewDialog::Options(_))) {
+        if matches!(key, "escape" | "enter" | "return") {
+            view.views.dialog = None;
+            cx.notify();
+        }
+        return true;
+    }
     match key {
         "escape" => view.views.dialog = None,
         "enter" | "return" => {
@@ -611,6 +653,7 @@ pub fn overlay(view: &DocumentView, cx: &mut Context<DocumentView>) -> Option<An
         } => (choice, percent, pages),
         ViewDialog::AutoCorrect(dialog) => return Some(options::overlay(dialog, cx)),
         ViewDialog::Find(dialog) => return Some(find::overlay(view, dialog, cx)),
+        ViewDialog::Options(page) => return Some(prefs::overlay(view, *page, cx)),
     };
     let (choice, pages) = (*choice, *pages);
     fn set(

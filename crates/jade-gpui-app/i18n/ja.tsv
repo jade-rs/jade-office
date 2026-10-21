@@ -2152,3 +2152,41 @@ find.start_reached	文書の先頭まで検索しました。
 find.not_found	検索項目は見つかりませんでした。
 find.bad_pattern	検索する文字列が正しくありません: {why}
 find.replaced_count	{n} 個の項目を置換しました。
+options.menu	Word のオプション…
+options.title	Word のオプション
+options.page.view	表示
+options.page.edit	編集
+options.page.ribbon	リボンとツール バー
+options.marks	常に画面に表示する編集記号
+options.marks.tabs	タブ
+options.marks.spaces	スペース
+options.marks.paragraph_marks	段落記号
+options.marks.hidden_text	隠し文字
+options.marks.optional_hyphens	任意指定のハイフン
+options.marks.anchors	アンカー記号
+options.overtype	上書き入力モードを使用する
+options.insert_key	Insert キーで上書き入力を切り替える
+options.paste	切り取り、コピー、貼り付け
+options.paste_same	同じ文書内での貼り付け
+options.paste_between	文書間での貼り付け
+options.paste_other	他のプログラムからの貼り付け
+options.tabs	表示するタブ
+options.qat	クイック アクセス ツール バーのコマンド
+options.custom_group	ホームの「ユーザー設定」グループのコマンド
+customize.group	ユーザー設定
+views.status.overtype	上書き
+qat.save	上書き保存
+qat.undo	元に戻す
+qat.redo	やり直し
+qat.print	印刷
+qat.export_pdf	PDF として書き出す
+qat.find	検索
+qat.bold	太字
+qat.italic	斜体
+qat.underline	下線
+qat.align_left	左揃え
+qat.align_center	中央揃え
+qat.align_right	右揃え
+qat.insert_table	表の挿入
+qat.picture	画像
+qat.track_changes	変更履歴の記録
