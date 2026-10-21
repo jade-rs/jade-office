@@ -565,6 +565,27 @@ impl DocView {
                 _ => bytes,
             }
         };
+        // A master document's subdocuments show as their links: the page
+        // cannot reach the files they are in.
+        let master_view;
+        let bytes = match kind == Kind::Document && jade_web::word::master::is_master(bytes) {
+            true => {
+                let unreachable = |_: &str| None;
+                let as_named = |target: &str| target.to_string();
+                let files = jade_web::word::master::Files {
+                    load: &unreachable,
+                    display: &as_named,
+                };
+                match jade_web::word::master::for_editing(bytes, &files) {
+                    Ok(editing) => {
+                        master_view = editing;
+                        &master_view[..]
+                    }
+                    Err(_) => bytes,
+                }
+            }
+            false => bytes,
+        };
         // An OLE compound file, not a package: password-protected, or one
         // of the old binary formats.
         if bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
@@ -899,6 +920,16 @@ impl DocView {
                         },
                     )
                     .map_err(|error| error.to_string()),
+                    // A master keeps its subdocuments as links.
+                    _ if jade_web::word::master::is_master(&docx) => {
+                        let unreachable = |_: &str| None;
+                        let as_named = |target: &str| target.to_string();
+                        let files = jade_web::word::master::Files {
+                            load: &unreachable,
+                            display: &as_named,
+                        };
+                        jade_web::word::master::for_saving(&docx, &files).map(|(stored, _)| stored)
+                    }
                     _ => Ok(docx),
                 }
             }),
@@ -1069,6 +1100,18 @@ impl DocView {
         let Document::Pages { document, .. } = &mut self.document else {
             return;
         };
+        // A locked subdocument, or a collapsed one's link, takes no edits.
+        let (first, last) = match (document.selection(), document.caret()) {
+            (Some((anchor, focus)), _) => (anchor.0.min(focus.0), anchor.0.max(focus.0)),
+            (None, Some(caret)) => (caret.0, caret.0),
+            (None, None) => (0, 0),
+        };
+        if jade_web::word::master::edit_is_locked(
+            jade_web::word::WordSession::word_document(&**document),
+            first..=last,
+        ) {
+            return self.word_result(Err(i18n::text("master.locked_edit").to_string()), cx);
+        }
         let result = edit(document);
         self.refresh_repainted();
         self.reveal_caret();

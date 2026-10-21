@@ -1505,3 +1505,24 @@ compat.layout.table_grid	Adjust line height to grid height in the table
 pdf_import.title	PDF Conversion
 pdf_import.body	The PDF was converted to an editable Word document. The result may not look exactly like the original PDF, especially if it had many graphics. It is saved as a Word Document (.docx).
 web.download_as	Download As ▾
+master.title	Master Document
+master.group	Master Document
+master.show	Show Document
+master.show_title	Show each subdocument in its box
+master.expand_collapse	Expand/Collapse
+master.expand_collapse_title	Expand subdocuments to show their text, or collapse them to their links
+master.create	Create
+master.create_title	Make the heading at the insertion point and what is under it a subdocument
+master.insert	Insert
+master.insert_title	Insert a file as a subdocument
+master.insert_prompt	Insert as Subdocument
+master.unlink	Unlink
+master.unlink_title	Remove the link to the subdocument and keep its text in the master document
+master.lock	Lock Document
+master.lock_title	Lock the subdocument against changes
+master.open	Open Subdocument
+master.open_title	Open the subdocument at the insertion point in its own tab
+master.none	This document has no subdocuments.
+master.not_in_subdocument	Put the insertion point in a subdocument.
+master.unreachable	These subdocuments could not be opened: {names}
+master.locked_edit	This modification is not allowed because the subdocument is locked.

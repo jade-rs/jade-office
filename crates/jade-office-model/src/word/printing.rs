@@ -726,7 +726,7 @@ mod tests {
         // Four to a sheet: two by two, the sheet as it was.
         let four = impose(&[0, 1, 2, 3], &[a4; 4], 4, None);
         assert!(four[0].height > four[0].width);
-        assert_eq!(four[0].placements[2].y > four[0].placements[0].y, true);
+        assert!(four[0].placements[2].y > four[0].placements[0].y);
     }
 
     #[test]

@@ -147,7 +147,7 @@ pub fn sfnt_face(data: &[u8], index: u32) -> Option<Vec<u8>> {
         let length = read_u32(record + 12)? as usize;
         let new_offset = header_size + body.len();
         body.extend_from_slice(data.get(table_offset..table_offset + length)?);
-        while body.len() % 4 != 0 {
+        while !body.len().is_multiple_of(4) {
             body.push(0);
         }
         out[12 + table * 16 + 8..12 + table * 16 + 12]

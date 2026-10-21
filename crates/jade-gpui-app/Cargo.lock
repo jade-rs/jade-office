@@ -3364,6 +3364,7 @@ dependencies = [
  "futures",
  "gpui",
  "image",
+ "jade-docx-convert",
  "jade-docx-editor",
  "jade-docx-native-render",
  "jade-docx-pdf-renderer",
