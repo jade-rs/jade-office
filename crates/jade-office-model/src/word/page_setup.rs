@@ -1150,6 +1150,34 @@ pub trait WordPageSetup: WordSession {
             .unwrap_or(false)
     }
 
+    /// 1 ページの行数を指定時に文字を行グリッド線に合わせる for the
+    /// selected paragraphs.
+    fn set_snap_to_grid(&mut self, snap: bool) -> Result<(), String> {
+        let range = self.selection_range().ok_or("no caret")?;
+        let (start, end) = range.normalized();
+        self.apply_command(
+            HeadlessCommand::SetParagraphSnapToGrid {
+                start_paragraph: start.paragraph,
+                end_paragraph: end.paragraph,
+                snap,
+            },
+            true,
+        )
+    }
+
+    /// Whether the caret's paragraph snaps to the document grid (the
+    /// default).
+    fn snap_to_grid(&self) -> bool {
+        let Some(range) = self.selection_range() else {
+            return true;
+        };
+        self.word_document()
+            .paragraph(range.focus.paragraph)
+            .and_then(|paragraph| paragraph.properties.as_ref())
+            .and_then(|properties| properties.snap_to_grid)
+            .unwrap_or(true)
+    }
+
     /// 改ページ, 段区切り and 文字列の折り返し at the caret, over the
     /// selection.
     fn insert_page_break(&mut self, kind: PageBreak) -> Result<(), String> {

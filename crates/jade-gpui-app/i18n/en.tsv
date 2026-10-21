@@ -834,3 +834,5 @@ story.distance.footer	Footer from Bottom {mm} mm
 story.group.close	Close
 story.close	Close Header and Footer
 story.close_title	Back to the body (or double-click it)
+setup.snap	Snap to Grid
+setup.snap_title	Snap to grid when the document grid is defined
