@@ -133,6 +133,14 @@ impl WordSession for EditableDocument {
         self.renderer.set_cell_selection(anchor_cell, focus_cell);
         Ok(())
     }
+
+    fn page_count(&self) -> Option<usize> {
+        Some(EditableDocument::page_count(self))
+    }
+
+    fn paragraph_page(&self, paragraph: usize) -> Option<usize> {
+        self.renderer.cached_paragraph_start_page(paragraph)
+    }
 }
 
 impl EditableDocument {

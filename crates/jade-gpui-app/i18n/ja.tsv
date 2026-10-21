@@ -1357,3 +1357,245 @@ chars.enclose.title	囲い文字
 chars.enclose.text	文字
 chars.enclose.enclosure	囲い文字の種類
 chars.font.complex_style	複合フォントのスタイル
+# Fields: 挿入 › フィールド, F9 and its kin, ファイル › プロパティ
+menu.file.properties	プロパティ…
+menu.insert.field	フィールド…
+menu.insert.edit_field	フィールドの編集…
+menu.insert.update_fields	フィールドの更新
+menu.insert.toggle_field_codes	フィールド コードの表示/非表示
+menu.insert.toggle_field_code	選択したフィールドのコードの表示/非表示
+menu.insert.lock_fields	フィールドのロック
+menu.insert.unlock_fields	フィールドのロック解除
+menu.insert.unlink_fields	フィールドのリンク解除
+field.ok	OK
+field.cancel	キャンセル
+field.status.none	選択範囲にフィールドがありません。
+field.group	テキスト
+field.insert	フィールド
+field.insert_title	フィールドを挿入
+field.date_time	日付と時刻
+field.date_time_title	自動的に更新される日付と時刻を挿入
+field.update	フィールドの更新
+field.update_title	選択範囲のフィールドを更新 (F9)。すべて選択するとヘッダーやフッターも更新
+field.properties	プロパティ
+field.properties_title	文書のプロパティ
+field.codes	フィールド コード
+field.codes_title	フィールド コードの表示/非表示 (⌥F9)
+field.dialog.title	フィールド
+field.dialog.edit_title	フィールドの編集
+field.dialog.categories	分類
+field.dialog.names	フィールドの名前
+field.dialog.options	オプション
+field.dialog.code	フィールド コード
+field.dialog.preserve	更新時に書式を維持する
+field.switch.on	オン
+field.switch.add	追加
+field.prompt.ask	入力 (ASK)
+field.prompt.fillin	入力 (FILLIN)
+field.prompt.progress	{index} / {count}
+field.category.all	(すべて)
+field.category.date_time	日付と時刻
+field.category.automation	文書の自動化
+field.category.information	文書情報
+field.category.formulas	式と計算
+field.category.index	索引と目次
+field.category.links	リンクと参照
+field.category.mail_merge	差し込み印刷
+field.category.numbering	番号
+field.category.user	ユーザー情報
+field.properties.title_dialog	文書のプロパティ
+field.properties.summary	ファイルの概要
+field.properties.statistics	ファイルの情報
+field.properties.custom	ユーザー設定
+field.properties.user	ユーザー情報
+field.properties.title	タイトル
+field.properties.subject	サブタイトル
+field.properties.author	作成者
+field.properties.manager	管理者
+field.properties.company	会社名
+field.properties.category	分類
+field.properties.keywords	キーワード
+field.properties.comments	コメント
+field.properties.hyperlink_base	ハイパーリンクの基点
+field.properties.created	作成日時
+field.properties.modified	更新日時
+field.properties.printed	印刷日時
+field.properties.last_saved_by	最終更新者
+field.properties.revision	改訂番号
+field.properties.total_time	編集時間の合計 (分)
+field.properties.pages	ページ数
+field.properties.words	単語数
+field.properties.characters	文字数
+field.properties.custom_name	名前
+field.properties.custom_kind	種類
+field.properties.custom_value	値
+field.properties.kind_text	テキスト
+field.properties.kind_number	数値
+field.properties.kind_date	日付
+field.properties.kind_yes_no	はい/いいえ
+field.properties.add	追加
+field.properties.remove	削除
+field.properties.name_missing	名前を入力してください。
+field.properties.not_a_number	値が数値ではありません。
+field.properties.not_a_date	値が日付ではありません (例: 2026/10/21)。
+field.properties.user_name	名前
+field.properties.user_initials	イニシャル
+field.properties.user_address	住所
+field.operand.address	アドレス
+field.operand.autotext	定型句
+field.operand.bookmark	ブックマーク
+field.operand.character_code	文字コード
+field.operand.comparison	比較式
+field.operand.condition	条件
+field.operand.destination	ジャンプ先
+field.operand.display_text	表示文字列
+field.operand.equation	数式
+field.operand.file	ファイル名
+field.operand.formula	式
+field.operand.info_type	情報の種類
+field.operand.list_name	リスト名
+field.operand.macro	マクロ名
+field.operand.merge_field	差し込みフィールド
+field.operand.new_value	新しい値
+field.operand.prompt	メッセージ
+field.operand.property	プロパティ
+field.operand.sequence	識別子
+field.operand.source_tag	資料文献のタグ
+field.operand.style	スタイル名
+field.operand.text	文字列
+field.operand.variable	変数名
+field.switch.advance_down	下へ移動 (pt)
+field.switch.advance_up	上へ移動 (pt)
+field.switch.advance_left	左へ移動 (pt)
+field.switch.advance_right	右へ移動 (pt)
+field.switch.advance_x	段の左端から (pt)
+field.switch.advance_y	ページの上端から (pt)
+field.switch.bold	ページ番号を太字
+field.switch.category	分類
+field.switch.category_heading	分類の見出しを付ける
+field.switch.citation_page	ページ
+field.switch.columns	段数
+field.switch.cross_reference	相互参照の文字列
+field.switch.date_picture	日付と時刻の書式
+field.switch.default_response	既定の入力
+field.switch.entry_separator	項目とページの区切り
+field.switch.entry_type	項目の種類
+field.switch.font	フォント
+field.switch.format	書式
+field.switch.from_bottom	ページの下から検索
+field.switch.full_number	完全な段落番号
+field.switch.full_path	フル パス
+field.switch.hide	結果を表示しない
+field.switch.hide_web_pages	Web レイアウトでページ番号を隠す
+field.switch.hyperlink	ハイパーリンクにする
+field.switch.hyperlinks	項目をハイパーリンクにする
+field.switch.italic	ページ番号を斜体
+field.switch.keep_line_height	行の高さを変えない
+field.switch.kilobytes	KB 単位
+field.switch.language	言語 ID
+field.switch.level	レベル
+field.switch.location	文書内の位置
+field.switch.long_citation	長い引用
+field.switch.megabytes	MB 単位
+field.switch.new_window	新しいウィンドウで開く
+field.switch.next	次の番号
+field.switch.no_author	著者を表示しない
+field.switch.no_page	ページ番号を付けない
+field.switch.no_page_numbers	ページ番号を付けないレベル
+field.switch.no_period	末尾のピリオドを付けない
+field.switch.no_store	画像を文書に保存しない
+field.switch.no_update_inside	挿入した文書のフィールドを更新しない
+field.switch.no_year	年を表示しない
+field.switch.note_format	脚注の書式
+field.switch.number_picture	数値の書式
+field.switch.outline_levels	アウトライン レベル
+field.switch.outline_paragraphs	段落のアウトライン レベルを使う
+field.switch.page_range	ページ範囲のブックマーク
+field.switch.page_separator	ページ番号の区切り
+field.switch.paragraph_number	段落番号
+field.switch.passim	5 ページ以上は「passim」
+field.switch.prefix	前に付ける文字列
+field.switch.prompt_once	一度だけ確認する
+field.switch.reading	読み
+field.switch.relative	上/下を表示
+field.switch.relative_number	相対的な段落番号
+field.switch.repeat	直前の番号
+field.switch.reset_at_heading	見出しで振り直す
+field.switch.reset_to	開始番号
+field.switch.separator	区切り文字
+field.switch.sequence	図表番号の識別子
+field.switch.shift_jis	Shift_JIS
+field.switch.short_citation	短い引用
+field.switch.size	サイズ (pt)
+field.switch.start_at	開始番号
+field.switch.style	スタイル
+field.switch.styles	スタイル
+field.switch.suffix	後に付ける文字列
+field.switch.target	表示先
+field.switch.text_after	後に付ける文字列
+field.switch.text_before	前に付ける文字列
+field.switch.tip	ヒント
+field.switch.tooltip	ヒント
+field.switch.unicode	Unicode
+field.describe.=	式を計算した結果
+field.describe.ADVANCE	後に続く文字列を指定した位置に移動
+field.describe.ASK	ユーザーに入力を求め、ブックマークに割り当てる
+field.describe.AUTHOR	文書のプロパティの作成者
+field.describe.AUTONUM	段落に自動で番号を付ける
+field.describe.AUTONUMLGL	段落に法律文書形式の番号を付ける
+field.describe.AUTONUMOUT	段落にアウトライン形式の番号を付ける
+field.describe.AUTOTEXT	定型句を挿入
+field.describe.AUTOTEXTLIST	定型句の一覧から選ぶ文字列
+field.describe.BIBLIOGRAPHY	文書の資料文献から作る文献目録
+field.describe.CITATION	資料文献の引用
+field.describe.COMMENTS	文書のプロパティのコメント
+field.describe.COMPARE	2 つの値を比べ、真なら 1、偽なら 0
+field.describe.CREATEDATE	文書を作成した日時
+field.describe.DATE	今日の日付 (開くときと更新時に更新)
+field.describe.DOCPROPERTY	文書のプロパティの値
+field.describe.DOCVARIABLE	文書変数の値
+field.describe.EQ	数式を描く
+field.describe.FILENAME	文書のファイル名
+field.describe.FILESIZE	文書のファイル サイズ
+field.describe.FILLIN	ユーザーに入力を求め、その文字列を表示
+field.describe.GOTOBUTTON	クリックするとジャンプするボタン
+field.describe.HYPERLINK	別の文書や場所へのリンク
+field.describe.IF	条件によって 2 つの文字列のどちらかを表示
+field.describe.INCLUDEPICTURE	ファイルの画像を挿入
+field.describe.INCLUDETEXT	ファイルの文字列を挿入
+field.describe.INDEX	索引を作る
+field.describe.INFO	文書の情報
+field.describe.KEYWORDS	文書のプロパティのキーワード
+field.describe.LASTSAVEDBY	最後に保存した人の名前
+field.describe.LISTNUM	段落内の任意の位置に番号を挿入
+field.describe.MACROBUTTON	クリックするとマクロを実行するボタン
+field.describe.MERGEFIELD	差し込み印刷のフィールド
+field.describe.NOTEREF	脚注・文末脚注の番号への参照
+field.describe.NUMCHARS	文書の文字数
+field.describe.NUMPAGES	文書のページ数
+field.describe.NUMWORDS	文書の単語数
+field.describe.PAGE	現在のページ番号
+field.describe.PAGEREF	ブックマークのあるページの番号
+field.describe.PRINTDATE	最後に印刷した日時
+field.describe.QUOTE	指定した文字列
+field.describe.REF	ブックマークの文字列
+field.describe.REVNUM	文書を保存した回数
+field.describe.SAVEDATE	最後に保存した日時
+field.describe.SECTION	現在のセクション番号
+field.describe.SECTIONPAGES	セクションのページ数
+field.describe.SEQ	図表番号などの連番
+field.describe.SET	ブックマークに文字列を割り当てる
+field.describe.STYLEREF	指定したスタイルの段落の文字列
+field.describe.SUBJECT	文書のプロパティのサブタイトル
+field.describe.SYMBOL	記号を挿入
+field.describe.TA	引用文献一覧の項目
+field.describe.TC	目次の項目
+field.describe.TEMPLATE	文書のテンプレート名
+field.describe.TIME	現在の時刻 (開くときと更新時に更新)
+field.describe.TITLE	文書のプロパティのタイトル
+field.describe.TOA	引用文献一覧を作る
+field.describe.TOC	目次を作る
+field.describe.USERADDRESS	ユーザー情報の住所
+field.describe.USERINITIALS	ユーザー情報のイニシャル
+field.describe.USERNAME	ユーザー情報の名前
+field.describe.XE	索引の項目
