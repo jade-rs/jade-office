@@ -95,3 +95,5 @@ Per-area detail behind the Word numbers above, in `docs/word/`:
   evaluated, insertable.
 - [japanese-typesetting.md](word/japanese-typesetting.md) — each Japanese
   typesetting option against its element, JIS X 4051 rule, code and tests.
+- [web-vs-desktop.md](word/web-vs-desktop.md) — what the browser build does
+  differently from the native app, why, and what is left to port.
