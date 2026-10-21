@@ -2190,3 +2190,13 @@ qat.align_right	右揃え
 qat.insert_table	表の挿入
 qat.picture	画像
 qat.track_changes	変更履歴の記録
+modes.title	編集モード
+modes.editing	編集
+modes.reviewing	校閲
+modes.viewing	閲覧
+modes.editing_hint	文書を直接編集します
+modes.reviewing_hint	変更をすべて変更履歴として記録します
+modes.viewing_hint	誤って変更しないように閲覧だけにします
+views.group.immersive	イマーシブ
+views.focus	フォーカス
+views.focus_title	フォーカス モード (Esc で終了)

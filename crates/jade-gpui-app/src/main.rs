@@ -1490,6 +1490,13 @@ impl DocumentView {
         // it any ranges selected beside the selection.
         self.views.mini = false;
         self.views.extra_ranges.clear();
+        // 閲覧: nothing the keyboard does changes the document.
+        if word_views::modes::read_only(self)
+            && word_views::modes::is_edit_key(event.keystroke.key.as_str())
+            && !self.views.is_open()
+        {
+            return;
+        }
         // A composition owns the keyboard while it is running; letting these
         // through would edit around the preedit.
         if self.marked.is_some() {
@@ -2019,7 +2026,9 @@ impl DocumentView {
                                 .child(t("doc.export_word"))
                                 .on_click(cx.listener(|view, _event, _window, cx| view.save(cx))),
                         ),
-                    ),
+                    )
+                    // 編集 / 校閲 / 閲覧, at the strip's far right.
+                    .child(word_views::modes::switch(self, cx)),
             )
             .child(
                 div()
@@ -2993,6 +3002,10 @@ impl DocumentView {
         if word_views::mini::settle(self, &action, cx) {
             return;
         }
+        // 閲覧: commands that would change the document do nothing.
+        if word_views::modes::refuses(self, &action) {
+            return;
+        }
         // Several ranges selected: formatting goes on each.
         if word_views::select::run_on_ranges(self, &action, cx) {
             return;
@@ -3253,6 +3266,9 @@ impl DocumentView {
 
     fn cut(&mut self, cx: &mut Context<Self>) {
         self.copy(cx);
+        if word_views::modes::read_only(self) {
+            return;
+        }
         let page = self.caret_page_1idx();
         if let Ok(caret) = self.document.replace_selection("", page) {
             self.insert_at = caret;
@@ -3263,6 +3279,9 @@ impl DocumentView {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
+        if word_views::modes::read_only(self) {
+            return;
+        }
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
@@ -4140,6 +4159,13 @@ impl EntityInputHandler for DocumentView {
         if self.page_dialog.is_some() {
             return;
         }
+        // 閲覧: typing changes nothing.
+        if word_views::modes::read_only(self)
+            && self.text_bar().is_none()
+            && self.find_bar.is_none()
+        {
+            return;
+        }
         if let Some(field) = self.text_bar_mut() {
             field.replace(range, text, false);
             return cx.notify();
@@ -4178,6 +4204,12 @@ impl EntityInputHandler for DocumentView {
         cx: &mut Context<Self>,
     ) {
         if self.page_dialog.is_some() {
+            return;
+        }
+        if word_views::modes::read_only(self)
+            && self.text_bar().is_none()
+            && self.find_bar.is_none()
+        {
             return;
         }
         if let Some(field) = self.text_bar_mut() {
@@ -4518,7 +4550,11 @@ impl Render for DocumentView {
                 view.show_inspector = !view.show_inspector;
                 cx.notify();
             }))
-            .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
+            .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
+                // Escape leaves フォーカス.
+                if view.views.focus && event.keystroke.key == "escape" {
+                    return word_views::modes::toggle_focus(view, window, cx);
+                }
                 view.handle_key(event, cx);
             }))
             .flex()
@@ -4535,6 +4571,7 @@ impl Render for DocumentView {
             // ---- sidebar: the document's pages ----------------------------
             .child(
                 div()
+                    .when(self.views.focus, |sidebar| sidebar.hidden())
                     .flex()
                     .flex_col()
                     .flex_none()
@@ -4574,7 +4611,8 @@ impl Render for DocumentView {
                     // they scroll, rather than pushing the panes beside the
                     // pages out of the window.
                     .min_w_0()
-                    .child(self.ribbon(window, cx))
+                    // フォーカス: no ribbon.
+                    .children((!self.views.focus).then(|| self.ribbon(window, cx)))
                     .children(self.dialog_element(cx))
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
