@@ -3,10 +3,40 @@
 //! into a bar and put in with its reference as one undo step — and the table
 //! of contents, inserted from the headings and updated after they change.
 
+pub mod bookmarks;
+pub mod captions;
+pub mod citations;
+pub mod crossref;
+pub mod index;
+pub mod navigation;
+pub mod notes;
+pub mod toc;
+
 use jade_docx_headless_api::HeadlessCommand;
+
+use jade_docx_editor::commands::document_edit::DocumentEditCommand;
+use jade_docx_editor::word_document::WordDocument;
+use jade_selection::SelectionRange;
 
 use super::{Position, WordSession};
 use crate::text::TextEdit;
+
+/// Runs `edit` on the document as one undo step. It is handed the
+/// selection to move; with `keep_selection` the selection stays as it was.
+pub(crate) fn edit_document<S: WordSession + ?Sized>(
+    session: &mut S,
+    name: &'static str,
+    keep_selection: bool,
+    mut edit: impl FnMut(&mut WordDocument, &mut Option<SelectionRange>) -> Result<(), String> + 'static,
+) -> Result<(), String> {
+    session.execute_command(
+        Box::new(DocumentEditCommand::new(
+            name,
+            Box::new(move |document, selection| edit(document, selection)),
+        )),
+        keep_selection,
+    )
+}
 
 /// Which notes: at the foot of the page, or at the end of the document.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,13 +106,18 @@ pub trait WordReferences: WordSession {
                 text,
             },
         };
-        // The caret stays with the reference mark, which takes no room in
-        // the paragraph's text; the engine leaves its selection in the note.
+        // The caret goes after the reference mark, as Word leaves it when
+        // the note's text is done; the engine leaves its selection in the
+        // note.
         self.apply_command(command, false)?;
+        let caret = notes::WordNotes::note_marks(self)
+            .into_iter()
+            .find(|mark| mark.at == at)
+            .map_or(at, |mark| mark.after());
         self.set_selection_range(Some(jade_selection::SelectionRange::collapsed(
-            jade_selection::TextPosition::new(paragraph, offset),
+            jade_selection::TextPosition::new(caret.0, caret.1),
         )));
-        Ok(at)
+        Ok(caret)
     }
 
     /// The notes of a kind the document has, in the order they are first

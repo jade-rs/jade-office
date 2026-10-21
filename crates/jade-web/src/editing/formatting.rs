@@ -138,8 +138,20 @@ impl WordSession for EditableDocument {
         Some(EditableDocument::page_count(self))
     }
 
+    fn position_metrics(
+        &self,
+        (paragraph, offset): jade_office_model::word::Position,
+    ) -> Option<(f64, f64, f64)> {
+        self.renderer
+            .caret_metrics_at(jade_selection::TextPosition::new(paragraph, offset))
+            .map(|metrics| (metrics.x, metrics.absolute_top, metrics.height))
+    }
+
     fn paragraph_page(&self, paragraph: usize) -> Option<usize> {
-        self.renderer.cached_paragraph_start_page(paragraph)
+        self.renderer
+            .caret_metrics_at(jade_selection::TextPosition::new(paragraph, 0))
+            .map(|metrics| self.page_and_offset(metrics.absolute_top).0 + 1)
+            .or_else(|| self.renderer.cached_paragraph_start_page(paragraph))
     }
 }
 

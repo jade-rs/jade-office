@@ -223,29 +223,34 @@ impl DocumentView {
         vec![
             Self::ribbon_group(
                 t("doc.comment"),
-                vec![Self::ribbon_row(vec![
-                    button(
-                        self,
-                        "review-comment",
-                        "review.new_comment",
-                        "review.new_comment",
-                        false,
-                        cx,
-                        |view, cx| view.add_comment(cx),
-                    ),
-                    button(
-                        self,
-                        "review-comments",
-                        "review.show_comments",
-                        "review.show_comments",
-                        showing,
-                        cx,
-                        |view, cx| {
-                            view.show_comments = !view.show_comments;
-                            cx.notify();
-                        },
-                    ),
-                ])],
+                vec![Self::ribbon_row(
+                    vec![
+                        button(
+                            self,
+                            "review-comment",
+                            "review.new_comment",
+                            "review.new_comment",
+                            false,
+                            cx,
+                            |view, cx| view.add_comment(cx),
+                        ),
+                        button(
+                            self,
+                            "review-comments",
+                            "review.show_comments",
+                            "review.show_comments",
+                            showing,
+                            cx,
+                            |view, cx| {
+                                view.show_comments = !view.show_comments;
+                                cx.notify();
+                            },
+                        ),
+                    ]
+                    .into_iter()
+                    .chain(crate::word_references::comment_steps(cx))
+                    .collect(),
+                )],
             )
             .into_any_element(),
             Self::ribbon_group(
