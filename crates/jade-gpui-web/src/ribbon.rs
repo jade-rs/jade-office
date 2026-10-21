@@ -82,20 +82,26 @@ pub enum Tab {
     Design,
     Layout,
     References,
+    /// 差し込み文書: mail merge (`view::word_mailings`).
+    Mailings,
     Review,
+    /// 開発: content controls and forms (`view::word_controls`).
+    Developer,
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
     TableDesign,
     TableLayout,
 }
 
 impl Tab {
-    const ALL: [Tab; 6] = [
+    const ALL: [Tab; 8] = [
         Tab::Home,
         Tab::Insert,
         Tab::Design,
         Tab::Layout,
         Tab::References,
+        Tab::Mailings,
         Tab::Review,
+        Tab::Developer,
     ];
 
     fn label(self) -> &'static str {
@@ -106,6 +112,8 @@ impl Tab {
             Tab::Layout => "doc.tab.layout",
             Tab::References => "doc.tab.references",
             Tab::Review => "doc.tab.review",
+            Tab::Developer => "cc.tab",
+            Tab::Mailings => "mail.tab",
             Tab::TableDesign => "doc.tab.table_design",
             Tab::TableLayout => "doc.tab.table_layout",
         })
@@ -237,6 +245,8 @@ pub enum Action {
     EditStory(Story),
     /// The 校閲 tab.
     Review(crate::word_review::ReviewAction),
+    /// The 開発 tab (`view::word_controls`).
+    Controls(crate::view::word_controls::ControlsAction),
     /// 挿入 → 画像: a picture picked from the device.
     InsertPicture,
     /// 挿入 → リンク (⌘K): the hyperlink dialog.
@@ -646,6 +656,10 @@ pub struct TabState {
     pub references: Option<crate::view::word_references::RibbonState>,
     /// The picture or shape selected, which the object tools act on.
     pub object: Option<jade_web::word::picture::PlacedObject>,
+    /// What the 開発 tab shows as on, read while it is showing.
+    pub developer: Option<crate::view::word_controls::DeveloperState>,
+    /// The 差し込み文書 tab's groups, read while it is showing.
+    pub mailings: Option<Vec<jade_web::word::form_view::ToolGroup>>,
 }
 
 pub fn ribbon(
@@ -748,6 +762,12 @@ pub fn ribbon(
             crate::view::word_references::ribbon_groups(ribbon.popup, shown.references.as_ref(), cx)
         }
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
+        Tab::Mailings => {
+            crate::view::word_mailings::tab(shown.mailings.as_deref().unwrap_or_default(), cx)
+        }
+        Tab::Developer => {
+            crate::view::word_controls::developer(&shown.developer.clone().unwrap_or_default(), cx)
+        }
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
             crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)

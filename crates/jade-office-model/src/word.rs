@@ -33,17 +33,20 @@ pub mod asian;
 pub mod building_blocks;
 pub mod clipboard;
 pub mod connectors;
+pub mod controls;
 pub mod count;
 pub mod design;
 pub mod diagrams;
 pub mod fields;
 pub mod find;
 pub mod font;
+pub mod form_view;
 pub mod group;
 pub mod ink;
 pub mod insert;
 pub mod links;
 pub mod lists;
+pub mod mailings;
 pub mod new;
 pub mod objects;
 pub mod package;
@@ -149,6 +152,16 @@ pub trait WordSession {
     /// moving the selection.
     fn position_metrics(&self, _at: Position) -> Option<(f64, f64, f64)> {
         None
+    }
+
+    /// Where the last layout drew the text from `start` to `end` (rendered
+    /// positions): a rectangle a line, in the document's coordinates.
+    fn text_regions(
+        &self,
+        _start: Position,
+        _end: Position,
+    ) -> Vec<jade_docx_editor::canvas_renderer::TextRegion> {
+        Vec::new()
     }
 }
 
