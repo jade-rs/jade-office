@@ -630,25 +630,26 @@ pub trait WordInkTools: WordSession {
     fn ink_strokes(&self) -> Vec<PageStroke> {
         let mut strokes = Vec::new();
         for drawing in self.word_document().ink_drawings() {
+            // The strokes fill the box they were laid in, which a resize since
+            // has stretched.
+            let (natural_w, natural_h) =
+                jade_docx_editor::inkml::InkContent::bounds(&drawing.traces)
+                    .map(|(_, _, right, bottom)| (right, bottom))
+                    .unwrap_or((drawing.width_px, drawing.height_px));
             let region = self.object_region(drawing.paragraph_index, drawing.run_index);
-            let (page, x, y, sx, sy) = match region {
-                Some((page, x, y, width, height)) => (
-                    page,
-                    x,
-                    y,
-                    width / drawing.width_px.max(1e-6),
-                    height / drawing.height_px.max(1e-6),
-                ),
+            let (page, x, y, width, height) = match region {
+                Some(region) => region,
                 None if drawing.page_relative => (
                     self.paragraph_page(drawing.paragraph_index)
                         .map_or(0, |page| page.saturating_sub(1)),
                     drawing.x_px,
                     drawing.y_px,
-                    1.0,
-                    1.0,
+                    drawing.width_px,
+                    drawing.height_px,
                 ),
                 None => continue,
             };
+            let (sx, sy) = (width / natural_w.max(1e-6), height / natural_h.max(1e-6));
             for trace in drawing.traces {
                 strokes.push(PageStroke {
                     page,
