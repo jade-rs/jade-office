@@ -713,6 +713,24 @@ objects.change.clipboard	From Clipboard
 objects.change.file	From a File
 objects.change_picture	Change Picture
 objects.change_shape	Change Shape
+objects.chart	Chart
+objects.chart.add_category	Add Row
+objects.chart.add_series	Add Column
+objects.chart.category	Category
+objects.chart.column	Clustered Column
+objects.chart.default_title	Chart Title
+objects.chart.edit_data	Edit Data
+objects.chart.edit_data_title	Edit the chart's data in a sheet
+objects.chart.elements	Add Chart Element
+objects.chart.line	Line
+objects.chart.pie	Pie
+objects.chart.remove_category	Remove Row
+objects.chart.remove_series	Remove Column
+objects.chart.series	Series
+objects.chart.title	Chart Title
+objects.chart.title_off	No Chart Title
+objects.chart.title_on	Show Chart Title
+objects.chart.type	Change Chart Type
 objects.color	Color
 objects.color.accent_dark	Accent {n} Dark
 objects.color.accent_light	Accent {n} Light
@@ -782,6 +800,8 @@ objects.dialog.wrap_style	Wrapping style
 objects.dialog.wrap_text	Wrap text
 objects.dialog.wrapping	Text Wrapping
 objects.draw_hint	Drag on the page to draw the shape. Esc cancels.
+objects.edit_points	Edit Points
+objects.edit_points_title	Drag a freeform's points to reshape it
 objects.effect.bevel	Bevel
 objects.effect.glow	Glow
 objects.effect.no_bevel	No Bevel
@@ -799,18 +819,26 @@ objects.fill.none	No Fill
 objects.format_pane	Format Pane
 objects.format_pane_title	Show the Format Shape pane
 objects.forward	Bring Forward
+objects.freeform	Freeform: Shape
 objects.glow.size	Glow: {n} pt
 objects.group	Group
 objects.group.adjust	Adjust
 objects.group.arrange	Arrange
+objects.group.chart	Chart Design
 objects.group.insert_shapes	Insert Shapes
 objects.group.picture_styles	Picture Styles
 objects.group.shape_styles	Shape Styles
 objects.group.size	Size
+objects.group.smartart	SmartArt Design
 objects.group.wordart_styles	WordArt Styles
 objects.hide_all	Hide All
 objects.in_front_of_text	Bring in Front of Text
 objects.layout_more	More Layout Options...
+objects.legend.bottom	Legend: Bottom
+objects.legend.left	Legend: Left
+objects.legend.none	No Legend
+objects.legend.right	Legend: Right
+objects.legend.top	Legend: Top
 objects.no_clipboard_picture	There is no picture on the clipboard
 objects.no_objects	There are no objects
 objects.nothing_selected	No picture or shape is selected
@@ -879,6 +907,13 @@ objects.size.larger	Larger
 objects.size.smaller	Smaller
 objects.size.summary	{w} mm wide × {h} mm high, rotated {r}°
 objects.size.width	Width
+objects.smartart	SmartArt
+objects.smartart.apply	Apply
+objects.smartart.layouts	Change Layout
+objects.smartart.placeholder	[Text]
+objects.smartart.text_pane	Text Pane
+objects.smartart.text_pane_hint	Enter adds, Tab demotes, ⇧Tab promotes, ⌫ in an empty line removes
+objects.smartart.text_pane_title	Edit the graphic's text and structure
 objects.tab.picture_format	Picture Format
 objects.tab.shape_format	Shape Format
 objects.text.bottom	Bottom

@@ -713,6 +713,24 @@ objects.change.clipboard	クリップボードから
 objects.change.file	ファイルから
 objects.change_picture	図の変更
 objects.change_shape	図形の変更
+objects.chart	グラフ
+objects.chart.add_category	行を追加
+objects.chart.add_series	列を追加
+objects.chart.category	分類
+objects.chart.column	集合縦棒
+objects.chart.default_title	グラフ タイトル
+objects.chart.edit_data	データの編集
+objects.chart.edit_data_title	グラフのデータをシートで編集します
+objects.chart.elements	グラフ要素を追加
+objects.chart.line	折れ線
+objects.chart.pie	円
+objects.chart.remove_category	行を削除
+objects.chart.remove_series	列を削除
+objects.chart.series	系列
+objects.chart.title	グラフ タイトル
+objects.chart.title_off	グラフ タイトルなし
+objects.chart.title_on	グラフ タイトルを表示
+objects.chart.type	グラフの種類の変更
 objects.color	色
 objects.color.accent_dark	アクセント {n} (濃色)
 objects.color.accent_light	アクセント {n} (淡色)
@@ -782,6 +800,8 @@ objects.dialog.wrap_style	折り返しの種類と配置
 objects.dialog.wrap_text	文字列の折り返し
 objects.dialog.wrapping	文字列の折り返し
 objects.draw_hint	ページ上をドラッグして図形を描きます。esc で取り消します。
+objects.edit_points	頂点の編集
+objects.edit_points_title	フリーフォームの頂点をドラッグして形を変えます
 objects.effect.bevel	面取り
 objects.effect.glow	光彩
 objects.effect.no_bevel	面取りなし
@@ -799,18 +819,26 @@ objects.fill.none	塗りつぶしなし
 objects.format_pane	書式設定ウィンドウ
 objects.format_pane_title	図形の書式設定ウィンドウを表示します
 objects.forward	前面へ移動
+objects.freeform	フリーフォーム: 図形
 objects.glow.size	光彩: {n} pt
 objects.group	グループ化
 objects.group.adjust	調整
 objects.group.arrange	配置
+objects.group.chart	グラフのデザイン
 objects.group.insert_shapes	図形の挿入
 objects.group.picture_styles	図のスタイル
 objects.group.shape_styles	図形のスタイル
 objects.group.size	サイズ
+objects.group.smartart	SmartArt のデザイン
 objects.group.wordart_styles	ワードアートのスタイル
 objects.hide_all	すべて非表示
 objects.in_front_of_text	テキストの前面へ移動
 objects.layout_more	その他のレイアウト オプション...
+objects.legend.bottom	凡例: 下
+objects.legend.left	凡例: 左
+objects.legend.none	凡例なし
+objects.legend.right	凡例: 右
+objects.legend.top	凡例: 上
 objects.no_clipboard_picture	クリップボードに図がありません
 objects.no_objects	このページにはオブジェクトがありません
 objects.nothing_selected	図や図形が選択されていません
@@ -879,6 +907,13 @@ objects.size.larger	大きく
 objects.size.smaller	小さく
 objects.size.summary	幅 {w} mm × 高さ {h} mm、回転 {r}°
 objects.size.width	幅
+objects.smartart	SmartArt
+objects.smartart.apply	反映
+objects.smartart.layouts	レイアウトの変更
+objects.smartart.placeholder	[テキスト]
+objects.smartart.text_pane	テキスト ウィンドウ
+objects.smartart.text_pane_hint	Enter で追加、Tab でレベル下げ、⇧Tab でレベル上げ、空の行で ⌫ で削除
+objects.smartart.text_pane_title	SmartArt の文字と構造を編集します
 objects.tab.picture_format	図の形式
 objects.tab.shape_format	図形の書式
 objects.text.bottom	下揃え

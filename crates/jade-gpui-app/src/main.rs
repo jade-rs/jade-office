@@ -1296,11 +1296,12 @@ impl DocumentView {
         // like the bars; then the selected object takes Delete, the arrows
         // and Escape (`word_objects`).
         let key = event.keystroke.key.as_str();
-        if (self.objects.panels.dialog.is_some()
-            && self.dialog_key(key, event.keystroke.modifiers.shift, cx))
-            || self.rename_key(key, cx)
-            || self.object_key(key, event.keystroke.modifiers.alt, cx)
-        {
+        if self.object_tools_key(
+            key,
+            event.keystroke.modifiers.shift,
+            event.keystroke.modifiers.alt,
+            cx,
+        ) {
             cx.stop_propagation();
             return;
         }
@@ -2158,16 +2159,7 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
-        if let Some(field) = self
-            .objects
-            .panels
-            .dialog
-            .as_ref()
-            .and_then(|dialog| dialog.focused())
-        {
-            return Some(field);
-        }
-        if let Some((_, field)) = self.objects.panels.renaming.as_ref() {
+        if let Some(field) = self.object_field() {
             return Some(field);
         }
         match (&self.comment_bar, &self.story_bar) {
@@ -2178,22 +2170,8 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
-        if self
-            .objects
-            .panels
-            .dialog
-            .as_ref()
-            .is_some_and(|dialog| dialog.focus.is_some())
-        {
-            return self
-                .objects
-                .panels
-                .dialog
-                .as_mut()
-                .and_then(|dialog| dialog.focused_mut());
-        }
-        if let Some((_, field)) = self.objects.panels.renaming.as_mut() {
-            return Some(field);
+        if self.object_field().is_some() {
+            return self.object_field_mut();
         }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
@@ -3850,21 +3828,9 @@ impl Render for DocumentView {
         };
         let zoom = self.zoom;
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
-        // The object tools' panes and dialog (`word_objects_panels`).
-        let selection_pane = self
-            .objects
-            .panels
-            .selection_pane
-            .then(|| self.selection_pane(cx));
-        let format_pane = self.objects.panels.format_pane.then(|| self.format_pane(cx));
-        let layout_dialog = self.layout_dialog_element(cx).map(|dialog| {
-            gpui::deferred(
-                gpui::anchored()
-                    .position(point(px(260.0), px(140.0)))
-                    .child(dialog),
-            )
-            .with_priority(3)
-        });
+        // The object tools' panes and dialogs (`word_objects_panels`).
+        let object_panes = self.object_panes(cx);
+        let object_dialogs = self.object_dialogs(cx);
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -4093,9 +4059,8 @@ impl Render for DocumentView {
             )
             // ---- the comments pane, beside the pages while it is open ----
             .children(comments_pane)
-            .children(selection_pane)
-            .children(format_pane)
-            .children(layout_dialog)
+            .children(object_panes)
+            .children(object_dialogs)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.

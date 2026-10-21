@@ -108,17 +108,17 @@ pub trait WordGroups: WordSession + WordObjects {
         let (width, height) = (emu(right - left), emu(bottom - top));
         let first = members[0];
         let others: Vec<PlacedObject> = members[1..].to_vec();
-        let all = members.clone();
-        // The group's drawing is built from each member's own drawing, read
-        // as the first command runs.
+        // Each member's drawing as the package has it, read before any of
+        // them goes: removing a text box renumbers the paragraphs after it.
+        let mut drawings = Vec::new();
+        for member in &members {
+            drawings.push(package_drawing(self.word_document(), member.target).ok_or("an object's drawing is not available")?);
+        }
+        let all: Vec<(PlacedObject, XmlElement)> = members.iter().copied().zip(drawings).collect();
         let group = replace_drawing_command("group_objects", first.target, move |document, drawing| {
             let mut children = Vec::new();
-            for member in &all {
-                let own = if member.target == first.target {
-                    drawing.clone()
-                } else {
-                    document.object_drawing(member.target)?
-                };
+            for (member, own) in &all {
+                let member = *member;
                 let object = graphic_object(&own).ok_or("an object cannot be grouped")?;
                 let doc_pr = descendant(&own, "wp:docPr");
                 children.push(as_member(
@@ -168,16 +168,15 @@ pub trait WordGroups: WordSession + WordObjects {
             });
             Ok(())
         });
-        // The others go, last first so the earlier ones keep their places.
-        let mut commands: Vec<Box<dyn Command>> = Vec::new();
+        // The others go first, last first so the earlier ones keep their
+        // places; the first, earliest in the document, keeps its own.
+        let mut sequence: Vec<Box<dyn Command>> = Vec::new();
         let mut removals: Vec<_> = others.iter().map(|object| object.target).collect();
         removals.sort_by_key(|target| (target.paragraph_index, target.run_index));
         for target in removals.into_iter().rev() {
-            commands.push(Box::new(DeleteObjectCommand::new(target)));
+            sequence.push(Box::new(DeleteObjectCommand::new(target)));
         }
-        // The group is built first: it reads the others before they go.
-        let mut sequence: Vec<Box<dyn Command>> = vec![Box::new(group)];
-        sequence.extend(commands);
+        sequence.push(Box::new(group));
         self.execute_command(Box::new(Sequence::new("group_objects", sequence)), true)
     }
 
@@ -187,19 +186,7 @@ pub trait WordGroups: WordSession + WordObjects {
         if group.target.kind != FloatingObjectKind::Image {
             return Err("the object is not a group".into());
         }
-        let drawing = self
-            .word_document()
-            .raw_document
-            .as_ref()
-            .and_then(|raw| {
-                let run = self
-                    .word_document()
-                    .paragraph(group.target.paragraph_index)?
-                    .runs
-                    .get(group.target.run_index)?;
-                raw.element(run.node_id?).cloned()
-            })
-            .and_then(|run| descendant(&run, "w:drawing").cloned())
+        let drawing = package_drawing(self.word_document(), group.target)
             .ok_or("the group's drawing is not available")?;
         let wgp = descendant(&drawing, "wpg:wgp").ok_or("the object is not a group")?;
         let xfrm = child(wgp, "wpg:grpSpPr")
@@ -344,6 +331,19 @@ pub trait WordGroups: WordSession + WordObjects {
 }
 
 impl<T: WordSession + ?Sized> WordGroups for T {}
+
+/// The `w:drawing` of the object at `target` as the package has it.
+fn package_drawing(
+    document: &jade_docx_editor::word_document::WordDocument,
+    target: FloatingObjectTarget,
+) -> Option<XmlElement> {
+    let run = document
+        .paragraph(target.paragraph_index)?
+        .runs
+        .get(target.run_index)?;
+    let element = document.raw_document.as_ref()?.element(run.node_id?)?;
+    descendant(element, "w:drawing").cloned()
+}
 
 /// Members' frames as fragments, for tests.
 pub fn member_frames(drawing: &XmlElement) -> Vec<(i64, i64, i64, i64)> {
