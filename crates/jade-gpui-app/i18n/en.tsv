@@ -2200,3 +2200,7 @@ modes.viewing_hint	Read the document without making accidental changes
 views.group.immersive	Immersive
 views.focus	Focus
 views.focus_title	Focus mode (Esc to leave)
+views.group.window	Window
+views.new_window	New Window
+views.split	Split
+views.window_hint	Another window on this document: edits here show in the first window at once.
