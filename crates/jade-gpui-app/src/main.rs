@@ -29,6 +29,7 @@ mod ribbon;
 mod shell;
 mod tooltip;
 mod word_characters;
+mod word_compat;
 mod word_dialogs;
 mod word_files;
 mod word_page;
@@ -179,6 +180,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         // コピーを保存 and テンプレートとして保存.
         KeyBinding::new("ctrl-cmd-s", word_files::SaveCopy, CONTEXT),
         KeyBinding::new("ctrl-cmd-t", word_files::SaveAsTemplate, CONTEXT),
+        // 互換性チェック and 変換 (互換モードの文書を現在の形式に).
+        KeyBinding::new("ctrl-cmd-k", word_compat::CheckCompatibility, CONTEXT),
+        KeyBinding::new("ctrl-cmd-u", word_compat::ConvertDocument, CONTEXT),
         // Unscoped so each view that can print answers it with its own
         // handler; a view without one leaves it alone.
         KeyBinding::new("cmd-p", Print, None),
@@ -290,6 +294,12 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.file.save_as"), SaveAs),
                 MenuItem::action(t("menu.file.save_copy"), word_files::SaveCopy),
                 MenuItem::action(t("menu.file.save_template"), word_files::SaveAsTemplate),
+                MenuItem::separator(),
+                MenuItem::action(
+                    t("menu.file.check_compatibility"),
+                    word_compat::CheckCompatibility,
+                ),
+                MenuItem::action(t("menu.file.convert"), word_compat::ConvertDocument),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.print"), Print),
                 MenuItem::action(t("menu.file.export_pdf"), ExportPdf),
@@ -4208,6 +4218,10 @@ impl editor::Editor for DocumentView {
         cx.notify();
     }
 
+    fn title_badge(&self) -> Option<SharedString> {
+        self.compatibility_badge()
+    }
+
     fn is_dirty(&self) -> bool {
         self.dirty
     }
@@ -4289,6 +4303,16 @@ impl Render for DocumentView {
             )
             .on_action(
                 cx.listener(|view, _: &word_files::SaveCopy, _window, cx| view.save_copy(cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_compat::CheckCompatibility, _window, cx| {
+                    view.open_compatibility_checker(None, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_compat::ConvertDocument, _window, cx| {
+                    view.convert_document(cx)
+                }),
             )
             .on_action(
                 cx.listener(|view, _: &word_files::SaveAsTemplate, _window, cx| {

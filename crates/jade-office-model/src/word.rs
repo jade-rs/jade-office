@@ -31,6 +31,7 @@ use jade_selection::{SelectionRange, TextPosition};
 
 pub mod asian;
 pub mod clipboard;
+pub mod compat;
 pub mod count;
 pub mod find;
 pub mod font;

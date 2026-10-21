@@ -1432,3 +1432,34 @@ pdf.accessible	電子配布とアクセシビリティに最適
 pdf.accessible_detail	見出し、段落、表、図 (代替テキスト付き) の構造タグと、見出しのブックマークを含めます。文字はベクターで書き出されます。
 pdf.appearance	画面の表示に合わせる
 pdf.appearance_detail	画面と同じ見た目で書き出します。文字は検索できますが、構造タグは含まれません。
+# Compatibility (word_compat)
+menu.file.check_compatibility	互換性チェック…
+menu.file.convert	文書の変換 (最新の形式にする)
+compat.badge	[互換モード]
+compat.title	Microsoft Word 互換性チェック
+compat.versions	表示するバージョン
+compat.summary	概要 (古いバージョンで開いたときに失われる、または変更される機能)
+compat.no_issues	互換性の問題は見つかりませんでした。
+compat.occurrences	{n} 件
+compat.check_on_save	文書を保存するときに互換性を確認する
+compat.continue	続行
+compat.convert_title	文書の変換
+compat.already_current	この文書は既に最新のファイル形式です。
+compat.issue.replies	コメントへの返信は、個別のコメントになります。
+compat.issue.repeating	繰り返しセクションのコンテンツ コントロールは、通常のコンテンツ コントロールになります。
+compat.issue.control_appearance	コンテンツ コントロールの色と外観は失われます。
+compat.issue.video	オンライン ビデオは、静止画像になります。
+compat.issue.collapsed	見出しの折りたたみは解除されます。
+compat.issue.text_effects	文字の効果 (光彩、影、反射、輪郭、グラデーション) は削除されます。
+compat.issue.opentype	OpenType の機能 (合字、数字の書式、スタイル セット) は削除されます。
+compat.issue.checkboxes	チェック ボックスのコンテンツ コントロールは、静的な内容になります。
+compat.issue.shapes	図形とテキスト ボックスは、旧形式の図形に変換されます。
+compat.issue.picture_effects	図の効果とアート効果は削除されます。
+compat.issue.table_alt	表の代替テキストは削除されます。
+compat.issue.relative	ページに対する相対的なサイズと位置は、絶対的な値になります。
+compat.issue.equations	数式は画像になり、編集できなくなります。
+compat.issue.controls	コンテンツ コントロールは、静的な文字列になります。
+compat.issue.smartart	SmartArt グラフィックは、1 つの画像になります。
+compat.issue.charts	グラフは画像になります。
+compat.issue.moves	移動の変更履歴は、挿入と削除になります。
+compat.issue.themes	テーマのフォントと色は、固定のフォントと色になります。

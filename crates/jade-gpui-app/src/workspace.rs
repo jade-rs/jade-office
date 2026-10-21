@@ -293,7 +293,12 @@ impl Workspace {
         };
         self.active = Some(index);
         window.focus(&tab.focus);
-        window.set_window_title(&format!("{} — jade", shell::file_name(&tab.path)));
+        let badge = tab
+            .editor
+            .title_badge(cx)
+            .map(|badge| format!(" {badge}"))
+            .unwrap_or_default();
+        window.set_window_title(&format!("{}{badge} — jade", shell::file_name(&tab.path)));
         cx.notify();
     }
 
@@ -444,7 +449,10 @@ impl Workspace {
 
     fn title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let title: SharedString = match self.active_tab() {
-            Some(tab) => SharedString::from(shell::file_name(&tab.path)),
+            Some(tab) => SharedString::from(match tab.editor.title_badge(cx) {
+                Some(badge) => format!("{} {badge}", shell::file_name(&tab.path)),
+                None => shell::file_name(&tab.path),
+            }),
             None => SharedString::from("jade office"),
         };
         let folder = self
