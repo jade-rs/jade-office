@@ -87,3 +87,5 @@ Per-area detail behind the Word numbers above, in `docs/word/`:
 
 - [coverage.md](word/coverage.md) — the test that covers each row of the
   reference list, and the rows no test covers.
+- [enumerations.md](word/enumerations.md) — border, underline, highlight,
+  shape, text-effect, emphasis and number-format values one by one.
