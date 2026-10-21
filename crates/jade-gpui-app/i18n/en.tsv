@@ -2046,3 +2046,48 @@ autocorrect.replace	Replace
 autocorrect.with	With
 autocorrect.add	Add
 autocorrect.delete	Delete
+context.cut	Cut
+context.copy	Copy
+context.paste	Paste
+context.paste_options	Paste Options
+context.paste_keep	Keep Source Formatting
+context.paste_merge	Merge Formatting
+context.paste_text	Keep Text Only
+context.font	Font…
+context.paragraph	Paragraph…
+context.bullets	Bullets
+context.numbering	Numbering
+context.smart_lookup	Smart Lookup
+context.new_comment	New Comment
+context.link	Link…
+context.edit_link	Edit Link…
+context.open_link	Open Link
+context.remove_link	Remove Link
+context.update_field	Update Field
+context.edit_field	Edit Field…
+context.toggle_field_codes	Toggle Field Codes
+context.insert	Insert
+context.row_above	Insert Rows Above
+context.row_below	Insert Rows Below
+context.column_left	Insert Columns to the Left
+context.column_right	Insert Columns to the Right
+context.insert_cells	Insert Cells…
+context.delete	Delete
+context.delete_cells	Delete Cells…
+context.delete_row	Delete Rows
+context.delete_column	Delete Columns
+context.delete_table	Delete Table
+context.merge_cells	Merge Cells
+context.split_cells	Split Cells…
+context.distribute_rows	Distribute Rows Evenly
+context.distribute_columns	Distribute Columns Evenly
+context.table_borders	Borders and Shading…
+context.text_direction	Text Direction…
+context.autofit	AutoFit
+context.autofit_contents	AutoFit to Contents
+context.autofit_window	AutoFit to Window
+context.table_properties	Table Properties…
+context.wrap	Wrap Text
+context.edit_header	Edit Header
+context.edit_footer	Edit Footer
+context.close_header_footer	Close Header and Footer

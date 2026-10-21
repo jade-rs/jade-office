@@ -14,6 +14,7 @@ use jade_office_model::word::view::{
     ZoomFit,
 };
 
+pub mod context;
 pub mod input;
 pub mod mini;
 pub mod options;
@@ -135,6 +136,8 @@ pub struct Views {
     pub gesture: Option<select::MouseGesture>,
     /// Set while a command runs on each of several ranges.
     pub on_ranges: bool,
+    /// The right-click menu, while it is open.
+    pub context: Option<context::OpenMenu>,
 }
 
 impl Views {

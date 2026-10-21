@@ -33,6 +33,7 @@ pub mod asian;
 pub mod autocorrect;
 pub mod building_blocks;
 pub mod clipboard;
+pub mod context_menu;
 pub mod count;
 pub mod design;
 pub mod fields;
