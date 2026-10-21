@@ -834,3 +834,5 @@ story.distance.footer	下からのフッター位置 {mm} mm
 story.group.close	閉じる
 story.close	ヘッダーとフッターを閉じる
 story.close_title	本文の編集に戻る (本文をダブルクリックしても戻ります)
+setup.snap	グリッドに合わせる
+setup.snap_title	1 ページの行数を指定時に文字を行グリッド線に合わせる

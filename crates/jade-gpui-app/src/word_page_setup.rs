@@ -32,6 +32,8 @@ pub enum SetupAction {
     Vertical(bool),
     /// 段落の方向: 右から左 or 左から右.
     RightToLeft(bool),
+    /// グリッドに合わせる for the selected paragraphs.
+    SnapToGrid(bool),
 }
 
 /// A number field of one of the dialogs.
@@ -341,6 +343,7 @@ impl DocumentView {
         let line_numbers = self.document.line_numbers_preset();
         let vertical = self.document.vertical_text();
         let rtl = self.document.paragraph_rtl();
+        let snap = self.document.snap_to_grid();
         let line_menu = (open == Some(Popup::LineNumbers)).then(|| {
             menu_panel("line-numbers-menu")
                 .w(px(220.0))
@@ -444,6 +447,14 @@ impl DocumentView {
                         cx,
                     ),
                     text_button(
+                        "snap-to-grid",
+                        t("setup.snap"),
+                        t("setup.snap_title"),
+                        snap,
+                        Action::Setup(SetupAction::SnapToGrid(!snap)),
+                        cx,
+                    ),
+                    text_button(
                         "page-setup-dialog",
                         t("setup.open"),
                         t("setup.title"),
@@ -508,6 +519,7 @@ impl DocumentView {
             SetupAction::LineNumbers(preset) => document.set_line_numbers(preset),
             SetupAction::Vertical(vertical) => document.set_vertical_text(vertical),
             SetupAction::RightToLeft(rtl) => document.set_paragraph_rtl(rtl),
+            SetupAction::SnapToGrid(snap) => document.set_snap_to_grid(snap),
         }
     }
 

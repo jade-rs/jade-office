@@ -133,3 +133,66 @@ fn breaks_go_in_at_the_caret() {
         .unwrap()
         .starts_with("ab"));
 }
+
+#[test]
+fn a_column_break_moves_the_text_to_the_next_column() {
+    let mut document = contract();
+    let paragraph = typed(&mut document, "left|right ");
+    document.place_caret(paragraph, 0);
+    document.set_column_preset(ColumnPreset::Two).unwrap();
+    let before = document.place_caret(paragraph, "left|".len()).unwrap();
+    document.insert_page_break(PageBreak::Column).unwrap();
+    let text = document.paragraph_text(paragraph).unwrap();
+    let after_break = text.find('\u{000E}').unwrap() + '\u{000E}'.len_utf8();
+    let after = document.place_caret(paragraph, after_break).unwrap();
+    let (width, _) = document.page_size();
+    assert!(
+        after.x > width / 2.0 && after.x > before.x,
+        "the text after the break is in the right column: {before:?} → {after:?}"
+    );
+    let xml = part(&document.export_docx().unwrap(), "word/document.xml");
+    assert!(xml.contains(r#"<w:br w:type="column"/>"#), "{xml}");
+}
+
+#[test]
+fn a_book_fold_shows_half_sheet_pages() {
+    let mut document = contract();
+    let (width, height) = document.page_size();
+    let mut dialog = document.page_setup_dialog(SetupTab::Margins);
+    dialog.apply_to = ApplyTo::WholeDocument;
+    dialog.set_multiple_pages(jade_web::word::page_setup::MultiplePages::BookFold);
+    document.apply_page_setup(&dialog).unwrap();
+    let (folded_width, folded_height) = document.page_size();
+    assert!(
+        (folded_width - height.max(width) / 2.0).abs() < 1.0
+            && (folded_height - width.min(height)).abs() < 1.0,
+        "{width}x{height} → {folded_width}x{folded_height}"
+    );
+    let settings = part(&document.export_docx().unwrap(), "word/settings.xml");
+    assert!(settings.contains("w:bookFoldPrinting"));
+
+    let mut dialog = document.page_setup_dialog(SetupTab::Margins);
+    dialog.apply_to = ApplyTo::WholeDocument;
+    dialog.set_multiple_pages(jade_web::word::page_setup::MultiplePages::TwoOnOne);
+    dialog.set_landscape(false);
+    document.apply_page_setup(&dialog).unwrap();
+    let (two_up_width, two_up_height) = document.page_size();
+    assert!(
+        two_up_width > two_up_height,
+        "an upright sheet carries two wide pages"
+    );
+}
+
+#[test]
+fn a_paragraph_leaves_the_grid() {
+    let mut document = contract();
+    let paragraph = typed(&mut document, "x");
+    document.place_caret(paragraph, 0);
+    assert!(document.snap_to_grid());
+    document.set_snap_to_grid(false).unwrap();
+    assert!(!document.snap_to_grid());
+    let xml = part(&document.export_docx().unwrap(), "word/document.xml");
+    assert!(xml.contains(r#"<w:snapToGrid w:val="0"/>"#));
+    document.undo().unwrap();
+    assert!(document.snap_to_grid());
+}
