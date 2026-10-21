@@ -135,6 +135,9 @@ pub fn run(
     pick: js_sys::Function,
 ) -> Result<(), JsError> {
     console_error_panic_hook::set_once();
+    // Before any document is laid out: like Word for Mac on a Mac, or as the
+    // page's `?word_platform=` says.
+    jade_web::set_word_layout_platform_from_page();
     i18n::init(&language);
     let backend = jade_web::backend_with(regular.clone(), Some(bold.clone()), Some(thai.clone()))
         .map_err(|e| JsError::new(&e))?;

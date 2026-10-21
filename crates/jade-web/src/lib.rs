@@ -23,6 +23,8 @@ pub mod editing;
 pub mod pdf;
 #[cfg(target_arch = "wasm32")]
 mod web;
+#[cfg(target_arch = "wasm32")]
+pub use web::set_word_layout_platform_from_page;
 
 /// An editable presentation, painted with tiny-skia.
 pub type Deck = deck::Deck<TinySkiaBackend>;
