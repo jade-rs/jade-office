@@ -16,7 +16,7 @@ use jade_docx_editor::fields::{self, FieldCommand, FieldEnvironment, FieldScope}
 pub use jade_docx_editor::fields::{
     CustomProperty, CustomValue, DocumentProperties, FieldCodeView, FieldInfo, FieldPrompt,
 };
-use jade_selection::{SelectionRange, TextPosition};
+pub use jade_selection::{SelectionRange, TextPosition};
 
 use super::WordSession;
 
