@@ -872,11 +872,19 @@ impl DocView {
     /// nothing drawn is missed and nothing undrawn is read.
     fn refresh_repainted(&mut self) {
         let Document::Pages {
-            document, pages, ..
+            document,
+            pages,
+            page_size,
+            ..
         } = &mut self.document
         else {
             return;
         };
+        // The box the pages are laid out in, which a page turned or another
+        // paper changes: the slots they are shown in, and their thumbnails,
+        // follow it.
+        let (width, height) = document.page_size();
+        *page_size = (width as f32, height as f32);
         // An edit from this page on can have moved what any later page
         // shows: a thumbnail kept of one is out of date.
         let changed_from = document.take_repainted_from();
