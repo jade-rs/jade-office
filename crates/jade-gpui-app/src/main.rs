@@ -29,6 +29,7 @@ mod shell;
 mod tooltip;
 mod word_characters;
 mod word_dialogs;
+mod word_equation;
 mod word_page;
 mod word_page_setup;
 mod word_review;
@@ -1044,6 +1045,8 @@ enum RibbonTab {
     TableLayout,
     /// ヘッダーとフッター, shown while a header or footer is open.
     HeaderFooter,
+    /// 数式, while an equation is being edited.
+    Equation,
 }
 
 impl RibbonTab {
@@ -1069,6 +1072,7 @@ impl RibbonTab {
             RibbonTab::TableDesign => t("doc.tab.table_design"),
             RibbonTab::TableLayout => t("doc.tab.table_layout"),
             RibbonTab::HeaderFooter => t("story.tab"),
+            RibbonTab::Equation => t("equation.tab"),
         }
     }
 }
@@ -1211,6 +1215,8 @@ struct DocumentView {
     tables: word_table::TableUi,
     /// The フォント dialog and the other character tools' dialogs.
     characters: word_characters::Characters,
+    /// The equation being edited, if one is (`word_equation`).
+    equation: word_equation::EquationUi,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1444,6 +1450,12 @@ impl DocumentView {
         if self.find_bar.is_some() && self.handle_find_bar_key(event, cx) {
             // Taken: the platform must not also type it (Tab, Enter) into
             // the field through the input handler.
+            cx.stop_propagation();
+            return;
+        }
+        // An equation being edited takes its keys: arrows walk its
+        // structure, Backspace edits it, Escape leaves it.
+        if word_equation::handle_key(self, event, cx) {
             cx.stop_propagation();
             return;
         }
@@ -1829,6 +1841,9 @@ impl DocumentView {
         if self.format_state().table.is_some() {
             tabs.extend([RibbonTab::TableDesign, RibbonTab::TableLayout]);
         }
+        if self.equation.editor.is_some() {
+            tabs.push(RibbonTab::Equation);
+        }
         tabs
     }
 
@@ -1947,6 +1962,7 @@ impl DocumentView {
                 word_page::header_footer(&self.ribbon, cx),
                 self.cover_group(cx),
                 word_characters::insert_group(cx),
+                word_equation::insert_group(self, cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -2092,6 +2108,7 @@ impl DocumentView {
             ],
             RibbonTab::Review => self.review_groups(cx),
             RibbonTab::HeaderFooter => self.story_groups(cx),
+            RibbonTab::Equation => word_equation::tab_groups(self, cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
@@ -2968,6 +2985,12 @@ impl DocumentView {
                 self.table_status = Some(SharedString::from(error));
             }
         }
+        // ホーム's size, colour and bold format the equation being edited.
+        if self.equation.editor.is_some() {
+            if let Some(format) = word_equation::home_format(&action) {
+                return word_equation::format(self, format, cx);
+            }
+        }
         let document: &mut NativeDocument = &mut self.document;
         let done = match action {
             Action::Undo => return self.step_history(true, cx),
@@ -3013,6 +3036,7 @@ impl DocumentView {
             Action::Tables(action) => return self.table_action(action, cx),
             Action::FontFamilyName(name) => WordFormatting::set_font_family(document, &name),
             Action::Characters(action) => return word_characters::run(self, action, cx),
+            Action::Equation(action) => return word_equation::run(self, action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -3373,6 +3397,7 @@ impl DocumentView {
                 self.insert_at = caret;
                 self.caret = self.document.place_caret(caret.0, caret.1);
                 self.rebuild_after_edit();
+                word_equation::after_history(self);
                 cx.notify();
             }
             // Nothing on the stack: not an error, just nothing to do.
@@ -3763,6 +3788,9 @@ impl DocumentView {
         if event.modifiers.platform && self.follow_link_at(local_x, document_y, cx) {
             return;
         }
+        if word_equation::click(self, page_index, local_x, local_y, cx) {
+            return;
+        }
         if self.table_mouse_down(page_index, local_x, document_y, event, cx) {
             return;
         }
@@ -3839,6 +3867,10 @@ impl DocumentView {
     /// Drawn here rather than painted into the page so moving it costs nothing:
     /// the document bitmap is untouched, which is also what will let it blink.
     fn caret_overlay(&self, page_index: usize) -> Option<impl IntoElement> {
+        // Inside an equation its own caret is drawn (`word_equation`).
+        if self.equation.editor.is_some() {
+            return None;
+        }
         let caret = self.caret?;
         let zoom = self.zoom;
         let (page_of_caret, local_y) = self.document.page_and_offset(caret.document_y);
@@ -4063,6 +4095,11 @@ impl EntityInputHandler for DocumentView {
         }
         if self.find_bar.is_some() {
             self.replace_in_find_bar(range, text, false, cx);
+            return;
+        }
+        if self.equation.editor.is_some() {
+            self.marked = None;
+            word_equation::type_text(self, text, cx);
             return;
         }
         let paragraph_text = self.current_paragraph_text();
@@ -4510,6 +4547,7 @@ impl Render for DocumentView {
                                             .h(px(page_height * zoom)),
                                     )
                                     .children(self.caret_overlay(index))
+                                    .children(word_equation::overlay(self, index))
                                     .children(self.table_overlay(index))
                                     .children(self.story_label(index))
                                     .children(self.object_outline(index))
@@ -4797,6 +4835,7 @@ fn document_view(
         show_comments: false,
         tables: word_table::TableUi::default(),
         characters: word_characters::Characters::default(),
+        equation: Default::default(),
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,

@@ -142,6 +142,10 @@ impl WordSession for WordDoc {
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
         WordSession::select_cells(&mut **self, anchor_cell, focus_cell)
     }
+
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        WordSession::math_zones(&**self)
+    }
 }
 
 fn role_name(role: Story) -> &'static str {
