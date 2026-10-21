@@ -183,6 +183,21 @@ impl TextEdit {
         self.caret = if end { self.text.len() } else { 0 };
     }
 
+    /// A field's own editing keys — Backspace, Delete, the arrows, Home and
+    /// End — by gpui's key name. Returns whether `key` was one.
+    pub fn edit_key(&mut self, key: &str) -> bool {
+        match key {
+            "backspace" => self.backspace(),
+            "delete" => self.delete(),
+            "left" => self.step(false),
+            "right" => self.step(true),
+            "home" | "up" => self.to_end(false),
+            "end" | "down" => self.to_end(true),
+            _ => return false,
+        }
+        true
+    }
+
     /// The text either side of the caret, for drawing it.
     pub fn split(&self) -> (&str, &str) {
         self.text.split_at(self.caret())

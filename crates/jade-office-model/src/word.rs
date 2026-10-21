@@ -29,15 +29,39 @@ use jade_docx_headless_api::{
 pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
+pub mod asian;
 pub mod clipboard;
+pub mod count;
 pub mod find;
+pub mod font;
+pub mod insert;
+pub mod links;
 pub mod new;
 pub mod page;
+pub mod page_setup;
+pub mod painter;
+pub mod paragraph;
 pub mod picture;
 pub mod platform;
+pub mod references;
 pub mod review;
+pub mod table;
+pub mod table_ui;
+pub mod typography;
 
+pub use count::{WordCount, WordCounting};
 pub use find::{FindOptions, Found, WordFind};
+/// The engine's command and query types, for shells that build commands.
+pub use jade_docx_headless_api as headless;
+/// The selection type [`WordSession`] speaks, for shells that wrap one.
+pub use jade_selection::SelectionRange as SelectionRangeOf;
+pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
+pub use painter::{CopiedFormat, WordFormatPainter};
+pub use paragraph::{
+    IndentUnit, LineSpacing, ParagraphField, ParagraphForm, ParagraphFormat, SpecialIndent,
+    WordParagraphs,
+};
+pub use references::{NoteForm, NoteKind, WordReferences};
 
 /// A paragraph and a byte offset into its text.
 pub type Position = (usize, usize);
@@ -80,6 +104,15 @@ pub trait WordSession {
     fn cell_layouts(&self) -> &[CellLayout];
     /// A laid-out table's order in the body, which table commands take.
     fn table_order_for(&self, table_id: usize) -> Option<usize>;
+    /// Where the pages show hyperlinks, from the document as it now is and
+    /// the last layout: a rectangle a line of each, in the document's
+    /// coordinates.
+    fn hyperlink_regions(&self) -> Vec<jade_docx_editor::canvas_renderer::HyperlinkRegion>;
+
+    /// Selects whole cells — the rectangle from one cell to another, by
+    /// their ids in the last paint's cell registry — and repaints so the
+    /// cells show selected, as Word's row, column and table selections do.
+    fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String>;
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
@@ -126,6 +159,9 @@ pub struct FormatState {
     pub list: Option<ListKind>,
     /// The cell the caret is in, when it is in a table.
     pub table: Option<TableCell>,
+    /// Everything else about the run: what the フォント dialog and the font
+    /// group's third row show (`font::WordCharacters`).
+    pub character: jade_docx_headless_api::HeadlessRunFormat,
 }
 
 /// What kind of list a paragraph is in, which decides what the ribbon's two
@@ -572,6 +608,7 @@ pub trait WordFormatting: WordSession {
             alignment: paragraph.and_then(|p| p.alignment),
             list,
             table: self.caret_table_cell(),
+            character: font::WordCharacters::run_format_at(self, at),
         }
     }
 
@@ -753,12 +790,13 @@ pub trait WordFormatting: WordSession {
     }
 
     /// Line height as a multiple of a single line (1.0, 1.15, 1.5, …): Word's
-    /// `auto` rule in 240ths of a line.
+    /// `auto` rule, which the command takes as the multiple itself and
+    /// writes in 240ths of a line.
     fn set_line_spacing(&mut self, multiple: f32) -> Result<(), String> {
         self.run_on_paragraphs(|start, end| HeadlessCommand::SetParagraphLineSpacing {
             start_paragraph: start,
             end_paragraph: end,
-            line: Some(Some(multiple * 240.0)),
+            line: Some(Some(multiple)),
             line_rule: Some("auto".to_string()),
             before: None,
             after: None,
@@ -864,18 +902,39 @@ pub trait WordFormatting: WordSession {
                 (start.paragraph, start.offset)
             })
             .unwrap_or((0, 0));
+        let outer_table = self
+            .cell_id_for_paragraph(paragraph)
+            .and_then(|id| self.cell_layout(id))
+            .map(|cell| cell.table_id);
         // The caret moves into the table, so no highlight is to be painted.
         self.collapse_to((paragraph, offset));
-        self.apply_command(
-            HeadlessCommand::InsertTable {
-                after_paragraph: paragraph,
-                rows: rows.max(1),
-                columns: columns.max(1),
-                column_widths: Vec::new(),
-                caret_offset: Some(offset),
-            },
+        // With Word's 表 (格子) style, as Word's 挿入 ▸ 表 gives every table:
+        // without it Word shows the table with no lines.
+        self.execute_command(
+            Box::new(
+                jade_docx_editor::commands::insert_table::InsertTableCommand::at_caret(
+                    paragraph,
+                    offset,
+                    rows.max(1),
+                    columns.max(1),
+                    Vec::new(),
+                )
+                .with_style("TableGrid"),
+            ),
             false,
         )?;
+        // In a cell the new table is nested in it: its first cell is the
+        // first paragraph after the caret's laid out in another table.
+        if let Some(outer) = outer_table {
+            let inner = (paragraph + 1..paragraph + 256)
+                .find(|&candidate| {
+                    self.cell_id_for_paragraph(candidate)
+                        .and_then(|id| self.cell_layout(id))
+                        .is_some_and(|cell| cell.table_id != outer)
+                })
+                .unwrap_or(paragraph);
+            return Ok((inner, 0));
+        }
         // Above the paragraph at its start, after it otherwise: the first
         // cell is whichever of the two is now in a table.
         let first_cell = [paragraph, paragraph + 1]

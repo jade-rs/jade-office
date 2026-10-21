@@ -45,6 +45,7 @@ impl DocumentView {
     ) {
         self.find_bar = None;
         self.story_bar = None;
+        self.dialog = None;
         self.show_comments = true;
         self.comment_bar = Some(CommentBar {
             entry,

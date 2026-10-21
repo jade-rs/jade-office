@@ -32,9 +32,13 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 
 mod deck;
 mod sheet;
+pub(crate) mod word_characters;
+mod word_dialogs;
 mod word_find;
 mod word_review;
+pub(crate) mod word_setup;
 mod word_story;
+mod word_table;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -384,11 +388,17 @@ enum Document {
         story: Option<Box<crate::word_page::StoryBar>>,
         /// A comment being typed — new, a reply, an edit — in its bar.
         comment: Option<Box<word_review::CommentBar>>,
+        /// A dialog — a link, a note, the paragraph's format — over the
+        /// pages; it takes the keyboard as the bars do.
+        dialog: Option<Box<word_dialogs::Dialog>>,
         /// Whether the comments pane is open beside the pages.
         show_comments: bool,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
+        /// The table tabs' dialogs, pen and tools, and a border being
+        /// dragged.
+        tables: Box<jade_web::word::table_ui::TableTools>,
     },
     Deck {
         deck: jade_web::Deck,
@@ -483,7 +493,15 @@ pub struct DocView {
     slideshow: bool,
     /// Whether the browser's paste event came after the last ⌘V.
     paste_arrived: bool,
+    /// The status bar's 文字カウント and the caret, selection and edit it
+    /// was counted for: counting reads every paragraph.
+    word_count: RefCell<Option<(FormatKey, SharedString)>>,
+    /// The フォント dialog and the other character tools' dialogs.
+    characters: word_characters::Characters,
     host: Host,
+    /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
+    /// document, while one is open (`word_setup`).
+    page_dialog: Option<Box<word_setup::PageDialogState>>,
 }
 
 impl DocView {
@@ -525,8 +543,10 @@ impl DocView {
                     find: None,
                     story: None,
                     comment: None,
+                    dialog: None,
                     show_comments: false,
                     object: None,
+                    tables: Box::default(),
                     pages: (0..opened.page_count())
                         .map(|index| {
                             opened
@@ -600,7 +620,10 @@ impl DocView {
             show_notes: true,
             slideshow: false,
             paste_arrived: false,
+            word_count: RefCell::new(None),
+            characters: word_characters::Characters::default(),
             host,
+            page_dialog: None,
         })
     }
 
@@ -610,13 +633,25 @@ impl DocView {
     pub fn status_items(&self) -> Vec<SharedString> {
         let mut items: Vec<SharedString> = Vec::new();
         match &self.document {
-            Document::Pages { pages, current, .. } => items.push(
-                i18n::format(
-                    "doc.position",
-                    &[("current", &(current + 1)), ("count", &pages.len())],
-                )
-                .into(),
-            ),
+            Document::Pages {
+                pages,
+                current,
+                document,
+                ribbon,
+                ..
+            } => {
+                items.push(
+                    i18n::format(
+                        "doc.position",
+                        &[("current", &(current + 1)), ("count", &pages.len())],
+                    )
+                    .into(),
+                );
+                items.push(self.word_count_status(document));
+                if ribbon.painter.is_some() {
+                    items.push(i18n::text("painter.armed").into());
+                }
+            }
             Document::Deck {
                 deck,
                 current,
@@ -640,6 +675,41 @@ impl DocView {
             items.push(self.status.clone());
         }
         items
+    }
+
+    /// 文字カウント for the status bar, as Word shows it: the document's
+    /// words and characters, and the selection's out of them.
+    fn word_count_status(&self, document: &jade_web::editing::EditableDocument) -> SharedString {
+        use jade_web::word::count::grouped;
+        use jade_web::word::WordCounting;
+        let key = (document.caret(), document.selection(), self.generation);
+        if let Some((cached, status)) = self.word_count.borrow().as_ref() {
+            if *cached == key {
+                return status.clone();
+            }
+        }
+        let whole = document.document_count();
+        let status: SharedString = match document.selection_count() {
+            Some(selected) => i18n::format(
+                "doc.word_count_selection",
+                &[
+                    ("selected_words", &grouped(selected.words)),
+                    ("words", &grouped(whole.words)),
+                    ("selected_characters", &grouped(selected.characters)),
+                    ("characters", &grouped(whole.characters)),
+                ],
+            ),
+            None => i18n::format(
+                "doc.word_count",
+                &[
+                    ("words", &grouped(whole.words)),
+                    ("characters", &grouped(whole.characters)),
+                ],
+            ),
+        }
+        .into();
+        *self.word_count.borrow_mut() = Some((key, status.clone()));
+        status
     }
 
     /// The chosen zoom, or the fitted one last shown: the workspace's status
@@ -1102,6 +1172,13 @@ impl DocView {
                 return cx.notify();
             }
         }
+        // ⌘-click follows a link, as Word does.
+        if (event.modifiers.platform || event.modifiers.control) && self.follow_link_at(x, y, cx) {
+            return;
+        }
+        if self.table_mouse_down(index, (x, y), event.click_count, cx) {
+            return;
+        }
         let extend = event.modifiers.shift;
         let clicks = event.click_count;
         if let Document::Pages { dragging, .. } = &mut self.document {
@@ -1182,6 +1259,9 @@ impl DocView {
     /// the bottom of the view the pages scroll to meet the pointer.
     fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
         if self.drag_object(event, cx) {
+            return;
+        }
+        if self.table_mouse_move(event, cx) {
             return;
         }
         let Document::Pages {
@@ -1315,11 +1395,63 @@ impl DocView {
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
         self.release_object(cx);
+        // The brush paints what was just clicked or dragged over.
+        let painting = matches!(
+            &self.document,
+            Document::Pages { ribbon, object: None, .. } if ribbon.painter.is_some()
+        );
+        if painting {
+            self.paint_format(false, cx);
+        }
+        self.table_mouse_up(cx);
         if let Document::Pages { dragging, .. } = &mut self.document {
             if std::mem::take(dragging) {
                 cx.notify();
             }
         }
+    }
+
+    /// 書式のコピー: takes up the format at the caret or the selection, to
+    /// paint onto what is selected next; `sticky` (a double-click on the
+    /// brush) keeps it painting until Escape. A second click puts it down.
+    fn pick_up_format(&mut self, sticky: bool, cx: &mut Context<Self>) {
+        use jade_web::word::WordFormatPainter;
+        let Document::Pages {
+            document, ribbon, ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let copied = document.copy_format();
+        ribbon.copied_format = Some(copied.clone());
+        ribbon.painter = match &ribbon.painter {
+            // A double-click arrives as a single click first: it turns the
+            // brush sticky rather than off.
+            Some(_) if !sticky => None,
+            _ => Some((copied, sticky)),
+        };
+        cx.notify();
+    }
+
+    /// Paints the format the brush holds — or, from ⌘⇧V, the one ⌘⇧C took
+    /// up — onto the selection, or the word at the caret.
+    fn paint_format(&mut self, from_shortcut: bool, cx: &mut Context<Self>) {
+        use jade_web::word::WordFormatPainter;
+        let Document::Pages { ribbon, .. } = &mut self.document else {
+            return;
+        };
+        let copied = if from_shortcut {
+            ribbon.copied_format.clone()
+        } else {
+            ribbon.painter.as_ref().map(|(copied, _)| copied.clone())
+        };
+        let Some(copied) = copied else {
+            return;
+        };
+        if !from_shortcut && !ribbon.painter.as_ref().is_some_and(|(_, sticky)| *sticky) {
+            ribbon.painter = None;
+        }
+        self.word_edit(cx, move |document| document.paste_format(&copied));
     }
 
     /// The long moves of ⌘ (a Mac) and Ctrl (elsewhere) with an arrow, Home
@@ -1373,6 +1505,15 @@ impl DocView {
             return false;
         }
         let motion = match key {
+            "escape" => {
+                if let Document::Pages { ribbon, .. } = &mut self.document {
+                    if ribbon.painter.take().is_some() {
+                        cx.notify();
+                        return true;
+                    }
+                }
+                return false;
+            }
             // ⌥⌫ and ⌥⌦ delete a word, as on a Mac: the word is selected,
             // then deleted, in one edit.
             "backspace" | "delete" if alt && document.selection().is_none() => {
@@ -1396,6 +1537,12 @@ impl DocView {
             }
             "delete" => {
                 self.word_edit(cx, |document| document.delete(false));
+                return true;
+            }
+            // ⇧Enter breaks the line inside the paragraph (`w:br`), as in
+            // Word; Enter splits the paragraph.
+            "enter" if extend => {
+                self.word_edit(cx, |document| document.insert_line_break());
                 return true;
             }
             "enter" => {
@@ -1464,6 +1611,24 @@ impl DocView {
         if let Action::Review(review) = action {
             return self.review_action(review, cx);
         }
+        if action == Action::InsertLink {
+            return self.open_link_dialog(cx);
+        }
+        if let Action::FormatPainter(sticky) = action {
+            return self.pick_up_format(sticky, cx);
+        }
+        if action == Action::ParagraphDialog {
+            return self.open_paragraph_dialog(cx);
+        }
+        if let Action::InsertNote(kind) = action {
+            return self.open_note_dialog(kind, cx);
+        }
+        if let Action::Setup(setup) = action {
+            return self.setup_action(setup, cx);
+        }
+        if let Action::Characters(action) = action {
+            return word_characters::run(self, action, cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1482,6 +1647,9 @@ impl DocView {
             }
             return;
         }
+        if let Action::Tables(action) = action {
+            return self.table_action(action, cx);
+        }
         if let Action::Style(style_id) = action {
             let result = document.set_paragraph_style(style_id.as_deref());
             ribbon.read_styles(document);
@@ -1491,7 +1659,7 @@ impl DocView {
         self.word_edit(cx, move |document| match action {
             Action::Toggle(format) => document.toggle_format(format),
             Action::ClearFormatting => document.clear_formatting(),
-            Action::FontFamily(family) => document.set_font_family(family),
+            Action::FontFamilyName(family) => document.set_font_family(&family),
             Action::FontSize(points) => document.set_font_size(points),
             Action::StepFontSize(grow) => document.step_font_size(grow),
             Action::FontColor(color) => document.set_font_color(&color),
@@ -1518,11 +1686,24 @@ impl DocView {
             Action::Page(command) => {
                 jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
             }
+            Action::InsertContents => {
+                jade_web::word::WordReferences::insert_table_of_contents(document)
+            }
+            Action::UpdateContents => {
+                jade_web::word::WordReferences::update_table_of_contents(document)
+            }
             Action::EditStory(_)
+            | Action::Setup(_)
+            | Action::Characters(_)
             | Action::Review(_)
             | Action::InsertPicture
+            | Action::InsertLink
+            | Action::InsertNote(_)
+            | Action::ParagraphDialog
+            | Action::FormatPainter(_)
             | Action::Wrap(_)
             | Action::Style(_)
+            | Action::Tables(_)
             | Action::Tab(_)
             | Action::Popup(_)
             | Action::ClosePopup
@@ -1538,6 +1719,7 @@ impl DocView {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let generation = self.generation;
+        let table = self.table_tab_state();
         let Document::Pages {
             document,
             ribbon,
@@ -1584,6 +1766,9 @@ impl DocView {
                 tracking: document.is_tracking_changes(),
                 comments: *show_comments,
                 picture: object.is_some_and(|grab| grab.object.is_picture()),
+                table,
+                layout: (ribbon.tab == ribbon::Tab::Layout)
+                    .then(|| word_setup::LayoutState::read(document)),
             }
         };
         ribbon::ribbon(
@@ -1653,9 +1838,20 @@ impl DocView {
         self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
         let story_bar = self.story_bar_element();
+        let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
         let find_bar = self.find_bar_element(cx);
+        let table_cursor = self.table_cursor();
+        let table_dialog = self.table_dialog_element(cx);
+        let mut table_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.table_overlay(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
+        let page_dialog = self.page_dialog_element(cx);
         let Document::Pages {
             document,
             pages,
@@ -1768,6 +1964,7 @@ impl DocView {
             .map(|(index, page)| {
                 let store = Rc::clone(&bounds_store);
                 let entity = entity.clone();
+                let table_overlay = table_overlays.next().flatten();
                 div()
                     .relative()
                     .flex_none()
@@ -1775,7 +1972,7 @@ impl DocView {
                     .h(px(height))
                     .bg(palette::paper())
                     .shadow_lg()
-                    .cursor_text()
+                    .cursor(table_cursor)
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |view, event, window, cx| {
@@ -1822,6 +2019,7 @@ impl DocView {
                                 )
                         },
                     ))
+                    .children(table_overlay)
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
                             div()
@@ -1927,6 +2125,7 @@ impl DocView {
                     .flex()
                     .flex_col()
                     .child(word_ribbon)
+                    .children(dialog_bar)
                     .children(comment_bar)
                     .children(story_bar)
                     .children(find_bar)
@@ -1948,6 +2147,8 @@ impl DocView {
                     ),
             )
             .children(comments_pane)
+            .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
+            .children(page_dialog)
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -1972,7 +2173,29 @@ impl DocView {
                 .ok();
             });
         }
+        // An open table dialog takes the keys it has.
+        if self.table_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        // A dialog over a Word document is modal: it takes every key.
+        if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        // A dialog takes the keyboard while it is open: its own keys stop
+        // here, and typing goes on to the input handler, into its field.
+        if self.characters.is_open() {
+            if word_characters::handle_key(self, key, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // The find bar over a Word document takes the keys it has.
+        if self.dialog_open() && self.dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.commenting() && self.comment_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -2012,9 +2235,30 @@ impl DocView {
                 "s" => self.save(cx),
                 "a" if pages => self.word_move(cx, |document| document.select_all()),
                 // Find, and Word for Mac's Find and Replace.
-                "f" if pages => self.open_find(false, cx),
+                "f" if pages && !modifiers.alt => self.open_find(false, cx),
                 "h" if pages && modifiers.shift => self.open_find(true, cx),
+                // Word for Mac's 書式のコピー / 書式の貼り付け.
+                "c" if pages && modifiers.shift => self.pick_up_format(false, cx),
+                "v" if pages && modifiers.shift => self.paint_format(true, cx),
+                // ⌘↩ is Word's page break (改ページ).
+                "enter" if pages => self.setup_action(
+                    word_setup::SetupAction::Break(jade_web::word::page_setup::PageBreak::Page),
+                    cx,
+                ),
                 "c" if pages => self.word_copy(false, cx),
+                // ハイパーリンクの挿入.
+                "k" if pages => self.open_link_dialog(cx),
+                // Word for Mac's 書式 → 段落 (⌥⌘M).
+                "m" | "µ" if pages && modifiers.alt => self.open_paragraph_dialog(cx),
+                // Word for Mac's ⌥⌘F and ⌥⌘D: 脚注の挿入, 文末脚注の挿入.
+                "f" | "ƒ" if pages && modifiers.alt => {
+                    self.open_note_dialog(jade_web::word::NoteKind::Footnote, cx)
+                }
+                "d" | "∂" if pages && modifiers.alt => {
+                    self.open_note_dialog(jade_web::word::NoteKind::Endnote, cx)
+                }
+                // Word for Mac's フォント… (書式 menu).
+                "d" if pages => word_characters::open_font_dialog(self, cx),
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.
                 "b" | "i" | "u" if pages => {
@@ -2048,6 +2292,9 @@ impl DocView {
         if self.slideshow {
             return None;
         }
+        if self.characters.is_open() {
+            return self.characters.text_field_mut();
+        }
         match &self.document {
             // Typing into a selected cell replaces it, as in Excel.
             // A dialog over the grid takes no typing into the cells.
@@ -2073,6 +2320,10 @@ impl DocView {
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_mut().map(|(_, text)| text),
             Document::Pages {
+                dialog: Some(dialog),
+                ..
+            } => dialog.field_mut(),
+            Document::Pages {
                 comment: Some(bar), ..
             } => Some(&mut bar.text),
             Document::Pages {
@@ -2086,6 +2337,9 @@ impl DocView {
     }
 
     fn current_text(&self) -> Option<&TextEdit> {
+        if let Some(field) = self.characters.text_field() {
+            return Some(field);
+        }
         match &self.document {
             Document::Workbook(sheet) => sheet.typed(),
             Document::Deck {
@@ -2093,6 +2347,10 @@ impl DocView {
                 ..
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_ref().map(|(_, text)| text),
+            Document::Pages {
+                dialog: Some(dialog),
+                ..
+            } => dialog.field(),
             Document::Pages {
                 comment: Some(bar), ..
             } => Some(&bar.text),
@@ -2372,6 +2630,12 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.table_dialog_typed(text, cx) {
+            return;
+        }
+        if self.page_dialog.is_some() {
+            return self.page_dialog_input(text, cx);
+        }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
             && !self.story_editing()
@@ -2413,6 +2677,9 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.table_dialog_open() || self.page_dialog.is_some() {
+            return;
+        }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
             && !self.story_editing()
@@ -2514,6 +2781,7 @@ impl Render for DocView {
                 Document::Workbook(_) => self.workbook_body(window, cx),
             }
         };
+        let dialog = word_characters::overlay(self, window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -2521,5 +2789,6 @@ impl Render for DocView {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::handle_key))
             .child(body)
+            .children(dialog)
     }
 }

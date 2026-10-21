@@ -76,17 +76,18 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | | Page setup per section (the commands act on the default one) | Medium | partly |
 | | Paste with formatting from other apps (HTML, RTF); a copy keeps its formatting within the app only | Medium | no |
 | | PDF in the browser is a picture of each page: its text cannot be selected or searched | Medium | partly (`jade-docx-pdf-renderer`) |
-| | Shift+Enter line break | Medium | partly |
-| | Space before/after, paragraph dialog (first-line/hanging indent, keep with next) | Medium | yes (`set_paragraph_spacing`) |
+| **Done** (#108) | Shift+Enter line break | Medium | partly |
+| **Done** (#108) | Format Painter: one click paints once, a double-click until Escape; ⌘⇧C / ⌘⇧V | Medium | yes |
+| **Done** (#108) | Space before/after, paragraph dialog (first-line/hanging indent, keep with next) | Medium | yes (`set_paragraph_spacing`) |
 | | Fonts beyond a fixed list; custom colours; Font dialog | Medium | partly |
 | | Modify and create styles; character styles | Medium | partly |
 | | List types, bullet glyphs, number formats, restart numbering | Medium | partly |
-| | Hyperlinks: insert, follow | Medium | yes |
+| **Done** (#108) | Hyperlinks: insert, edit (⌘K), follow (⌘-click) | Medium | yes |
 | | Page Break (native runs Blank Page), ⌘Enter | Medium | yes |
-| | Footnotes and endnotes | Medium | yes |
-| | Table of contents: update; none in the browser | Medium | yes |
+| **Done** (#108) | Footnotes and endnotes: insert (⌥⌘F, ⌥⌘D) | Medium | yes |
+| **Done** (#108) | Table of contents: update; none in the browser | Medium | yes |
 | | Table column resizing by drag, AutoFit, table properties | Medium | yes |
-| | Word count; spelling | Medium | no |
+| | Word count (done on word-editing-gaps: status bar, Japanese counted as Word counts it); spelling | Medium | no |
 | | Save failures only printed to the console (native) | Medium | — |
 | | Shapes, text boxes, symbols, equations, fields, bookmarks | Low–Medium | yes for most |
 | | Japanese word selection on double-click; drag-and-drop text | Low | no |

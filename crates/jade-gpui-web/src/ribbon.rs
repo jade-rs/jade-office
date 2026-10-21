@@ -28,19 +28,6 @@ use crate::tooltip::Tooltip;
 use crate::view::DocView;
 use crate::{i18n, palette};
 
-/// jade-ide's font list (`FONT_FAMILIES`).
-const FONT_FAMILIES: [&str; 10] = [
-    "ＭＳ 明朝",
-    "游明朝",
-    "Hiragino Mincho ProN",
-    "Hiragino Sans",
-    "Noto Sans JP",
-    "Yu Mincho",
-    "Noto Serif JP",
-    "MS Mincho",
-    "Times New Roman",
-    "Arial",
-];
 /// Word's ribbon sizes (`WORD_FONT_SIZES`).
 const FONT_SIZES: [f32; 17] = [
     8.0, 9.0, 10.0, 10.5, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0,
@@ -49,12 +36,6 @@ const FONT_SIZES: [f32; 17] = [
 /// What an empty size or family box falls back to, as in jade-ide.
 const DEFAULT_FAMILY: &str = "游明朝";
 const DEFAULT_SIZE: f32 = 12.0;
-/// The font colour swatches, jade-ide's `textColors`.
-const TEXT_COLORS: [u32; 22] = [
-    0x000000, 0x1a1a2e, 0x434343, 0x666666, 0x999999, 0xb7b7b7, 0xdc2626, 0xea580c, 0xca8a04,
-    0x16a34a, 0x0d9488, 0x2563eb, 0x7c3aed, 0xdb2777, 0xfca5a5, 0xfdba74, 0xfde047, 0x86efac,
-    0x5eead4, 0x93c5fd, 0xc4b5fd, 0xf9a8d4,
-];
 /// Word's highlight names and what they look like.
 const HIGHLIGHTS: [(&str, u32); 15] = [
     ("yellow", 0xffff00),
@@ -99,18 +80,31 @@ pub enum Tab {
     Home,
     Insert,
     Layout,
+    References,
     Review,
+    /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
+    TableDesign,
+    TableLayout,
 }
 
 impl Tab {
-    const ALL: [Tab; 4] = [Tab::Home, Tab::Insert, Tab::Layout, Tab::Review];
+    const ALL: [Tab; 5] = [
+        Tab::Home,
+        Tab::Insert,
+        Tab::Layout,
+        Tab::References,
+        Tab::Review,
+    ];
 
     fn label(self) -> &'static str {
         i18n::text(match self {
             Tab::Home => "doc.tab.home",
             Tab::Insert => "doc.tab.insert",
             Tab::Layout => "doc.tab.layout",
+            Tab::References => "doc.tab.references",
             Tab::Review => "doc.tab.review",
+            Tab::TableDesign => "doc.tab.table_design",
+            Tab::TableLayout => "doc.tab.table_layout",
         })
     }
 }
@@ -135,6 +129,24 @@ pub enum Popup {
     Columns,
     Breaks,
     PageNumbers,
+    /// The table tabs' lists (`word_table`).
+    TableSelect,
+    TableStyles,
+    TableShading,
+    PenStyle,
+    PenWidth,
+    PenColor,
+    BorderSets,
+    AutoFit,
+    TextDirection,
+    /// レイアウト's 行番号, 文字列の方向 and ページの色, 挿入's 表紙
+    /// (`view::word_setup`).
+    LineNumbers,
+    PageTextDirection,
+    PageColor,
+    Cover,
+    /// The font group's third row (`view::word_characters`).
+    Characters(crate::view::word_characters::CharPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -147,6 +159,13 @@ pub struct Ribbon {
     gallery: Vec<GalleryStyle>,
     /// The document's default paragraph style, which 標準 stands for.
     default_style: Option<String>,
+    /// 書式のコピー/貼り付け: the format the brush holds, and whether it
+    /// keeps painting (a double-click) until Escape.
+    pub painter: Option<(jade_web::word::CopiedFormat, bool)>,
+    /// The format ⌘⇧C took up, for ⌘⇧V.
+    pub copied_format: Option<jade_web::word::CopiedFormat>,
+    /// The theme's colours, for the font colour's テーマの色.
+    pub theme_colors: Vec<(String, String)>,
 }
 
 impl Ribbon {
@@ -159,6 +178,7 @@ impl Ribbon {
             .find(|style| style.is_default)
             .map(|style| style.id.clone());
         self.gallery = style_gallery(&styles);
+        self.theme_colors = crate::view::word_characters::document_theme_colors(document);
     }
 
     /// Opens a list, or closes it when it is the one open.
@@ -180,7 +200,11 @@ pub enum Action {
     Redo,
     Toggle(CharacterFormat),
     ClearFormatting,
-    FontFamily(&'static str),
+    /// An installed font from the family list.
+    FontFamilyName(String),
+    /// The font group's third row, the colour lists and the dialogs
+    /// (`view::word_characters`).
+    Characters(crate::view::word_characters::CharAction),
     FontSize(f32),
     StepFontSize(bool),
     /// `RRGGBB`, or `auto`.
@@ -203,8 +227,24 @@ pub enum Action {
     Review(crate::word_review::ReviewAction),
     /// 挿入 → 画像: a picture picked from the device.
     InsertPicture,
+    /// 挿入 → リンク (⌘K): the hyperlink dialog.
+    InsertLink,
+    /// 段落…: the paragraph dialog.
+    ParagraphDialog,
+    /// 書式のコピー/貼り付け: the brush taken up, sticky on a double-click.
+    FormatPainter(bool),
+    /// 参考資料 → 目次.
+    InsertContents,
+    /// 参考資料 → 目次の更新.
+    UpdateContents,
+    /// 参考資料 → 脚注の挿入 / 文末脚注の挿入: the note's bar.
+    InsertNote(jade_web::word::NoteKind),
     /// 文字列の折り返し for the picture selected.
     Wrap(jade_web::word::picture::Wrap),
+    /// The table tabs, dialogs and tools (`word_table`).
+    Tables(crate::word_table::TableAction),
+    /// The ページ設定 dialogs and menus (`view::word_setup`).
+    Setup(crate::view::word_setup::SetupAction),
 }
 
 impl Action {
@@ -581,6 +621,11 @@ pub struct TabState {
     pub comments: bool,
     /// Whether a picture is selected, which 文字列の折り返し acts on.
     pub picture: bool,
+    /// What the table tabs show, read while one of them is showing.
+    pub table: Option<crate::word_table::TableTabState>,
+    /// What the text, line number and background groups show, read only
+    /// while レイアウト is up.
+    pub layout: Option<crate::view::word_setup::LayoutState>,
 }
 
 pub fn ribbon(
@@ -592,29 +637,56 @@ pub fn ribbon(
     viewport: Size<Pixels>,
     cx: &mut Context<DocView>,
 ) -> AnyElement {
-    let tabs = Tab::ALL.map(|tab| {
-        let active = tab == ribbon.tab;
-        div()
-            .id(("ribbon-tab", tab as usize))
-            .px_3()
-            .py_1()
-            .rounded_md()
-            .cursor_pointer()
-            .text_xs()
-            .when(active, |element| {
-                element.bg(palette::selected()).text_color(palette::text())
-            })
-            .when(!active, |element| element.text_color(palette::dim()))
-            .hover(|element| element.bg(palette::hovered()))
-            .child(tab.label())
-            .on_click(listener(Action::Tab(tab), cx))
-    });
-    let groups = match ribbon.tab {
+    // The table tabs while the caret is in a table; a table tab left
+    // behind shows ホーム.
+    let in_table = state.table.is_some();
+    let shown_tab = match ribbon.tab {
+        Tab::TableDesign | Tab::TableLayout if !in_table => Tab::Home,
+        tab => tab,
+    };
+    let mut strip = Tab::ALL.to_vec();
+    if in_table {
+        strip.extend([Tab::TableDesign, Tab::TableLayout]);
+    }
+    let tabs: Vec<_> = strip
+        .into_iter()
+        .map(|tab| {
+            let active = tab == shown_tab;
+            div()
+                .id(("ribbon-tab", tab as usize))
+                .px_3()
+                .py_1()
+                .rounded_md()
+                .cursor_pointer()
+                .text_xs()
+                .when(active, |element| {
+                    element.bg(palette::selected()).text_color(palette::text())
+                })
+                .when(!active, |element| element.text_color(palette::dim()))
+                .hover(|element| element.bg(palette::hovered()))
+                .child(tab.label())
+                .on_click(listener(Action::Tab(tab), cx))
+        })
+        .collect();
+    let groups = match shown_tab {
         Tab::Home => home(ribbon, state, cx),
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
             groups.push(crate::word_page::pictures(shown.picture, cx));
+            groups.push(group(
+                i18n::text("link.group"),
+                vec![row(vec![crate::word_page::text_button(
+                    "hyperlink",
+                    i18n::text("link.button"),
+                    i18n::text("link.button_title"),
+                    false,
+                    Action::InsertLink,
+                    cx,
+                )])],
+            ));
             groups.push(crate::word_page::header_footer(ribbon, cx));
+            groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
+            groups.push(crate::view::word_characters::insert_group(cx));
             groups
         }
         Tab::Layout => {
@@ -628,10 +700,35 @@ pub fn ribbon(
                     cx,
                 ));
             }
-            groups.extend(layout(ribbon, state, cx));
+            if let Some(layout) = &shown.layout {
+                groups.extend(crate::view::word_setup::layout_groups(
+                    ribbon.popup,
+                    layout,
+                    cx,
+                ));
+                groups.extend(crate::view::word_setup::background_groups(
+                    ribbon.popup,
+                    layout,
+                    cx,
+                ));
+            }
             groups
         }
+        Tab::References => references(cx),
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
+        Tab::TableDesign => {
+            let tabs = shown.table.clone().unwrap_or_default();
+            crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)
+        }
+        Tab::TableLayout => {
+            let tabs = shown.table.clone().unwrap_or_default();
+            let (before, after) = crate::word_table::layout_groups(ribbon.popup, &tabs, state, cx);
+            before
+                .into_iter()
+                .chain(layout(ribbon, state, cx))
+                .chain(after)
+                .collect()
+        }
     };
     div()
         .flex()
@@ -706,20 +803,8 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
         .unwrap_or_else(|| DEFAULT_FAMILY.to_string());
     let size = state.font_size.unwrap_or(DEFAULT_SIZE);
 
-    let family_menu = (open == Some(Popup::FontFamily)).then(|| {
-        menu_panel("family-menu")
-            .w(px(200.0))
-            .children(FONT_FAMILIES.iter().enumerate().map(|(index, name)| {
-                menu_row(
-                    ("family", index),
-                    *name,
-                    family == *name,
-                    Action::FontFamily(name),
-                    cx,
-                )
-            }))
-            .into_any_element()
-    });
+    let family_menu = (open == Some(Popup::FontFamily))
+        .then(|| crate::view::word_characters::font_family_menu(&family, cx));
     let size_menu = (open == Some(Popup::FontSize)).then(|| {
         menu_panel("size-menu")
             .w(px(72.0))
@@ -736,29 +821,8 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
             }))
             .into_any_element()
     });
-    let color_menu = (open == Some(Popup::FontColor)).then(|| {
-        menu_panel("color-menu")
-            .w(px(260.0))
-            .child(menu_row(
-                "color-auto",
-                i18n::text("doc.color.auto"),
-                false,
-                Action::FontColor("auto".to_string()),
-                cx,
-            ))
-            .child(div().flex().flex_wrap().gap_1().p_1().children(
-                TEXT_COLORS.iter().enumerate().map(|(index, color)| {
-                    swatch(
-                        ("color", index),
-                        *color,
-                        format!("#{}", hex(*color)),
-                        Action::FontColor(hex(*color)),
-                        cx,
-                    )
-                }),
-            ))
-            .into_any_element()
-    });
+    let color_menu = (open == Some(Popup::FontColor))
+        .then(|| crate::view::word_characters::font_color_menu(&ribbon.theme_colors, cx));
     let highlight_menu = (open == Some(Popup::Highlight)).then(|| {
         menu_panel("highlight-menu")
             .w(px(200.0))
@@ -1005,6 +1069,7 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         cx,
                     ),
                 ]),
+                crate::view::word_characters::font_row(ribbon, state, cx),
             ],
         ),
         group(
@@ -1113,6 +1178,15 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         ),
                         borders_menu,
                     ),
+                    icon_button(
+                        "paragraph-dialog",
+                        "icons/settings-2.svg",
+                        i18n::text("paragraph.button_title"),
+                        false,
+                        true,
+                        Action::ParagraphDialog,
+                        cx,
+                    ),
                 ]),
             ],
         ),
@@ -1138,9 +1212,46 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                     Action::Redo,
                     cx,
                 ),
+                painter_button(ribbon.painter.is_some(), cx),
             ])],
         ),
     ]
+}
+
+/// 書式のコピー/貼り付け: one click paints once, a double-click until
+/// Escape.
+fn painter_button(active: bool, cx: &mut Context<DocView>) -> AnyElement {
+    let view = cx.weak_entity();
+    div()
+        .id("format-painter")
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(26.0))
+        .rounded_md()
+        .when(active, |button| button.bg(palette::selected()))
+        .cursor_pointer()
+        .hover(|button| button.bg(palette::hovered()))
+        .tooltip(Tooltip::text(i18n::text("painter.title")))
+        .on_click(move |event: &ClickEvent, window, cx| {
+            let sticky = event.click_count() >= 2;
+            view.update(cx, |view, cx| {
+                view.ribbon_action(Action::FormatPainter(sticky), window, cx)
+            })
+            .ok();
+        })
+        .child(
+            svg()
+                .path("icons/paintbrush.svg")
+                .size_4()
+                .text_color(if active {
+                    palette::accent()
+                } else {
+                    palette::text()
+                }),
+        )
+        .into_any_element()
 }
 
 /// The style gallery: the first few entries as cards, the whole list
@@ -1277,6 +1388,7 @@ fn insert(ribbon: &Ribbon, cx: &mut Context<DocView>) -> Vec<AnyElement> {
                 &[("columns", &columns), ("rows", &rows)],
             )))
             .children(cells)
+            .children(crate::word_table::insert_menu_rows(cx))
             .into_any_element()
     });
     vec![group(
@@ -1323,6 +1435,57 @@ fn insert(ribbon: &Ribbon, cx: &mut Context<DocView>) -> Vec<AnyElement> {
             picker,
         )],
     )]
+}
+
+// ---- 参考資料 -------------------------------------------------------------------
+
+fn references(cx: &mut Context<DocView>) -> Vec<AnyElement> {
+    use crate::word_page::text_button;
+    use jade_web::word::NoteKind;
+    vec![
+        group(
+            i18n::text("doc.toc"),
+            vec![row(vec![
+                text_button(
+                    "toc",
+                    i18n::text("doc.toc"),
+                    i18n::text("doc.toc_title"),
+                    false,
+                    Action::InsertContents,
+                    cx,
+                ),
+                text_button(
+                    "toc-update",
+                    i18n::text("doc.toc_update"),
+                    i18n::text("doc.toc_update_title"),
+                    false,
+                    Action::UpdateContents,
+                    cx,
+                ),
+            ])],
+        ),
+        group(
+            i18n::text("note.group"),
+            vec![row(vec![
+                text_button(
+                    "footnote",
+                    i18n::text("note.footnote"),
+                    i18n::text("note.footnote_title"),
+                    false,
+                    Action::InsertNote(NoteKind::Footnote),
+                    cx,
+                ),
+                text_button(
+                    "endnote",
+                    i18n::text("note.endnote"),
+                    i18n::text("note.endnote_title"),
+                    false,
+                    Action::InsertNote(NoteKind::Endnote),
+                    cx,
+                ),
+            ])],
+        ),
+    ]
 }
 
 // ---- レイアウト (表ツール) -------------------------------------------------------

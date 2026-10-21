@@ -44,6 +44,7 @@ impl DocView {
             story,
             find,
             show_comments,
+            dialog,
             ..
         } = &mut self.document
         else {
@@ -51,6 +52,7 @@ impl DocView {
         };
         *find = None;
         *story = None;
+        *dialog = None;
         *show_comments = true;
         *comment = Some(Box::new(CommentBar {
             entry,
