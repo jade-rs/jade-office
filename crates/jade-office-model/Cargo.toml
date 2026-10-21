@@ -29,6 +29,8 @@ jade-docx-headless-api = { path = "../../jade-core/crates/jade-docx-headless-api
 # Word's other formats: .doc, RTF, text, ODT, HTML (word::formats).
 jade-docx-convert = { path = "../../jade-core/crates/jade-docx-convert" }
 jade-doc-reader = { path = "../../jade-core/crates/jade-doc-reader" }
+# Embedded fonts' obfuscation and licences (word::embedding).
+jade-docx-reader = { path = "../../jade-core/crates/jade-docx-reader" }
 # Loading a .docx outside a renderer (word::printing's selection).
 futures = "0.3"
 # Placing the printed PDF's pages on sheets (word::printing, native only).
@@ -55,6 +57,8 @@ encoding_rs = "0.8"
 # document's archive still has (word::repair).
 flate2 = "1"
 quick-xml = "0.39"
+# Bringing pictures down to a resolution (word::compress).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [dev-dependencies]
 png = "0.17"

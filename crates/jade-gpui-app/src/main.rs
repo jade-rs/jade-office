@@ -32,10 +32,12 @@ mod word_characters;
 mod word_compat;
 mod word_dialogs;
 mod word_files;
+mod word_fonts;
 mod word_page;
 mod word_page_setup;
 mod word_print;
 mod word_review;
+mod word_save_options;
 mod word_story;
 mod word_table;
 mod word_templates;
@@ -185,6 +187,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-cmd-u", word_compat::ConvertDocument, CONTEXT),
         // テンプレートとアドイン.
         KeyBinding::new("ctrl-cmd-a", word_templates::TemplatesAndAddIns, CONTEXT),
+        // ファイル サイズの圧縮.
+        KeyBinding::new("ctrl-cmd-z", word_save_options::CompressPictures, CONTEXT),
         // Unscoped so each view that can print answers it with its own
         // handler; a view without one leaves it alone.
         KeyBinding::new("cmd-p", Print, None),
@@ -303,6 +307,7 @@ fn menus() -> Vec<Menu> {
                 ),
                 MenuItem::action(t("menu.file.convert"), word_compat::ConvertDocument),
                 MenuItem::action(t("menu.file.templates"), word_templates::TemplatesAndAddIns),
+                MenuItem::action(t("menu.file.compress"), word_save_options::CompressPictures),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.print"), Print),
                 MenuItem::action(t("menu.file.export_pdf"), ExportPdf),
@@ -570,6 +575,9 @@ fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
     if let Some(path) = word_characters::complex_script_fallback() {
         faces.push(face("Complex Script Fallback", 400, &path));
     }
+    // The fonts the document carries with it (TrueType フォントを埋め込む),
+    // for the families nothing installed answers to.
+    faces.extend(word_fonts::embedded_faces(bytes));
     if installed {
         faces = jade_docx_native_render::system_fonts::word_document_faces(bytes, &faces);
     }
@@ -4320,6 +4328,11 @@ impl Render for DocumentView {
             .on_action(cx.listener(
                 |view, _: &word_templates::TemplatesAndAddIns, _window, cx| {
                     view.open_templates_dialog(cx)
+                },
+            ))
+            .on_action(cx.listener(
+                |view, _: &word_save_options::CompressPictures, _window, cx| {
+                    view.open_compress_dialog(cx)
                 },
             ))
             .on_action(

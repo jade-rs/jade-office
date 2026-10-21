@@ -13,6 +13,8 @@ license = "PolyForm-Noncommercial-1.0.0"
 
 [dependencies]
 jade-docx-native-render = { path = "../../jade-core/crates/jade-docx-native-render" }
+# The fonts a document embeds, to lay it out in (word_fonts).
+jade-docx-reader = { path = "../../jade-core/crates/jade-docx-reader" }
 jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
 jade-docx-pdf-renderer = { path = "../../jade-core/crates/jade-docx-pdf-renderer" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter" }

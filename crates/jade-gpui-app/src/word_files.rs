@@ -58,6 +58,8 @@ pub struct Files {
     pub check_on_save: bool,
     /// A save the checker let through: written without asking again.
     pub checked: bool,
+    /// How every save compresses the pictures, when it does.
+    pub compress_on_save: Option<crate::word_save_options::Compression>,
 }
 
 impl Default for Files {
@@ -73,6 +75,7 @@ impl Default for Files {
             mode: jade_office_model::word::compat::CURRENT_MODE,
             check_on_save: true,
             checked: false,
+            compress_on_save: None,
         }
     }
 }
@@ -125,6 +128,8 @@ pub enum FileDialog {
     Compatibility(crate::word_compat::Checker),
     /// テンプレートとアドイン.
     Templates(crate::word_templates::TemplatesDialog),
+    /// ファイル サイズの圧縮.
+    Compress(crate::word_save_options::CompressDialog),
 }
 
 /// The 保存 preferences as the dialog holds them until OK.
@@ -227,6 +232,10 @@ impl DocumentView {
     pub(crate) fn opened_as(&mut self, opened: &Opened, source: Option<Rc<Vec<u8>>>) {
         self.files.format = opened.format;
         self.files.encoding = opened.encoding;
+        let (embed_fonts, embed_subset) =
+            jade_office_model::word::embedding::embedding_settings(&opened.docx);
+        self.files.embed_fonts = embed_fonts;
+        self.files.embed_subset = embed_subset || !embed_fonts;
         if !opened.repairs.is_empty() {
             let report = repair_report(&opened.repairs);
             self.files.dialog = Some(FileDialog::Message {
@@ -393,7 +402,7 @@ impl DocumentView {
             .export_docx()
             .map_err(|error| error.to_string())
             .and_then(|docx| {
-                let docx = self.prepare_for_save(docx, format);
+                let docx = self.prepared_for_save(docx, format);
                 save_from_docx(format, &docx, options).map_err(|error| describe(&error, &name))
             })
             .and_then(|bytes| {
@@ -419,11 +428,6 @@ impl DocumentView {
             }
             Err(error) => self.show_message(t("files.save_failed"), &error, cx),
         }
-    }
-
-    /// The `.docx` a save writes, given what the save settings ask of it.
-    fn prepare_for_save(&self, docx: Vec<u8>, _format: WordFormat) -> Vec<u8> {
-        docx
     }
 
     /// Asks how the PDF at `target` is to be made.
@@ -593,6 +597,7 @@ fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         FileDialog::Message { .. } => {}
         FileDialog::Compatibility(checker) => crate::word_compat::confirm(view, checker, cx),
         FileDialog::Templates(_) => {}
+        FileDialog::Compress(dialog) => view.compress_now(dialog, cx),
         FileDialog::PdfOptions { target, tagged } => view.write_pdf_with(
             &target,
             jade_docx_native_render::PdfExportOptions {
@@ -638,6 +643,7 @@ pub fn overlay(
             crate::word_compat::dialog(checker, view.files.check_on_save, cx)
         }
         FileDialog::Templates(state) => crate::word_templates::dialog(&state.clone(), cx),
+        FileDialog::Compress(state) => crate::word_save_options::dialog(*state, cx),
         FileDialog::PdfOptions { tagged, .. } => {
             let tagged = *tagged;
             let choices = [
@@ -755,6 +761,10 @@ pub(crate) fn modal(
     )
     .with_priority(4)
     .into_any_element()
+}
+
+pub(crate) fn ok_cancel_buttons(cx: &mut Context<DocumentView>) -> AnyElement {
+    ok_cancel(cx)
 }
 
 fn ok_cancel(cx: &mut Context<DocumentView>) -> AnyElement {

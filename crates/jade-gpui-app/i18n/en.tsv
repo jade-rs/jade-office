@@ -1486,3 +1486,21 @@ repair.part_mended	The XML of {name} was damaged. What could be read (about {per
 repair.relationship	A reference to the missing {name} was removed.
 repair.content_types	The list of content types ([Content_Types].xml) was made again.
 repair.package_rels	The package relationships were made again.
+# Save options (word_save_options)
+menu.file.compress	Reduce File Size…
+compress.title	Reduce File Size
+compress.quality	Picture Quality
+compress.hd	HD (330 ppi)
+compress.print	Print (220 ppi)
+compress.web	Web (150 ppi)
+compress.email	Email (96 ppi)
+compress.delete_crops	Delete cropped areas of pictures
+compress.on_save	Compress this way every time the document is saved
+compress.note	Only pictures with more resolution than their size on the page needs are reduced.
+compress.done	{n} pictures compressed (about {kb} KB saved).
+compress.nothing	No pictures could be compressed.
+compat.layout_options	Layout compatibility options (this document)
+compat.layout.fe	Lay out East Asian text on the line grid (useFELayout)
+compat.layout.balance	Balance SBCS characters and DBCS characters
+compat.layout.no_tab_hang	Don't add an automatic tab stop for hanging indent
+compat.layout.table_grid	Adjust line height to grid height in the table
