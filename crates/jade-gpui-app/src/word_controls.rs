@@ -13,8 +13,8 @@ use gpui::{div, prelude::*, px, AnyElement, Context, ElementId, SharedString, Wi
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::controls::{
     character_styles, kind_key, ContentControlAction, ContentControlKind, ControlChrome,
-    ControlClick, ControlPropertiesForm, DatePicker, FormFieldForm, FormFieldKind, WordControls,
-    INSERTABLE,
+    ControlClick, ControlPropertiesForm, DatePicker, FormFieldForm, FormFieldKind, SaveBlockForm,
+    WordControls, INSERTABLE,
 };
 use jade_office_model::word::form_view::{FormEvent, FormOutcome};
 use jade_office_model::word::WordSession;
@@ -29,6 +29,7 @@ fn t(key: &'static str) -> &'static str {
 pub enum ControlsDialog {
     Properties(Box<ControlPropertiesForm>),
     FormField(Box<FormFieldForm>),
+    SaveBlock(SaveBlockForm),
 }
 
 /// What drops under a control a click landed on.
@@ -89,6 +90,7 @@ impl ControlsUi {
         match self.dialog.as_ref()? {
             ControlsDialog::Properties(form) => Some(form.field()),
             ControlsDialog::FormField(form) => Some(form.field()),
+            ControlsDialog::SaveBlock(form) => Some(&form.name),
         }
     }
 
@@ -96,6 +98,7 @@ impl ControlsUi {
         match self.dialog.as_mut()? {
             ControlsDialog::Properties(form) => Some(form.field_mut()),
             ControlsDialog::FormField(form) => Some(form.field_mut()),
+            ControlsDialog::SaveBlock(form) => Some(&mut form.name),
         }
     }
 }
@@ -175,6 +178,20 @@ impl DocumentView {
                 false,
                 cx,
                 |view, cx| view.ungroup(cx),
+            )
+            .into_any_element(),
+            self.ribbon_button(
+                "cc-save-block",
+                t("cc.save_block"),
+                t("cc.save_block_title"),
+                false,
+                cx,
+                |view, cx| {
+                    view.sync_control_selection();
+                    view.controls.dialog =
+                        Some(ControlsDialog::SaveBlock(SaveBlockForm::default()));
+                    cx.notify();
+                },
             )
             .into_any_element(),
         ]);
@@ -414,6 +431,7 @@ impl DocumentView {
         let outcome = match dialog {
             ControlsDialog::Properties(form) => form.event(event),
             ControlsDialog::FormField(form) => form.event(event),
+            ControlsDialog::SaveBlock(form) => form.event(event),
         };
         match outcome {
             FormOutcome::Stay => cx.notify(),
@@ -456,6 +474,7 @@ impl DocumentView {
         let form = match self.controls.dialog.as_ref()? {
             ControlsDialog::Properties(form) => form.view(t),
             ControlsDialog::FormField(form) => form.view(t),
+            ControlsDialog::SaveBlock(form) => form.view(t),
         };
         Some(word_form::overlay(
             &form,

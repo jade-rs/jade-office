@@ -10,8 +10,8 @@ use gpui::{div, prelude::*, px, AnyElement, Context, ElementId, SharedString, Wi
 use jade_web::text::TextEdit;
 use jade_web::word::controls::{
     character_styles, kind_key, ContentControlAction, ContentControlKind, ControlChrome,
-    ControlClick, ControlPropertiesForm, DatePicker, FormFieldForm, FormFieldKind, WordControls,
-    INSERTABLE,
+    ControlClick, ControlPropertiesForm, DatePicker, FormFieldForm, FormFieldKind, SaveBlockForm,
+    WordControls, INSERTABLE,
 };
 use jade_web::word::form_view::{FormEvent, FormOutcome};
 use jade_web::word::WordSession;
@@ -35,6 +35,8 @@ pub enum ControlsAction {
     Properties,
     Group,
     Ungroup,
+    /// 選択範囲をギャラリーに保存.
+    SaveBlock,
     InsertForm(FormFieldKind),
     FormOptions,
     Shading,
@@ -53,6 +55,7 @@ pub struct DeveloperState {
 pub enum ControlsDialog {
     Properties(Box<ControlPropertiesForm>),
     FormField(Box<FormFieldForm>),
+    SaveBlock(SaveBlockForm),
 }
 
 /// What drops under a control a click landed on.
@@ -110,6 +113,7 @@ impl ControlsUi {
         match self.dialog.as_ref()? {
             ControlsDialog::Properties(form) => Some(form.field()),
             ControlsDialog::FormField(form) => Some(form.field()),
+            ControlsDialog::SaveBlock(form) => Some(&form.name),
         }
     }
 
@@ -117,6 +121,7 @@ impl ControlsUi {
         match self.dialog.as_mut()? {
             ControlsDialog::Properties(form) => Some(form.field_mut()),
             ControlsDialog::FormField(form) => Some(form.field_mut()),
+            ControlsDialog::SaveBlock(form) => Some(&mut form.name),
         }
     }
 }
@@ -188,6 +193,14 @@ pub fn developer(state: &DeveloperState, cx: &mut Context<DocView>) -> Vec<AnyEl
             t("cc.ungroup_title"),
             false,
             controls(ControlsAction::Ungroup),
+            cx,
+        ),
+        text_button(
+            "cc-save-block",
+            t("cc.save_block"),
+            t("cc.save_block_title"),
+            false,
+            controls(ControlsAction::SaveBlock),
             cx,
         ),
     ]);
@@ -285,6 +298,10 @@ pub fn run(view: &mut DocView, action: ControlsAction, cx: &mut Context<DocView>
         ControlsAction::Group => view.word_edit(cx, |document| {
             document.insert_content_control(ContentControlKind::Group, true)
         }),
+        ControlsAction::SaveBlock => {
+            view.controls.dialog = Some(ControlsDialog::SaveBlock(SaveBlockForm::default()));
+            cx.notify();
+        }
         ControlsAction::Ungroup => view.word_edit(cx, |document| {
             let caret = document.caret().unwrap_or((0, 0));
             let group = document
@@ -359,6 +376,7 @@ fn form_event(view: &mut DocView, event: FormEvent, cx: &mut Context<DocView>) {
     let outcome = match dialog {
         ControlsDialog::Properties(form) => form.event(event),
         ControlsDialog::FormField(form) => form.event(event),
+        ControlsDialog::SaveBlock(form) => form.event(event),
     };
     match outcome {
         FormOutcome::Stay => cx.notify(),
@@ -398,6 +416,7 @@ pub fn dialog(
     let form = match view.controls.dialog.as_ref()? {
         ControlsDialog::Properties(form) => form.view(t),
         ControlsDialog::FormField(form) => form.view(t),
+        ControlsDialog::SaveBlock(form) => form.view(t),
     };
     Some(word_form::overlay(&form, window, form_event, cx))
 }
