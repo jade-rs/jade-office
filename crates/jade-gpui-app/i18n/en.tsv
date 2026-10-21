@@ -2152,3 +2152,41 @@ find.start_reached	Word has reached the beginning of the document.
 find.not_found	The search item was not found.
 find.bad_pattern	The text to find is not valid: {why}
 find.replaced_count	{n} replacements made.
+options.menu	Word Options…
+options.title	Word Options
+options.page.view	View
+options.page.edit	Edit
+options.page.ribbon	Ribbon & Toolbar
+options.marks	Always show these formatting marks on the screen
+options.marks.tabs	Tab characters
+options.marks.spaces	Spaces
+options.marks.paragraph_marks	Paragraph marks
+options.marks.hidden_text	Hidden text
+options.marks.optional_hyphens	Optional hyphens
+options.marks.anchors	Object anchors
+options.overtype	Use overtype mode
+options.insert_key	Use the Insert key to control overtype mode
+options.paste	Cut, copy, and paste
+options.paste_same	Pasting within the same document
+options.paste_between	Pasting between documents
+options.paste_other	Pasting from other programs
+options.tabs	Main tabs
+options.qat	Quick Access Toolbar commands
+options.custom_group	Commands in Home's custom group
+customize.group	Custom
+views.status.overtype	Overtype
+qat.save	Save
+qat.undo	Undo
+qat.redo	Redo
+qat.print	Print
+qat.export_pdf	Export as PDF
+qat.find	Find
+qat.bold	Bold
+qat.italic	Italic
+qat.underline	Underline
+qat.align_left	Align Left
+qat.align_center	Center
+qat.align_right	Align Right
+qat.insert_table	Insert Table
+qat.picture	Picture
+qat.track_changes	Track Changes
