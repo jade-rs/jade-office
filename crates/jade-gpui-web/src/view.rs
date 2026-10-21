@@ -125,6 +125,11 @@ impl Kind {
         let extension = name.rsplit_once('.')?.1.to_lowercase();
         match extension.as_str() {
             "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
+            // Word's other formats, converted as they open
+            // (`jade_office_model::word::formats`).
+            "doc" | "dot" | "wbk" | "rtf" | "txt" | "odt" | "fodt" | "htm" | "html" => {
+                Some(Kind::Document)
+            }
             // A CSV opens as a workbook of one sheet, as in Excel.
             "xlsx" | "xlsm" | "xltx" | "xltm" | "csv" => Some(Kind::Workbook),
             "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
@@ -475,6 +480,8 @@ struct CellSelection {
 
 pub struct DocView {
     pub name: SharedString,
+    /// A text file's encoding, as it was read and is saved.
+    pub text_encoding: Option<jade_web::word::formats::TextEncoding>,
     pub kind: Kind,
     document: Document,
     retired: Vec<Arc<RenderImage>>,
@@ -515,6 +522,29 @@ impl DocView {
     ) -> Result<Self, String> {
         let kind = Kind::of(&name)
             .ok_or_else(|| i18n::format("workspace.unsupported", &[("name", &name)]))?;
+        // A Word document in another format — .doc, RTF, text, ODT, HTML —
+        // is converted to a .docx to edit, and saved back as it came.
+        let mut text_encoding = None;
+        let converted;
+        let bytes = {
+            use jade_web::word::formats::{open_as_docx, OpenOptions, WordFormat};
+            let format = WordFormat::sniff(bytes).or_else(|| WordFormat::of_name(&name));
+            match format {
+                Some(format) if kind == Kind::Document && !format.is_package() => {
+                    let opened = open_as_docx(&name, bytes, OpenOptions::default(), &|_| None)
+                        .map_err(|error| match error {
+                            jade_web::word::formats::FormatError::Encrypted => {
+                                i18n::format("workspace.protected", &[("name", &name)])
+                            }
+                            other => other.to_string(),
+                        })?;
+                    text_encoding = opened.encoding;
+                    converted = opened.docx;
+                    &converted[..]
+                }
+                _ => bytes,
+            }
+        };
         // An OLE compound file, not a package: password-protected, or one
         // of the old binary formats.
         if bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
@@ -608,6 +638,7 @@ impl DocView {
         };
         Ok(Self {
             name,
+            text_encoding,
             kind,
             document,
             retired: Vec::new(),
@@ -830,7 +861,22 @@ impl DocView {
         }
         self.commit_slide_text(cx);
         let bytes = match &mut self.document {
-            Document::Pages { document, .. } => document.export_docx(),
+            // Saved back in the format the file came in, as Word does.
+            Document::Pages { document, .. } => document.export_docx().and_then(|docx| {
+                use jade_web::word::formats::{save_from_docx, SaveOptions, WordFormat};
+                match WordFormat::of_name(&self.name) {
+                    Some(format) if !format.is_package() => save_from_docx(
+                        format,
+                        &docx,
+                        SaveOptions {
+                            encoding: self.text_encoding,
+                            ..SaveOptions::default()
+                        },
+                    )
+                    .map_err(|error| error.to_string()),
+                    _ => Ok(docx),
+                }
+            }),
             Document::Deck { deck, .. } => Ok(deck.save_bytes()),
             // A .csv saves the active sheet as CSV, as Excel does.
             Document::Workbook(sheet) => sheet.book.save_bytes_as(&self.name),

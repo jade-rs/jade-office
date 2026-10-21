@@ -987,11 +987,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "jade-doc-reader"
+version = "0.1.0"
+dependencies = [
+ "cfb",
+ "flate2",
+ "jade-docx-convert",
+]
+
+[[package]]
 name = "jade-docx-annotations"
 version = "0.1.0"
 dependencies = [
  "jade-docx-reader",
  "jade-docx-writer",
+]
+
+[[package]]
+name = "jade-docx-convert"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "encoding_rs",
+ "jade-opc",
+ "quick-xml",
+ "zip",
 ]
 
 [[package]]
@@ -1101,6 +1121,8 @@ version = "0.1.0"
 dependencies = [
  "encoding_rs",
  "flate2",
+ "jade-doc-reader",
+ "jade-docx-convert",
  "jade-docx-editor",
  "jade-docx-headless-api",
  "jade-docx-layout",
