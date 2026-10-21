@@ -1285,6 +1285,60 @@ mod tests {
         });
     }
 
+    /// A picture and a table go into the header as into the body, and come
+    /// back into its part with the picture's media beside it.
+    #[gpui::test]
+    fn the_header_takes_a_picture_and_a_table(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::word::picture::WordPicture;
+        let (view, cx) = open(cx, "public/fixtures/header.docx");
+        let mut png = Vec::new();
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([200, 30, 30, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::EditStory(Story::Header), cx);
+            view.document.place_caret(0, 0);
+            WordPicture::insert_picture(&mut view.document, png.clone()).unwrap();
+            view.document.place_caret(0, 0);
+            WordFormatting::insert_table(&mut view.document, 2, 2).unwrap();
+            view.run_ribbon(Action::Story(StoryAction::Close), cx);
+        });
+        let saved = view.read_with(cx, |view, _| view.document.export_docx().unwrap());
+        let header = part(&saved, "word/header1.xml");
+        assert!(header.contains("<w:drawing>"), "{header}");
+        assert!(header.contains("<w:tbl>"), "{header}");
+        let rels = part(&saved, "word/_rels/header1.xml.rels");
+        let package = jade_opc::OpcPackage::open(&saved).unwrap();
+        let media = package
+            .part_names()
+            .into_iter()
+            .filter(|name| name.starts_with("word/media/"))
+            .count();
+        assert!(rels.contains("relationships/image"), "{rels}");
+        assert!(media > 0);
+    }
+
+    /// ページ罫線 from デザイン: the dialog's box goes around the page.
+    #[gpui::test]
+    fn the_page_border_dialog_draws_a_frame(cx: &mut gpui::TestAppContext) {
+        use crate::word_page_setup::{PageDialog, SetupAction};
+        use jade_office_model::word::page_setup::{BorderSetting, WordPageSetup};
+        let (view, cx) = open(cx, "public/fixtures/header.docx");
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::Setup(SetupAction::OpenBorders), cx);
+            let state = view.page_dialog.as_mut().unwrap();
+            let PageDialog::Borders(dialog) = &mut state.dialog else {
+                panic!("the ページ罫線 dialog");
+            };
+            dialog.set_setting(BorderSetting::Box);
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.page_dialog.is_none());
+            assert!(view.document.section_layout().page_borders.top.is_some());
+        });
+    }
+
     /// ヘッダーの位置 moves the header nearer the edge, a millimetre a step.
     #[gpui::test]
     fn the_header_distance_steps(cx: &mut gpui::TestAppContext) {

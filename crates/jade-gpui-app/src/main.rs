@@ -1773,6 +1773,7 @@ impl DocumentView {
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
                 self.picture_group(cx),
                 word_page::header_footer(&self.ribbon, cx),
+                self.cover_group(cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -1802,65 +1803,7 @@ impl DocumentView {
                 )
                 .into_any_element(),
             ],
-            RibbonTab::Design => vec![
-                Self::ribbon_group(
-                    t("doc.page_color"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "page-cream",
-                            t("doc.color.cream"),
-                            t("doc.page_color"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_background(Some("FFF9E6"), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "page-grey",
-                            t("doc.color.light_gray"),
-                            t("doc.page_color"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_background(Some("F2F2F2"), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "page-white",
-                            t("doc.none"),
-                            t("doc.page_color_none"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_background(None, cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-                Self::ribbon_group(
-                    t("doc.page_borders"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "page-border",
-                            t("doc.box"),
-                            t("doc.page_borders_box"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_borders(true, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "page-no-border",
-                            t("doc.none"),
-                            t("doc.page_borders_none"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_borders(false, cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-            ],
+            RibbonTab::Design => self.design_groups(cx),
             RibbonTab::Layout => vec![{
                 let japanese = i18n::language() == i18n::Language::Japanese;
                 let setup = self.document.page_setup();
@@ -2621,20 +2564,6 @@ impl DocumentView {
                 self.current_page = page_of_hit;
             }
             self.rebuild_all_images();
-            cx.notify();
-        }
-    }
-
-    fn set_page_background(&mut self, color: Option<&str>, cx: &mut Context<Self>) {
-        if self.document.set_page_background(color).is_ok() {
-            self.rebuild_after_edit();
-            cx.notify();
-        }
-    }
-
-    fn set_page_borders(&mut self, boxed: bool, cx: &mut Context<Self>) {
-        if self.document.set_page_borders(boxed).is_ok() {
-            self.rebuild_after_edit();
             cx.notify();
         }
     }
