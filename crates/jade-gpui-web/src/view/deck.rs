@@ -725,12 +725,18 @@ impl DocView {
                 notes_edit: Some(_),
                 ..
             } => return false,
+            // Typing with a shape selected types into it: after its text,
+            // whatever range the input method names, which was for text it
+            // had not seen.
             Document::Deck {
                 edit: None,
                 typing: None,
                 selected: Some(_),
                 ..
-            } => self.begin_slide_text(None, cx),
+            } => {
+                self.type_into_selected(text, mark, cx);
+                return true;
+            }
             _ => {}
         }
         let Document::Deck {
@@ -748,6 +754,48 @@ impl DocView {
             self.edit_typing(cx, move |typing, deck| typing.commit(deck, range, &text));
         }
         true
+    }
+
+    /// Text typed — or composed, when `mark` — while a shape is selected
+    /// and nothing is typed into: a shape takes it after its text, as the
+    /// model's `begin_typing` puts it; a table into its first cell.
+    fn type_into_selected(&mut self, text: &str, mark: bool, cx: &mut Context<Self>) {
+        let Document::Deck {
+            deck,
+            current,
+            selected: Some(id),
+            typing,
+            drag,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let (slide, id) = (*current, *id);
+        if !matches!(deck.text_target(slide, id, None), TextTarget::Shape(_)) {
+            self.begin_slide_text(None, cx);
+            if let Document::Deck {
+                edit: Some((_, edit)),
+                ..
+            } = &mut self.document
+            {
+                edit.replace(None, text, mark);
+            }
+            cx.notify();
+            return;
+        }
+        match ShapeText::begin_typing(deck, slide, id, text, mark) {
+            Ok(Some(begun)) => {
+                *typing = Some(begun);
+                *drag = None;
+                self.typed(Ok(!mark), cx);
+            }
+            Ok(None) => {
+                self.status = i18n::text("deck.text_locked").into();
+                cx.notify();
+            }
+            Err(error) => self.edited(Err(error), cx),
+        }
     }
 
     /// Where the IME's candidate window goes: at the caret in the text typed
@@ -1286,6 +1334,31 @@ impl DocView {
             self.toggle_selected(id);
             cx.notify();
             return;
+        }
+        // A second click on the text of a shape selected on its own types
+        // into it where the click lands, as in PowerPoint.
+        if let (Some(id), [only]) = (hit, selection.as_slice()) {
+            let into_text = id == *only
+                && event.click_count < 2
+                && match &mut self.document {
+                    Document::Deck { deck, current, .. } => {
+                        deck.click_into_text(*current, id, (x, y)).is_some()
+                    }
+                    _ => false,
+                };
+            if into_text {
+                self.begin_slide_text(Some((x, y)), cx);
+                if let Document::Deck {
+                    typing: Some(_),
+                    selecting_text,
+                    ..
+                } = &mut self.document
+                {
+                    *selecting_text = true;
+                }
+                cx.notify();
+                return;
+            }
         }
         // A press on a shape of the selection keeps it, to drag it all.
         let in_selection = hit.is_some_and(|id| selection.contains(&id));
