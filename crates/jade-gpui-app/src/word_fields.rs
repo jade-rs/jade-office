@@ -501,6 +501,7 @@ impl DocumentView {
             user_address: self.fields.user.address.clone(),
             file: (!self.untitled).then(|| PathBuf::from(self.path.to_string())),
             japanese: japanese(),
+            merge: self.mailings.previewed(),
         }
     }
 

@@ -1004,7 +1004,7 @@ pub fn set_operand(code: &str, index: usize, value: &str, quoted: bool) -> Strin
 type FileReader = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
 
 /// What the host tells field evaluation: the clock, the user, the file.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct FieldHost {
     pub now: FieldDateTime,
     pub utc_offset_seconds: i64,
@@ -1014,6 +1014,13 @@ pub struct FieldHost {
     /// The document's file, once saved.
     pub file: Option<PathBuf>,
     pub japanese: bool,
+    /// The merge 差し込み文書 previews and the recipient shown (an index
+    /// into its chosen records): merge fields take its values on an update
+    /// (`MailMerge::previewed`).
+    pub merge: Option<(
+        jade_docx_editor::word_document::mail_merge::MergeRequest,
+        usize,
+    )>,
 }
 
 impl Default for FieldHost {
@@ -1027,6 +1034,7 @@ impl Default for FieldHost {
             user_address: String::new(),
             file: None,
             japanese: true,
+            merge: None,
         }
     }
 }
@@ -1120,7 +1128,7 @@ pub trait WordFields: WordSession {
             prompt_answers: answers,
             read_file,
             japanese: host.japanese,
-            merge: None,
+            merge: host.merge.clone(),
         }
     }
 

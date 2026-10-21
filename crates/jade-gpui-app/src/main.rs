@@ -28,11 +28,14 @@ mod ribbon;
 mod shell;
 mod tooltip;
 mod word_characters;
+mod word_controls;
 mod word_design;
 mod word_dialog;
 mod word_dialogs;
 mod word_fields;
+mod word_form;
 mod word_lists;
+mod word_mailings;
 mod word_objects;
 mod word_objects_diagrams;
 mod word_objects_panels;
@@ -1094,6 +1097,8 @@ pub(crate) enum RibbonTab {
     Design,
     Layout,
     References,
+    /// 差し込み文書: mail merge (`word_mailings`).
+    Mailings,
     Review,
     View,
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
@@ -1103,17 +1108,21 @@ pub(crate) enum RibbonTab {
     HeaderFooter,
     /// 図の形式 / 図形の書式: shown while a picture or shape is selected.
     ObjectFormat,
+    /// 開発: content controls and forms (`word_controls`).
+    Developer,
 }
 
 impl RibbonTab {
-    const ALL: [RibbonTab; 7] = [
+    const ALL: [RibbonTab; 9] = [
         RibbonTab::Home,
         RibbonTab::Insert,
         RibbonTab::Design,
         RibbonTab::Layout,
         RibbonTab::References,
+        RibbonTab::Mailings,
         RibbonTab::Review,
         RibbonTab::View,
+        RibbonTab::Developer,
     ];
 
     fn label(self) -> &'static str {
@@ -1123,12 +1132,14 @@ impl RibbonTab {
             RibbonTab::Design => t("doc.tab.design"),
             RibbonTab::Layout => t("doc.tab.layout"),
             RibbonTab::References => t("doc.tab.references"),
+            RibbonTab::Mailings => t("mail.tab"),
             RibbonTab::Review => t("doc.tab.review"),
             RibbonTab::View => t("doc.tab.view"),
             RibbonTab::TableDesign => t("doc.tab.table_design"),
             RibbonTab::TableLayout => t("doc.tab.table_layout"),
             RibbonTab::HeaderFooter => t("story.tab"),
             RibbonTab::ObjectFormat => t("objects.tab.shape_format"),
+            RibbonTab::Developer => t("cc.tab"),
         }
     }
 }
@@ -1258,6 +1269,12 @@ struct DocumentView {
     tools: word_tools::WordTools,
     /// 参考資料's dialogs, the navigation pane and ブックマーク表示.
     references: word_references::References,
+    /// The 開発 tab's content controls and form fields: their dialogs, the
+    /// list or calendar dropped under one.
+    controls: word_controls::ControlsUi,
+    /// The 差し込み文書 tab's merge: its recipients, the record previewed,
+    /// its dialogs.
+    mailings: jade_office_model::word::mailings::MailMerge,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1456,6 +1473,28 @@ impl DocumentView {
         // A composition owns the keyboard while it is running; letting these
         // through would edit around the preedit.
         if self.marked.is_some() {
+            return;
+        }
+        // A control or mail-merge dialog takes the keyboard: its own keys
+        // stop here, and typing goes on to the input handler, into its field.
+        if self.mailings.is_open() {
+            if self.mailings_key(
+                event.keystroke.key.as_str(),
+                event.keystroke.modifiers.shift,
+                cx,
+            ) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.controls.is_open() {
+            if self.controls_key(
+                event.keystroke.key.as_str(),
+                event.keystroke.modifiers.shift,
+                cx,
+            ) {
+                cx.stop_propagation();
+            }
             return;
         }
         // A dialog is modal: it takes every key while it is open.
@@ -1713,6 +1752,10 @@ impl DocumentView {
         use jade_office_model::word::CellStep;
         let (paragraph, offset) = self.insert_at;
         self.document.place_caret(paragraph, offset);
+        // A document protected for forms goes from field to field.
+        if self.tab_to_form_field(backwards, cx) {
+            return;
+        }
         let step = WordFormatting::step_cell(&mut self.document, !backwards);
         match step {
             Ok(CellStep::Select(from, to)) => {
@@ -2159,6 +2202,8 @@ impl DocumentView {
             RibbonTab::References => word_references::ribbon_groups(self, cx),
             RibbonTab::Review => self.review_groups(cx),
             RibbonTab::HeaderFooter => self.story_groups(cx),
+            RibbonTab::Developer => self.developer_groups(cx),
+            RibbonTab::Mailings => self.mailings_groups(cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
@@ -2449,6 +2494,12 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = self.mailings.field() {
+            return Some(field);
+        }
+        if let Some(field) = self.controls.field() {
+            return Some(field);
+        }
         if let Some(field) = self.dialog.as_ref().and_then(|dialog| dialog.field()) {
             return Some(field);
         }
@@ -2475,6 +2526,12 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self.mailings.is_open() {
+            return self.mailings.field_mut();
+        }
+        if self.controls.is_open() {
+            return self.controls.field_mut();
+        }
         if self.dialog.is_some() {
             return self.dialog.as_mut().and_then(|dialog| dialog.field_mut());
         }
@@ -3797,6 +3854,9 @@ impl DocumentView {
             self.selection_anchor = None;
             self.caret = self.place_caret_near(position, document_y);
             self.refresh_caret_page_image();
+            if event.click_count == 1 && !event.modifiers.shift {
+                self.click_control(position, page_index, cx);
+            }
             cx.notify();
         }
     }
@@ -3950,6 +4010,10 @@ impl DocumentView {
         // Not while a composition is running: there the marked range is what
         // the IME is replacing, and the selection it started from is already
         // gone.
+        // Over a content control's placeholder, or a form field's.
+        if self.marked.is_none() && self.type_over_control(text, cx) {
+            return;
+        }
         if self.marked.is_none() && self.document.selection().is_some() {
             let page = self.caret_page_1idx();
             match self.document.replace_selection(text, page) {
@@ -4136,6 +4200,12 @@ impl EntityInputHandler for DocumentView {
                 .clone()
                 .unwrap_or(self.insert_at.1..self.insert_at.1),
         };
+        // A composition started over a placeholder replaces it.
+        if self.marked.is_none() && self.type_over_control(new_text, cx) {
+            let end = self.insert_at.1;
+            self.marked = Some(end.saturating_sub(new_text.len())..end);
+            return;
+        }
         let start = bytes.start;
         self.replace_bytes(bytes, new_text, cx);
         // The preedit is now in the document, and this is the range the next
@@ -4323,6 +4393,9 @@ impl Render for DocumentView {
         // The object tools' panes and dialogs (`word_objects_panels`).
         let object_panes = self.object_panes(cx);
         let object_dialogs = self.object_dialogs(cx);
+        // The 開発 and 差し込み文書 tabs' dialogs.
+        let controls_dialog = self.controls_dialog(window, cx);
+        let mailings_dialog = self.mailings_dialog(window, cx);
         word_references::on_actions(div().id("root"), cx)
             .relative()
             .track_focus(&self.focus)
@@ -4589,6 +4662,8 @@ impl Render for DocumentView {
                                     .children(vertical_rulers.next().flatten())
                                     .children(self.object_overlay(index))
                                     .children(self.wrap_point_overlay(index))
+                                    .children(self.controls_overlay(index, cx))
+                                    .children(self.mailings_overlay(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
                                     // before the renderer can hit-test it.
@@ -4646,6 +4721,8 @@ impl Render for DocumentView {
             .children(reference_dialog)
             .children(object_panes)
             .children(object_dialogs)
+            .children(controls_dialog)
+            .children(mailings_dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4852,6 +4929,7 @@ fn document_view(
         .collect();
     let mut ribbon = ribbon::Ribbon::default();
     ribbon.read_styles(&document);
+    let mailings = word_mailings::open_merge(&document, &path_text);
 
     DocumentView {
         path: SharedString::from(path_text),
@@ -4885,6 +4963,8 @@ fn document_view(
         characters: word_characters::Characters::default(),
         tools: word_tools::WordTools::default(),
         references: word_references::References::default(),
+        controls: word_controls::ControlsUi::default(),
+        mailings,
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,

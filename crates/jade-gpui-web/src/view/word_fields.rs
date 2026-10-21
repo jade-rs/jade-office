@@ -45,6 +45,11 @@ impl DocView {
                     now,
                     utc_offset_seconds: offset,
                     japanese: !i18n::is_english(),
+                    // Merge fields show the recipient 結果のプレビュー shows.
+                    merge: self
+                        .mailings
+                        .as_ref()
+                        .and_then(|mailings| mailings.merge.previewed()),
                     ..FieldHost::default()
                 };
                 self.word_edit(cx, |document| {
