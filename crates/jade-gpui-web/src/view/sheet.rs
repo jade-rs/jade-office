@@ -961,9 +961,16 @@ impl DocView {
         let open = sheet.popup;
         // The open dropdown hangs under its button, painted over the grid.
         let mut dropdown = self.toolbar_popup(cx).map(gpui::deferred);
+        // Only the open one's button takes it: every other button leaves it
+        // for the one it belongs to.
         let mut hang = move |which: Popup, button: gpui::Stateful<gpui::Div>| {
             let button = button.relative();
-            match dropdown.take().filter(|_| open == Some(which)) {
+            let mine = if open == Some(which) {
+                dropdown.take()
+            } else {
+                None
+            };
+            match mine {
                 Some(dropdown) => button.child(dropdown),
                 None => button,
             }
