@@ -1747,6 +1747,10 @@ impl DocView {
     ) -> gpui::AnyElement {
         let generation = self.generation;
         let table = self.table_tab_state();
+        let side = cx
+            .try_global::<crate::workspace::side_by_side::SideBySideShown>()
+            .copied()
+            .unwrap_or_default();
         let Document::Pages {
             document,
             ribbon,
@@ -1808,6 +1812,8 @@ impl DocView {
                         inspect: protection.inspect,
                         reading: read_aloud.is_some(),
                         immersive: immersive.is_some(),
+                        side_by_side: side.on,
+                        sync_scroll: side.sync,
                         markup: (**markup).clone(),
                         reviewers: document.reviewers(),
                     }

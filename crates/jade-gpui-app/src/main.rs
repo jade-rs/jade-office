@@ -2132,6 +2132,7 @@ impl DocumentView {
                 let marks = self.document.formatting_marks();
                 vec![
                     word_immersive::view_group(self, cx),
+                    workspace::side_by_side::view_group(self, cx),
                     Self::ribbon_group(
                         t("doc.group.show"),
                         vec![Self::ribbon_row(vec![self
