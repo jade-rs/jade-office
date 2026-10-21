@@ -836,3 +836,6 @@ story.close	Close Header and Footer
 story.close_title	Back to the body (or double-click it)
 setup.snap	Snap to Grid
 setup.snap_title	Snap to grid when the document grid is defined
+story.field.heading	Heading Reference
+story.field.heading_title	Insert this page's Heading 1 (STYLEREF) at the caret
+story.field.heading_missing	Heading 1

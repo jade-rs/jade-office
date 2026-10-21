@@ -836,3 +836,6 @@ story.close	ヘッダーとフッターを閉じる
 story.close_title	本文の編集に戻る (本文をダブルクリックしても戻ります)
 setup.snap	グリッドに合わせる
 setup.snap_title	1 ページの行数を指定時に文字を行グリッド線に合わせる
+story.field.heading	見出しの参照
+story.field.heading_title	カーソルの位置にこのページの見出し 1 (STYLEREF) を挿入
+story.field.heading_missing	見出し 1
