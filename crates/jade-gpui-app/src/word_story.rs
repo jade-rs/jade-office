@@ -150,6 +150,10 @@ impl WordSession for WordDoc {
     fn paragraph_page(&self, paragraph: usize) -> Option<usize> {
         WordSession::paragraph_page(&**self, paragraph)
     }
+
+    fn position_metrics(&self, at: jade_office_model::word::Position) -> Option<(f64, f64, f64)> {
+        WordSession::position_metrics(&**self, at)
+    }
 }
 
 fn role_name(role: Story) -> &'static str {

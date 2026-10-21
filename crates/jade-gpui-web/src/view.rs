@@ -36,6 +36,7 @@ pub(crate) mod word_characters;
 mod word_dialogs;
 mod word_fields;
 mod word_find;
+pub(crate) mod word_references;
 mod word_review;
 pub(crate) mod word_setup;
 mod word_story;
@@ -499,6 +500,9 @@ pub struct DocView {
     word_count: RefCell<Option<(FormatKey, SharedString)>>,
     /// The フォント dialog and the other character tools' dialogs.
     characters: word_characters::Characters,
+    /// 参考資料's dialogs, the navigation pane and ブックマーク表示
+    /// (`word_references`).
+    references: word_references::References,
     host: Host,
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
@@ -623,6 +627,7 @@ impl DocView {
             paste_arrived: false,
             word_count: RefCell::new(None),
             characters: word_characters::Characters::default(),
+            references: word_references::References::default(),
             host,
             page_dialog: None,
         })
@@ -942,6 +947,8 @@ impl DocView {
     /// tiles of each page its drawing touched, read from the page itself, so
     /// nothing drawn is missed and nothing undrawn is read.
     fn refresh_repainted(&mut self) {
+        // Headings collapsed in the body follow edits that move them.
+        word_references::refresh_collapsed(self);
         let Document::Pages {
             document,
             pages,
@@ -1140,6 +1147,9 @@ impl DocView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A click in the pages takes the keyboard back from the pane's
+        // search box.
+        self.references.searching = false;
         window.focus(&self.focus, cx);
         if let Some(bar) = self.find_bar_mut() {
             bar.active = false;
@@ -1634,6 +1644,9 @@ impl DocView {
         if let Action::Characters(action) = action {
             return word_characters::run(self, action, cx);
         }
+        if let Action::References(action) = action {
+            return word_references::run(self, action, cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1706,15 +1719,10 @@ impl DocView {
             Action::Page(command) => {
                 jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
             }
-            Action::InsertContents => {
-                jade_web::word::WordReferences::insert_table_of_contents(document)
-            }
-            Action::UpdateContents => {
-                jade_web::word::WordReferences::update_table_of_contents(document)
-            }
             Action::EditStory(_)
             | Action::Setup(_)
             | Action::Characters(_)
+            | Action::References(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -1797,6 +1805,8 @@ impl DocView {
                 table,
                 layout: (ribbon.tab == ribbon::Tab::Layout)
                     .then(|| word_setup::LayoutState::read(document)),
+                references: (ribbon.tab == ribbon::Tab::References)
+                    .then(|| word_references::ribbon_state(document, &self.references)),
             }
         };
         ribbon::ribbon(
@@ -1880,6 +1890,8 @@ impl DocView {
         }
         .into_iter();
         let page_dialog = self.page_dialog_element(cx);
+        let navigation = word_references::navigation_pane(self, cx);
+        let marks = word_references::bookmark_marks(self);
         let Document::Pages {
             document,
             pages,
@@ -2048,6 +2060,7 @@ impl DocView {
                         },
                     ))
                     .children(table_overlay)
+                    .children(word_references::page_marks(&marks, index, zoom, cx))
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
                             div()
@@ -2114,6 +2127,7 @@ impl DocView {
             .size_full()
             .flex()
             .bg(palette::window())
+            .children(navigation)
             .child(
                 div()
                     .flex()
@@ -2219,6 +2233,12 @@ impl DocView {
             }
             return;
         }
+        if self.references.is_open() || self.references.searching {
+            if word_references::handle_key(self, key, modifiers.shift, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // The find bar over a Word document takes the keys it has.
         if self.dialog_open() && self.dialog_key(event, cx) {
             cx.stop_propagation();
@@ -2292,6 +2312,20 @@ impl DocView {
                 }
                 // Word for Mac's フォント… (書式 menu).
                 "d" if pages => word_characters::open_font_dialog(self, cx),
+                // Word for Mac's ジャンプ (⌥⌘G), 索引登録 (⌥⇧⌘X), 引用文の
+                // 登録 (⌥⇧⌘I) and the navigation pane (⌃⌘N).
+                "g" | "©" if pages && modifiers.alt => {
+                    word_references::run(self, word_references::RefAction::OpenGoTo, cx)
+                }
+                "x" | "˛" | "X" if pages && modifiers.alt && modifiers.shift => {
+                    word_references::run(self, word_references::RefAction::OpenMarkEntry, cx)
+                }
+                "i" | "ˆ" | "I" if pages && modifiers.alt && modifiers.shift => {
+                    word_references::run(self, word_references::RefAction::OpenMarkCitation, cx)
+                }
+                "n" if pages && modifiers.platform && modifiers.control => {
+                    word_references::run(self, word_references::RefAction::ToggleNavigation, cx)
+                }
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.
                 "b" | "i" | "u" if pages => {
@@ -2327,6 +2361,9 @@ impl DocView {
         }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
+        }
+        if self.references.is_open() || self.references.searching {
+            return self.references.text_field_mut();
         }
         match &self.document {
             // Typing into a selected cell replaces it, as in Excel.
@@ -2371,6 +2408,9 @@ impl DocView {
 
     fn current_text(&self) -> Option<&TextEdit> {
         if let Some(field) = self.characters.text_field() {
+            return Some(field);
+        }
+        if let Some(field) = self.references.text_field() {
             return Some(field);
         }
         match &self.document {
@@ -2669,6 +2709,11 @@ impl EntityInputHandler for DocView {
         if self.page_dialog.is_some() {
             return self.page_dialog_input(text, cx);
         }
+        // A 参考資料 dialog's field, or the navigation pane's search box.
+        if let Some(field) = self.references.text_field_mut() {
+            field.replace(range, text, false);
+            return cx.notify();
+        }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
             && !self.story_editing()
@@ -2712,6 +2757,10 @@ impl EntityInputHandler for DocView {
     ) {
         if self.table_dialog_open() || self.page_dialog.is_some() {
             return;
+        }
+        if let Some(field) = self.references.text_field_mut() {
+            field.replace(range, new_text, true);
+            return cx.notify();
         }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
@@ -2815,6 +2864,7 @@ impl Render for DocView {
             }
         };
         let dialog = word_characters::overlay(self, window, cx);
+        let reference_dialog = word_references::overlay(self, window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -2823,5 +2873,6 @@ impl Render for DocView {
             .on_key_down(cx.listener(Self::handle_key))
             .child(body)
             .children(dialog)
+            .children(reference_dialog)
     }
 }

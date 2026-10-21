@@ -128,9 +128,18 @@ pub trait WordSession {
     fn page_count(&self) -> Option<usize> {
         None
     }
-    /// The page (1-based) a paragraph starts on at the last paint (PAGE,
-    /// PAGEREF).
+
+    /// The page (1-based) a paragraph starts on at the last layout, when it
+    /// has been laid out: what an index, a table of contents' page numbers,
+    /// the navigation pane and the PAGE and PAGEREF fields show.
     fn paragraph_page(&self, _paragraph: usize) -> Option<usize> {
+        None
+    }
+
+    /// Where a caret at a position would be drawn at the last layout —
+    /// its x, its top in document coordinates and its height — without
+    /// moving the selection.
+    fn position_metrics(&self, _at: Position) -> Option<(f64, f64, f64)> {
         None
     }
 }

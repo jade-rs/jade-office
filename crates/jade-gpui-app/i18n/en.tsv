@@ -1763,3 +1763,237 @@ word.unit.inch	Inches
 word.unit.mm	Millimeters
 word.unit.pt	Points
 word.list.picture_bullet	Picture...
+bibliography.insert	Insert Bibliography
+bibliography.references	References
+bibliography.title	Bibliography
+bibliography.works_cited	Works Cited
+bookmark.add	Add
+bookmark.delete	Delete
+bookmark.go	Go To
+bookmark.hidden	Hidden bookmarks
+bookmark.menu	Bookmark…
+bookmark.name	Bookmark name
+bookmark.show	Show Bookmarks
+bookmark.sort	Sort by
+bookmark.sort.location	Location
+bookmark.sort.name	Name
+bookmark.title	Bookmark
+caption.above	Above selected item
+caption.below	Below selected item
+caption.caption	Caption
+caption.chapter	Include chapter number
+caption.chapter_style	Chapter starts with style
+caption.exclude_label	Exclude label from caption
+caption.format	Format
+caption.heading	Heading
+caption.insert	Insert Caption
+caption.label	Label
+caption.label_name	Label
+caption.new_label	New Label…
+caption.new_label.title	New Label
+caption.numbering	Numbering
+caption.position	Position
+caption.sep.colon	colon
+caption.sep.em_dash	em-dash
+caption.sep.en_dash	en-dash
+caption.sep.hyphen	hyphen
+caption.sep.period	period
+caption.separator	Use separator
+caption.title	Caption
+captions.group	Captions
+citations.group	Citations & Bibliography
+citations.insert	Insert Citation
+citations.style	Style
+comments.next	Next Comment
+comments.none	No more comments
+comments.previous	Previous Comment
+goto.bookmark	Bookmark
+goto.bookmark_name	Bookmark name
+goto.comment	Comment
+goto.endnote	Endnote
+goto.equation	Equation
+goto.field	Field
+goto.footnote	Footnote
+goto.go	Go To
+goto.graphic	Graphic
+goto.heading	Heading
+goto.hint	Enter + and - to move relative to the current location; leave it empty for the next one.
+goto.line	Line
+goto.menu	Go To…
+goto.number	Number
+goto.page	Page
+goto.section	Section
+goto.table	Table
+goto.target	Go to what
+goto.title	Go To
+index.bold	Bold
+index.bookmark	Choose a bookmark
+index.columns	Columns
+index.current_page	Current page
+index.english	English
+index.group	Index
+index.headings	Headings
+index.indented	Indented
+index.insert	Insert Index
+index.italic	Italic
+index.japanese	Japanese
+index.language	Language
+index.layout	Type
+index.main	Main entry
+index.mark	Mark
+index.mark.menu	Mark Index Entry…
+index.mark.title	Mark Index Entry
+index.mark_all	Mark All
+index.marked	{n} entries marked
+index.options	Options
+index.page_format	Page number format
+index.page_range	Page range
+index.reading	Reading
+index.run_in	Run-in
+index.see	Cross-reference
+index.sub	Subentry
+index.title	Index
+index.update	Update Index
+links.group	Links
+nav.collapse_all	Collapse All Headings
+nav.demote	Demote
+nav.expand_all	Expand All Headings
+nav.headings	Headings
+nav.menu	Navigation Pane
+nav.move_down	Move Down
+nav.move_up	Move Up
+nav.no_headings	This document has no headings. Apply heading styles to see them here.
+nav.page	Page {n}
+nav.pages	Pages
+nav.promote	Promote
+nav.result_count	{n} results
+nav.results	Results
+nav.search	Search document
+nav.title	Navigation
+notes.apply	Apply
+notes.bad_start	Enter a number to start at
+notes.beneath_text	Below text
+notes.convert	Convert…
+notes.convert.swap	Swap footnotes and endnotes
+notes.convert.title	Convert Notes
+notes.convert.to_endnotes	Convert all footnotes to endnotes
+notes.convert.to_footnotes	Convert all endnotes to footnotes
+notes.document_end	End of document
+notes.endnotes	Endnotes
+notes.footnotes	Footnotes
+notes.format	Number format
+notes.insert	Insert
+notes.kind	Location
+notes.next_endnote	Next Endnote
+notes.next_footnote	Next Footnote
+notes.no_more_endnotes	No more endnotes
+notes.no_more_footnotes	No more footnotes
+notes.none	The document has no notes
+notes.page_bottom	Bottom of page
+notes.place	Position
+notes.previous_endnote	Previous Endnote
+notes.previous_footnote	Previous Footnote
+notes.restart	Numbering
+notes.restart.continuous	Continuous
+notes.restart.page	Restart each page
+notes.restart.section	Restart each section
+notes.scope	Apply changes to
+notes.scope.section	This section
+notes.scope.whole	Whole document
+notes.section_end	End of section
+notes.show	Show Notes
+notes.show_title	Moves between a note's mark and its text
+notes.start	Start at
+notes.title	Footnote and Endnote
+sources.author	Author
+sources.cited_note	✓ Cited source
+sources.close	Close
+sources.copy	Copy →
+sources.copy_back	← Copy
+sources.current	Current List
+sources.delete	Delete
+sources.edit	Edit…
+sources.edit.title	Edit Source
+sources.manage	Manage Sources
+sources.master	Master List
+sources.need_author_title	Enter the author and the title
+sources.new	Add New Source…
+sources.new.title	Create Source
+sources.new_button	New…
+sources.preview	Preview
+sources.publisher	Publisher
+sources.tag	Tag name
+sources.title	Source Manager
+sources.title_field	Title
+sources.type	Type of source
+sources.type.book	Book
+sources.type.conference	Conference Proceedings
+sources.type.journal	Journal Article
+sources.type.periodical	Article in a Periodical
+sources.type.report	Report
+sources.type.web	Web site
+sources.url	URL
+sources.year	Year
+toa.all	(All)
+toa.category	Category
+toa.group	Table of Authorities
+toa.insert	Insert Table of Authorities
+toa.long	Selected text
+toa.mark	Mark
+toa.mark.menu	Mark Citation…
+toa.mark.title	Mark Citation
+toa.none	There is no table of authorities to update
+toa.passim	Use passim
+toa.short	Short citation
+toa.title	Table of Authorities
+toa.update	Update Table
+toc.automatic1	Automatic Table 1
+toc.automatic2	Automatic Table 2
+toc.custom	Custom Table of Contents…
+toc.figures.include_label	Include label and number
+toc.figures.insert	Insert Table of Figures
+toc.figures.label	Caption label
+toc.figures.none	There is no table of figures to update
+toc.figures.title	Table of Figures
+toc.figures.update	Update Table
+toc.hyperlinks	Use hyperlinks instead of page numbers
+toc.leader	Tab leader
+toc.levels	Show levels
+toc.manual	Manual Table
+toc.none	There is no table of contents to update
+toc.options	Options…
+toc.options.title	Table of Contents Options
+toc.outline_levels	Outline levels
+toc.page_numbers	Show page numbers
+toc.preview	Print Preview
+toc.right_align	Right align page numbers
+toc.styles	Styles and TOC levels
+toc.title	Table of Contents
+toc.update.all	Update entire table
+toc.update.pages	Update page numbers only
+toc.update.prompt	Word is updating the table of contents. Select one of the following options:
+toc.update.title	Update Table of Contents
+xref.hyperlink	Insert as hyperlink
+xref.insert	Insert
+xref.pick	Pick what to refer to
+xref.targets	For which
+xref.text	Insert reference to
+xref.text.bookmark	Bookmark text
+xref.text.caption	Entire caption
+xref.text.endnote	Endnote number
+xref.text.footnote	Footnote number
+xref.text.heading	Heading text
+xref.text.label_number	Only label and number
+xref.text.number	Number
+xref.text.page	Page number
+xref.title	Cross-reference
+xref.type	Reference type
+xref.type.bookmark	Bookmark
+xref.type.endnote	Endnote
+xref.type.footnote	Footnote
+xref.type.heading	Heading
+notes.separators	Separators
+notes.separator	Show separator
+notes.continuation_separator	Show continuation separator
+nav.collapse	Collapse
+nav.expand	Expand

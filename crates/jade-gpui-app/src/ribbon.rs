@@ -115,6 +115,8 @@ pub enum Popup {
     Characters(crate::word_characters::CharPopup),
     /// The paragraph, list, style and design tools' lists (`word_tools`).
     Word(crate::word_tools::ToolMenu),
+    /// 参考資料's lists (`word_references`).
+    References(crate::word_references::RefPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -216,6 +218,8 @@ pub enum Action {
     Characters(crate::word_characters::CharAction),
     /// The paragraph, list, style and design tools (`word_tools`).
     Word(crate::word_tools::ToolCommand),
+    /// 参考資料, ジャンプ and the navigation pane (`word_references`).
+    References(crate::word_references::RefAction),
 }
 
 impl Action {
