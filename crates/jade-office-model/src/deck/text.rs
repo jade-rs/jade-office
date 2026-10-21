@@ -87,6 +87,29 @@ impl ShapeText {
         Some(edit)
     }
 
+    /// Typing — or an input method's composition, when `mark` — into shape
+    /// `id`, which was selected but not typed into: it goes in after the
+    /// shape's text, whatever range the input method names, which was for
+    /// text it had not seen. `None` when the shape's text may not be
+    /// edited; otherwise the caret, for the keys that follow.
+    pub fn begin_typing<B: Backend>(
+        deck: &mut Deck<B>,
+        slide: usize,
+        id: u32,
+        text: &str,
+        mark: bool,
+    ) -> Result<Option<Self>, String> {
+        let Some(mut typing) = Self::begin(deck, slide, id, None) else {
+            return Ok(None);
+        };
+        if mark {
+            typing.compose(None, text);
+        } else {
+            typing.type_text(deck, text)?;
+        }
+        Ok(Some(typing))
+    }
+
     /// The shape's text as it stands.
     pub fn text<B: Backend>(&self, deck: &Deck<B>) -> String {
         deck.shape_text(self.slide, self.id).unwrap_or_default()
@@ -477,6 +500,20 @@ fn word_right(text: &str, from: usize) -> usize {
 }
 
 impl<B: Backend> Deck<B> {
+    /// What a click at `point` on shape `id`, already selected on its own,
+    /// types into, as PowerPoint's second click does: its text where it
+    /// lies, or a table's cell under the point. `None` for a shape without
+    /// text that may be edited, which the click leaves selected.
+    pub fn click_into_text(
+        &mut self,
+        slide: usize,
+        id: u32,
+        point: (f64, f64),
+    ) -> Option<super::TextTarget> {
+        let target = self.text_target(slide, id, Some(point));
+        self.text(slide, target).map(|_| target)
+    }
+
     /// Runs `f` on the laid-out shape that carries `id`'s text, with a
     /// measure that measures as the slide was laid out.
     fn with_placed_text<T>(

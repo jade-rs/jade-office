@@ -1043,3 +1043,63 @@ fn a_selection_moves_drags_and_deletes_together() {
     assert!(!deck.is_dirty());
     assert_eq!(deck.selectable_shapes(1).len(), count);
 }
+
+/// The title on the first slide of the sample deck, and its text.
+fn title(deck: &mut Deck<TinySkiaBackend>) -> (u32, String) {
+    let ids: Vec<u32> = deck.shapes(0).iter().map(|shape| shape.id).collect();
+    ids.into_iter()
+        .find_map(|id| {
+            deck.shape_text(0, id)
+                .filter(|text| text == "Jade Slides")
+                .map(|text| (id, text))
+        })
+        .expect("the sample deck's title")
+}
+
+#[test]
+fn a_click_on_a_selected_shape_puts_the_caret_where_it_lands() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, text) = title(&mut deck);
+    // Where "Slides" is drawn: between its "i" and "d".
+    let mut probe = ShapeText::begin(&mut deck, 0, id, None).unwrap();
+    probe.anchor = 8;
+    probe.focus = 8;
+    let caret = probe.geometry(&mut deck).unwrap().caret;
+    let point = (caret[0].x, (caret[0].y + caret[1].y) / 2.0);
+    // A second click on the shape, already selected, types into it there,
+    // as PowerPoint's does.
+    let target = deck.click_into_text(0, id, point);
+    assert_eq!(target, Some(TextTarget::Shape(id)));
+    let typing = ShapeText::begin(&mut deck, 0, id, Some(point)).unwrap();
+    assert_eq!(typing.focus, 8, "{text}");
+    // A picture has no text to click into.
+    let picture = deck.insert_picture(0, &png(40, 20)).unwrap();
+    let rect = deck.shape_rect(0, picture).unwrap();
+    let middle = (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+    assert_eq!(deck.click_into_text(0, picture, middle), None);
+}
+
+#[test]
+fn typing_into_a_selected_shape_goes_in_after_its_text() {
+    let mut deck = open_own("sample-deck.pptx");
+    let (id, _) = title(&mut deck);
+    // In after the text, a leading space kept — not at the start, where an
+    // input method that never saw the text would put it.
+    let mut typing = ShapeText::begin_typing(&mut deck, 0, id, " ", false)
+        .unwrap()
+        .expect("the title takes text");
+    assert_eq!(deck.shape_text(0, id).as_deref(), Some("Jade Slides "));
+    let caret = typing.focus;
+    assert!(typing
+        .commit(&mut deck, Some(caret..caret), "2026")
+        .unwrap());
+    assert_eq!(deck.shape_text(0, id).as_deref(), Some("Jade Slides 2026"));
+    // An input method composing starts at the end too.
+    let mut deck = open_own("sample-deck.pptx");
+    let composing = ShapeText::begin_typing(&mut deck, 0, id, "にほ", true)
+        .unwrap()
+        .unwrap();
+    let (seen, _, marked) = composing.input_text(&deck);
+    assert_eq!(seen, "Jade Slidesにほ");
+    assert_eq!(marked, Some(11..13));
+}
