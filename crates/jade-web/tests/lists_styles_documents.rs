@@ -721,3 +721,92 @@ fn a_picture_bullet_is_saved_and_drawn() {
     assert!(has_red(&document, 0));
     assert!(has_red(&reopened, 0));
 }
+
+/// The shapes of a document, as the engine holds them.
+fn shapes(document: &EditableDocument) -> Vec<jade_docx_editor::document::RunTextBox> {
+    let mut out = Vec::new();
+    for index in 0..document.paragraph_count() {
+        if let Some(paragraph) = document.word_document().paragraph(index) {
+            out.extend(paragraph.runs.iter().filter_map(|run| run.text_box.clone()));
+        }
+    }
+    out
+}
+
+/// A shape that names the theme's third effect style (Word's own shapes
+/// do, through `wps:style`) draws the effect scheme's shadow; another
+/// scheme changes it.
+#[test]
+fn theme_effects_reach_the_shapes_that_name_them() {
+    use jade_docx_headless_api::{HeadlessCommand, HeadlessShapeKind};
+    use jade_office_model::word::xml::{Element, Node};
+    let mut document = document(&["図形"]);
+    document
+        .apply_command(
+            HeadlessCommand::InsertShape {
+                paragraph: 0,
+                offset: 0,
+                shape: HeadlessShapeKind::Rectangle,
+                width_px: 120.0,
+                height_px: 80.0,
+                fill_color: Some("#4472C4".into()),
+                border_color: None,
+                border_width_px: 1.0,
+                text: String::new(),
+            },
+            false,
+        )
+        .unwrap();
+    let mut package = Package::open(&document.export_docx().unwrap()).unwrap();
+    let main = package.main().to_string();
+    let mut body = package.xml(&main).unwrap();
+    fn add_style(element: &mut Element) -> bool {
+        if element.name == "wps:wsp" {
+            let at = element
+                .children
+                .iter()
+                .position(|node| matches!(node, Node::Element(child) if child.name == "wps:spPr"))
+                .map_or(0, |index| index + 1);
+            let style = Element::new("wps:style")
+                .child(
+                    Element::new("a:lnRef")
+                        .attr("idx", "2")
+                        .child(Element::with_val("a:schemeClr", "accent1")),
+                )
+                .child(
+                    Element::new("a:fillRef")
+                        .attr("idx", "1")
+                        .child(Element::with_val("a:schemeClr", "accent1")),
+                )
+                .child(
+                    Element::new("a:effectRef")
+                        .attr("idx", "3")
+                        .child(Element::with_val("a:schemeClr", "accent1")),
+                )
+                .child(
+                    Element::new("a:fontRef")
+                        .attr("idx", "minor")
+                        .child(Element::with_val("a:schemeClr", "lt1")),
+                );
+            element.children.insert(at, Node::Element(style));
+            return true;
+        }
+        element.elements_mut().any(add_style)
+    }
+    assert!(add_style(&mut body.root), "the shape is in the body");
+    package.put_xml(&main, &body);
+    let mut document = open_bytes(&package.write().unwrap());
+    // Office 2007 - 2010's effects: a shadow on every style.
+    document.apply_effect_scheme(&EFFECT_SCHEMES[1]).unwrap();
+    let shape = shapes(&document).into_iter().next().expect("a shape");
+    assert_eq!(shape.effect_ref, Some(3));
+    let shadow = shape.shadow.expect("the theme's shadow");
+    assert!(
+        (shadow.blur_radius_px - 40_000.0 / 9_525.0).abs() < 0.01,
+        "{shadow:?}"
+    );
+    assert!((shadow.opacity - 0.35).abs() < 0.01);
+    // Subtle Solids: no effects.
+    document.apply_effect_scheme(&EFFECT_SCHEMES[2]).unwrap();
+    assert!(shapes(&document)[0].shadow.is_none());
+}
