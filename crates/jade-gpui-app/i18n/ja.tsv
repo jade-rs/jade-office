@@ -2224,3 +2224,22 @@ language.pt_br	ポルトガル語 (ブラジル)
 language.ru_ru	ロシア語
 language.th_th	タイ語
 language.ar_sa	アラビア語
+outline.tab	アウトライン
+outline.group.tools	アウトライン ツール
+outline.group.close	閉じる
+outline.level	レベル {n}
+outline.body	本文
+outline.all	すべて
+outline.show_level	レベルの表示
+outline.to_top	見出し 1 にレベル上げ
+outline.promote	レベル上げ
+outline.demote	レベル下げ
+outline.to_body	本文にレベル下げ
+outline.move_up	上へ移動
+outline.move_down	下へ移動
+outline.expand	展開
+outline.collapse	折りたたみ
+outline.close	アウトライン表示を閉じる
+views.read.edit	文書の編集
+views.read.position	{current} / {count} 画面
+views.read.keys	← → で移動、Esc で戻る

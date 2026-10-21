@@ -19,10 +19,12 @@ pub mod customize;
 pub mod find;
 pub mod input;
 pub mod language;
+pub mod layout;
 pub mod marks;
 pub mod mini;
 pub mod modes;
 pub mod options;
+pub mod outline;
 pub mod paste;
 pub mod prefs;
 pub mod select;
@@ -186,6 +188,8 @@ pub struct Views {
     pub split: Option<split::Pane>,
     /// How many 新しいウィンドウ have been opened on the document.
     pub windows: usize,
+    /// アウトライン's レベルの表示: 1–9, or 0 / 10 for every level.
+    pub outline_level: u8,
 }
 
 impl Views {
@@ -286,7 +290,20 @@ pub fn run(view: &mut DocumentView, action: ViewAction, cx: &mut Context<Documen
 /// Changes the view. 下書き and 印刷レイアウト show the same pages; the
 /// others are drawn by their own modules.
 fn set_view(view: &mut DocumentView, kind: ViewKind) {
+    let leaving_outline = view.views.kind == ViewKind::Outline && kind != ViewKind::Outline;
     view.views.kind = kind;
+    layout::enter(view, kind);
+    if kind == ViewKind::Outline {
+        view.views.outline_level = outline::BODY_LEVEL;
+        view.ribbon_tab = crate::RibbonTab::Outlining;
+    }
+    // The view's page box (or the sections' pages again), and the
+    // outline's indents.
+    layout::follow(view);
+    outline::follow(view);
+    if leaving_outline {
+        crate::word_references::refresh_collapsed(view);
+    }
     if kind == ViewKind::Draft {
         // 下書き scrolls one page under another, at the zoom it had.
         view.views.movement = PageMovement::Vertical;
@@ -352,6 +369,8 @@ pub fn before_render(view: &mut DocumentView, window: &Window, cx: &mut Context<
     let area = workspace::editor_area(window, cx);
     AREA.with(|cell| cell.set(Some(area)));
     apply_fit(view);
+    // A view that lays the document out anew follows the window.
+    layout::follow(view);
     // The marks Word のオプション shows by kind, in every document.
     marks::apply(view);
 }
@@ -393,6 +412,11 @@ pub fn page_crop(view: &DocumentView, index: usize) -> Option<PageCrop> {
 /// several across (複数ページ), or a row turned sideways (横).
 pub fn arrange_pages(pages: gpui::Stateful<gpui::Div>, views: &Views) -> gpui::Stateful<gpui::Div> {
     let pages = pages.flex().size_full().overflow_scroll();
+    if !views.focus {
+        if layout::arranges(views.kind) {
+            return layout::arrange(pages, views.kind);
+        }
+    }
     let pages = match (views.movement, views.fit) {
         (PageMovement::SideToSide, _) => pages.flex_row().items_center().gap_6().p_8(),
         (_, ZoomFit::MultiplePages(_)) => pages
@@ -430,6 +454,10 @@ pub fn frame_page(
     zoom: f32,
 ) -> gpui::Stateful<gpui::Div> {
     let Some(crop) = crop else {
+        // Web レイアウト and アウトライン are one sheet, not pages.
+        if matches!(views.kind, ViewKind::Web | ViewKind::Outline) {
+            return surface;
+        }
         return surface.shadow_lg();
     };
     let surface = surface
