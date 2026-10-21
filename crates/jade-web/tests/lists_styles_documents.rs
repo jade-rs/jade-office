@@ -598,3 +598,126 @@ fn a_template_s_styles_are_copied_when_attached() {
     assert!(rels.contains("TargetMode=\"External\""), "{rels}");
     assert!(rels.contains("file:///Users/me/Templates/"), "{rels}");
 }
+
+/// A document whose text names the theme's body font and accent colour,
+/// as Word's own blank document does.
+fn themed_document() -> EditableDocument {
+    use jade_office_model::word::package::PartKind;
+    use jade_office_model::word::xml::Element;
+    let mut package = Package::open(&blank_document(Blank::English)).unwrap();
+    package.part(PartKind::Theme).unwrap();
+    package
+        .edit(PartKind::Styles, |styles| {
+            let fonts = styles
+                .find_mut("w:docDefaults")
+                .and_then(|defaults| defaults.find_mut("w:rPrDefault"))
+                .and_then(|default| default.find_mut("w:rPr"))
+                .and_then(|rpr| rpr.find_mut("w:rFonts"))
+                .unwrap();
+            *fonts = Element::new("w:rFonts")
+                .attr("w:asciiTheme", "minorHAnsi")
+                .attr("w:hAnsiTheme", "minorHAnsi")
+                .attr("w:eastAsiaTheme", "minorEastAsia");
+            Ok(())
+        })
+        .unwrap();
+    let main = package.main().to_string();
+    let mut body = package.xml(&main).unwrap();
+    let paragraph = body
+        .root
+        .find_mut("w:body")
+        .and_then(|body| body.find_mut("w:p"))
+        .unwrap();
+    *paragraph = Element::new("w:p").child(
+        Element::new("w:r")
+            .child(
+                Element::new("w:rPr")
+                    .child(Element::with_val("w:color", "4472C4").attr("w:themeColor", "accent1")),
+            )
+            .child(Element::new("w:t").text("Themed text")),
+    );
+    package.put_xml(&main, &body);
+    open_bytes(&package.write().unwrap())
+}
+
+#[test]
+fn theme_fonts_and_colours_reach_the_text() {
+    let mut document = themed_document();
+    let before = document.run_style_at((0, 1)).unwrap();
+    assert_eq!(before.font_family.as_deref(), Some("Calibri"), "{before:?}");
+    let arial = FONT_SCHEMES
+        .iter()
+        .find(|scheme| scheme.name == "Arial")
+        .unwrap();
+    document.apply_font_scheme(arial).unwrap();
+    assert_eq!(
+        document
+            .run_style_at((0, 1))
+            .unwrap()
+            .font_family
+            .as_deref(),
+        Some("Arial")
+    );
+    let green = COLOR_SCHEMES
+        .iter()
+        .find(|scheme| scheme.name == "Green")
+        .unwrap();
+    document.apply_color_scheme(green).unwrap();
+    let color = document.run_style_at((0, 1)).unwrap().color;
+    assert_eq!(
+        color.as_deref().map(str::to_ascii_uppercase),
+        Some("#549E39".to_string())
+    );
+    // The theme names it; the saved run keeps naming the slot.
+    let xml = part(&mut document, "document");
+    assert!(xml.contains(r#"w:themeColor="accent1""#), "{xml}");
+}
+
+/// One red pixel, a PNG.
+const PIXEL: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+    0x00, 0x03, 0x01, 0x01, 0x00, 0xC9, 0xFE, 0x92, 0xEF, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+    0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
+/// Whether page `index` has a strongly red pixel: only the picture bullet
+/// is red.
+fn has_red(document: &EditableDocument, index: usize) -> bool {
+    document
+        .page(index)
+        .unwrap()
+        .rgba_premultiplied()
+        .chunks(4)
+        .any(|pixel| pixel[0] > 200 && pixel[1] < 60 && pixel[2] < 60 && pixel[3] > 200)
+}
+
+#[test]
+fn a_picture_bullet_is_saved_and_drawn() {
+    let mut document = document(&["一", "二"]);
+    document.select((0, 0), (1, 1)).unwrap();
+    document.apply_picture_bullet(PIXEL, "png").unwrap();
+    let state = document.list_state().unwrap();
+    let picture = state.definition.levels[0]
+        .picture
+        .clone()
+        .expect("a picture level");
+    let numbering = part(&mut document, "numbering");
+    assert!(numbering.contains("<v:imagedata r:id="), "{numbering}");
+    assert!(numbering.contains(&format!(r#"<w:lvlPicBulletId w:val="{picture}"/>"#)));
+    // The engine reads the picture with its image, for the renderer.
+    let reopened = reopen(&mut document);
+    let numbering = reopened.word_document().numbering_part.as_ref().unwrap();
+    let bullet = numbering
+        .level_picture_bullet(&state.num_id, 0)
+        .expect("the level shows the picture");
+    assert!(bullet
+        .data_uri
+        .as_deref()
+        .is_some_and(|uri| uri.starts_with("data:image/png;base64,")));
+    assert_eq!(bullet.width_pt, Some(9.0));
+    // Drawn where the bullet's glyph would be, on screen and reopened.
+    assert!(has_red(&document, 0));
+    assert!(has_red(&reopened, 0));
+}

@@ -282,6 +282,30 @@ impl Package {
         Ok(())
     }
 
+    /// Declares the content type of every part with `extension`, unless
+    /// the package already does.
+    pub fn declare_default(&mut self, extension: &str, content_type: &str) -> Result<(), String> {
+        let mut types = self.xml("[Content_Types].xml")?;
+        if types.root.elements().any(|entry| {
+            entry.name == "Default"
+                && entry
+                    .get("Extension")
+                    .is_some_and(|known| known.eq_ignore_ascii_case(extension))
+        }) {
+            return Ok(());
+        }
+        types.root.children.insert(
+            0,
+            super::xml::Node::Element(
+                Element::new("Default")
+                    .attr("Extension", extension)
+                    .attr("ContentType", content_type),
+            ),
+        );
+        self.put_xml("[Content_Types].xml", &types);
+        Ok(())
+    }
+
     /// The main document's part of `kind`, created (related, declared and
     /// empty) when the package has none.
     pub fn part(&mut self, kind: PartKind) -> Result<String, String> {
@@ -382,7 +406,7 @@ pub struct HeadlessStep {
 }
 
 impl HeadlessStep {
-    pub fn new(commands: Vec<HeadlessCommand>) -> Box<dyn Command> {
+    pub fn boxed(commands: Vec<HeadlessCommand>) -> Box<dyn Command> {
         Box::new(HeadlessStep {
             commands,
             executor: CommandExecutor::new(),

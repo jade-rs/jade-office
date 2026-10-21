@@ -1116,7 +1116,7 @@ pub trait WordStyles: WordSession {
         let then = match new.kind {
             StyleKind::Paragraph | StyleKind::Linked => {
                 let (start, end) = paragraph_span(self);
-                vec![HeadlessStep::new(vec![
+                vec![HeadlessStep::boxed(vec![
                     HeadlessCommand::SetParagraphStyle {
                         start_paragraph: start,
                         end_paragraph: end,
@@ -1125,7 +1125,7 @@ pub trait WordStyles: WordSession {
                 ])]
             }
             StyleKind::Character => match character_span(self) {
-                Some((start, end)) => vec![HeadlessStep::new(vec![
+                Some((start, end)) => vec![HeadlessStep::boxed(vec![
                     HeadlessCommand::SetCharacterStyle {
                         start_paragraph: start.0,
                         start_offset: start.1,
