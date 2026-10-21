@@ -33,16 +33,19 @@ pub struct InsertThen {
 }
 
 /// What [`InsertThen`] puts in.
+// One per command in the undo history; the shape command's size is fine.
+#[allow(clippy::large_enum_variant)]
 pub enum Inserted {
     Shape(InsertShapeCommand),
-    Image(InsertImageCommand),
+    /// Boxed: an image command carries the picture's run.
+    Image(Box<InsertImageCommand>),
 }
 
 impl Inserted {
     fn command(&mut self) -> &mut dyn Command {
         match self {
             Inserted::Shape(command) => command,
-            Inserted::Image(command) => command,
+            Inserted::Image(command) => command.as_mut(),
         }
     }
 
@@ -837,7 +840,7 @@ pub trait WordShapes: WordSession + WordObjects {
         };
         let source = box_of(from).ok_or("the first object is not a text box")?;
         let destination = box_of(to).ok_or("the second object is not a text box")?;
-        if destination.text.trim().len() > 0 {
+        if !destination.text.trim().is_empty() {
             return Err("a text box can only be linked to an empty one".into());
         }
         // The chain's id, and the next place in it.

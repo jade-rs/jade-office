@@ -138,8 +138,8 @@ pub trait WordGroups: WordSession + WordObjects {
                 let mut children = Vec::new();
                 for (member, own) in &all {
                     let member = *member;
-                    let object = graphic_object(&own).ok_or("an object cannot be grouped")?;
-                    let doc_pr = descendant(&own, "wp:docPr");
+                    let object = graphic_object(own).ok_or("an object cannot be grouped")?;
+                    let doc_pr = descendant(own, "wp:docPr");
                     children.push(as_member(
                         object,
                         doc_pr,
