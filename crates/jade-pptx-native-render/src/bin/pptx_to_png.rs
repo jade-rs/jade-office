@@ -2,15 +2,21 @@
 //!
 //! ```text
 //! cd crates/jade-pptx-native-render
-//! cargo run --bin pptx_to_png -- deck.pptx out-dir [width]
+//! cargo run --bin pptx_to_png -- [--real-fonts] deck.pptx out-dir [width]
 //! ```
+//!
+//! `--real-fonts` draws the deck's own fonts where they are installed
+//! (Office's own first), as the native app does.
 
 use std::path::{Path, PathBuf};
 
-use jade_pptx_native_render::{aliased_faces, bundled_font_paths, NativeDeck};
+use jade_pptx_native_render::{aliased_faces, bundled_font_paths, FontSet, NativeDeck};
 
 fn main() {
-    let mut args = std::env::args().skip(1);
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let real_fonts = args.iter().any(|arg| arg == "--real-fonts");
+    args.retain(|arg| arg != "--real-fonts");
+    let mut args = args.into_iter();
     let (Some(input), Some(output)) = (args.next(), args.next()) else {
         eprintln!("usage: pptx_to_png <in.pptx> <out-dir> [width]");
         std::process::exit(2);
@@ -26,7 +32,14 @@ fn main() {
     });
     let core = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../jade-core");
     let (regular, bold) = bundled_font_paths(&core);
-    let deck = NativeDeck::open(&bytes, &aliased_faces(&regular, &bold)).unwrap_or_else(|error| {
+    let fonts = FontSet::load(&aliased_faces(&regular, &bold)).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(1);
+    });
+    if real_fonts {
+        fonts.add_installed(&bytes);
+    }
+    let deck = NativeDeck::with_fonts(&bytes, fonts).unwrap_or_else(|error| {
         eprintln!("{error}");
         std::process::exit(1);
     });

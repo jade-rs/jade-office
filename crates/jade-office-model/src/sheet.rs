@@ -171,6 +171,7 @@ impl<B: Backend> Workbook<B> {
     /// Opens `.xlsx` bytes for editing, recalculating in `time_zone` (an IANA
     /// name such as `Asia/Tokyo`; UTC when the engine does not know it).
     pub fn open(bytes: &[u8], time_zone: &str, backend: B) -> Result<Self, String> {
+        backend.prepare_fonts(bytes);
         let book = HeadlessWorkbook::open_for_editing_in_time_zone(bytes, time_zone)
             .or_else(|_| HeadlessWorkbook::open_for_editing(bytes))
             .map_err(|error| format!("cannot read the workbook: {error}"))?;

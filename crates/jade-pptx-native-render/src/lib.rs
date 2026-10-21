@@ -123,6 +123,29 @@ impl FontSet {
         Ok(Self { template })
     }
 
+    /// Adds the installed faces (Office's own first) of the fonts `package`
+    /// names, registered after the stand-ins so they are the ones drawn.
+    pub fn add_installed(&self, package: &[u8]) {
+        use jade_docx_native_render::system_fonts::{families_named_in, FontLibrary};
+        let families = families_named_in(package);
+        let (faces, _missing) =
+            FontLibrary::system().faces_for(families.iter().map(String::as_str));
+        for face in faces {
+            let registered = std::fs::read(&face.path).ok().and_then(|bytes| {
+                self.template.register_font_bytes_styled(
+                    face.family.as_str(),
+                    face.weight,
+                    face.italic,
+                    &bytes,
+                    face.index as usize,
+                )
+            });
+            if registered.is_none() {
+                eprintln!("font {} skipped: {}", face.family, face.path.display());
+            }
+        }
+    }
+
     /// A raster surface with every face registered.
     pub fn painter(&self, width: i32, height: i32) -> Option<SkiaPainter> {
         let painter = SkiaPainter::new(width, height)?;
@@ -132,8 +155,8 @@ impl FontSet {
 
     /// Registers every face on an existing surface, such as a PDF page.
     pub fn register_on(&self, painter: &SkiaPainter) {
-        for (family, weight, typeface) in self.template.registered_faces() {
-            painter.register_face(family, weight, typeface);
+        for (family, weight, italic, typeface) in self.template.registered_faces_styled() {
+            painter.register_face_styled(family, weight, italic, typeface);
         }
     }
 }

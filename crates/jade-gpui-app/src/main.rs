@@ -47,7 +47,7 @@ use gpui::{
     KeyBinding, KeyDownEvent, Menu, MenuItem, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
-use jade_docx_native_render::{CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit};
+use jade_docx_native_render::{CaretAffinity, CaretRect, FontFace, NativeDocument, ObjectHit};
 use jade_office_model::word::clipboard::{RichClip, WordClipboard};
 use jade_office_model::word::page::{Story, WordPage};
 use jade_office_model::word::picture::{ObjectTarget, PlacedObject, WordPicture, Wrap};
@@ -421,7 +421,10 @@ pub(crate) fn skia_backend() -> Result<jade_office_model::skia::SkiaBackend, Str
         faces.push(jade_office_model::thai_face(Arc::new(
             std::fs::read(&thai).map_err(|error| format!("{}: {error}", thai.display()))?,
         )));
-        let made = jade_office_model::skia::SkiaBackend::new(&faces)?;
+        let mut made = jade_office_model::skia::SkiaBackend::new(&faces)?;
+        if use_installed_fonts() {
+            made = made.with_installed_fonts();
+        }
         *backend.borrow_mut() = Some(made.clone());
         Ok(made)
     })
@@ -433,22 +436,38 @@ fn open_document(path: &str) -> Result<NativeDocument, String> {
     open_document_bytes(&bytes)
 }
 
+/// Whether documents are drawn in their own fonts where those are
+/// installed — Office's own faces first, then the system's — as Office draws
+/// them. `JADE_FONTS=bundled` draws everything in the bundled faces instead,
+/// as the tests do, so they lay out the same on every machine.
+pub(crate) fn use_installed_fonts() -> bool {
+    !cfg!(test) && std::env::var("JADE_FONTS").map_or(true, |value| value != "bundled")
+}
+
 /// `.docx` bytes, painted and ready to be edited.
 fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
     let regular = bundled_font("NotoSansJP-Regular.ttf");
     let bold = bundled_font("NotoSansJP-Bold.ttf");
+    let face = |family: &str, weight: u16, path: &PathBuf| FontFace {
+        family: family.to_string(),
+        weight,
+        italic: false,
+        path: path.clone(),
+        index: 0,
+    };
+    let installed = use_installed_fonts();
+    // The bundled face first: it is what text no other face covers falls
+    // back to. Without the installed fonts, the families documents name are
+    // pointed at it too, so a first render is never blank.
     let mut faces = Vec::new();
-    for family in ALIASED_FAMILIES {
-        faces.push(FaceSpec {
-            family,
-            weight: 400,
-            path: &regular,
-        });
-        faces.push(FaceSpec {
-            family,
-            weight: 700,
-            path: &bold,
-        });
+    let families: &[&str] = if installed {
+        &["Noto Sans JP"]
+    } else {
+        ALIASED_FAMILIES
+    };
+    for family in families {
+        faces.push(face(family, 400, &regular));
+        faces.push(face(family, 700, &bold));
     }
     // Word's line- and page-break marks are U+21B5 and U+21D3, which a Japanese
     // text face does not carry. Registered so the painter's per-character
@@ -456,19 +475,18 @@ fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
     // is why they used to be switched off entirely.
     let symbols = PathBuf::from(SYMBOL_FALLBACK);
     if symbols.exists() {
-        faces.push(FaceSpec {
-            family: "Symbol Fallback",
-            weight: 400,
-            path: &symbols,
-        });
+        faces.push(face("Symbol Fallback", 400, &symbols));
     }
-    let thai = thai_font();
-    faces.push(FaceSpec {
-        family: "Noto Sans Thai",
-        weight: 400,
-        path: &thai,
-    });
-    NativeDocument::open(bytes, INITIAL_PAGE_WIDTH_PX, INITIAL_PAGE_HEIGHT_PX, &faces)
+    faces.push(face("Noto Sans Thai", 400, &thai_font()));
+    if installed {
+        faces = jade_docx_native_render::system_fonts::word_document_faces(bytes, &faces);
+    }
+    NativeDocument::open_with_font_faces(
+        bytes,
+        INITIAL_PAGE_WIDTH_PX,
+        INITIAL_PAGE_HEIGHT_PX,
+        &faces,
+    )
 }
 
 /// Reports what the text system resolves the shell's labels to.
@@ -4392,6 +4410,14 @@ fn main() {
     {
         use jade_office_model::word::platform;
         platform::set_word_layout_platform(platform::native_word_layout_platform());
+    }
+
+    // Indexing the installed fonts takes most of a second; done while the
+    // window opens, the first document does not wait for it.
+    if use_installed_fonts() {
+        std::thread::spawn(|| {
+            jade_docx_native_render::system_fonts::FontLibrary::system();
+        });
     }
 
     let application = Application::new().with_assets(Assets);

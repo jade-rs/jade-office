@@ -1,5 +1,8 @@
 //! The native backend: Skia surfaces, for the desktop app.
 
+use std::cell::RefCell;
+use std::collections::BTreeSet;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use jade_docx_native_render::document::NativeDocument;
@@ -16,6 +19,9 @@ use crate::{Backend, Face};
 #[derive(Clone)]
 pub struct SkiaBackend {
     template: SkiaPainter,
+    /// Whether a file's own fonts are looked for among the installed ones,
+    /// and the families already looked for.
+    installed_fonts: Option<Rc<RefCell<BTreeSet<String>>>>,
 }
 
 impl SkiaBackend {
@@ -42,13 +48,25 @@ impl SkiaBackend {
                 }
             }
         }
-        Ok(Self { template })
+        Ok(Self {
+            template,
+            installed_fonts: None,
+        })
+    }
+
+    /// The backend drawing a file's own fonts where they are installed
+    /// (Office's own faces first, then the system's), over the faces it was
+    /// made with: as Excel and PowerPoint draw them, so text is as wide as
+    /// there and cells and text boxes break it where they do.
+    pub fn with_installed_fonts(mut self) -> Self {
+        self.installed_fonts = Some(Rc::new(RefCell::new(BTreeSet::new())));
+        self
     }
 
     /// Gives an existing surface — a PDF page, say — the backend's faces.
     pub fn register_on(&self, painter: &SkiaPainter) {
-        for (family, weight, typeface) in self.template.registered_faces() {
-            painter.register_face(family, weight, typeface);
+        for (family, weight, italic, typeface) in self.template.registered_faces_styled() {
+            painter.register_face_styled(family, weight, italic, typeface);
         }
     }
 }
@@ -80,6 +98,37 @@ impl Backend for SkiaBackend {
     fn pdf(pages: &[SkiaPainter], _size: (f64, f64)) -> Result<Vec<u8>, String> {
         // Each recording knows its size.
         SkiaPainter::encode_pdf(pages)
+    }
+
+    fn prepare_fonts(&self, package: &[u8]) {
+        use jade_docx_native_render::system_fonts::{families_named_in, FontLibrary};
+        let Some(looked_for) = &self.installed_fonts else {
+            return;
+        };
+        let families: Vec<String> = families_named_in(package)
+            .into_iter()
+            .filter(|family| looked_for.borrow_mut().insert(family.to_lowercase()))
+            .collect();
+        if families.is_empty() {
+            return;
+        }
+        let (faces, _missing) =
+            FontLibrary::system().faces_for(families.iter().map(String::as_str));
+        // Registered after the stand-ins, so the painter picks these.
+        for face in faces {
+            let registered = std::fs::read(&face.path).ok().and_then(|bytes| {
+                self.template.register_font_bytes_styled(
+                    face.family.as_str(),
+                    face.weight,
+                    face.italic,
+                    &bytes,
+                    face.index as usize,
+                )
+            });
+            if registered.is_none() {
+                eprintln!("font {} skipped: {}", face.family, face.path.display());
+            }
+        }
     }
 }
 

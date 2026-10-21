@@ -63,6 +63,11 @@ pub trait Backend: Clone + 'static {
 
     /// Pages from [`Backend::page`], each `size` px, as a PDF.
     fn pdf(pages: &[Self::Painter], size: (f64, f64)) -> Result<Vec<u8>, String>;
+
+    /// Makes the faces of `package`'s fonts — an Office file's bytes — ready
+    /// for the surfaces made after, where the backend can find them
+    /// installed. Backends that only ever draw their own faces do nothing.
+    fn prepare_fonts(&self, _package: &[u8]) {}
 }
 
 /// The families documents ask for. A machine outside Office has none of
