@@ -65,3 +65,7 @@ required-features = ["tiny-skia"]
 [[example]]
 name = "oracle_pdf"
 required-features = ["skia"]
+
+[[example]]
+name = "resave_docx"
+required-features = ["skia"]
