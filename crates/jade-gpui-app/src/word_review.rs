@@ -247,6 +247,7 @@ impl DocumentView {
         ]);
         let proofing =
             jade_office_model::word::proofing::WordProofingDisplay::proofing(&*self.document);
+        let checking = self.review.accessibility.is_some();
         vec![
             Self::ribbon_group(
                 t("proof.group"),
@@ -268,6 +269,18 @@ impl DocumentView {
                         cx,
                     ),
                 ])],
+            )
+            .into_any_element(),
+            Self::ribbon_group(
+                t("a11y.group"),
+                vec![Self::ribbon_row(vec![tools::text_button(
+                    "review-accessibility",
+                    "a11y.button",
+                    "a11y.title",
+                    checking,
+                    ReviewAction::Accessibility,
+                    cx,
+                )])],
             )
             .into_any_element(),
             Self::ribbon_group(

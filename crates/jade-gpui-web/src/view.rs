@@ -395,6 +395,8 @@ enum Document {
         show_comments: bool,
         /// 変更内容の表示 and 変更履歴とコメントの表示.
         markup: Box<jade_web::word::markup::MarkupOptions>,
+        /// Whether the アクセシビリティ pane is open beside the pages.
+        accessibility: bool,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
@@ -548,6 +550,7 @@ impl DocView {
                     dialog: None,
                     show_comments: false,
                     markup: Box::new(word_review::markup_as_opened(&opened)),
+                    accessibility: false,
                     object: None,
                     tables: Box::default(),
                     pages: (0..opened.page_count())
@@ -1732,6 +1735,7 @@ impl DocView {
             dragging,
             show_comments,
             markup,
+            accessibility,
             object,
             ..
         } = &mut self.document
@@ -1772,6 +1776,7 @@ impl DocView {
                     crate::word_review::ReviewShown {
                         tracking: document.is_tracking_changes(),
                         comments: *show_comments,
+                        accessibility: *accessibility,
                         markup: (**markup).clone(),
                         reviewers: document.reviewers(),
                     }
@@ -1852,6 +1857,7 @@ impl DocView {
         let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
+        let accessibility_pane = self.accessibility_pane(cx);
         let find_bar = self.find_bar_element(cx);
         let table_cursor = self.table_cursor();
         let table_dialog = self.table_dialog_element(cx);
@@ -2158,6 +2164,7 @@ impl DocView {
                     ),
             )
             .children(comments_pane)
+            .children(accessibility_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
     }

@@ -64,12 +64,17 @@ pub enum ReviewAction {
     Reviewer(Option<String>),
     /// ユーザー情報.
     UserInfo,
+    /// アクセシビリティ チェック: the pane.
+    Accessibility,
+    /// 代替テキスト… for the picture last pressed on.
+    AltText,
 }
 
 /// What the tab shows as current.
 pub struct ReviewShown {
     pub tracking: bool,
     pub comments: bool,
+    pub accessibility: bool,
     pub markup: MarkupOptions,
     pub reviewers: Vec<String>,
 }
@@ -265,6 +270,17 @@ pub fn review(
             .into_any_element()
     });
     vec![
+        group(
+            i18n::text("a11y.group"),
+            vec![row(vec![text_button(
+                "review-accessibility",
+                i18n::text("a11y.button"),
+                i18n::text("a11y.title"),
+                shown.accessibility,
+                act(ReviewAction::Accessibility),
+                cx,
+            )])],
+        ),
         group(
             i18n::text("doc.comment"),
             vec![
