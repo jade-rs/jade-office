@@ -13,6 +13,7 @@
 
 mod color;
 mod font;
+mod paste;
 mod ribbon;
 mod typography;
 
@@ -28,7 +29,8 @@ use jade_office_model::word::typography::WordTypography;
 
 use crate::{i18n, theme, DocumentView};
 
-pub use ribbon::{font_color_menu, font_family_menu, font_row};
+pub use paste::{open as open_paste_special, paste_with};
+pub use ribbon::{font_color_menu, font_family_menu, font_row, paste_options};
 
 /// The lists the font group's third row drops.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +38,7 @@ pub enum CharPopup {
     ChangeCase,
     Underline,
     AsianLayout,
+    PasteOptions,
 }
 
 /// What the third row, the colour menus and the dialogs' launchers do.
@@ -63,6 +66,10 @@ pub enum CharAction {
     Scale(f32),
     /// 体裁…: the Japanese typography dialog.
     OpenTypography,
+    /// A 貼り付けのオプション entry.
+    Paste(jade_office_model::word::clipboard::PasteMode),
+    /// 形式を選択して貼り付け….
+    OpenPasteSpecial,
 }
 
 /// The open dialog.
@@ -72,6 +79,8 @@ pub enum Dialog {
     Color(color::ColorDialog),
     /// 体裁: the paragraph's and the document's Japanese typography.
     Typography(typography::TypographyState),
+    /// 形式を選択して貼り付け.
+    PasteSpecial(paste::PasteSpecial),
 }
 
 /// The lists a dialog drops over itself.
@@ -198,6 +207,8 @@ pub fn run(view: &mut DocumentView, action: CharAction, cx: &mut Context<Documen
     let done = match action {
         CharAction::OpenFontDialog => return open_font_dialog(view, cx),
         CharAction::OpenTypography => return open_typography(view, cx),
+        CharAction::Paste(mode) => return paste::paste_with(view, mode, cx),
+        CharAction::OpenPasteSpecial => return paste::open(view, cx),
         CharAction::MoreFontColors => {
             let current = WordCharacters::character_format(&view.document).color;
             view.characters
@@ -260,6 +271,7 @@ pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         Dialog::Typography(state) => {
             WordTypography::apply_typography(&mut view.document, &state.dialog)
         }
+        Dialog::PasteSpecial(dialog) => return paste::confirm(view, dialog, cx),
         Dialog::Color(dialog) => match dialog.back {
             // From the フォント dialog: back to it, with the colour chosen.
             Some(mut font) => {
@@ -345,11 +357,13 @@ pub fn overlay(
         Dialog::Font(_) => font::body(view, cx),
         Dialog::Color(_) => color::body(view, cx),
         Dialog::Typography(_) => typography::body(view, cx),
+        Dialog::PasteSpecial(_) => paste::body(view, cx),
     };
     let title = match view.characters.dialog.as_ref()? {
         Dialog::Font(_) => i18n::text("chars.font.title"),
         Dialog::Color(_) => i18n::text("chars.color.title"),
         Dialog::Typography(_) => i18n::text("chars.typography.title"),
+        Dialog::PasteSpecial(_) => i18n::text("chars.paste.title"),
     };
     let viewport = window.viewport_size();
     Some(
@@ -873,6 +887,83 @@ mod tests {
             let settings = package.part_str("word/settings.xml").unwrap().unwrap();
             assert!(!settings.contains("strictFirstAndLastChars"));
         });
+    }
+
+    /// A bold copy pasted three ways: 元の書式を保持 keeps it bold and red,
+    /// 書式を結合 keeps the bold but not the colour, テキストのみ保持 keeps
+    /// neither; 形式を選択して貼り付け's 書式なしテキスト is the last.
+    #[gpui::test]
+    fn paste_options_keep_merge_or_drop_formatting(cx: &mut gpui::TestAppContext) {
+        use crate::{Copy, PasteMatchFormatting, PasteSpecial};
+        use jade_office_model::word::clipboard::PasteMode;
+        let (view, cx) = open_selected(cx);
+        view.update(cx, |view, cx| {
+            view.run_ribbon(
+                Action::Toggle(jade_office_model::word::CharacterFormat::Bold),
+                cx,
+            );
+            view.run_ribbon(Action::FontColor("C00000".into()), cx);
+        });
+        cx.dispatch_action(Copy);
+        // The end of the next paragraph, as a caret.
+        let paste_at = |view: &mut crate::DocumentView| {
+            let paragraph = view.insert_at.0 + 1;
+            let end = view.document.paragraph_text(paragraph).unwrap().len();
+            view.document.set_selection_range(None);
+            view.insert_at = (paragraph, end);
+            view.document.place_caret(paragraph, end);
+            (paragraph, end)
+        };
+        let style_after = |view: &crate::DocumentView, at: (usize, usize)| {
+            view.document.run_style_at(at.0, at.1).unwrap_or_default()
+        };
+        let at = view.update(cx, |view, cx| {
+            let at = paste_at(view);
+            super::paste_with(view, PasteMode::KeepSource, cx);
+            at
+        });
+        view.read_with(cx, |view, _| {
+            let style = style_after(view, at);
+            assert_eq!(style.bold, Some(true));
+            assert!(style.color.is_some_and(|color| color.contains("C00000")));
+        });
+        let at = view.update(cx, |view, _| paste_at_end(view, 1));
+        cx.dispatch_action(PasteMatchFormatting);
+        view.read_with(cx, |view, _| {
+            let style = style_after(view, at);
+            assert_eq!(style.bold, Some(true));
+            assert!(!style.color.is_some_and(|color| color.contains("C00000")));
+        });
+        let at = view.update(cx, |view, _| paste_at_end(view, 1));
+        cx.dispatch_action(PasteSpecial);
+        view.update(cx, |view, cx| {
+            let Some(Dialog::PasteSpecial(dialog)) = view.characters.dialog.as_mut() else {
+                panic!("⌃⌘V opens the dialog");
+            };
+            assert_eq!(
+                dialog.formats.len(),
+                5,
+                "a copy made here offers every format"
+            );
+            dialog.chosen = dialog
+                .formats
+                .iter()
+                .position(|format| format.mode() == PasteMode::TextOnly)
+                .unwrap();
+            super::confirm(view, cx);
+            let style = style_after(view, at);
+            assert_ne!(style.bold, Some(true));
+        });
+    }
+
+    /// Moves the caret to the end of the paragraph `down` after its own.
+    fn paste_at_end(view: &mut crate::DocumentView, down: usize) -> (usize, usize) {
+        let paragraph = view.insert_at.0 + down;
+        let end = view.document.paragraph_text(paragraph).unwrap().len();
+        view.document.set_selection_range(None);
+        view.insert_at = (paragraph, end);
+        view.document.place_caret(paragraph, end);
+        (paragraph, end)
     }
 
     /// 文字種の変換: 全角, then 半角, change the selected text.

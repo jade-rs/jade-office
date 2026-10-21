@@ -398,3 +398,41 @@ pub fn font_color_menu(
         ))
         .into_any_element()
 }
+
+/// The ▾ beside 貼り付け: 貼り付けのオプション and 形式を選択して貼り付け.
+pub fn paste_options(ribbon: &Ribbon, cx: &mut Context<DocumentView>) -> AnyElement {
+    use jade_office_model::word::clipboard::PasteMode;
+    let open = ribbon.popup == Some(Popup::Characters(CharPopup::PasteOptions));
+    let menu = open.then(|| {
+        menu_panel("paste-menu")
+            .w(px(240.0))
+            .children(PasteMode::ALL.into_iter().enumerate().map(|(index, mode)| {
+                menu_row(
+                    ("paste-mode", index),
+                    super::paste::mode_label(mode),
+                    false,
+                    action(CharAction::Paste(mode)),
+                    cx,
+                )
+            }))
+            .child(menu_row(
+                "paste-special",
+                i18n::text("chars.paste.title_menu"),
+                false,
+                action(CharAction::OpenPasteSpecial),
+                cx,
+            ))
+            .into_any_element()
+    });
+    dropdown(
+        glyph_menu(
+            "paste-options",
+            "",
+            i18n::text("chars.paste.options"),
+            open,
+            CharPopup::PasteOptions,
+            cx,
+        ),
+        menu,
+    )
+}

@@ -124,6 +124,8 @@ actions!(
         ZoomFit,
         FontDialog,
         TypographyDialog,
+        PasteSpecial,
+        PasteMatchFormatting,
     ]
 );
 
@@ -192,6 +194,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-d", FontDialog, CONTEXT),
         // 体裁 (the 段落 dialog's Japanese typography).
         KeyBinding::new("cmd-alt-shift-k", TypographyDialog, CONTEXT),
+        // Word for Mac's 形式を選択して貼り付け and 貼り付けて書式を合わせる.
+        KeyBinding::new("ctrl-cmd-v", PasteSpecial, CONTEXT),
+        KeyBinding::new("alt-shift-cmd-v", PasteMatchFormatting, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -257,6 +262,8 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.edit.cut"), Cut),
                 MenuItem::action(t("menu.edit.copy"), Copy),
                 MenuItem::action(t("menu.edit.paste"), Paste),
+                MenuItem::action(t("menu.edit.paste_special"), PasteSpecial),
+                MenuItem::action(t("menu.edit.paste_match"), PasteMatchFormatting),
                 MenuItem::action(t("menu.edit.select_all"), SelectAll),
                 MenuItem::action(t("menu.edit.select_paragraph"), SelectParagraph),
                 MenuItem::separator(),
@@ -2050,6 +2057,7 @@ impl DocumentView {
                     |view, cx| view.paste(cx),
                 )
                 .into_any_element(),
+                word_characters::paste_options(&self.ribbon, cx),
                 self.ribbon_button(
                     "cut",
                     t("doc.cut"),
@@ -4013,6 +4021,16 @@ impl Render for DocumentView {
             }))
             .on_action(cx.listener(|view, _: &TypographyDialog, _window, cx| {
                 word_characters::open_typography(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &PasteSpecial, _window, cx| {
+                word_characters::open_paste_special(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &PasteMatchFormatting, _window, cx| {
+                word_characters::paste_with(
+                    view,
+                    jade_office_model::word::clipboard::PasteMode::MergeFormatting,
+                    cx,
+                )
             }))
             .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
                 view.show_inspector = !view.show_inspector;
