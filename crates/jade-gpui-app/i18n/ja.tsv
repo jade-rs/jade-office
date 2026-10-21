@@ -799,3 +799,38 @@ setup.numbers.separator	区切り文字
 setup.numbers.numbering	連続番号
 setup.numbers.continue	前のセクションから継続
 setup.numbers.start	開始番号
+story.tab	ヘッダーとフッター
+story.header	ヘッダー
+story.header.first	先頭ページのヘッダー
+story.header.even	偶数ページのヘッダー
+story.footer	フッター
+story.footer.first	先頭ページのフッター
+story.footer.even	偶数ページのフッター
+story.section	セクション {n}
+story.linked	前と同じ
+story.group.insert	挿入
+story.field.page	ページ番号
+story.field.page_title	カーソルの位置にページ番号 (PAGE) を挿入
+story.field.pages	総ページ数
+story.field.pages_title	カーソルの位置に総ページ数 (NUMPAGES) を挿入
+story.field.date	日付
+story.field.date_title	カーソルの位置に日付 (DATE) を挿入
+story.field.file	ファイル名
+story.field.file_title	カーソルの位置にファイル名 (FILENAME) を挿入
+story.group.navigation	ナビゲーション
+story.goto.header	ヘッダーに移動
+story.goto.footer	フッターに移動
+story.previous	前へ
+story.previous_title	前のセクションのヘッダーまたはフッターへ
+story.next	次へ
+story.next_title	次のセクションのヘッダーまたはフッターへ
+story.link	前と同じヘッダー/フッター
+story.link_title	前のセクションと同じヘッダーまたはフッターを使う
+story.group.options	オプション
+story.group.position	位置
+story.distance_title	用紙の端からの距離を 1 mm 変える
+story.distance.header	上からのヘッダー位置 {mm} mm
+story.distance.footer	下からのフッター位置 {mm} mm
+story.group.close	閉じる
+story.close	ヘッダーとフッターを閉じる
+story.close_title	本文の編集に戻る (本文をダブルクリックしても戻ります)

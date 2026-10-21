@@ -30,6 +30,7 @@ mod tooltip;
 mod word_page;
 mod word_page_setup;
 mod word_review;
+mod word_story;
 mod workbook;
 mod workspace;
 
@@ -50,7 +51,7 @@ use gpui::{
 };
 use jade_docx_native_render::{CaretAffinity, CaretRect, FaceSpec, NativeDocument, ObjectHit};
 use jade_office_model::word::clipboard::{RichClip, WordClipboard};
-use jade_office_model::word::page::{Story, WordPage};
+use jade_office_model::word::page::WordPage;
 use jade_office_model::word::picture::{ObjectTarget, PlacedObject, WordPicture, Wrap};
 use jade_office_model::word::review::WordReview;
 use jade_office_model::word::{
@@ -953,6 +954,8 @@ enum RibbonTab {
     References,
     Review,
     View,
+    /// ヘッダーとフッター, shown while a header or footer is open.
+    HeaderFooter,
 }
 
 impl RibbonTab {
@@ -975,6 +978,7 @@ impl RibbonTab {
             RibbonTab::References => t("doc.tab.references"),
             RibbonTab::Review => t("doc.tab.review"),
             RibbonTab::View => t("doc.tab.view"),
+            RibbonTab::HeaderFooter => t("story.tab"),
         }
     }
 }
@@ -1046,7 +1050,8 @@ type FormatKey = (
 struct DocumentView {
     path: SharedString,
     file_size: u64,
-    document: NativeDocument,
+    /// The document, or the header or footer open over it (`word_story`).
+    document: word_story::WordDoc,
     /// One image per page, rebuilt only for the page an edit touched.
     images: Vec<Arc<RenderImage>>,
     /// Where to write the session when `JADE_DUMP_PAGE` names a directory,
@@ -1663,6 +1668,16 @@ impl DocumentView {
             .into_any_element()
     }
 
+    /// The tabs the strip shows: Word's seven, and ヘッダーとフッター while a
+    /// header or footer is open.
+    fn ribbon_tabs(&self) -> Vec<RibbonTab> {
+        let mut tabs = RibbonTab::ALL.to_vec();
+        if self.editing_story() {
+            tabs.push(RibbonTab::HeaderFooter);
+        }
+        tabs
+    }
+
     /// The tab strip, and the tab's own groups under it.
     fn ribbon(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.ribbon_tab;
@@ -1680,7 +1695,7 @@ impl DocumentView {
                     .gap_1()
                     .px_4()
                     .pt(px(8.0))
-                    .children(RibbonTab::ALL.map(|tab| {
+                    .children(self.ribbon_tabs().into_iter().map(|tab| {
                         div()
                             .id(tab.label())
                             .px_3()
@@ -1911,6 +1926,7 @@ impl DocumentView {
             )
             .into_any_element()],
             RibbonTab::Review => self.review_groups(cx),
+            RibbonTab::HeaderFooter => self.story_groups(cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
@@ -2202,19 +2218,6 @@ impl DocumentView {
             (None, Some(bar)) => Some(&mut bar.text),
             (None, None) => None,
         }
-    }
-
-    /// ヘッダーの編集 / フッターの編集: the bar over the pages, holding the
-    /// story's first line (its tab-separated left, centre and right).
-    fn open_story_bar(&mut self, story: Story, cx: &mut Context<Self>) {
-        self.find_bar = None;
-        self.comment_bar = None;
-        let text = self.document.story_text(story);
-        self.story_bar = Some(word_page::StoryBar {
-            story,
-            text: jade_office_model::text::TextEdit::new(text),
-        });
-        cx.notify();
     }
 
     /// Keys the header and footer bar takes: Enter puts the text in, Escape
@@ -2672,7 +2675,14 @@ impl DocumentView {
             return cx.notify();
         }
         self.ribbon.popup = None;
-        let document = &mut self.document;
+        // Page setup acts on the body's sections: an open header or footer
+        // is written back first.
+        if matches!(action, Action::Page(_)) {
+            if let Err(error) = self.close_story_editing() {
+                self.table_status = Some(SharedString::from(error));
+            }
+        }
+        let document: &mut NativeDocument = &mut self.document;
         let done = match action {
             Action::Undo => return self.step_history(true, cx),
             Action::Redo => return self.step_history(false, cx),
@@ -2711,7 +2721,8 @@ impl DocumentView {
                 let japanese = i18n::language() == i18n::Language::Japanese;
                 WordPage::page_command(document, command, japanese)
             }
-            Action::EditStory(story) => return self.open_story_bar(story, cx),
+            Action::EditStory(story) => return self.edit_story_in_place(story, cx),
+            Action::Story(story) => self.run_story_action(story, cx),
             Action::Setup(setup) => self.run_setup_action(setup, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
@@ -3112,6 +3123,10 @@ impl DocumentView {
     /// ファイル → PDF として書き出す: asks where, then writes the pages as
     /// the editor paints them, their text searchable.
     fn export_pdf(&mut self, cx: &mut Context<Self>) {
+        // The PDF is the body's pages: an open header or footer goes in first.
+        if let Err(error) = self.close_story_editing() {
+            self.table_status = Some(SharedString::from(error));
+        }
         let source = PathBuf::from(self.path.to_string());
         let suggested = format!(
             "{}.pdf",
@@ -3403,6 +3418,11 @@ impl DocumentView {
         let zoom = f64::from(self.zoom);
         let local_x = f64::from(event.position.x - bounds.origin.x) / zoom;
         let local_y = f64::from(event.position.y - bounds.origin.y) / zoom;
+        // A double-click in the top or bottom margin opens the header or
+        // footer there; an open one takes clicks only inside it.
+        if self.story_click(page_index, local_y, event.click_count, cx) {
+            return;
+        }
 
         // Through the document's own mapping rather than page height times
         // index: the renderer leaves a gap between pages, so the height alone
@@ -4111,6 +4131,7 @@ impl Render for DocumentView {
                                             .h(px(page_height * zoom)),
                                     )
                                     .children(self.caret_overlay(index))
+                                    .children(self.story_label(index))
                                     .children(self.object_outline(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
@@ -4364,7 +4385,7 @@ fn document_view(
     DocumentView {
         path: SharedString::from(path_text),
         file_size,
-        document,
+        document: word_story::WordDoc::new(document),
         images,
         retired_images: Vec::new(),
         dump_directory: std::env::var_os("JADE_DUMP_PAGE").map(PathBuf::from),
@@ -4932,20 +4953,18 @@ mod tests {
             assert_eq!(view.document.page_setup().margins.top, 36.0);
             view.run_ribbon(Action::Page(PageCommand::Landscape(!before.landscape)), cx);
             assert_eq!(view.document.page_setup().landscape, !before.landscape);
+            // ヘッダーの編集 opens the header in place, over the caret's page.
             view.run_ribbon(Action::EditStory(Story::Header), cx);
-            assert!(view.story_bar.is_some());
+            assert!(view.editing_story());
         });
-        view.update(cx, |view, _| {
-            view.story_bar.as_mut().unwrap().text =
-                jade_office_model::text::TextEdit::new(String::new());
-        });
-        cx.simulate_input("jade");
-        cx.simulate_keystrokes("tab");
-        cx.simulate_input("header");
-        cx.simulate_keystrokes("enter");
+        cx.simulate_input("jade header");
         view.update(cx, |view, cx| {
-            assert!(view.story_bar.is_none());
-            assert_eq!(view.document.story_text(Story::Header), "jade\theader");
+            view.run_ribbon(Action::Story(super::word_story::StoryAction::Close), cx);
+            assert!(!view.editing_story());
+            assert!(view
+                .document
+                .story_text(Story::Header)
+                .starts_with("jade header"));
             view.run_ribbon(
                 Action::Page(PageCommand::PageNumber(
                     Story::Footer,

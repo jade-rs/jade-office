@@ -39,6 +39,10 @@ pub mod platform;
 pub mod review;
 
 pub use find::{FindOptions, Found, WordFind};
+/// The engine's command and query types, for shells that build commands.
+pub use jade_docx_headless_api as headless;
+/// The selection type [`WordSession`] speaks, for shells that wrap one.
+pub use jade_selection::SelectionRange as SelectionRangeOf;
 
 /// A paragraph and a byte offset into its text.
 pub type Position = (usize, usize);
