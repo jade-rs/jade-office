@@ -97,3 +97,5 @@ Per-area detail behind the Word numbers above, in `docs/word/`:
   typesetting option against its element, JIS X 4051 rule, code and tests.
 - [web-vs-desktop.md](word/web-vs-desktop.md) — what the browser build does
   differently from the native app, why, and what is left to port.
+- [ribbon-map.md](word/ribbon-map.md) — Word's ribbon tabs, context tabs,
+  dialogs and shortcuts (Mac and Windows) mapped to jade's two shells.
