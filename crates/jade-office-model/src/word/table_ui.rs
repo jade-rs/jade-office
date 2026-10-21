@@ -6,8 +6,8 @@
 
 use super::table::{
     AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, LookOption, Pen,
-    PropertiesTab, SortKey, SortKind, SortSpec, TableHit, TablePart, TablePropertiesDialog,
-    TextSeparator, WordTables, MM_PER_PT,
+    PropertiesTab, SortKey, SortKind, SortSpec, TableHit, TableLookState, TablePart,
+    TablePropertiesDialog, TableStyleChoice, TextSeparator, WordTables, MM_PER_PT,
 };
 use super::{Position, TableCommand, WordFormatting};
 
@@ -254,6 +254,20 @@ pub enum TableOutcome {
     Selected(Result<(), String>),
 }
 
+/// What the table tabs show as current: read once per frame they show.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TableTabState {
+    pub look: TableLookState,
+    pub styles: Vec<TableStyleChoice>,
+    pub style_id: Option<String>,
+    pub pen: Pen,
+    pub tool: Option<DrawTool>,
+    /// The caret column's width and row's height, in points.
+    pub cell_size: (f32, f32),
+    /// The caret cell's 文字列の方向.
+    pub direction: String,
+}
+
 /// A drag in a table: what, on which page, from and to where in layout
 /// pixels.
 pub type DragState = (TableDrag, usize, (f64, f64), (f64, f64));
@@ -274,6 +288,22 @@ pub struct TableTools {
 }
 
 impl TableTools {
+    /// What the table tabs show for `document`.
+    pub fn tab_state<S: WordTables + ?Sized>(&self, document: &S) -> TableTabState {
+        TableTabState {
+            look: document.table_look().unwrap_or_default(),
+            styles: document.table_styles(),
+            style_id: document.table_style_id(),
+            pen: self.pen.clone(),
+            tool: self.tool,
+            cell_size: document.cell_size().unwrap_or((0.0, 0.0)),
+            direction: document
+                .table_properties()
+                .map(|properties| properties.text_direction)
+                .unwrap_or_default(),
+        }
+    }
+
     /// The pointer over the pages.
     pub fn cursor(&self) -> TableCursor {
         match (self.tool, self.drag.map(|drag| drag.0), self.hover) {

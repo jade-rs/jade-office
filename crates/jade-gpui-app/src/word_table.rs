@@ -44,7 +44,7 @@ const FUNCTIONS: [&str; 9] = [
 
 pub use jade_office_model::word::table_ui::{
     DialogBox, Separator, SortSlot, TableAction, TableCursor, TableDialog, TableDrag, TableOutcome,
-    TableTools as TableUi,
+    TableTabState, TableTools as TableUi,
 };
 
 /// The pointer over the pages, in gpui's shapes.
@@ -230,13 +230,13 @@ fn tables(action: TableAction) -> Action {
 
 /// The テーブル デザイン tab's groups.
 pub fn design_groups(
-    view: &DocumentView,
+    open: Option<Popup>,
+    tabs: &TableTabState,
     state: &FormatState,
     cx: &mut Context<DocumentView>,
 ) -> Vec<AnyElement> {
     let in_table = state.table.is_some();
-    let open = view.ribbon.popup;
-    let look = view.document.table_look().unwrap_or_default();
+    let look = tabs.look;
     let options: Vec<AnyElement> = [
         (LookOption::HeaderRow, LookOption::FirstColumn),
         (LookOption::TotalRow, LookOption::LastColumn),
@@ -265,8 +265,8 @@ pub fn design_groups(
     })
     .collect();
 
-    let styles = view.document.table_styles();
-    let current = view.document.table_style_id();
+    let styles = &tabs.styles;
+    let current = tabs.style_id.clone();
     let tile = |index: usize,
                 style: &jade_office_model::word::table::TableStyleChoice,
                 cx: &mut Context<DocumentView>| {
@@ -368,7 +368,7 @@ pub fn design_groups(
             ))
             .into_any_element()
     });
-    let pen = view.tables.pen.clone();
+    let pen = tabs.pen.clone();
     let style_menu = (open == Some(Popup::PenStyle)).then(|| {
         menu_panel("pen-style-menu")
             .children(Pen::STYLES.iter().enumerate().map(|(index, style)| {
@@ -517,7 +517,7 @@ pub fn design_groups(
                         "pen-tool",
                         "table.draw",
                         "table.draw_title",
-                        view.tables.tool == Some(DrawTool::Pencil),
+                        tabs.tool == Some(DrawTool::Pencil),
                         true,
                         tables(TableAction::Tool(DrawTool::Pencil)),
                         cx,
@@ -571,13 +571,15 @@ fn border_key(set: BorderSet) -> &'static str {
 
 /// The テーブル レイアウト tab's groups, around the ribbon's own row, column,
 /// merge and format groups.
+/// The groups before and after the ribbon's own row, column, merge and
+/// format groups, which the shell puts between them.
 pub fn layout_groups(
-    view: &DocumentView,
+    open: Option<Popup>,
+    tabs: &TableTabState,
     state: &FormatState,
     cx: &mut Context<DocumentView>,
-) -> Vec<AnyElement> {
+) -> (Vec<AnyElement>, Vec<AnyElement>) {
     let in_table = state.table.is_some();
-    let open = view.ribbon.popup;
     let select_menu = (open == Some(Popup::TableSelect)).then(|| {
         menu_panel("table-select-menu")
             .children(
@@ -633,7 +635,7 @@ pub fn layout_groups(
                 "draw-table",
                 "table.draw",
                 "table.draw_title",
-                view.tables.tool == Some(DrawTool::Pencil),
+                tabs.tool == Some(DrawTool::Pencil),
                 true,
                 tables(TableAction::Tool(DrawTool::Pencil)),
                 cx,
@@ -642,7 +644,7 @@ pub fn layout_groups(
                 "eraser",
                 "table.eraser",
                 "table.eraser_title",
-                view.tables.tool == Some(DrawTool::Eraser),
+                tabs.tool == Some(DrawTool::Eraser),
                 true,
                 tables(TableAction::Tool(DrawTool::Eraser)),
                 cx,
@@ -705,7 +707,7 @@ pub fn layout_groups(
             )
             .into_any_element()
     });
-    let (width, height) = view.document.cell_size().unwrap_or((0.0, 0.0));
+    let (width, height) = tabs.cell_size;
     let stepper = |id: &'static str,
                    caption: &'static str,
                    value: f32,
@@ -863,11 +865,7 @@ pub fn layout_groups(
         })
         .collect();
     let direction_menu = (open == Some(Popup::TextDirection)).then(|| {
-        let current = view
-            .document
-            .table_properties()
-            .map(|properties| properties.text_direction)
-            .unwrap_or_default();
+        let current = tabs.direction.clone();
         menu_panel("text-direction-menu")
             .children(
                 [
@@ -979,13 +977,10 @@ pub fn layout_groups(
             ]),
         ],
     );
-    let mut groups = vec![table_group, draw_group];
-    groups.extend(crate::ribbon::table_tools(&view.ribbon, state, cx));
-    groups.push(cells_group);
-    groups.push(size_group);
-    groups.push(align_group);
-    groups.push(data_group);
-    groups
+    (
+        vec![table_group, draw_group],
+        vec![cells_group, size_group, align_group, data_group],
+    )
 }
 
 /// 挿入 ▸ 表's list, under the grid: 罫線を引く and 文字列を表にする.

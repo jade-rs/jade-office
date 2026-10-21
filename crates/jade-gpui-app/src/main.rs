@@ -1904,8 +1904,20 @@ impl DocumentView {
                 )
                 .into_any_element(),
             ],
-            RibbonTab::TableDesign => word_table::design_groups(self, &state, cx),
-            RibbonTab::TableLayout => word_table::layout_groups(self, &state, cx),
+            RibbonTab::TableDesign => {
+                let tabs = self.tables.tab_state(&self.document);
+                word_table::design_groups(self.ribbon.popup, &tabs, &state, cx)
+            }
+            RibbonTab::TableLayout => {
+                let tabs = self.tables.tab_state(&self.document);
+                let (before, after) =
+                    word_table::layout_groups(self.ribbon.popup, &tabs, &state, cx);
+                before
+                    .into_iter()
+                    .chain(ribbon::table_tools(&self.ribbon, &state, cx))
+                    .chain(after)
+                    .collect()
+            }
             RibbonTab::References => vec![Self::ribbon_group(
                 t("doc.toc"),
                 vec![Self::ribbon_row(vec![self
