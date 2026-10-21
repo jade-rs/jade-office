@@ -740,34 +740,39 @@ impl DocView {
                     state.typing = Some((key, String::new(), false));
                 }
             }
-            _ => {
-                let typed = event
-                    .keystroke
-                    .key_char
-                    .clone()
-                    .unwrap_or_else(|| event.keystroke.key.clone());
-                let Some((_, text, started)) = state.typing.as_mut() else {
-                    // The dialog is modal: nothing reaches the document.
-                    return true;
-                };
-                for ch in typed.chars() {
-                    let ch = match ch {
-                        '０'..='９' => char::from(b'0' + (ch as u32 - '０' as u32) as u8),
-                        '．' => '.',
-                        other => other,
-                    };
-                    if ch.is_ascii_digit() || ch == '.' {
-                        if !*started {
-                            text.clear();
-                            *started = true;
-                        }
-                        text.push(ch);
-                    }
-                }
-            }
+            // Typed characters arrive through the input handler
+            // (`page_dialog_input`), as the browser delivers them.
+            _ => return true,
         }
         cx.notify();
         true
+    }
+
+    /// Text the browser typed while a dialog is open: digits and a decimal
+    /// point into the field being typed into; nothing reaches the document.
+    pub(super) fn page_dialog_input(&mut self, typed: &str, cx: &mut Context<Self>) {
+        let Some((_, text, started)) = self
+            .page_dialog
+            .as_mut()
+            .and_then(|state| state.typing.as_mut())
+        else {
+            return;
+        };
+        for ch in typed.chars() {
+            let ch = match ch {
+                '０'..='９' => char::from(b'0' + (ch as u32 - '０' as u32) as u8),
+                '．' => '.',
+                other => other,
+            };
+            if ch.is_ascii_digit() || ch == '.' {
+                if !*started {
+                    text.clear();
+                    *started = true;
+                }
+                text.push(ch);
+            }
+        }
+        cx.notify();
     }
 
     /// A number field: its value (or what is typed, with a caret), and the

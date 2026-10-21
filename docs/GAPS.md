@@ -72,8 +72,8 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | **Done** (#81) | Tracked changes: accept or reject one, next and previous; none in the browser | High | partly |
 | **Done** (#76) | Find and Replace in the browser; options (case, whole word) in both | High | yes |
 | **Done** (#74) | Native keys: Home/End, word and line jumps, word delete, Tab (the browser has them) | High | yes |
-| | Headers and footers: first-page and odd/even variants, a story of more than one line, a header per section | Medium | partly (`SetHeaderFooterVariants`) |
-| | Page setup per section (the commands act on the default one) | Medium | partly |
+| **Done** | Headers and footers: first-page and odd/even variants, a story of more than one line, a header per section — edited in place in the native app (double-click the margin); the browser keeps the one-line bar | Medium | yes (`story_docx`, `SetHeaderFooterLink`) |
+| **Done** | Page setup per section: the ページ設定 dialog, 設定対象 (this section, from here on, the whole document) | Medium | yes (`SetSectionLayout`) |
 | | Paste with formatting from other apps (HTML, RTF); a copy keeps its formatting within the app only | Medium | no |
 | | PDF in the browser is a picture of each page: its text cannot be selected or searched | Medium | partly (`jade-docx-pdf-renderer`) |
 | | Shift+Enter line break | Medium | partly |

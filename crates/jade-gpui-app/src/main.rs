@@ -3668,6 +3668,10 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A dialog is modal: its key handler takes the digits it wants.
+        if self.page_dialog.is_some() {
+            return;
+        }
         if let Some(field) = self.text_bar_mut() {
             field.replace(range, text, false);
             return cx.notify();
@@ -3701,6 +3705,9 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.page_dialog.is_some() {
+            return;
+        }
         if let Some(field) = self.text_bar_mut() {
             field.replace(range, new_text, true);
             return cx.notify();
