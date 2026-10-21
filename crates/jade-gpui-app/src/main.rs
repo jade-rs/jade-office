@@ -1394,6 +1394,32 @@ impl DocumentView {
                 let result = self.document.delete_text(paragraph, offset, false, 1, page);
                 self.after_edit(result, (paragraph, offset), cx);
             }
+            // ⇧Enter: a line break (`w:br`) inside the paragraph, as in Word.
+            // The break is one character of the paragraph's text; the lines
+            // after it move down, so every page is re-read.
+            "enter" if modifiers.shift => {
+                // Taken here: the platform would also type the `\n` through
+                // the input handler.
+                cx.stop_propagation();
+                // Bounded to the last page, as a split is: the new line can
+                // push text onto any page after it.
+                let page = self.document.page_count().max(1);
+                let result = if self.document.selection().is_some() {
+                    self.document
+                        .replace_selection("\n", page)
+                        .map(|caret| (caret, Duration::ZERO))
+                } else {
+                    self.document
+                        .insert_text(paragraph, offset, "\n", page)
+                        .map(|elapsed| ((paragraph, offset + 1), elapsed))
+                };
+                self.selection_anchor = None;
+                self.rebuild_after_edit();
+                match result {
+                    Ok((caret, elapsed)) => self.after_edit(Ok(elapsed), caret, cx),
+                    Err(error) => self.after_edit(Err(error), (paragraph, offset), cx),
+                }
+            }
             "enter" => {
                 // The split re-flows everything below, so the whole document is
                 // repainted rather than the visible page.
@@ -4778,6 +4804,42 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.insert_at, (paragraph - 1, above.len()));
             assert_eq!(view.current_paragraph_text(), format!("{above}{before}"));
+        });
+    }
+
+    /// ⇧Enter breaks the line inside the paragraph (`w:br`), where Enter
+    /// would split it: the paragraph count stays, the caret follows the
+    /// break, typing continues on the new line, and Undo takes it back.
+    #[gpui::test]
+    fn shift_enter_breaks_the_line_not_the_paragraph(cx: &mut gpui::TestAppContext) {
+        use super::Undo;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "one");
+        let (count, before) = view.read_with(cx, |view, _| {
+            (
+                view.document.paragraph_count(),
+                view.current_paragraph_text(),
+            )
+        });
+        cx.simulate_keystrokes("shift-enter");
+        cx.simulate_input("two");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.document.paragraph_count(), count);
+            assert_eq!(view.insert_at, (paragraph, "one\ntwo".len()));
+            assert_eq!(
+                view.current_paragraph_text(),
+                before.replacen("one", "one\ntwo", 1)
+            );
+            let xml = view.document.export_docx().unwrap();
+            let package = jade_opc::OpcPackage::open(&xml).unwrap();
+            let body = package.part_str("word/document.xml").unwrap().unwrap();
+            assert!(body.contains("<w:br"), "the break is a w:br");
+        });
+        for _ in 0.."two".len() + 1 {
+            cx.dispatch_action(Undo);
+        }
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.current_paragraph_text(), before)
         });
     }
 

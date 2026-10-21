@@ -923,6 +923,22 @@ impl EditableDocument {
         self.split_at_caret()
     }
 
+    /// Shift+Enter: a line break (`w:br`) at the caret, the line ending
+    /// inside the paragraph — after removing the selection, as one undoable
+    /// step. The break is one character of the paragraph's text, `\n`.
+    pub fn insert_line_break(&mut self) -> Result<(), String> {
+        self.goal_x = None;
+        if self.selection().is_some() {
+            self.executor.begin_group();
+            let result = self
+                .replace_selection("")
+                .and_then(|()| self.insert_text("\n"));
+            self.executor.end_group();
+            return result;
+        }
+        self.insert_text("\n")
+    }
+
     fn split_at_caret(&mut self) -> Result<(), String> {
         let (paragraph, offset) = self.caret().ok_or("no caret")?;
         self.apply(
