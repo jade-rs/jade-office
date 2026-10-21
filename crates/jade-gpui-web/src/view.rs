@@ -1482,6 +1482,30 @@ impl DocView {
             }
             return;
         }
+        if let Action::Object(object_action) = action {
+            let selected = match &self.document {
+                Document::Pages { object, .. } => object.map(|grab| grab.object),
+                _ => None,
+            };
+            self.word_edit(cx, move |document| {
+                crate::word_objects::run(document, selected, object_action)
+            });
+            // The object where it is now: moved, rotated or restyled.
+            if let Document::Pages {
+                document, object, ..
+            } = &mut self.document
+            {
+                *object = object.and_then(|grab| {
+                    let moved = document.object_region(grab.object.target)?;
+                    Some(ObjectGrab {
+                        object: moved,
+                        rect: (moved.x, moved.y, moved.width, moved.height),
+                        ..grab
+                    })
+                });
+            }
+            return;
+        }
         if let Action::Style(style_id) = action {
             let result = document.set_paragraph_style(style_id.as_deref());
             ribbon.read_styles(document);
@@ -1522,6 +1546,7 @@ impl DocView {
             | Action::Review(_)
             | Action::InsertPicture
             | Action::Wrap(_)
+            | Action::Object(_)
             | Action::Style(_)
             | Action::Tab(_)
             | Action::Popup(_)
@@ -1584,6 +1609,7 @@ impl DocView {
                 tracking: document.is_tracking_changes(),
                 comments: *show_comments,
                 picture: object.is_some_and(|grab| grab.object.is_picture()),
+                object: object.map(|grab| grab.object),
             }
         };
         ribbon::ribbon(

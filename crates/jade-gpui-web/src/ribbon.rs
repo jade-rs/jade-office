@@ -135,6 +135,8 @@ pub enum Popup {
     Columns,
     Breaks,
     PageNumbers,
+    /// 図形, SmartArt and the selected object's lists (`word_objects`).
+    Object(crate::word_objects::ObjectPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -205,6 +207,8 @@ pub enum Action {
     InsertPicture,
     /// 文字列の折り返し for the picture selected.
     Wrap(jade_web::word::picture::Wrap),
+    /// Drawing objects: insert, arrange, effects, styles (`word_objects`).
+    Object(crate::word_objects::ObjectAction),
 }
 
 impl Action {
@@ -581,6 +585,8 @@ pub struct TabState {
     pub comments: bool,
     /// Whether a picture is selected, which 文字列の折り返し acts on.
     pub picture: bool,
+    /// The picture or shape selected, which the object tools act on.
+    pub object: Option<jade_web::word::picture::PlacedObject>,
 }
 
 pub fn ribbon(
@@ -614,6 +620,7 @@ pub fn ribbon(
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
             groups.push(crate::word_page::pictures(shown.picture, cx));
+            groups.push(crate::word_objects::objects(ribbon.popup, shown.object, cx));
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups
         }

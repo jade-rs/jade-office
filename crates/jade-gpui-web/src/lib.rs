@@ -20,6 +20,7 @@ mod palette;
 mod ribbon;
 mod tooltip;
 mod view;
+mod word_objects;
 mod word_page;
 mod word_review;
 mod workspace;
