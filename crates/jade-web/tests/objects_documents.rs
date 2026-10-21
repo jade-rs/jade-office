@@ -49,7 +49,11 @@ fn with_picture(bytes: Vec<u8>) -> (EditableDocument, FloatingObjectTarget) {
     let paragraph = typed(&mut document, "pic ");
     document.place_caret(paragraph, 0);
     document.insert_picture(bytes).unwrap();
-    let run = document.word_document().paragraph(paragraph).unwrap().runs
+    let run = document
+        .word_document()
+        .paragraph(paragraph)
+        .unwrap()
+        .runs
         .iter()
         .position(|run| run.image.is_some())
         .unwrap();
@@ -63,8 +67,15 @@ fn with_picture(bytes: Vec<u8>) -> (EditableDocument, FloatingObjectTarget) {
     )
 }
 
-fn image(document: &EditableDocument, target: FloatingObjectTarget) -> jade_docx_editor::document::RunImage {
-    document.word_document().paragraph(target.paragraph_index).unwrap().runs[target.run_index]
+fn image(
+    document: &EditableDocument,
+    target: FloatingObjectTarget,
+) -> jade_docx_editor::document::RunImage {
+    document
+        .word_document()
+        .paragraph(target.paragraph_index)
+        .unwrap()
+        .runs[target.run_index]
         .image
         .clone()
         .unwrap()
@@ -75,12 +86,19 @@ fn an_svg_goes_in_with_its_png_fallback() {
     let (mut document, target) = with_picture(SVG.as_bytes().to_vec());
     let picture = image(&document, target);
     assert_eq!(
-        (picture.width_px.map(f64::round), picture.height_px.map(f64::round)),
+        (
+            picture.width_px.map(f64::round),
+            picture.height_px.map(f64::round)
+        ),
         (Some(40.0), Some(20.0))
     );
     assert!(picture.format().svg_relationship_id.is_some());
     assert!(
-        picture.data_uri.as_deref().unwrap().starts_with("data:image/svg+xml"),
+        picture
+            .data_uri
+            .as_deref()
+            .unwrap()
+            .starts_with("data:image/svg+xml"),
         "the SVG is what is drawn"
     );
     let xml = document_xml(&mut document);
@@ -89,7 +107,9 @@ fn an_svg_goes_in_with_its_png_fallback() {
     let package = jade_opc::OpcPackage::open(&saved).unwrap();
     let names = package.part_names();
     assert!(names.iter().any(|name| name.ends_with(".svg")), "{names:?}");
-    assert!(names.iter().any(|name| name.starts_with("word/media/") && name.ends_with(".png")));
+    assert!(names
+        .iter()
+        .any(|name| name.starts_with("word/media/") && name.ends_with(".png")));
     // One step back takes the whole picture.
     document.undo().unwrap();
     assert!(document
@@ -119,7 +139,10 @@ fn replacing_a_picture_keeps_its_size_place_and_effects() {
     assert_eq!(after.layout.wrap, before.layout.wrap);
     assert!(after.format().shadow.is_some(), "the shadow stays");
     document.undo().unwrap();
-    assert_eq!(image(&document, target).relationship_id, before.relationship_id);
+    assert_eq!(
+        image(&document, target).relationship_id,
+        before.relationship_id
+    );
 }
 
 #[test]
@@ -128,19 +151,25 @@ fn outline_effects_and_colour_are_written_and_drawn() {
     document
         .set_picture_outline(target, OutlineEdit::Color("FF0000".into()))
         .unwrap();
-    document.set_picture_outline(target, OutlineEdit::Width(3.0)).unwrap();
+    document
+        .set_picture_outline(target, OutlineEdit::Width(3.0))
+        .unwrap();
     document
         .set_object_effect(target, Effect::Reflection(Some(ReflectionPreset::Half)))
         .unwrap();
     document
         .set_object_effect(target, Effect::Glow(Some((5.0, "4472C4".into()))))
         .unwrap();
-    document.set_object_effect(target, Effect::SoftEdge(Some(2.5))).unwrap();
+    document
+        .set_object_effect(target, Effect::SoftEdge(Some(2.5)))
+        .unwrap();
     document
         .set_object_effect(target, Effect::Bevel(Some("circle".into())))
         .unwrap();
     document.set_picture_corrections(target, 0.2, -0.2).unwrap();
-    document.recolor_picture(target, Recolor::Grayscale).unwrap();
+    document
+        .recolor_picture(target, Recolor::Grayscale)
+        .unwrap();
     document.set_picture_transparency(target, 0.5).unwrap();
 
     let picture = image(&document, target);
@@ -149,7 +178,10 @@ fn outline_effects_and_colour_are_written_and_drawn() {
     assert_eq!(outline.color.as_deref(), Some("#FF0000"));
     assert_eq!(outline.width_px.map(|px| (px * 0.75).round()), Some(3.0));
     assert!(format.reflection.is_some());
-    assert_eq!(format.glow.as_ref().unwrap().color.as_deref(), Some("#4472C4"));
+    assert_eq!(
+        format.glow.as_ref().unwrap().color.as_deref(),
+        Some("#4472C4")
+    );
     assert!(format.soft_edge_radius_px.is_some());
     assert_eq!(format.bevel.as_ref().unwrap().preset, "circle");
     assert_eq!(
@@ -200,13 +232,18 @@ fn saturation_artistic_effects_and_background_removal_are_baked_with_the_origina
     document.set_picture_saturation(target, 0.0).unwrap();
     document.remove_picture_background(target, true).unwrap();
     let picture = image(&document, target);
-    assert_ne!(picture.relationship_id, original, "the blip is the baked copy");
+    assert_ne!(
+        picture.relationship_id, original,
+        "the blip is the baked copy"
+    );
     let corrections = picture.format().corrections.clone().unwrap();
     assert_eq!(corrections.original_relationship_id, original);
     assert_eq!(corrections.saturation, Some(0.0));
     assert!(corrections.background_removal.is_some());
     // The corner went transparent, the middle stayed (grey now).
-    let bytes = jade_docx_editor::picture_effects::data_uri_bytes(picture.data_uri.as_deref().unwrap()).unwrap();
+    let bytes =
+        jade_docx_editor::picture_effects::data_uri_bytes(picture.data_uri.as_deref().unwrap())
+            .unwrap();
     let pixels = jade_docx_editor::picture_effects::decode(&bytes).unwrap();
     assert_eq!(pixels.get_pixel(0, 0).0[3], 0);
     let middle = pixels.get_pixel(8, 8).0;
@@ -226,14 +263,22 @@ fn saturation_artistic_effects_and_background_removal_are_baked_with_the_origina
 #[test]
 fn cropping_to_a_shape_and_an_aspect_ratio() {
     let (mut document, target) = with_picture(png(40, 20));
-    document.crop_picture_to_shape(target, TextBoxShape::Ellipse).unwrap();
-    assert_eq!(image(&document, target).format().geometry, Some(TextBoxShape::Ellipse));
+    document
+        .crop_picture_to_shape(target, TextBoxShape::Ellipse)
+        .unwrap();
+    assert_eq!(
+        image(&document, target).format().geometry,
+        Some(TextBoxShape::Ellipse)
+    );
     document.crop_picture_to_aspect(target, (1, 1)).unwrap();
     let picture = image(&document, target);
     let crop = picture.crop.unwrap();
     assert!((crop.left - 0.25).abs() < 1e-3 && (crop.right - 0.25).abs() < 1e-3);
     assert_eq!(crop.top, 0.0);
-    assert_eq!(picture.width_px.map(f64::round), picture.height_px.map(f64::round));
+    assert_eq!(
+        picture.width_px.map(f64::round),
+        picture.height_px.map(f64::round)
+    );
     document
         .crop_picture(
             target,
@@ -248,7 +293,10 @@ fn cropping_to_a_shape_and_an_aspect_ratio() {
     assert_eq!(image(&document, target).crop.unwrap().bottom, 0.2);
     let xml = document_xml(&mut document);
     assert!(xml.contains(r#"<a:prstGeom prst="ellipse">"#), "{xml}");
-    assert!(xml.contains(r#"<a:srcRect l="10000" t="0" r="0" b="20000"/>"#), "{xml}");
+    assert!(
+        xml.contains(r#"<a:srcRect l="10000" t="0" r="0" b="20000"/>"#),
+        "{xml}"
+    );
 }
 
 #[test]
@@ -257,18 +305,29 @@ fn rotating_and_flipping() {
     document.rotate_object(target, Rotate::Right90).unwrap();
     document.rotate_object(target, Rotate::Right90).unwrap();
     document.rotate_object(target, Rotate::Left90).unwrap();
-    document.rotate_object(target, Rotate::FlipHorizontal).unwrap();
+    document
+        .rotate_object(target, Rotate::FlipHorizontal)
+        .unwrap();
     let format = document.object_format(target).unwrap();
     assert_eq!(format.rotation.round(), 90.0);
     assert!(format.flip_horizontal && !format.flip_vertical);
     document.set_object_rotation(target, -30.0).unwrap();
-    assert_eq!(document.object_format(target).unwrap().rotation.round(), 330.0);
+    assert_eq!(
+        document.object_format(target).unwrap().rotation.round(),
+        330.0
+    );
     // A drag keeps the rotation.
     let placed = document.object_region(target).unwrap();
     document
-        .move_object(placed, (placed.x + 10.0, placed.y, placed.width, placed.height))
+        .move_object(
+            placed,
+            (placed.x + 10.0, placed.y, placed.width, placed.height),
+        )
         .unwrap();
-    assert_eq!(document.object_format(target).unwrap().rotation.round(), 330.0);
+    assert_eq!(
+        document.object_format(target).unwrap().rotation.round(),
+        330.0
+    );
 }
 
 #[test]
@@ -310,7 +369,9 @@ fn the_layout_dialog_positions_and_options() {
             },
         )
         .unwrap();
-    document.set_object_distances(target, [6.0, 7.0, 8.0, 9.0]).unwrap();
+    document
+        .set_object_distances(target, [6.0, 7.0, 8.0, 9.0])
+        .unwrap();
     let format = document.object_format(target).unwrap();
     assert!(format.moves_with_text && format.locked);
     assert!(!format.allow_overlap && !format.layout_in_cell);
@@ -324,13 +385,18 @@ fn the_layout_dialog_positions_and_options() {
     let setup = jade_web::word::page::WordPage::page_setup(&document);
     let left = f64::from(setup.margins.left) * 96.0 / 72.0;
     let right = f64::from(setup.width - setup.margins.right) * 96.0 / 72.0;
-    assert!((placed.x + placed.width / 2.0 - (left + right) / 2.0).abs() < 1.0, "{placed:?}");
+    assert!(
+        (placed.x + placed.width / 2.0 - (left + right) / 2.0).abs() < 1.0,
+        "{placed:?}"
+    );
 }
 
 #[test]
 fn stacking_names_visibility_and_alignment() {
     let (mut document, first) = with_picture(png(40, 20));
-    document.set_object_wrap(first, Wrap::InFrontOfText).unwrap();
+    document
+        .set_object_wrap(first, Wrap::InFrontOfText)
+        .unwrap();
     let paragraph = first.paragraph_index;
     document.place_caret(paragraph, 0);
     document.insert_picture(png(20, 20)).unwrap();
@@ -343,7 +409,9 @@ fn stacking_names_visibility_and_alignment() {
         run_index: first.run_index - 1,
         ..first
     };
-    document.set_object_wrap(second, Wrap::InFrontOfText).unwrap();
+    document
+        .set_object_wrap(second, Wrap::InFrontOfText)
+        .unwrap();
     let z = |document: &EditableDocument, target| {
         jade_web::word::objects::stacking_index(document.word_document(), target).unwrap()
     };
@@ -366,18 +434,29 @@ fn stacking_names_visibility_and_alignment() {
         .collect();
     assert!(names.contains(&("ロゴ".to_string(), false)), "{names:?}");
     assert!(names.iter().any(|(_, hidden)| *hidden));
-    assert!(document.object_region(second).is_none(), "a hidden object is not on the page");
+    assert!(
+        document.object_region(second).is_none(),
+        "a hidden object is not on the page"
+    );
     document.set_object_hidden(second, false).unwrap();
 
     let a = document.object_region(first).unwrap();
     let b = document.object_region(second).unwrap();
-    document.align_objects(&[a, b], Align::Left, AlignTo::Selection).unwrap();
+    document
+        .align_objects(&[a, b], Align::Left, AlignTo::Selection)
+        .unwrap();
     let a = document.object_region(first).unwrap();
     let b = document.object_region(second).unwrap();
     assert!((a.x - b.x).abs() < 0.5, "{a:?} {b:?}");
-    document.align_objects(&[a, b], Align::Top, AlignTo::Page).unwrap();
+    document
+        .align_objects(&[a, b], Align::Top, AlignTo::Page)
+        .unwrap();
     let top = document.object_region(first).unwrap();
-    assert!(top.y.abs() < 0.5, "{top:?} {:?}", document.object_format(first));
+    assert!(
+        top.y.abs() < 0.5,
+        "{top:?} {:?}",
+        document.object_format(first)
+    );
     document.undo().unwrap();
     assert!((document.object_region(first).unwrap().y - a.y).abs() < 0.5);
 }

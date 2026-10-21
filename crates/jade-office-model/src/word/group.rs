@@ -7,8 +7,8 @@ use jade_docx_editor::commands::delete_object::DeleteObjectCommand;
 use jade_docx_editor::commands::edit_drawing::replace_drawing_command;
 use jade_docx_editor::commands::insert_shape::InsertShapeCommand;
 use jade_docx_editor::commands::Command;
-use jade_docx_editor::docx_xml::{XmlElement, XmlNode};
 use jade_docx_editor::document::TextBoxShape;
+use jade_docx_editor::docx_xml::{XmlElement, XmlNode};
 use jade_docx_editor::drawing_xml::{
     self, child, child_mut, descendant, elements, get_attr, set_attr,
 };
@@ -29,7 +29,8 @@ fn emu(px: f64) -> i64 {
 /// The object inside a drawing's graphic (`wps:wsp`, `pic:pic`, `wpg:wgp`).
 fn graphic_object(drawing: &XmlElement) -> Option<&XmlElement> {
     let data = descendant(drawing, "a:graphicData")?;
-    elements(data).find(|element| matches!(element.name.as_str(), "wps:wsp" | "pic:pic" | "wpg:wgp"))
+    elements(data)
+        .find(|element| matches!(element.name.as_str(), "wps:wsp" | "pic:pic" | "wpg:wgp"))
 }
 
 /// A member of a group, as it is written inside `wpg:wgp`: a shape keeps
@@ -44,7 +45,9 @@ fn as_member(
         "wps:wsp" => {
             if child(&member, "wps:cNvPr").is_none() {
                 let id = doc_pr.and_then(|pr| get_attr(pr, "id")).unwrap_or("1");
-                let name = doc_pr.and_then(|pr| get_attr(pr, "name")).unwrap_or("Shape");
+                let name = doc_pr
+                    .and_then(|pr| get_attr(pr, "name"))
+                    .unwrap_or("Shape");
                 member.children.insert(
                     0,
                     XmlNode::Element(fragment(&format!(
@@ -64,7 +67,9 @@ fn as_member(
     };
     let sp_pr = child_mut(&mut member, sp_pr_name).ok_or("the object has no shape properties")?;
     if child(sp_pr, "a:xfrm").is_none() {
-        sp_pr.children.insert(0, XmlNode::Element(fragment("<a:xfrm/>")?));
+        sp_pr
+            .children
+            .insert(0, XmlNode::Element(fragment("<a:xfrm/>")?));
     }
     let xfrm = child_mut(sp_pr, "a:xfrm").expect("added above");
     xfrm.children.retain(|node| {
@@ -76,7 +81,9 @@ fn as_member(
     );
     xfrm.children.insert(
         1,
-        XmlNode::Element(fragment(&format!(r#"<a:ext cx="{width}" cy="{height}"/>"#))?),
+        XmlNode::Element(fragment(&format!(
+            r#"<a:ext cx="{width}" cy="{height}"/>"#
+        ))?),
     );
     Ok(member)
 }
@@ -103,8 +110,14 @@ pub trait WordGroups: WordSession + WordObjects {
         members.sort_by_key(|object| (object.target.paragraph_index, object.target.run_index));
         let left = members.iter().map(|o| o.x).fold(f64::INFINITY, f64::min);
         let top = members.iter().map(|o| o.y).fold(f64::INFINITY, f64::min);
-        let right = members.iter().map(|o| o.x + o.width).fold(f64::NEG_INFINITY, f64::max);
-        let bottom = members.iter().map(|o| o.y + o.height).fold(f64::NEG_INFINITY, f64::max);
+        let right = members
+            .iter()
+            .map(|o| o.x + o.width)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let bottom = members
+            .iter()
+            .map(|o| o.y + o.height)
+            .fold(f64::NEG_INFINITY, f64::max);
         let (width, height) = (emu(right - left), emu(bottom - top));
         let first = members[0];
         let others: Vec<PlacedObject> = members[1..].to_vec();
@@ -112,62 +125,74 @@ pub trait WordGroups: WordSession + WordObjects {
         // them goes: removing a text box renumbers the paragraphs after it.
         let mut drawings = Vec::new();
         for member in &members {
-            drawings.push(package_drawing(self.word_document(), member.target).ok_or("an object's drawing is not available")?);
+            drawings.push(
+                package_drawing(self.word_document(), member.target)
+                    .ok_or("an object's drawing is not available")?,
+            );
         }
         let all: Vec<(PlacedObject, XmlElement)> = members.iter().copied().zip(drawings).collect();
-        let group = replace_drawing_command("group_objects", first.target, move |document, drawing| {
-            let mut children = Vec::new();
-            for (member, own) in &all {
-                let member = *member;
-                let object = graphic_object(&own).ok_or("an object cannot be grouped")?;
-                let doc_pr = descendant(&own, "wp:docPr");
-                children.push(as_member(
-                    object,
-                    doc_pr,
-                    (
-                        emu(member.x - left),
-                        emu(member.y - top),
-                        emu(member.width),
-                        emu(member.height),
-                    ),
-                )?);
-            }
-            let id = document.new_drawing_object_id();
-            let members_xml: String = children.iter().map(element_xml).collect();
-            let group = parse_element(&format!(
-                r#"<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{width}" cy="{height}"/><a:chOff x="0" y="0"/><a:chExt cx="{width}" cy="{height}"/></a:xfrm></wpg:grpSpPr>{members_xml}</wpg:wgp></a:graphicData></a:graphic>"#
-            ))?;
-            let frame = drawing_xml::container_mut(drawing).ok_or("the object has no frame")?;
-            frame.children.retain(|node| {
+        let group = replace_drawing_command(
+            "group_objects",
+            first.target,
+            move |document, drawing| {
+                let mut children = Vec::new();
+                for (member, own) in &all {
+                    let member = *member;
+                    let object = graphic_object(&own).ok_or("an object cannot be grouped")?;
+                    let doc_pr = descendant(&own, "wp:docPr");
+                    children.push(as_member(
+                        object,
+                        doc_pr,
+                        (
+                            emu(member.x - left),
+                            emu(member.y - top),
+                            emu(member.width),
+                            emu(member.height),
+                        ),
+                    )?);
+                }
+                let id = document.new_drawing_object_id();
+                let members_xml: String = children.iter().map(element_xml).collect();
+                let group = parse_element(&format!(
+                    r#"<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{width}" cy="{height}"/><a:chOff x="0" y="0"/><a:chExt cx="{width}" cy="{height}"/></a:xfrm></wpg:grpSpPr>{members_xml}</wpg:wgp></a:graphicData></a:graphic>"#
+                ))?;
+                let frame = drawing_xml::container_mut(drawing).ok_or("the object has no frame")?;
+                frame.children.retain(|node| {
                 !matches!(node, XmlNode::Element(element) if element.name == "a:graphic")
             });
-            frame.children.push(XmlNode::Element(group));
-            for (name, value) in [("cx", width), ("cy", height)] {
-                if let Some(extent) = child_mut(frame, "wp:extent") {
-                    set_attr(extent, name, Some(value.to_string()));
+                frame.children.push(XmlNode::Element(group));
+                for (name, value) in [("cx", width), ("cy", height)] {
+                    if let Some(extent) = child_mut(frame, "wp:extent") {
+                        set_attr(extent, name, Some(value.to_string()));
+                    }
                 }
-            }
-            // The group sits where its members' box is on the page.
-            let position_h = fragment(&format!(
-                r#"<wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH>"#,
-                emu(left)
-            ))?;
-            let position_v = fragment(&format!(
-                r#"<wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV>"#,
-                emu(top)
-            ))?;
-            drawing_xml::put_child(frame, position_h, &["wp:positionH"], &["wp:positionV", "wp:extent"]);
-            drawing_xml::put_child(frame, position_v, &["wp:positionV"], &["wp:extent"]);
-            if let Some(doc_pr) = child_mut(frame, "wp:docPr") {
-                set_attr(doc_pr, "id", Some(id.to_string()));
-                set_attr(doc_pr, "name", Some(format!("グループ化 {id}")));
-                set_attr(doc_pr, "descr", None);
-            }
-            frame.children.retain(|node| {
+                // The group sits where its members' box is on the page.
+                let position_h = fragment(&format!(
+                    r#"<wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH>"#,
+                    emu(left)
+                ))?;
+                let position_v = fragment(&format!(
+                    r#"<wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV>"#,
+                    emu(top)
+                ))?;
+                drawing_xml::put_child(
+                    frame,
+                    position_h,
+                    &["wp:positionH"],
+                    &["wp:positionV", "wp:extent"],
+                );
+                drawing_xml::put_child(frame, position_v, &["wp:positionV"], &["wp:extent"]);
+                if let Some(doc_pr) = child_mut(frame, "wp:docPr") {
+                    set_attr(doc_pr, "id", Some(id.to_string()));
+                    set_attr(doc_pr, "name", Some(format!("グループ化 {id}")));
+                    set_attr(doc_pr, "descr", None);
+                }
+                frame.children.retain(|node| {
                 !matches!(node, XmlNode::Element(element) if element.name == "wp:cNvGraphicFramePr")
             });
-            Ok(())
-        });
+                Ok(())
+            },
+        );
         // The others go first, last first so the earlier ones keep their
         // places; the first, earliest in the document, keeps its own.
         let mut sequence: Vec<Box<dyn Command>> = Vec::new();
@@ -222,16 +247,24 @@ pub trait WordGroups: WordSession + WordObjects {
             let member_xfrm = child(member, properties_name)
                 .and_then(|properties| child(properties, "a:xfrm"))
                 .ok_or("a member has no frame")?;
-            let x = group.x + (number(child(member_xfrm, "a:off"), "x") - child_offset.0) / EMU * scale_x;
-            let y = group.y + (number(child(member_xfrm, "a:off"), "y") - child_offset.1) / EMU * scale_y;
+            let x = group.x
+                + (number(child(member_xfrm, "a:off"), "x") - child_offset.0) / EMU * scale_x;
+            let y = group.y
+                + (number(child(member_xfrm, "a:off"), "y") - child_offset.1) / EMU * scale_y;
             let width = number(child(member_xfrm, "a:ext"), "cx") / EMU * scale_x;
             let height = number(child(member_xfrm, "a:ext"), "cy") / EMU * scale_y;
             let mut object = member.clone();
             let (uri, name, id) = match object.name.as_str() {
                 "pic:pic" => (
                     "http://schemas.openxmlformats.org/drawingml/2006/picture",
-                    descendant(member, "pic:cNvPr").and_then(|pr| get_attr(pr, "name")).unwrap_or("図").to_string(),
-                    descendant(member, "pic:cNvPr").and_then(|pr| get_attr(pr, "id")).unwrap_or("0").to_string(),
+                    descendant(member, "pic:cNvPr")
+                        .and_then(|pr| get_attr(pr, "name"))
+                        .unwrap_or("図")
+                        .to_string(),
+                    descendant(member, "pic:cNvPr")
+                        .and_then(|pr| get_attr(pr, "id"))
+                        .unwrap_or("0")
+                        .to_string(),
                 ),
                 "wpg:grpSp" => {
                     object.name = "wpg:wgp".into();
@@ -242,12 +275,22 @@ pub trait WordGroups: WordSession + WordObjects {
                     )
                 }
                 _ => {
-                    let name = child(member, "wps:cNvPr").and_then(|pr| get_attr(pr, "name")).unwrap_or("図形").to_string();
-                    let id = child(member, "wps:cNvPr").and_then(|pr| get_attr(pr, "id")).unwrap_or("0").to_string();
+                    let name = child(member, "wps:cNvPr")
+                        .and_then(|pr| get_attr(pr, "name"))
+                        .unwrap_or("図形")
+                        .to_string();
+                    let id = child(member, "wps:cNvPr")
+                        .and_then(|pr| get_attr(pr, "id"))
+                        .unwrap_or("0")
+                        .to_string();
                     object.children.retain(|node| {
                         !matches!(node, XmlNode::Element(element) if element.name == "wps:cNvPr")
                     });
-                    ("http://schemas.microsoft.com/office/word/2010/wordprocessingShape", name, id)
+                    (
+                        "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+                        name,
+                        id,
+                    )
                 }
             };
             // The member's frame becomes its own extent at its new place.
@@ -266,7 +309,13 @@ pub trait WordGroups: WordSession + WordObjects {
             let attributes: String = frame
                 .attributes
                 .iter()
-                .map(|attribute| format!(r#" {}="{}""#, attribute.name, attribute.value.replace('"', "&quot;")))
+                .map(|attribute| {
+                    format!(
+                        r#" {}="{}""#,
+                        attribute.name,
+                        attribute.value.replace('"', "&quot;")
+                    )
+                })
                 .collect();
             let xml = format!(
                 r#"<w:drawing><wp:anchor{attributes}><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{}<wp:docPr id="{id}" name="{}"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="{uri}">{}</a:graphicData></a:graphic></wp:anchor></w:drawing>"#,
@@ -274,9 +323,18 @@ pub trait WordGroups: WordSession + WordObjects {
                 emu(y),
                 emu(width).max(1),
                 emu(height).max(1),
-                drawing_xml::child_any(frame, &["wp:wrapNone", "wp:wrapSquare", "wp:wrapTight", "wp:wrapThrough", "wp:wrapTopAndBottom"])
-                    .map(element_xml)
-                    .unwrap_or_else(|| "<wp:wrapNone/>".into()),
+                drawing_xml::child_any(
+                    frame,
+                    &[
+                        "wp:wrapNone",
+                        "wp:wrapSquare",
+                        "wp:wrapTight",
+                        "wp:wrapThrough",
+                        "wp:wrapTopAndBottom"
+                    ]
+                )
+                .map(element_xml)
+                .unwrap_or_else(|| "<wp:wrapNone/>".into()),
                 name.replace('"', "&quot;"),
                 element_xml(&object),
             );
@@ -311,12 +369,16 @@ pub trait WordGroups: WordSession + WordObjects {
                 )),
                 move |target| {
                     let mut drawing = Some(drawing.clone());
-                    vec![Box::new(replace_drawing_command("ungroup_member", target, move |_, current| {
-                        if let Some(drawing) = drawing.take() {
-                            *current = drawing;
-                        }
-                        Ok(())
-                    })) as Box<dyn Command>]
+                    vec![Box::new(replace_drawing_command(
+                        "ungroup_member",
+                        target,
+                        move |_, current| {
+                            if let Some(drawing) = drawing.take() {
+                                *current = drawing;
+                            }
+                            Ok(())
+                        },
+                    )) as Box<dyn Command>]
                 },
             )));
         }

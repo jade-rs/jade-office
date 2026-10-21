@@ -12,9 +12,11 @@ use jade_office_model::word::diagrams::WordDiagrams;
 use jade_office_model::word::objects::ObjectSort;
 
 use crate::i18n::{self, text as t};
-use crate::ribbon::{dropdown, group, listener, menu_caption, menu_panel, menu_row, row, Action, Popup};
-use crate::word_objects_ribbon::{ObjectAction, ObjectPopup};
+use crate::ribbon::{
+    dropdown, group, listener, menu_caption, menu_panel, menu_row, row, Action, Popup,
+};
 use crate::tooltip::Tooltip;
+use crate::word_objects_ribbon::{ObjectAction, ObjectPopup};
 use crate::{theme, DocumentView};
 
 /// The diagram tools' lists.
@@ -74,7 +76,10 @@ impl DiagramTools {
         }
         if let Some(sheet) = self.chart_sheet.as_mut() {
             if let Some((row, column)) = sheet.focus {
-                return sheet.cells.get_mut(row).and_then(|cells| cells.get_mut(column));
+                return sheet
+                    .cells
+                    .get_mut(row)
+                    .and_then(|cells| cells.get_mut(column));
             }
         }
         None
@@ -125,7 +130,10 @@ fn list_button(
         .cursor_pointer()
         .when(open, |button| button.bg(theme::selected()))
         .hover(|button| button.bg(theme::hovered()))
-        .on_click(listener(Action::Popup(Popup::Object(ObjectPopup::Diagram(which))), cx))
+        .on_click(listener(
+            Action::Popup(Popup::Object(ObjectPopup::Diagram(which))),
+            cx,
+        ))
         .child(label)
         .child(
             gpui::svg()
@@ -176,80 +184,186 @@ impl DocumentView {
     /// 挿入's SmartArt and グラフ buttons.
     pub(crate) fn insert_diagram_buttons(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let open = self.ribbon.popup;
-        let smartart_menu = (open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::InsertSmartArt)))).then(|| {
-            layout_menu("insert-smartart-menu", true, cx)
-        });
-        let chart_menu = (open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::InsertChart)))).then(|| {
+        let smartart_menu = (open
+            == Some(Popup::Object(ObjectPopup::Diagram(
+                DiagramPopup::InsertSmartArt,
+            ))))
+        .then(|| layout_menu("insert-smartart-menu", true, cx));
+        let chart_menu = (open
+            == Some(Popup::Object(ObjectPopup::Diagram(
+                DiagramPopup::InsertChart,
+            ))))
+        .then(|| {
             menu_panel("insert-chart-menu")
                 .w(px(180.0))
                 .children(CHART_KINDS.into_iter().enumerate().map(|(index, kind)| {
-                    menu_row(("insert-chart", index), chart_kind_label(kind), false, act(DiagramAction::InsertChart(kind)), cx)
+                    menu_row(
+                        ("insert-chart", index),
+                        chart_kind_label(kind),
+                        false,
+                        act(DiagramAction::InsertChart(kind)),
+                        cx,
+                    )
                 }))
                 .into_any_element()
         });
         vec![
             dropdown(
-                list_button("insert-smartart", t("objects.smartart"), open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::InsertSmartArt))), DiagramPopup::InsertSmartArt, cx),
+                list_button(
+                    "insert-smartart",
+                    t("objects.smartart"),
+                    open == Some(Popup::Object(ObjectPopup::Diagram(
+                        DiagramPopup::InsertSmartArt,
+                    ))),
+                    DiagramPopup::InsertSmartArt,
+                    cx,
+                ),
                 smartart_menu,
             ),
             dropdown(
-                list_button("insert-chart", t("objects.chart"), open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::InsertChart))), DiagramPopup::InsertChart, cx),
+                list_button(
+                    "insert-chart",
+                    t("objects.chart"),
+                    open == Some(Popup::Object(ObjectPopup::Diagram(
+                        DiagramPopup::InsertChart,
+                    ))),
+                    DiagramPopup::InsertChart,
+                    cx,
+                ),
                 chart_menu,
             ),
         ]
     }
 
     /// SmartArt's and a chart's own groups on the contextual tab.
-    pub(crate) fn diagram_groups(&mut self, sort: ObjectSort, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(crate) fn diagram_groups(
+        &mut self,
+        sort: ObjectSort,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let open = self.ribbon.popup;
         match sort {
             ObjectSort::SmartArt => {
-                let layouts = (open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::Layouts))))
-                    .then(|| layout_menu("smartart-layouts-menu", false, cx));
+                let layouts = (open
+                    == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::Layouts))))
+                .then(|| layout_menu("smartart-layouts-menu", false, cx));
                 vec![group(
                     t("objects.group.smartart"),
                     vec![row(vec![
-                        dropdown(list_button("smartart-layouts", t("objects.smartart.layouts"), open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::Layouts))), DiagramPopup::Layouts, cx), layouts),
-                        text_button("smartart-text-pane", t("objects.smartart.text_pane"), t("objects.smartart.text_pane_title"), DiagramAction::TextPane, cx),
+                        dropdown(
+                            list_button(
+                                "smartart-layouts",
+                                t("objects.smartart.layouts"),
+                                open == Some(Popup::Object(ObjectPopup::Diagram(
+                                    DiagramPopup::Layouts,
+                                ))),
+                                DiagramPopup::Layouts,
+                                cx,
+                            ),
+                            layouts,
+                        ),
+                        text_button(
+                            "smartart-text-pane",
+                            t("objects.smartart.text_pane"),
+                            t("objects.smartart.text_pane_title"),
+                            DiagramAction::TextPane,
+                            cx,
+                        ),
                     ])],
                 )]
             }
             ObjectSort::Chart => {
-                let types = (open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::ChartType)))).then(|| {
+                let types = (open
+                    == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::ChartType))))
+                .then(|| {
                     menu_panel("chart-type-menu")
                         .w(px(180.0))
                         .children(CHART_KINDS.into_iter().enumerate().map(|(index, kind)| {
-                            menu_row(("chart-type", index), chart_kind_label(kind), false, act(DiagramAction::ChartType(kind)), cx)
+                            menu_row(
+                                ("chart-type", index),
+                                chart_kind_label(kind),
+                                false,
+                                act(DiagramAction::ChartType(kind)),
+                                cx,
+                            )
                         }))
                         .into_any_element()
                 });
-                let legends = (open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::Legend)))).then(|| {
-                    let places = [
-                        (None, "objects.legend.none"),
-                        (Some("r"), "objects.legend.right"),
-                        (Some("t"), "objects.legend.top"),
-                        (Some("l"), "objects.legend.left"),
-                        (Some("b"), "objects.legend.bottom"),
-                    ];
-                    menu_panel("legend-menu")
-                        .w(px(160.0))
-                        .children(places.into_iter().enumerate().map(|(index, (place, label))| {
-                            menu_row(("legend", index), t(label), false, act(DiagramAction::Legend(place)), cx)
-                        }))
-                        .child(menu_caption(t("objects.chart.title")))
-                        .child(menu_row("title-on", t("objects.chart.title_on"), false, act(DiagramAction::ChartTitle(true)), cx))
-                        .child(menu_row("title-off", t("objects.chart.title_off"), false, act(DiagramAction::ChartTitle(false)), cx))
-                        .into_any_element()
-                });
+                let legends =
+                    (open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::Legend)))).then(
+                        || {
+                            let places = [
+                                (None, "objects.legend.none"),
+                                (Some("r"), "objects.legend.right"),
+                                (Some("t"), "objects.legend.top"),
+                                (Some("l"), "objects.legend.left"),
+                                (Some("b"), "objects.legend.bottom"),
+                            ];
+                            menu_panel("legend-menu")
+                                .w(px(160.0))
+                                .children(places.into_iter().enumerate().map(
+                                    |(index, (place, label))| {
+                                        menu_row(
+                                            ("legend", index),
+                                            t(label),
+                                            false,
+                                            act(DiagramAction::Legend(place)),
+                                            cx,
+                                        )
+                                    },
+                                ))
+                                .child(menu_caption(t("objects.chart.title")))
+                                .child(menu_row(
+                                    "title-on",
+                                    t("objects.chart.title_on"),
+                                    false,
+                                    act(DiagramAction::ChartTitle(true)),
+                                    cx,
+                                ))
+                                .child(menu_row(
+                                    "title-off",
+                                    t("objects.chart.title_off"),
+                                    false,
+                                    act(DiagramAction::ChartTitle(false)),
+                                    cx,
+                                ))
+                                .into_any_element()
+                        },
+                    );
                 vec![group(
                     t("objects.group.chart"),
                     vec![
                         row(vec![
-                            text_button("chart-data", t("objects.chart.edit_data"), t("objects.chart.edit_data_title"), DiagramAction::EditData, cx),
-                            dropdown(list_button("chart-type", t("objects.chart.type"), open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::ChartType))), DiagramPopup::ChartType, cx), types),
+                            text_button(
+                                "chart-data",
+                                t("objects.chart.edit_data"),
+                                t("objects.chart.edit_data_title"),
+                                DiagramAction::EditData,
+                                cx,
+                            ),
+                            dropdown(
+                                list_button(
+                                    "chart-type",
+                                    t("objects.chart.type"),
+                                    open == Some(Popup::Object(ObjectPopup::Diagram(
+                                        DiagramPopup::ChartType,
+                                    ))),
+                                    DiagramPopup::ChartType,
+                                    cx,
+                                ),
+                                types,
+                            ),
                         ]),
                         row(vec![dropdown(
-                            list_button("chart-legend", t("objects.chart.elements"), open == Some(Popup::Object(ObjectPopup::Diagram(DiagramPopup::Legend))), DiagramPopup::Legend, cx),
+                            list_button(
+                                "chart-legend",
+                                t("objects.chart.elements"),
+                                open == Some(Popup::Object(ObjectPopup::Diagram(
+                                    DiagramPopup::Legend,
+                                ))),
+                                DiagramPopup::Legend,
+                                cx,
+                            ),
                             legends,
                         )]),
                     ],
@@ -275,8 +389,12 @@ impl DocumentView {
                 self.select_inserted_at_caret();
             }
             DiagramAction::ChangeLayout(layout) => {
-                let Some(target) = self.object_target() else { return };
-                let Some(mut diagram) = self.document.smartart(target) else { return };
+                let Some(target) = self.object_target() else {
+                    return;
+                };
+                let Some(mut diagram) = self.document.smartart(target) else {
+                    return;
+                };
                 diagram.layout = layout.to_string();
                 self.object_edit(cx, |view| view.document.set_smartart(target, diagram));
                 if let Some(pane) = self.objects.diagrams.text_pane.as_mut() {
@@ -292,18 +410,28 @@ impl DocumentView {
                 }
             }
             DiagramAction::ChartType(kind) => {
-                let Some(target) = self.object_target() else { return };
-                let Some(mut chart) = self.document.chart_data(target) else { return };
+                let Some(target) = self.object_target() else {
+                    return;
+                };
+                let Some(mut chart) = self.document.chart_data(target) else {
+                    return;
+                };
                 chart.kind = kind;
                 self.object_edit(cx, |view| view.document.set_chart(target, chart));
             }
             DiagramAction::Legend(place) => {
-                let Some(target) = self.object_target() else { return };
+                let Some(target) = self.object_target() else {
+                    return;
+                };
                 self.object_edit(cx, |view| view.document.set_chart_legend(target, place));
             }
             DiagramAction::ChartTitle(on) => {
-                let Some(target) = self.object_target() else { return };
-                let Some(mut chart) = self.document.chart_data(target) else { return };
+                let Some(target) = self.object_target() else {
+                    return;
+                };
+                let Some(mut chart) = self.document.chart_data(target) else {
+                    return;
+                };
                 chart.title = if on {
                     if chart.title.is_empty() {
                         t("objects.chart.default_title").to_string()
@@ -352,8 +480,12 @@ impl DocumentView {
 
     /// テキスト ウィンドウ for the selected SmartArt graphic.
     fn open_text_pane(&mut self, cx: &mut Context<Self>) {
-        let Some(target) = self.object_target() else { return };
-        let Some(diagram) = self.document.smartart(target) else { return };
+        let Some(target) = self.object_target() else {
+            return;
+        };
+        let Some(diagram) = self.document.smartart(target) else {
+            return;
+        };
         self.objects.diagrams.text_pane = Some(TextPane {
             target,
             layout: diagram.layout.clone(),
@@ -368,7 +500,9 @@ impl DocumentView {
 
     /// The text pane's points back into the graphic.
     fn apply_text_pane(&mut self, cx: &mut Context<Self>) {
-        let Some(pane) = self.objects.diagrams.text_pane.as_ref() else { return };
+        let Some(pane) = self.objects.diagrams.text_pane.as_ref() else {
+            return;
+        };
         let target = pane.target;
         let lines: Vec<(usize, String)> = pane
             .lines
@@ -403,13 +537,18 @@ impl DocumentView {
             }
             "enter" | "return" => {
                 let level = pane.lines[index].0;
-                pane.lines.insert(index + 1, (level, TextEdit::new(String::new())));
+                pane.lines
+                    .insert(index + 1, (level, TextEdit::new(String::new())));
                 pane.focus = Some(index + 1);
                 self.apply_text_pane(cx);
             }
             "tab" => {
                 let (level, _) = pane.lines[index];
-                let ceiling = if index == 0 { 0 } else { pane.lines[index - 1].0 + 1 };
+                let ceiling = if index == 0 {
+                    0
+                } else {
+                    pane.lines[index - 1].0 + 1
+                };
                 pane.lines[index].0 = if shift {
                     level.saturating_sub(1)
                 } else {
@@ -461,7 +600,9 @@ impl DocumentView {
                     .rounded_sm()
                     .text_xs()
                     .when(focused, |line| line.bg(theme::selected()))
-                    .when(edit.text.is_empty() && !focused, |line| line.text_color(theme::text_faint()))
+                    .when(edit.text.is_empty() && !focused, |line| {
+                        line.text_color(theme::text_faint())
+                    })
                     .cursor_text()
                     .child("•")
                     .child(text)
@@ -490,7 +631,12 @@ impl DocumentView {
                 .border_l_1()
                 .border_color(theme::border())
                 .child(div().text_sm().child(t("objects.smartart.text_pane")))
-                .child(div().text_xs().text_color(theme::text_faint()).child(t("objects.smartart.text_pane_hint")))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme::text_faint())
+                        .child(t("objects.smartart.text_pane_hint")),
+                )
                 .children(rows)
                 .child(
                     div()
@@ -504,7 +650,9 @@ impl DocumentView {
                         .border_color(theme::border())
                         .cursor_pointer()
                         .child(t("objects.smartart.apply"))
-                        .on_click(cx.listener(|view, _event, _window, cx| view.apply_text_pane(cx))),
+                        .on_click(
+                            cx.listener(|view, _event, _window, cx| view.apply_text_pane(cx)),
+                        ),
                 )
                 .into_any_element(),
         )
@@ -512,11 +660,20 @@ impl DocumentView {
 
     /// データの編集 for the selected chart.
     fn open_chart_sheet(&mut self, cx: &mut Context<Self>) {
-        let Some(target) = self.object_target() else { return };
-        let Some(chart) = self.document.chart_data(target) else { return };
+        let Some(target) = self.object_target() else {
+            return;
+        };
+        let Some(chart) = self.document.chart_data(target) else {
+            return;
+        };
         let mut cells = Vec::new();
         let mut header = vec![TextEdit::new(String::new())];
-        header.extend(chart.series.iter().map(|series| TextEdit::new(series.name.clone())));
+        header.extend(
+            chart
+                .series
+                .iter()
+                .map(|series| TextEdit::new(series.name.clone())),
+        );
         cells.push(header);
         for (index, category) in chart.categories.iter().enumerate() {
             let mut row = vec![TextEdit::new(category.clone())];
@@ -540,10 +697,17 @@ impl DocumentView {
 
     /// The sheet's data into the chart.
     fn apply_chart_sheet(&mut self, cx: &mut Context<Self>) {
-        let Some(sheet) = self.objects.diagrams.chart_sheet.take() else { return };
+        let Some(sheet) = self.objects.diagrams.chart_sheet.take() else {
+            return;
+        };
         let mut chart = sheet.chart.clone();
         let columns = sheet.cells.first().map(|row| row.len()).unwrap_or(1);
-        chart.categories = sheet.cells.iter().skip(1).map(|row| row[0].text.clone()).collect();
+        chart.categories = sheet
+            .cells
+            .iter()
+            .skip(1)
+            .map(|row| row[0].text.clone())
+            .collect();
         chart.series = (1..columns)
             .map(|column| ChartSeries {
                 name: sheet.cells[0][column].text.clone(),
@@ -561,7 +725,12 @@ impl DocumentView {
 
     /// Keys in the sheet: Tab and the arrows move, Enter puts the data in,
     /// Escape closes.
-    pub(crate) fn chart_sheet_key(&mut self, key: &str, shift: bool, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn chart_sheet_key(
+        &mut self,
+        key: &str,
+        shift: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some(sheet) = self.objects.diagrams.chart_sheet.as_mut() else {
             return false;
         };
@@ -613,7 +782,11 @@ impl DocumentView {
                             .h(px(22.0))
                             .px_1()
                             .border_1()
-                            .border_color(if focused { theme::accent() } else { theme::border() })
+                            .border_color(if focused {
+                                theme::accent()
+                            } else {
+                                theme::border()
+                            })
                             .when(row == 0 || column == 0, |cell| cell.bg(theme::hovered()))
                             .text_xs()
                             .overflow_hidden()
@@ -628,7 +801,10 @@ impl DocumentView {
                     .into_any_element()
             })
             .collect();
-        let button = |id: &'static str, label: &'static str, cx: &mut Context<Self>, on: fn(&mut ChartSheet)| {
+        let button = |id: &'static str,
+                      label: &'static str,
+                      cx: &mut Context<Self>,
+                      on: fn(&mut ChartSheet)| {
             div()
                 .id(id)
                 .px_2()
@@ -667,32 +843,64 @@ impl DocumentView {
                     div()
                         .flex()
                         .gap_2()
-                        .child(button("add-row", t("objects.chart.add_category"), cx, |sheet| {
-                            let columns = sheet.cells[0].len();
-                            let mut row = vec![TextEdit::new(format!("{} {}", t("objects.chart.category"), sheet.cells.len()))];
-                            row.extend((1..columns).map(|_| TextEdit::new(String::new())));
-                            sheet.cells.push(row);
-                        }))
-                        .child(button("add-column", t("objects.chart.add_series"), cx, |sheet| {
-                            let name = format!("{} {}", t("objects.chart.series"), sheet.cells[0].len());
-                            for (index, row) in sheet.cells.iter_mut().enumerate() {
-                                row.push(TextEdit::new(if index == 0 { name.clone() } else { String::new() }));
-                            }
-                        }))
-                        .child(button("remove-row", t("objects.chart.remove_category"), cx, |sheet| {
-                            if sheet.cells.len() > 2 {
-                                sheet.cells.pop();
-                                sheet.focus = Some((1, 1));
-                            }
-                        }))
-                        .child(button("remove-column", t("objects.chart.remove_series"), cx, |sheet| {
-                            if sheet.cells[0].len() > 2 {
-                                for row in sheet.cells.iter_mut() {
-                                    row.pop();
+                        .child(button(
+                            "add-row",
+                            t("objects.chart.add_category"),
+                            cx,
+                            |sheet| {
+                                let columns = sheet.cells[0].len();
+                                let mut row = vec![TextEdit::new(format!(
+                                    "{} {}",
+                                    t("objects.chart.category"),
+                                    sheet.cells.len()
+                                ))];
+                                row.extend((1..columns).map(|_| TextEdit::new(String::new())));
+                                sheet.cells.push(row);
+                            },
+                        ))
+                        .child(button(
+                            "add-column",
+                            t("objects.chart.add_series"),
+                            cx,
+                            |sheet| {
+                                let name = format!(
+                                    "{} {}",
+                                    t("objects.chart.series"),
+                                    sheet.cells[0].len()
+                                );
+                                for (index, row) in sheet.cells.iter_mut().enumerate() {
+                                    row.push(TextEdit::new(if index == 0 {
+                                        name.clone()
+                                    } else {
+                                        String::new()
+                                    }));
                                 }
-                                sheet.focus = Some((1, 1));
-                            }
-                        })),
+                            },
+                        ))
+                        .child(button(
+                            "remove-row",
+                            t("objects.chart.remove_category"),
+                            cx,
+                            |sheet| {
+                                if sheet.cells.len() > 2 {
+                                    sheet.cells.pop();
+                                    sheet.focus = Some((1, 1));
+                                }
+                            },
+                        ))
+                        .child(button(
+                            "remove-column",
+                            t("objects.chart.remove_series"),
+                            cx,
+                            |sheet| {
+                                if sheet.cells[0].len() > 2 {
+                                    for row in sheet.cells.iter_mut() {
+                                        row.pop();
+                                    }
+                                    sheet.focus = Some((1, 1));
+                                }
+                            },
+                        )),
                 )
                 .child(
                     div()
@@ -726,7 +934,9 @@ impl DocumentView {
                                 .text_color(gpui::white())
                                 .cursor_pointer()
                                 .child(t("format.ok"))
-                                .on_click(cx.listener(|view, _event, _window, cx| view.apply_chart_sheet(cx))),
+                                .on_click(cx.listener(|view, _event, _window, cx| {
+                                    view.apply_chart_sheet(cx)
+                                })),
                         ),
                 )
                 .into_any_element(),
@@ -738,13 +948,24 @@ impl DocumentView {
 fn layout_menu(id: &'static str, insert: bool, cx: &mut Context<DocumentView>) -> AnyElement {
     menu_panel(id)
         .w(px(220.0))
-        .children(smartart::LAYOUTS.iter().enumerate().map(|(index, (layout, ja, en, _))| {
-            let action = if insert {
-                DiagramAction::InsertSmartArt(layout)
-            } else {
-                DiagramAction::ChangeLayout(layout)
-            };
-            menu_row((id, index), if japanese() { *ja } else { *en }, false, act(action), cx)
-        }))
+        .children(
+            smartart::LAYOUTS
+                .iter()
+                .enumerate()
+                .map(|(index, (layout, ja, en, _))| {
+                    let action = if insert {
+                        DiagramAction::InsertSmartArt(layout)
+                    } else {
+                        DiagramAction::ChangeLayout(layout)
+                    };
+                    menu_row(
+                        (id, index),
+                        if japanese() { *ja } else { *en },
+                        false,
+                        act(action),
+                        cx,
+                    )
+                }),
+        )
         .into_any_element()
 }

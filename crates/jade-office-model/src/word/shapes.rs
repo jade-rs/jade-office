@@ -10,11 +10,10 @@ use jade_docx_editor::commands::insert_image::InsertImageCommand;
 use jade_docx_editor::commands::insert_shape::InsertShapeCommand;
 use jade_docx_editor::commands::transform_object::TransformObjectCommand;
 use jade_docx_editor::commands::{Command, CommandContext, CommandError, CommandResult};
-use jade_docx_editor::docx_xml::{XmlElement, XmlNode};
 pub use jade_docx_editor::document::TextBoxShape;
+use jade_docx_editor::docx_xml::{XmlElement, XmlNode};
 use jade_docx_editor::drawing_xml::{
-    self, child, child_mut, descendant_mut, get_attr, put_shape_property, remove_children,
-    set_attr,
+    self, child, child_mut, descendant_mut, get_attr, put_shape_property, remove_children, set_attr,
 };
 use jade_docx_editor::word_document::{
     FloatingObjectTarget, FloatingObjectTransform, ShapeInsertSpec, WordDocument,
@@ -295,7 +294,14 @@ pub fn apply_style(drawing: &mut XmlElement, style: &ShapeStyle) -> Result<(), S
     put_shape_property(
         sp_pr,
         fragment(&fill)?,
-        &["a:noFill", "a:solidFill", "a:gradFill", "a:blipFill", "a:pattFill", "a:grpFill"],
+        &[
+            "a:noFill",
+            "a:solidFill",
+            "a:gradFill",
+            "a:blipFill",
+            "a:pattFill",
+            "a:grpFill",
+        ],
     );
     let line = match &style.line {
         Some(paint) => format!(
@@ -378,7 +384,9 @@ fn set_text_color(drawing: &mut XmlElement, paint: &Paint) -> Result<(), String>
     fn walk(element: &mut XmlElement, value: &str, theme: Option<&str>) -> Result<(), String> {
         if element.name == "w:r" {
             if child(element, "w:rPr").is_none() {
-                element.children.insert(0, XmlNode::Element(fragment("<w:rPr/>")?));
+                element
+                    .children
+                    .insert(0, XmlNode::Element(fragment("<w:rPr/>")?));
             }
             let properties = child_mut(element, "w:rPr").expect("added above");
             remove_children(properties, &["w:color"]);
@@ -387,7 +395,9 @@ fn set_text_color(drawing: &mut XmlElement, paint: &Paint) -> Result<(), String>
                 color.push_str(&format!(r#" w:themeColor="{theme}""#));
             }
             color.push_str("/>");
-            properties.children.push(XmlNode::Element(fragment(&color)?));
+            properties
+                .children
+                .push(XmlNode::Element(fragment(&color)?));
             return Ok(());
         }
         for child in &mut element.children {
@@ -408,11 +418,15 @@ fn set_text_color(drawing: &mut XmlElement, paint: &Paint) -> Result<(), String>
                 continue;
             }
             if child(paragraph, "w:pPr").is_none() {
-                paragraph.children.insert(0, XmlNode::Element(fragment("<w:pPr/>")?));
+                paragraph
+                    .children
+                    .insert(0, XmlNode::Element(fragment("<w:pPr/>")?));
             }
             let properties = child_mut(paragraph, "w:pPr").expect("added above");
             if child(properties, "w:rPr").is_none() {
-                properties.children.push(XmlNode::Element(fragment("<w:rPr/>")?));
+                properties
+                    .children
+                    .push(XmlNode::Element(fragment("<w:rPr/>")?));
             }
             let mark = child_mut(properties, "w:rPr").expect("added above");
             remove_children(mark, &["w:color"]);
@@ -647,29 +661,33 @@ pub trait WordShapes: WordSession + WordObjects {
                         },
                     )));
                 }
-                then.push(Box::new(edit_drawing_command("shape_style", target, move |_, drawing| {
-                    apply_style(drawing, &style)?;
-                    if let Some(doc_pr) = descendant_mut(drawing, "wp:docPr") {
-                        let id = get_attr(doc_pr, "id").unwrap_or("1").to_string();
-                        set_attr(doc_pr, "name", Some(format!("{name} {id}")));
-                    }
-                    if !text_box {
-                        // A shape's text sits in its middle.
-                        if let Some(body) = descendant_mut(drawing, "wps:bodyPr") {
-                            set_attr(body, "anchor", Some("ctr".into()));
+                then.push(Box::new(edit_drawing_command(
+                    "shape_style",
+                    target,
+                    move |_, drawing| {
+                        apply_style(drawing, &style)?;
+                        if let Some(doc_pr) = descendant_mut(drawing, "wp:docPr") {
+                            let id = get_attr(doc_pr, "id").unwrap_or("1").to_string();
+                            set_attr(doc_pr, "name", Some(format!("{name} {id}")));
                         }
-                        if let Some(content) = descendant_mut(drawing, "w:txbxContent") {
-                            for paragraph in content.children.iter_mut() {
-                                if let XmlNode::Element(paragraph) = paragraph {
-                                    center_paragraph(paragraph)?;
+                        if !text_box {
+                            // A shape's text sits in its middle.
+                            if let Some(body) = descendant_mut(drawing, "wps:bodyPr") {
+                                set_attr(body, "anchor", Some("ctr".into()));
+                            }
+                            if let Some(content) = descendant_mut(drawing, "w:txbxContent") {
+                                for paragraph in content.children.iter_mut() {
+                                    if let XmlNode::Element(paragraph) = paragraph {
+                                        center_paragraph(paragraph)?;
+                                    }
                                 }
                             }
+                        } else if let Some(shape) = descendant_mut(drawing, "wps:cNvSpPr") {
+                            set_attr(shape, "txBox", Some("1".into()));
                         }
-                    } else if let Some(shape) = descendant_mut(drawing, "wps:cNvSpPr") {
-                        set_attr(shape, "txBox", Some("1".into()));
-                    }
-                    Ok(())
-                })));
+                        Ok(())
+                    },
+                )));
                 then
             })),
             false,
@@ -677,17 +695,29 @@ pub trait WordShapes: WordSession + WordObjects {
     }
 
     /// 図形のスタイル: one of the theme style gallery's.
-    fn apply_shape_style(&mut self, target: FloatingObjectTarget, style: ShapeStyle) -> Result<(), String> {
-        self.edit_object(target, "shape_style", move |_, drawing| apply_style(drawing, &style))
+    fn apply_shape_style(
+        &mut self,
+        target: FloatingObjectTarget,
+        style: ShapeStyle,
+    ) -> Result<(), String> {
+        self.edit_object(target, "shape_style", move |_, drawing| {
+            apply_style(drawing, &style)
+        })
     }
 
     /// 図形の塗りつぶし.
     fn set_shape_fill(&mut self, target: FloatingObjectTarget, fill: Fill) -> Result<(), String> {
-        self.edit_object(target, "shape_fill", move |_, drawing| apply_fill(drawing, &fill))
+        self.edit_object(target, "shape_fill", move |_, drawing| {
+            apply_fill(drawing, &fill)
+        })
     }
 
     /// 文字の塗りつぶし: the colour of all the shape's text.
-    fn set_shape_text_color(&mut self, target: FloatingObjectTarget, paint: Paint) -> Result<(), String> {
+    fn set_shape_text_color(
+        &mut self,
+        target: FloatingObjectTarget,
+        paint: Paint,
+    ) -> Result<(), String> {
         self.edit_object(target, "shape_text_color", move |_, drawing| {
             set_text_color(drawing, &paint)
         })
@@ -695,7 +725,12 @@ pub trait WordShapes: WordSession + WordObjects {
 
     /// 挿入 → ワードアート: `text` in a box with no fill or line, in
     /// `style`, at the caret's paragraph.
-    fn insert_wordart(&mut self, style: WordArtStyle, text: &str, drawn: Option<Drawn>) -> Result<(), String> {
+    fn insert_wordart(
+        &mut self,
+        style: WordArtStyle,
+        text: &str,
+        drawn: Option<Drawn>,
+    ) -> Result<(), String> {
         let range = self.selection_range().ok_or("no caret")?;
         let (start, _) = range.normalized();
         let text = if text.is_empty() {
@@ -772,7 +807,11 @@ pub trait WordShapes: WordSession + WordObjects {
 
     /// 文字の効果 → 変形: WordArt's text transform; `textNoShape` takes it
     /// off.
-    fn set_text_warp(&mut self, target: FloatingObjectTarget, preset: &'static str) -> Result<(), String> {
+    fn set_text_warp(
+        &mut self,
+        target: FloatingObjectTarget,
+        preset: &'static str,
+    ) -> Result<(), String> {
         self.edit_object(target, "text_warp", move |_, drawing| {
             let body = descendant_mut(drawing, "wps:bodyPr").ok_or("the object has no text")?;
             remove_children(body, &["a:prstTxWarp"]);
@@ -785,11 +824,103 @@ pub trait WordShapes: WordSession + WordObjects {
         })
     }
 
+    /// テキスト ボックスのリンクの作成: the empty text box `to` takes the text
+    /// that does not fit in `from` (and the boxes already linked after it).
+    fn link_text_boxes(
+        &mut self,
+        from: FloatingObjectTarget,
+        to: FloatingObjectTarget,
+    ) -> Result<(), String> {
+        let document = self.word_document();
+        let box_of = |target: FloatingObjectTarget| {
+            object_run(document, target).and_then(|run| run.text_box.clone())
+        };
+        let source = box_of(from).ok_or("the first object is not a text box")?;
+        let destination = box_of(to).ok_or("the second object is not a text box")?;
+        if destination.text.trim().len() > 0 {
+            return Err("a text box can only be linked to an empty one".into());
+        }
+        // The chain's id, and the next place in it.
+        let links: Vec<jade_docx_editor::document::TextBoxLink> =
+            super::objects::body_objects(document)
+                .iter()
+                .filter_map(|object| object_run(document, object.target))
+                .filter_map(|run| {
+                    run.text_box
+                        .as_ref()
+                        .and_then(|text_box| text_box.extras().link)
+                })
+                .collect();
+        let (id, start_chain) = match source.extras().link {
+            Some(link) => (link.id, false),
+            None => (
+                links.iter().map(|link| link.id).max().unwrap_or(0) + 1,
+                true,
+            ),
+        };
+        let sequence = links
+            .iter()
+            .filter(|link| link.id == id)
+            .map(|link| link.sequence)
+            .max()
+            .map(|last| last + 1)
+            .unwrap_or(1);
+        let mut commands: Vec<Box<dyn Command>> = Vec::new();
+        // The follower first: it is emptied of its text box paragraphs,
+        // which renumbers what follows it but not what comes before.
+        let follower = jade_docx_editor::commands::edit_drawing::replace_drawing_command(
+            "link_text_boxes",
+            to,
+            move |_, drawing| {
+                let shape =
+                    descendant_mut(drawing, "wps:wsp").ok_or("the object is not a shape")?;
+                remove_children(shape, &["wps:txbx", "wps:linkedTxbx"]);
+                let at = drawing_xml::child_index(shape, &["wps:bodyPr"])
+                    .unwrap_or(shape.children.len());
+                shape.children.insert(
+                    at,
+                    XmlNode::Element(fragment(&format!(
+                        r#"<wps:linkedTxbx id="{id}" seq="{sequence}"/>"#
+                    ))?),
+                );
+                Ok(())
+            },
+        );
+        let head = start_chain.then(|| {
+            edit_drawing_command("link_text_boxes", from, move |_, drawing| {
+                let story =
+                    descendant_mut(drawing, "wps:txbx").ok_or("the text box has no text")?;
+                set_attr(story, "id", Some(id.to_string()));
+                Ok(())
+            })
+        });
+        let (from_first, to_first) = (
+            (from.paragraph_index, from.run_index),
+            (to.paragraph_index, to.run_index),
+        );
+        if to_first > from_first {
+            commands.push(Box::new(follower));
+            commands.extend(head.map(|head| Box::new(head) as Box<dyn Command>));
+        } else {
+            commands.extend(head.map(|head| Box::new(head) as Box<dyn Command>));
+            commands.push(Box::new(follower));
+        }
+        self.execute_command(
+            Box::new(super::objects::Sequence::new("link_text_boxes", commands)),
+            true,
+        )
+    }
+
     /// The object at `target`'s shape geometry changed to `shape`
     /// (図形の変更).
-    fn change_shape(&mut self, target: FloatingObjectTarget, shape: TextBoxShape) -> Result<(), String> {
+    fn change_shape(
+        &mut self,
+        target: FloatingObjectTarget,
+        shape: TextBoxShape,
+    ) -> Result<(), String> {
         self.edit_object(target, "change_shape", move |_, drawing| {
-            let sp_pr = drawing_xml::shape_properties_mut(drawing).ok_or("the object is not a shape")?;
+            let sp_pr =
+                drawing_xml::shape_properties_mut(drawing).ok_or("the object is not a shape")?;
             put_shape_property(
                 sp_pr,
                 fragment(&format!(
@@ -809,7 +940,13 @@ fn apply_fill_none_line_none(sp_pr: &mut XmlElement) -> Result<(), String> {
     put_shape_property(
         sp_pr,
         fragment("<a:noFill/>")?,
-        &["a:noFill", "a:solidFill", "a:gradFill", "a:blipFill", "a:pattFill"],
+        &[
+            "a:noFill",
+            "a:solidFill",
+            "a:gradFill",
+            "a:blipFill",
+            "a:pattFill",
+        ],
     );
     put_shape_property(sp_pr, fragment("<a:ln><a:noFill/></a:ln>")?, &["a:ln"]);
     Ok(())
@@ -820,7 +957,9 @@ fn center_paragraph(paragraph: &mut XmlElement) -> Result<(), String> {
         return Ok(());
     }
     if child(paragraph, "w:pPr").is_none() {
-        paragraph.children.insert(0, XmlNode::Element(fragment("<w:pPr/>")?));
+        paragraph
+            .children
+            .insert(0, XmlNode::Element(fragment("<w:pPr/>")?));
     }
     let properties = child_mut(paragraph, "w:pPr").expect("added above");
     remove_children(properties, &["w:jc"]);
