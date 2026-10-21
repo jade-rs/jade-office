@@ -35,6 +35,7 @@ mod sheet;
 pub(crate) mod word_characters;
 pub(crate) mod word_controls;
 mod word_dialogs;
+pub(crate) mod word_equation;
 mod word_fields;
 mod word_find;
 mod word_form;
@@ -515,6 +516,10 @@ pub struct DocView {
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
     page_dialog: Option<Box<word_setup::PageDialogState>>,
+    /// The equation being edited, if one is (`word_equation`).
+    equation: Option<Box<jade_web::word::equation::EquationEditor>>,
+    /// The 記号と特殊文字 category the 数式 tab shows.
+    equation_symbols: usize,
 }
 
 impl DocView {
@@ -649,6 +654,8 @@ impl DocView {
             mailings,
             host,
             page_dialog: None,
+            equation: None,
+            equation_symbols: 0,
         })
     }
 
@@ -935,6 +942,7 @@ impl DocView {
                 // it undid.
                 self.reveal_caret();
                 self.word_result(result.map(|_| ()), cx);
+                self.equation_after_history();
                 return;
             }
             Document::Deck {
@@ -1218,6 +1226,13 @@ impl DocView {
         }
         // ⌘-click follows a link, as Word does.
         if (event.modifiers.platform || event.modifiers.control) && self.follow_link_at(x, y, cx) {
+            return;
+        }
+        let page_y = match &self.document {
+            Document::Pages { document, .. } => y - document.document_y(index, 0.0),
+            _ => y,
+        };
+        if self.equation_click(index, x, page_y, cx) {
             return;
         }
         if self.table_mouse_down(index, (x, y), event.click_count, cx) {
@@ -1643,6 +1658,13 @@ impl DocView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // ホーム's size, colour and bold format the equation being edited.
+        if self.equation_home_format(&action, cx) {
+            if let Document::Pages { ribbon, .. } = &mut self.document {
+                ribbon.popup = None;
+            }
+            return;
+        }
         let Document::Pages {
             ribbon, document, ..
         } = &mut self.document
@@ -1693,6 +1715,17 @@ impl DocView {
         }
         if let Action::Controls(action) = action {
             return word_controls::run(self, action, cx);
+        }
+        if let Action::Equation(action) = action {
+            return self.equation_action(action, cx);
+        }
+
+        if matches!(action, Action::Undo | Action::Redo) && self.equation.is_some() {
+            self.word_edit(cx, move |document| match action {
+                Action::Undo => document.undo().map(|_| ()),
+                _ => document.redo().map(|_| ()),
+            });
+            return self.equation_after_history();
         }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
@@ -1795,6 +1828,7 @@ impl DocView {
             | Action::Characters(_)
             | Action::References(_)
             | Action::Controls(_)
+            | Action::Equation(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -1829,6 +1863,7 @@ impl DocView {
             Document::Pages { ribbon, .. } if ribbon.tab == ribbon::Tab::Mailings)
         .then(|| word_mailings::groups(self))
         .flatten();
+        let equation = self.equation_tab_state();
         let Document::Pages {
             document,
             ribbon,
@@ -1890,6 +1925,7 @@ impl DocView {
                 object: object.map(|grab| grab.object),
                 developer,
                 mailings,
+                equation,
             }
         };
         ribbon::ribbon(
@@ -1986,6 +2022,8 @@ impl DocView {
             _ => Vec::new(),
         }
         .into_iter();
+        let equation_overlay = self.equation_overlay(zoom);
+        let editing_equation = self.equation.is_some();
         let Document::Pages {
             document,
             pages,
@@ -2024,15 +2062,19 @@ impl DocView {
             )
         });
         // The caret, as a page and a rectangle on it.
-        let caret = document.caret_rect().map(|caret| {
-            let (page, y) = document.page_and_offset(caret.document_y);
-            (
-                page,
-                caret.x as f32 * zoom,
-                y as f32 * zoom,
-                caret.height as f32 * zoom,
-            )
-        });
+        // Inside an equation its own caret is drawn (`word_equation`).
+        let caret = document
+            .caret_rect()
+            .filter(|_| !editing_equation)
+            .map(|caret| {
+                let (page, y) = document.page_and_offset(caret.document_y);
+                (
+                    page,
+                    caret.x as f32 * zoom,
+                    y as f32 * zoom,
+                    caret.height as f32 * zoom,
+                )
+            });
         page_bounds.borrow_mut().resize(pages.len(), None);
         let bounds_store = Rc::clone(page_bounds);
         let current_index = *current;
@@ -2157,6 +2199,13 @@ impl DocView {
                     .children(table_overlay)
                     .children(word_references::page_marks(&marks, index, zoom, cx))
                     .children(control_overlay)
+                    .children(
+                        equation_overlay
+                            .as_ref()
+                            .filter(|overlay| overlay.page == index)
+                            .map(|overlay| word_equation::overlay_elements(overlay, zoom))
+                            .unwrap_or_default(),
+                    )
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
                             div()
@@ -2355,6 +2404,10 @@ impl DocView {
             return;
         }
         if self.commenting() && self.comment_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        if self.equation_key(event, cx) {
             cx.stop_propagation();
             return;
         }
@@ -2858,6 +2911,9 @@ impl EntityInputHandler for DocView {
         if let Some(field) = self.references.text_field_mut() {
             field.replace(range, text, false);
             return cx.notify();
+        }
+        if self.equation.is_some() {
+            return self.equation_type(text, cx);
         }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()

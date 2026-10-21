@@ -164,6 +164,10 @@ impl WordSession for EditableDocument {
             .map(|metrics| self.page_and_offset(metrics.absolute_top).0 + 1)
             .or_else(|| self.renderer.cached_paragraph_start_page(paragraph))
     }
+
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        self.renderer.math_zones().to_vec()
+    }
 }
 
 impl EditableDocument {

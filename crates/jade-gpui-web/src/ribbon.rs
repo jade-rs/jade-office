@@ -90,6 +90,8 @@ pub enum Tab {
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
     TableDesign,
     TableLayout,
+    /// 数式: while an equation is being edited.
+    Equation,
 }
 
 impl Tab {
@@ -116,6 +118,7 @@ impl Tab {
             Tab::Mailings => "mail.tab",
             Tab::TableDesign => "doc.tab.table_design",
             Tab::TableLayout => "doc.tab.table_layout",
+            Tab::Equation => "equation.tab",
         })
     }
 }
@@ -164,6 +167,8 @@ pub enum Popup {
     References(crate::view::word_references::RefPopup),
     /// 図形, SmartArt and the selected object's lists (`word_objects`).
     Object(crate::word_objects::ObjectPopup),
+    /// 数式's lists (`view::word_equation`).
+    Equation(crate::view::word_equation::EquationPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -269,6 +274,8 @@ pub enum Action {
     References(crate::view::word_references::RefAction),
     /// Drawing objects: insert, arrange, effects, styles (`word_objects`).
     Object(crate::word_objects::ObjectAction),
+    /// 挿入 > 数式 and the 数式 tab (`view::word_equation`).
+    Equation(crate::view::word_equation::EquationAction),
 }
 
 impl Action {
@@ -660,6 +667,8 @@ pub struct TabState {
     pub developer: Option<crate::view::word_controls::DeveloperState>,
     /// The 差し込み文書 tab's groups, read while it is showing.
     pub mailings: Option<Vec<jade_web::word::form_view::ToolGroup>>,
+    /// What the 数式 tab shows, while an equation is being edited.
+    pub equation: Option<crate::view::word_equation::EquationTabState>,
 }
 
 pub fn ribbon(
@@ -676,11 +685,15 @@ pub fn ribbon(
     let in_table = state.table.is_some();
     let shown_tab = match ribbon.tab {
         Tab::TableDesign | Tab::TableLayout if !in_table => Tab::Home,
+        Tab::Equation if shown.equation.is_none() => Tab::Home,
         tab => tab,
     };
     let mut strip = Tab::ALL.to_vec();
     if in_table {
         strip.extend([Tab::TableDesign, Tab::TableLayout]);
+    }
+    if shown.equation.is_some() {
+        strip.push(Tab::Equation);
     }
     let tabs: Vec<_> = strip
         .into_iter()
@@ -731,6 +744,7 @@ pub fn ribbon(
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
             groups.push(crate::view::word_characters::insert_group(cx));
+            groups.push(crate::view::word_equation::insert_group(ribbon.popup, cx));
             groups
         }
         Tab::Layout => {
@@ -761,6 +775,10 @@ pub fn ribbon(
         Tab::References => {
             crate::view::word_references::ribbon_groups(ribbon.popup, shown.references.as_ref(), cx)
         }
+        Tab::Equation => match shown.equation.clone() {
+            Some(state) => crate::view::word_equation::tab_groups(ribbon.popup, state, cx),
+            None => Vec::new(),
+        },
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
         Tab::Mailings => {
             crate::view::word_mailings::tab(shown.mailings.as_deref().unwrap_or_default(), cx)

@@ -162,6 +162,10 @@ impl WordSession for WordDoc {
     fn position_metrics(&self, at: jade_office_model::word::Position) -> Option<(f64, f64, f64)> {
         WordSession::position_metrics(&**self, at)
     }
+
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        WordSession::math_zones(&**self)
+    }
 }
 
 fn role_name(role: Story) -> &'static str {

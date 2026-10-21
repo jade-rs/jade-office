@@ -37,6 +37,7 @@ pub mod controls;
 pub mod count;
 pub mod design;
 pub mod diagrams;
+pub mod equation;
 pub mod fields;
 pub mod find;
 pub mod font;
@@ -161,6 +162,12 @@ pub trait WordSession {
         _start: Position,
         _end: Position,
     ) -> Vec<jade_docx_editor::canvas_renderer::TextRegion> {
+        Vec::new()
+    }
+
+    /// Where the last paint drew every equation: what the equation editor
+    /// places its caret and answers clicks with.
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
         Vec::new()
     }
 }

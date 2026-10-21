@@ -226,4 +226,8 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
             TextPosition::new(end.0, end.1),
         )
     }
+
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        self.renderer().math_zones().to_vec()
+    }
 }
