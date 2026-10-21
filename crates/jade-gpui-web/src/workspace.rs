@@ -49,6 +49,17 @@ pub struct Workspace {
     host: Host,
     /// How many new documents have been made, for their names.
     untitled: usize,
+    /// A document with a password to open, waiting for it: its name, its
+    /// bytes, the password typed, and whether the last one was wrong.
+    locked: Option<Box<Locked>>,
+}
+
+/// A file waiting for its password to open.
+struct Locked {
+    name: SharedString,
+    bytes: Rc<Vec<u8>>,
+    field: jade_web::text::TextEdit,
+    wrong: bool,
 }
 
 impl Workspace {
@@ -65,6 +76,7 @@ impl Workspace {
             fonts,
             host,
             untitled: 0,
+            locked: None,
         }
     }
 
@@ -93,6 +105,18 @@ impl Workspace {
                 self.error = Some(i18n::format("workspace.unsupported", &[("name", &name)]).into());
                 cx.notify();
             }
+            return;
+        }
+        // 読み取りパスワード: asked for before the document opens.
+        if jade_web::word::protection::is_encrypted_package(&bytes) {
+            self.locked = Some(Box::new(Locked {
+                name,
+                bytes,
+                field: jade_web::text::TextEdit::new(String::new()),
+                wrong: false,
+            }));
+            window.focus(&self.focus, cx);
+            cx.notify();
             return;
         }
         // The revised document a 比較 waits for: the comparison opens as a
@@ -953,7 +977,10 @@ impl Render for Workspace {
             .text_color(palette::text())
             .font_family(UI_FONT)
             .track_focus(&self.focus)
-            .on_key_down(cx.listener(|workspace, event: &KeyDownEvent, _window, cx| {
+            .on_key_down(cx.listener(|workspace, event: &KeyDownEvent, window, cx| {
+                if workspace.password_key(event, window, cx) {
+                    return cx.stop_propagation();
+                }
                 let modifiers = event.keystroke.modifiers;
                 if (modifiers.platform || modifiers.control) && event.keystroke.key == "o" {
                     workspace.host.pick();
@@ -984,7 +1011,98 @@ impl Render for Workspace {
                             })),
                     ),
             )
+            .children(self.password_bar())
             .child(self.status_bar(cx))
             .into_any_element()
+    }
+}
+
+impl Workspace {
+    /// Keys the password prompt takes; `true` when taken.
+    fn password_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(locked) = self.locked.as_mut() else {
+            return false;
+        };
+        match event.keystroke.key.as_str() {
+            "escape" => self.locked = None,
+            "enter" => {
+                let password = locked.field.text.clone();
+                match jade_web::word::protection::decrypt_package(&locked.bytes, &password) {
+                    Ok(plain) => {
+                        let name = locked.name.clone();
+                        self.locked = None;
+                        self.open(name.clone(), Rc::new(plain), window, cx);
+                        if let Some(tab) = self.tabs.iter().find(|tab| tab.read(cx).name == name) {
+                            tab.update(cx, |view, _| view.set_open_password(password));
+                        }
+                    }
+                    Err(jade_web::word::protection::DecryptError::WrongPassword) => {
+                        locked.wrong = true;
+                        locked.field = jade_web::text::TextEdit::new(String::new());
+                    }
+                    Err(error) => {
+                        self.locked = None;
+                        self.error = Some(error.to_string().into());
+                    }
+                }
+            }
+            key => {
+                if !locked.field.edit_key(key) {
+                    match event.keystroke.key_char.as_deref() {
+                        Some(text) if !event.keystroke.modifiers.platform => {
+                            locked.field.insert(text);
+                            locked.wrong = false;
+                        }
+                        _ => return false,
+                    }
+                }
+            }
+        }
+        cx.notify();
+        true
+    }
+
+    /// The password prompt, over the status bar while a file waits for it.
+    fn password_bar(&self) -> Option<gpui::AnyElement> {
+        let locked = self.locked.as_ref()?;
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .px_4()
+                .py_1p5()
+                .bg(palette::panel())
+                .border_t_1()
+                .border_color(palette::border())
+                .text_xs()
+                .child(i18n::format(
+                    "protect.password_prompt",
+                    &[("name", &locked.name)],
+                ))
+                .child(
+                    div()
+                        .min_w(px(160.0))
+                        .px_2()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(palette::accent())
+                        .bg(palette::canvas())
+                        .child(jade_web::word::protection::masked(&locked.field.text)),
+                )
+                .when(locked.wrong, |bar| {
+                    bar.child(
+                        div()
+                            .text_color(palette::accent())
+                            .child(i18n::text("protect.wrong")),
+                    )
+                })
+                .into_any_element(),
+        )
     }
 }

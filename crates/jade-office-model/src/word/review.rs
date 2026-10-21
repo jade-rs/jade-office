@@ -249,6 +249,13 @@ pub trait WordReview: WordSession {
     }
 
     fn set_tracking_changes(&mut self, on: bool, author: &Reviewer) -> Result<(), String> {
+        // 変更履歴のロック: tracking stays on until the lock is lifted.
+        if !on {
+            use super::protection::WordProtection;
+            if self.tracking_locked() {
+                return Err("tracking is locked".to_string());
+            }
+        }
         let command = if on {
             HeadlessCommand::StartChangeTracking {
                 author: Some(author.name.clone()),

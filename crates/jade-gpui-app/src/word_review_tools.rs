@@ -16,6 +16,7 @@ use gpui::{
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::accessibility::{AltTextForm, WordAccessibility};
 use jade_office_model::word::markup::{MarkupMode, MarkupOptions, WordMarkup};
+use jade_office_model::word::protection::WordProtection;
 use jade_office_model::word::review::WordReview;
 use jade_office_model::word::reviewer::{Reviewer, ReviewerField, ReviewerForm};
 
@@ -143,6 +144,12 @@ pub enum ReviewAction {
     RevisionsPane,
     /// 比較… (`false`) or 組み込み….
     Compare(bool),
+    /// 編集の制限: the pane.
+    RestrictPane,
+    /// 文書の保護….
+    Protect,
+    /// 最終版にする.
+    MarkFinal,
 }
 
 /// The dialog the tab opens.
@@ -152,6 +159,8 @@ pub enum ReviewDialog {
     AltText(AltTextForm),
     /// 文書の比較 / 組み込み (`word_compare`).
     Compare(Box<crate::word_compare::CompareDialog>),
+    /// 文書の保護 (`word_protection`).
+    Protect(Box<jade_office_model::word::protection::ProtectForm>),
 }
 
 impl ReviewDialog {
@@ -160,6 +169,7 @@ impl ReviewDialog {
             ReviewDialog::User(form) => Some(form.focused()),
             ReviewDialog::AltText(form) => Some(&form.description),
             ReviewDialog::Compare(dialog) => Some(&dialog.author),
+            ReviewDialog::Protect(form) => Some(form.focused()),
         }
     }
 
@@ -168,6 +178,7 @@ impl ReviewDialog {
             ReviewDialog::User(form) => Some(form.focused_mut()),
             ReviewDialog::AltText(form) => Some(&mut form.description),
             ReviewDialog::Compare(dialog) => Some(&mut dialog.author),
+            ReviewDialog::Protect(form) => Some(form.focused_mut()),
         }
     }
 }
@@ -183,12 +194,18 @@ pub struct ReviewTools {
     pub accessibility: Option<crate::word_accessibility::A11yPane>,
     /// Whether the 変更履歴ウィンドウ is open (`word_revisions`).
     pub revisions_pane: bool,
+    /// 編集の制限, 文書の保護 and 最終版 (`word_protection`).
+    pub protection: crate::word_protection::ProtectionUi,
 }
 
 impl ReviewTools {
-    /// For a document just opened: the markup view it was saved with.
-    pub fn opened(document: &jade_docx_native_render::NativeDocument) -> Self {
-        let mut tools = Self::default();
+    /// For a document just opened: the markup view it was saved with, and
+    /// read-only when it is final or recommends it.
+    pub fn opened(document: &mut jade_docx_native_render::NativeDocument) -> Self {
+        let mut tools = Self {
+            protection: crate::word_protection::ProtectionUi::opened(document),
+            ..Self::default()
+        };
         if !document.revision_display().0 {
             tools.markup.mode = MarkupMode::NoMarkup;
         }
@@ -196,16 +213,23 @@ impl ReviewTools {
     }
 
     pub fn is_open(&self) -> bool {
-        self.dialog.is_some()
+        self.dialog.is_some() || self.protection.password.is_some()
     }
 
-    /// The field typing goes into while a dialog is open.
+    /// The field typing goes into while a dialog — or the 編集の制限 pane's
+    /// password box — is open.
     pub fn text_field(&self) -> Option<&TextEdit> {
-        self.dialog.as_ref()?.field()
+        match self.dialog.as_ref() {
+            Some(dialog) => dialog.field(),
+            None => self.protection.password.as_ref(),
+        }
     }
 
     pub fn text_field_mut(&mut self) -> Option<&mut TextEdit> {
-        self.dialog.as_mut()?.field_mut()
+        match self.dialog.as_mut() {
+            Some(dialog) => dialog.field_mut(),
+            None => self.protection.password.as_mut(),
+        }
     }
 
     /// After typing reached the open dialog's field.
@@ -271,6 +295,9 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
         ReviewAction::AltText => return open_alt_text(view, cx),
         ReviewAction::RevisionsPane => return crate::word_revisions::toggle(view, cx),
         ReviewAction::Compare(combine) => return crate::word_compare::open(view, combine, cx),
+        ReviewAction::RestrictPane => return crate::word_protection::toggle_pane(view, cx),
+        ReviewAction::Protect => return crate::word_protection::open_protect_dialog(view, cx),
+        ReviewAction::MarkFinal => return crate::word_protection::toggle_final(view, cx),
         ReviewAction::ProofingMarks => {
             let on = !view.document.proofing();
             return crate::word_proofing::set_marks(view, on, cx);
@@ -610,6 +637,37 @@ pub fn text_button(
 
 /// A key while the tab's dialog is open; `true` when it was taken.
 pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentView>) -> bool {
+    // The 編集の制限 pane's password box.
+    if view.review.dialog.is_none() {
+        let Some(field) = view.review.protection.password.as_mut() else {
+            return false;
+        };
+        if field.marked.is_some() {
+            return false;
+        }
+        match key {
+            "escape" => view.review.protection.password = None,
+            "enter" | "return" => {
+                let enforced = view.document.is_restricted();
+                crate::word_protection::pane_action(
+                    view,
+                    if enforced {
+                        crate::word_protection::PaneAction::Stop
+                    } else {
+                        crate::word_protection::PaneAction::Start
+                    },
+                    cx,
+                );
+            }
+            key => {
+                if !field.edit_key(key) {
+                    return false;
+                }
+            }
+        }
+        cx.notify();
+        return true;
+    }
     let Some(dialog) = view.review.dialog.as_mut() else {
         return false;
     };
@@ -620,6 +678,7 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
         ("escape", _) => view.review.dialog = None,
         ("enter" | "return", _) => confirm(view, cx),
         ("tab", ReviewDialog::User(form)) => form.next_field(),
+        ("tab", ReviewDialog::Protect(form)) => form.next_field(),
         ("tab", _) => {}
         (key, dialog) => {
             if !dialog.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -651,6 +710,9 @@ fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         }
         Some(ReviewDialog::Compare(dialog)) => {
             crate::word_compare::confirm(view, *dialog, cx);
+        }
+        Some(ReviewDialog::Protect(form)) => {
+            crate::word_protection::confirm_protect(view, *form, cx);
         }
         None => {}
     }
@@ -758,6 +820,10 @@ pub fn overlay(
                     cx,
                 ))
                 .into_any_element(),
+        ),
+        ReviewDialog::Protect(form) => (
+            "protect.title",
+            crate::word_protection::protect_body(form, cx),
         ),
         ReviewDialog::Compare(dialog) => (
             if dialog.form.combine {

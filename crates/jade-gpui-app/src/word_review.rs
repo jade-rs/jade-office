@@ -375,6 +375,37 @@ impl DocumentView {
             Self::ribbon_group(t("review.group.changes"), vec![Self::ribbon_row(decisions)])
                 .into_any_element(),
             Self::ribbon_group(
+                t("protect.group"),
+                vec![Self::ribbon_row(vec![
+                    tools::text_button(
+                        "review-restrict",
+                        "restrict.button",
+                        "restrict.title",
+                        self.review.protection.pane,
+                        ReviewAction::RestrictPane,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-protect",
+                        "protect.button",
+                        "protect.title",
+                        false,
+                        ReviewAction::Protect,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-final",
+                        "protect.final",
+                        "protect.final_title",
+                        self.review.protection.read_only
+                            == Some(crate::word_protection::ReadOnlyReason::Final),
+                        ReviewAction::MarkFinal,
+                        cx,
+                    ),
+                ])],
+            )
+            .into_any_element(),
+            Self::ribbon_group(
                 t("compare.group"),
                 vec![Self::ribbon_row(vec![
                     tools::text_button(

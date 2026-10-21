@@ -1040,6 +1040,7 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "sha2",
  "thiserror",
  "unicode-script",
  "unicode-segmentation",
@@ -1171,6 +1172,9 @@ dependencies = [
 name = "jade-opc"
 version = "0.1.0"
 dependencies = [
+ "aes",
+ "base64",
+ "cfb",
  "quick-xml",
  "serde",
  "sha2",

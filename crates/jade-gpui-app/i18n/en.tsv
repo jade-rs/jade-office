@@ -1477,3 +1477,39 @@ compare.by_word	Word level
 compare.done	Compared: {insertions} insertions, {deletions} deletions, {formatting} formatting changes
 compare.keys	⏎ Choose the revised document · ⇥ Character/Word · esc Cancel
 compare.waiting	Choose the revised document…
+protect.group	Protect
+protect.button	Protect Document
+protect.title	Password Protection
+protect.open_hint	Set a password to open this document
+protect.open	Password to open
+protect.modify_hint	Set a password to modify this document
+protect.modify	Password to modify
+protect.recommended	Read-only recommended
+protect.final	Mark as Final
+protect.final_title	Mark the document as final
+protect.final_bar	Marked as Final: an author has marked this document as final to discourage editing.
+protect.recommended_bar	The author would like you to open this document as read-only.
+protect.edit_anyway	Edit Anyway
+protect.password_title	Password
+protect.password_prompt	"{name}" is protected. Enter the password to open it.
+protect.wrong	The password is incorrect
+restrict.button	Restrict Editing
+restrict.title	Restrict Editing
+restrict.formatting_title	1. Formatting restrictions
+restrict.formatting	Limit formatting to a selection of styles
+restrict.editing_title	2. Editing restrictions
+restrict.none	No restriction
+restrict.read_only	No changes (Read only)
+restrict.tracked	Tracked changes
+restrict.comments	Comments
+restrict.forms	Filling in forms
+restrict.exceptions	Exceptions (optional): let these edit the selection
+restrict.everyone	Everyone
+restrict.start_title	3. Start enforcement
+restrict.stop_title	Stop protection
+restrict.password	Password (optional)
+restrict.start	Yes, Start Enforcing Protection
+restrict.stop	Stop Protection
+restrict.enforced	This document is protected.
+restrict.exception_count	{n} exceptions
+restrict.keys	⏎ OK · esc Cancel
