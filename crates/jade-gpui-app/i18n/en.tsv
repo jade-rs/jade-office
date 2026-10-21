@@ -1599,3 +1599,167 @@ field.describe.USERADDRESS	The address from the user information
 field.describe.USERINITIALS	The initials from the user information
 field.describe.USERNAME	The name from the user information
 field.describe.XE	An index entry
+# Word: paragraph options, lists, styles, design, rulers (word_*.rs)
+word.align.distribute	Distributed
+word.borders.between	Between
+word.borders.bottom	Bottom
+word.borders.box	Box
+word.borders.color	Color
+word.borders.kind	Setting
+word.borders.left	Left
+word.borders.menu	Borders and Shading...
+word.borders.none	None
+word.borders.right	Right
+word.borders.section	Borders
+word.borders.space	From text
+word.borders.style	Style
+word.borders.title	Borders and Shading
+word.borders.top	Top
+word.borders.width	Width
+word.define_list.alignment	Number alignment
+word.define_list.format	Number style
+word.define_list.format_section	Number format
+word.define_list.legal	Legal style numbering
+word.define_list.level	Level to modify
+word.define_list.link	Link level to style
+word.define_list.menu	Define New Multilevel List...
+word.define_list.position_section	Position
+word.define_list.start	Start at
+word.define_list.text	Number format (%1 is the number)
+word.define_list.title	Define New Multilevel List
+word.design.colors	Colors
+word.design.effects	Effects
+word.design.fonts	Fonts
+word.design.set_default	Set as Default
+word.design.spacing	Paragraph Spacing
+word.design.style_sets	Style Set
+word.design.template	Templates and Add-ins...
+word.design.themes	Themes
+word.drop_cap.dropped	Dropped
+word.drop_cap.lines	Lines to drop
+word.drop_cap.margin	In margin
+word.drop_cap.none	None
+word.drop_cap.options	Drop Cap Options...
+word.drop_cap.position	Position
+word.drop_cap.title	Drop Cap
+word.error.length	Enter a length, such as 12.7 mm or 0.5".
+word.error.lines	Enter 1 to 10 lines.
+word.error.name	Enter a name.
+word.error.not_in_list	The paragraph is not in a list.
+word.error.value	Enter a number.
+word.group.defaults	Defaults
+word.group.document_format	Document Formatting
+word.group.lists	Lists
+word.group.style_tools	Style Tools
+word.group.text	Text
+word.line.dash_small	Small dashes
+word.line.dashed	Dashes
+word.line.dot_dash	Dot dash
+word.line.dotted	Dotted
+word.line.double	Double
+word.line.single	Single
+word.line.thick_thin	Thick-thin
+word.line.wave	Wave
+word.list.adjust_indent	Adjust List Indents...
+word.list.bullet_library	Bullets
+word.list.change_level	Change List Level
+word.list.continue	Continue from previous list
+word.list.level	Level {n}  {sample}
+word.list.list_styles	List Styles
+word.list.multilevel_library	Multilevel List
+word.list.number_library	Numbering
+word.list.number_position	Number position
+word.list.preset.articles	Article I. / Section 1.01 / (a) (headings)
+word.list.preset.bullets	● / ○ / ■
+word.list.preset.chapters	Chapter 1 / Section 1 / Clause 1 (headings)
+word.list.preset.headings	1 Heading 1 / 1.1 Heading 2 / 1.1.1 Heading 3
+word.list.preset.outline	1. / 1.1. / 1.1.1.
+word.list.preset.paren	1) / a) / i)
+word.list.restart	Restart at 1
+word.list.set_value	Set Numbering Value...
+word.list.start_new	Start new list
+word.list.suffix	Follow number with
+word.list.suffix_nothing	Nothing
+word.list.suffix_space	Space
+word.list.suffix_tab	Tab character
+word.list.text_indent	Text indent
+word.list.value	Set value to
+word.list_indent.title	Adjust List Indents
+word.list_start.title	Set Numbering Value
+word.list_style.menu	Define New List Style...
+word.list_style.name	Name
+word.list_style.title	Define New List Style
+word.paragraph.dialogs	Settings
+word.paragraph.settings	Paragraph settings
+word.quick_part.autotext	AutoText
+word.quick_part.gallery	Quick Parts
+word.quick_part.gallery_label	Gallery
+word.quick_part.menu	Quick Parts
+word.quick_part.name	Name
+word.quick_part.save	Save Selection to Gallery...
+word.quick_part.title	Create New Building Block
+word.ruler.group	Ruler
+word.ruler.show	Ruler
+word.ruler.tab_kind	Tab stop the ruler sets
+word.shading.clear	Clear
+word.shading.diagonal	Diagonal
+word.shading.fill	Fill
+word.shading.horizontal	Horizontal
+word.shading.pattern	Pattern
+word.shading.section	Shading
+word.shading.solid	Solid (100%)
+word.shading.vertical	Vertical
+word.style.after	pt after
+word.style.alignment	Alignment
+word.style.auto_update	Automatically update
+word.style.based_on	Style based on
+word.style.before	pt before
+word.style.first_line	pt first line
+word.style.format	Formatting
+word.style.indent	Indent
+word.style.kind	Style type
+word.style.kind_character	Character
+word.style.kind_linked	Linked (paragraph and character)
+word.style.kind_paragraph	Paragraph
+word.style.left	pt left
+word.style.line_spacing	Line spacing
+word.style.modify_menu	Modify Style...
+word.style.modify_title	Modify Style
+word.style.name	Name
+word.style.new_menu	Create a Style...
+word.style.new_name	Style{n}
+word.style.new_short	New
+word.style.new_title	Create New Style from Formatting
+word.style.next	Style for following paragraph
+word.style.no_style	(no style)
+word.style.pane	Styles Pane
+word.style.properties	Properties
+word.style.quick	Add to Styles gallery
+word.style.sample	Sample Text サンプル
+word.style.spacing	Spacing
+word.style.tools	Styles
+word.style.update_menu	Update to Match Selection
+word.switch.contextual	Don't add space between paragraphs of the same style
+word.switch.hyphenation	Don't hyphenate
+word.switch.line_numbers	Suppress line numbers
+word.tab.alignment	Alignment
+word.tab.bar	Bar
+word.tab.center	Center
+word.tab.clear	Clear
+word.tab.clear_all	Clear All
+word.tab.decimal	Decimal
+word.tab.default	Default tab stops
+word.tab.leader	Leader
+word.tab.leader_none	None
+word.tab.left	Left
+word.tab.position	Tab stop position
+word.tab.right	Right
+word.tab.set	Set
+word.tabs.menu	Tabs...
+word.tabs.title	Tabs
+word.unit.char	Characters
+word.unit.cm	Centimeters
+word.unit.inch	Inches
+word.unit.mm	Millimeters
+word.unit.pt	Points
+word.list.picture_bullet	Picture...

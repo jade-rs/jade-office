@@ -30,26 +30,33 @@ pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
 pub mod asian;
+pub mod building_blocks;
 pub mod clipboard;
 pub mod count;
-
+pub mod design;
 pub mod fields;
 pub mod find;
 pub mod font;
 pub mod insert;
 pub mod links;
+pub mod lists;
 pub mod new;
+pub mod package;
 pub mod page;
 pub mod page_setup;
 pub mod painter;
 pub mod paragraph;
+pub mod paragraph_options;
 pub mod picture;
 pub mod platform;
 pub mod references;
 pub mod review;
+pub mod ruler;
+pub mod styles;
 pub mod table;
 pub mod table_ui;
 pub mod typography;
+pub mod xml;
 
 pub use count::{WordCount, WordCounting};
 pub use find::{FindOptions, Found, WordFind};

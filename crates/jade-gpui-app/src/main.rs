@@ -28,13 +28,20 @@ mod ribbon;
 mod shell;
 mod tooltip;
 mod word_characters;
+mod word_design;
+mod word_dialog;
 mod word_dialogs;
 mod word_fields;
+mod word_lists;
 mod word_page;
 mod word_page_setup;
+mod word_paragraph;
 mod word_review;
+mod word_ruler;
 mod word_story;
+mod word_styles;
 mod word_table;
+mod word_tools;
 mod workbook;
 mod workspace;
 
@@ -1054,6 +1061,14 @@ impl gpui::AssetSource for Assets {
             "wrap-text",
             "x",
             "zap",
+            // The Word view's paragraph, list and design tools.
+            "align-distribute",
+            "blocks",
+            "list-tree",
+            "palette",
+            "ruler",
+            "sparkles",
+            "type-plus",
         );
         Ok(bytes.map(std::borrow::Cow::Borrowed))
     }
@@ -1248,6 +1263,8 @@ struct DocumentView {
     tables: word_table::TableUi,
     /// The フォント dialog and the other character tools' dialogs.
     characters: word_characters::Characters,
+    /// The paragraph, list, style and design tools' dialog, rulers and pane.
+    tools: word_tools::WordTools,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1460,6 +1477,14 @@ impl DocumentView {
             if word_characters::handle_key(self, event.keystroke.key.as_str(), cx) {
                 cx.stop_propagation();
             }
+            return;
+        }
+        // A dialog over the pages has every key while it is open.
+        if self.tools.dialog.is_some() {
+            if self.handle_tool_dialog_key(event, cx) {
+                cx.stop_propagation();
+            }
+            // Nothing reaches the document while a dialog is open.
             return;
         }
         // The bar owns the keyboard while it is open, so Enter means "next
@@ -1693,6 +1718,8 @@ impl DocumentView {
                 cx.notify();
             }
             Ok(CellStep::Stay) => {}
+            // At a list item's start, a level down (or up), as in Word.
+            Ok(CellStep::NotInTable) if self.tab_in_list(backwards, cx) => {}
             Ok(CellStep::NotInTable) if !backwards => {
                 let page = self.caret_page_1idx();
                 let result = self.document.insert_text(paragraph, offset, "\t", page);
@@ -1970,10 +1997,17 @@ impl DocumentView {
             RibbonTab::Home => {
                 let mut groups = vec![self.clipboard_group(cx)];
                 groups.extend(ribbon::home(&self.ribbon, &state, cx));
+                // Lists and the paragraph's settings after 段落, the style
+                // tools after the gallery.
+                let lists = self.list_group(cx);
+                groups.insert(3.min(groups.len()), lists);
+                let styles = self.style_tools_group(cx);
+                groups.insert(5.min(groups.len()), styles);
                 groups
             }
             RibbonTab::Insert => vec![
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
+                self.quick_parts_group(cx),
                 self.picture_group(cx),
                 Self::ribbon_group(
                     t("link.group"),
@@ -2022,7 +2056,11 @@ impl DocumentView {
                 )
                 .into_any_element(),
             ],
-            RibbonTab::Design => self.design_groups(cx),
+            RibbonTab::Design => self
+                .design_groups(cx)
+                .into_iter()
+                .chain(self.page_background_groups(cx))
+                .collect(),
             RibbonTab::Layout => vec![{
                 let japanese = i18n::language() == i18n::Language::Japanese;
                 let setup = self.document.page_setup();
@@ -2141,6 +2179,7 @@ impl DocumentView {
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
+                    self.ruler_group(cx),
                     Self::ribbon_group(
                         t("doc.group.show"),
                         vec![Self::ribbon_row(vec![
@@ -2459,6 +2498,9 @@ impl DocumentView {
         if let Some(dialog) = self.fields.dialog.as_ref() {
             return dialog.text();
         }
+        if self.tools.dialog.is_some() {
+            return self.dialog_field();
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2473,8 +2515,15 @@ impl DocumentView {
         if self.characters.is_open() {
             return self.characters.text_field_mut();
         }
-        if let Some(dialog) = self.fields.dialog.as_mut() {
-            return dialog.text_mut();
+        if self.fields.dialog.is_some() {
+            return self
+                .fields
+                .dialog
+                .as_mut()
+                .and_then(|dialog| dialog.text_mut());
+        }
+        if self.tools.dialog.is_some() {
+            return self.dialog_field_mut();
         }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
@@ -3022,6 +3071,23 @@ impl DocumentView {
                 self.table_status = Some(SharedString::from(error));
             }
         }
+        // Direct formatting a self-updating style takes in (自動的に更新する).
+        let formats = matches!(
+            action,
+            Action::Toggle(_)
+                | Action::FontFamilyName(_)
+                | Action::FontSize(_)
+                | Action::StepFontSize(_)
+                | Action::FontColor(_)
+                | Action::Align(_)
+                | Action::LineSpacing(_)
+                | Action::Indent(_)
+                | Action::Shading(_)
+                | Action::ParagraphBorders(_)
+        );
+        if let Action::Word(command) = action {
+            return self.run_tool(command, cx);
+        }
         let document: &mut NativeDocument = &mut self.document;
         let done = match action {
             Action::Undo => return self.step_history(true, cx),
@@ -3052,7 +3118,14 @@ impl DocumentView {
                 WordFormatting::set_paragraph_borders(document, borders)
             }
             Action::Style(style_id) => {
-                let done = WordFormatting::set_paragraph_style(document, style_id.as_deref());
+                // A character or linked style from the gallery goes on as
+                // Word puts it (word_styles).
+                let done = match style_id.as_deref() {
+                    Some(id) => {
+                        jade_office_model::word::styles::WordStyles::apply_style(document, id)
+                    }
+                    None => WordFormatting::set_paragraph_style(document, None),
+                };
                 self.ribbon.read_styles(&self.document);
                 done
             }
@@ -3067,12 +3140,15 @@ impl DocumentView {
             Action::Tables(action) => return self.table_action(action, cx),
             Action::FontFamilyName(name) => WordFormatting::set_font_family(document, &name),
             Action::Characters(action) => return word_characters::run(self, action, cx),
-            Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
+            Action::Popup(_) | Action::ClosePopup | Action::Grid(..) | Action::Word(_) => Ok(()),
         };
         match done {
             Ok(()) => {
                 self.dirty = true;
                 self.table_status = None;
+                if formats {
+                    self.auto_update_style();
+                }
                 // A bare caret stays put in its paragraph, but the line it is
                 // on may have moved; a selection hides the caret anyway.
                 if self.document.selection().is_none() {
@@ -4340,8 +4416,16 @@ impl Render for DocumentView {
         let table_dialog = self.table_dialog_element(cx);
         let dialog = word_characters::overlay(self, window, cx);
         let fields_dialog = self.fields_dialog_element(cx);
+        let styles_pane = self.styles_pane(cx);
+        let ruler = self.horizontal_ruler(cx);
+        let tool_dialog = self.tool_dialog_element(cx);
+        let vertical_rulers: Vec<Option<AnyElement>> = (0..self.images.len())
+            .map(|index| self.vertical_ruler(index))
+            .collect();
+        let mut vertical_rulers = vertical_rulers.into_iter();
         div()
             .id("root")
+            .relative()
             .track_focus(&self.focus)
             // What the shortcuts in `key_bindings` are scoped to, so they fire
             // only while a document has the keyboard.
@@ -4519,11 +4603,16 @@ impl Render for DocumentView {
                     .flex()
                     .flex_col()
                     .size_full()
+                    // Narrower than the ribbon's groups when the window is:
+                    // they scroll, rather than pushing the panes beside the
+                    // pages out of the window.
+                    .min_w_0()
                     .child(self.ribbon(window, cx))
                     .children(self.dialog_element(cx))
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
+                    .children(ruler)
                     .child(
                         div()
                             .id("pages")
@@ -4588,6 +4677,7 @@ impl Render for DocumentView {
                                     .children(self.caret_overlay(index))
                                     .children(self.table_overlay(index))
                                     .children(self.story_label(index))
+                                    .children(vertical_rulers.next().flatten())
                                     .children(self.object_outline(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
@@ -4634,12 +4724,15 @@ impl Render for DocumentView {
             )
             // ---- the comments pane, beside the pages while it is open ----
             .children(comments_pane)
+            // ---- the styles pane, beside the pages while it is open ----
+            .children(styles_pane)
             // ---- a table dialog, over everything while it is open ----
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             // ---- a ページ設定 dialog, over everything while it is open ----
             .children(self.page_dialog_element(cx))
             // ---- the open dialog, over everything ----
             .children(dialog)
+            .children(tool_dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4877,6 +4970,7 @@ fn document_view(
         show_comments: false,
         tables: word_table::TableUi::default(),
         characters: word_characters::Characters::default(),
+        tools: word_tools::WordTools::default(),
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,
@@ -5666,6 +5760,25 @@ mod tests {
     fn tab_goes_from_cell_to_cell(cx: &mut gpui::TestAppContext) {
         use super::ribbon::Action;
         let (view, cx) = open_contract(cx);
+        // A paragraph that is not a list item: at an item's start Tab takes
+        // the item a level down instead, as in Word (word_tools).
+        view.update(cx, |view, _| {
+            let plain = (view.insert_at.0..view.document.paragraph_count())
+                .find(|&index| {
+                    view.document
+                        .word_document()
+                        .paragraph(index)
+                        .and_then(|paragraph| paragraph.properties.as_ref())
+                        .and_then(|props| props.numbering.as_ref())
+                        .is_none()
+                        && view
+                            .document
+                            .paragraph_text(index)
+                            .is_some_and(|text| text.chars().count() > 3)
+                })
+                .unwrap();
+            view.insert_at = (plain, 0);
+        });
         let paragraph = type_at_start(&view, cx, "");
         cx.simulate_keystrokes("tab");
         view.read_with(cx, |view, _| {

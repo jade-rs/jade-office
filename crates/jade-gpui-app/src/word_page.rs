@@ -18,7 +18,7 @@ use crate::{i18n, theme, DocumentView};
 use jade_office_model::word::page_setup::SetupTab;
 
 /// A text button with a chevron that opens a list.
-fn list_button(
+pub(crate) fn list_button(
     id: &'static str,
     label: &'static str,
     open: bool,
