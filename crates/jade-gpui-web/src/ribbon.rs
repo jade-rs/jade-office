@@ -154,6 +154,8 @@ pub enum Popup {
     Word(crate::word_tools::ToolMenu),
     /// 参考資料's lists (`view::word_references`).
     References(crate::view::word_references::RefPopup),
+    /// 図形, SmartArt and the selected object's lists (`word_objects`).
+    Object(crate::word_objects::ObjectPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -255,6 +257,8 @@ pub enum Action {
     Word(crate::word_tools::ToolCommand),
     /// 参考資料, ジャンプ and the navigation pane (`view::word_references`).
     References(crate::view::word_references::RefAction),
+    /// Drawing objects: insert, arrange, effects, styles (`word_objects`).
+    Object(crate::word_objects::ObjectAction),
 }
 
 impl Action {
@@ -640,6 +644,8 @@ pub struct TabState {
     pub tools: crate::word_tools::ToolState,
     /// What 参考資料 shows, read only while it is up.
     pub references: Option<crate::view::word_references::RibbonState>,
+    /// The picture or shape selected, which the object tools act on.
+    pub object: Option<jade_web::word::picture::PlacedObject>,
 }
 
 pub fn ribbon(
@@ -695,6 +701,7 @@ pub fn ribbon(
             let mut groups = insert(ribbon, cx);
             groups.push(crate::word_tools::drop_cap_group(ribbon, &shown.tools, cx));
             groups.push(crate::word_page::pictures(shown.picture, cx));
+            groups.push(crate::word_objects::objects(ribbon.popup, shown.object, cx));
             groups.push(group(
                 i18n::text("link.group"),
                 vec![row(vec![crate::word_page::text_button(

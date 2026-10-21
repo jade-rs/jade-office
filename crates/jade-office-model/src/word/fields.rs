@@ -1120,6 +1120,7 @@ pub trait WordFields: WordSession {
             prompt_answers: answers,
             read_file,
             japanese: host.japanese,
+            merge: None,
         }
     }
 
