@@ -992,6 +992,7 @@ dependencies = [
  "cfb",
  "console_error_panic_hook",
  "emf-core",
+ "image",
  "indexmap",
  "jade-canvas-painter",
  "jade-docx-annotations",
@@ -1105,6 +1106,7 @@ dependencies = [
  "jade-xlsx-reader",
  "jade-xlsx-render",
  "png 0.17.16",
+ "resvg",
 ]
 
 [[package]]

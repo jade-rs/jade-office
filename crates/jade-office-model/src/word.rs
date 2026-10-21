@@ -31,9 +31,14 @@ use jade_selection::{SelectionRange, TextPosition};
 
 pub mod clipboard;
 pub mod find;
+pub mod group;
 pub mod new;
+pub mod objects;
 pub mod page;
 pub mod picture;
+pub mod picture_format;
+pub mod shape_gallery;
+pub mod shapes;
 pub mod platform;
 pub mod review;
 

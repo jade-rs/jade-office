@@ -33,9 +33,91 @@ pub fn picture_type(bytes: &[u8]) -> Option<&'static str> {
         Some("image/jpeg")
     } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
         Some("image/gif")
+    } else if is_svg(bytes) {
+        Some("image/svg+xml")
     } else {
         None
     }
+}
+
+/// Whether `bytes` are an SVG document.
+pub fn is_svg(bytes: &[u8]) -> bool {
+    let head = &bytes[..bytes.len().min(1024)];
+    let Ok(text) = std::str::from_utf8(head) else {
+        return false;
+    };
+    let text = text.trim_start_matches('\u{feff}').trim_start();
+    (text.starts_with("<?xml") || text.starts_with("<svg") || text.starts_with("<!--"))
+        && text.contains("<svg")
+}
+
+/// A picture ready to go into a document: the bitmap Word shows (an SVG's
+/// PNG fallback, as Word writes one) and the SVG itself when it is one.
+pub struct PreparedPicture {
+    pub bitmap: Vec<u8>,
+    pub mime: &'static str,
+    pub extension: &'static str,
+    pub svg: Option<Vec<u8>>,
+    /// Pixels, at 96 an inch.
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Checks a picture's format and size, and draws an SVG's fallback.
+pub fn prepare_picture(bytes: Vec<u8>) -> Result<PreparedPicture, String> {
+    let mime = picture_type(&bytes).ok_or("not a PNG, JPEG, GIF or SVG picture")?;
+    if mime == "image/svg+xml" {
+        let (png, width, height) = svg_fallback(&bytes)?;
+        return Ok(PreparedPicture {
+            bitmap: png,
+            mime: "image/png",
+            extension: "png",
+            svg: Some(bytes),
+            width,
+            height,
+        });
+    }
+    let (width, height) = picture_size(&bytes).ok_or("the picture has no size")?;
+    let extension = match mime {
+        "image/png" => "png",
+        "image/jpeg" => "jpeg",
+        _ => "gif",
+    };
+    Ok(PreparedPicture {
+        bitmap: bytes,
+        mime,
+        extension,
+        svg: None,
+        width,
+        height,
+    })
+}
+
+/// An SVG drawn at its own size (twice that, for a sharp fallback), as the
+/// PNG Word stores beside it for readers without SVG.
+pub fn svg_fallback(svg: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
+    let tree = resvg::usvg::Tree::from_data(svg, &resvg::usvg::Options::default())
+        .map_err(|error| format!("the SVG cannot be read: {error}"))?;
+    let size = tree.size();
+    let (width, height) = (
+        size.width().round().max(1.0) as u32,
+        size.height().round().max(1.0) as u32,
+    );
+    const SCALE: f32 = 2.0;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(
+        (width as f32 * SCALE).ceil() as u32,
+        (height as f32 * SCALE).ceil() as u32,
+    )
+    .ok_or("the SVG is too large")?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(SCALE, SCALE),
+        &mut pixmap.as_mut(),
+    );
+    let png = pixmap
+        .encode_png()
+        .map_err(|error| format!("the SVG's fallback cannot be written: {error}"))?;
+    Ok((png, width, height))
 }
 
 /// A picture's size in pixels, read from its header.
@@ -102,8 +184,8 @@ pub trait WordPicture: WordSession + WordPage {
     /// inch, unless that is wider than the text: then shrunk to the text's
     /// width, its proportions kept.
     fn insert_picture(&mut self, bytes: Vec<u8>) -> Result<(), String> {
-        let mime = picture_type(&bytes).ok_or("not a PNG, JPEG or GIF picture")?;
-        let (width, height) = picture_size(&bytes).ok_or("the picture has no size")?;
+        let picture = prepare_picture(bytes)?;
+        let (mime, width, height) = (picture.mime, picture.width, picture.height);
         let page = self.page_setup();
         let text_width =
             f64::from(page.width - page.margins.left - page.margins.right).max(1.0) * PX_PER_PT;
@@ -116,18 +198,21 @@ pub trait WordPicture: WordSession + WordPage {
         let (start, _) = range.normalized();
         let caret = SelectionRange::collapsed(TextPosition::new(start.paragraph, start.offset));
         self.set_selection_range(Some(caret));
-        self.execute_command(
-            Box::new(InsertImageCommand::new(
-                caret,
-                bytes,
-                mime.to_string(),
-                width,
-                height,
-                None,
-                None,
-            )),
-            false,
-        )
+        let insert = InsertImageCommand::new(
+            caret,
+            picture.bitmap,
+            mime.to_string(),
+            width,
+            height,
+            None,
+            None,
+        );
+        match picture.svg {
+            // An SVG goes in as Word puts one in: its PNG fallback as the
+            // picture, the SVG in the blip's extension.
+            Some(svg) => self.execute_command(Box::new(InsertSvgCommand::new(insert, svg)), false),
+            None => self.execute_command(Box::new(insert), false),
+        }
     }
 
     /// Moves and resizes a picture or shape to `rect` (x, y, width, height
@@ -176,6 +261,70 @@ pub trait WordPicture: WordSession + WordPage {
 }
 
 impl<T: WordSession + ?Sized> WordPicture for T {}
+
+/// A picture inserted, then given its SVG: one undo step.
+struct InsertSvgCommand {
+    insert: InsertImageCommand,
+    svg: Vec<u8>,
+    edit: Option<jade_docx_editor::commands::snapshot_edit::SnapshotEditCommand>,
+}
+
+impl InsertSvgCommand {
+    fn new(insert: InsertImageCommand, svg: Vec<u8>) -> Self {
+        Self {
+            insert,
+            svg,
+            edit: None,
+        }
+    }
+}
+
+impl jade_docx_editor::commands::Command for InsertSvgCommand {
+    fn name(&self) -> &'static str {
+        "insert_svg"
+    }
+
+    fn apply(
+        &mut self,
+        ctx: &mut jade_docx_editor::commands::CommandContext<'_>,
+    ) -> jade_docx_editor::commands::CommandResult<()> {
+        use jade_docx_editor::commands::CommandError;
+        self.insert.apply(ctx)?;
+        let target = self
+            .insert
+            .inserted_target()
+            .ok_or_else(|| CommandError::Custom("the picture did not go in".into()))?;
+        let svg = self.svg.clone();
+        let mut edit = jade_docx_editor::commands::edit_drawing::edit_drawing_command(
+            "insert_svg",
+            target,
+            move |document, drawing| {
+                let relationship = document.add_object_media(&svg, "svg", "image/svg+xml")?;
+                let blip = jade_docx_editor::drawing_xml::descendant_mut(drawing, "a:blip")
+                    .ok_or("the picture has no image")?;
+                super::picture_format::set_svg(blip, Some(&relationship))
+            },
+        );
+        let selection = *ctx.selection;
+        if let Err(error) = edit.apply(ctx) {
+            let _ = self.insert.undo(ctx);
+            return Err(error);
+        }
+        *ctx.selection = selection;
+        self.edit = Some(edit);
+        Ok(())
+    }
+
+    fn undo(
+        &mut self,
+        ctx: &mut jade_docx_editor::commands::CommandContext<'_>,
+    ) -> jade_docx_editor::commands::CommandResult<()> {
+        if let Some(edit) = self.edit.as_mut() {
+            edit.undo(ctx)?;
+        }
+        self.insert.undo(ctx)
+    }
+}
 
 /// The 文字列の折り返し menu, in Word's order.
 pub const WRAPS: [Wrap; 7] = [
