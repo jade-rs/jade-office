@@ -72,3 +72,30 @@ fn automatic_hyphenation_redraws_the_page() {
     document.set_auto_hyphenation(false).unwrap();
     assert!(page_pixels(&document) == plain);
 }
+
+/// An ADVANCE field from the フィールド dialog moves the text after it, and
+/// still does once the document is saved and opened again.
+#[test]
+fn an_advance_field_moves_the_text_after_it() {
+    use jade_office_model::word::fields::{FieldHost, WordFields};
+    use jade_web::word::new::{blank_document, Blank};
+
+    let mut document = common::open_bytes(&blank_document(Blank::English));
+    document.place_caret(0, 0);
+    document.insert_text("Advance this").unwrap();
+    let plain = page_pixels(&document);
+
+    document.place_caret(0, "Advance".len());
+    document
+        .insert_field_code("ADVANCE \\r 40 \\d 6", &FieldHost::default())
+        .unwrap();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("Advance this"));
+    let moved = page_pixels(&document);
+    assert!(plain != moved, "the words after the field move");
+
+    let reopened = common::open_bytes(&document.export_docx().unwrap());
+    assert!(
+        page_pixels(&reopened) == moved,
+        "the saved field moves them too"
+    );
+}
