@@ -1317,6 +1317,36 @@ impl EditableDocument {
         Ok(true)
     }
 
+    /// 変更内容の表示 and 変更履歴とコメントの表示: tracked changes marked up
+    /// or not, the original shown in place of the final text, and the
+    /// view's change bars, reviewer colours and filters. Only the pages
+    /// change; repaints when anything did.
+    pub fn set_revision_display(
+        &mut self,
+        markup: bool,
+        original: bool,
+        view: jade_docx_editor::revision_view::RevisionView,
+    ) -> Result<bool, String> {
+        let original = original && !markup;
+        if self.options.render_changes == markup
+            && self.options.render_original == original
+            && *self.options.revision_view() == view
+        {
+            return Ok(false);
+        }
+        self.options.render_changes = markup;
+        self.options.render_original = original;
+        self.options.set_revision_view(view);
+        self.repaint_all()?;
+        Ok(true)
+    }
+
+    /// Whether tracked changes are marked up, and whether the original is
+    /// shown in place of the final text.
+    pub fn revision_display(&self) -> (bool, bool) {
+        (self.options.render_changes, self.options.render_original)
+    }
+
     /// Every page from scratch: undo can change content anywhere.
     fn repaint_all(&mut self) -> Result<(), String> {
         self.repainted_from = Some(0);

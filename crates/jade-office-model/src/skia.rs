@@ -195,3 +195,15 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
         NativeDocument::select_cells(self, anchor_cell, focus_cell)
     }
 }
+
+/// The native app's pages show tracked changes as the markup views say.
+impl crate::word::markup::WordMarkupDisplay for jade_docx_native_render::document::NativeDocument {
+    fn set_revision_display(
+        &mut self,
+        markup: bool,
+        original: bool,
+        view: jade_docx_editor::revision_view::RevisionView,
+    ) -> Result<bool, String> {
+        NativeDocument::set_revision_display(self, markup, original, view)
+    }
+}

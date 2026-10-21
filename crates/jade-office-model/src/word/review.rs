@@ -9,6 +9,7 @@ use jade_docx_headless_api::{
     HeadlessRevisionSnapshot, HeadlessRevisionTarget,
 };
 
+use super::reviewer::Reviewer;
 use super::{query, Position, WordSession};
 
 /// One comment and its replies, as the comments pane lists it.
@@ -83,6 +84,12 @@ impl Revision {
         self.kind.to_ascii_lowercase().starts_with("ins")
     }
 
+    /// Whether the change is to formatting (`w:rPrChange`, `w:pPrChange`)
+    /// rather than to the text.
+    pub fn is_formatting(&self) -> bool {
+        self.kind.to_ascii_lowercase().starts_with("format")
+    }
+
     /// Whether `next` carries this change on: the same author's same kind
     /// of change, starting where this one ends.
     fn continued_by(&self, next: &Revision) -> bool {
@@ -133,7 +140,7 @@ pub trait WordReview: WordSession {
 
     /// 新しいコメント: a comment on the selection, or on the caret's
     /// paragraph. Returns the new comment's id.
-    fn add_comment(&mut self, text: &str, author: &str) -> Result<Option<String>, String> {
+    fn add_comment(&mut self, text: &str, author: &Reviewer) -> Result<Option<String>, String> {
         let before = self.comment_ids();
         let range = self.selection_range().ok_or("no caret")?;
         let (start, end) = range.normalized();
@@ -149,8 +156,8 @@ pub trait WordReview: WordSession {
                 end_paragraph: end.paragraph,
                 end_offset,
                 text: text.to_string(),
-                author: Some(author.to_string()),
-                initials: None,
+                author: Some(author.name.clone()),
+                initials: author.initials(),
                 date: None,
             },
             true,
@@ -162,17 +169,44 @@ pub trait WordReview: WordSession {
     }
 
     /// 返信: a reply under comment `id`.
-    fn reply_to_comment(&mut self, id: &str, text: &str, author: &str) -> Result<(), String> {
+    fn reply_to_comment(&mut self, id: &str, text: &str, author: &Reviewer) -> Result<(), String> {
         self.apply_command(
             HeadlessCommand::ReplyToComment {
                 comment_id: id.to_string(),
                 text: text.to_string(),
-                author: Some(author.to_string()),
-                initials: None,
+                author: Some(author.name.clone()),
+                initials: author.initials(),
                 date: None,
             },
             true,
         )
+    }
+
+    /// コメント › 前へ / 次へ: the first comment whose text starts after
+    /// `from` (or the last before it), wrapping round the document. A
+    /// comment whose text is gone has no place and is passed over.
+    fn step_comment(&self, from: Position, forwards: bool) -> Option<Comment> {
+        let mut anchored: Vec<Comment> = self
+            .comments()
+            .into_iter()
+            .filter(|comment| comment.anchor.is_some())
+            .collect();
+        anchored.sort_by_key(|comment| comment.anchor.map(|(start, _)| start));
+        let start = |comment: &Comment| comment.anchor.map(|(start, _)| start).unwrap_or_default();
+        if forwards {
+            anchored
+                .iter()
+                .find(|comment| start(comment) > from)
+                .or_else(|| anchored.first())
+                .cloned()
+        } else {
+            anchored
+                .iter()
+                .rev()
+                .find(|comment| start(comment) < from)
+                .or_else(|| anchored.last())
+                .cloned()
+        }
     }
 
     /// Rewrites comment `id`'s text, as editing it in the pane does.
@@ -214,11 +248,11 @@ pub trait WordReview: WordSession {
         self.word_document().revision_session().is_some()
     }
 
-    fn set_tracking_changes(&mut self, on: bool, author: &str) -> Result<(), String> {
+    fn set_tracking_changes(&mut self, on: bool, author: &Reviewer) -> Result<(), String> {
         let command = if on {
             HeadlessCommand::StartChangeTracking {
-                author: Some(author.to_string()),
-                initials: None,
+                author: Some(author.name.clone()),
+                initials: author.initials(),
                 date: None,
                 date_utc: None,
             }

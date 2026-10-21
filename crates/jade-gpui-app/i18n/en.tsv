@@ -1357,3 +1357,34 @@ chars.enclose.title	Enclose Characters
 chars.enclose.text	Text
 chars.enclose.enclosure	Enclosure
 chars.font.complex_style	Complex scripts style
+review.group.changes	Changes
+review.delete_comment	Delete Comment
+review.no_comment_here	There is no comment here
+review.previous_comment	Previous Comment
+review.next_comment	Next Comment
+review.user	User Info
+review.user.title	User Information
+review.user.hint	The name comments and tracked changes are recorded under
+review.user.name	Name
+review.user.initials	Initials
+review.markup.title	Display for Review
+review.markup.simple	Simple Markup
+review.markup.all	All Markup
+review.markup.none	No Markup
+review.markup.original	Original
+review.show	Show Markup
+review.show.title	Show Markup
+review.show.comments	Comments
+review.show.insertions	Insertions and Deletions
+review.show.formatting	Formatting
+review.show.reviewers	Reviewers
+review.show.everyone	All Reviewers
+review.accept.this	Accept This Change
+review.accept.visible	Accept All Changes Shown
+review.accept.all	Accept All Changes
+review.accept.all_stop	Accept All Changes and Stop Tracking
+review.reject.this	Reject Change
+review.reject.visible	Reject All Changes Shown
+review.reject.all	Reject All Changes
+review.reject.all_stop	Reject All Changes and Stop Tracking
+menu.app.user_info	User Information…

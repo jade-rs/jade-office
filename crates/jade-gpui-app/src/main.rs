@@ -32,6 +32,7 @@ mod word_dialogs;
 mod word_page;
 mod word_page_setup;
 mod word_review;
+mod word_review_tools;
 mod word_story;
 mod word_table;
 mod workbook;
@@ -80,6 +81,7 @@ actions!(
     jade,
     [
         Quit,
+        UserInformation,
         NewDocument,
         NewFromTemplate,
         Open,
@@ -150,6 +152,8 @@ fn key_bindings() -> Vec<KeyBinding> {
     const CONTEXT: Option<&str> = Some("Document");
     vec![
         KeyBinding::new("cmd-q", Quit, None),
+        // Word's 環境設定 (⌘,), where ユーザー情報 is.
+        KeyBinding::new("cmd-,", UserInformation, CONTEXT),
         // Opening and closing belong to the app, not to one kind of window:
         // they work from the start window and from every view.
         KeyBinding::new("cmd-n", NewDocument, None),
@@ -260,7 +264,11 @@ fn menus() -> Vec<Menu> {
     vec![
         Menu {
             name: "jade".into(),
-            items: vec![MenuItem::action(t("menu.app.quit"), Quit)],
+            items: vec![
+                MenuItem::action(t("menu.app.user_info"), UserInformation),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.app.quit"), Quit),
+            ],
         },
         Menu {
             name: t("menu.file").into(),
@@ -1211,6 +1219,8 @@ struct DocumentView {
     tables: word_table::TableUi,
     /// The フォント dialog and the other character tools' dialogs.
     characters: word_characters::Characters,
+    /// The 校閲 tab's markup views, filters and dialogs.
+    review: word_review_tools::ReviewTools,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1419,6 +1429,12 @@ impl DocumentView {
         // here, and typing goes on to the input handler, into its field.
         if self.characters.is_open() {
             if word_characters::handle_key(self, event.keystroke.key.as_str(), cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.review.is_open() {
+            if word_review_tools::handle_key(self, event.keystroke.key.as_str(), cx) {
                 cx.stop_propagation();
             }
             return;
@@ -2408,6 +2424,9 @@ impl DocumentView {
         if let Some(field) = self.characters.text_field() {
             return Some(field);
         }
+        if let Some(field) = self.review.text_field() {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2421,6 +2440,9 @@ impl DocumentView {
         }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
+        }
+        if self.review.is_open() {
+            return self.review.text_field_mut();
         }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
@@ -3013,6 +3035,7 @@ impl DocumentView {
             Action::Tables(action) => return self.table_action(action, cx),
             Action::FontFamilyName(name) => WordFormatting::set_font_family(document, &name),
             Action::Characters(action) => return word_characters::run(self, action, cx),
+            Action::Review(action) => return word_review_tools::run(self, action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -4059,6 +4082,7 @@ impl EntityInputHandler for DocumentView {
         }
         if let Some(field) = self.text_bar_mut() {
             field.replace(range, text, false);
+            self.review.typed();
             return cx.notify();
         }
         if self.find_bar.is_some() {
@@ -4284,7 +4308,8 @@ impl Render for DocumentView {
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
-        let dialog = word_characters::overlay(self, window, cx);
+        let dialog = word_characters::overlay(self, window, cx)
+            .or_else(|| word_review_tools::overlay(self, window, cx));
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -4344,6 +4369,9 @@ impl Render for DocumentView {
                 view.run_ribbon(Action::Table(TableCommand::DeleteRow), cx)
             }))
             .on_action(cx.listener(|view, _: &AddComment, _window, cx| view.add_comment(cx)))
+            .on_action(cx.listener(|view, _: &UserInformation, _window, cx| {
+                word_review_tools::run(view, word_review_tools::ReviewAction::UserInfo, cx)
+            }))
             .on_action(
                 cx.listener(|view, _: &InsertHyperlink, _window, cx| view.open_link_dialog(cx)),
             )
@@ -4766,6 +4794,7 @@ fn document_view(
         .collect();
     let mut ribbon = ribbon::Ribbon::default();
     ribbon.read_styles(&document);
+    let review = word_review_tools::ReviewTools::opened(&document);
 
     DocumentView {
         path: SharedString::from(path_text),
@@ -4797,6 +4826,7 @@ fn document_view(
         show_comments: false,
         tables: word_table::TableUi::default(),
         characters: word_characters::Characters::default(),
+        review,
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,

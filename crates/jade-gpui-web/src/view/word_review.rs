@@ -4,14 +4,93 @@
 //! it; the 校閲 tab's change tracking. What each does is `jade-office-model`'s
 //! `WordReview`, the code the native app runs.
 
+use jade_web::word::markup::{MarkupMode, MarkupOptions, WordMarkup};
 use jade_web::word::review::{Comment, WordReview};
+use jade_web::word::reviewer::Reviewer;
 
 use super::sheet::caret_line;
 use super::*;
-use crate::word_review::ReviewAction;
+use crate::word_review::{Decision, ReviewAction};
 
-/// Who the comments and the tracked changes are by.
-const AUTHOR: &str = "jade";
+thread_local! {
+    static REVIEWER: RefCell<Option<Reviewer>> = const { RefCell::new(None) };
+}
+
+/// Where ユーザー情報 is kept between visits: the browser's local storage.
+const STORAGE_KEY: &str = "jade-office.reviewer";
+
+#[cfg(target_arch = "wasm32")]
+fn local_storage() -> Option<js_sys::Object> {
+    use wasm_bindgen::JsCast;
+    js_sys::Reflect::get(&js_sys::global(), &"localStorage".into())
+        .ok()?
+        .dyn_into()
+        .ok()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn stored_reviewer() -> Option<Reviewer> {
+    use wasm_bindgen::JsCast;
+    let storage = local_storage()?;
+    let get: js_sys::Function = js_sys::Reflect::get(&storage, &"getItem".into())
+        .ok()?
+        .dyn_into()
+        .ok()?;
+    let text = get.call1(&storage, &STORAGE_KEY.into()).ok()?.as_string()?;
+    Reviewer::from_settings(&text)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn stored_reviewer() -> Option<Reviewer> {
+    None
+}
+
+#[cfg(target_arch = "wasm32")]
+fn store_reviewer(reviewer: &Reviewer) {
+    use wasm_bindgen::JsCast;
+    let Some(storage) = local_storage() else {
+        return;
+    };
+    if let Some(set) = js_sys::Reflect::get(&storage, &"setItem".into())
+        .ok()
+        .and_then(|set| set.dyn_into::<js_sys::Function>().ok())
+    {
+        set.call2(
+            &storage,
+            &STORAGE_KEY.into(),
+            &reviewer.to_settings().into(),
+        )
+        .ok();
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn store_reviewer(_reviewer: &Reviewer) {}
+
+/// Who comments and tracked changes are put down to: what ユーザー情報
+/// saved in this browser, or a name to start with.
+pub(super) fn reviewer() -> Reviewer {
+    REVIEWER.with(|slot| {
+        slot.borrow_mut()
+            .get_or_insert_with(|| stored_reviewer().unwrap_or_else(|| Reviewer::named("jade")))
+            .clone()
+    })
+}
+
+/// ユーザー情報's OK.
+pub(super) fn set_reviewer(reviewer: Reviewer) {
+    store_reviewer(&reviewer);
+    REVIEWER.with(|slot| *slot.borrow_mut() = Some(reviewer));
+}
+
+/// The markup view a document was saved with.
+pub(super) fn markup_as_opened(document: &jade_web::editing::EditableDocument) -> MarkupOptions {
+    let mut options = MarkupOptions::default();
+    if !document.revision_display().0 {
+        options.mode = MarkupMode::NoMarkup;
+    }
+    options
+}
 
 /// What a comment bar's text becomes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,40 +142,129 @@ impl DocView {
 
     /// The 校閲 tab's buttons.
     pub(super) fn review_action(&mut self, action: ReviewAction, cx: &mut Context<Self>) {
+        let Document::Pages {
+            show_comments,
+            markup,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let options = markup.as_mut();
         match action {
             ReviewAction::NewComment => {
                 return self.open_comment_bar(CommentEntry::New, String::new(), cx)
             }
             ReviewAction::ToggleComments => {
-                if let Document::Pages { show_comments, .. } = &mut self.document {
-                    *show_comments = !*show_comments;
-                }
+                *show_comments = !*show_comments;
+                options.comments = *show_comments;
                 return cx.notify();
+            }
+            ReviewAction::UserInfo => return self.open_reviewer_dialog(cx),
+            ReviewAction::Markup(mode) => options.mode = mode,
+            ReviewAction::ShowInsertionsDeletions => {
+                options.insertions_deletions = !options.insertions_deletions
+            }
+            ReviewAction::ShowFormatting => options.formatting = !options.formatting,
+            ReviewAction::Reviewer(Some(ref name)) => {
+                let shown = options.shows_reviewer(name);
+                options.set_reviewer_shown(name, !shown);
+            }
+            ReviewAction::Reviewer(None) => {
+                if options.hidden_reviewers.is_empty() {
+                    if let Document::Pages { document, .. } = &self.document {
+                        let everyone = document.reviewers();
+                        if let Document::Pages { markup, .. } = &mut self.document {
+                            markup.hidden_reviewers = everyone;
+                        }
+                    }
+                } else {
+                    options.hidden_reviewers.clear();
+                }
+            }
+            ReviewAction::StepComment(forwards) => {
+                if let Document::Pages { show_comments, .. } = &mut self.document {
+                    *show_comments = true;
+                }
+                return self.word_move(cx, move |document| {
+                    let from = match document.selection() {
+                        Some((anchor, focus)) if forwards => anchor.max(focus),
+                        Some((anchor, focus)) => anchor.min(focus),
+                        None => document.caret().unwrap_or((0, 0)),
+                    };
+                    match document
+                        .step_comment(from, forwards)
+                        .and_then(|comment| comment.anchor)
+                    {
+                        Some((start, end)) => document.select(start, end),
+                        None => Err(i18n::text("review.no_comments").to_string()),
+                    }
+                });
             }
             _ => {}
         }
-        self.word_edit(cx, move |document| match action {
-            ReviewAction::ToggleTracking => {
-                let on = !document.is_tracking_changes();
-                document.set_tracking_changes(on, AUTHOR)
-            }
-            ReviewAction::Step(forwards) => {
-                let from = match document.selection() {
-                    Some((anchor, focus)) if forwards => anchor.max(focus),
-                    Some((anchor, focus)) => anchor.min(focus),
-                    None => document.caret().unwrap_or((0, 0)),
-                };
-                match document.step_revision(from, forwards) {
-                    Some(revision) => document.select(revision.start(), revision.end()),
-                    None => Err(i18n::text("review.no_changes").to_string()),
+        let Document::Pages { markup, .. } = &self.document else {
+            return;
+        };
+        let options = (**markup).clone();
+        self.word_edit(cx, move |document| {
+            let result = match action {
+                ReviewAction::ToggleTracking => {
+                    let on = !document.is_tracking_changes();
+                    document.set_tracking_changes(on, &reviewer())
                 }
-            }
-            ReviewAction::Decide(accept) => match document.decide_and_step(accept)? {
-                Some(next) => document.select(next.start(), next.end()),
-                None => Ok(()),
-            },
-            ReviewAction::DecideAll(accept) => document.decide_all_revisions(accept),
-            ReviewAction::NewComment | ReviewAction::ToggleComments => Ok(()),
+                ReviewAction::Step(forwards) => {
+                    let from = match document.selection() {
+                        Some((anchor, focus)) if forwards => anchor.max(focus),
+                        Some((anchor, focus)) => anchor.min(focus),
+                        None => document.caret().unwrap_or((0, 0)),
+                    };
+                    match document.step_revision(from, forwards) {
+                        Some(revision) => document.select(revision.start(), revision.end()),
+                        None => Err(i18n::text("review.no_changes").to_string()),
+                    }
+                }
+                ReviewAction::Decide(accept, Decision::AndNext) => {
+                    match document.decide_and_step(accept)? {
+                        Some(next) => document.select(next.start(), next.end()),
+                        None => Ok(()),
+                    }
+                }
+                ReviewAction::Decide(accept, Decision::This) => {
+                    let here = document.revisions_at_selection();
+                    document.decide_revisions(&here, accept)
+                }
+                ReviewAction::Decide(accept, Decision::Visible) => {
+                    document.decide_visible_revisions(&options, accept)
+                }
+                ReviewAction::Decide(accept, Decision::All) => {
+                    document.decide_all_revisions(accept)
+                }
+                ReviewAction::Decide(accept, Decision::AllAndStop) => document
+                    .decide_all_revisions(accept)
+                    .and_then(|()| document.set_tracking_changes(false, &reviewer())),
+                ReviewAction::DeleteComment => {
+                    let (start, end) = match document.selection() {
+                        Some((anchor, focus)) => (anchor.min(focus), anchor.max(focus)),
+                        None => {
+                            let caret = document.caret().unwrap_or((0, 0));
+                            (caret, caret)
+                        }
+                    };
+                    match document.comments().into_iter().find(|comment| {
+                        comment
+                            .anchor
+                            .is_some_and(|(from, to)| from <= end && start <= to)
+                    }) {
+                        Some(comment) => document.delete_comment(&comment.id),
+                        None => Err(i18n::text("review.no_comment_here").to_string()),
+                    }
+                }
+                _ => Ok(()),
+            };
+            // The view follows: a new reviewer takes the next colour.
+            document.show_markup(&options).map(|_| ())?;
+            result
         });
     }
 
@@ -129,8 +297,8 @@ impl DocView {
                     };
                 }
                 self.word_edit(cx, move |document| match &bar.entry {
-                    CommentEntry::New => document.add_comment(&text, AUTHOR).map(|_| ()),
-                    CommentEntry::Reply(id) => document.reply_to_comment(id, &text, AUTHOR),
+                    CommentEntry::New => document.add_comment(&text, &reviewer()).map(|_| ()),
+                    CommentEntry::Reply(id) => document.reply_to_comment(id, &text, &reviewer()),
                     CommentEntry::Edit(id) => document.edit_comment(id, &text),
                 });
                 return true;
