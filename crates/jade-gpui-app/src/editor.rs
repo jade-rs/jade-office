@@ -62,6 +62,11 @@ pub trait Editor: Render + Focusable {
         false
     }
 
+    /// What the title shows after the file's name: Word's [互換モード].
+    fn title_badge(&self) -> Option<SharedString> {
+        None
+    }
+
     /// Zooms so the content fits the space it has. A view with nothing to fit
     /// goes back to 100%.
     fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
@@ -76,6 +81,7 @@ pub trait EditorHandle {
     fn status_items(&self, cx: &App) -> Vec<SharedString>;
     fn zoom(&self, cx: &App) -> f32;
     fn is_dirty(&self, cx: &App) -> bool;
+    fn title_badge(&self, cx: &App) -> Option<SharedString>;
     fn set_zoom(&self, zoom: f32, cx: &mut App);
     fn zoom_to_fit(&self, cx: &mut App);
 }
@@ -99,6 +105,10 @@ impl<T: Editor> EditorHandle for Entity<T> {
 
     fn is_dirty(&self, cx: &App) -> bool {
         self.read(cx).is_dirty()
+    }
+
+    fn title_badge(&self, cx: &App) -> Option<SharedString> {
+        self.read(cx).title_badge()
     }
 
     fn set_zoom(&self, zoom: f32, cx: &mut App) {

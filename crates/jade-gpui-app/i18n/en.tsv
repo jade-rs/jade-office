@@ -1432,3 +1432,34 @@ pdf.accessible	Best for electronic distribution and accessibility
 pdf.accessible_detail	Includes structure tags for headings, paragraphs, tables and figures (with alt text), and bookmarks from the headings. Text is written as vectors.
 pdf.appearance	Match the screen
 pdf.appearance_detail	Writes the pages as the screen shows them. Text is searchable, but there are no structure tags.
+# Compatibility (word_compat)
+menu.file.check_compatibility	Check Compatibility…
+menu.file.convert	Convert Document (Upgrade to Current Format)
+compat.badge	[Compatibility Mode]
+compat.title	Microsoft Word Compatibility Checker
+compat.versions	Versions to show
+compat.summary	Summary (features lost or changed when opened in an earlier version)
+compat.no_issues	No compatibility issues were found.
+compat.occurrences	{n} occurrences
+compat.check_on_save	Check compatibility when saving documents
+compat.continue	Continue
+compat.convert_title	Convert Document
+compat.already_current	This document is already in the current file format.
+compat.issue.replies	Replies to comments become separate comments.
+compat.issue.repeating	Repeating section content controls become ordinary content controls.
+compat.issue.control_appearance	Content controls lose their color and appearance.
+compat.issue.video	Online videos become static pictures.
+compat.issue.collapsed	Collapsed headings are expanded.
+compat.issue.text_effects	Text effects (glow, shadow, reflection, outline, gradient) are removed.
+compat.issue.opentype	OpenType features (ligatures, number forms, stylistic sets) are removed.
+compat.issue.checkboxes	Check box content controls become static content.
+compat.issue.shapes	Shapes and text boxes are converted to the older kind.
+compat.issue.picture_effects	Picture effects and artistic effects are removed.
+compat.issue.table_alt	Alternative text on tables is removed.
+compat.issue.relative	Sizes and positions relative to the page become absolute.
+compat.issue.equations	Equations become pictures that cannot be edited.
+compat.issue.controls	Content controls become static text.
+compat.issue.smartart	SmartArt graphics become a single picture.
+compat.issue.charts	Charts become pictures.
+compat.issue.moves	Tracked moves become insertions and deletions.
+compat.issue.themes	Theme fonts and colors become fixed fonts and colors.

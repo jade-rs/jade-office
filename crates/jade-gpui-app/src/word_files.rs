@@ -52,6 +52,12 @@ pub struct Files {
     /// document's, as its settings say.
     pub embed_fonts: bool,
     pub embed_subset: bool,
+    /// The compatibility mode the document is laid out in (15 is current).
+    pub mode: u32,
+    /// 保存時に互換性を確認する.
+    pub check_on_save: bool,
+    /// A save the checker let through: written without asking again.
+    pub checked: bool,
 }
 
 impl Default for Files {
@@ -64,6 +70,9 @@ impl Default for Files {
             dialog: None,
             embed_fonts: false,
             embed_subset: true,
+            mode: jade_office_model::word::compat::CURRENT_MODE,
+            check_on_save: true,
+            checked: false,
         }
     }
 }
@@ -111,6 +120,9 @@ pub enum FileDialog {
     /// How a PDF is written: tagged for accessibility (the default, as
     /// Word's 電子配布とアクセシビリティに最適), or as the screen shows it.
     PdfOptions { target: PathBuf, tagged: bool },
+    /// 互換性チェック: what the chosen version loses, and the save waiting
+    /// on it when it was opened by one.
+    Compatibility(crate::word_compat::Checker),
 }
 
 /// The 保存 preferences as the dialog holds them until OK.
@@ -180,6 +192,15 @@ impl DocumentView {
     pub(crate) fn opened_as(&mut self, opened: &Opened, source: Option<Rc<Vec<u8>>>) {
         self.files.format = opened.format;
         self.files.encoding = opened.encoding;
+        // A Word 97–2004 file is in Word 2003's mode, whatever the .docx
+        // made of it says.
+        self.files.mode = if opened.format.is_legacy() {
+            11
+        } else if opened.format.is_package() {
+            jade_office_model::word::compat::compatibility_mode(&opened.docx)
+        } else {
+            jade_office_model::word::compat::CURRENT_MODE
+        };
         if let Some(source) = source {
             if needs_encoding_choice(&source) {
                 self.files.dialog = Some(FileDialog::Encoding {
@@ -303,6 +324,14 @@ impl DocumentView {
         }
         if !format.can_save() {
             return self.show_message(t("files.doc_title"), t("files.cannot_write_doc"), cx);
+        }
+        // A document in 互換モード is checked before it is saved, as Word
+        // does, unless the checker has just let this save through.
+        if format.is_package()
+            && !std::mem::take(&mut self.files.checked)
+            && self.check_before_saving(&write, cx)
+        {
+            return;
         }
         if format == WordFormat::Text && options.is_none() {
             self.files.dialog = Some(FileDialog::Encoding {
@@ -520,6 +549,7 @@ fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
             cx,
         ),
         FileDialog::Message { .. } => {}
+        FileDialog::Compatibility(checker) => crate::word_compat::confirm(view, checker, cx),
         FileDialog::PdfOptions { target, tagged } => view.write_pdf_with(
             &target,
             jade_docx_native_render::PdfExportOptions {
@@ -560,6 +590,9 @@ pub fn overlay(
                 i18n::format("files.encoding_title_named", &[("name", &name)]).into();
             let body = encoding_body(view, purpose.clone(), *selected, *line_ending, cx);
             (title, body, ok_cancel(cx))
+        }
+        FileDialog::Compatibility(checker) => {
+            crate::word_compat::dialog(checker, view.files.check_on_save, cx)
         }
         FileDialog::PdfOptions { tagged, .. } => {
             let tagged = *tagged;
