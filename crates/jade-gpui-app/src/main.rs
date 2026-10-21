@@ -27,6 +27,10 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
+mod word_objects;
+mod word_objects_diagrams;
+mod word_objects_panels;
+mod word_objects_ribbon;
 mod word_page;
 mod word_review;
 mod workbook;
@@ -555,17 +559,7 @@ fn placed_object(object: &ObjectHit) -> PlacedObject {
     }
 }
 
-const WRAP_IDS: [&str; 7] = [
-    "wrap-inline",
-    "wrap-square",
-    "wrap-tight",
-    "wrap-through",
-    "wrap-top-bottom",
-    "wrap-behind",
-    "wrap-front",
-];
-
-fn wrap_label(wrap: Wrap) -> &'static str {
+pub(crate) fn wrap_label(wrap: Wrap) -> &'static str {
     t(match wrap {
         Wrap::Inline => "picture.wrap.inline",
         Wrap::Square => "picture.wrap.square",
@@ -944,7 +938,7 @@ impl gpui::AssetSource for Assets {
 /// The browser shell shows these seven, and a tab that is present but empty is
 /// worse than one that is not: each of these has something under it.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum RibbonTab {
+pub(crate) enum RibbonTab {
     Home,
     Insert,
     Design,
@@ -952,6 +946,8 @@ enum RibbonTab {
     References,
     Review,
     View,
+    /// 図の形式 / 図形の書式: shown while a picture or shape is selected.
+    ObjectFormat,
 }
 
 impl RibbonTab {
@@ -974,6 +970,7 @@ impl RibbonTab {
             RibbonTab::References => t("doc.tab.references"),
             RibbonTab::Review => t("doc.tab.review"),
             RibbonTab::View => t("doc.tab.view"),
+            RibbonTab::ObjectFormat => t("objects.tab.shape_format"),
         }
     }
 }
@@ -1015,23 +1012,6 @@ impl FindBar {
             &mut self.query
         }
     }
-}
-
-/// A picture or shape being dragged, and what the drag is doing to it.
-struct ObjectDrag {
-    object: ObjectHit,
-    /// The rectangle the object had when the drag started. Deltas are measured
-    /// from here rather than accumulated, so a drag that crosses a repaint does
-    /// not drift.
-    start: (f64, f64, f64, f64),
-    /// Where the pointer went down, in page coordinates.
-    from: (f64, f64),
-    /// A grab near the bottom-right corner resizes; anywhere else moves.
-    resizing: bool,
-    /// Whether a transform from this drag is already on the undo stack. The
-    /// next move replaces it rather than stacking on it, so the whole drag is
-    /// one undo.
-    applied: bool,
 }
 
 /// The caret, the selection and the edit count the ribbon's formatting was
@@ -1118,10 +1098,9 @@ struct DocumentView {
     /// The picture or shape last clicked, which 文字列の折り返し acts on and
     /// an outline shows.
     selected_object: Option<ObjectHit>,
-    /// The picture or shape being dragged, if the mouse went down on one.
-    /// Pictures are not in the text flow, so dragging one is a move, not a
-    /// selection.
-    object_drag: Option<ObjectDrag>,
+    /// The object tools' state: other selected objects, a drag on a handle,
+    /// cropping, the panels and the shape being drawn (`word_objects`).
+    objects: word_objects::ObjectTools,
     /// The byte range of the composition in the current paragraph, while one is
     /// in progress. The IME replaces it in place as the reading changes.
     marked: Option<Range<usize>>,
@@ -1310,6 +1289,18 @@ impl DocumentView {
         if self.find_bar.is_some() && self.handle_find_bar_key(event, cx) {
             // Taken: the platform must not also type it (Tab, Enter) into
             // the field through the input handler.
+            cx.stop_propagation();
+            return;
+        }
+        // The layout dialog and a Selection Pane rename own the keyboard
+        // like the bars; then the selected object takes Delete, the arrows
+        // and Escape (`word_objects`).
+        let key = event.keystroke.key.as_str();
+        if (self.objects.panels.dialog.is_some()
+            && self.dialog_key(key, event.keystroke.modifiers.shift, cx))
+            || self.rename_key(key, cx)
+            || self.object_key(key, event.keystroke.modifiers.alt, cx)
+        {
             cx.stop_propagation();
             return;
         }
@@ -1665,9 +1656,9 @@ impl DocumentView {
                     .gap_1()
                     .px_4()
                     .pt(px(8.0))
-                    .children(RibbonTab::ALL.map(|tab| {
+                    .children(self.visible_tabs().into_iter().map(|(tab, label)| {
                         div()
-                            .id(tab.label())
+                            .id(label)
                             .px_3()
                             .py_1()
                             .rounded_md()
@@ -1680,7 +1671,7 @@ impl DocumentView {
                                 element.text_color(theme::text_dim())
                             })
                             .hover(|element| element.bg(theme::hovered()))
-                            .child(tab.label())
+                            .child(label)
                             .on_click(cx.listener(move |view, _event, _window, cx| {
                                 view.ribbon_tab = tab;
                                 view.ribbon.popup = None;
@@ -1730,10 +1721,30 @@ impl DocumentView {
             )
     }
 
+    /// The tabs, with their labels: Word's seven, and the selected object's
+    /// contextual one after them.
+    fn visible_tabs(&mut self) -> Vec<(RibbonTab, &'static str)> {
+        let mut tabs: Vec<_> = RibbonTab::ALL.map(|tab| (tab, tab.label())).to_vec();
+        match self.selected_format() {
+            Some(format) => tabs.push((
+                RibbonTab::ObjectFormat,
+                t(if format.sort == jade_office_model::word::objects::ObjectSort::Picture {
+                    "objects.tab.picture_format"
+                } else {
+                    "objects.tab.shape_format"
+                }),
+            )),
+            None if self.ribbon_tab == RibbonTab::ObjectFormat => self.ribbon_tab = RibbonTab::Home,
+            None => {}
+        }
+        tabs
+    }
+
     /// The groups under the selected tab.
     fn ribbon_groups(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let state = self.format_state();
         match self.ribbon_tab {
+            RibbonTab::ObjectFormat => self.object_format_groups(cx),
             RibbonTab::Home => {
                 let mut groups = vec![self.clipboard_group(cx)];
                 groups.extend(ribbon::home(&self.ribbon, &state, cx));
@@ -1980,41 +1991,15 @@ impl DocumentView {
         }
     }
 
-    /// 挿入's 図: a picture from a file, and the wrap of the one last
-    /// clicked.
+    /// 挿入's 図: 画像, 図形, テキスト ボックス, ワードアート, SmartArt, グラフ
+    /// (`word_objects_ribbon`).
     fn picture_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let selected = self
-            .selected_object
-            .is_some_and(|object| placed_object(&object).is_picture());
-        let mut wraps = vec![self
-            .ribbon_button(
-                "insert-picture",
-                t("picture.insert"),
-                t("picture.insert_title"),
-                false,
-                cx,
-                |view, cx| view.prompt_for_picture(cx),
-            )
-            .into_any_element()];
-        if selected {
-            for (index, wrap) in jade_office_model::word::picture::WRAPS
-                .into_iter()
-                .enumerate()
-            {
-                wraps.push(
-                    self.ribbon_button(
-                        WRAP_IDS[index],
-                        wrap_label(wrap),
-                        t("picture.wrap"),
-                        false,
-                        cx,
-                        move |view, cx| view.wrap_picture(wrap, cx),
-                    )
-                    .into_any_element(),
-                );
-            }
-        }
-        Self::ribbon_group(t("picture.group"), vec![Self::ribbon_row(wraps)]).into_any_element()
+        div()
+            .flex()
+            .flex_none()
+            .h_full()
+            .children(self.insert_object_groups(cx))
+            .into_any_element()
     }
 
     /// The ホーム tab's clipboard, which only the native app can paste into
@@ -2173,6 +2158,18 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = self
+            .objects
+            .panels
+            .dialog
+            .as_ref()
+            .and_then(|dialog| dialog.focused())
+        {
+            return Some(field);
+        }
+        if let Some((_, field)) = self.objects.panels.renaming.as_ref() {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2181,6 +2178,23 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self
+            .objects
+            .panels
+            .dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.focus.is_some())
+        {
+            return self
+                .objects
+                .panels
+                .dialog
+                .as_mut()
+                .and_then(|dialog| dialog.focused_mut());
+        }
+        if let Some((_, field)) = self.objects.panels.renaming.as_mut() {
+            return Some(field);
+        }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
             (None, Some(bar)) => Some(&mut bar.text),
@@ -2696,6 +2710,7 @@ impl DocumentView {
                 WordPage::page_command(document, command, japanese)
             }
             Action::EditStory(story) => return self.open_story_bar(story, cx),
+            Action::Object(action) => return self.run_object_action(action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -2868,6 +2883,10 @@ impl DocumentView {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
+        // A picture on the clipboard goes in as a picture (`word_objects`).
+        if self.paste_picture(cx) {
+            return;
+        }
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
@@ -2983,49 +3002,6 @@ impl DocumentView {
             Err(error) => self.table_status = Some(SharedString::from(error)),
         }
         cx.notify();
-    }
-
-    /// 文字列の折り返し for the picture last clicked.
-    fn wrap_picture(&mut self, wrap: Wrap, cx: &mut Context<Self>) {
-        let Some(object) = self.selected_object else {
-            return;
-        };
-        let placed = placed_object(&object);
-        match WordPicture::set_picture_wrap(&mut self.document, placed, wrap) {
-            Ok(()) => {
-                self.table_status = None;
-                self.rebuild_after_edit();
-            }
-            Err(error) => self.table_status = Some(SharedString::from(error)),
-        }
-        cx.notify();
-    }
-
-    /// The outline of the picture last clicked, on its page.
-    fn object_outline(&self, page_index: usize) -> Option<impl IntoElement> {
-        let object = self.selected_object?;
-        if object.page.saturating_sub(1) != page_index {
-            return None;
-        }
-        let zoom = self.zoom;
-        Some(
-            div()
-                .absolute()
-                .left(px(object.x as f32 * zoom))
-                .top(px(object.y as f32 * zoom))
-                .w(px(object.width as f32 * zoom))
-                .h(px(object.height as f32 * zoom))
-                .border_1()
-                .border_color(theme::accent())
-                .child(
-                    div()
-                        .absolute()
-                        .right(px(-4.0))
-                        .bottom(px(-4.0))
-                        .size(px(8.0))
-                        .bg(theme::accent()),
-                ),
-        )
     }
 
     /// Undo or redo, then repaint everything: history can move content onto
@@ -3297,8 +3273,21 @@ impl DocumentView {
 
     /// Extends the selection from the drag anchor to the pointer.
     fn drag_to(&mut self, page_index: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) {
-        if self.object_drag.is_some() {
-            return self.drag_object_to(page_index, event, cx);
+        if self.objects.panels.wrap_drag.is_some() {
+            let bounds = self.page_bounds.borrow().get(page_index).copied();
+            if let Some(Some(bounds)) = bounds {
+                let zoom = f64::from(self.zoom);
+                let point = (
+                    f64::from(event.position.x - bounds.origin.x) / zoom,
+                    f64::from(event.position.y - bounds.origin.y) / zoom,
+                );
+                self.drag_wrap_point(point);
+                cx.notify();
+            }
+            return;
+        }
+        if self.drag_object(page_index, event, cx) {
+            return;
         }
         let Some(anchor) = self.drag_anchor else {
             return;
@@ -3320,63 +3309,6 @@ impl DocumentView {
         }
     }
 
-    /// Moves or resizes the object the pointer grabbed.
-    ///
-    /// Measured from where the drag started rather than from the last position,
-    /// so the object tracks the pointer exactly however many moves arrive.
-    fn drag_object_to(
-        &mut self,
-        page_index: usize,
-        event: &MouseMoveEvent,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(drag) = self.object_drag.as_ref() else {
-            return;
-        };
-        let Some(Some(bounds)) = self.page_bounds.borrow().get(page_index).copied() else {
-            return;
-        };
-        let zoom = f64::from(self.zoom);
-        let local_x = f64::from(event.position.x - bounds.origin.x) / zoom;
-        let local_y = f64::from(event.position.y - bounds.origin.y) / zoom;
-        let (dx, dy) = (local_x - drag.from.0, local_y - drag.from.1);
-        let (start_x, start_y, start_width, start_height) = drag.start;
-
-        let rect = if drag.resizing {
-            // A minimum, or a drag past the top-left corner would invert the
-            // picture and then be impossible to grab again.
-            (
-                start_x,
-                start_y,
-                (start_width + dx).max(8.0),
-                (start_height + dy).max(8.0),
-            )
-        } else {
-            (start_x + dx, start_y + dy, start_width, start_height)
-        };
-        let object = drag.object;
-        // The first move of a drag records; the rest replace what it recorded,
-        // so releasing the mouse leaves one undo step rather than thirty.
-        let moved = if drag.applied {
-            self.document
-                .retransform_object(object, rect.0, rect.1, rect.2, rect.3)
-        } else {
-            self.document
-                .transform_object(object, rect.0, rect.1, rect.2, rect.3)
-        };
-        if let Err(error) = moved {
-            eprintln!("transform failed: {error}");
-            return;
-        }
-        if let Some(drag) = self.object_drag.as_mut() {
-            drag.applied = true;
-        }
-        // The object is not bound to one page's bitmap: moving it can uncover
-        // text on the page it came from, so every page is rebuilt.
-        self.rebuild_after_edit();
-        cx.notify();
-    }
-
     /// Turns a click into an insertion point.
     fn click_page(&mut self, page_index: usize, event: &MouseDownEvent, cx: &mut Context<Self>) {
         self.log_call(format!("click page {page_index}"));
@@ -3393,28 +3325,24 @@ impl DocumentView {
         let document_y = self.document.document_y(page_index, local_y);
 
         // A picture is on top of the text, so a click inside one is a grab on
-        // the picture. Falling through would put the caret behind it and let a
-        // drag select the text underneath instead.
-        if let Some(object) = self.document.object_at(local_x, document_y) {
-            // The bottom-right corner resizes, the rest moves — the handle Word
-            // and the browser shell both put there.
-            const HANDLE: f64 = 12.0;
-            let resizing = local_x >= object.x + object.width - HANDLE
-                && local_y >= object.y + object.height - HANDLE;
-            self.selected_object = Some(object);
-            self.object_drag = Some(ObjectDrag {
-                object,
-                start: (object.x, object.y, object.width, object.height),
-                from: (local_x, local_y),
-                resizing,
-                applied: false,
-            });
+        // the picture, as is a click on the selected one's handles or wrap
+        // points; with a shape tool picked, a press starts drawing
+        // (`word_objects`). Falling through would put the caret behind it and
+        // let a drag select the text underneath instead.
+        if self.press_wrap_point(page_index, (local_x, local_y))
+            || self.press_object(
+                page_index,
+                (local_x, local_y),
+                document_y,
+                event.modifiers.shift,
+                event.click_count,
+                cx,
+            )
+        {
             self.drag_anchor = None;
-            cx.notify();
             return;
         }
 
-        self.selected_object = None;
         if let Some(position) = self.document.position_at(local_x, document_y) {
             self.insert_at = position;
             self.current_page = page_index;
@@ -3704,6 +3632,8 @@ impl EntityInputHandler for DocumentView {
     ) {
         if let Some(field) = self.text_bar_mut() {
             field.replace(range, text, false);
+            // The dialog's size fields keep the proportions.
+            self.dialog_typed();
             return cx.notify();
         }
         if self.find_bar.is_some() {
@@ -3920,6 +3850,21 @@ impl Render for DocumentView {
         };
         let zoom = self.zoom;
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
+        // The object tools' panes and dialog (`word_objects_panels`).
+        let selection_pane = self
+            .objects
+            .panels
+            .selection_pane
+            .then(|| self.selection_pane(cx));
+        let format_pane = self.objects.panels.format_pane.then(|| self.format_pane(cx));
+        let layout_dialog = self.layout_dialog_element(cx).map(|dialog| {
+            gpui::deferred(
+                gpui::anchored()
+                    .position(point(px(260.0), px(140.0)))
+                    .child(dialog),
+            )
+            .with_priority(3)
+        });
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -4067,7 +4012,12 @@ impl Render for DocumentView {
                                         cx.listener(
                                             move |view, event: &MouseDownEvent, _window, cx| {
                                                 view.click_page(index, event, cx);
-                                                if event.click_count >= 2 {
+                                                // A double click on an object is
+                                                // the object's, not a word's.
+                                                if event.click_count >= 2
+                                                    && view.objects.drag.is_none()
+                                                    && view.objects.sketch.is_none()
+                                                {
                                                     view.select_word_at_caret(cx);
                                                 }
                                             },
@@ -4083,8 +4033,10 @@ impl Render for DocumentView {
                                     .on_mouse_up(
                                         MouseButton::Left,
                                         cx.listener(
-                                            move |view, _event: &MouseUpEvent, _window, _cx| {
+                                            move |view, _event: &MouseUpEvent, _window, cx| {
                                                 view.drag_anchor = None;
+                                                view.release_wrap_point(cx);
+                                                view.release_object(cx);
                                             },
                                         ),
                                     )
@@ -4094,7 +4046,8 @@ impl Render for DocumentView {
                                             .h(px(page_height * zoom)),
                                     )
                                     .children(self.caret_overlay(index))
-                                    .children(self.object_outline(index))
+                                    .children(self.object_overlay(index))
+                                    .children(self.wrap_point_overlay(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
                                     // before the renderer can hit-test it.
@@ -4140,6 +4093,9 @@ impl Render for DocumentView {
             )
             // ---- the comments pane, beside the pages while it is open ----
             .children(comments_pane)
+            .children(selection_pane)
+            .children(format_pane)
+            .children(layout_dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4353,7 +4309,7 @@ fn document_view(
         insert_at: (INSERT_PARAGRAPH, 0),
         caret,
         drag_anchor: None,
-        object_drag: None,
+        objects: Default::default(),
         selected_object: None,
         selection_anchor: None,
         zoom: 1.0,

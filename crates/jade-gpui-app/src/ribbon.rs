@@ -114,6 +114,8 @@ pub enum Popup {
     Columns,
     Breaks,
     PageNumbers,
+    /// The drawing-object tools' lists (`word_objects_ribbon`).
+    Object(crate::word_objects_ribbon::ObjectPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -182,6 +184,8 @@ pub enum Action {
     Page(PageCommand),
     /// ヘッダーの編集 / フッターの編集: the bar over the pages.
     EditStory(Story),
+    /// A drawing-object tool (`word_objects_ribbon`).
+    Object(crate::word_objects_ribbon::ObjectAction),
 }
 
 impl Action {
