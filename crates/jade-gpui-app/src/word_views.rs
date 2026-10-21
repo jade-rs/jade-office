@@ -14,6 +14,8 @@ use jade_office_model::word::view::{
     ZoomFit,
 };
 
+pub mod mini;
+
 use crate::ribbon::{group, listener, row, Action};
 use crate::tooltip::Tooltip;
 use crate::word_dialog::{button, chip, on};
@@ -69,6 +71,14 @@ pub struct Views {
     grid: Option<DrawingGrid>,
     pub hide_white_space: bool,
     pub dialog: Option<ViewDialog>,
+    /// ミニ ツールバー: shown over a selection the mouse made.
+    pub mini: bool,
+    pub mini_popup: Option<mini::MiniPopup>,
+    /// The gallery entry previewed on the selection.
+    pub preview: Option<mini::Preview>,
+    /// Set while a preview runs its command, so the command does not
+    /// settle the preview it is.
+    pub previewing: bool,
 }
 
 impl Views {
@@ -883,11 +893,11 @@ const VIEW_IDS: [&str; 5] = [
 ];
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{run, ViewAction};
     use jade_office_model::word::view::{PageMovement, ViewKind, ZoomFit};
 
-    fn open_contract(
+    pub(crate) fn open_contract(
         cx: &mut gpui::TestAppContext,
     ) -> (
         gpui::Entity<crate::DocumentView>,

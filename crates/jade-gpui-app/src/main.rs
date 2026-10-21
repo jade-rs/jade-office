@@ -1482,6 +1482,8 @@ impl DocumentView {
     /// lets a composition exist — so this only handles the keys an IME never
     /// sees.
     fn handle_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // The mini toolbar goes at the first key, as Word's does.
+        self.views.mini = false;
         // A composition owns the keyboard while it is running; letting these
         // through would edit around the preedit.
         if self.marked.is_some() {
@@ -2969,6 +2971,11 @@ impl DocumentView {
     /// so the next command acts on the same text; a table command that adds
     /// or removes cells moves the caret to where the command left it.
     fn run_ribbon(&mut self, action: Action, cx: &mut Context<Self>) {
+        // A gallery entry previewed on the selection: kept by its click,
+        // taken back by anything else.
+        if word_views::mini::settle(self, &action, cx) {
+            return;
+        }
         if action.is_chrome() {
             match action {
                 Action::Popup(popup) => self.ribbon.toggle(popup),
@@ -3768,6 +3775,7 @@ impl DocumentView {
     /// Turns a click into an insertion point.
     fn click_page(&mut self, page_index: usize, event: &MouseDownEvent, cx: &mut Context<Self>) {
         self.log_call(format!("click page {page_index}"));
+        self.views.mini = false;
         // A click in the pages takes the keyboard back from the pane's
         // search box.
         self.references.searching = false;
@@ -4349,6 +4357,7 @@ impl Render for DocumentView {
         let mut vertical_rulers = vertical_rulers.into_iter();
         let reference_dialog = word_references::overlay(self, window, cx);
         let views_dialog = word_views::overlay(self, cx);
+        let mini_toolbar = word_views::mini::toolbar(self, cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
         word_references::on_actions(div().id("root"), cx)
@@ -4596,6 +4605,7 @@ impl Render for DocumentView {
                                     MouseButton::Left,
                                     cx.listener(move |view, _event: &MouseUpEvent, _window, cx| {
                                         view.drag_anchor = None;
+                                        word_views::mini::after_mouse_up(view);
                                         // The brush paints what was
                                         // just clicked or dragged over.
                                         if view.painter.is_some() {
@@ -4679,6 +4689,7 @@ impl Render for DocumentView {
             .children(tool_dialog)
             .children(reference_dialog)
             .children(views_dialog)
+            .children(mini_toolbar)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
