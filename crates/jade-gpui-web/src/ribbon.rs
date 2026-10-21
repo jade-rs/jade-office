@@ -155,6 +155,11 @@ pub struct Ribbon {
     gallery: Vec<GalleryStyle>,
     /// The document's default paragraph style, which 標準 stands for.
     default_style: Option<String>,
+    /// 書式のコピー/貼り付け: the format the brush holds, and whether it
+    /// keeps painting (a double-click) until Escape.
+    pub painter: Option<(jade_web::word::CopiedFormat, bool)>,
+    /// The format ⌘⇧C took up, for ⌘⇧V.
+    pub copied_format: Option<jade_web::word::CopiedFormat>,
 }
 
 impl Ribbon {
@@ -215,6 +220,8 @@ pub enum Action {
     InsertLink,
     /// 段落…: the paragraph dialog.
     ParagraphDialog,
+    /// 書式のコピー/貼り付け: the brush taken up, sticky on a double-click.
+    FormatPainter(bool),
     /// 参考資料 → 目次.
     InsertContents,
     /// 参考資料 → 目次の更新.
@@ -1177,9 +1184,46 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                     Action::Redo,
                     cx,
                 ),
+                painter_button(ribbon.painter.is_some(), cx),
             ])],
         ),
     ]
+}
+
+/// 書式のコピー/貼り付け: one click paints once, a double-click until
+/// Escape.
+fn painter_button(active: bool, cx: &mut Context<DocView>) -> AnyElement {
+    let view = cx.weak_entity();
+    div()
+        .id("format-painter")
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(26.0))
+        .rounded_md()
+        .when(active, |button| button.bg(palette::selected()))
+        .cursor_pointer()
+        .hover(|button| button.bg(palette::hovered()))
+        .tooltip(Tooltip::text(i18n::text("painter.title")))
+        .on_click(move |event: &ClickEvent, window, cx| {
+            let sticky = event.click_count() >= 2;
+            view.update(cx, |view, cx| {
+                view.ribbon_action(Action::FormatPainter(sticky), window, cx)
+            })
+            .ok();
+        })
+        .child(
+            svg()
+                .path("icons/paintbrush.svg")
+                .size_4()
+                .text_color(if active {
+                    palette::accent()
+                } else {
+                    palette::text()
+                }),
+        )
+        .into_any_element()
 }
 
 /// The style gallery: the first few entries as cards, the whole list

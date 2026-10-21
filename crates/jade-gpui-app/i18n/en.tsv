@@ -734,3 +734,7 @@ paragraph.keep_next	Keep with next
 paragraph.keep_lines	Keep lines together
 paragraph.page_break_before	Page break before
 paragraph.keys	⇥ next field · ⏎ OK · esc cancel
+menu.format.copy_format	Copy Formatting
+menu.format.paste_format	Paste Formatting
+painter.title	Format Painter (double-click to keep painting)
+painter.armed	Format Painter: select the text to format · esc to stop

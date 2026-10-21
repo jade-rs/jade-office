@@ -734,3 +734,7 @@ paragraph.keep_next	次の段落と分離しない
 paragraph.keep_lines	段落を分割しない
 paragraph.page_break_before	段落前で改ページする
 paragraph.keys	⇥ 次の項目 · ⏎ OK · esc キャンセル
+menu.format.copy_format	書式のコピー
+menu.format.paste_format	書式の貼り付け
+painter.title	書式のコピー/貼り付け (ダブルクリックで続けて貼り付け)
+painter.armed	書式のコピー: 貼り付ける文字列を選択 · esc で終了

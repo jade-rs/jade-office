@@ -35,6 +35,7 @@ pub mod find;
 pub mod links;
 pub mod new;
 pub mod page;
+pub mod painter;
 pub mod paragraph;
 pub mod picture;
 pub mod platform;
@@ -44,6 +45,7 @@ pub mod review;
 pub use count::{WordCount, WordCounting};
 pub use find::{FindOptions, Found, WordFind};
 pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
+pub use painter::{CopiedFormat, WordFormatPainter};
 pub use paragraph::{
     IndentUnit, LineSpacing, ParagraphField, ParagraphForm, ParagraphFormat, SpecialIndent,
     WordParagraphs,
