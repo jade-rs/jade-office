@@ -1398,6 +1398,12 @@ impl DocView {
                 self.word_edit(cx, |document| document.delete(false));
                 return true;
             }
+            // ⇧Enter breaks the line inside the paragraph (`w:br`), as in
+            // Word; Enter splits the paragraph.
+            "enter" if extend => {
+                self.word_edit(cx, |document| document.insert_line_break());
+                return true;
+            }
             "enter" => {
                 self.word_edit(cx, |document| document.insert_paragraph_break());
                 return true;
