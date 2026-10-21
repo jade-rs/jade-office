@@ -33,6 +33,7 @@ mod word_compat;
 mod word_dialogs;
 mod word_files;
 mod word_fonts;
+mod word_master;
 mod word_page;
 mod word_page_setup;
 mod word_print;
@@ -1022,6 +1023,7 @@ impl gpui::AssetSource for Assets {
             "life-buoy",
             "list",
             "list-ordered",
+            "lock",
             "merge",
             "moon",
             "paint-bucket",
@@ -1289,6 +1291,8 @@ struct DocumentView {
     dirty: bool,
     /// The file's format and encoding, and the dialogs about them.
     files: word_files::Files,
+    /// マスター文書: the subdocuments' boxes (`word_master`).
+    master: word_master::Master,
     /// The 自動回復 copy of the unsaved edits.
     recovery: autorecover::Recovery,
     /// The 印刷 panel, while it is open.
@@ -1504,6 +1508,15 @@ impl DocumentView {
         // A selection is what backspace and delete act on when there is one:
         // removing a character next to it instead would leave the selection
         // behind and surprise anyone who just dragged over a phrase.
+        // A locked subdocument takes no edits (`word_master`).
+        if matches!(
+            event.keystroke.key.as_str(),
+            "backspace" | "delete" | "enter" | "tab"
+        ) && self.refuse_locked_edit(cx)
+        {
+            cx.stop_propagation();
+            return;
+        }
         if self.document.selection().is_some()
             && matches!(event.keystroke.key.as_str(), "backspace" | "delete")
         {
@@ -2221,6 +2234,7 @@ impl DocumentView {
                         ])],
                     )
                     .into_any_element(),
+                    self.master_group(cx),
                 ]
             }
         }
@@ -3245,6 +3259,9 @@ impl DocumentView {
 
     fn cut(&mut self, cx: &mut Context<Self>) {
         self.copy(cx);
+        if self.refuse_locked_edit(cx) {
+            return;
+        }
         let page = self.caret_page_1idx();
         if let Ok(caret) = self.document.replace_selection("", page) {
             self.insert_at = caret;
@@ -3255,6 +3272,9 @@ impl DocumentView {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
+        if self.refuse_locked_edit(cx) {
+            return;
+        }
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
@@ -3617,6 +3637,7 @@ impl DocumentView {
             let dropped: Vec<_> = self.images.drain(pages..).collect();
             self.retired_images.extend(dropped);
         }
+        self.refresh_master_boxes();
     }
 
     /// The text position under a window-coordinate point on `page_index`.
@@ -3921,6 +3942,9 @@ impl DocumentView {
     /// Replaces `range` (bytes, in the current paragraph) with `text`, leaving
     /// the caret after it.
     fn replace_bytes(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        if self.refuse_locked_edit(cx) {
+            return;
+        }
         self.log_call(format!(
             "replace_bytes paragraph {} range {:?} text {text:?} bound {} marked {:?} selection {:?}",
             self.insert_at.0,
@@ -4560,6 +4584,7 @@ impl Render for DocumentView {
                                     .children(self.table_overlay(index))
                                     .children(self.story_label(index))
                                     .children(self.object_outline(index))
+                                    .children(self.master_boxes(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
                                     // before the renderer can hit-test it.
@@ -4871,6 +4896,7 @@ fn document_view(
         show_inspector: false,
         dirty: false,
         files: word_files::Files::default(),
+        master: word_master::Master::default(),
         recovery: autorecover::Recovery::default(),
         printing: None,
         scroll: ScrollHandle::new(),

@@ -1505,3 +1505,24 @@ compat.layout.table_grid	表の行の高さを行グリッドに合わせる
 pdf_import.title	PDF の変換
 pdf_import.body	PDF を編集可能な Word 文書に変換しました。変換後の文書は、特に図が多い場合、元の PDF と見た目が異なることがあります。保存すると Word 文書 (.docx) として保存されます。
 web.download_as	形式を指定してダウンロード ▾
+master.title	マスター文書
+master.group	マスター文書
+master.show	文書を表示
+master.show_title	サブ文書を枠で囲んで表示します
+master.expand_collapse	展開/折りたたみ
+master.expand_collapse_title	サブ文書を展開して内容を表示するか、折りたたんでリンクだけを表示します
+master.create	作成
+master.create_title	カーソルのある見出しとその下の内容からサブ文書を作成します
+master.insert	挿入
+master.insert_title	ファイルをサブ文書として挿入します
+master.insert_prompt	サブ文書として挿入
+master.unlink	リンク解除
+master.unlink_title	サブ文書へのリンクを解除して、内容をマスター文書に取り込みます
+master.lock	文書のロック
+master.lock_title	サブ文書をロックして編集できないようにします
+master.open	サブ文書を開く
+master.open_title	カーソルのあるサブ文書を別のタブで開きます
+master.none	この文書にはサブ文書がありません。
+master.not_in_subdocument	カーソルをサブ文書の中に置いてください。
+master.unreachable	次のサブ文書を開けませんでした: {names}
+master.locked_edit	ロックされたサブ文書は変更できません。

@@ -37,6 +37,8 @@ image = "0.25"
 [dev-dependencies]
 jade-opc = { path = "../../jade-core/crates/jade-opc" }
 jade-selection = { path = "../../jade-core/crates/jade-selection" }
+# Reading saved subdocuments back in the master document tests.
+jade-docx-convert = { path = "../../jade-core/crates/jade-docx-convert" }
 # Reading the printed PDFs' sheets back in the print tests.
 lopdf = { version = "=0.39.0", default-features = false }
 # Headless windows for scenario tests: keystrokes, input and actions driven

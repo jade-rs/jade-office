@@ -40,6 +40,7 @@ pub mod font;
 pub mod formats;
 pub mod insert;
 pub mod links;
+pub mod master;
 pub mod new;
 pub mod page;
 pub mod page_setup;

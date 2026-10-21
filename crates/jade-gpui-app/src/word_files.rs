@@ -174,6 +174,8 @@ pub fn read(path: &Path) -> Result<FileRead, String> {
     // 文書のスタイルを自動的に更新する: the attached template's styles, now.
     if opened.format.is_package() {
         opened.docx = crate::word_templates::refresh_linked_styles(opened.docx);
+        // マスター文書: its subdocuments collapsed to their links.
+        opened.docx = crate::word_master::for_editing(opened.docx, path);
     }
     let source = (opened.format == WordFormat::Text).then(|| Rc::new(bytes));
     Ok((opened, source))
@@ -401,6 +403,11 @@ impl DocumentView {
             .document
             .export_docx()
             .map_err(|error| error.to_string())
+            .and_then(|docx| match format.is_package() {
+                // A master's subdocuments go to their own files.
+                true => self.stored_master(docx, &target),
+                false => Ok(docx),
+            })
             .and_then(|docx| {
                 let docx = self.prepared_for_save(docx, format);
                 save_from_docx(format, &docx, options).map_err(|error| describe(&error, &name))

@@ -152,7 +152,7 @@ pub fn repair(docx: &[u8]) -> Result<Repaired, String> {
                 .unwrap_or("");
             let external = element.contains("TargetMode=\"External\"");
             let resolved = jade_opc::resolve_target(&source, target);
-            if external || names.iter().any(|name| *name == resolved) {
+            if external || names.contains(&resolved) {
                 kept.push_str(element);
             } else {
                 notes.push(RepairNote::RelationshipDropped(resolved));
