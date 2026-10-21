@@ -1316,6 +1316,21 @@ impl EditableDocument {
         self.repaint_all()
     }
 
+    /// Shows or hides Word's formatting marks (表示 → 編集記号) and
+    /// repaints.
+    pub fn set_formatting_marks(&mut self, show: bool) -> Result<(), String> {
+        if self.options.show_formatting_marks == show {
+            return Ok(());
+        }
+        self.options.show_formatting_marks = show;
+        self.repaint_all()
+    }
+
+    /// Whether the formatting marks show.
+    pub fn formatting_marks(&self) -> bool {
+        self.options.show_formatting_marks
+    }
+
     /// The top-level body elements collapsed headings hide.
     pub fn collapsed_blocks(&self) -> &[usize] {
         self.options.collapsed_blocks()

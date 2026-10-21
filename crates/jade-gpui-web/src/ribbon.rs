@@ -83,19 +83,22 @@ pub enum Tab {
     Layout,
     References,
     Review,
+    /// 表示: the marks, the panes and the zoom.
+    View,
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
     TableDesign,
     TableLayout,
 }
 
 impl Tab {
-    const ALL: [Tab; 6] = [
+    const ALL: [Tab; 7] = [
         Tab::Home,
         Tab::Insert,
         Tab::Design,
         Tab::Layout,
         Tab::References,
         Tab::Review,
+        Tab::View,
     ];
 
     fn label(self) -> &'static str {
@@ -106,6 +109,7 @@ impl Tab {
             Tab::Layout => "doc.tab.layout",
             Tab::References => "doc.tab.references",
             Tab::Review => "doc.tab.review",
+            Tab::View => "doc.tab.view",
             Tab::TableDesign => "doc.tab.table_design",
             Tab::TableLayout => "doc.tab.table_layout",
         })
@@ -255,6 +259,18 @@ pub enum Action {
     Word(crate::word_tools::ToolCommand),
     /// 参考資料, ジャンプ and the navigation pane (`view::word_references`).
     References(crate::view::word_references::RefAction),
+    /// 表示: 編集記号 and the zoom.
+    View(ViewAction),
+}
+
+/// What the 表示 tab's own buttons do.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ViewAction {
+    ToggleMarks,
+    ZoomOut,
+    ZoomActual,
+    ZoomIn,
+    PageWidth,
 }
 
 impl Action {
@@ -638,8 +654,11 @@ pub struct TabState {
     pub layout: Option<crate::view::word_setup::LayoutState>,
     /// What the list, paragraph and design tools' open list shows.
     pub tools: crate::word_tools::ToolState,
-    /// What 参考資料 shows, read only while it is up.
+    /// What 参考資料 shows, read only while it is up (and 表示, whose
+    /// pane buttons are 参考資料's).
     pub references: Option<crate::view::word_references::RibbonState>,
+    /// Whether the formatting marks show.
+    pub marks: bool,
 }
 
 pub fn ribbon(
@@ -741,6 +760,7 @@ pub fn ribbon(
             crate::view::word_references::ribbon_groups(ribbon.popup, shown.references.as_ref(), cx)
         }
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
+        Tab::View => view_groups(shown, cx),
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
             crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)
@@ -1874,4 +1894,63 @@ fn cell_format_menu(state: &FormatState, cx: &mut Context<DocView>) -> Option<An
             ))
             .into_any_element(),
     )
+}
+
+/// The 表示 tab: 編集記号 and the panes (ナビゲーション, ブックマーク, ジャンプ),
+/// and the zoom.
+fn view_groups(shown: &TabState, cx: &mut Context<DocView>) -> Vec<AnyElement> {
+    fn button(
+        id: &'static str,
+        label: &'static str,
+        active: bool,
+        action: ViewAction,
+        cx: &mut Context<DocView>,
+    ) -> AnyElement {
+        crate::word_page::text_button(
+            id,
+            i18n::text(label),
+            i18n::text(label),
+            active,
+            Action::View(action),
+            cx,
+        )
+    }
+    let mut show = vec![button(
+        "view-marks",
+        "doc.marks",
+        shown.marks,
+        ViewAction::ToggleMarks,
+        cx,
+    )];
+    if let Some(references) = &shown.references {
+        show.extend(crate::view::word_references::view_buttons(references, cx));
+    }
+    let zoom = vec![
+        button(
+            "view-zoom-out",
+            "doc.zoom_out",
+            false,
+            ViewAction::ZoomOut,
+            cx,
+        ),
+        button(
+            "view-zoom-actual",
+            "doc.zoom_actual",
+            false,
+            ViewAction::ZoomActual,
+            cx,
+        ),
+        button("view-zoom-in", "doc.zoom_in", false, ViewAction::ZoomIn, cx),
+        button(
+            "view-page-width",
+            "views.page_width",
+            false,
+            ViewAction::PageWidth,
+            cx,
+        ),
+    ];
+    vec![
+        group(i18n::text("doc.group.show"), vec![row(show)]),
+        group(i18n::text("doc.group.zoom"), vec![row(zoom)]),
+    ]
 }

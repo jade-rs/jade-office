@@ -1655,6 +1655,26 @@ impl DocView {
         if let Action::References(action) = action {
             return word_references::run(self, action, cx);
         }
+        if let Action::View(action) = action {
+            use ribbon::ViewAction;
+            match action {
+                ViewAction::ToggleMarks => self.word_edit(cx, |document| {
+                    let show = !document.formatting_marks();
+                    document.set_formatting_marks(show)
+                }),
+                ViewAction::ZoomOut => {
+                    let zoom = zoom_step(self.zoom(), false);
+                    self.set_zoom(zoom, cx)
+                }
+                ViewAction::ZoomIn => {
+                    let zoom = zoom_step(self.zoom(), true);
+                    self.set_zoom(zoom, cx)
+                }
+                ViewAction::ZoomActual => self.set_zoom(1.0, cx),
+                ViewAction::PageWidth => self.zoom_to_fit(window, cx),
+            }
+            return;
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1731,6 +1751,7 @@ impl DocView {
             | Action::Setup(_)
             | Action::Characters(_)
             | Action::References(_)
+            | Action::View(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -1813,8 +1834,9 @@ impl DocView {
                 table,
                 layout: (ribbon.tab == ribbon::Tab::Layout)
                     .then(|| word_setup::LayoutState::read(document)),
-                references: (ribbon.tab == ribbon::Tab::References)
+                references: matches!(ribbon.tab, ribbon::Tab::References | ribbon::Tab::View)
                     .then(|| word_references::ribbon_state(document, &self.references)),
+                marks: document.formatting_marks(),
             }
         };
         ribbon::ribbon(

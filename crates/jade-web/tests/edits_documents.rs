@@ -1158,3 +1158,16 @@ fn autocorrect_follows_typing() {
     document.autocorrect_enter(list, &options).unwrap();
     assert_eq!(document.paragraph_text(list).unwrap(), "");
 }
+
+/// 表示 → 編集記号: the marks go and come back, the pages repainted.
+#[test]
+fn formatting_marks_toggle_from_the_view_tab() {
+    let mut document = open("contract.docx");
+    assert!(document.formatting_marks(), "on, as Word's editors open");
+    let with = page_rgba(&document, 0);
+    document.set_formatting_marks(false).unwrap();
+    assert!(!document.formatting_marks());
+    assert!(page_rgba(&document, 0) != with, "the marks are gone");
+    document.set_formatting_marks(true).unwrap();
+    assert!(page_rgba(&document, 0) == with, "and back");
+}
