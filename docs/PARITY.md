@@ -91,3 +91,5 @@ Per-area detail behind the Word numbers above, in `docs/word/`:
   shape, text-effect, emphasis and number-format values one by one.
 - [compatibility-modes.md](word/compatibility-modes.md) — compatibility modes,
   legacy layout options and Word for Mac vs Windows, with jade's handling.
+- [fields.md](word/fields.md) — every field type and switch: parsed,
+  evaluated, insertable.
