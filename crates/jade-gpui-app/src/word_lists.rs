@@ -18,7 +18,7 @@ use jade_office_model::word::styles::{display_name, WordStyles};
 use crate::ribbon::{dropdown, menu_caption, menu_panel, menu_row, Action, Popup};
 use crate::word_dialog::{check, chip, labeled, on, section, DialogError, Inputs, WordDialog};
 use crate::word_tools::{ToolCommand, ToolMenu};
-use crate::{i18n, theme, DocumentView};
+use crate::{i18n, DocumentView};
 
 /// The number formats the define dialog offers, with what they look like.
 const FORMATS: [(&str, &str); 16] = [
@@ -702,7 +702,7 @@ impl DocumentView {
             .flex()
             .flex_col()
             .p_2()
-            .bg(theme::paper())
+            .bg(gpui::rgb(0xffffff))
             .text_color(gpui::rgb(0x202020))
             .children((0..9).map(|index| {
                 let entry = &dialog.definition.levels[index];
