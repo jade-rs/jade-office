@@ -193,6 +193,137 @@ fn format_commands(
     commands
 }
 
+/// Word's 貼り付けのオプション: how a paste treats the copy's formatting.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PasteMode {
+    /// 元の書式を保持: the copy's character and paragraph formatting.
+    KeepSource,
+    /// 書式を結合 (貼り付け先の書式に合わせる, ⌥⇧⌘V): the destination's
+    /// formatting, keeping the copy's bold, italic, underline, strikethrough
+    /// and super/subscript.
+    MergeFormatting,
+    /// テキストのみ保持: the text alone, formatted as typing there would be.
+    TextOnly,
+}
+
+impl PasteMode {
+    pub const ALL: [PasteMode; 3] = [
+        PasteMode::KeepSource,
+        PasteMode::MergeFormatting,
+        PasteMode::TextOnly,
+    ];
+}
+
+/// The formats 形式を選択して貼り付け lists, and the paste each stands for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PasteFormat {
+    /// Microsoft Word 文書.
+    WordDocument,
+    /// 書式付きテキスト (RTF).
+    FormattedText,
+    /// HTML 形式.
+    Html,
+    /// 書式なしテキスト.
+    UnformattedText,
+    /// 書式なしの Unicode テキスト.
+    UnicodeText,
+}
+
+impl PasteFormat {
+    pub const ALL: [PasteFormat; 5] = [
+        PasteFormat::WordDocument,
+        PasteFormat::FormattedText,
+        PasteFormat::Html,
+        PasteFormat::UnformattedText,
+        PasteFormat::UnicodeText,
+    ];
+
+    /// The formats a clipboard offers: all of them for a copy made here,
+    /// only the text ones for text from elsewhere.
+    pub fn available(rich: bool) -> Vec<PasteFormat> {
+        Self::ALL
+            .into_iter()
+            .filter(|format| rich || format.mode() == PasteMode::TextOnly)
+            .collect()
+    }
+
+    pub fn mode(self) -> PasteMode {
+        match self {
+            PasteFormat::WordDocument | PasteFormat::FormattedText | PasteFormat::Html => {
+                PasteMode::KeepSource
+            }
+            PasteFormat::UnformattedText | PasteFormat::UnicodeText => PasteMode::TextOnly,
+        }
+    }
+}
+
+impl RichClip {
+    /// The copy as a paste in `mode` would put it in, given what typing
+    /// at the destination would take on (`inherited`).
+    pub fn for_mode(&self, mode: PasteMode, inherited: &HeadlessRunStyle) -> RichClip {
+        if mode == PasteMode::KeepSource {
+            return self.clone();
+        }
+        let paragraphs = self
+            .paragraphs
+            .iter()
+            .map(|paragraph| ClipParagraph {
+                style_id: None,
+                alignment: None,
+                runs: paragraph
+                    .runs
+                    .iter()
+                    .map(|run| {
+                        let mut style = inherited.clone();
+                        if mode == PasteMode::MergeFormatting {
+                            let keep = |source: Option<bool>, had: Option<bool>| {
+                                if source == Some(true) {
+                                    Some(true)
+                                } else {
+                                    had
+                                }
+                            };
+                            style.bold = keep(run.style.bold, style.bold);
+                            style.italic = keep(run.style.italic, style.italic);
+                            style.underline = keep(run.style.underline, style.underline);
+                            style.strike = keep(run.style.strike, style.strike);
+                            if run.style.baseline.is_some() {
+                                style.baseline = run.style.baseline.clone();
+                            }
+                        }
+                        ClipRun {
+                            text: run.text.clone(),
+                            style,
+                        }
+                    })
+                    .collect(),
+            })
+            .collect();
+        RichClip { paragraphs }
+    }
+
+    /// Plain text from elsewhere as a copy: one paragraph per line.
+    pub fn from_text(text: &str) -> RichClip {
+        RichClip {
+            paragraphs: text
+                .replace("\r\n", "\n")
+                .replace('\r', "\n")
+                .split('\n')
+                .map(|line| ClipParagraph {
+                    runs: (!line.is_empty())
+                        .then(|| ClipRun {
+                            text: line.to_string(),
+                            style: HeadlessRunStyle::default(),
+                        })
+                        .into_iter()
+                        .collect(),
+                    ..Default::default()
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Formatted copy and paste for every session.
 pub trait WordClipboard: WordSession {
     /// The selection's text with its formatting; `None` for a caret.
@@ -255,6 +386,17 @@ pub trait WordClipboard: WordSession {
             });
         }
         Some(RichClip { paragraphs })
+    }
+
+    /// Pastes `clip` the way `mode` says — 元の書式を保持, 書式を結合 or
+    /// テキストのみ保持 — as one undo step. Returns where the caret goes.
+    fn paste_as(&mut self, clip: &RichClip, mode: PasteMode) -> Result<Position, String> {
+        let range = self.selection_range().ok_or("no caret")?;
+        let (start, _) = range.normalized();
+        let inherited = self
+            .run_style_at((start.paragraph, start.offset.saturating_sub(1)))
+            .unwrap_or_default();
+        self.paste_rich(&clip.for_mode(mode, &inherited))
     }
 
     /// Pastes `clip` in place of the selection, or at the caret, as one undo
@@ -358,6 +500,47 @@ mod tests {
         assert_eq!(clip.plain_text(), "Bold plain\nnext");
         assert!(clip.matches("Bold plain\r\nnext"));
         assert!(!clip.matches("Bold plain"));
+    }
+
+    #[test]
+    fn merging_keeps_emphasis_and_text_only_keeps_nothing() {
+        let clip = RichClip {
+            paragraphs: vec![ClipParagraph {
+                style_id: Some("Heading1".into()),
+                alignment: Some("center".into()),
+                runs: vec![ClipRun {
+                    text: "Bold red".into(),
+                    style: HeadlessRunStyle {
+                        bold: Some(true),
+                        font_size: Some(20.0),
+                        color: Some("FF0000".into()),
+                        font_family: Some("Arial".into()),
+                        ..Default::default()
+                    },
+                }],
+            }],
+        };
+        let destination = HeadlessRunStyle {
+            font_size: Some(10.5),
+            font_family: Some("游明朝".into()),
+            ..Default::default()
+        };
+        let merged = clip.for_mode(PasteMode::MergeFormatting, &destination);
+        let run = &merged.paragraphs[0].runs[0];
+        assert_eq!(run.style.bold, Some(true));
+        assert_eq!(run.style.font_size, Some(10.5));
+        assert_eq!(run.style.font_family.as_deref(), Some("游明朝"));
+        assert_eq!(run.style.color, None);
+        assert_eq!(merged.paragraphs[0].style_id, None);
+        let plain = clip.for_mode(PasteMode::TextOnly, &destination);
+        assert_eq!(plain.paragraphs[0].runs[0].style, destination);
+        assert_eq!(clip.for_mode(PasteMode::KeepSource, &destination), clip);
+        // Text from elsewhere offers only the text formats.
+        assert_eq!(
+            PasteFormat::available(false),
+            [PasteFormat::UnformattedText, PasteFormat::UnicodeText]
+        );
+        assert_eq!(RichClip::from_text("a\r\nb").plain_text(), "a\nb");
     }
 
     #[test]

@@ -28,6 +28,7 @@ mod ribbon;
 mod shell;
 mod tooltip;
 mod word_dialogs;
+mod word_characters;
 mod word_page;
 mod word_page_setup;
 mod word_review;
@@ -132,6 +133,12 @@ actions!(
         ZoomOut,
         ZoomActual,
         ZoomFit,
+        FontDialog,
+        TypographyDialog,
+        PasteSpecial,
+        PasteMatchFormatting,
+        InsertSymbol,
+        InsertDateTime,
     ]
 );
 
@@ -206,6 +213,16 @@ fn key_bindings() -> Vec<KeyBinding> {
         // Word for Mac's 書式のコピー / 書式の貼り付け.
         KeyBinding::new("cmd-shift-c", CopyFormat, CONTEXT),
         KeyBinding::new("cmd-shift-v", PasteFormat, CONTEXT),
+        // Word for Mac's フォント… (書式 menu).
+        KeyBinding::new("cmd-d", FontDialog, CONTEXT),
+        // 体裁 (the 段落 dialog's Japanese typography).
+        KeyBinding::new("cmd-alt-shift-k", TypographyDialog, CONTEXT),
+        // Word for Mac's 形式を選択して貼り付け and 貼り付けて書式を合わせる.
+        KeyBinding::new("ctrl-cmd-v", PasteSpecial, CONTEXT),
+        KeyBinding::new("alt-shift-cmd-v", PasteMatchFormatting, CONTEXT),
+        // 挿入's 記号と特殊文字 and 日付と時刻 (Word for Mac's ⌃⇧D).
+        KeyBinding::new("cmd-alt-shift-s", InsertSymbol, CONTEXT),
+        KeyBinding::new("ctrl-shift-d", InsertDateTime, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -271,6 +288,8 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.edit.cut"), Cut),
                 MenuItem::action(t("menu.edit.copy"), Copy),
                 MenuItem::action(t("menu.edit.paste"), Paste),
+                MenuItem::action(t("menu.edit.paste_special"), PasteSpecial),
+                MenuItem::action(t("menu.edit.paste_match"), PasteMatchFormatting),
                 MenuItem::action(t("menu.edit.select_all"), SelectAll),
                 MenuItem::action(t("menu.edit.select_paragraph"), SelectParagraph),
                 MenuItem::separator(),
@@ -287,6 +306,8 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.format.bold"), Bold),
                 MenuItem::action(t("menu.format.italic"), Italic),
                 MenuItem::action(t("menu.format.underline"), Underline),
+                MenuItem::action(t("menu.format.font"), FontDialog),
+                MenuItem::action(t("menu.format.typography"), TypographyDialog),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.align_left"), AlignLeft),
                 MenuItem::action(t("menu.format.center"), AlignCenter),
@@ -308,6 +329,13 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.insert.footnote"), InsertFootnote),
                 MenuItem::action(t("menu.insert.endnote"), InsertEndnote),
+            ],
+        },
+        Menu {
+            name: t("menu.insert").into(),
+            items: vec![
+                MenuItem::action(t("menu.insert.symbol"), InsertSymbol),
+                MenuItem::action(t("menu.insert.date_time"), InsertDateTime),
             ],
         },
         Menu {
@@ -513,6 +541,12 @@ fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
         faces.push(face("Symbol Fallback", 400, &symbols));
     }
     faces.push(face("Noto Sans Thai", 400, &thai_font()));
+    // Complex-script text (Hebrew, Arabic) falls back to a system face that
+    // carries it, as Thai does to the bundled one; without it every letter
+    // was a tofu box.
+    if let Some(path) = word_characters::complex_script_fallback() {
+        faces.push(face("Complex Script Fallback", 400, &path));
+    }
     if installed {
         faces = jade_docx_native_render::system_fonts::word_document_faces(bytes, &faces);
     }
@@ -1175,6 +1209,8 @@ struct DocumentView {
     show_comments: bool,
     /// The table tabs' dialogs, pen and tools, and a border being dragged.
     tables: word_table::TableUi,
+    /// The フォント dialog and the other character tools' dialogs.
+    characters: word_characters::Characters,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1377,6 +1413,14 @@ impl DocumentView {
         // A dialog is modal: it takes every key while it is open.
         if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
             cx.stop_propagation();
+            return;
+        }
+        // A dialog owns the keyboard while it is open: its own keys stop
+        // here, and typing goes on to the input handler, into its field.
+        if self.characters.is_open() {
+            if word_characters::handle_key(self, event.keystroke.key.as_str(), cx) {
+                cx.stop_propagation();
+            }
             return;
         }
         // The bar owns the keyboard while it is open, so Enter means "next
@@ -1902,6 +1946,7 @@ impl DocumentView {
                 .into_any_element(),
                 word_page::header_footer(&self.ribbon, cx),
                 self.cover_group(cx),
+                word_characters::insert_group(cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -2184,6 +2229,7 @@ impl DocumentView {
                     |view, cx| view.paste(cx),
                 )
                 .into_any_element(),
+                word_characters::paste_options(&self.ribbon, cx),
                 self.ribbon_button(
                     "cut",
                     t("doc.cut"),
@@ -2359,6 +2405,9 @@ impl DocumentView {
         if let Some(field) = self.dialog.as_ref().and_then(|dialog| dialog.field()) {
             return Some(field);
         }
+        if let Some(field) = self.characters.text_field() {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2369,6 +2418,9 @@ impl DocumentView {
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
         if self.dialog.is_some() {
             return self.dialog.as_mut().and_then(|dialog| dialog.field_mut());
+        }
+        if self.characters.is_open() {
+            return self.characters.text_field_mut();
         }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
@@ -2931,7 +2983,6 @@ impl DocumentView {
             Action::Table(command) => document.table_command(command).map(|_| ()),
             Action::Toggle(format) => document.toggle_format(format),
             Action::ClearFormatting => document.clear_formatting(),
-            Action::FontFamily(family) => WordFormatting::set_font_family(document, family),
             Action::FontSize(points) => WordFormatting::set_font_size(document, points),
             Action::StepFontSize(grow) => document.step_font_size(grow),
             Action::FontColor(color) => WordFormatting::set_font_color(document, &color),
@@ -2960,6 +3011,8 @@ impl DocumentView {
             Action::Setup(setup) => self.run_setup_action(setup, cx),
             Action::ParagraphDialog => return self.open_paragraph_dialog(cx),
             Action::Tables(action) => return self.table_action(action, cx),
+            Action::FontFamilyName(name) => WordFormatting::set_font_family(document, &name),
+            Action::Characters(action) => return word_characters::run(self, action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -4231,6 +4284,7 @@ impl Render for DocumentView {
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
+        let dialog = word_characters::overlay(self, window, cx);
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -4313,6 +4367,28 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
             )
+            .on_action(cx.listener(|view, _: &FontDialog, _window, cx| {
+                word_characters::open_font_dialog(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &TypographyDialog, _window, cx| {
+                word_characters::open_typography(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &InsertSymbol, _window, cx| {
+                word_characters::open_symbols(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &InsertDateTime, _window, cx| {
+                word_characters::open_date_time(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &PasteSpecial, _window, cx| {
+                word_characters::open_paste_special(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &PasteMatchFormatting, _window, cx| {
+                word_characters::paste_with(
+                    view,
+                    jade_office_model::word::clipboard::PasteMode::MergeFormatting,
+                    cx,
+                )
+            }))
             .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
                 view.show_inspector = !view.show_inspector;
                 cx.notify();
@@ -4486,6 +4562,8 @@ impl Render for DocumentView {
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             // ---- a ページ設定 dialog, over everything while it is open ----
             .children(self.page_dialog_element(cx))
+            // ---- the open dialog, over everything ----
+            .children(dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4679,6 +4757,7 @@ fn document_view(
     file_size: u64,
     cx: &mut App,
 ) -> DocumentView {
+    word_characters::start_field_clock(&mut document);
     // Placed before the window opens so the caret is visible from the first
     // frame rather than only after the first click.
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
@@ -4717,6 +4796,7 @@ fn document_view(
         page_dialog: None,
         show_comments: false,
         tables: word_table::TableUi::default(),
+        characters: word_characters::Characters::default(),
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,

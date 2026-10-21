@@ -1126,3 +1126,234 @@ setup.cover.group	Pages
 setup.cover.simple	Simple
 setup.cover.banner	Banner
 setup.cover.lined	Lined
+# ---- Character formatting and Japanese text (word_characters) ----
+menu.format.font	Font...
+chars.none	None
+chars.font.title	Font
+chars.font.tab_font	Font
+chars.font.tab_advanced	Advanced
+chars.font.japanese	Asian text font
+chars.font.latin	Latin text font
+chars.font.complex	Complex scripts font
+chars.font.complex_size	Complex scripts size
+chars.font.style	Font style
+chars.font.size	Size
+chars.font.all_text	All text
+chars.font.color	Font color
+chars.font.underline	Underline style
+chars.font.underline_color	Underline color
+chars.font.emphasis	Emphasis mark
+chars.font.decorations	Effects
+chars.font.preview	Preview
+chars.font.type_to_filter	Type to filter
+chars.font.launcher	Font... (⌘D)
+chars.font.all_fonts	All fonts
+chars.style.regular	Regular
+chars.style.italic	Italic
+chars.style.bold	Bold
+chars.style.bold_italic	Bold Italic
+chars.underline.none	(none)
+chars.underline.single	Single
+chars.underline.words	Words only
+chars.underline.double	Double
+chars.underline.thick	Thick
+chars.underline.dotted	Dotted
+chars.underline.dotted_heavy	Heavy dotted
+chars.underline.dash	Dash
+chars.underline.dash_heavy	Heavy dash
+chars.underline.dash_long	Long dash
+chars.underline.dash_long_heavy	Heavy long dash
+chars.underline.dot_dash	Dot dash
+chars.underline.dot_dash_heavy	Heavy dot dash
+chars.underline.dot_dot_dash	Dot dot dash
+chars.underline.dot_dot_dash_heavy	Heavy dot dot dash
+chars.underline.wave	Wave
+chars.underline.wave_heavy	Heavy wave
+chars.underline.wave_double	Double wave
+chars.emphasis.none	(none)
+chars.emphasis.dot	Dot
+chars.emphasis.comma	Comma
+chars.emphasis.circle	Circle
+chars.emphasis.under_dot	Under dot
+chars.effect.strike	Strikethrough
+chars.effect.double_strike	Double strikethrough
+chars.effect.superscript	Superscript
+chars.effect.subscript	Subscript
+chars.effect.small_caps	Small caps
+chars.effect.all_caps	All caps
+chars.effect.hidden	Hidden
+chars.effect.outline	Outline
+chars.effect.shadow	Shadow
+chars.effect.emboss	Emboss
+chars.effect.engrave	Engrave
+chars.advanced.spacing	Character spacing
+chars.advanced.scale	Scale
+chars.advanced.char_spacing	Spacing
+chars.advanced.position	Position
+chars.advanced.opentype	OpenType features
+chars.advanced.ligatures	Ligatures
+chars.advanced.number_spacing	Number spacing
+chars.advanced.number_form	Number forms
+chars.advanced.stylistic_set	Stylistic sets
+chars.advanced.alternates	Use contextual alternates
+chars.advanced.effects	Text effects
+chars.advanced.glow	Glow
+chars.advanced.text_outline	Text outline
+chars.spacing.normal	Normal
+chars.spacing.expanded	Expanded
+chars.spacing.condensed	Condensed
+chars.position.normal	Normal
+chars.position.raised	Raised
+chars.position.lowered	Lowered
+chars.kerning	Kerning for fonts
+chars.kerning_from	points and above
+chars.ligatures.none	None
+chars.ligatures.standard	Standard only
+chars.ligatures.standard_contextual	Standard and contextual
+chars.ligatures.historical	Historical and discretionary
+chars.ligatures.all	All
+chars.number.default	Default
+chars.number.proportional	Proportional
+chars.number.tabular	Tabular
+chars.number.lining	Lining
+chars.number.old_style	Old-style
+chars.color.title	Colors
+chars.color.theme	Theme colors
+chars.color.standard	Standard colors
+chars.color.more	More colors...
+chars.color.code	Hex code
+chars.case.title_tip	Change case
+chars.case.sentence	Sentence case.
+chars.case.lower	lowercase
+chars.case.upper	UPPERCASE
+chars.case.title	Capitalize Each Word
+chars.case.toggle	tOGGLE cASE
+chars.case.half_width	Half-width
+chars.case.full_width	Full-width
+chars.case.katakana	Katakana
+chars.case.hiragana	Hiragana
+chars.shading	Character shading
+chars.border	Character border
+chars.asian.title	Asian layout
+chars.asian.vertical	Horizontal in vertical
+chars.asian.vertical_fit	Horizontal in vertical (fit line)
+chars.asian.combine	Combine characters
+chars.asian.warichu	Two lines in one
+chars.asian.warichu_none	Two lines in one (no brackets)
+chars.asian.remove	Remove Asian layout
+chars.asian.scale	Character scale
+menu.format.typography	Asian Typography...
+chars.typography.title	Asian Typography
+chars.typography.paragraph	Line breaking (selected paragraphs)
+chars.typography.document	Typography (whole document)
+chars.typography.kinsoku	Use Asian rules for first and last characters
+chars.typography.word_wrap	Allow Latin text to wrap in the middle of a word
+chars.typography.overflow_punct	Allow hanging punctuation
+chars.typography.top_line_punct	Compress punctuation at the start of a line
+chars.typography.auto_space_de	Adjust space between Asian and Latin text
+chars.typography.auto_space_dn	Adjust space between Asian text and numbers
+chars.kinsoku.level	First and last characters
+chars.kinsoku.standard	Normal
+chars.kinsoku.strict	Strict
+chars.kinsoku.custom	Custom
+chars.kinsoku.line_start	Not at start of line
+chars.kinsoku.line_end	Not at end of line
+chars.compress.title	Character spacing control
+chars.compress.none	Don't compress
+chars.compress.punctuation	Compress punctuation only
+chars.compress.kana	Compress punctuation and Japanese kana
+menu.edit.paste_special	Paste Special...
+menu.edit.paste_match	Paste and Match Formatting
+chars.paste.title	Paste Special
+chars.paste.title_menu	Paste Special...
+chars.paste.options	Paste Options
+chars.paste.keep_source	Keep Source Formatting
+chars.paste.merge	Merge Formatting
+chars.paste.text_only	Keep Text Only
+chars.paste.source	Source
+chars.paste.paste	Paste
+chars.paste.link	Paste link
+chars.paste.as	As
+chars.paste.format.word	Microsoft Word Document
+chars.paste.format.rtf	Formatted Text (RTF)
+chars.paste.format.html	HTML Format
+chars.paste.format.text	Unformatted Text
+chars.paste.format.unicode	Unformatted Unicode Text
+menu.insert.symbol	Symbol...
+menu.insert.date_time	Date and Time...
+chars.insert.group	Symbols
+chars.symbol.title	Symbol
+chars.symbol.title_menu	Symbol
+chars.symbol.tab_symbols	Symbols
+chars.symbol.tab_special	Special Characters
+chars.symbol.subset	Subset
+chars.symbol.recent	Recently used symbols
+chars.symbol.code	Character code
+chars.symbol.subset.latin	Basic Latin
+chars.symbol.subset.latin1	Latin-1 Supplement
+chars.symbol.subset.greek	Greek
+chars.symbol.subset.cyrillic	Cyrillic
+chars.symbol.subset.punctuation	General Punctuation
+chars.symbol.subset.currency	Currency Symbols
+chars.symbol.subset.letterlike	Letterlike Symbols
+chars.symbol.subset.number_forms	Number Forms
+chars.symbol.subset.arrows	Arrows
+chars.symbol.subset.math	Mathematical Operators
+chars.symbol.subset.technical	Miscellaneous Technical
+chars.symbol.subset.enclosed	Enclosed Alphanumerics
+chars.symbol.subset.box	Box Drawing
+chars.symbol.subset.shapes	Geometric Shapes
+chars.symbol.subset.misc	Miscellaneous Symbols
+chars.symbol.subset.cjk	CJK Symbols and Punctuation
+chars.symbol.subset.hiragana	Hiragana
+chars.symbol.subset.katakana	Katakana
+chars.symbol.subset.enclosed_cjk	Enclosed CJK Letters and Months
+chars.symbol.subset.fullwidth	Halfwidth and Fullwidth Forms
+chars.special.em_dash	Em Dash
+chars.special.en_dash	En Dash
+chars.special.nonbreaking_hyphen	Nonbreaking Hyphen
+chars.special.optional_hyphen	Optional Hyphen
+chars.special.em_space	Em Space
+chars.special.en_space	En Space
+chars.special.quarter_em_space	1/4 Em Space
+chars.special.nonbreaking_space	Nonbreaking Space
+chars.special.copyright	Copyright
+chars.special.registered	Registered
+chars.special.trademark	Trademark
+chars.special.section	Section
+chars.special.paragraph	Paragraph
+chars.special.ellipsis	Ellipsis
+chars.special.no_width_break	No-Width Optional Break
+chars.special.no_width_join	No-Width Non Break
+chars.date.title	Date and Time
+chars.date.title_menu	Date and Time
+chars.date.language	Language
+chars.date.japanese	Japanese
+chars.date.english	English (United States)
+chars.date.calendar	Calendar type
+chars.date.gregorian	Gregorian
+chars.date.era	Japanese era
+chars.date.formats	Available formats
+chars.date.auto_update	Update automatically
+chars.ruby.title	Phonetic Guide
+chars.ruby.base	Base text
+chars.ruby.ruby	Ruby text
+chars.ruby.whole	Group
+chars.ruby.per_character	Mono
+chars.ruby.clear	Clear all
+chars.ruby.align	Alignment
+chars.ruby.align.center	Center
+chars.ruby.align.distribute_letter	Distributed
+chars.ruby.align.distribute_space	1:2:1
+chars.ruby.align.left	Left
+chars.ruby.align.right	Right
+chars.ruby.align.right_vertical	Right vertical
+chars.ruby.font	Font
+chars.ruby.font_same	(same as base)
+chars.ruby.size	Size
+chars.ruby.offset	Offset
+chars.ruby.auto	Auto
+chars.enclose.title	Enclose Characters
+chars.enclose.text	Text
+chars.enclose.enclosure	Enclosure
+chars.font.complex_style	Complex scripts style
