@@ -800,6 +800,21 @@ impl DeckView {
             self.toggle_selected(id, cx);
             return;
         }
+        // A second click on the text of a shape selected on its own types
+        // into it where the click lands, as in PowerPoint.
+        if let Some(id) = hit.filter(|id| {
+            self.selected == Some(*id) && self.more.is_empty() && event.click_count < 2
+        }) {
+            if self
+                .deck
+                .click_into_text(self.current, id, (x, y))
+                .is_some()
+            {
+                self.begin_text(id, Some((x, y)), cx);
+                self.selecting_text = self.typing.is_some();
+                return;
+            }
+        }
         // A press on a shape of the selection keeps it, to drag it all.
         let in_selection =
             hit.is_some_and(|id| self.more.contains(&id) || self.selected == Some(id));
@@ -903,6 +918,45 @@ impl DeckView {
             None => self.status = SharedString::from(i18n::text("deck.text_locked")),
         }
         cx.notify();
+    }
+
+    /// Text typed — or composed, when `mark` — while a shape is selected
+    /// and nothing is typed into: a shape takes it after its text, as the
+    /// model's `begin_typing` puts it; a table starts typing into its first
+    /// cell and leaves the text to the caller (`false`). `true` when it is
+    /// dealt with — nothing selected included.
+    fn type_into_selected(&mut self, text: &str, mark: bool, cx: &mut Context<Self>) -> bool {
+        let Some(id) = self.selected else {
+            return true;
+        };
+        if !matches!(
+            self.deck.text_target(self.current, id, None),
+            TextTarget::Shape(_)
+        ) {
+            self.begin_text(id, None, cx);
+            return self.text_edit.is_none();
+        }
+        match ShapeText::begin_typing(&mut self.deck, self.current, id, text, mark) {
+            Ok(Some(typing)) => {
+                self.drag = None;
+                self.typing = Some(typing);
+                if mark {
+                    cx.notify();
+                } else {
+                    self.reload(false, cx);
+                }
+            }
+            Ok(None) => {
+                self.status = SharedString::from(i18n::text("deck.text_locked"));
+                cx.notify();
+            }
+            Err(error) => {
+                self.status =
+                    SharedString::from(i18n::format("deck.edit_failed", &[("error", &error)]));
+                cx.notify();
+            }
+        }
+        true
     }
 
     /// Runs `edit` on the text being typed in place, repainting the slide
@@ -2408,12 +2462,15 @@ impl EntityInputHandler for DeckView {
             cx.notify();
             return;
         }
+        let mut range = range;
         if self.text_edit.is_none() && self.typing.is_none() {
             // Typing with a shape selected types into it.
-            let Some(id) = self.selected else {
+            if self.type_into_selected(text, false, cx) {
                 return;
-            };
-            self.begin_text(id, None, cx);
+            }
+            // A table's cell: the range was for text the input method had
+            // not seen.
+            range = None;
         }
         if self.typing.is_some() {
             self.edit_typing(cx, |typing, deck| typing.commit(deck, range, text));
@@ -2450,11 +2507,12 @@ impl EntityInputHandler for DeckView {
             cx.notify();
             return;
         }
+        let mut range = range;
         if self.text_edit.is_none() && self.typing.is_none() {
-            let Some(id) = self.selected else {
+            if self.type_into_selected(new_text, true, cx) {
                 return;
-            };
-            self.begin_text(id, None, cx);
+            }
+            range = None;
         }
         if let Some(typing) = self.typing.as_mut() {
             typing.compose(range, new_text);
@@ -3602,6 +3660,63 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.shapes.len(), count);
             assert!(!view.deck.is_dirty());
+        });
+    }
+
+    /// A click on the title selects it; a second click on its text types
+    /// into it with the caret where it lands, as in PowerPoint, so End and
+    /// typing add to its end. Typing into a shape that is only selected
+    /// goes in after its text.
+    #[gpui::test]
+    fn a_second_click_on_a_selected_shape_types_into_it_there(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let (id, at) = view.update(cx, |view, _| {
+            let id = view
+                .shapes
+                .iter()
+                .map(|shape| shape.id)
+                .find(|id| view.deck.shape_text(0, *id).as_deref() == Some("Jade Slides"))
+                .expect("the sample deck's title");
+            // Inside "Slides", between its "i" and "d".
+            let mut probe = ShapeText::begin(&mut view.deck, 0, id, None).unwrap();
+            probe.anchor = 8;
+            probe.focus = 8;
+            let [a, b] = probe.geometry(&mut view.deck).unwrap().caret;
+            let bounds = view.slide_bounds.get().expect("the slide is painted");
+            let scale = view.shown_scale;
+            let at = point(
+                bounds.origin.x + px(a.x as f32 * scale),
+                bounds.origin.y + px(((a.y + b.y) / 2.0) as f32 * scale),
+            );
+            (id, at)
+        });
+        cx.simulate_click(at, gpui::Modifiers::none());
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.selected, Some(id));
+            assert!(view.typing.is_none());
+        });
+        cx.simulate_click(at, gpui::Modifiers::none());
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.typing.as_ref().map(|typing| typing.focus), Some(8));
+        });
+        cx.simulate_keystrokes("end");
+        cx.simulate_input(" 2026");
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.typing.is_none());
+            assert_eq!(view.selected, Some(id));
+            assert_eq!(
+                view.deck.shape_text(0, id).as_deref(),
+                Some("Jade Slides 2026")
+            );
+        });
+        // Only selected: the typing goes in after the text.
+        cx.simulate_input(" 春");
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.deck.shape_text(0, id).as_deref(),
+                Some("Jade Slides 2026 春")
+            );
         });
     }
 
