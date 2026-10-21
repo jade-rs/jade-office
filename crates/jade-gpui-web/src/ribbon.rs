@@ -100,6 +100,9 @@ pub enum Tab {
     Insert,
     Layout,
     Review,
+    /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
+    TableDesign,
+    TableLayout,
 }
 
 impl Tab {
@@ -111,6 +114,8 @@ impl Tab {
             Tab::Insert => "doc.tab.insert",
             Tab::Layout => "doc.tab.layout",
             Tab::Review => "doc.tab.review",
+            Tab::TableDesign => "doc.tab.table_design",
+            Tab::TableLayout => "doc.tab.table_layout",
         })
     }
 }
@@ -135,6 +140,16 @@ pub enum Popup {
     Columns,
     Breaks,
     PageNumbers,
+    /// The table tabs' lists (`word_table`).
+    TableSelect,
+    TableStyles,
+    TableShading,
+    PenStyle,
+    PenWidth,
+    PenColor,
+    BorderSets,
+    AutoFit,
+    TextDirection,
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -205,6 +220,8 @@ pub enum Action {
     InsertPicture,
     /// 文字列の折り返し for the picture selected.
     Wrap(jade_web::word::picture::Wrap),
+    /// The table tabs, dialogs and tools (`word_table`).
+    Tables(crate::word_table::TableAction),
 }
 
 impl Action {
@@ -581,6 +598,8 @@ pub struct TabState {
     pub comments: bool,
     /// Whether a picture is selected, which 文字列の折り返し acts on.
     pub picture: bool,
+    /// What the table tabs show, read while one of them is showing.
+    pub table: Option<crate::word_table::TableTabState>,
 }
 
 pub fn ribbon(
@@ -592,24 +611,38 @@ pub fn ribbon(
     viewport: Size<Pixels>,
     cx: &mut Context<DocView>,
 ) -> AnyElement {
-    let tabs = Tab::ALL.map(|tab| {
-        let active = tab == ribbon.tab;
-        div()
-            .id(("ribbon-tab", tab as usize))
-            .px_3()
-            .py_1()
-            .rounded_md()
-            .cursor_pointer()
-            .text_xs()
-            .when(active, |element| {
-                element.bg(palette::selected()).text_color(palette::text())
-            })
-            .when(!active, |element| element.text_color(palette::dim()))
-            .hover(|element| element.bg(palette::hovered()))
-            .child(tab.label())
-            .on_click(listener(Action::Tab(tab), cx))
-    });
-    let groups = match ribbon.tab {
+    // The table tabs while the caret is in a table; a table tab left
+    // behind shows ホーム.
+    let in_table = state.table.is_some();
+    let shown_tab = match ribbon.tab {
+        Tab::TableDesign | Tab::TableLayout if !in_table => Tab::Home,
+        tab => tab,
+    };
+    let mut strip = Tab::ALL.to_vec();
+    if in_table {
+        strip.extend([Tab::TableDesign, Tab::TableLayout]);
+    }
+    let tabs: Vec<_> = strip
+        .into_iter()
+        .map(|tab| {
+            let active = tab == shown_tab;
+            div()
+                .id(("ribbon-tab", tab as usize))
+                .px_3()
+                .py_1()
+                .rounded_md()
+                .cursor_pointer()
+                .text_xs()
+                .when(active, |element| {
+                    element.bg(palette::selected()).text_color(palette::text())
+                })
+                .when(!active, |element| element.text_color(palette::dim()))
+                .hover(|element| element.bg(palette::hovered()))
+                .child(tab.label())
+                .on_click(listener(Action::Tab(tab), cx))
+        })
+        .collect();
+    let groups = match shown_tab {
         Tab::Home => home(ribbon, state, cx),
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
@@ -628,10 +661,22 @@ pub fn ribbon(
                     cx,
                 ));
             }
-            groups.extend(layout(ribbon, state, cx));
             groups
         }
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
+        Tab::TableDesign => {
+            let tabs = shown.table.clone().unwrap_or_default();
+            crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)
+        }
+        Tab::TableLayout => {
+            let tabs = shown.table.clone().unwrap_or_default();
+            let (before, after) = crate::word_table::layout_groups(ribbon.popup, &tabs, state, cx);
+            before
+                .into_iter()
+                .chain(layout(ribbon, state, cx))
+                .chain(after)
+                .collect()
+        }
     };
     div()
         .flex()
@@ -1277,6 +1322,7 @@ fn insert(ribbon: &Ribbon, cx: &mut Context<DocView>) -> Vec<AnyElement> {
                 &[("columns", &columns), ("rows", &rows)],
             )))
             .children(cells)
+            .children(crate::word_table::insert_menu_rows(cx))
             .into_any_element()
     });
     vec![group(
