@@ -34,6 +34,7 @@ mod deck;
 mod sheet;
 pub(crate) mod word_characters;
 mod word_dialogs;
+pub(crate) mod word_download;
 mod word_find;
 mod word_print;
 mod word_review;
@@ -483,6 +484,8 @@ pub struct DocView {
     pub name: SharedString,
     /// A text file's encoding, as it was read and is saved.
     pub text_encoding: Option<jade_web::word::formats::TextEncoding>,
+    /// The compatibility mode a Word document is laid out in (15 is current).
+    pub compat_mode: u32,
     pub kind: Kind,
     document: Document,
     retired: Vec<Arc<RenderImage>>,
@@ -528,6 +531,7 @@ impl DocView {
         // A Word document in another format — .doc, RTF, text, ODT, HTML —
         // is converted to a .docx to edit, and saved back as it came.
         let mut text_encoding = None;
+        let mut compat_mode = jade_web::word::compat::CURRENT_MODE;
         let converted;
         let bytes = {
             use jade_web::word::formats::{open_as_docx, OpenOptions, WordFormat};
@@ -542,6 +546,9 @@ impl DocView {
                             other => other.to_string(),
                         })?;
                     text_encoding = opened.encoding;
+                    if opened.format.is_legacy() {
+                        compat_mode = 11;
+                    }
                     converted = opened.docx;
                     &converted[..]
                 }
@@ -649,9 +656,13 @@ impl DocView {
                 Document::Workbook(Box::new(sheet::Sheet::open(book)))
             }
         };
+        if kind == Kind::Document && compat_mode == jade_web::word::compat::CURRENT_MODE {
+            compat_mode = jade_web::word::compat::compatibility_mode(bytes);
+        }
         Ok(Self {
             name,
             text_encoding,
+            compat_mode,
             kind,
             document,
             retired: Vec::new(),
