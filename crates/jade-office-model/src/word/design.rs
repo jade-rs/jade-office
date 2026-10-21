@@ -210,7 +210,13 @@ const fn fonts(
 /// Word's フォント list, with the Japanese faces Japanese Word pairs each
 /// with.
 pub const FONT_SCHEMES: [FontScheme; 9] = [
-    fonts("Office", "Aptos Display", "Aptos", "游ゴシック Light", "游明朝"),
+    fonts(
+        "Office",
+        "Aptos Display",
+        "Aptos",
+        "游ゴシック Light",
+        "游明朝",
+    ),
     fonts(
         "Office 2013 - 2022",
         "Calibri Light",
@@ -226,7 +232,13 @@ pub const FONT_SCHEMES: [FontScheme; 9] = [
         "ＭＳ 明朝",
     ),
     fonts("Calibri", "Calibri", "Calibri", "游ゴシック", "游ゴシック"),
-    fonts("Arial", "Arial", "Arial", "ＭＳ Ｐゴシック", "ＭＳ Ｐゴシック"),
+    fonts(
+        "Arial",
+        "Arial",
+        "Arial",
+        "ＭＳ Ｐゴシック",
+        "ＭＳ Ｐゴシック",
+    ),
     fonts(
         "Times New Roman",
         "Times New Roman",
@@ -234,7 +246,13 @@ pub const FONT_SCHEMES: [FontScheme; 9] = [
         "ＭＳ 明朝",
         "ＭＳ 明朝",
     ),
-    fonts("Century Gothic", "Century Gothic", "Century Gothic", "游ゴシック", "游ゴシック"),
+    fonts(
+        "Century Gothic",
+        "Century Gothic",
+        "Century Gothic",
+        "游ゴシック",
+        "游ゴシック",
+    ),
     fonts("Georgia", "Georgia", "Georgia", "游明朝", "游明朝"),
     fonts("Meiryo", "Meiryo UI", "Meiryo UI", "メイリオ", "メイリオ"),
 ];
@@ -300,7 +318,13 @@ pub const THEMES: [Theme; 5] = [
             "99CA3C",
             "B9D181",
         ),
-        fonts: fonts("Facet", "Trebuchet MS", "Trebuchet MS", "游ゴシック", "游ゴシック"),
+        fonts: fonts(
+            "Facet",
+            "Trebuchet MS",
+            "Trebuchet MS",
+            "游ゴシック",
+            "游ゴシック",
+        ),
         effects: EFFECT_SCHEMES[2],
     },
     Theme {
@@ -313,7 +337,13 @@ pub const THEMES: [Theme; 5] = [
             "6B9F25",
             "B26B02",
         ),
-        fonts: fonts("Integral", "Tw Cen MT Condensed", "Tw Cen MT", "游ゴシック", "游ゴシック"),
+        fonts: fonts(
+            "Integral",
+            "Tw Cen MT Condensed",
+            "Tw Cen MT",
+            "游ゴシック",
+            "游ゴシック",
+        ),
         effects: EFFECT_SCHEMES[2],
     },
 ];
@@ -347,7 +377,9 @@ fn find_local<'a>(element: &'a Element, name: &str) -> Option<&'a Element> {
 }
 
 fn find_local_mut<'a>(element: &'a mut Element, name: &str) -> Option<&'a mut Element> {
-    element.elements_mut().find(|child| local(&child.name) == name)
+    element
+        .elements_mut()
+        .find(|child| local(&child.name) == name)
 }
 
 /// The prefix the theme uses for DrawingML (`a` almost always).
@@ -401,17 +433,19 @@ pub fn write_font_scheme(root: &mut Element, scheme: &FontScheme) -> Result<(), 
         let collection = match find_local_mut(fonts, which) {
             Some(collection) => collection,
             None => {
-                fonts.children.push(Node::Element(Element::new(&format!("{a}{which}"))));
+                fonts
+                    .children
+                    .push(Node::Element(Element::new(&format!("{a}{which}"))));
                 find_local_mut(fonts, which).expect("just added")
             }
         };
-        let set = |collection: &mut Element, name: &str, typeface: &str| {
-            match find_local_mut(collection, name) {
-                Some(element) => element.set_attr("typeface", typeface),
-                None => collection.children.push(Node::Element(
-                    Element::new(&format!("{a}{name}")).attr("typeface", typeface),
-                )),
-            }
+        let set = |collection: &mut Element, name: &str, typeface: &str| match find_local_mut(
+            collection, name,
+        ) {
+            Some(element) => element.set_attr("typeface", typeface),
+            None => collection.children.push(Node::Element(
+                Element::new(&format!("{a}{name}")).attr("typeface", typeface),
+            )),
         };
         set(collection, "latin", latin);
         if find_local(collection, "ea").is_none() {
@@ -447,8 +481,13 @@ pub fn write_effect_scheme(root: &mut Element, scheme: &EffectScheme) -> Result<
         .styles
         .iter()
         .map(|inner| {
-            let inner = inner.replace("<a:", &format!("<{a}")).replace("</a:", &format!("</{a}"));
-            let wrapped = format!(r#"<{a}effectStyle xmlns:{}="{A_NS}">{inner}</{a}effectStyle>"#, a.trim_end_matches(':'));
+            let inner = inner
+                .replace("<a:", &format!("<{a}"))
+                .replace("</a:", &format!("</{a}"));
+            let wrapped = format!(
+                r#"<{a}effectStyle xmlns:{}="{A_NS}">{inner}</{a}effectStyle>"#,
+                a.trim_end_matches(':')
+            );
             let mut element = super::xml::Document::parse(&wrapped)
                 .map(|document| document.root)
                 .unwrap_or_else(|_| Element::new(&format!("{a}effectStyle")));
@@ -470,7 +509,12 @@ pub fn design_of(theme_xml: &str) -> DesignState {
     let slot = |name: &str| {
         clr.and_then(|clr| find_local(clr, name))
             .and_then(|slot| slot.elements().next())
-            .and_then(|colour| colour.get("val").filter(|_| local(&colour.name) == "srgbClr").or_else(|| colour.get("lastClr")))
+            .and_then(|colour| {
+                colour
+                    .get("val")
+                    .filter(|_| local(&colour.name) == "srgbClr")
+                    .or_else(|| colour.get("lastClr"))
+            })
             .map(|value| value.to_ascii_uppercase())
     };
     let accents: Vec<String> = (1..=6)
@@ -488,7 +532,12 @@ pub fn design_of(theme_xml: &str) -> DesignState {
     let colors = COLOR_SCHEMES
         .iter()
         .find(|scheme| {
-            scheme.accents.iter().map(|value| value.to_string()).collect::<Vec<_>>() == accents
+            scheme
+                .accents
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                == accents
                 && slot("dk2").as_deref() == Some(scheme.dark2)
         })
         .map(|scheme| scheme.name.to_string());
@@ -670,7 +719,11 @@ pub trait WordDesign: WordSession {
         &mut self,
         edit: impl FnOnce(&mut Element) -> Result<(), String> + 'static,
     ) -> Result<(), String> {
-        edit_package(self, |package| package.edit(PartKind::Theme, edit), Vec::new())
+        edit_package(
+            self,
+            |package| package.edit(PartKind::Theme, edit),
+            Vec::new(),
+        )
     }
 
     /// Applies a style set: Normal's spacing and the headings' and title's
@@ -703,7 +756,12 @@ pub trait WordDesign: WordSession {
 
     /// 段落の間隔: Normal's space after and line spacing, in points and as
     /// a multiple.
-    fn apply_paragraph_spacing(&mut self, before: f32, after: f32, line: f32) -> Result<(), String> {
+    fn apply_paragraph_spacing(
+        &mut self,
+        before: f32,
+        after: f32,
+        line: f32,
+    ) -> Result<(), String> {
         edit_package(
             self,
             move |package| {
@@ -748,7 +806,12 @@ pub trait WordDesign: WordSession {
             space_after: spacing.as_ref().and_then(|spacing| spacing.after),
             line_spacing: spacing
                 .as_ref()
-                .filter(|spacing| spacing.line_rule.as_deref().is_none_or(|rule| rule == "auto"))
+                .filter(|spacing| {
+                    spacing
+                        .line_rule
+                        .as_deref()
+                        .is_none_or(|rule| rule == "auto")
+                })
                 .and_then(|spacing| spacing.line),
             ..StyleFormat::default()
         };

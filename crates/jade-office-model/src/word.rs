@@ -29,6 +29,7 @@ use jade_docx_headless_api::{
 pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
+pub mod building_blocks;
 pub mod clipboard;
 pub mod design;
 pub mod find;
@@ -40,6 +41,7 @@ pub mod paragraph_options;
 pub mod picture;
 pub mod platform;
 pub mod review;
+pub mod ruler;
 pub mod styles;
 pub mod xml;
 

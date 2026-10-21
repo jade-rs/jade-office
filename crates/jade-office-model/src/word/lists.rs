@@ -168,14 +168,18 @@ impl ListLevel {
                 .map(|value| value / 20.0)
         };
         ListLevel {
-            format: lvl.child_val("w:numFmt").unwrap_or_else(|| "decimal".into()),
+            format: lvl
+                .child_val("w:numFmt")
+                .unwrap_or_else(|| "decimal".into()),
             text: lvl.child_val("w:lvlText").unwrap_or_default(),
             start: lvl
                 .child_val("w:start")
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(1),
             alignment: lvl.child_val("w:lvlJc").unwrap_or_else(|| "left".into()),
-            indent: points("w:left").or_else(|| points("w:start")).unwrap_or(0.0),
+            indent: points("w:left")
+                .or_else(|| points("w:start"))
+                .unwrap_or(0.0),
             hanging: points("w:hanging")
                 .or_else(|| points("w:firstLine").map(|first| -first))
                 .unwrap_or(0.0),
@@ -257,7 +261,11 @@ impl ListDefinition {
 
     /// The number of each level, as a preview with every level at 1.
     pub fn preview(&self, level: usize) -> String {
-        let formats: Vec<String> = self.levels.iter().map(|level| level.format.clone()).collect();
+        let formats: Vec<String> = self
+            .levels
+            .iter()
+            .map(|level| level.format.clone())
+            .collect();
         self.levels
             .get(level)
             .map(|lvl| lvl.preview(&[1; 9], &formats))
@@ -265,7 +273,8 @@ impl ListDefinition {
     }
 
     fn element(&self, abstract_id: u32, nsid: u32) -> Element {
-        let mut element = Element::new("w:abstractNum").attr("w:abstractNumId", &abstract_id.to_string());
+        let mut element =
+            Element::new("w:abstractNum").attr("w:abstractNumId", &abstract_id.to_string());
         element.children.push(Node::Element(Element::with_val(
             "w:nsid",
             &format!("{nsid:08X}"),
@@ -303,7 +312,9 @@ impl ListDefinition {
                     .iter()
                     .find(|(level, _)| *level == index)
                     .map(|(_, level)| level.clone())
-                    .unwrap_or_else(|| ListLevel::numbered(index, "decimal", &format!("%{}.", index + 1)))
+                    .unwrap_or_else(|| {
+                        ListLevel::numbered(index, "decimal", &format!("%{}.", index + 1))
+                    })
             })
             .collect();
         ListDefinition {
@@ -323,20 +334,62 @@ pub struct NumberFormat {
 
 /// Word's 段落番号 library, Japanese formats included.
 pub const NUMBER_FORMATS: [NumberFormat; 14] = [
-    NumberFormat { format: "decimal", text: "%1." },
-    NumberFormat { format: "decimal", text: "%1)" },
-    NumberFormat { format: "decimal", text: "(%1)" },
-    NumberFormat { format: "decimalEnclosedCircle", text: "%1" },
-    NumberFormat { format: "decimalFullWidth", text: "%1." },
-    NumberFormat { format: "japaneseCounting", text: "%1、" },
-    NumberFormat { format: "japaneseCounting", text: "第%1" },
-    NumberFormat { format: "aiueoFullWidth", text: "%1." },
-    NumberFormat { format: "irohaFullWidth", text: "%1." },
-    NumberFormat { format: "upperRoman", text: "%1." },
-    NumberFormat { format: "lowerRoman", text: "%1." },
-    NumberFormat { format: "upperLetter", text: "%1." },
-    NumberFormat { format: "lowerLetter", text: "%1)" },
-    NumberFormat { format: "ideographTraditional", text: "%1." },
+    NumberFormat {
+        format: "decimal",
+        text: "%1.",
+    },
+    NumberFormat {
+        format: "decimal",
+        text: "%1)",
+    },
+    NumberFormat {
+        format: "decimal",
+        text: "(%1)",
+    },
+    NumberFormat {
+        format: "decimalEnclosedCircle",
+        text: "%1",
+    },
+    NumberFormat {
+        format: "decimalFullWidth",
+        text: "%1.",
+    },
+    NumberFormat {
+        format: "japaneseCounting",
+        text: "%1、",
+    },
+    NumberFormat {
+        format: "japaneseCounting",
+        text: "第%1",
+    },
+    NumberFormat {
+        format: "aiueoFullWidth",
+        text: "%1.",
+    },
+    NumberFormat {
+        format: "irohaFullWidth",
+        text: "%1.",
+    },
+    NumberFormat {
+        format: "upperRoman",
+        text: "%1.",
+    },
+    NumberFormat {
+        format: "lowerRoman",
+        text: "%1.",
+    },
+    NumberFormat {
+        format: "upperLetter",
+        text: "%1.",
+    },
+    NumberFormat {
+        format: "lowerLetter",
+        text: "%1)",
+    },
+    NumberFormat {
+        format: "ideographTraditional",
+        text: "%1.",
+    },
 ];
 
 /// Word's 箇条書き library: the glyph and its font (`None` for the text's).
@@ -533,17 +586,19 @@ pub fn list_styles(styles_xml: &str) -> Vec<(String, String, String)> {
         .filter_map(|style| {
             let id = style.get("w:styleId")?;
             let name = style.child_val("w:name").unwrap_or_else(|| id.clone());
-            let num_id = style
-                .find("w:pPr")?
-                .find("w:numPr")?
-                .child_val("w:numId")?;
+            let num_id = style.find("w:pPr")?.find("w:numPr")?.child_val("w:numId")?;
             Some((id, name, num_id))
         })
         .collect()
 }
 
 /// `CT_Numbering`'s children.
-const NUMBERING_ORDER: &[&str] = &["w:numPicBullet", "w:abstractNum", "w:num", "w:numIdMacAtCleanup"];
+const NUMBERING_ORDER: &[&str] = &[
+    "w:numPicBullet",
+    "w:abstractNum",
+    "w:num",
+    "w:numIdMacAtCleanup",
+];
 
 /// Adds `definition` and a list instance of it to `numbering`, returning the
 /// instance's `w:numId`.
@@ -570,7 +625,11 @@ pub fn add_list(numbering: &mut Element, definition: &ListDefinition) -> String 
 
 /// Adds a list instance of `abstract_id`, with the level's start overridden
 /// when `start` names one; returns its `w:numId`.
-pub fn add_instance(numbering: &mut Element, abstract_id: &str, start: Option<(u8, u32)>) -> String {
+pub fn add_instance(
+    numbering: &mut Element,
+    abstract_id: &str,
+    start: Option<(u8, u32)>,
+) -> String {
     let num_id = numbering
         .elements()
         .filter(|element| element.name == "w:num")
@@ -638,9 +697,10 @@ pub fn link_styles(styles: &mut Element, num_id: &str, definition: &ListDefiniti
         let ppr = style.ensure("w:pPr", STYLE_ORDER);
         let mut num_pr = Element::new("w:numPr");
         if index > 0 {
-            num_pr
-                .children
-                .push(Node::Element(Element::with_val("w:ilvl", &index.to_string())));
+            num_pr.children.push(Node::Element(Element::with_val(
+                "w:ilvl",
+                &index.to_string(),
+            )));
         }
         num_pr
             .children
@@ -706,7 +766,12 @@ pub trait WordLists: WordSession {
 
     /// 段落番号 / 箇条書き from the library: the selection becomes a list in
     /// that format, or — already in a list — the list's level takes it.
-    fn apply_list_format(&mut self, format: &str, text: &str, font: Option<&str>) -> Result<(), String> {
+    fn apply_list_format(
+        &mut self,
+        format: &str,
+        text: &str,
+        font: Option<&str>,
+    ) -> Result<(), String> {
         let format = format.to_string();
         let text = text.to_string();
         let font = font.map(str::to_string);
@@ -744,7 +809,11 @@ pub trait WordLists: WordSession {
 
     /// Makes the selection a new list of `definition`, each paragraph at
     /// `level` (or the level it is at, when `None`).
-    fn apply_list_definition(&mut self, definition: &ListDefinition, level: Option<u8>) -> Result<(), String> {
+    fn apply_list_definition(
+        &mut self,
+        definition: &ListDefinition,
+        level: Option<u8>,
+    ) -> Result<(), String> {
         let (start, end) = list_span(self);
         let levels: Vec<u8> = (start..=end)
             .map(|index| {
@@ -797,7 +866,8 @@ pub trait WordLists: WordSession {
     /// A multilevel list from the library.
     fn apply_multilevel_preset(&mut self, preset: MultilevelPreset) -> Result<(), String> {
         let headings = heading_ids(self);
-        let definition = preset.definition(&|level| headings.get(level as usize).cloned().flatten());
+        let definition =
+            preset.definition(&|level| headings.get(level as usize).cloned().flatten());
         let level = (!definition.levels.iter().any(|level| level.style.is_some())).then_some(0);
         // A heading-linked list numbers the heading paragraphs through their
         // styles; the selection is put in at its own level.
@@ -870,14 +940,18 @@ pub trait WordLists: WordSession {
                 nearest = Some(id.clone());
             }
             if numbering.abstract_id(&id).as_deref() == Some(state.abstract_id.as_str())
-                || numbering.definition(&id).map(|definition| definition.levels[0].format.clone())
+                || numbering
+                    .definition(&id)
+                    .map(|definition| definition.levels[0].format.clone())
                     == Some(state.definition.levels[0].format.clone())
             {
                 previous = Some(id);
                 break;
             }
         }
-        let target = previous.or(nearest).ok_or("there is no list before this one")?;
+        let target = previous
+            .or(nearest)
+            .ok_or("there is no list before this one")?;
         let commands: Vec<HeadlessCommand> = self
             .rest_of_list(from, &state.num_id)
             .into_iter()
@@ -893,7 +967,10 @@ pub trait WordLists: WordSession {
 
     /// リストのインデントの調整 and the level settings of the define dialog:
     /// rewrites the caret's level of its list.
-    fn edit_list_level(&mut self, edit: impl FnOnce(&mut ListLevel) + 'static) -> Result<(), String> {
+    fn edit_list_level(
+        &mut self,
+        edit: impl FnOnce(&mut ListLevel) + 'static,
+    ) -> Result<(), String> {
         let state = self.list_state().ok_or("the caret is not in a list")?;
         let abstract_id = state.abstract_id.clone();
         let level = state.level;
@@ -946,21 +1023,34 @@ pub trait WordLists: WordSession {
 
     /// 新しいリスト スタイルの定義: a list style named `name`, its definition
     /// `definition`, applied to the selection. Returns the style's id.
-    fn create_list_style(&mut self, name: &str, definition: &ListDefinition) -> Result<String, String> {
+    fn create_list_style(
+        &mut self,
+        name: &str,
+        definition: &ListDefinition,
+    ) -> Result<String, String> {
         let name = name.trim().to_string();
         if name.is_empty() {
             return Err("a list style needs a name".to_string());
         }
-        let styles_xml = self.word_document().related_part_xml("styles").unwrap_or_default();
+        let styles_xml = self
+            .word_document()
+            .related_part_xml("styles")
+            .unwrap_or_default();
         let catalog = super::styles::catalog_of(&styles_xml);
-        if catalog.iter().any(|style| style.name.eq_ignore_ascii_case(&name)) {
+        if catalog
+            .iter()
+            .any(|style| style.name.eq_ignore_ascii_case(&name))
+        {
             return Err(format!("a style named {name} already exists"));
         }
         let mut id: String = name.chars().filter(|ch| ch.is_alphanumeric()).collect();
         if id.is_empty() {
             id = "ListStyle".to_string();
         }
-        while catalog.iter().any(|style| style.id.eq_ignore_ascii_case(&id)) {
+        while catalog
+            .iter()
+            .any(|style| style.id.eq_ignore_ascii_case(&id))
+        {
             id.push('1');
         }
         let num_id = next_num_id(&self.numbering());
@@ -1113,18 +1203,24 @@ mod tests {
     #[test]
     fn definitions_round_trip_through_numbering_xml() {
         let mut root = Document::parse(r#"<w:numbering xmlns:w="urn:w"><w:abstractNum w:abstractNumId="0"/><w:num w:numId="3"><w:abstractNumId w:val="0"/></w:num></w:numbering>"#).unwrap().root;
-        let mut definition = MultilevelPreset::Articles.definition(&|level| Some(format!("Heading{}", level + 1)));
+        let mut definition =
+            MultilevelPreset::Articles.definition(&|level| Some(format!("Heading{}", level + 1)));
         definition.levels[2].suffix = Suffix::Nothing;
         definition.levels[2].alignment = "right".into();
         let num_id = add_list(&mut root, &definition);
         assert_eq!(num_id, "4");
         let restarted = add_instance(&mut root, "1", Some((1, 5)));
-        let numbering = Numbering { root: Some(root.clone()) };
+        let numbering = Numbering {
+            root: Some(root.clone()),
+        };
         assert_eq!(numbering.definition("4").unwrap(), definition);
         assert_eq!(numbering.start_override(&restarted, 1), Some(5));
         // Every abstractNum comes before the first num.
         let names: Vec<&str> = root.elements().map(|e| e.name.as_str()).collect();
-        let last_abstract = names.iter().rposition(|name| *name == "w:abstractNum").unwrap();
+        let last_abstract = names
+            .iter()
+            .rposition(|name| *name == "w:abstractNum")
+            .unwrap();
         let first_num = names.iter().position(|name| *name == "w:num").unwrap();
         assert!(last_abstract < first_num, "{names:?}");
     }

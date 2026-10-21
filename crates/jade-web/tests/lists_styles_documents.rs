@@ -9,7 +9,9 @@ mod common;
 use common::open_bytes;
 use jade_docx_editor::headless_api::execute_headless_queries_on_document;
 use jade_docx_headless_api::{HeadlessQuery, HeadlessQueryRequest, HeadlessQueryResult};
-use jade_office_model::word::design::{WordDesign, COLOR_SCHEMES, EFFECT_SCHEMES, FONT_SCHEMES, THEMES};
+use jade_office_model::word::design::{
+    WordDesign, COLOR_SCHEMES, EFFECT_SCHEMES, FONT_SCHEMES, THEMES,
+};
 use jade_office_model::word::lists::{MultilevelPreset, Suffix, WordLists, NUMBER_FORMATS};
 use jade_office_model::word::new::{blank_document, Blank};
 use jade_office_model::word::package::Package;
@@ -17,9 +19,7 @@ use jade_office_model::word::paragraph_options::{
     BorderBox, BorderLine, DropCapPosition, ParagraphSwitch, ShadingSpec, Tab, TabAlignment,
     TabLeader, WordParagraphOptions,
 };
-use jade_office_model::word::styles::{
-    NewStyle, StyleChange, StyleFormat, StyleKind, WordStyles,
-};
+use jade_office_model::word::styles::{NewStyle, StyleChange, StyleFormat, StyleKind, WordStyles};
 use jade_web::editing::{EditableDocument, WordFormatting, WordSession};
 
 /// A blank Japanese document with these paragraphs.
@@ -70,7 +70,11 @@ fn label(document: &EditableDocument, index: usize) -> Option<String> {
 /// Undo takes the whole edit back: the saved document is what it was.
 fn assert_undoes(document: &mut EditableDocument, before: &[u8]) {
     document.undo().unwrap();
-    assert_eq!(document.export_docx().unwrap(), before, "undo restores the document");
+    assert_eq!(
+        document.export_docx().unwrap(),
+        before,
+        "undo restores the document"
+    );
 }
 
 #[test]
@@ -94,7 +98,9 @@ fn tab_stops_from_the_dialog_and_the_ruler_are_saved() {
     );
     assert!(part(&mut document, "document").contains(r#"<w:tab w:val="decimal" w:pos="3600"/>"#));
     assert_eq!(reopen(&mut document).paragraph_options().tabs, tabs);
-    document.set_tab(Tab::new(36.0, TabAlignment::Center, TabLeader::MiddleDot)).unwrap();
+    document
+        .set_tab(Tab::new(36.0, TabAlignment::Center, TabLeader::MiddleDot))
+        .unwrap();
     document.clear_all_tabs().unwrap();
     assert!(document.paragraph_options().tabs.is_empty());
 
@@ -136,7 +142,10 @@ fn switches_borders_shading_alignment_and_drop_caps_are_saved() {
     for state in [document.paragraph_options(), reopened.paragraph_options()] {
         assert!(state.contextual_spacing && state.suppress_line_numbers && state.dont_hyphenate);
         assert_eq!(state.borders.top.as_ref().unwrap().style, "double");
-        assert_eq!(state.borders.top.as_ref().unwrap().color.as_deref(), Some("C00000"));
+        assert_eq!(
+            state.borders.top.as_ref().unwrap().color.as_deref(),
+            Some("C00000")
+        );
         assert_eq!(state.borders.between.as_ref().unwrap().style, "dotted");
         assert_eq!(state.shading.as_ref(), Some(&shading));
         assert_eq!(state.alignment.as_deref(), Some("distribute"));
@@ -163,7 +172,9 @@ fn japanese_formats_start_values_continue_and_levels() {
         .iter()
         .find(|format| format.format == "japaneseCounting" && format.text == "%1、")
         .unwrap();
-    document.apply_list_format(kanji.format, kanji.text, None).unwrap();
+    document
+        .apply_list_format(kanji.format, kanji.text, None)
+        .unwrap();
     assert_eq!(label(&document, 0).as_deref(), Some("一、"));
     assert_eq!(label(&document, 2).as_deref(), Some("三、"));
 
@@ -272,7 +283,9 @@ fn list_styles_are_created_and_applied() {
     let id = document.create_list_style("契約条項", &definition).unwrap();
     assert_eq!(label(&document, 1).as_deref(), Some("2)"));
     let styles = part(&mut document, "styles");
-    assert!(styles.contains(&format!(r#"w:type="numbering" w:customStyle="1" w:styleId="{id}""#)));
+    assert!(styles.contains(&format!(
+        r#"w:type="numbering" w:customStyle="1" w:styleId="{id}""#
+    )));
     let numbering = part(&mut document, "numbering");
     assert!(numbering.contains(&format!(r#"<w:styleLink w:val="{id}"/>"#)));
 }
@@ -283,7 +296,12 @@ fn styles_are_created_modified_updated_and_applied() {
     document.place_caret(0, 0);
     let before = document.export_docx().unwrap();
     let catalog = document.style_catalog();
-    let normal = catalog.iter().find(|style| style.is_default).unwrap().id.clone();
+    let normal = catalog
+        .iter()
+        .find(|style| style.is_default)
+        .unwrap()
+        .id
+        .clone();
     let id = document
         .create_style(&NewStyle {
             name: "要点".into(),
@@ -299,12 +317,14 @@ fn styles_are_created_modified_updated_and_applied() {
             auto_update: false,
         })
         .unwrap();
-    assert_eq!(document.format_state().style_id.as_deref(), Some(id.as_str()));
+    assert_eq!(
+        document.format_state().style_id.as_deref(),
+        Some(id.as_str())
+    );
     assert_eq!(document.format_state().font_size, Some(14.0));
-    assert!(document
-        .style_catalog()
-        .iter()
-        .any(|style| style.id == id && style.quick && style.based_on.as_deref() == Some(normal.as_str())));
+    assert!(document.style_catalog().iter().any(|style| style.id == id
+        && style.quick
+        && style.based_on.as_deref() == Some(normal.as_str())));
     assert_undoes(&mut document, &before);
     document.redo().unwrap();
 
@@ -338,7 +358,10 @@ fn styles_are_created_modified_updated_and_applied() {
     let end = document.paragraph_text(0).unwrap().len();
     document.place_caret(0, end);
     document.insert_paragraph_break().unwrap();
-    assert_eq!(document.format_state().style_id.as_deref(), Some(normal.as_str()));
+    assert_eq!(
+        document.format_state().style_id.as_deref(),
+        Some(normal.as_str())
+    );
     document.undo().unwrap();
 
     // 選択個所と一致するように更新.
@@ -394,7 +417,10 @@ fn character_and_linked_styles_apply_to_the_selection() {
         .unwrap();
     let styled = document.run_style_at((0, 1)).unwrap();
     assert_eq!(styled.bold, Some(true));
-    assert_ne!(document.run_style_at((0, "重要な".len())).unwrap().bold, Some(true));
+    assert_ne!(
+        document.run_style_at((0, "重要な".len())).unwrap().bold,
+        Some(true)
+    );
     let reopened = reopen(&mut document);
     assert_eq!(reopened.run_style_at((0, 1)).unwrap().bold, Some(true));
 
@@ -419,7 +445,10 @@ fn character_and_linked_styles_apply_to_the_selection() {
         .select((0, "重要な".len()), (0, "重要な語".len()))
         .unwrap();
     document.apply_style(&linked).unwrap();
-    assert_ne!(document.format_state().style_id.as_deref(), Some(linked.as_str()));
+    assert_ne!(
+        document.format_state().style_id.as_deref(),
+        Some(linked.as_str())
+    );
     assert_eq!(
         document.run_style_at((0, "重要な".len())).unwrap().italic,
         Some(true)
@@ -445,7 +474,10 @@ fn the_gallery_lists_quick_styles_by_priority() {
             .unwrap();
     }
     let gallery = jade_office_model::word::styles::quick_style_gallery(&document.style_catalog());
-    let names: Vec<_> = gallery.iter().filter_map(|entry| entry.name.clone()).collect();
+    let names: Vec<_> = gallery
+        .iter()
+        .filter_map(|entry| entry.name.clone())
+        .collect();
     assert!(names.contains(&"後".to_string()));
     assert!(!names.contains(&"隠れ".to_string()));
 }
@@ -462,7 +494,10 @@ fn themes_colors_fonts_effects_and_style_sets() {
     assert_eq!(state.theme.as_deref(), Some("Office 2007 - 2010"));
     assert_undoes(&mut document, &before);
 
-    let green = COLOR_SCHEMES.iter().find(|scheme| scheme.name == "Green").unwrap();
+    let green = COLOR_SCHEMES
+        .iter()
+        .find(|scheme| scheme.name == "Green")
+        .unwrap();
     document.apply_color_scheme(green).unwrap();
     document.apply_font_scheme(&FONT_SCHEMES[4]).unwrap();
     document.apply_effect_scheme(&EFFECT_SCHEMES[3]).unwrap();
@@ -545,13 +580,21 @@ fn a_template_s_styles_are_copied_when_attached() {
         .attach_template(&template_bytes, "/Users/me/Templates/契約書.dotx", true)
         .unwrap();
     assert!(copied >= 2, "{copied}");
-    assert!(document.style_catalog().iter().any(|style| style.name == "Memo"));
+    assert!(document
+        .style_catalog()
+        .iter()
+        .any(|style| style.name == "Memo"));
     let settings = part(&mut document, "settings");
     assert!(settings.contains("<w:attachedTemplate r:id="), "{settings}");
     let bytes = document.export_docx().unwrap();
     let package = Package::open(&bytes).unwrap();
-    let rels = String::from_utf8(package.bytes("word/_rels/settings.xml.rels").unwrap().to_vec()).unwrap();
+    let rels = String::from_utf8(
+        package
+            .bytes("word/_rels/settings.xml.rels")
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
     assert!(rels.contains("TargetMode=\"External\""), "{rels}");
     assert!(rels.contains("file:///Users/me/Templates/"), "{rels}");
 }
-
