@@ -675,3 +675,251 @@ format.fill.none	No color
 format.ok	OK
 format.cancel	Cancel
 sheet.protected	The cell or sheet you are trying to change is protected.
+# word-objects: pictures, shapes and drawing objects
+objects.align	Align
+objects.align.bottom	Align Bottom
+objects.align.center	Align Center
+objects.align.distribute_h	Distribute Horizontally
+objects.align.distribute_v	Distribute Vertically
+objects.align.left	Align Left
+objects.align.margin	Align to Margin
+objects.align.middle	Align Middle
+objects.align.page	Align to Page
+objects.align.relative	Align To
+objects.align.right	Align Right
+objects.align.selection	Align Selected Objects
+objects.align.top	Align Top
+objects.arrow.both	Arrows: Both Ends
+objects.arrow.end	Arrow: End
+objects.arrow.none	No Arrows
+objects.arrow.start	Arrow: Start
+objects.artistic	Artistic Effects
+objects.artistic.blur	Blur
+objects.artistic.line_drawing	Line Drawing
+objects.artistic.none	None
+objects.artistic.pencil_grayscale	Pencil Grayscale
+objects.background.remove	Remove Background
+objects.background.restore	Restore Background
+objects.background.title	Make the picture's background transparent
+objects.backward	Send Backward
+objects.behind_text	Send Behind Text
+objects.bevel.angle	Angle
+objects.bevel.circle	Circle
+objects.bevel.cool_slant	Cool Slant
+objects.bevel.cross	Cross
+objects.bevel.relaxed_inset	Relaxed Inset
+objects.bevel.soft_round	Soft Round
+objects.change.clipboard	From Clipboard
+objects.change.file	From a File
+objects.change_picture	Change Picture
+objects.change_shape	Change Shape
+objects.color	Color
+objects.color.accent_dark	Accent {n} Dark
+objects.color.accent_light	Accent {n} Light
+objects.color.black	Black
+objects.color.black_white	Black and White: 50%
+objects.color.blue	Blue, Accent 1
+objects.color.blue_gray	Blue-Gray, Text 2
+objects.color.bright_green	Green
+objects.color.dark_red	Dark Red
+objects.color.gold	Gold, Accent 4
+objects.color.gray	Gray, Accent 3
+objects.color.grayscale	Grayscale
+objects.color.green	Green, Accent 6
+objects.color.light_blue	Blue, Accent 5
+objects.color.none	No Recolor
+objects.color.orange	Orange, Accent 2
+objects.color.purple	Purple
+objects.color.recolor	Recolor
+objects.color.red	Red
+objects.color.saturation	Color Saturation
+objects.color.sepia	Sepia
+objects.color.tone	Color Tone
+objects.color.transparent_white	Make White Transparent
+objects.color.white	White
+objects.color.yellow	Yellow
+objects.corrections	Corrections
+objects.corrections.caption	Brightness / Contrast
+objects.corrections.cell	Brightness / Contrast
+objects.crop	Crop
+objects.crop.aspect	Aspect Ratio
+objects.crop.shape	Crop to Shape
+objects.dash.dash	Dash
+objects.dash.dash_dot	Dash Dot
+objects.dash.long_dash	Long Dash
+objects.dash.long_dash_dot	Long Dash Dot
+objects.dash.long_dash_dot_dot	Long Dash Dot Dot
+objects.dash.round_dot	Round Dot
+objects.dash.solid	Solid
+objects.dash.square_dot	Square Dot
+objects.dialog.allow_overlap	Allow overlap
+objects.dialog.below	Below
+objects.dialog.both_sides	Both sides
+objects.dialog.bottom	Bottom
+objects.dialog.distance	Distance from text
+objects.dialog.horizontal	Horizontal
+objects.dialog.inline_note	An object in line with text has no position; OK makes its wrapping square.
+objects.dialog.largest_only	Largest only
+objects.dialog.layout_in_cell	Layout in table cell
+objects.dialog.left	Left
+objects.dialog.left_only	Left only
+objects.dialog.lock_anchor	Lock anchor
+objects.dialog.lock_ratio	Lock aspect ratio
+objects.dialog.move_with_text	Move object with text
+objects.dialog.offset	Absolute position
+objects.dialog.options	Options
+objects.dialog.position	Position
+objects.dialog.relative_to	relative to
+objects.dialog.right	Right
+objects.dialog.right_of	to the right of
+objects.dialog.right_only	Right only
+objects.dialog.rotation	Rotation
+objects.dialog.size	Size
+objects.dialog.title	Layout
+objects.dialog.top	Top
+objects.dialog.vertical	Vertical
+objects.dialog.wrap_style	Wrapping style
+objects.dialog.wrap_text	Wrap text
+objects.dialog.wrapping	Text Wrapping
+objects.draw_hint	Drag on the page to draw the shape. Esc cancels.
+objects.effect.bevel	Bevel
+objects.effect.glow	Glow
+objects.effect.no_bevel	No Bevel
+objects.effect.no_glow	No Glow
+objects.effect.no_reflection	No Reflection
+objects.effect.no_shadow	No Shadow
+objects.effect.no_soft_edges	No Soft Edges
+objects.effect.none	None
+objects.effect.reflection	Reflection
+objects.effect.shadow	Shadow
+objects.effect.soft_edges	Soft Edges
+objects.effects	Picture Effects
+objects.fill	Shape Fill
+objects.fill.none	No Fill
+objects.format_pane	Format Pane
+objects.format_pane_title	Show the Format Shape pane
+objects.forward	Bring Forward
+objects.glow.size	Glow: {n} pt
+objects.group	Group
+objects.group.adjust	Adjust
+objects.group.arrange	Arrange
+objects.group.insert_shapes	Insert Shapes
+objects.group.picture_styles	Picture Styles
+objects.group.shape_styles	Shape Styles
+objects.group.size	Size
+objects.group.wordart_styles	WordArt Styles
+objects.hide_all	Hide All
+objects.in_front_of_text	Bring in Front of Text
+objects.layout_more	More Layout Options...
+objects.no_clipboard_picture	There is no picture on the clipboard
+objects.no_objects	There are no objects
+objects.nothing_selected	No picture or shape is selected
+objects.outline	Picture Border
+objects.outline.arrows	Arrows
+objects.outline.dash	Dashes
+objects.outline.none	No Outline
+objects.outline.weight	Weight
+objects.position	Position
+objects.position.bottom_center	Position in Bottom Center with Square Text Wrapping
+objects.position.bottom_left	Position in Bottom Left with Square Text Wrapping
+objects.position.bottom_right	Position in Bottom Right with Square Text Wrapping
+objects.position.middle_center	Position in Middle Center with Square Text Wrapping
+objects.position.middle_left	Position in Middle Left with Square Text Wrapping
+objects.position.middle_right	Position in Middle Right with Square Text Wrapping
+objects.position.top_center	Position in Top Center with Square Text Wrapping
+objects.position.top_left	Position in Top Left with Square Text Wrapping
+objects.position.top_right	Position in Top Right with Square Text Wrapping
+objects.position.with_wrapping	With Text Wrapping
+objects.reflection.full	Full Reflection: Touching
+objects.reflection.half	Half Reflection: Touching
+objects.reflection.tight	Tight Reflection: Touching
+objects.relative.bottom_margin	Bottom Margin
+objects.relative.character	Character
+objects.relative.column	Column
+objects.relative.inside	Inside
+objects.relative.inside_margin	Inside Margin
+objects.relative.left_margin	Left Margin
+objects.relative.line	Line
+objects.relative.margin	Margin
+objects.relative.outside	Outside
+objects.relative.outside_margin	Outside Margin
+objects.relative.page	Page
+objects.relative.paragraph	Paragraph
+objects.relative.right_margin	Right Margin
+objects.relative.top_margin	Top Margin
+objects.reset	Reset Picture
+objects.reset_size	Reset Picture & Size
+objects.rotate	Rotate
+objects.rotate.flip_h	Flip Horizontal
+objects.rotate.flip_v	Flip Vertical
+objects.rotate.left	Rotate Left 90°
+objects.rotate.more	More Rotation Options...
+objects.rotate.right	Rotate Right 90°
+objects.selection_pane	Selection Pane
+objects.selection_pane_title	List objects to select, show, hide or reorder them
+objects.shadow.bottom	Offset: Bottom
+objects.shadow.bottom_left	Offset: Bottom Left
+objects.shadow.bottom_right	Offset: Bottom Right
+objects.shadow.center	Offset: Center
+objects.shadow.inner_bottom_right	Inside: Bottom Right
+objects.shadow.inner_center	Inside: Center
+objects.shadow.inner_top_left	Inside: Top Left
+objects.shadow.left	Offset: Left
+objects.shadow.right	Offset: Right
+objects.shadow.top	Offset: Top
+objects.shadow.top_left	Offset: Top Left
+objects.shadow.top_right	Offset: Top Right
+objects.shape_effects	Shape Effects
+objects.shape_outline	Shape Outline
+objects.shape_styles	Shape Styles
+objects.shapes	Shapes
+objects.show_all	Show All
+objects.size.height	Height
+objects.size.larger	Larger
+objects.size.smaller	Smaller
+objects.size.summary	{w} mm wide × {h} mm high, rotated {r}°
+objects.size.width	Width
+objects.tab.picture_format	Picture Format
+objects.tab.shape_format	Shape Format
+objects.text.bottom	Bottom
+objects.text.middle	Middle
+objects.text.top	Top
+objects.text_align	Align Text
+objects.text_box	Text Box
+objects.text_box_title	Draw a text box
+objects.text_effects	Text Effects
+objects.text_fill	Text Fill
+objects.to_back	Send to Back
+objects.to_front	Bring to Front
+objects.transparency	Transparency
+objects.ungroup	Ungroup
+objects.warp	Transform
+objects.warp.arch_down	Arch: Down
+objects.warp.arch_up	Arch: Up
+objects.warp.button	Button
+objects.warp.can_down	Can Down
+objects.warp.can_up	Can Up
+objects.warp.chevron	Chevron: Up
+objects.warp.chevron_inverted	Chevron: Down
+objects.warp.circle	Circle
+objects.warp.deflate	Deflate
+objects.warp.double_wave	Double Wave
+objects.warp.fade_left	Fade: Left
+objects.warp.fade_right	Fade: Right
+objects.warp.inflate	Inflate
+objects.warp.none	No Transform
+objects.warp.slant_down	Slant Down
+objects.warp.slant_up	Slant Up
+objects.warp.triangle	Triangle: Up
+objects.warp.triangle_inverted	Triangle: Down
+objects.warp.wave1	Wave: Up
+objects.warp.wave2	Wave: Down
+objects.wordart	WordArt
+objects.wordart.accent_shadow	Fill: Blue, Accent 1; Shadow
+objects.wordart.black_shadow	Fill: Black, Text 1; Shadow
+objects.wordart.gray_bevel	Fill: Gray; Soft Bevel
+objects.wordart.orange_outline	Fill: Orange; Outline: Orange
+objects.wordart.outline_only	No Fill; Outline: Blue, Accent 1
+objects.wordart.white_outline_glow	Fill: White; Outline: Blue; Glow
+objects.wrap_points	Edit Wrap Points
+# word-objects end
