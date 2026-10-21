@@ -5053,6 +5053,45 @@ mod tests {
         });
     }
 
+    /// A page turned to landscape is laid out and painted as the same
+    /// document opened landscape — its page count, its pitch and every
+    /// page's pixels — and the view's page images follow.
+    #[gpui::test]
+    fn a_page_turned_to_landscape_paints_as_one_opened_landscape(cx: &mut gpui::TestAppContext) {
+        use super::ribbon::Action;
+        use jade_office_model::word::page::PageCommand;
+        let (view, cx) = open_contract(cx);
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::Page(PageCommand::Landscape(true)), cx);
+            let mut reopened =
+                super::open_document_bytes(&view.document.export_docx().unwrap()).unwrap();
+            // Painted at the window's scale and on its paper, as the view's
+            // document is.
+            reopened
+                .set_raster_scale(f64::from(view.raster_scale))
+                .unwrap();
+            reopened.set_dark_paper(view.document.dark_paper()).unwrap();
+            let (width, height) = reopened.layout_page_size();
+            assert!(width > height, "opened landscape: {width}x{height}");
+            assert_eq!(view.document.layout_page_size(), (width, height));
+            assert_eq!(view.document.page_pitch(), reopened.page_pitch());
+            assert_eq!(view.document.page_count(), reopened.page_count());
+            assert_eq!(view.images.len(), reopened.page_count());
+            for index in 0..reopened.page_count() {
+                let turned = view.document.page_pixels(index).unwrap();
+                let opened = reopened.page_pixels(index).unwrap();
+                assert_eq!((turned.1, turned.2), (opened.1, opened.2), "page {index}");
+                assert!(turned.0 == opened.0, "page {index} is painted as opened");
+                let image = view.images[index].size(0);
+                assert_eq!(
+                    (image.width.0, image.height.0),
+                    (opened.1, opened.2),
+                    "page {index}'s image"
+                );
+            }
+        });
+    }
+
     #[test]
     fn file_urls_decode_to_paths() {
         assert_eq!(
