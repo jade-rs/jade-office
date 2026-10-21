@@ -76,10 +76,14 @@ impl Separator {
     }
 }
 
+/// One 並べ替え key as the dialog holds it: a column, its kind, and
+/// whether it sorts descending; `None` for (なし).
+pub type SortSlot = Option<(usize, SortKind, bool)>;
+
 /// The table dialog that is open.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TableDialog {
-    Properties(TablePropertiesDialog),
+    Properties(Box<TablePropertiesDialog>),
     Borders(BordersDialog),
     Cells {
         delete: bool,
@@ -103,7 +107,7 @@ pub enum TableDialog {
     Sort {
         /// Up to three keys: a column, its kind, descending. The first is
         /// always set.
-        keys: [Option<(usize, SortKind, bool)>; 3],
+        keys: [SortSlot; 3],
         header: bool,
         headings: Vec<String>,
     },
@@ -119,7 +123,9 @@ impl TableDialog {
         let digits = |target: &mut String| {
             for ch in text.chars() {
                 let ch = match ch {
-                    '０'..='９' => char::from_u32(ch as u32 - '０' as u32 + '0' as u32).unwrap_or(ch),
+                    '０'..='９' => {
+                        char::from_u32(ch as u32 - '０' as u32 + '0' as u32).unwrap_or(ch)
+                    }
                     other => other,
                 };
                 if ch.is_ascii_digit() {
@@ -211,8 +217,14 @@ impl TableDialog {
 /// A drag the mouse began in a table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TableDrag {
-    Column { table_id: usize, boundary: usize },
-    Row { table_id: usize, row: usize },
+    Column {
+        table_id: usize,
+        boundary: usize,
+    },
+    Row {
+        table_id: usize,
+        row: usize,
+    },
     /// The pencil, from where it went down.
     Stroke,
 }
@@ -242,6 +254,10 @@ pub enum TableOutcome {
     Selected(Result<(), String>),
 }
 
+/// A drag in a table: what, on which page, from and to where in layout
+/// pixels.
+pub type DragState = (TableDrag, usize, (f64, f64), (f64, f64));
+
 /// The table tools' state, kept with the document.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TableTools {
@@ -252,7 +268,7 @@ pub struct TableTools {
     pub tool: Option<DrawTool>,
     /// A border or a pencil stroke being dragged: what, on which page, from
     /// and to where in layout pixels.
-    pub drag: Option<(TableDrag, usize, (f64, f64), (f64, f64))>,
+    pub drag: Option<DragState>,
     /// What the pointer is over, for its shape.
     pub hover: Option<TableHit>,
 }
@@ -274,21 +290,25 @@ impl TableTools {
     }
 
     /// A table control was clicked.
-    pub fn action<S: WordTables + ?Sized>(&mut self, document: &mut S, action: TableAction) -> TableOutcome {
+    pub fn action<S: WordTables + ?Sized>(
+        &mut self,
+        document: &mut S,
+        action: TableAction,
+    ) -> TableOutcome {
         let edited = |result: Result<(), String>| TableOutcome::Edited(result.map(|_| None));
         match action {
             TableAction::Look(option, on) => edited(document.set_look_option(option, on)),
             TableAction::Style(style) => edited(document.apply_table_style(style.as_deref())),
             TableAction::Select(part) => TableOutcome::Selected(document.select_table_part(part)),
-            TableAction::Properties(tab) => self.open(
-                document
-                    .table_properties()
-                    .map(|properties| TableDialog::Properties(TablePropertiesDialog::new(properties, tab))),
-            ),
+            TableAction::Properties(tab) => {
+                self.open(document.table_properties().map(|properties| {
+                    TableDialog::Properties(Box::new(TablePropertiesDialog::new(properties, tab)))
+                }))
+            }
             TableAction::CellMargins => self.open(document.table_properties().map(|properties| {
                 let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Table);
                 dialog.options_open = true;
-                TableDialog::Properties(dialog)
+                TableDialog::Properties(Box::new(dialog))
             })),
             TableAction::Borders => {
                 let mut dialog = BordersDialog::new(BorderTarget::Table);
@@ -330,14 +350,18 @@ impl TableTools {
             TableAction::StepHeight(grow) => {
                 let (_, height) = document.cell_size().unwrap_or((0.0, 0.0));
                 let step = 1.0 / MM_PER_PT;
-                edited(document.set_row_height((height + if grow { step } else { -step }).max(step)))
+                edited(
+                    document.set_row_height((height + if grow { step } else { -step }).max(step)),
+                )
             }
             TableAction::StepWidth(grow) => {
                 let (width, _) = document.cell_size().unwrap_or((0.0, 0.0));
                 let step = 1.0 / MM_PER_PT;
                 edited(document.set_column_width(width + if grow { step } else { -step }))
             }
-            TableAction::Align(horizontal, vertical) => edited(document.align_cells(horizontal, vertical)),
+            TableAction::Align(horizontal, vertical) => {
+                edited(document.align_cells(horizontal, vertical))
+            }
             TableAction::TextDirection(direction) => edited(document.set_text_direction(direction)),
             TableAction::Sort => {
                 let header = document
@@ -353,7 +377,10 @@ impl TableTools {
             }
             TableAction::Formula => {
                 let formula = document.suggested_formula();
-                self.open(Some(TableDialog::Formula { formula, format: "" }))
+                self.open(Some(TableDialog::Formula {
+                    formula,
+                    format: "",
+                }))
             }
             TableAction::UpdateFormulas => edited(document.update_formulas()),
             TableAction::ToText => self.open(Some(TableDialog::ToText {
@@ -388,10 +415,18 @@ impl TableTools {
             return TableOutcome::NotMine;
         };
         TableOutcome::Edited(match dialog {
-            TableDialog::Properties(dialog) => document.apply_table_properties(&dialog).map(|_| None),
+            TableDialog::Properties(dialog) => {
+                document.apply_table_properties(&dialog).map(|_| None)
+            }
             TableDialog::Borders(dialog) => document.apply_borders(&dialog).map(|_| None),
-            TableDialog::Cells { delete: false, shift } => document.insert_cells(shift).map(Some),
-            TableDialog::Cells { delete: true, shift } => document.delete_cells(shift).map(Some),
+            TableDialog::Cells {
+                delete: false,
+                shift,
+            } => document.insert_cells(shift).map(Some),
+            TableDialog::Cells {
+                delete: true,
+                shift,
+            } => document.delete_cells(shift).map(Some),
             TableDialog::Split { columns, rows, .. } => document
                 .table_command(TableCommand::SplitCell {
                     columns: columns.parse().unwrap_or(2).clamp(1, 63),
@@ -426,9 +461,9 @@ impl TableTools {
                     header_row: header,
                 })
                 .map(|_| None),
-            TableDialog::Formula { formula, format } => {
-                document.insert_formula(&formula, Some(format)).map(|_| None)
-            }
+            TableDialog::Formula { formula, format } => document
+                .insert_formula(&formula, Some(format))
+                .map(|_| None),
         })
     }
 
@@ -494,8 +529,15 @@ impl TableTools {
             return TableOutcome::NotMine;
         };
         match hit {
-            TableHit::ColumnBorder { table_id, boundary, .. } => {
-                self.drag = Some((TableDrag::Column { table_id, boundary }, page, (x, y), (x, y)));
+            TableHit::ColumnBorder {
+                table_id, boundary, ..
+            } => {
+                self.drag = Some((
+                    TableDrag::Column { table_id, boundary },
+                    page,
+                    (x, y),
+                    (x, y),
+                ));
                 TableOutcome::Redraw
             }
             TableHit::RowBorder { table_id, row, .. } => {
@@ -554,7 +596,9 @@ impl TableTools {
                 if (to.0 - from.0).abs() < 1.0 {
                     return TableOutcome::Redraw;
                 }
-                document.drag_column_border(table_id, boundary, to.0).map(|_| None)
+                document
+                    .drag_column_border(table_id, boundary, to.0)
+                    .map(|_| None)
             }
             TableDrag::Row { table_id, row } => {
                 if (to.1 - from.1).abs() < 1.0 {
@@ -570,7 +614,11 @@ impl TableTools {
     }
 
     /// The pointer moved without a button: whether what it is over changed.
-    pub fn hover<S: WordTables + ?Sized>(&mut self, document: &S, point: Option<(f64, f64)>) -> bool {
+    pub fn hover<S: WordTables + ?Sized>(
+        &mut self,
+        document: &S,
+        point: Option<(f64, f64)>,
+    ) -> bool {
         let hover = point.and_then(|(x, y)| document.table_hit(x, y));
         if hover == self.hover {
             return false;

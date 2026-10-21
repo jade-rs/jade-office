@@ -9,8 +9,7 @@ mod common;
 use common::open_bytes;
 use jade_office_model::word::table::{
     AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, Field, LookOption, Pen,
-    PropertiesTab, SortSpec, TableHit, TablePart, TablePropertiesDialog, TextSeparator,
-    WordTables,
+    PropertiesTab, SortSpec, TableHit, TablePart, TablePropertiesDialog, TextSeparator, WordTables,
 };
 use jade_web::editing::{EditableDocument, TableCommand, WordFormatting, WordSession};
 use jade_web::word::new::{blank_document, Blank};
@@ -54,7 +53,10 @@ fn fill(document: &mut EditableDocument, order: usize, cells: &[&[&str]]) {
 }
 
 fn cell_texts(document: &EditableDocument, order: usize) -> Vec<Vec<String>> {
-    let table = document.word_document().table_by_order(order).expect("table");
+    let table = document
+        .word_document()
+        .table_by_order(order)
+        .expect("table");
     table
         .rows
         .iter()
@@ -70,7 +72,9 @@ fn cell_texts(document: &EditableDocument, order: usize) -> Vec<Vec<String>> {
                                 .runs
                                 .iter()
                                 .map(|run| match (&run.field, run.text.is_empty()) {
-                                    (Some(field), true) => field.cached_text.clone().unwrap_or_default(),
+                                    (Some(field), true) => {
+                                        field.cached_text.clone().unwrap_or_default()
+                                    }
                                     _ => run.text.clone(),
                                 })
                                 .collect::<String>()
@@ -105,24 +109,46 @@ fn caret_table_id(document: &EditableDocument) -> usize {
 fn style_options_and_a_gallery_style_apply_and_save() {
     let mut document = with_table(3, 3);
     let styles = document.table_styles();
-    assert!(styles.iter().any(|style| style.name == "Grid Table 4 - Accent 1"));
+    assert!(styles
+        .iter()
+        .any(|style| style.name == "Grid Table 4 - Accent 1"));
     assert!(styles.iter().any(|style| style.id == "TableGrid"));
 
-    document.apply_table_style(Some("GridTable4-Accent1")).unwrap();
-    assert_eq!(document.table_style_id().as_deref(), Some("GridTable4-Accent1"));
-    document.set_look_option(LookOption::TotalRow, true).unwrap();
-    document.set_look_option(LookOption::BandedColumns, true).unwrap();
-    document.set_look_option(LookOption::HeaderRow, false).unwrap();
+    document
+        .apply_table_style(Some("GridTable4-Accent1"))
+        .unwrap();
+    assert_eq!(
+        document.table_style_id().as_deref(),
+        Some("GridTable4-Accent1")
+    );
+    document
+        .set_look_option(LookOption::TotalRow, true)
+        .unwrap();
+    document
+        .set_look_option(LookOption::BandedColumns, true)
+        .unwrap();
+    document
+        .set_look_option(LookOption::HeaderRow, false)
+        .unwrap();
     let look = document.table_look().unwrap();
     assert!(look.total_row && look.banded_columns && !look.header_row && look.banded_rows);
 
     let saved = document.export_docx().unwrap();
     let xml = document_xml(&saved);
-    assert!(xml.contains("<w:tblStyle w:val=\"GridTable4-Accent1\"/>"), "{xml}");
-    assert!(xml.contains("w:lastRow=\"1\"") && xml.contains("w:noVBand=\"0\""), "{xml}");
+    assert!(
+        xml.contains("<w:tblStyle w:val=\"GridTable4-Accent1\"/>"),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("w:lastRow=\"1\"") && xml.contains("w:noVBand=\"0\""),
+        "{xml}"
+    );
     let mut reopened = open_bytes(&saved);
     reopened.place_caret(cell_paragraph(&reopened, 0, 0, 0), 0);
-    assert_eq!(reopened.table_style_id().as_deref(), Some("GridTable4-Accent1"));
+    assert_eq!(
+        reopened.table_style_id().as_deref(),
+        Some("GridTable4-Accent1")
+    );
     assert_eq!(reopened.table_look(), Some(look));
 }
 
@@ -151,14 +177,22 @@ fn cells_rows_columns_and_the_table_select_from_the_menu_and_the_mouse() {
     let table_id = caret_table_id(&document);
     let geometry = document.table_geometry(table_id).unwrap();
     let (top, bottom) = geometry.rows[2];
-    let hit = document.table_hit(geometry.left() - 10.0, (top + bottom) / 2.0).unwrap();
+    let hit = document
+        .table_hit(geometry.left() - 10.0, (top + bottom) / 2.0)
+        .unwrap();
     assert_eq!(hit, TableHit::RowSelector { table_id, row: 2 });
     document.click_table_hit(hit).unwrap();
     assert_eq!(document.cell_span().unwrap().rows, (2, 2));
 
     let x = (geometry.columns[1] + geometry.columns[2]) / 2.0;
     let hit = document.table_hit(x, geometry.top() - 6.0).unwrap();
-    assert_eq!(hit, TableHit::ColumnSelector { table_id, column: 1 });
+    assert_eq!(
+        hit,
+        TableHit::ColumnSelector {
+            table_id,
+            column: 1
+        }
+    );
     document.click_table_hit(hit).unwrap();
     assert_eq!(document.cell_span().unwrap().columns, (1, 1));
 
@@ -196,9 +230,15 @@ fn borders_drag_to_resize_columns_and_rows() {
     let hit = document.table_hit(before.columns[1] + 1.0, y).unwrap();
     assert_eq!(
         hit,
-        TableHit::ColumnBorder { table_id, boundary: 1, x: before.columns[1] }
+        TableHit::ColumnBorder {
+            table_id,
+            boundary: 1,
+            x: before.columns[1]
+        }
     );
-    document.drag_column_border(table_id, 1, before.columns[1] + 40.0).unwrap();
+    document
+        .drag_column_border(table_id, 1, before.columns[1] + 40.0)
+        .unwrap();
     let table_id = caret_table_id(&document);
     let after = document.table_geometry(table_id).unwrap();
     let (old, new) = (before.widths_pt(), after.widths_pt());
@@ -206,15 +246,27 @@ fn borders_drag_to_resize_columns_and_rows() {
     assert!((old[1] - new[1] - 30.0).abs() < 1.0, "{old:?} → {new:?}");
     assert!((new[2] - old[2]).abs() < 1.0);
 
-    document.drag_column_border(table_id, 3, after.right() - 20.0).unwrap();
+    document
+        .drag_column_border(table_id, 3, after.right() - 20.0)
+        .unwrap();
     let table_id = caret_table_id(&document);
     let narrower = document.table_geometry(table_id).unwrap().widths_pt();
-    assert!((new[2] - narrower[2] - 15.0).abs() < 1.0, "{new:?} → {narrower:?}");
+    assert!(
+        (new[2] - narrower[2] - 15.0).abs() < 1.0,
+        "{new:?} → {narrower:?}"
+    );
 
     let geometry = document.table_geometry(table_id).unwrap();
     let (top, bottom) = geometry.rows[0];
     let hit = document.table_hit(geometry.left() + 20.0, bottom).unwrap();
-    assert_eq!(hit, TableHit::RowBorder { table_id, row: 0, y: bottom });
+    assert_eq!(
+        hit,
+        TableHit::RowBorder {
+            table_id,
+            row: 0,
+            y: bottom
+        }
+    );
     document.drag_row_border(table_id, 0, top + 80.0).unwrap();
     let table_id = caret_table_id(&document);
     let (top, bottom) = document.table_geometry(table_id).unwrap().rows[0];
@@ -223,9 +275,20 @@ fn borders_drag_to_resize_columns_and_rows() {
     let saved = document.export_docx().unwrap();
     let reopened = open_bytes(&saved);
     let table = reopened.word_document().table_by_order(0).unwrap();
-    let widths: Vec<f32> = table.columns.iter().map(|column| column.width.unwrap()).collect();
-    assert!((widths[0] - narrower[0]).abs() < 1.0, "{widths:?} {narrower:?}");
-    assert!((table.rows[0].height.unwrap() - 60.0).abs() < 1.5, "{:?}", table.rows[0].height);
+    let widths: Vec<f32> = table
+        .columns
+        .iter()
+        .map(|column| column.width.unwrap())
+        .collect();
+    assert!(
+        (widths[0] - narrower[0]).abs() < 1.0,
+        "{widths:?} {narrower:?}"
+    );
+    assert!(
+        (table.rows[0].height.unwrap() - 60.0).abs() < 1.5,
+        "{:?}",
+        table.rows[0].height
+    );
 }
 
 /// 表のプロパティ: each tab's settings land on the table, its rows, its
@@ -236,7 +299,7 @@ fn table_properties_set_the_table_rows_columns_and_cells() {
     let paragraph = cell_paragraph(&document, 0, 1, 1);
     document.place_caret(paragraph, 0);
     let properties = document.table_properties().unwrap();
-    assert!(properties.autofit || !properties.autofit);
+    assert!(!properties.autofit, "an inserted table keeps its column widths");
     let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Table);
     dialog.width_on = true;
     dialog.width_percent = true;
@@ -245,7 +308,9 @@ fn table_properties_set_the_table_rows_columns_and_cells() {
     dialog.floating = true;
     dialog.position_x_align = Some("right".to_string());
     dialog.horizontal_anchor = "margin".to_string();
-    dialog.text.insert(Field::PositionVertical, "20".to_string());
+    dialog
+        .text
+        .insert(Field::PositionVertical, "20".to_string());
     dialog.spacing_on = true;
     dialog.text.insert(Field::Spacing, "1".to_string());
     dialog.text.insert(Field::MarginLeft, "3".to_string());
@@ -266,14 +331,24 @@ fn table_properties_set_the_table_rows_columns_and_cells() {
 
     document.place_caret(cell_paragraph(&document, 0, 1, 1), 0);
     let read = document.table_properties().unwrap();
-    assert!(matches!(read.width, Some(jade_office_model::word::table::PreferredWidth::Percent(p)) if (p - 80.0).abs() < 0.1));
+    assert!(
+        matches!(read.width, Some(jade_office_model::word::table::PreferredWidth::Percent(p)) if (p - 80.0).abs() < 0.1)
+    );
     assert_eq!(read.alignment, "center");
     assert!(read.floating);
     assert_eq!(read.position.horizontal_align.as_deref(), Some("right"));
-    assert!((read.spacing.unwrap() - 2.83).abs() < 0.05, "{:?}", read.spacing);
+    assert!(
+        (read.spacing.unwrap() - 2.83).abs() < 0.05,
+        "{:?}",
+        read.spacing
+    );
     assert!((read.row_height.unwrap() - 34.0).abs() < 0.2 && read.row_exact);
     assert!(!read.allow_break && read.repeat_header);
-    assert!((read.column_width.unwrap() - 113.4).abs() < 0.5, "{:?}", read.column_width);
+    assert!(
+        (read.column_width.unwrap() - 113.4).abs() < 0.5,
+        "{:?}",
+        read.column_width
+    );
     assert_eq!(read.vertical_align, "center");
     assert!((read.cell_margins.unwrap()[0] - 5.67).abs() < 0.1);
 
@@ -320,7 +395,14 @@ fn cells_insert_and_delete_with_a_shift() {
     document.insert_cells(CellShift::Vertical).unwrap();
     let texts = cell_texts(&document, 0);
     assert_eq!(texts.len(), 3);
-    assert_eq!((texts[0][1].as_str(), texts[1][1].as_str(), texts[2][1].as_str()), ("", "b", "d"));
+    assert_eq!(
+        (
+            texts[0][1].as_str(),
+            texts[1][1].as_str(),
+            texts[2][1].as_str()
+        ),
+        ("", "b", "d")
+    );
     document.place_caret(cell_paragraph(&document, 0, 0, 1), 0);
     document.delete_cells(CellShift::Vertical).unwrap();
     let texts = cell_texts(&document, 0);
@@ -342,13 +424,23 @@ fn text_and_tables_convert_both_ways() {
     document.insert_text("おわり").unwrap();
     document.select((0, 0), (1, 2)).unwrap();
     assert_eq!(document.text_table_shape(&TextSeparator::Tab), (2, 2));
-    let caret = document.convert_text_to_table(&TextSeparator::Tab, None).unwrap();
+    let caret = document
+        .convert_text_to_table(&TextSeparator::Tab, None)
+        .unwrap();
     document.place_caret(caret.0, caret.1);
-    assert_eq!(cell_texts(&document, 0), vec![vec!["品目", "数量"], vec!["りんご", "3"]]);
+    assert_eq!(
+        cell_texts(&document, 0),
+        vec![vec!["品目", "数量"], vec!["りんご", "3"]]
+    );
     assert!(document.caret_table_cell().is_some());
-    assert!(document.paragraph_text(document.paragraph_count() - 1).unwrap().contains("おわり"));
+    assert!(document
+        .paragraph_text(document.paragraph_count() - 1)
+        .unwrap()
+        .contains("おわり"));
 
-    document.convert_table_to_text(&TextSeparator::Comma).unwrap();
+    document
+        .convert_table_to_text(&TextSeparator::Comma)
+        .unwrap();
     assert!(document.word_document().table_by_order(0).is_none());
     assert_eq!(document.paragraph_text(0).as_deref(), Some("品目,数量"));
     assert_eq!(document.paragraph_text(1).as_deref(), Some("りんご,3"));
@@ -366,7 +458,12 @@ fn rows_sort_and_formulas_compute() {
     fill(
         &mut document,
         0,
-        &[&["品目", "金額"], &["みかん", "300"], &["りんご", "1,200"], &["ぶどう", "800"]],
+        &[
+            &["品目", "金額"],
+            &["みかん", "300"],
+            &["りんご", "1,200"],
+            &["ぶどう", "800"],
+        ],
     );
     document.place_caret(cell_paragraph(&document, 0, 1, 0), 0);
     assert_eq!(document.sort_columns(true), vec!["品目", "金額"]);
@@ -388,7 +485,9 @@ fn rows_sort_and_formulas_compute() {
 
     document.place_caret(cell_paragraph(&document, 0, 4, 1), 0);
     assert_eq!(document.suggested_formula(), "=SUM(ABOVE)");
-    document.insert_formula("=SUM(ABOVE)", Some("#,##0")).unwrap();
+    document
+        .insert_formula("=SUM(ABOVE)", Some("#,##0"))
+        .unwrap();
     assert_eq!(cell_texts(&document, 0)[4][1], "2,300");
     // Change a number; フィールド更新 recomputes.
     let paragraph = cell_paragraph(&document, 0, 3, 1);
@@ -409,12 +508,17 @@ fn a_table_inside_a_cell_is_edited_as_a_table() {
     let caret = WordFormatting::insert_table(&mut document, 2, 2).unwrap();
     document.place_caret(caret.0, caret.1);
     let cell = document.caret_table_cell().unwrap();
-    assert_eq!(cell.table_order_index, 1, "the caret is in the nested table");
+    assert_eq!(
+        cell.table_order_index, 1,
+        "the caret is in the nested table"
+    );
     assert_eq!((cell.rows, cell.columns), (2, 2));
     // Word's 挿入 ▸ 表 gives a table its lines: 表 (格子).
     assert_eq!(document.table_style_id().as_deref(), Some("TableGrid"));
     document.insert_text("内側").unwrap();
-    let caret = document.table_command(TableCommand::InsertRowBelow).unwrap();
+    let caret = document
+        .table_command(TableCommand::InsertRowBelow)
+        .unwrap();
     document.place_caret(caret.0, caret.1);
     assert_eq!(document.caret_table_cell().unwrap().rows, 3);
     // The outer table is untouched.
@@ -440,7 +544,9 @@ fn the_pencil_splits_and_the_eraser_merges() {
     let middle = (top + bottom) / 2.0;
     // A vertical stroke through the first cell: two columns there.
     let x = (geometry.columns[0] + geometry.columns[1]) / 2.0;
-    document.draw_stroke((x, top + 1.0), (x, bottom - 1.0), None).unwrap();
+    document
+        .draw_stroke((x, top + 1.0), (x, bottom - 1.0), None)
+        .unwrap();
     assert_eq!(document.word_document().table_dimensions(0), Some((1, 3)));
 
     // The eraser on the new line joins the two halves again.

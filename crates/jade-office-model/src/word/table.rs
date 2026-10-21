@@ -22,7 +22,9 @@ use jade_docx_headless_api::{
 use super::{CellLayout, Position, TableCell, WordFormatting, WordSession};
 
 /// What a 並べ替え key is made of, for the shells.
-pub use jade_docx_headless_api::{HeadlessTableSortKey as SortKey, HeadlessTableSortKind as SortKind};
+pub use jade_docx_headless_api::{
+    HeadlessTableSortKey as SortKey, HeadlessTableSortKind as SortKind,
+};
 
 /// Points per layout pixel: the renderer lays pages out at 96 per inch.
 const PT_PER_PX: f64 = 0.75;
@@ -274,7 +276,7 @@ impl TextSeparator {
         }
     }
 
-    fn split<'a>(&self, text: &'a str) -> usize {
+    fn split(&self, text: &str) -> usize {
         match self {
             TextSeparator::Paragraph => 1,
             TextSeparator::Tab => text.matches('\t').count() + 1,
@@ -375,8 +377,14 @@ impl TableProperties {
         let margins = [
             margin(margins.and_then(|m| m.top), 0.0),
             margin(margins.and_then(|m| m.bottom), 0.0),
-            margin(margins.and_then(|m| m.physical_left(table.bidi_visual)), 5.4),
-            margin(margins.and_then(|m| m.physical_right(table.bidi_visual)), 5.4),
+            margin(
+                margins.and_then(|m| m.physical_left(table.bidi_visual)),
+                5.4,
+            ),
+            margin(
+                margins.and_then(|m| m.physical_right(table.bidi_visual)),
+                5.4,
+            ),
         ];
         let row = table.rows.get(cell.row);
         let cell_model = row.and_then(|row| {
@@ -426,24 +434,29 @@ impl TableProperties {
             // Word stores half the spacing its dialog shows.
             spacing: table.cell_spacing.map(|value| value * 2.0),
             autofit: table.table_layout != Some(TableLayoutMode::Fixed),
-            row_height: row.and_then(|row| row.height).filter(|_| {
-                row.and_then(|row| row.height_rule) != Some(TableRowHeightRule::Auto)
-            }),
+            row_height: row
+                .and_then(|row| row.height)
+                .filter(|_| row.and_then(|row| row.height_rule) != Some(TableRowHeightRule::Auto)),
             row_exact: row.and_then(|row| row.height_rule) == Some(TableRowHeightRule::Exact),
             allow_break: !row.is_some_and(|row| row.cant_split),
             repeat_header: row.is_some_and(|row| row.is_header),
-            column_width: table.columns.get(cell.column).and_then(|column| column.width),
+            column_width: table
+                .columns
+                .get(cell.column)
+                .and_then(|column| column.width),
             vertical_align: cell_model
                 .and_then(|cell| cell.vertical_align.clone())
                 .unwrap_or_else(|| "top".to_string()),
-            cell_margins: cell_model.and_then(|cell| cell.margins.as_ref()).map(|own| {
-                [
-                    own.top.unwrap_or(margins[0]),
-                    own.bottom.unwrap_or(margins[1]),
-                    own.physical_left(table.bidi_visual).unwrap_or(margins[2]),
-                    own.physical_right(table.bidi_visual).unwrap_or(margins[3]),
-                ]
-            }),
+            cell_margins: cell_model
+                .and_then(|cell| cell.margins.as_ref())
+                .map(|own| {
+                    [
+                        own.top.unwrap_or(margins[0]),
+                        own.bottom.unwrap_or(margins[1]),
+                        own.physical_left(table.bidi_visual).unwrap_or(margins[2]),
+                        own.physical_right(table.bidi_visual).unwrap_or(margins[3]),
+                    ]
+                }),
             text_direction: cell_model
                 .and_then(|cell| cell.text_direction)
                 .map(|direction| match direction {
@@ -572,7 +585,10 @@ impl TablePropertiesDialog {
         }
         put(Field::Indent, mm(properties.indent));
         put(Field::RowHeight, mm(properties.row_height.unwrap_or(0.0)));
-        put(Field::ColumnWidth, mm(properties.column_width.unwrap_or(0.0)));
+        put(
+            Field::ColumnWidth,
+            mm(properties.column_width.unwrap_or(0.0)),
+        );
         put(Field::CellWidth, mm(properties.column_width.unwrap_or(0.0)));
         for (field, value) in [
             Field::MarginTop,
@@ -659,7 +675,10 @@ impl TablePropertiesDialog {
                 '．' => '.',
                 other => other,
             };
-            if ch.is_ascii_digit() || (ch == '.' && !entry.contains('.')) || (ch == '-' && entry.is_empty()) {
+            if ch.is_ascii_digit()
+                || (ch == '.' && !entry.contains('.'))
+                || (ch == '-' && entry.is_empty())
+            {
                 entry.push(ch);
             }
         }
@@ -901,7 +920,9 @@ impl TablePropertiesDialog {
                     height,
                 });
             }
-            if self.allow_break != original.allow_break || self.repeat_header != original.repeat_header {
+            if self.allow_break != original.allow_break
+                || self.repeat_header != original.repeat_header
+            {
                 commands.push(HeadlessCommand::SetTableRowProperties {
                     table_order_index,
                     row,
@@ -915,17 +936,22 @@ impl TablePropertiesDialog {
 
         // 列 / セル: the selected columns' widths.
         let column_width = if self.tab == PropertiesTab::Cell {
-            self.cell_width_on.then(|| self.length(Field::CellWidth)).flatten()
+            self.cell_width_on
+                .then(|| self.length(Field::CellWidth))
+                .flatten()
         } else {
-            self.column_width_on.then(|| self.length(Field::ColumnWidth)).flatten()
+            self.column_width_on
+                .then(|| self.length(Field::ColumnWidth))
+                .flatten()
         }
         .filter(|value| *value > 0.0);
         if let Some(width) = column_width {
             if original.column_width.is_none_or(|old| changed(width, old))
                 && column_widths.len() == column_count
             {
-                for column in span.columns.0..=span.columns.1.min(column_count.saturating_sub(1)) {
-                    grid[column] = width;
+                let last = span.columns.1.min(column_count.saturating_sub(1));
+                for slot in grid.iter_mut().take(last + 1).skip(span.columns.0) {
+                    *slot = width;
                 }
                 grid_changed = true;
             }
@@ -1007,7 +1033,8 @@ pub struct BordersDialog {
 }
 
 impl BordersDialog {
-    pub const EDGE_NAMES: [&'static str; 6] = ["top", "bottom", "left", "right", "insideH", "insideV"];
+    pub const EDGE_NAMES: [&'static str; 6] =
+        ["top", "bottom", "left", "right", "insideH", "insideV"];
 
     pub fn new(target: BorderTarget) -> Self {
         BordersDialog {
@@ -1048,8 +1075,16 @@ impl BordersDialog {
                     for column in span.columns.0..=span.columns.1 {
                         let top = if row == span.rows.0 { top } else { inside_h };
                         let bottom = if row == span.rows.1 { bottom } else { inside_h };
-                        let left = if column == span.columns.0 { left } else { inside_v };
-                        let right = if column == span.columns.1 { right } else { inside_v };
+                        let left = if column == span.columns.0 {
+                            left
+                        } else {
+                            inside_v
+                        };
+                        let right = if column == span.columns.1 {
+                            right
+                        } else {
+                            inside_v
+                        };
                         commands.push(HeadlessCommand::SetTableCellBorders {
                             table_order_index,
                             row,
@@ -1070,7 +1105,9 @@ impl BordersDialog {
                         table_order_index,
                         row,
                         column,
-                        color: fill.as_ref().map(|color| format!("#{}", color.trim_start_matches('#'))),
+                        color: fill
+                            .as_ref()
+                            .map(|color| format!("#{}", color.trim_start_matches('#'))),
                     });
                 }
             }
@@ -1106,7 +1143,10 @@ pub enum TableHit {
 impl TableHit {
     /// Whether a drag from here resizes (the pointer shows ↔ or ↕).
     pub fn is_border(&self) -> bool {
-        matches!(self, TableHit::ColumnBorder { .. } | TableHit::RowBorder { .. })
+        matches!(
+            self,
+            TableHit::ColumnBorder { .. } | TableHit::RowBorder { .. }
+        )
     }
 }
 
@@ -1144,7 +1184,10 @@ impl TableGeometry {
 }
 
 fn geometry_of(cells: &[CellLayout], table_id: usize) -> Option<TableGeometry> {
-    let cells: Vec<&CellLayout> = cells.iter().filter(|cell| cell.table_id == table_id).collect();
+    let cells: Vec<&CellLayout> = cells
+        .iter()
+        .filter(|cell| cell.table_id == table_id)
+        .collect();
     if cells.is_empty() {
         return None;
     }
@@ -1210,7 +1253,9 @@ pub trait WordTables: WordSession {
     /// The caret's table's style options.
     fn table_look(&self) -> Option<TableLookState> {
         let cell = self.caret_table_cell()?;
-        let table = self.word_document().table_by_order(cell.table_order_index)?;
+        let table = self
+            .word_document()
+            .table_by_order(cell.table_order_index)?;
         let look = table.look;
         Some(TableLookState {
             header_row: look.first_row_enabled(),
@@ -1260,10 +1305,9 @@ pub trait WordTables: WordSession {
                     .flat_map(char::to_lowercase)
                     .collect()
             };
-            if choices
-                .iter()
-                .any(|choice| key(&choice.name) == key(&info.name) || key(&choice.id) == key(&info.style_id))
-            {
+            if choices.iter().any(|choice| {
+                key(&choice.name) == key(&info.name) || key(&choice.id) == key(&info.style_id)
+            }) {
                 continue;
             }
             let display = &info.display;
@@ -1276,7 +1320,10 @@ pub trait WordTables: WordSession {
                         .as_ref()
                         .and_then(|row| row.fill.clone())
                         .map(|fill| fill.trim_start_matches('#').to_string()),
-                    display.band1_fill.clone().map(|fill| fill.trim_start_matches('#').to_string()),
+                    display
+                        .band1_fill
+                        .clone()
+                        .map(|fill| fill.trim_start_matches('#').to_string()),
                     None,
                 ),
             });
@@ -1346,7 +1393,12 @@ pub trait WordTables: WordSession {
 
     /// The cell ids of a table's corners within a span: the first and last
     /// cell laid out for it.
-    fn span_corners(&self, table_id: usize, rows: (usize, usize), columns: (usize, usize)) -> Option<(usize, usize)> {
+    fn span_corners(
+        &self,
+        table_id: usize,
+        rows: (usize, usize),
+        columns: (usize, usize),
+    ) -> Option<(usize, usize)> {
         let inside = |cell: &CellLayout| {
             cell.table_id == table_id
                 && (rows.0..=rows.1).contains(&cell.row)
@@ -1359,7 +1411,10 @@ pub trait WordTables: WordSession {
             .enumerate()
             .filter(|(_, cell)| inside(cell))
             .collect();
-        let first = cells.iter().min_by_key(|(_, cell)| (cell.row, cell.column))?.0;
+        let first = cells
+            .iter()
+            .min_by_key(|(_, cell)| (cell.row, cell.column))?
+            .0;
         let last = cells
             .iter()
             .max_by_key(|(_, cell)| (cell.row, cell.column))?
@@ -1381,8 +1436,15 @@ pub trait WordTables: WordSession {
     }
 
     /// Selects `part` of a laid-out table around (`row`, `column`).
-    fn select_in_table(&mut self, table_id: usize, part: TablePart, row: usize, column: usize) -> Result<(), String> {
-        let geometry = geometry_of(self.cell_layouts(), table_id).ok_or("the table is not laid out")?;
+    fn select_in_table(
+        &mut self,
+        table_id: usize,
+        part: TablePart,
+        row: usize,
+        column: usize,
+    ) -> Result<(), String> {
+        let geometry =
+            geometry_of(self.cell_layouts(), table_id).ok_or("the table is not laid out")?;
         let rows = geometry.rows.len().saturating_sub(1);
         let columns = geometry.columns.len().saturating_sub(2);
         let (row_span, column_span) = match part {
@@ -1404,7 +1466,11 @@ pub trait WordTables: WordSession {
 
     /// What the pointer at (`x`, `y`) in layout pixels is over.
     fn table_hit(&self, x: f64, y: f64) -> Option<TableHit> {
-        let mut tables: Vec<usize> = self.cell_layouts().iter().map(|cell| cell.table_id).collect();
+        let mut tables: Vec<usize> = self
+            .cell_layouts()
+            .iter()
+            .map(|cell| cell.table_id)
+            .collect();
         tables.sort_unstable();
         tables.dedup();
         // The innermost table first: a nested table sits inside its cell.
@@ -1414,7 +1480,10 @@ pub trait WordTables: WordSession {
                 continue;
             };
             let area = (geometry.right() - geometry.left())
-                * geometry.rows.last().map_or(0.0, |row| row.1 - geometry.top());
+                * geometry
+                    .rows
+                    .last()
+                    .map_or(0.0, |row| row.1 - geometry.top());
             let mut consider = |hit: TableHit| {
                 if best.as_ref().is_none_or(|(size, _)| area < *size) {
                     best = Some((area, hit));
@@ -1437,7 +1506,11 @@ pub trait WordTables: WordSession {
                     continue;
                 }
                 if (y - bottom).abs() <= BORDER_GRAB_PX {
-                    consider(TableHit::RowBorder { table_id, row, y: bottom });
+                    consider(TableHit::RowBorder {
+                        table_id,
+                        row,
+                        y: bottom,
+                    });
                     continue;
                 }
                 // The lines of this row's own cells.
@@ -1525,10 +1598,15 @@ pub trait WordTables: WordSession {
     /// A drag across cells selects whole cells, as in Word: from the cell
     /// at `anchor` to the one at `focus` (paragraphs).
     fn select_cells_between(&mut self, anchor: usize, focus: usize) -> Result<bool, String> {
-        let (Some(a), Some(f)) = (self.cell_id_for_paragraph(anchor), self.cell_id_for_paragraph(focus)) else {
+        let (Some(a), Some(f)) = (
+            self.cell_id_for_paragraph(anchor),
+            self.cell_id_for_paragraph(focus),
+        ) else {
             return Ok(false);
         };
-        let (Some(anchor_cell), Some(focus_cell)) = (self.cell_layout(a).cloned(), self.cell_layout(f).cloned()) else {
+        let (Some(anchor_cell), Some(focus_cell)) =
+            (self.cell_layout(a).cloned(), self.cell_layout(f).cloned())
+        else {
             return Ok(false);
         };
         if anchor_cell.table_id != focus_cell.table_id
@@ -1536,7 +1614,10 @@ pub trait WordTables: WordSession {
         {
             return Ok(false);
         }
-        let rows = (anchor_cell.row.min(focus_cell.row), anchor_cell.row.max(focus_cell.row));
+        let rows = (
+            anchor_cell.row.min(focus_cell.row),
+            anchor_cell.row.max(focus_cell.row),
+        );
         let columns = (
             anchor_cell.column.min(focus_cell.column),
             (anchor_cell.column + anchor_cell.column_span.max(1) - 1)
@@ -1546,11 +1627,12 @@ pub trait WordTables: WordSession {
             .span_corners(anchor_cell.table_id, rows, columns)
             .ok_or("no cells there")?;
         // The anchor stays where the drag began.
-        let (anchor, focus) = if (anchor_cell.row, anchor_cell.column) <= (focus_cell.row, focus_cell.column) {
-            (first, last)
-        } else {
-            (last, first)
-        };
+        let (anchor, focus) =
+            if (anchor_cell.row, anchor_cell.column) <= (focus_cell.row, focus_cell.column) {
+                (first, last)
+            } else {
+                (last, first)
+            };
         self.select_cells(anchor, focus)?;
         Ok(true)
     }
@@ -1558,9 +1640,15 @@ pub trait WordTables: WordSession {
     /// A column border dragged to `x`: the columns either side share the
     /// move, or the last column takes it at the right edge — and the table's
     /// grid takes the widths it is drawn with, as Word's drag does.
-    fn drag_column_border(&mut self, table_id: usize, boundary: usize, x: f64) -> Result<(), String> {
+    fn drag_column_border(
+        &mut self,
+        table_id: usize,
+        boundary: usize,
+        x: f64,
+    ) -> Result<(), String> {
         let table_order_index = self.table_order_for(table_id).ok_or("the table is gone")?;
-        let geometry = geometry_of(self.cell_layouts(), table_id).ok_or("the table is not laid out")?;
+        let geometry =
+            geometry_of(self.cell_layouts(), table_id).ok_or("the table is not laid out")?;
         let last = geometry.columns.len() - 1;
         if boundary == 0 || boundary > last {
             return Err("the table's left edge does not resize".to_string());
@@ -1578,7 +1666,10 @@ pub trait WordTables: WordSession {
             .map(|pair| ((pair[1] - pair[0]) * PT_PER_PX) as f32)
             .collect();
         self.execute_command(
-            Box::new(ResizeTableColumnCommand::rendered_columns(table_order_index, widths)),
+            Box::new(ResizeTableColumnCommand::rendered_columns(
+                table_order_index,
+                widths,
+            )),
             true,
         )
     }
@@ -1586,7 +1677,8 @@ pub trait WordTables: WordSession {
     /// A row border dragged to `y`: the row above takes the new height.
     fn drag_row_border(&mut self, table_id: usize, row: usize, y: f64) -> Result<(), String> {
         let table_order_index = self.table_order_for(table_id).ok_or("the table is gone")?;
-        let geometry = geometry_of(self.cell_layouts(), table_id).ok_or("the table is not laid out")?;
+        let geometry =
+            geometry_of(self.cell_layouts(), table_id).ok_or("the table is not laid out")?;
         let (top, _) = *geometry.rows.get(row).ok_or("no such row")?;
         let height = ((y - top).max(MIN_COLUMN_PX) * PT_PER_PX) as f32;
         self.apply_command(
@@ -1604,7 +1696,9 @@ pub trait WordTables: WordSession {
     /// What the caret's table is, for 表のプロパティ.
     fn table_properties(&self) -> Option<TableProperties> {
         let cell = self.caret_table_cell()?;
-        let table = self.word_document().table_by_order(cell.table_order_index)?;
+        let table = self
+            .word_document()
+            .table_by_order(cell.table_order_index)?;
         Some(TableProperties::read(table, cell))
     }
 
@@ -1617,12 +1711,19 @@ pub trait WordTables: WordSession {
             .ok_or("the table is gone")?;
         let column_count = table.columns.len();
         let geometry = self
-            .cell_id_for_paragraph(self.selection_range().map_or(0, |range| range.focus.paragraph))
+            .cell_id_for_paragraph(
+                self.selection_range()
+                    .map_or(0, |range| range.focus.paragraph),
+            )
             .and_then(|id| self.cell_layout(id))
             .and_then(|cell| geometry_of(self.cell_layouts(), cell.table_id));
         let widths: Vec<f32> = match geometry {
             Some(geometry) if geometry.columns.len() == column_count + 1 => geometry.widths_pt(),
-            _ => table.columns.iter().map(|column| column.width.unwrap_or(72.0)).collect(),
+            _ => table
+                .columns
+                .iter()
+                .map(|column| column.width.unwrap_or(72.0))
+                .collect(),
         };
         let setup = super::page::WordPage::page_setup(self);
         let content_width = (setup.width - setup.margins.left - setup.margins.right).max(72.0);
@@ -1643,21 +1744,55 @@ pub trait WordTables: WordSession {
         let mut dialog = BordersDialog::new(BorderTarget::Cell);
         dialog.pen = pen.clone();
         let table_wide = span.rows.0 == span.rows.1 && span.columns.0 == span.columns.1;
-        if table_wide && matches!(set, BorderSet::All | BorderSet::None | BorderSet::Outside | BorderSet::Inside | BorderSet::InsideHorizontal | BorderSet::InsideVertical) {
+        if table_wide
+            && matches!(
+                set,
+                BorderSet::All
+                    | BorderSet::None
+                    | BorderSet::Outside
+                    | BorderSet::Inside
+                    | BorderSet::InsideHorizontal
+                    | BorderSet::InsideVertical
+            )
+        {
             dialog.target = BorderTarget::Table;
         }
         let on = |edges: [bool; 6]| edges;
         let (edges, touched): ([bool; 6], [bool; 6]) = match set {
-            BorderSet::Bottom => (on([false, true, false, false, false, false]), [false, true, false, false, false, false]),
-            BorderSet::Top => ([true, false, false, false, false, false], [true, false, false, false, false, false]),
-            BorderSet::Left => ([false, false, true, false, false, false], [false, false, true, false, false, false]),
-            BorderSet::Right => ([false, false, false, true, false, false], [false, false, false, true, false, false]),
+            BorderSet::Bottom => (
+                on([false, true, false, false, false, false]),
+                [false, true, false, false, false, false],
+            ),
+            BorderSet::Top => (
+                [true, false, false, false, false, false],
+                [true, false, false, false, false, false],
+            ),
+            BorderSet::Left => (
+                [false, false, true, false, false, false],
+                [false, false, true, false, false, false],
+            ),
+            BorderSet::Right => (
+                [false, false, false, true, false, false],
+                [false, false, false, true, false, false],
+            ),
             BorderSet::None => ([false; 6], [true; 6]),
             BorderSet::All => ([true; 6], [true; 6]),
-            BorderSet::Outside => ([true, true, true, true, false, false], [true, true, true, true, false, false]),
-            BorderSet::Inside => ([false, false, false, false, true, true], [false, false, false, false, true, true]),
-            BorderSet::InsideHorizontal => ([false, false, false, false, true, false], [false, false, false, false, true, false]),
-            BorderSet::InsideVertical => ([false, false, false, false, false, true], [false, false, false, false, false, true]),
+            BorderSet::Outside => (
+                [true, true, true, true, false, false],
+                [true, true, true, true, false, false],
+            ),
+            BorderSet::Inside => (
+                [false, false, false, false, true, true],
+                [false, false, false, false, true, true],
+            ),
+            BorderSet::InsideHorizontal => (
+                [false, false, false, false, true, false],
+                [false, false, false, false, true, false],
+            ),
+            BorderSet::InsideVertical => (
+                [false, false, false, false, false, true],
+                [false, false, false, false, false, true],
+            ),
         };
         dialog.edges = edges;
         // Only the edges the entry names change; the others are left out.
@@ -1690,12 +1825,16 @@ pub trait WordTables: WordSession {
 
     /// セルの挿入 before the caret's cell.
     fn insert_cells(&mut self, shift: CellShift) -> Result<Position, String> {
-        let cell = self.caret_table_cell().ok_or("the caret is not in a table")?;
+        let cell = self
+            .caret_table_cell()
+            .ok_or("the caret is not in a table")?;
         let direction = match shift {
             CellShift::Horizontal => HeadlessTableCellInsertDirection::ShiftRight,
             CellShift::Vertical => HeadlessTableCellInsertDirection::ShiftDown,
             CellShift::EntireRow => return self.table_command(super::TableCommand::InsertRowAbove),
-            CellShift::EntireColumn => return self.table_command(super::TableCommand::InsertColumnLeft),
+            CellShift::EntireColumn => {
+                return self.table_command(super::TableCommand::InsertColumnLeft)
+            }
         };
         self.structural_cell_command(HeadlessCommand::InsertTableCell {
             table_order_index: cell.table_order_index,
@@ -1707,12 +1846,16 @@ pub trait WordTables: WordSession {
 
     /// セルの削除 of the caret's cell.
     fn delete_cells(&mut self, shift: CellShift) -> Result<Position, String> {
-        let cell = self.caret_table_cell().ok_or("the caret is not in a table")?;
+        let cell = self
+            .caret_table_cell()
+            .ok_or("the caret is not in a table")?;
         let direction = match shift {
             CellShift::Horizontal => HeadlessTableCellDeleteDirection::ShiftLeft,
             CellShift::Vertical => HeadlessTableCellDeleteDirection::ShiftUp,
             CellShift::EntireRow => return self.table_command(super::TableCommand::DeleteRow),
-            CellShift::EntireColumn => return self.table_command(super::TableCommand::DeleteColumn),
+            CellShift::EntireColumn => {
+                return self.table_command(super::TableCommand::DeleteColumn)
+            }
         };
         self.structural_cell_command(HeadlessCommand::DeleteTableCell {
             table_order_index: cell.table_order_index,
@@ -1725,7 +1868,9 @@ pub trait WordTables: WordSession {
     /// Runs a command that renumbers the table's paragraphs, and puts the
     /// caret back in the cell it was in.
     fn structural_cell_command(&mut self, command: HeadlessCommand) -> Result<Position, String> {
-        let cell = self.caret_table_cell().ok_or("the caret is not in a table")?;
+        let cell = self
+            .caret_table_cell()
+            .ok_or("the caret is not in a table")?;
         let caret = self
             .selection_range()
             .map(|range| (range.focus.paragraph, 0))
@@ -1738,7 +1883,11 @@ pub trait WordTables: WordSession {
             .cell_layouts()
             .iter()
             .filter(|layout| self.table_order_for(layout.table_id) == Some(cell.table_order_index))
-            .find(|layout| layout.row == cell.row && layout.column <= cell.column && cell.column < layout.column + layout.column_span.max(1))
+            .find(|layout| {
+                layout.row == cell.row
+                    && layout.column <= cell.column
+                    && cell.column < layout.column + layout.column_span.max(1)
+            })
             .and_then(|layout| layout.paragraphs.first().copied())
             .unwrap_or(caret.0);
         let position = (paragraph, 0);
@@ -1750,7 +1899,9 @@ pub trait WordTables: WordSession {
 
     /// 自動調整.
     fn autofit(&mut self, fit: AutoFit) -> Result<(), String> {
-        let cell = self.caret_table_cell().ok_or("the caret is not in a table")?;
+        let cell = self
+            .caret_table_cell()
+            .ok_or("the caret is not in a table")?;
         self.apply_command(
             HeadlessCommand::SetTableFit {
                 table_order_index: cell.table_order_index,
@@ -1787,7 +1938,10 @@ pub trait WordTables: WordSession {
             .and_then(|id| self.cell_layout(id))
             .map(|cell| cell.table_id)
             .ok_or("the caret is not in a table")?;
-        let mut widths = self.table_geometry(table_id).ok_or("not laid out")?.widths_pt();
+        let mut widths = self
+            .table_geometry(table_id)
+            .ok_or("not laid out")?
+            .widths_pt();
         for column in span.columns.0..=span.columns.1.min(widths.len().saturating_sub(1)) {
             widths[column] = width.max(9.0);
         }
@@ -1815,7 +1969,9 @@ pub trait WordTables: WordSession {
     /// Word's four: 横書き, 縦書き (upright Japanese, `tbRlV`), turned right
     /// (`tbRl`) and turned left (`btLr`).
     fn cycle_text_direction(&mut self) -> Result<(), String> {
-        let properties = self.table_properties().ok_or("the caret is not in a table")?;
+        let properties = self
+            .table_properties()
+            .ok_or("the caret is not in a table")?;
         let next = match properties.text_direction.as_str() {
             "lrTb" => Some("tbRlV"),
             "tbRlV" => Some("tbRl"),
@@ -1898,7 +2054,9 @@ pub trait WordTables: WordSession {
 
     /// 並べ替え of the caret's table.
     fn sort_table(&mut self, spec: &SortSpec) -> Result<(), String> {
-        let cell = self.caret_table_cell().ok_or("the caret is not in a table")?;
+        let cell = self
+            .caret_table_cell()
+            .ok_or("the caret is not in a table")?;
         let caret = self.selection_range();
         self.apply_command(
             HeadlessCommand::SortTable {
@@ -1909,7 +2067,10 @@ pub trait WordTables: WordSession {
             false,
         )?;
         self.set_selection_range(caret.map(|range| {
-            jade_selection::SelectionRange::collapsed(jade_selection::TextPosition::new(range.focus.paragraph, 0))
+            jade_selection::SelectionRange::collapsed(jade_selection::TextPosition::new(
+                range.focus.paragraph,
+                0,
+            ))
         }));
         Ok(())
     }
@@ -1933,7 +2094,9 @@ pub trait WordTables: WordSession {
                         cell.blocks
                             .iter()
                             .filter_map(BodyElement::as_paragraph)
-                            .flat_map(|paragraph| paragraph.runs.iter().map(|run| run.text.as_str()))
+                            .flat_map(|paragraph| {
+                                paragraph.runs.iter().map(|run| run.text.as_str())
+                            })
                             .collect::<String>()
                     })
                     .filter(|text| !text.trim().is_empty());
@@ -1952,14 +2115,18 @@ pub trait WordTables: WordSession {
             return "=SUM(ABOVE)".to_string();
         };
         let number_above = cell.row > 0
-            && table.rows.get(cell.row - 1).and_then(|row| row.cells.get(cell.column)).is_some_and(|above| {
-                above
-                    .blocks
-                    .iter()
-                    .filter_map(BodyElement::as_paragraph)
-                    .flat_map(|paragraph| paragraph.runs.iter())
-                    .any(|run| run.text.chars().any(|ch| ch.is_ascii_digit()))
-            });
+            && table
+                .rows
+                .get(cell.row - 1)
+                .and_then(|row| row.cells.get(cell.column))
+                .is_some_and(|above| {
+                    above
+                        .blocks
+                        .iter()
+                        .filter_map(BodyElement::as_paragraph)
+                        .flat_map(|paragraph| paragraph.runs.iter())
+                        .any(|run| run.text.chars().any(|ch| ch.is_ascii_digit()))
+                });
         if number_above || cell.column == 0 {
             "=SUM(ABOVE)".to_string()
         } else {
@@ -1971,7 +2138,8 @@ pub trait WordTables: WordSession {
     fn insert_formula(&mut self, formula: &str, number_format: Option<&str>) -> Result<(), String> {
         let range = self.selection_range().ok_or("nothing is selected")?;
         let (start, _) = range.normalized();
-        self.caret_table_cell().ok_or("a formula goes in a table cell")?;
+        self.caret_table_cell()
+            .ok_or("a formula goes in a table cell")?;
         self.apply_command(
             HeadlessCommand::InsertTableFormula {
                 paragraph: start.paragraph,
@@ -2006,7 +2174,8 @@ pub trait WordTables: WordSession {
                     .clone()
                     .filter_map(|index| self.word_document().paragraph(index))
                     .map(|paragraph| {
-                        let text: String = paragraph.runs.iter().map(|run| run.text.as_str()).collect();
+                        let text: String =
+                            paragraph.runs.iter().map(|run| run.text.as_str()).collect();
                         separator.split(&text)
                     })
                     .max()
@@ -2018,7 +2187,11 @@ pub trait WordTables: WordSession {
 
     /// 文字列を表にする: the selected paragraphs become a table, and the caret
     /// goes to its first cell.
-    fn convert_text_to_table(&mut self, separator: &TextSeparator, columns: Option<usize>) -> Result<Position, String> {
+    fn convert_text_to_table(
+        &mut self,
+        separator: &TextSeparator,
+        columns: Option<usize>,
+    ) -> Result<Position, String> {
         let range = self.selection_range().ok_or("select the text to convert")?;
         let (start, end) = range.normalized();
         self.set_selection_range(Some(jade_selection::SelectionRange::collapsed(start)));
@@ -2040,7 +2213,9 @@ pub trait WordTables: WordSession {
 
     /// 表の解除: the caret's table becomes text.
     fn convert_table_to_text(&mut self, separator: &TextSeparator) -> Result<Position, String> {
-        let cell = self.caret_table_cell().ok_or("the caret is not in a table")?;
+        let cell = self
+            .caret_table_cell()
+            .ok_or("the caret is not in a table")?;
         let first = self
             .cell_layouts()
             .iter()
@@ -2070,14 +2245,24 @@ pub trait WordTables: WordSession {
     /// cell, a mostly horizontal stroke splits it into two rows and a
     /// vertical one into two columns; outside any table, a rectangle drawn
     /// at `paragraph` becomes a one-cell table that wide.
-    fn draw_stroke(&mut self, from: (f64, f64), to: (f64, f64), paragraph: Option<Position>) -> Result<Option<Position>, String> {
+    fn draw_stroke(
+        &mut self,
+        from: (f64, f64),
+        to: (f64, f64),
+        paragraph: Option<Position>,
+    ) -> Result<Option<Position>, String> {
         let middle = ((from.0 + to.0) / 2.0, (from.1 + to.1) / 2.0);
         let inside = self.cell_layouts().iter().enumerate().find(|(_, cell)| {
-            middle.0 > cell.left && middle.0 < cell.right && middle.1 > cell.top && middle.1 < cell.bottom
+            middle.0 > cell.left
+                && middle.0 < cell.right
+                && middle.1 > cell.top
+                && middle.1 < cell.bottom
         });
         if let Some((_, cell)) = inside {
             let cell = cell.clone();
-            let table_order_index = self.table_order_for(cell.table_id).ok_or("the table is gone")?;
+            let table_order_index = self
+                .table_order_for(cell.table_id)
+                .ok_or("the table is gone")?;
             let horizontal = (to.0 - from.0).abs() >= (to.1 - from.1).abs();
             self.apply_command(
                 HeadlessCommand::SplitTableCell {
@@ -2163,7 +2348,9 @@ pub trait WordTables: WordSession {
             return Ok(false);
         };
         let (table_id, first, second) = match hit {
-            TableHit::ColumnBorder { table_id, boundary, .. } => {
+            TableHit::ColumnBorder {
+                table_id, boundary, ..
+            } => {
                 let row = self
                     .cell_layouts()
                     .iter()
@@ -2171,12 +2358,13 @@ pub trait WordTables: WordSession {
                     .map(|cell| cell.row)
                     .ok_or("no row there")?;
                 let left = self.cell_layouts().iter().find(|cell| {
-                    cell.table_id == table_id && cell.row == row && cell.column + cell.column_span.max(1) == boundary
+                    cell.table_id == table_id
+                        && cell.row == row
+                        && cell.column + cell.column_span.max(1) == boundary
                 });
-                let right = self
-                    .cell_layouts()
-                    .iter()
-                    .find(|cell| cell.table_id == table_id && cell.row == row && cell.column == boundary);
+                let right = self.cell_layouts().iter().find(|cell| {
+                    cell.table_id == table_id && cell.row == row && cell.column == boundary
+                });
                 match (left, right) {
                     (Some(left), Some(right)) => (table_id, left.clone(), right.clone()),
                     _ => return Ok(false),
@@ -2187,7 +2375,10 @@ pub trait WordTables: WordSession {
                     cell.table_id == table_id && cell.row == row && x > cell.left && x < cell.right
                 });
                 let below = self.cell_layouts().iter().find(|cell| {
-                    cell.table_id == table_id && cell.row == row + 1 && x > cell.left && x < cell.right
+                    cell.table_id == table_id
+                        && cell.row == row + 1
+                        && x > cell.left
+                        && x < cell.right
                 });
                 match (above, below) {
                     (Some(above), Some(below)) => (table_id, above.clone(), below.clone()),
@@ -2273,7 +2464,15 @@ impl<T: WordSession + ?Sized> WordTables for T {}
 mod tests {
     use super::*;
 
-    fn layout(table_id: usize, row: usize, column: usize, left: f64, right: f64, top: f64, bottom: f64) -> CellLayout {
+    fn layout(
+        table_id: usize,
+        row: usize,
+        column: usize,
+        left: f64,
+        right: f64,
+        top: f64,
+        bottom: f64,
+    ) -> CellLayout {
         CellLayout {
             paragraphs: vec![row * 10 + column],
             left,
@@ -2356,8 +2555,15 @@ mod tests {
         assert!(commands.iter().any(|command| matches!(command,
             HeadlessCommand::SetTableRowHeightProperties { row: 1, mode, height: Some(height), .. }
                 if mode == "exact" && (height - 28.35).abs() < 0.1)));
-        assert!(commands.iter().any(|command| matches!(command,
-            HeadlessCommand::SetTableRowProperties { row: 1, cant_split: Some(true), repeat_header: None, .. })));
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            HeadlessCommand::SetTableRowProperties {
+                row: 1,
+                cant_split: Some(true),
+                repeat_header: None,
+                ..
+            }
+        )));
         assert!(commands.iter().any(|command| matches!(command,
             HeadlessCommand::SetTableCellSpacing { spacing: Some(spacing), .. } if (spacing - 1.417).abs() < 0.01)));
     }
@@ -2379,11 +2585,22 @@ mod tests {
         assert_eq!(commands.len(), 4);
         // Only the bottom row's cells get a bottom line; nothing else moves.
         for command in commands {
-            let HeadlessCommand::SetTableCellBorders { row, top, bottom, left, right, .. } = command else {
+            let HeadlessCommand::SetTableCellBorders {
+                row,
+                top,
+                bottom,
+                left,
+                right,
+                ..
+            } = command
+            else {
                 panic!("cell borders");
             };
             assert!(top.is_none() && left.is_none() && right.is_none());
-            assert_eq!(bottom.unwrap().style.as_deref(), Some(if row == 1 { "single" } else { "none" }));
+            assert_eq!(
+                bottom.unwrap().style.as_deref(),
+                Some(if row == 1 { "single" } else { "none" })
+            );
         }
     }
 }
