@@ -1477,3 +1477,12 @@ templates.normal_custom	New documents start from the saved Normal template.
 templates.save_normal	Set this document's styles and page as the default
 templates.reset_normal	Reset to defaults
 templates.normal_saved	New documents will start with this document's styles and page.
+# Repair (word::repair)
+repair.title	Document Recovery
+repair.intro	This document had unreadable content, so the parts that could be recovered were opened. Saving it saves the recovered content.
+repair.archive	The file's table of contents (the ZIP central directory) was damaged, so each part was read again in turn.
+repair.entry_lost	{name} could not be read and was removed.
+repair.part_mended	The XML of {name} was damaged. What could be read (about {percent}%) was kept.
+repair.relationship	A reference to the missing {name} was removed.
+repair.content_types	The list of content types ([Content_Types].xml) was made again.
+repair.package_rels	The package relationships were made again.

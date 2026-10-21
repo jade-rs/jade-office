@@ -47,6 +47,7 @@ pub mod picture;
 pub mod platform;
 pub mod printing;
 pub mod references;
+pub mod repair;
 pub mod review;
 pub mod table;
 pub mod table_ui;

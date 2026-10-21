@@ -237,6 +237,8 @@ pub struct Opened {
     pub format: WordFormat,
     /// A text file's encoding, as read.
     pub encoding: Option<TextEncoding>,
+    /// What repairing a damaged document did, when it was damaged.
+    pub repairs: Vec<super::repair::RepairNote>,
 }
 
 /// Reads `bytes`, a file named `name`, as a `.docx`. A package is handed
@@ -264,11 +266,23 @@ pub fn open_as_docx(
     let mut encoding = None;
     let flow: FlowDocument = match format {
         _ if format.is_package() => {
+            // A damaged document is repaired as it opens, and says so.
+            if super::repair::needs_repair(bytes) {
+                if let Ok(repaired) = super::repair::repair(bytes) {
+                    return Ok(Opened {
+                        docx: repaired.docx,
+                        format,
+                        encoding: None,
+                        repairs: repaired.notes,
+                    });
+                }
+            }
             return Ok(Opened {
                 docx: bytes.to_vec(),
                 format,
                 encoding: None,
-            })
+                repairs: Vec::new(),
+            });
         }
         WordFormat::Doc | WordFormat::Dot => {
             jade_doc_reader::read_doc(bytes).map_err(|error| match error {
@@ -296,6 +310,7 @@ pub fn open_as_docx(
         docx,
         format,
         encoding,
+        repairs: Vec::new(),
     })
 }
 

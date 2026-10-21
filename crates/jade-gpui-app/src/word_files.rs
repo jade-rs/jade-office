@@ -170,6 +170,35 @@ pub fn read(path: &Path) -> Result<(Opened, Option<Rc<Vec<u8>>>), String> {
     Ok((opened, source))
 }
 
+/// What repairing a document did, a line each, in the user's language.
+pub fn repair_report(notes: &[jade_office_model::word::repair::RepairNote]) -> String {
+    use jade_office_model::word::repair::RepairNote;
+    let mut lines = vec![t("repair.intro").to_string()];
+    for note in notes {
+        lines.push(match note {
+            RepairNote::ArchiveRebuilt => t("repair.archive").to_string(),
+            RepairNote::EntryLost(name) => i18n::format("repair.entry_lost", &[("name", name)]),
+            RepairNote::PartMended {
+                part,
+                kept_bytes,
+                total_bytes,
+            } => i18n::format(
+                "repair.part_mended",
+                &[
+                    ("name", part),
+                    ("percent", &(kept_bytes * 100 / (*total_bytes).max(1))),
+                ],
+            ),
+            RepairNote::RelationshipDropped(target) => {
+                i18n::format("repair.relationship", &[("name", target)])
+            }
+            RepairNote::ContentTypesRebuilt => t("repair.content_types").to_string(),
+            RepairNote::PackageRelationshipsRebuilt => t("repair.package_rels").to_string(),
+        });
+    }
+    lines.join("\n・ ").replacen("\n・ ", "\n\n・ ", 1)
+}
+
 /// What went wrong, in the user's language.
 pub fn describe(error: &FormatError, name: &str) -> String {
     match error {
@@ -198,6 +227,13 @@ impl DocumentView {
     pub(crate) fn opened_as(&mut self, opened: &Opened, source: Option<Rc<Vec<u8>>>) {
         self.files.format = opened.format;
         self.files.encoding = opened.encoding;
+        if !opened.repairs.is_empty() {
+            let report = repair_report(&opened.repairs);
+            self.files.dialog = Some(FileDialog::Message {
+                title: t("repair.title").into(),
+                body: report.into(),
+            });
+        }
         // A Word 97–2004 file is in Word 2003's mode, whatever the .docx
         // made of it says.
         self.files.mode = if opened.format.is_legacy() {
@@ -1287,5 +1323,24 @@ mod tests {
         let backup = crate::autorecover::backup_path(&path).unwrap();
         assert_eq!(std::fs::read(backup).unwrap(), before);
         crate::autorecover::set_settings(crate::autorecover::Settings::default());
+    }
+
+    /// A document cut short opens repaired, and says what was done.
+    #[gpui::test]
+    fn a_damaged_document_opens_repaired_with_a_report(cx: &mut gpui::TestAppContext) {
+        let docx = std::fs::read(core_fixture("contract.docx")).unwrap();
+        let directory = std::env::temp_dir().join(format!("jade-repair-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("cut.docx");
+        std::fs::write(&path, &docx[..docx.len() * 9 / 10]).unwrap();
+        let (view, cx) = open(&path, cx);
+        view.read_with(cx, |view, _| {
+            assert!(text_of(view).contains("秘密保持契約書"));
+            let Some(FileDialog::Message { body, .. }) = &view.files.dialog else {
+                panic!("the repair is reported");
+            };
+            assert!(body.contains(i18n::text("repair.archive")));
+        });
+        std::fs::remove_dir_all(directory).ok();
     }
 }

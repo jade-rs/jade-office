@@ -545,6 +545,16 @@ impl DocView {
                     converted = opened.docx;
                     &converted[..]
                 }
+                // A damaged Word document is repaired as it opens.
+                _ if kind == Kind::Document && jade_web::word::repair::needs_repair(bytes) => {
+                    match jade_web::word::repair::repair(bytes) {
+                        Ok(repaired) => {
+                            converted = repaired.docx;
+                            &converted[..]
+                        }
+                        Err(_) => bytes,
+                    }
+                }
                 _ => bytes,
             }
         };
