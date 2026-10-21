@@ -1555,6 +1555,10 @@ impl DocView {
             "tab" => {
                 let backwards = extend;
                 self.word_edit(cx, |document| {
+                    // At a list item's start, a level down (or up).
+                    if let Some(result) = crate::word_tools::tab_in_list(document, backwards) {
+                        return result;
+                    }
                     if document.step_cell(!backwards)? || backwards {
                         Ok(())
                     } else {
@@ -1651,8 +1655,23 @@ impl DocView {
         if let Action::Tables(action) = action {
             return self.table_action(action, cx);
         }
+        if let Action::Word(command) = action {
+            self.word_edit(cx, move |document| {
+                crate::word_tools::run(document, command)
+            });
+            if let Document::Pages {
+                ribbon, document, ..
+            } = &mut self.document
+            {
+                ribbon.read_styles(document);
+            }
+            return;
+        }
         if let Action::Style(style_id) = action {
-            let result = document.set_paragraph_style(style_id.as_deref());
+            let result = match style_id.as_deref() {
+                Some(id) => crate::word_tools::apply_style(document, id),
+                None => document.set_paragraph_style(None),
+            };
             ribbon.read_styles(document);
             self.refresh_repainted();
             return self.word_result(result, cx);
@@ -1705,6 +1724,7 @@ impl DocView {
             | Action::Wrap(_)
             | Action::Style(_)
             | Action::Tables(_)
+            | Action::Word(_)
             | Action::Tab(_)
             | Action::Popup(_)
             | Action::ClosePopup
@@ -1764,6 +1784,13 @@ impl DocView {
             use jade_web::word::review::WordReview;
             ribbon::TabState {
                 page,
+                tools: crate::word_tools::ToolState::read(
+                    document,
+                    match ribbon.popup {
+                        Some(ribbon::Popup::Word(menu)) => Some(menu),
+                        _ => None,
+                    },
+                ),
                 tracking: document.is_tracking_changes(),
                 comments: *show_comments,
                 picture: object.is_some_and(|grab| grab.object.is_picture()),

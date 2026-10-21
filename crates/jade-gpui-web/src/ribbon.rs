@@ -18,8 +18,8 @@ use gpui::{
     ElementId, MouseButton, Pixels, SharedString, Size, Window,
 };
 use jade_web::editing::{
-    style_gallery, CharacterFormat, EditableDocument, FormatState, GalleryStyle, ListKind,
-    ParagraphBorders, TableBorders, TableCommand, WordFormatting,
+    CharacterFormat, EditableDocument, FormatState, GalleryStyle, ListKind, ParagraphBorders,
+    TableBorders, TableCommand,
 };
 
 use jade_web::word::page::{MarginPreset, PageCommand, PageSetup, Story};
@@ -79,6 +79,7 @@ pub enum Tab {
     #[default]
     Home,
     Insert,
+    Design,
     Layout,
     References,
     Review,
@@ -88,9 +89,10 @@ pub enum Tab {
 }
 
 impl Tab {
-    const ALL: [Tab; 5] = [
+    const ALL: [Tab; 6] = [
         Tab::Home,
         Tab::Insert,
+        Tab::Design,
         Tab::Layout,
         Tab::References,
         Tab::Review,
@@ -100,6 +102,7 @@ impl Tab {
         i18n::text(match self {
             Tab::Home => "doc.tab.home",
             Tab::Insert => "doc.tab.insert",
+            Tab::Design => "doc.tab.design",
             Tab::Layout => "doc.tab.layout",
             Tab::References => "doc.tab.references",
             Tab::Review => "doc.tab.review",
@@ -147,6 +150,8 @@ pub enum Popup {
     Cover,
     /// The font group's third row (`view::word_characters`).
     Characters(crate::view::word_characters::CharPopup),
+    /// The list, paragraph and design tools' lists (`word_tools`).
+    Word(crate::word_tools::ToolMenu),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -172,12 +177,15 @@ impl Ribbon {
     /// Reads the document's paragraph styles into the gallery. Again after a
     /// style is applied: a missing built-in is added on first use.
     pub fn read_styles(&mut self, document: &EditableDocument) {
-        let styles = document.paragraph_styles();
-        self.default_style = styles
+        // Word's gallery: the fixed head, then the quick styles in
+        // w:uiPriority order.
+        use jade_web::word::styles::WordStyles;
+        let catalog = document.style_catalog();
+        self.default_style = catalog
             .iter()
-            .find(|style| style.is_default)
+            .find(|style| style.is_default && style.is_paragraph())
             .map(|style| style.id.clone());
-        self.gallery = style_gallery(&styles);
+        self.gallery = jade_web::word::styles::quick_style_gallery(&catalog);
         self.theme_colors = crate::view::word_characters::document_theme_colors(document);
     }
 
@@ -245,6 +253,8 @@ pub enum Action {
     Tables(crate::word_table::TableAction),
     /// The ページ設定 dialogs and menus (`view::word_setup`).
     Setup(crate::view::word_setup::SetupAction),
+    /// The list, paragraph and design tools (`word_tools`).
+    Word(crate::word_tools::ToolCommand),
 }
 
 impl Action {
@@ -626,6 +636,8 @@ pub struct TabState {
     /// What the text, line number and background groups show, read only
     /// while レイアウト is up.
     pub layout: Option<crate::view::word_setup::LayoutState>,
+    /// What the list, paragraph and design tools' open list shows.
+    pub tools: crate::word_tools::ToolState,
 }
 
 pub fn ribbon(
@@ -669,9 +681,17 @@ pub fn ribbon(
         })
         .collect();
     let groups = match shown_tab {
-        Tab::Home => home(ribbon, state, cx),
+        Tab::Home => {
+            let mut groups = home(ribbon, state, cx);
+            let lists =
+                crate::word_tools::list_group(ribbon, &shown.tools, state.alignment.as_deref(), cx);
+            groups.insert(2.min(groups.len()), lists);
+            groups
+        }
+        Tab::Design => crate::word_tools::design(ribbon, &shown.tools, cx),
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
+            groups.push(crate::word_tools::drop_cap_group(ribbon, &shown.tools, cx));
             groups.push(crate::word_page::pictures(shown.picture, cx));
             groups.push(group(
                 i18n::text("link.group"),

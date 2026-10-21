@@ -1599,3 +1599,167 @@ field.describe.USERADDRESS	ユーザー情報の住所
 field.describe.USERINITIALS	ユーザー情報のイニシャル
 field.describe.USERNAME	ユーザー情報の名前
 field.describe.XE	索引の項目
+# Word: paragraph options, lists, styles, design, rulers (word_*.rs)
+word.align.distribute	均等割り付け
+word.borders.between	段落間
+word.borders.bottom	下罫線
+word.borders.box	囲む
+word.borders.color	色
+word.borders.kind	種類
+word.borders.left	左罫線
+word.borders.menu	線種とページ罫線と網かけの設定...
+word.borders.none	罫線なし
+word.borders.right	右罫線
+word.borders.section	罫線
+word.borders.space	文字列との間隔
+word.borders.style	線種
+word.borders.title	線種とページ罫線と網かけの設定
+word.borders.top	上罫線
+word.borders.width	線の太さ
+word.define_list.alignment	番号の配置
+word.define_list.format	番号の種類
+word.define_list.format_section	番号書式
+word.define_list.legal	正規形式の番号を使用する
+word.define_list.level	変更するレベル
+word.define_list.link	レベルと対応付ける見出しスタイル
+word.define_list.menu	新しいアウトラインの定義...
+word.define_list.position_section	位置
+word.define_list.start	開始番号
+word.define_list.text	番号書式 (%1 が番号)
+word.define_list.title	新しいアウトラインの定義
+word.design.colors	配色
+word.design.effects	効果
+word.design.fonts	フォント
+word.design.set_default	既定に設定
+word.design.spacing	段落の間隔
+word.design.style_sets	スタイル セット
+word.design.template	テンプレートとアドイン...
+word.design.themes	テーマ
+word.drop_cap.dropped	本文内に表示
+word.drop_cap.lines	ドロップする行数
+word.drop_cap.margin	余白に表示
+word.drop_cap.none	なし
+word.drop_cap.options	ドロップキャップのオプション...
+word.drop_cap.position	位置
+word.drop_cap.title	ドロップキャップ
+word.error.length	長さを数値で入力してください (例: 12.7 mm、2 字)。
+word.error.lines	行数は 1 から 10 で指定してください。
+word.error.name	名前を入力してください。
+word.error.not_in_list	カーソルの段落はリストではありません。
+word.error.value	数値を入力してください。
+word.group.defaults	既定
+word.group.document_format	ドキュメントの書式設定
+word.group.lists	リスト
+word.group.style_tools	スタイルの設定
+word.group.text	テキスト
+word.line.dash_small	破線 (細かい)
+word.line.dashed	破線
+word.line.dot_dash	一点鎖線
+word.line.dotted	点線
+word.line.double	二重線
+word.line.single	実線
+word.line.thick_thin	太線 - 細線
+word.line.wave	波線
+word.list.adjust_indent	リストのインデントの調整...
+word.list.bullet_library	箇条書き
+word.list.change_level	リストのレベルの変更
+word.list.continue	前のリストから継続
+word.list.level	レベル {n}  {sample}
+word.list.list_styles	リスト スタイル
+word.list.multilevel_library	アウトライン
+word.list.number_library	段落番号
+word.list.number_position	番号の位置
+word.list.preset.articles	第 I 条 / 第 1.01 節 / (a) (見出しスタイル)
+word.list.preset.bullets	● / ○ / ■
+word.list.preset.chapters	第1章 / 第1節 / 第1項 (見出しスタイル)
+word.list.preset.headings	1 見出し 1 / 1.1 見出し 2 / 1.1.1 見出し 3
+word.list.preset.outline	1. / 1.1. / 1.1.1.
+word.list.preset.paren	1) / a) / i)
+word.list.restart	新しいリストを開始
+word.list.set_value	番号の設定...
+word.list.start_new	新しいリストを開始する
+word.list.suffix	番号に続く空白の扱い
+word.list.suffix_nothing	なし
+word.list.suffix_space	スペース
+word.list.suffix_tab	タブ文字
+word.list.text_indent	インデント
+word.list.value	開始番号
+word.list_indent.title	リストのインデントの調整
+word.list_start.title	番号の設定
+word.list_style.menu	新しいリスト スタイルの定義...
+word.list_style.name	名前
+word.list_style.title	新しいリスト スタイルの定義
+word.paragraph.dialogs	設定
+word.paragraph.settings	段落の詳細設定
+word.quick_part.autotext	定型句
+word.quick_part.gallery	クイック パーツ
+word.quick_part.gallery_label	ギャラリー
+word.quick_part.menu	クイック パーツ
+word.quick_part.name	名前
+word.quick_part.save	選択範囲をギャラリーに保存...
+word.quick_part.title	新しい文書パーツの作成
+word.ruler.group	ルーラー
+word.ruler.show	ルーラー
+word.ruler.tab_kind	クリックで設定するタブの種類
+word.shading.clear	なし
+word.shading.diagonal	斜線
+word.shading.fill	背景の色
+word.shading.horizontal	横線
+word.shading.pattern	網かけの種類
+word.shading.section	網かけ
+word.shading.solid	塗りつぶし (100%)
+word.shading.vertical	縦線
+word.style.after	pt 後
+word.style.alignment	配置
+word.style.auto_update	自動的に更新する
+word.style.based_on	基準にするスタイル
+word.style.before	pt 前
+word.style.first_line	pt 1 行目
+word.style.format	書式
+word.style.indent	インデント
+word.style.kind	種類
+word.style.kind_character	文字
+word.style.kind_linked	リンク (段落と文字)
+word.style.kind_paragraph	段落
+word.style.left	pt 左
+word.style.line_spacing	行間
+word.style.modify_menu	スタイルの変更...
+word.style.modify_title	スタイルの変更
+word.style.name	名前
+word.style.new_menu	スタイルの作成...
+word.style.new_name	スタイル{n}
+word.style.new_short	新規
+word.style.new_title	書式から新しいスタイルを作成
+word.style.next	次の段落のスタイル
+word.style.no_style	(スタイルなし)
+word.style.pane	スタイル ウィンドウ
+word.style.properties	プロパティ
+word.style.quick	スタイル ギャラリーに追加
+word.style.sample	サンプル テキスト Sample Text
+word.style.spacing	段落の間隔
+word.style.tools	スタイル
+word.style.update_menu	選択個所と一致するように更新
+word.switch.contextual	同じスタイルの場合は段落間にスペースを追加しない
+word.switch.hyphenation	段落の自動ハイフネーションを行わない
+word.switch.line_numbers	行番号を表示しない
+word.tab.alignment	配置
+word.tab.bar	縦線
+word.tab.center	中央揃え
+word.tab.clear	クリア
+word.tab.clear_all	すべてクリア
+word.tab.decimal	小数点揃え
+word.tab.default	既定のタブ間隔
+word.tab.leader	リーダー
+word.tab.leader_none	なし
+word.tab.left	左揃え
+word.tab.position	タブ位置
+word.tab.right	右揃え
+word.tab.set	設定
+word.tabs.menu	タブとリーダー...
+word.tabs.title	タブとリーダー
+word.unit.char	字
+word.unit.cm	センチメートル (cm)
+word.unit.inch	インチ (")
+word.unit.mm	ミリメートル (mm)
+word.unit.pt	ポイント (pt)
+word.list.picture_bullet	図...

@@ -83,6 +83,12 @@ impl WordSession for Session {
     fn table_order_for(&self, _table_id: usize) -> Option<usize> {
         None
     }
+    fn hyperlink_regions(&self) -> Vec<jade_docx_editor::canvas_renderer::HyperlinkRegion> {
+        Vec::new()
+    }
+    fn select_cells(&mut self, _anchor_cell: usize, _focus_cell: usize) -> Result<(), String> {
+        Err("no tables in this session".into())
+    }
     fn page_count(&self) -> Option<usize> {
         Some(2)
     }

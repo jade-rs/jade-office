@@ -1328,7 +1328,7 @@ impl DocumentView {
     }
 
     /// デザイン's ページの背景: ページの色 and ページ罫線.
-    pub(crate) fn design_groups(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(crate) fn page_background_groups(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let open = self.ribbon.popup;
         let current = self.document.page_color();
         let color_menu = (open == Some(Popup::PageColor)).then(|| {
