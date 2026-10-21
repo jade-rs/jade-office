@@ -161,6 +161,13 @@ impl DocView {
                 return cx.notify();
             }
             ReviewAction::UserInfo => return self.open_reviewer_dialog(cx),
+            ReviewAction::AltText => return self.open_alt_text_dialog(cx),
+            ReviewAction::Accessibility => {
+                if let Document::Pages { accessibility, .. } = &mut self.document {
+                    *accessibility = !*accessibility;
+                }
+                return cx.notify();
+            }
             ReviewAction::Markup(mode) => options.mode = mode,
             ReviewAction::ShowInsertionsDeletions => {
                 options.insertions_deletions = !options.insertions_deletions
@@ -535,4 +542,138 @@ fn comment_card(index: usize, comment: Comment, cx: &mut Context<DocView>) -> gp
                 ),
         )
         .into_any_element()
+}
+
+impl DocView {
+    /// The アクセシビリティ pane beside the pages, while it is open: Word's
+    /// エラー, 警告 and ヒント, each a click away in the document, with its
+    /// おすすめのアクション.
+    pub(super) fn accessibility_pane(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        use jade_web::word::accessibility::{IssueKind, Severity, WordAccessibility};
+        let Document::Pages {
+            document,
+            accessibility: true,
+            ..
+        } = &self.document
+        else {
+            return None;
+        };
+        let issues = document.accessibility_issues();
+        let mut rows: Vec<gpui::AnyElement> = Vec::new();
+        if issues.is_empty() {
+            rows.push(
+                div()
+                    .text_color(palette::dim())
+                    .child(i18n::text("a11y.none"))
+                    .into_any_element(),
+            );
+        }
+        let mut shown: Option<Severity> = None;
+        for (index, issue) in issues.into_iter().enumerate() {
+            if shown != Some(issue.severity()) {
+                shown = Some(issue.severity());
+                rows.push(
+                    div()
+                        .mt_1()
+                        .text_color(palette::dim())
+                        .child(i18n::text(match issue.severity() {
+                            Severity::Error => "a11y.errors",
+                            Severity::Warning => "a11y.warnings",
+                            Severity::Tip => "a11y.tips",
+                        }))
+                        .into_any_element(),
+                );
+            }
+            let (start, end) = (issue.start(), issue.end());
+            let fix = issue.clone();
+            let describe = match issue.kind {
+                IssueKind::MissingAltText(target) => Some(target),
+                _ => None,
+            };
+            let fix_key = match issue.kind {
+                IssueKind::MissingAltText(_) => "a11y.fix.decorative",
+                IssueKind::NoHeaderRow { .. } => "a11y.fix.header",
+                IssueKind::NotInline(_) => "a11y.fix.inline",
+                _ => "a11y.fix",
+            };
+            rows.push(
+                div()
+                    .id(("a11y-issue", index))
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .p_2()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(palette::border())
+                    .bg(palette::canvas())
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                        view.word_move(cx, |document| document.select(start, end));
+                        view.reveal_caret();
+                    }))
+                    .child(
+                        div()
+                            .text_color(palette::text())
+                            .child(i18n::text(issue.kind.label_key())),
+                    )
+                    .when(!issue.excerpt.is_empty(), |card| {
+                        card.child(
+                            div()
+                                .text_color(palette::dim())
+                                .child(issue.excerpt.clone()),
+                        )
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .children(describe.map(|target| {
+                                comment_action(("a11y-describe", index), "a11y.fix.describe")
+                                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                                        cx.stop_propagation();
+                                        view.open_alt_text_for(target, cx)
+                                    }))
+                            }))
+                            .when(issue.kind.has_quick_fix(), |row| {
+                                row.child(comment_action(("a11y-fix", index), fix_key).on_click(
+                                    cx.listener(move |view, _event, _window, cx| {
+                                        cx.stop_propagation();
+                                        let issue = fix.clone();
+                                        view.word_edit(cx, move |document| {
+                                            document.quick_fix(&issue)
+                                        })
+                                    }),
+                                ))
+                            }),
+                    )
+                    .into_any_element(),
+            );
+        }
+        Some(
+            div()
+                .id("accessibility-pane")
+                .flex()
+                .flex_col()
+                .flex_none()
+                .w(px(280.0))
+                .h_full()
+                .gap_2()
+                .px_3()
+                .pt_3()
+                .overflow_y_scroll()
+                .bg(palette::panel())
+                .border_l_1()
+                .border_color(palette::border())
+                .text_xs()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(palette::text())
+                        .child(i18n::text("a11y.title")),
+                )
+                .children(rows)
+                .into_any_element(),
+        )
+    }
 }

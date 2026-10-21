@@ -27,6 +27,7 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
+mod word_accessibility;
 mod word_characters;
 mod word_dialogs;
 mod word_page;
@@ -2214,6 +2215,16 @@ impl DocumentView {
                 |view, cx| view.prompt_for_picture(cx),
             )
             .into_any_element()];
+        if self.selected_object.is_some() {
+            wraps.push(word_review_tools::text_button(
+                "alt-text",
+                "alt.button",
+                "alt.title",
+                false,
+                word_review_tools::ReviewAction::AltText,
+                cx,
+            ));
+        }
         if selected {
             for (index, wrap) in jade_office_model::word::picture::WRAPS
                 .into_iter()
@@ -4313,6 +4324,7 @@ impl Render for DocumentView {
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
         word_proofing::start_once(self, cx);
         let proofing_pane = word_proofing::pane(self, cx);
+        let accessibility_pane = word_accessibility::pane(self, cx);
         let proofing_menu = word_proofing::menu(self, cx);
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
@@ -4603,6 +4615,7 @@ impl Render for DocumentView {
             .children(comments_pane)
             // ---- 文章校正, beside the pages while it is open ----
             .children(proofing_pane)
+            .children(accessibility_pane)
             .children(proofing_menu)
             // ---- a table dialog, over everything while it is open ----
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))

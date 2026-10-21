@@ -14,6 +14,7 @@ use gpui::{
     Window,
 };
 use jade_office_model::text::TextEdit;
+use jade_office_model::word::accessibility::{AltTextForm, WordAccessibility};
 use jade_office_model::word::markup::{MarkupMode, MarkupOptions, WordMarkup};
 use jade_office_model::word::review::WordReview;
 use jade_office_model::word::reviewer::{Reviewer, ReviewerField, ReviewerForm};
@@ -134,11 +135,33 @@ pub enum ReviewAction {
     Proofing,
     /// 入力時にスペル チェック: the marks on or off.
     ProofingMarks,
+    /// アクセシビリティ チェック: the pane.
+    Accessibility,
+    /// 代替テキスト… for the picture or shape last clicked.
+    AltText,
 }
 
 /// The dialog the tab opens.
 pub enum ReviewDialog {
     User(ReviewerForm),
+    /// 代替テキスト for a picture or shape.
+    AltText(AltTextForm),
+}
+
+impl ReviewDialog {
+    fn field(&self) -> Option<&TextEdit> {
+        match self {
+            ReviewDialog::User(form) => Some(form.focused()),
+            ReviewDialog::AltText(form) => Some(&form.description),
+        }
+    }
+
+    fn field_mut(&mut self) -> Option<&mut TextEdit> {
+        match self {
+            ReviewDialog::User(form) => Some(form.focused_mut()),
+            ReviewDialog::AltText(form) => Some(&mut form.description),
+        }
+    }
 }
 
 /// The view's share of the 校閲 tab.
@@ -148,6 +171,8 @@ pub struct ReviewTools {
     pub dialog: Option<ReviewDialog>,
     /// スペル チェックと文章校正 (`word_proofing`).
     pub proofing: crate::word_proofing::Proofing,
+    /// The アクセシビリティ pane, while it is open (`word_accessibility`).
+    pub accessibility: Option<crate::word_accessibility::A11yPane>,
 }
 
 impl ReviewTools {
@@ -166,15 +191,11 @@ impl ReviewTools {
 
     /// The field typing goes into while a dialog is open.
     pub fn text_field(&self) -> Option<&TextEdit> {
-        match self.dialog.as_ref()? {
-            ReviewDialog::User(form) => Some(form.focused()),
-        }
+        self.dialog.as_ref()?.field()
     }
 
     pub fn text_field_mut(&mut self) -> Option<&mut TextEdit> {
-        match self.dialog.as_mut()? {
-            ReviewDialog::User(form) => Some(form.focused_mut()),
-        }
+        self.dialog.as_mut()?.field_mut()
     }
 
     /// After typing reached the open dialog's field.
@@ -236,6 +257,8 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
             return cx.notify();
         }
         ReviewAction::Proofing => return crate::word_proofing::open_pane(view, cx),
+        ReviewAction::Accessibility => return crate::word_accessibility::toggle(view, cx),
+        ReviewAction::AltText => return open_alt_text(view, cx),
         ReviewAction::ProofingMarks => {
             let on = !view.document.proofing();
             return crate::word_proofing::set_marks(view, on, cx);
@@ -578,16 +601,16 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
     let Some(dialog) = view.review.dialog.as_mut() else {
         return false;
     };
-    let ReviewDialog::User(form) = dialog;
-    if form.focused().marked.is_some() {
+    if dialog.field().is_some_and(|field| field.marked.is_some()) {
         return false;
     }
-    match key {
-        "escape" => view.review.dialog = None,
-        "enter" | "return" => confirm(view, cx),
-        "tab" => form.next_field(),
-        key => {
-            if !form.focused_mut().edit_key(key) {
+    match (key, &mut *dialog) {
+        ("escape", _) => view.review.dialog = None,
+        ("enter" | "return", _) => confirm(view, cx),
+        ("tab", ReviewDialog::User(form)) => form.next_field(),
+        ("tab", _) => {}
+        (key, dialog) => {
+            if !dialog.field_mut().is_some_and(|field| field.edit_key(key)) {
                 return false;
             }
             view.review.typed();
@@ -599,26 +622,33 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
 
 /// OK.
 fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
-    let Some(ReviewDialog::User(form)) = view.review.dialog.take() else {
-        return;
-    };
-    if let Some(chosen) = form.reviewer() {
-        set_reviewer(chosen.clone());
-        // Changes typed from now on go down to the new name.
-        if view.document.is_tracking_changes() {
-            let result = view.document.set_tracking_changes(true, &chosen);
+    match view.review.dialog.take() {
+        Some(ReviewDialog::User(form)) => {
+            if let Some(chosen) = form.reviewer() {
+                set_reviewer(chosen.clone());
+                // Changes typed from now on go down to the new name.
+                if view.document.is_tracking_changes() {
+                    let result = view.document.set_tracking_changes(true, &chosen);
+                    view.reviewed(result, cx);
+                }
+            }
+        }
+        Some(ReviewDialog::AltText(form)) => {
+            let result = view.document.set_alt_text(form.target, form.alt_text());
             view.reviewed(result, cx);
         }
+        None => {}
     }
     cx.notify();
 }
 
+/// A labelled one-line box; a click on it gives it the keyboard.
 fn field(
     id: &'static str,
     label: &'static str,
     edit: &TextEdit,
     focused: bool,
-    focus: ReviewerField,
+    focus: fn(&mut ReviewDialog),
     cx: &mut Context<DocumentView>,
 ) -> AnyElement {
     let (before, after) = edit.split();
@@ -636,9 +666,10 @@ fn field(
             div()
                 .id(id)
                 .flex()
+                .flex_wrap()
                 .items_center()
-                .w(px(240.0))
-                .h(px(24.0))
+                .w(px(280.0))
+                .min_h(px(24.0))
                 .px_2()
                 .rounded_md()
                 .bg(theme::canvas())
@@ -650,8 +681,8 @@ fn field(
                 })
                 .cursor_text()
                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                    if let Some(ReviewDialog::User(form)) = view.review.dialog.as_mut() {
-                        form.focus = focus;
+                    if let Some(dialog) = view.review.dialog.as_mut() {
+                        focus(dialog);
                     }
                     cx.notify();
                 }))
@@ -675,40 +706,120 @@ pub fn overlay(
     window: &mut Window,
     cx: &mut Context<DocumentView>,
 ) -> Option<AnyElement> {
-    let ReviewDialog::User(form) = view.review.dialog.as_ref()?;
-    let body = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(
+    let (title, body) = match view.review.dialog.as_ref()? {
+        ReviewDialog::User(form) => (
+            "review.user.title",
             div()
-                .text_color(theme::text_dim())
-                .child(i18n::text("review.user.hint")),
-        )
-        .child(field(
-            "review-user-name",
-            "review.user.name",
-            &form.name,
-            form.focus == ReviewerField::Name,
-            ReviewerField::Name,
-            cx,
-        ))
-        .child(field(
-            "review-user-initials",
-            "review.user.initials",
-            &form.initials,
-            form.focus == ReviewerField::Initials,
-            ReviewerField::Initials,
-            cx,
-        ))
-        .into_any_element();
-    Some(modal(
-        "review-dialog",
-        i18n::text("review.user.title"),
-        body,
-        window,
-        cx,
-    ))
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .text_color(theme::text_dim())
+                        .child(i18n::text("review.user.hint")),
+                )
+                .child(field(
+                    "review-user-name",
+                    "review.user.name",
+                    &form.name,
+                    form.focus == ReviewerField::Name,
+                    |dialog| {
+                        if let ReviewDialog::User(form) = dialog {
+                            form.focus = ReviewerField::Name;
+                        }
+                    },
+                    cx,
+                ))
+                .child(field(
+                    "review-user-initials",
+                    "review.user.initials",
+                    &form.initials,
+                    form.focus == ReviewerField::Initials,
+                    |dialog| {
+                        if let ReviewDialog::User(form) = dialog {
+                            form.focus = ReviewerField::Initials;
+                        }
+                    },
+                    cx,
+                ))
+                .into_any_element(),
+        ),
+        ReviewDialog::AltText(form) => {
+            let decorative = form.decorative;
+            (
+                "alt.title",
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .w(px(380.0))
+                    .child(
+                        div()
+                            .text_color(theme::text_dim())
+                            .child(i18n::text("alt.hint")),
+                    )
+                    .when(!decorative, |body| {
+                        body.child(field(
+                            "alt-description",
+                            "alt.description",
+                            &form.description,
+                            true,
+                            |_| {},
+                            cx,
+                        ))
+                    })
+                    .child(
+                        crate::word_characters::check(
+                            "alt-decorative",
+                            i18n::text("alt.decorative"),
+                            decorative,
+                        )
+                        .on_click(cx.listener(
+                            |view, _: &ClickEvent, _, cx| {
+                                if let Some(ReviewDialog::AltText(form)) =
+                                    view.review.dialog.as_mut()
+                                {
+                                    form.decorative = !form.decorative;
+                                }
+                                cx.notify();
+                            },
+                        )),
+                    )
+                    .child(
+                        div()
+                            .text_color(theme::text_faint())
+                            .child(i18n::text("alt.decorative_hint")),
+                    )
+                    .into_any_element(),
+            )
+        }
+    };
+    Some(modal("review-dialog", i18n::text(title), body, window, cx))
+}
+
+/// 代替テキスト… for the picture or shape last clicked.
+pub fn open_alt_text(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
+    let Some(object) = view.selected_object else {
+        view.table_status = Some(i18n::text("alt.no_object").into());
+        return cx.notify();
+    };
+    let target = jade_office_model::word::picture::ObjectTarget {
+        paragraph_index: object.paragraph,
+        run_index: object.run,
+        kind: object.kind,
+    };
+    open_alt_text_for(view, target, cx);
+}
+
+/// 代替テキスト… for `target`.
+pub fn open_alt_text_for(
+    view: &mut DocumentView,
+    target: jade_office_model::word::picture::ObjectTarget,
+    cx: &mut Context<DocumentView>,
+) {
+    let alt = view.document.alt_text(target).unwrap_or_default();
+    view.review.dialog = Some(ReviewDialog::AltText(AltTextForm::new(target, alt)));
+    cx.notify();
 }
 
 /// A dialog over the window: its title, its body, キャンセル and OK.

@@ -284,6 +284,14 @@ pub fn pictures(selected: bool, cx: &mut Context<DocView>) -> AnyElement {
         cx,
     )];
     if selected {
+        buttons.push(text_button(
+            "alt-text",
+            i18n::text("alt.button"),
+            i18n::text("alt.title"),
+            false,
+            Action::Review(crate::word_review::ReviewAction::AltText),
+            cx,
+        ));
         let ids = [
             "wrap-inline",
             "wrap-square",

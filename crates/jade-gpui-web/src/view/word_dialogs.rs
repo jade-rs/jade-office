@@ -23,6 +23,8 @@ pub(super) enum Dialog {
     Paragraph(Box<ParagraphForm>),
     /// ユーザー情報: the reviewer's name and initials.
     Reviewer(jade_web::word::reviewer::ReviewerForm),
+    /// 代替テキスト: a picture's description, or 装飾用にする (Tab).
+    AltText(jade_web::word::accessibility::AltTextForm),
 }
 
 impl Dialog {
@@ -32,6 +34,7 @@ impl Dialog {
             Dialog::Note(form) => Some(&form.text),
             Dialog::Paragraph(form) => Some(form.focused()),
             Dialog::Reviewer(form) => Some(form.focused()),
+            Dialog::AltText(form) => Some(&form.description),
         }
     }
 
@@ -41,6 +44,7 @@ impl Dialog {
             Dialog::Note(form) => Some(&mut form.text),
             Dialog::Paragraph(form) => Some(form.focused_mut()),
             Dialog::Reviewer(form) => Some(form.focused_mut()),
+            Dialog::AltText(form) => Some(&mut form.description),
         }
     }
 }
@@ -165,6 +169,37 @@ impl DocView {
         self.open_dialog(Dialog::Reviewer(form), cx);
     }
 
+    /// 代替テキスト… for the picture last pressed on.
+    pub(super) fn open_alt_text_dialog(&mut self, cx: &mut Context<Self>) {
+        use jade_web::word::accessibility::{AltTextForm, WordAccessibility};
+        let Document::Pages {
+            document, object, ..
+        } = &self.document
+        else {
+            return;
+        };
+        let Some(target) = object.as_ref().map(|grab| grab.object.target) else {
+            self.status = i18n::text("alt.no_object").into();
+            return cx.notify();
+        };
+        let alt = document.alt_text(target).unwrap_or_default();
+        self.open_dialog(Dialog::AltText(AltTextForm::new(target, alt)), cx);
+    }
+
+    /// 代替テキスト… for `target`, from the アクセシビリティ pane.
+    pub(super) fn open_alt_text_for(
+        &mut self,
+        target: jade_web::word::picture::ObjectTarget,
+        cx: &mut Context<Self>,
+    ) {
+        use jade_web::word::accessibility::{AltTextForm, WordAccessibility};
+        let Document::Pages { document, .. } = &self.document else {
+            return;
+        };
+        let alt = document.alt_text(target).unwrap_or_default();
+        self.open_dialog(Dialog::AltText(AltTextForm::new(target, alt)), cx);
+    }
+
     /// Changes the open 段落 dialog from a click on one of its controls.
     fn edit_paragraph_form(
         &mut self,
@@ -228,6 +263,7 @@ impl DocView {
                 Dialog::Note(form) => form.text.insert("\t"),
                 Dialog::Paragraph(form) => form.step_focus(!event.keystroke.modifiers.shift),
                 Dialog::Reviewer(form) => form.next_field(),
+                Dialog::AltText(form) => form.decorative = !form.decorative,
             },
             _ => {
                 if !open.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -255,6 +291,12 @@ impl DocView {
             Dialog::Note(form) => form.submit(document.as_mut()).map(Some),
             // The caret, or the selection, stays where it is.
             Dialog::Paragraph(form) => form.submit(document.as_mut()).map(|()| None),
+            Dialog::AltText(form) => {
+                use jade_web::word::accessibility::WordAccessibility;
+                document
+                    .set_alt_text(form.target, form.alt_text())
+                    .map(|()| None)
+            }
             Dialog::Reviewer(form) => {
                 use jade_web::word::review::WordReview;
                 if let Some(chosen) = form.reviewer() {
@@ -328,6 +370,30 @@ impl DocView {
                 vec![field_box(i18n::text("note.text"), &form.text, true, 360.0)],
             ),
             Dialog::Paragraph(form) => self.paragraph_dialog(form, cx),
+            Dialog::AltText(form) => bar(
+                i18n::text("alt.title"),
+                i18n::text("alt.keys"),
+                vec![
+                    field_box(
+                        i18n::text("alt.description"),
+                        &form.description,
+                        !form.decorative,
+                        320.0,
+                    ),
+                    div()
+                        .text_color(if form.decorative {
+                            palette::accent()
+                        } else {
+                            palette::dim()
+                        })
+                        .child(format!(
+                            "{} {}",
+                            if form.decorative { "☑" } else { "☐" },
+                            i18n::text("alt.decorative")
+                        ))
+                        .into_any_element(),
+                ],
+            ),
             Dialog::Reviewer(form) => {
                 use jade_web::word::reviewer::ReviewerField;
                 bar(

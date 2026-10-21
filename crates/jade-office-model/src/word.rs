@@ -29,6 +29,7 @@ use jade_docx_headless_api::{
 pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
+pub mod accessibility;
 pub mod asian;
 pub mod clipboard;
 pub mod count;

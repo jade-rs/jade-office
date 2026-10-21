@@ -1405,3 +1405,31 @@ proof.learn	辞書に追加
 proof.open_pane	スペル チェックと文章校正…
 proof.finished	文章校正が完了しました。
 menu.review.spelling	スペル チェックと文章校正…
+alt.button	代替テキスト
+alt.title	代替テキスト
+alt.hint	この図をどのように説明しますか? 視覚に障碍のある方のために、図の内容を説明してください。
+alt.description	説明
+alt.decorative	装飾用にする
+alt.decorative_hint	ページの見た目だけのもので、読み上げても意味のない図に付けます。
+alt.no_object	図や図形をクリックしてから選んでください
+a11y.group	アクセシビリティ
+a11y.button	アクセシビリティ チェック
+a11y.title	アクセシビリティ
+a11y.none	問題は見つかりませんでした。障碍のある方にとって読みやすい文書です。
+a11y.errors	エラー
+a11y.warnings	警告
+a11y.tips	ヒント
+a11y.missing_alt	代替テキストがありません
+a11y.no_header	表のヘッダーがありません
+a11y.skipped_heading	見出しのレベルが飛んでいます
+a11y.skipped_detail	見出し {from} の次が見出し {to} です
+a11y.unclear_link	不明瞭なハイパーリンク テキスト
+a11y.low_contrast	読みにくいテキストのコントラスト
+a11y.contrast_detail	コントラスト比 {ratio}:1 (4.5:1 以上が必要)
+a11y.not_inline	画像またはオブジェクトが行内にありません
+a11y.fix	修正
+a11y.fix.describe	説明を追加
+a11y.fix.decorative	装飾用にする
+a11y.fix.header	最初の行をヘッダーとして使用
+a11y.fix.inline	行内に配置
+alt.keys	⇥ 装飾用にする · ⏎ OK · esc キャンセル

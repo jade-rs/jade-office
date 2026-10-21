@@ -1405,3 +1405,31 @@ proof.learn	Add to Dictionary
 proof.open_pane	Spelling and Grammar…
 proof.finished	The spelling and grammar check is complete.
 menu.review.spelling	Spelling and Grammar…
+alt.button	Alt Text
+alt.title	Alt Text
+alt.hint	How would you describe this object and its context to someone who is blind or has low vision?
+alt.description	Description
+alt.decorative	Mark as decorative
+alt.decorative_hint	For an object that only adds visual interest and means nothing read aloud.
+alt.no_object	Click a picture or shape first
+a11y.group	Accessibility
+a11y.button	Check Accessibility
+a11y.title	Accessibility
+a11y.none	No accessibility issues found. People with disabilities should not have difficulty reading this document.
+a11y.errors	Errors
+a11y.warnings	Warnings
+a11y.tips	Tips
+a11y.missing_alt	Missing alternative text
+a11y.no_header	Missing table header
+a11y.skipped_heading	Skipped heading level
+a11y.skipped_detail	Heading {to} follows heading {from}
+a11y.unclear_link	Unclear hyperlink text
+a11y.low_contrast	Hard-to-read text contrast
+a11y.contrast_detail	Contrast {ratio}:1 (4.5:1 or more is needed)
+a11y.not_inline	Image or object not inline
+a11y.fix	Fix
+a11y.fix.describe	Add a description
+a11y.fix.decorative	Mark as decorative
+a11y.fix.header	Use first row as header
+a11y.fix.inline	Place in line with text
+alt.keys	⇥ Mark as decorative · ⏎ OK · esc Cancel
