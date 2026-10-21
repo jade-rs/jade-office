@@ -81,7 +81,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | | Fonts beyond a fixed list; custom colours; Font dialog | Medium | partly |
 | | Modify and create styles; character styles | Medium | partly |
 | | List types, bullet glyphs, number formats, restart numbering | Medium | partly |
-| | Hyperlinks: insert, follow | Medium | yes |
+| **Done** | Hyperlinks: insert, edit (⌘K), follow (⌘-click) | Medium | yes |
 | | Page Break (native runs Blank Page), ⌘Enter | Medium | yes |
 | | Footnotes and endnotes | Medium | yes |
 | | Table of contents: update; none in the browser | Medium | yes |

@@ -27,6 +27,7 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
+mod word_dialogs;
 mod word_page;
 mod word_review;
 mod workbook;
@@ -117,6 +118,7 @@ actions!(
         DeleteTableRow,
         AddComment,
         ToggleChangeTracking,
+        InsertHyperlink,
         ZoomIn,
         ZoomOut,
         ZoomActual,
@@ -185,6 +187,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
+        // Word for Mac's 挿入 menu.
+        KeyBinding::new("cmd-k", InsertHyperlink, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -274,6 +278,13 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.format.indent_more"), IndentMore),
                 MenuItem::action(t("menu.format.indent_less"), IndentLess),
             ],
+        },
+        Menu {
+            name: t("menu.insert").into(),
+            items: vec![MenuItem::action(
+                t("menu.insert.hyperlink"),
+                InsertHyperlink,
+            )],
         },
         Menu {
             name: t("menu.table").into(),
@@ -1096,6 +1107,9 @@ struct DocumentView {
     story_bar: Option<word_page::StoryBar>,
     /// A comment being typed — new, a reply, an edit — in its bar.
     comment_bar: Option<word_review::CommentBar>,
+    /// A dialog — a link, a note, the paragraph's format — over the pages;
+    /// it takes the keyboard as the bars do.
+    dialog: Option<word_dialogs::Dialog>,
     /// Whether the comments pane is open beside the pages.
     show_comments: bool,
     /// Display scale. The pages are rasterised at their own size and drawn
@@ -1299,6 +1313,10 @@ impl DocumentView {
         }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
+        if self.dialog.is_some() && self.handle_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.comment_bar.is_some() && self.handle_comment_bar_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -1768,6 +1786,20 @@ impl DocumentView {
             RibbonTab::Insert => vec![
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
                 self.picture_group(cx),
+                Self::ribbon_group(
+                    t("link.group"),
+                    vec![Self::ribbon_row(vec![self
+                        .ribbon_button(
+                            "hyperlink",
+                            t("link.button"),
+                            t("link.button_title"),
+                            false,
+                            cx,
+                            |view, cx| view.open_link_dialog(cx),
+                        )
+                        .into_any_element()])],
+                )
+                .into_any_element(),
                 word_page::header_footer(&self.ribbon, cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
@@ -2199,6 +2231,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = self.dialog.as_ref().and_then(|dialog| dialog.field()) {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2207,6 +2242,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self.dialog.is_some() {
+            return self.dialog.as_mut().and_then(|dialog| dialog.field_mut());
+        }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
             (None, Some(bar)) => Some(&mut bar.text),
@@ -2219,6 +2257,7 @@ impl DocumentView {
     fn open_story_bar(&mut self, story: Story, cx: &mut Context<Self>) {
         self.find_bar = None;
         self.comment_bar = None;
+        self.dialog = None;
         let text = self.document.story_text(story);
         self.story_bar = Some(word_page::StoryBar {
             story,
@@ -2370,6 +2409,7 @@ impl DocumentView {
             }
         }
         self.find_query = (!bar.query.is_empty()).then(|| bar.query.clone());
+        self.dialog = None;
         self.find_bar = Some(bar);
         self.update_find_count();
         cx.notify();
@@ -3441,6 +3481,10 @@ impl DocumentView {
         }
 
         self.selected_object = None;
+        // ⌘-click follows a link, as Word does.
+        if event.modifiers.platform && self.follow_link_at(local_x, document_y, cx) {
+            return;
+        }
         if let Some(position) = self.document.position_at(local_x, document_y) {
             self.insert_at = position;
             self.current_page = page_index;
@@ -4006,6 +4050,9 @@ impl Render for DocumentView {
             }))
             .on_action(cx.listener(|view, _: &AddComment, _window, cx| view.add_comment(cx)))
             .on_action(
+                cx.listener(|view, _: &InsertHyperlink, _window, cx| view.open_link_dialog(cx)),
+            )
+            .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
             )
             .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
@@ -4063,6 +4110,7 @@ impl Render for DocumentView {
                     .flex_col()
                     .size_full()
                     .child(self.ribbon(window, cx))
+                    .children(self.dialog_element())
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
@@ -4391,6 +4439,7 @@ fn document_view(
         find_bar: None,
         story_bar: None,
         comment_bar: None,
+        dialog: None,
         show_comments: false,
         ribbon_tab: RibbonTab::Home,
         ribbon,
@@ -4841,6 +4890,70 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.current_paragraph_text(), before)
         });
+    }
+
+    /// ⌘K opens ハイパーリンクの挿入 on the selection with its text filled
+    /// in; the address typed goes in with Enter (`www.` gaining `http://`),
+    /// a ⌘-click on the link hands the address to the system, a plain click
+    /// only places the caret, and ⌘K in the link opens it for editing.
+    #[gpui::test]
+    fn command_k_links_the_selection_and_command_click_follows_it(cx: &mut gpui::TestAppContext) {
+        use super::word_dialogs::Dialog;
+        use super::InsertHyperlink;
+        use jade_office_model::word::WordLinks;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "jade ");
+        view.update(cx, |view, _| {
+            view.document
+                .select((paragraph, 0), (paragraph, 4), 1)
+                .unwrap();
+            view.insert_at = (paragraph, 4);
+        });
+        cx.dispatch_action(InsertHyperlink);
+        view.read_with(cx, |view, _| match &view.dialog {
+            Some(Dialog::Link(form)) => {
+                assert_eq!(form.display.text, "jade");
+                assert!(!form.draft.editing);
+            }
+            _ => panic!("the link dialog is open"),
+        });
+        cx.simulate_input("www.example.com");
+        cx.simulate_keystrokes("enter");
+        let point = view.update(cx, |view, _| {
+            assert!(view.dialog.is_none(), "{:?}", view.table_status);
+            let link = view.document.hyperlink_at((paragraph, 1)).expect("a link");
+            assert_eq!(link.address, "http://www.example.com");
+            assert_eq!(view.insert_at, (paragraph, 4));
+            // Where the link's second letter is drawn, in the window.
+            let rect = view.document.place_caret(paragraph, 1).unwrap();
+            let (page, y) = view.document.page_and_offset(rect.document_y);
+            let bounds = view.page_bounds.borrow()[page].unwrap();
+            let zoom = view.zoom;
+            bounds.origin
+                + gpui::point(
+                    gpui::px((rect.x as f32 + 2.0) * zoom),
+                    gpui::px((y + rect.height / 2.0) as f32 * zoom),
+                )
+        });
+        cx.simulate_click(point, gpui::Modifiers::none());
+        assert_eq!(cx.opened_url(), None, "a plain click only places the caret");
+        cx.simulate_click(point, gpui::Modifiers::command());
+        assert_eq!(cx.opened_url().as_deref(), Some("http://www.example.com"));
+
+        view.update(cx, |view, _| {
+            view.insert_at = (paragraph, 2);
+            view.caret = view.document.place_caret(paragraph, 2);
+        });
+        cx.dispatch_action(InsertHyperlink);
+        view.read_with(cx, |view, _| match &view.dialog {
+            Some(Dialog::Link(form)) => {
+                assert!(form.draft.editing);
+                assert_eq!(form.address.text, "http://www.example.com");
+            }
+            _ => panic!("the link dialog is open"),
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| assert!(view.dialog.is_none()));
     }
 
     /// Tab goes from cell to cell with the cell's text selected, ⇧Tab

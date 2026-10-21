@@ -32,6 +32,7 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 
 mod deck;
 mod sheet;
+mod word_dialogs;
 mod word_find;
 mod word_review;
 mod word_story;
@@ -384,6 +385,9 @@ enum Document {
         story: Option<Box<crate::word_page::StoryBar>>,
         /// A comment being typed — new, a reply, an edit — in its bar.
         comment: Option<Box<word_review::CommentBar>>,
+        /// A dialog — a link, a note, the paragraph's format — over the
+        /// pages; it takes the keyboard as the bars do.
+        dialog: Option<Box<word_dialogs::Dialog>>,
         /// Whether the comments pane is open beside the pages.
         show_comments: bool,
         /// The picture or shape last pressed on, and the drag moving or
@@ -525,6 +529,7 @@ impl DocView {
                     find: None,
                     story: None,
                     comment: None,
+                    dialog: None,
                     show_comments: false,
                     object: None,
                     pages: (0..opened.page_count())
@@ -1102,6 +1107,10 @@ impl DocView {
                 return cx.notify();
             }
         }
+        // ⌘-click follows a link, as Word does.
+        if (event.modifiers.platform || event.modifiers.control) && self.follow_link_at(x, y, cx) {
+            return;
+        }
         let extend = event.modifiers.shift;
         let clicks = event.click_count;
         if let Document::Pages { dragging, .. } = &mut self.document {
@@ -1470,6 +1479,9 @@ impl DocView {
         if let Action::Review(review) = action {
             return self.review_action(review, cx);
         }
+        if action == Action::InsertLink {
+            return self.open_link_dialog(cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1527,6 +1539,7 @@ impl DocView {
             Action::EditStory(_)
             | Action::Review(_)
             | Action::InsertPicture
+            | Action::InsertLink
             | Action::Wrap(_)
             | Action::Style(_)
             | Action::Tab(_)
@@ -1659,6 +1672,7 @@ impl DocView {
         self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
         let story_bar = self.story_bar_element();
+        let dialog_bar = self.dialog_element();
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
         let find_bar = self.find_bar_element(cx);
@@ -1933,6 +1947,7 @@ impl DocView {
                     .flex()
                     .flex_col()
                     .child(word_ribbon)
+                    .children(dialog_bar)
                     .children(comment_bar)
                     .children(story_bar)
                     .children(find_bar)
@@ -1979,6 +1994,10 @@ impl DocView {
             });
         }
         // The find bar over a Word document takes the keys it has.
+        if self.dialog_open() && self.dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.commenting() && self.comment_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -2021,6 +2040,8 @@ impl DocView {
                 "f" if pages => self.open_find(false, cx),
                 "h" if pages && modifiers.shift => self.open_find(true, cx),
                 "c" if pages => self.word_copy(false, cx),
+                // ハイパーリンクの挿入.
+                "k" if pages => self.open_link_dialog(cx),
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.
                 "b" | "i" | "u" if pages => {
@@ -2079,6 +2100,10 @@ impl DocView {
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_mut().map(|(_, text)| text),
             Document::Pages {
+                dialog: Some(dialog),
+                ..
+            } => dialog.field_mut(),
+            Document::Pages {
                 comment: Some(bar), ..
             } => Some(&mut bar.text),
             Document::Pages {
@@ -2099,6 +2124,10 @@ impl DocView {
                 ..
             } => Some(notes),
             Document::Deck { edit, .. } => edit.as_ref().map(|(_, text)| text),
+            Document::Pages {
+                dialog: Some(dialog),
+                ..
+            } => dialog.field(),
             Document::Pages {
                 comment: Some(bar), ..
             } => Some(&bar.text),

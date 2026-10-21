@@ -675,3 +675,14 @@ format.fill.none	色なし
 format.ok	OK
 format.cancel	キャンセル
 sheet.protected	変更しようとしているセルやグラフは保護されているシート上にあります。
+menu.insert	挿入
+menu.insert.hyperlink	リンク…
+link.group	リンク
+link.button	リンク
+link.button_title	ハイパーリンクの挿入 (⌘K)
+link.insert	ハイパーリンクの挿入
+link.edit	ハイパーリンクの編集
+link.display	表示文字列
+link.address	アドレス
+link.keys	⇥ 項目の切り替え · ⏎ OK · esc キャンセル · アドレスを空にするとリンクを解除
+link.missing_bookmark	リンク先のブックマークが見つかりません
