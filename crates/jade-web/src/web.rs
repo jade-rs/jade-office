@@ -13,25 +13,18 @@ pub fn start() {
     set_word_layout_platform_from_page();
 }
 
-/// Lays the page's documents out like Word for Mac or Word for Windows:
-/// `"mac"`, `"windows"`, or `"auto"` for the browser's own platform. Call it
-/// before the first document is opened; until then the page follows its
-/// `?word_platform=` or, without one, the browser (see
-/// [`set_word_layout_platform_from_page`]).
-#[wasm_bindgen(js_name = setWordLayoutPlatform)]
-pub fn set_word_layout_platform(setting: &str) {
-    use jade_office_model::word::platform;
-    platform::set_word_layout_platform(platform::word_layout_platform_for(
-        setting,
-        &browser_platform(),
-    ));
-}
-
 /// Sets the Word the page's documents are laid out like from its
 /// `?word_platform=mac|windows|auto`, or from the browser's platform without
-/// one: a Mac lays documents out like Word for Mac.
+/// one: a Mac lays documents out like Word for Mac. A page with a setting of
+/// its own calls `setWordLayoutPlatform("mac" | "windows")` before opening
+/// a document — jade-docx-editor's export, which this bundle carries.
 pub fn set_word_layout_platform_from_page() {
-    set_word_layout_platform(&query_parameter("word_platform").unwrap_or_default());
+    use jade_office_model::word::platform;
+    let setting = query_parameter("word_platform").unwrap_or_default();
+    platform::set_word_layout_platform(platform::word_layout_platform_for(
+        &setting,
+        &browser_platform(),
+    ));
 }
 
 /// `navigator.userAgentData.platform`, else `navigator.platform`, else the
