@@ -1455,3 +1455,25 @@ review.kind.formatted	Formatted
 review.pane	Reviewing Pane
 review.pane_title	Reviewing Pane
 review.pane.count	{n} revisions
+compare.group	Compare
+compare.button	Compare
+compare.title	Compare Documents
+compare.combine	Combine
+compare.combine_title	Combine Documents
+compare.original	Original document
+compare.revised	Revised document
+compare.none	(none chosen)
+compare.browse	Browse…
+compare.this	This document
+compare.label	Label changes with
+compare.settings	Comparison settings
+compare.formatting	Formatting
+compare.case	Case changes
+compare.space	White space
+compare.comments	Comments
+compare.level	Show changes at
+compare.by_character	Character level
+compare.by_word	Word level
+compare.done	Compared: {insertions} insertions, {deletions} deletions, {formatting} formatting changes
+compare.keys	⏎ Choose the revised document · ⇥ Character/Word · esc Cancel
+compare.waiting	Choose the revised document…

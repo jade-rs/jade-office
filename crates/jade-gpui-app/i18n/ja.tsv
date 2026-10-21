@@ -1455,3 +1455,25 @@ review.kind.formatted	書式変更
 review.pane	変更履歴ウィンドウ
 review.pane_title	変更履歴ウィンドウ
 review.pane.count	変更 {n} 件
+compare.group	比較
+compare.button	比較
+compare.title	文書の比較
+compare.combine	組み込み
+compare.combine_title	文書の組み込み
+compare.original	元の文書
+compare.revised	変更された文書
+compare.none	(選択されていません)
+compare.browse	参照…
+compare.this	この文書
+compare.label	変更の表示名
+compare.settings	比較の設定
+compare.formatting	書式
+compare.case	大文字/小文字の変更
+compare.space	空白文字
+compare.comments	コメント
+compare.level	変更の表示単位
+compare.by_character	文字レベル
+compare.by_word	単語レベル
+compare.done	比較結果: 挿入 {insertions} 件、削除 {deletions} 件、書式変更 {formatting} 件
+compare.keys	⏎ 変更された文書を選ぶ · ⇥ 文字/単語 · esc キャンセル
+compare.waiting	変更された文書を選んでください…

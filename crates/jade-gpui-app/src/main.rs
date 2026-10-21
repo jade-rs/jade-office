@@ -29,6 +29,7 @@ mod shell;
 mod tooltip;
 mod word_accessibility;
 mod word_characters;
+mod word_compare;
 mod word_dialogs;
 mod word_page;
 mod word_page_setup;

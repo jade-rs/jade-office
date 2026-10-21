@@ -70,6 +70,8 @@ pub enum ReviewAction {
     AltText,
     /// 変更履歴ウィンドウ.
     RevisionsPane,
+    /// 比較… (`false`) or 組み込み….
+    Compare(bool),
 }
 
 /// What the tab shows as current.
@@ -387,6 +389,27 @@ pub fn review(
                     ),
                 ]),
             ],
+        ),
+        group(
+            i18n::text("compare.group"),
+            vec![row(vec![
+                text_button(
+                    "review-compare",
+                    i18n::text("compare.button"),
+                    i18n::text("compare.title"),
+                    false,
+                    act(ReviewAction::Compare(false)),
+                    cx,
+                ),
+                text_button(
+                    "review-combine",
+                    i18n::text("compare.combine"),
+                    i18n::text("compare.combine_title"),
+                    false,
+                    act(ReviewAction::Compare(true)),
+                    cx,
+                ),
+            ])],
         ),
         group(
             i18n::text("review.group.changes"),

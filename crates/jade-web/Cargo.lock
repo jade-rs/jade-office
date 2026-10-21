@@ -33,6 +33,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -830,11 +836,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "jade-diff-align"
+version = "0.1.0"
+
+[[package]]
 name = "jade-docx-annotations"
 version = "0.1.0"
 dependencies = [
  "jade-docx-reader",
  "jade-docx-writer",
+]
+
+[[package]]
+name = "jade-docx-diff"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jade-diff-align",
+ "jade-docx-extract",
+ "serde",
+ "serde_json",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -872,6 +894,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jade-docx-extract"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "serde",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
 name = "jade-docx-headless-api"
 version = "0.1.0"
 dependencies = [
@@ -894,6 +926,16 @@ dependencies = [
  "unicode-bidi",
  "unicode-script",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "jade-docx-merge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jade-docx-diff",
+ "quick-xml",
+ "zip",
 ]
 
 [[package]]
@@ -924,9 +966,11 @@ version = "0.1.0"
 dependencies = [
  "encoding_rs",
  "flate2",
+ "jade-docx-diff",
  "jade-docx-editor",
  "jade-docx-headless-api",
  "jade-docx-layout",
+ "jade-docx-merge",
  "jade-opc",
  "jade-painter",
  "jade-pptx-layout",
@@ -940,6 +984,7 @@ dependencies = [
  "jade-xlsx-layout",
  "jade-xlsx-reader",
  "jade-xlsx-render",
+ "zip",
 ]
 
 [[package]]
@@ -1865,6 +1910,15 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-properties"

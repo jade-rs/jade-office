@@ -26,6 +26,10 @@ tiny-skia = ["dep:jade-tiny-skia-painter", "dep:flate2"]
 [dependencies]
 jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
 jade-docx-headless-api = { path = "../../jade-core/crates/jade-docx-headless-api" }
+# 文書の比較 and 組み込み: the structural diff and the redline it merges into.
+jade-docx-diff = { path = "../../jade-core/crates/jade-docx-diff" }
+jade-docx-merge = { path = "../../jade-core/crates/jade-docx-merge" }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 jade-docx-layout = { path = "../../jade-core/crates/jade-docx-layout" }
 jade-selection = { path = "../../jade-core/crates/jade-selection" }
 jade-opc = { path = "../../jade-core/crates/jade-opc" }
