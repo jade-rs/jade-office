@@ -1427,3 +1427,8 @@ print.pdf	PDF として保存…
 print.print	印刷
 print.fit	全体表示
 print.sheet_of	{n} / {count}
+pdf.title	PDF として保存
+pdf.accessible	電子配布とアクセシビリティに最適
+pdf.accessible_detail	見出し、段落、表、図 (代替テキスト付き) の構造タグと、見出しのブックマークを含めます。文字はベクターで書き出されます。
+pdf.appearance	画面の表示に合わせる
+pdf.appearance_detail	画面と同じ見た目で書き出します。文字は検索できますが、構造タグは含まれません。
