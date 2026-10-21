@@ -32,6 +32,7 @@ use jade_selection::{SelectionRange, TextPosition};
 pub mod asian;
 pub mod clipboard;
 pub mod count;
+pub mod equation;
 pub mod find;
 pub mod font;
 pub mod insert;
@@ -113,6 +114,12 @@ pub trait WordSession {
     /// their ids in the last paint's cell registry — and repaints so the
     /// cells show selected, as Word's row, column and table selections do.
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String>;
+
+    /// Where the last paint drew every equation: what the equation editor
+    /// places its caret and answers clicks with.
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        Vec::new()
+    }
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
