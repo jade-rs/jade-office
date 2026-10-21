@@ -30,6 +30,22 @@ fn backend() -> TinySkiaBackend {
 
 fn workbook(bytes: &[u8], edit: bool) -> Result<Vec<u8>, String> {
     let mut book = Workbook::open(bytes, "Asia/Tokyo", backend())?;
+    if std::env::var("RESAVE_SCATTER").is_ok() && edit {
+        // Cells between, before and beside the ones there: where a writer
+        // that appends would put rows and cells out of order.
+        let end = book.used_end();
+        for (column, row) in [
+            (1, 1),
+            (30, 1),
+            (1, end.row / 2 + 1),
+            (end.column + 3, end.row / 2 + 1),
+            (1, end.row + 5),
+            (2, 2),
+        ] {
+            let _ = book.set_cell(CellRef::new(column, row), "x");
+        }
+        return book.save_bytes();
+    }
     if edit {
         let end = book.used_end();
         book.set_cell(CellRef::new(1, end.row + 2), "jade 編集")?;
