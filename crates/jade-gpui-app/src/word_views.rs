@@ -20,6 +20,7 @@ pub mod find;
 pub mod input;
 pub mod marks;
 pub mod mini;
+pub mod modes;
 pub mod options;
 pub mod paste;
 pub mod prefs;
@@ -168,6 +169,11 @@ pub struct Views {
     pub on_ranges: bool,
     /// The right-click menu, while it is open.
     pub context: Option<context::OpenMenu>,
+    /// 編集 / 校閲 / 閲覧, and its list while open.
+    pub mode: modes::EditMode,
+    pub mode_menu: bool,
+    /// フォーカス.
+    pub focus: bool,
 }
 
 impl Views {
@@ -383,6 +389,10 @@ pub fn arrange_pages(pages: gpui::Stateful<gpui::Div>, views: &Views) -> gpui::S
             .p_8(),
         _ => pages.flex_col().items_center(),
     };
+    if views.focus {
+        // フォーカス: the page alone on a dark ground.
+        return pages.gap_6().p_8().bg(gpui::rgb(0x1b1b1f)).items_center();
+    }
     match views.kind {
         // 下書き: the bands one after another on white, from the left.
         ViewKind::Draft => pages.items_start().gap_0().p_0().bg(theme::paper()),
@@ -898,6 +908,11 @@ pub fn view_tab(view: &mut DocumentView, cx: &mut Context<DocumentView>) -> Vec<
             ),
         ])],
     );
+    let immersive = group(
+        t("views.group.immersive"),
+        vec![row(vec![modes::focus_button(view, cx)])],
+    );
+    let views = &view.views;
     let grid = tab_button(
         "views-gridlines",
         t("views.gridlines"),
@@ -1010,6 +1025,7 @@ pub fn view_tab(view: &mut DocumentView, cx: &mut Context<DocumentView>) -> Vec<
     );
     vec![
         views_group,
+        immersive,
         movement,
         view.ruler_group(cx),
         show,

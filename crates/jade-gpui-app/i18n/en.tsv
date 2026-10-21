@@ -2190,3 +2190,13 @@ qat.align_right	Align Right
 qat.insert_table	Insert Table
 qat.picture	Picture
 qat.track_changes	Track Changes
+modes.title	Editing mode
+modes.editing	Editing
+modes.reviewing	Reviewing
+modes.viewing	Viewing
+modes.editing_hint	Edit the document directly
+modes.reviewing_hint	Every change is tracked
+modes.viewing_hint	Read the document without making accidental changes
+views.group.immersive	Immersive
+views.focus	Focus
+views.focus_title	Focus mode (Esc to leave)
