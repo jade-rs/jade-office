@@ -16,6 +16,7 @@ mod font;
 mod insert;
 mod paste;
 mod ribbon;
+mod ruby;
 mod typography;
 
 use gpui::{
@@ -76,6 +77,8 @@ pub enum CharAction {
     OpenSymbols,
     /// 日付と時刻….
     OpenDateTime,
+    /// ルビ….
+    OpenRuby,
 }
 
 /// The open dialog.
@@ -91,6 +94,8 @@ pub enum Dialog {
     Symbol(insert::SymbolDialog),
     /// 日付と時刻.
     DateTime(insert::DateTimeDialog),
+    /// ルビ.
+    Ruby(ruby::RubyState),
 }
 
 /// The lists a dialog drops over itself.
@@ -224,6 +229,7 @@ pub fn run(view: &mut DocumentView, action: CharAction, cx: &mut Context<Documen
         CharAction::OpenPasteSpecial => return paste::open(view, cx),
         CharAction::OpenSymbols => return insert::open_symbols(view, cx),
         CharAction::OpenDateTime => return insert::open_date_time(view, cx),
+        CharAction::OpenRuby => return ruby::open(view, cx),
         CharAction::MoreFontColors => {
             let current = WordCharacters::character_format(&view.document).color;
             view.characters
@@ -277,6 +283,7 @@ pub fn open_typography(view: &mut DocumentView, cx: &mut Context<DocumentView>) 
 /// OK: what the dialog says lands on the document, as one undo step.
 pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
     typography::commit_field(view);
+    ruby::commit_field(view);
     let typed = std::mem::replace(&mut view.characters.field, TextEdit::new(String::new()));
     let Some(mut dialog) = view.characters.dialog.take() else {
         return;
@@ -296,6 +303,7 @@ pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         Dialog::PasteSpecial(dialog) => return paste::confirm(view, dialog, cx),
         Dialog::Symbol(dialog) => return insert::confirm_symbol(view, dialog, cx),
         Dialog::DateTime(dialog) => return insert::confirm_date_time(view, dialog, cx),
+        Dialog::Ruby(state) => return ruby::confirm(view, state, cx),
         Dialog::Color(dialog) => match dialog.back {
             // From the フォント dialog: back to it, with the colour chosen.
             Some(mut font) => {
@@ -384,6 +392,7 @@ pub fn overlay(
         Dialog::PasteSpecial(_) => paste::body(view, cx),
         Dialog::Symbol(_) => insert::symbol_body(view, cx),
         Dialog::DateTime(_) => insert::date_time_body(view, cx),
+        Dialog::Ruby(_) => ruby::body(view, cx),
     };
     let title = match view.characters.dialog.as_ref()? {
         Dialog::Font(_) => i18n::text("chars.font.title"),
@@ -392,6 +401,7 @@ pub fn overlay(
         Dialog::PasteSpecial(_) => i18n::text("chars.paste.title"),
         Dialog::Symbol(_) => i18n::text("chars.symbol.title"),
         Dialog::DateTime(_) => i18n::text("chars.date.title"),
+        Dialog::Ruby(_) => i18n::text("chars.ruby.title"),
     };
     let viewport = window.viewport_size();
     Some(
@@ -1043,6 +1053,59 @@ mod tests {
             let xml = package.part_str("word/document.xml").unwrap().unwrap();
             assert!(xml.contains("DATE \\@ &quot;yyyy年M月d日&quot;"), "{xml}");
         });
+    }
+
+    /// ルビ: 読み方 split per character takes よ over 読み and かた over 方,
+    /// typed into the dialog; opening it again shows them; undo takes both
+    /// off.
+    #[gpui::test]
+    fn ruby_goes_on_per_character_and_reads_back(cx: &mut gpui::TestAppContext) {
+        use crate::Undo;
+        let (view, cx) = open_selected(cx);
+        let paragraph = view.update(cx, |view, cx| {
+            let paragraph = view.insert_at.0;
+            view.document
+                .insert_text(paragraph, 0, "読み方", 1)
+                .unwrap();
+            view.document
+                .select((paragraph, 0), (paragraph, "読み方".len()), 1)
+                .unwrap();
+            view.run_ribbon(Action::Characters(CharAction::OpenRuby), cx);
+            let Some(Dialog::Ruby(state)) = view.characters.dialog.as_mut() else {
+                panic!("the dialog opens");
+            };
+            let text = state.text.clone();
+            state.dialog.split_per_character(&text);
+            assert_eq!(state.dialog.groups.len(), 2);
+            paragraph
+        });
+        cx.simulate_input("よ");
+        view.update(cx, |view, _| super::ruby::focus_for_test(view, 1));
+        cx.simulate_input("かた");
+        cx.simulate_keystrokes("enter");
+        let xml = view.read_with(cx, |view, _| document_xml(view));
+        assert_eq!(xml.matches("<w:ruby>").count(), 2, "{xml}");
+        assert!(xml.contains(">かた</w:t>"));
+        view.update(cx, |view, cx| {
+            view.document
+                .select((paragraph, 0), (paragraph, "読み方".len()), 1)
+                .unwrap();
+            view.run_ribbon(Action::Characters(CharAction::OpenRuby), cx);
+            let Some(Dialog::Ruby(state)) = view.characters.dialog.as_ref() else {
+                panic!("the dialog opens again");
+            };
+            let guides: Vec<&str> = state
+                .dialog
+                .groups
+                .iter()
+                .map(|group| group.ruby.as_str())
+                .collect();
+            assert_eq!(guides, ["よ", "かた"]);
+            super::cancel(view, cx);
+        });
+        cx.dispatch_action(Undo);
+        let xml = view.read_with(cx, |view, _| document_xml(view));
+        assert!(!xml.contains("<w:ruby>"));
     }
 
     /// 文字種の変換: 全角, then 半角, change the selected text.

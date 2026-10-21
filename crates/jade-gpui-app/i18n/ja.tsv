@@ -885,3 +885,21 @@ chars.date.gregorian	グレゴリオ暦
 chars.date.era	和暦
 chars.date.formats	表示形式
 chars.date.auto_update	自動的に更新する
+chars.ruby.title	ルビ
+chars.ruby.base	対象文字列
+chars.ruby.ruby	ルビ
+chars.ruby.whole	文字列全体
+chars.ruby.per_character	文字単位
+chars.ruby.clear	ルビの解除
+chars.ruby.align	配置
+chars.ruby.align.center	中央揃え
+chars.ruby.align.distribute_letter	均等割り付け 1
+chars.ruby.align.distribute_space	均等割り付け 2
+chars.ruby.align.left	左揃え
+chars.ruby.align.right	右揃え
+chars.ruby.align.right_vertical	縦書き右揃え
+chars.ruby.font	フォント
+chars.ruby.font_same	(対象文字列と同じ)
+chars.ruby.size	サイズ
+chars.ruby.offset	オフセット
+chars.ruby.auto	自動
