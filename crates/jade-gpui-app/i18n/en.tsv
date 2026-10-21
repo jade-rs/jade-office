@@ -686,3 +686,14 @@ link.display	Text to display
 link.address	Address
 link.keys	⇥ next field · ⏎ OK · esc cancel · an empty address removes the link
 link.missing_bookmark	The bookmark this link goes to is not in the document
+menu.insert.footnote	Footnote
+menu.insert.endnote	Endnote
+doc.toc_update	Update Table
+doc.toc_update_title	Rebuild the table of contents from the headings
+note.group	Footnotes
+note.footnote	Insert Footnote
+note.footnote_title	Insert Footnote (⌥⌘F)
+note.endnote	Insert Endnote
+note.endnote_title	Insert Endnote (⌥⌘D)
+note.text	Text
+note.keys	⏎ insert · esc cancel

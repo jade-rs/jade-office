@@ -336,7 +336,7 @@ doc.tab.home	ホーム
 doc.tab.insert	挿入
 doc.tab.design	デザイン
 doc.tab.layout	レイアウト
-doc.tab.references	参照設定
+doc.tab.references	参考資料
 doc.tab.review	校閲
 doc.tab.view	表示
 doc.export_word	Word 出力
@@ -686,3 +686,14 @@ link.display	表示文字列
 link.address	アドレス
 link.keys	⇥ 項目の切り替え · ⏎ OK · esc キャンセル · アドレスを空にするとリンクを解除
 link.missing_bookmark	リンク先のブックマークが見つかりません
+menu.insert.footnote	脚注
+menu.insert.endnote	文末脚注
+doc.toc_update	目次の更新
+doc.toc_update_title	目次を見出しから作り直す
+note.group	脚注
+note.footnote	脚注の挿入
+note.footnote_title	脚注の挿入 (⌥⌘F)
+note.endnote	文末脚注の挿入
+note.endnote_title	文末脚注の挿入 (⌥⌘D)
+note.text	内容
+note.keys	⏎ 挿入 · esc キャンセル

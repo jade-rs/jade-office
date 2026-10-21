@@ -99,17 +99,25 @@ pub enum Tab {
     Home,
     Insert,
     Layout,
+    References,
     Review,
 }
 
 impl Tab {
-    const ALL: [Tab; 4] = [Tab::Home, Tab::Insert, Tab::Layout, Tab::Review];
+    const ALL: [Tab; 5] = [
+        Tab::Home,
+        Tab::Insert,
+        Tab::Layout,
+        Tab::References,
+        Tab::Review,
+    ];
 
     fn label(self) -> &'static str {
         i18n::text(match self {
             Tab::Home => "doc.tab.home",
             Tab::Insert => "doc.tab.insert",
             Tab::Layout => "doc.tab.layout",
+            Tab::References => "doc.tab.references",
             Tab::Review => "doc.tab.review",
         })
     }
@@ -205,6 +213,12 @@ pub enum Action {
     InsertPicture,
     /// 挿入 → リンク (⌘K): the hyperlink dialog.
     InsertLink,
+    /// 参考資料 → 目次.
+    InsertContents,
+    /// 参考資料 → 目次の更新.
+    UpdateContents,
+    /// 参考資料 → 脚注の挿入 / 文末脚注の挿入: the note's bar.
+    InsertNote(jade_web::word::NoteKind),
     /// 文字列の折り返し for the picture selected.
     Wrap(jade_web::word::picture::Wrap),
 }
@@ -644,6 +658,7 @@ pub fn ribbon(
             groups.extend(layout(ribbon, state, cx));
             groups
         }
+        Tab::References => references(cx),
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
     };
     div()
@@ -1336,6 +1351,57 @@ fn insert(ribbon: &Ribbon, cx: &mut Context<DocView>) -> Vec<AnyElement> {
             picker,
         )],
     )]
+}
+
+// ---- 参考資料 -------------------------------------------------------------------
+
+fn references(cx: &mut Context<DocView>) -> Vec<AnyElement> {
+    use crate::word_page::text_button;
+    use jade_web::word::NoteKind;
+    vec![
+        group(
+            i18n::text("doc.toc"),
+            vec![row(vec![
+                text_button(
+                    "toc",
+                    i18n::text("doc.toc"),
+                    i18n::text("doc.toc_title"),
+                    false,
+                    Action::InsertContents,
+                    cx,
+                ),
+                text_button(
+                    "toc-update",
+                    i18n::text("doc.toc_update"),
+                    i18n::text("doc.toc_update_title"),
+                    false,
+                    Action::UpdateContents,
+                    cx,
+                ),
+            ])],
+        ),
+        group(
+            i18n::text("note.group"),
+            vec![row(vec![
+                text_button(
+                    "footnote",
+                    i18n::text("note.footnote"),
+                    i18n::text("note.footnote_title"),
+                    false,
+                    Action::InsertNote(NoteKind::Footnote),
+                    cx,
+                ),
+                text_button(
+                    "endnote",
+                    i18n::text("note.endnote"),
+                    i18n::text("note.endnote_title"),
+                    false,
+                    Action::InsertNote(NoteKind::Endnote),
+                    cx,
+                ),
+            ])],
+        ),
+    ]
 }
 
 // ---- レイアウト (表ツール) -------------------------------------------------------

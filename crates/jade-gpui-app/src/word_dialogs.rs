@@ -1,11 +1,11 @@
 //! Word's small dialogs, as bars over the pages that take the keyboard while
 //! they are open, as the header and comment bars do: ハイパーリンクの挿入
-//! (⌘K). What each does is `jade-office-model`'s; the browser shell has the
+//! (⌘K), 脚注の挿入 (⌥⌘F) and 文末脚注の挿入 (⌥⌘D). What each does is `jade-office-model`'s; the browser shell has the
 //! same (`jade-gpui-web/src/view/word_dialogs.rs`).
 
 use gpui::{div, prelude::*, px, AnyElement, Context, KeyDownEvent, SharedString};
 use jade_office_model::text::TextEdit;
-use jade_office_model::word::{LinkForm, LinkTarget, WordLinks};
+use jade_office_model::word::{LinkForm, LinkTarget, NoteForm, NoteKind, WordLinks};
 
 use crate::{t, theme, DocumentView};
 
@@ -13,6 +13,8 @@ use crate::{t, theme, DocumentView};
 pub enum Dialog {
     /// ハイパーリンクの挿入 / ハイパーリンクの編集.
     Link(LinkForm),
+    /// 脚注の挿入 / 文末脚注の挿入: the note's text.
+    Note(NoteForm),
 }
 
 impl Dialog {
@@ -20,12 +22,14 @@ impl Dialog {
     pub fn field(&self) -> Option<&TextEdit> {
         match self {
             Dialog::Link(form) => Some(form.field()),
+            Dialog::Note(form) => Some(&form.text),
         }
     }
 
     pub fn field_mut(&mut self) -> Option<&mut TextEdit> {
         match self {
             Dialog::Link(form) => Some(form.field_mut()),
+            Dialog::Note(form) => Some(&mut form.text),
         }
     }
 }
@@ -127,6 +131,14 @@ impl DocumentView {
         self.open_dialog(Dialog::Link(LinkForm::new(draft)), cx);
     }
 
+    /// ⌥⌘F / ⌥⌘D: the bar the note's text is typed into; its reference goes
+    /// at the caret, or after the selection, when the text is put in.
+    pub(crate) fn open_note_dialog(&mut self, kind: NoteKind, cx: &mut Context<Self>) {
+        self.sync_selection();
+        let form = NoteForm::new(&self.document, kind);
+        self.open_dialog(Dialog::Note(form), cx);
+    }
+
     /// ⌘-click: a link's address to the system, a bookmark's place to the
     /// caret. Returns whether there was a link under the point.
     pub(crate) fn follow_link_at(
@@ -177,6 +189,7 @@ impl DocumentView {
             "enter" | "return" => return self.submit_dialog(cx),
             "tab" => match dialog {
                 Dialog::Link(form) => form.switch_field(),
+                Dialog::Note(form) => form.text.insert("\t"),
             },
             _ => {
                 let edited = dialog.field_mut().is_some_and(|field| field.edit_key(key));
@@ -196,6 +209,7 @@ impl DocumentView {
         };
         let result = match &dialog {
             Dialog::Link(form) => form.submit(&mut self.document),
+            Dialog::Note(form) => form.submit(&mut self.document),
         };
         match result {
             Ok(caret) => {
@@ -231,6 +245,14 @@ impl DocumentView {
                     field_box(t("link.display"), &form.display, !form.on_address, 200.0),
                     field_box(t("link.address"), &form.address, form.on_address, 280.0),
                 ],
+            ),
+            Dialog::Note(form) => bar(
+                t(match form.kind {
+                    NoteKind::Footnote => "note.footnote_title",
+                    NoteKind::Endnote => "note.endnote_title",
+                }),
+                t("note.keys"),
+                vec![field_box(t("note.text"), &form.text, true, 360.0)],
             ),
         })
     }

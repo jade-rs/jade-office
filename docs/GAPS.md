@@ -83,8 +83,8 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | | List types, bullet glyphs, number formats, restart numbering | Medium | partly |
 | **Done** | Hyperlinks: insert, edit (⌘K), follow (⌘-click) | Medium | yes |
 | | Page Break (native runs Blank Page), ⌘Enter | Medium | yes |
-| | Footnotes and endnotes | Medium | yes |
-| | Table of contents: update; none in the browser | Medium | yes |
+| **Done** | Footnotes and endnotes: insert (⌥⌘F, ⌥⌘D) | Medium | yes |
+| **Done** | Table of contents: update; none in the browser | Medium | yes |
 | | Table column resizing by drag, AutoFit, table properties | Medium | yes |
 | | Word count; spelling | Medium | no |
 | | Save failures only printed to the console (native) | Medium | — |
