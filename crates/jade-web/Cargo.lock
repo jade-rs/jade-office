@@ -1041,6 +1041,7 @@ name = "jade-web"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "encoding_rs",
  "flate2",
  "fontdb",
  "futures",

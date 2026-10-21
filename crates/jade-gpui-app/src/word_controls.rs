@@ -321,7 +321,7 @@ impl DocumentView {
     }
 
     /// The view's caret and selection made the document's.
-    fn show_document_selection(&mut self) {
+    pub(crate) fn show_document_selection(&mut self) {
         let range = WordSession::selection_range(&self.document).map(|range| {
             (
                 (range.anchor.paragraph, range.anchor.offset),

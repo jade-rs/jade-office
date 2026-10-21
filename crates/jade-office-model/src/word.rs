@@ -38,6 +38,7 @@ pub mod font;
 pub mod form_view;
 pub mod insert;
 pub mod links;
+pub mod mailings;
 pub mod new;
 pub mod page;
 pub mod page_setup;

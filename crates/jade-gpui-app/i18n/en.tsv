@@ -1445,3 +1445,170 @@ form.entries	Items in drop-down list
 form.bookmark	Bookmark
 form.help_text	Help text
 form.enabled	Fill-in enabled
+# Mailings: mail merge (word_mailings)
+mail.tab	Mailings
+mail.group.create	Create
+mail.group.start	Start Mail Merge
+mail.group.fields	Write & Insert Fields
+mail.group.preview	Preview Results
+mail.group.finish	Finish
+mail.envelopes	Envelopes
+mail.envelopes_title	Create and print envelopes
+mail.labels	Labels
+mail.labels_title	Create and print labels
+mail.start	Start Mail Merge
+mail.start_title	Start a mail merge of letters, envelopes, labels or a directory
+mail.start.letters	Letters
+mail.start.envelopes	Envelopes...
+mail.start.labels	Labels...
+mail.start.directory	Directory
+mail.start.email	E-mail Messages
+mail.start.normal	Normal Word Document
+mail.recipients	Select Recipients
+mail.recipients_title	Choose the list of people to merge
+mail.recipients.new	Create a New List...
+mail.recipients.existing	Use an Existing List...
+mail.recipients.source	Data source: {name}
+mail.recipients.all	Select All
+mail.recipients.none	Clear All
+mail.recipients.count	{n} of {count} recipients will be merged
+mail.edit_recipients	Edit Recipient List
+mail.edit_recipients_title	Choose, sort and filter the recipients to merge
+mail.highlight	Highlight Merge Fields
+mail.highlight_title	Shade the merge fields in the document
+mail.address_block	Address Block
+mail.address_block_title	Insert the recipient's address
+mail.greeting	Greeting Line
+mail.greeting_title	Insert a greeting line
+mail.insert_field	Insert Merge Field
+mail.insert_field_title	Insert a column of the recipient list as a merge field
+mail.rules	Rules
+mail.rules_title	Insert a mail merge rule
+mail.match	Match Fields
+mail.match_title	Match the address fields to the recipient list's columns
+mail.update_labels	Update Labels
+mail.update_labels_title	Copy the first label to all the other labels
+mail.preview	Preview Results
+mail.preview_title	Show the merge fields with the recipients' data
+mail.first	|◀
+mail.first_title	First Record
+mail.previous	◀
+mail.previous_title	Previous Record
+mail.next	▶
+mail.next_title	Next Record
+mail.last	▶|
+mail.last_title	Last Record
+mail.record	Record {n} of {count}
+mail.record_none	No records
+mail.check	Check for Errors
+mail.check_title	Check the mail merge for errors
+mail.check.note	The merge is simulated and its errors are reported.
+mail.check.none	No mail merge errors have been found.
+mail.check.empty	The data source has no columns.
+mail.check.missing	The merge field “{name}” is not in the data source.
+mail.check.unmatched	The address block or greeting line has no matched columns. Use Match Fields.
+mail.finish	Finish & Merge
+mail.finish_title	Complete the mail merge
+mail.finish.document	Edit Individual Documents...
+mail.finish.print	Print Documents...
+mail.finish.pdf	Merge to PDF...
+mail.finish.records	Merge records
+mail.finish.all	All
+mail.finish.current	Current record
+mail.finish.range	From
+mail.finish.from	From record
+mail.finish.to	To record
+mail.no_data	No recipient list
+mail.no_recipients	There are no recipients to merge.
+mail.preview_heading	Preview
+mail.preview_none	Choose a recipient list to see it here.
+mail.print	Print
+mail.new_document	New Document
+mail.address.name	Insert recipient's name in this format
+mail.address.name_format	Name format
+mail.address.honorific	Honorific
+mail.address.company	Insert company name
+mail.address.postal	Insert postal address
+mail.address.country	Country or region
+mail.address.country_always	Always include
+mail.address.country_never	Never include
+mail.address.country_except	Only if different from the United States
+mail.address.by_country	Format address according to the destination country/region
+mail.greeting.before	Greeting
+mail.greeting.after	Punctuation
+mail.greeting.invalid	Greeting line for invalid recipient names
+mail.match.none	(not matched)
+mail.match.note	The address block and greeting line use the columns matched here.
+mail.field.title	Courtesy Title
+mail.field.first	First Name
+mail.field.middle	Middle Name
+mail.field.last	Last Name
+mail.field.suffix	Suffix
+mail.field.nickname	Nickname
+mail.field.job	Job Title
+mail.field.company	Company
+mail.field.department	Department
+mail.field.address1	Address 1
+mail.field.address2	Address 2
+mail.field.city	City
+mail.field.state	State
+mail.field.postal	Postal Code
+mail.field.country	Country or Region
+mail.field.phone	Business Phone
+mail.field.email	E-mail Address
+mail.filter	Filter
+mail.filter.column	Field
+mail.filter.compare	Comparison
+mail.filter.value	Compare to
+mail.filter.add	Add Filter
+mail.filter.clear	Clear Filters
+mail.filter.equal	Equal to
+mail.filter.not_equal	Not equal to
+mail.filter.contains	Contains
+mail.filter.not_contains	Does not contain
+mail.filter.empty	Is blank
+mail.filter.not_empty	Is not blank
+mail.filter.less	Less than
+mail.filter.greater	Greater than
+mail.filter.less_equal	Less than or equal
+mail.filter.greater_equal	Greater than or equal
+mail.list.title	New Address List
+mail.list.note	Type the recipients' information. Tab goes to the next field; Tab in the last one adds an entry.
+mail.list.add_row	New Entry
+mail.list.remove_row	Delete Entry
+mail.list.column_name	Column name
+mail.list.add_column	Add Column
+mail.list.rename_column	Rename Column
+mail.list.remove_column	Delete Column
+mail.list.name	File name
+mail.rule.ask	Ask...
+mail.rule.fill_in	Fill-in...
+mail.rule.if	If...Then...Else...
+mail.rule.merge_record	Merge Record #
+mail.rule.merge_sequence	Merge Sequence #
+mail.rule.next	Next Record
+mail.rule.next_if	Next Record If...
+mail.rule.set	Set Bookmark...
+mail.rule.skip_if	Skip Record If...
+mail.rule.field	Field name
+mail.rule.operator	Comparison
+mail.rule.value	Compare to
+mail.rule.then	Insert this text
+mail.rule.else	Otherwise insert this text
+mail.rule.bookmark	Bookmark
+mail.rule.prompt	Prompt
+mail.rule.default	Default text
+mail.rule.once	Ask once
+mail.envelope.options	Envelope Options
+mail.envelope.merge_note	The delivery address is the merge's address block.
+mail.envelope.delivery	Delivery address
+mail.envelope.return	Return address
+mail.envelope.omit_return	Omit return address
+mail.envelope.size	Envelope size
+mail.envelope.left	Delivery address from left (mm)
+mail.envelope.top	Delivery address from top (mm)
+mail.envelope.auto	Blank is automatic ({left} mm from the left, {top} mm from the top)
+mail.labels.options	Label Options
+mail.labels.address	Address
+mail.labels.product	Product number
+mail.labels.details	{columns} across × {rows} down, labels {width} × {height} mm

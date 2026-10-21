@@ -83,7 +83,11 @@ pub struct Anchor {
 }
 
 /// What was drawn, for the edit and the selection it was read at.
-type ChromeCache = (u64, Option<((usize, usize), (usize, usize))>, Vec<ControlChrome>);
+type ChromeCache = (
+    u64,
+    Option<((usize, usize), (usize, usize))>,
+    Vec<ControlChrome>,
+);
 
 /// The view's share of the content controls.
 #[derive(Default)]

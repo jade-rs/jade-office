@@ -81,6 +81,8 @@ pub enum Tab {
     Insert,
     Layout,
     References,
+    /// 差し込み文書: mail merge (`view::word_mailings`).
+    Mailings,
     Review,
     /// 開発: content controls and forms (`view::word_controls`).
     Developer,
@@ -90,11 +92,12 @@ pub enum Tab {
 }
 
 impl Tab {
-    const ALL: [Tab; 6] = [
+    const ALL: [Tab; 7] = [
         Tab::Home,
         Tab::Insert,
         Tab::Layout,
         Tab::References,
+        Tab::Mailings,
         Tab::Review,
         Tab::Developer,
     ];
@@ -107,6 +110,7 @@ impl Tab {
             Tab::References => "doc.tab.references",
             Tab::Review => "doc.tab.review",
             Tab::Developer => "cc.tab",
+            Tab::Mailings => "mail.tab",
             Tab::TableDesign => "doc.tab.table_design",
             Tab::TableLayout => "doc.tab.table_layout",
         })
@@ -634,6 +638,8 @@ pub struct TabState {
     pub layout: Option<crate::view::word_setup::LayoutState>,
     /// What the 開発 tab shows as on, read while it is showing.
     pub developer: Option<crate::view::word_controls::DeveloperState>,
+    /// The 差し込み文書 tab's groups, read while it is showing.
+    pub mailings: Option<Vec<jade_web::word::form_view::ToolGroup>>,
 }
 
 pub fn ribbon(
@@ -724,6 +730,9 @@ pub fn ribbon(
         }
         Tab::References => references(cx),
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
+        Tab::Mailings => {
+            crate::view::word_mailings::tab(shown.mailings.as_deref().unwrap_or_default(), cx)
+        }
         Tab::Developer => {
             crate::view::word_controls::developer(&shown.developer.clone().unwrap_or_default(), cx)
         }
