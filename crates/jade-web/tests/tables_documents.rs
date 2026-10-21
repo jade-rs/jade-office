@@ -277,6 +277,19 @@ fn table_properties_set_the_table_rows_columns_and_cells() {
     assert_eq!(read.vertical_align, "center");
     assert!((read.cell_margins.unwrap()[0] - 5.67).abs() < 0.1);
 
+    // 80% of the 150 mm text column: the grid is scaled to it, as Word's
+    // dialog scales the columns, so the table is drawn that wide — and then
+    // the second column takes the 40 mm the 列 tab asked for.
+    let grid: Vec<f32> = document
+        .word_document()
+        .table_by_order(0)
+        .unwrap()
+        .columns
+        .iter()
+        .map(|column| column.width.unwrap_or(0.0))
+        .collect();
+    assert!((grid[0] - 0.4 * 425.2).abs() < 2.0, "{grid:?}");
+    assert!((grid[1] - 113.4).abs() < 1.0, "{grid:?}");
     let xml = document_xml(&document.export_docx().unwrap());
     for expected in [
         "<w:tblW w:w=\"4000\" w:type=\"pct\"/>",
@@ -471,7 +484,7 @@ fn borders_text_direction_and_autofit() {
     dialog.fill = Some(Some("FFF2CC".to_string()));
     document.apply_borders(&dialog).unwrap();
     document.cycle_text_direction().unwrap();
-    assert_eq!(document.table_properties().unwrap().text_direction, "tbRl");
+    assert_eq!(document.table_properties().unwrap().text_direction, "tbRlV");
     document.autofit(AutoFit::Window).unwrap();
     let xml = document_xml(&document.export_docx().unwrap());
     for expected in [
@@ -479,7 +492,7 @@ fn borders_text_direction_and_autofit() {
         "w:color=\"C00000\"",
         "w:val=\"dashed\"",
         "w:fill=\"FFF2CC\"",
-        "<w:textDirection w:val=\"tbRl\"/>",
+        "<w:textDirection w:val=\"tbRlV\"/>",
         "<w:tblW w:w=\"5000\" w:type=\"pct\"/>",
     ] {
         assert!(xml.contains(expected), "{expected} in {xml}");
