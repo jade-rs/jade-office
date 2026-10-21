@@ -152,6 +152,8 @@ pub enum ReviewAction {
     MarkFinal,
     /// ドキュメント検査: the pane.
     Inspect,
+    /// 読み上げ: start or stop.
+    ReadAloud,
 }
 
 /// The dialog the tab opens.
@@ -202,6 +204,8 @@ pub struct ReviewTools {
     pub inspect: Option<crate::word_inspect::InspectPane>,
     /// What ドキュメント検査 left out of every later save.
     pub cleaning: jade_office_model::word::inspect::PackageCleaning,
+    /// 読み上げ, while reading (`word_read_aloud`).
+    pub read_aloud: Option<crate::word_read_aloud::ReadAloudUi>,
 }
 
 impl ReviewTools {
@@ -305,6 +309,7 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
         ReviewAction::Protect => return crate::word_protection::open_protect_dialog(view, cx),
         ReviewAction::MarkFinal => return crate::word_protection::toggle_final(view, cx),
         ReviewAction::Inspect => return crate::word_inspect::toggle(view, cx),
+        ReviewAction::ReadAloud => return crate::word_read_aloud::toggle(view, cx),
         ReviewAction::ProofingMarks => {
             let on = !view.document.proofing();
             return crate::word_proofing::set_marks(view, on, cx);

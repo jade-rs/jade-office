@@ -32,6 +32,7 @@ mod word_accessibility;
 mod word_characters;
 mod word_compare;
 mod word_inspect;
+mod word_read_aloud;
 mod word_dialogs;
 mod word_page;
 mod word_page_setup;
@@ -4346,6 +4347,7 @@ impl Render for DocumentView {
         let revisions_pane = word_revisions::pane(self, cx);
         let restrict_pane = word_protection::pane(self, cx);
         let read_only_bar = word_protection::banner(self, cx);
+        let read_aloud_bar = word_read_aloud::bar(self, cx);
         let proofing_menu = word_proofing::menu(self, cx);
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
@@ -4524,6 +4526,7 @@ impl Render for DocumentView {
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
+                    .children(read_aloud_bar)
                     .child(
                         div()
                             .id("pages")

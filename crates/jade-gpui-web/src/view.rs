@@ -36,6 +36,7 @@ pub(crate) mod word_characters;
 mod word_dialogs;
 mod word_find;
 mod word_inspect;
+mod word_read_aloud;
 mod word_review;
 pub(crate) mod word_setup;
 mod word_story;
@@ -402,6 +403,8 @@ enum Document {
         revisions_pane: bool,
         /// 編集の制限, 文書の保護 and 最終版.
         protection: Box<word_review::WebProtection>,
+        /// 読み上げ, while reading.
+        read_aloud: Option<Box<word_read_aloud::WebReading>>,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
@@ -558,6 +561,7 @@ impl DocView {
                     accessibility: false,
                     revisions_pane: false,
                     protection: Box::new(word_review::WebProtection::opened(&mut opened)),
+                    read_aloud: None,
                     object: None,
                     tables: Box::default(),
                     pages: (0..opened.page_count())
@@ -1752,6 +1756,7 @@ impl DocView {
             revisions_pane,
             protection,
             object,
+            read_aloud,
             ..
         } = &mut self.document
         else {
@@ -1796,6 +1801,7 @@ impl DocView {
                         restrict_pane: protection.pane,
                         final_: protection.read_only == Some(word_review::ReadOnlyReason::Final),
                         inspect: protection.inspect,
+                        reading: read_aloud.is_some(),
                         markup: (**markup).clone(),
                         reviewers: document.reviewers(),
                     }
@@ -1882,6 +1888,7 @@ impl DocView {
         let inspect_pane = self.inspect_pane(cx);
         let read_only_bar = self.read_only_bar(cx);
         let find_bar = self.find_bar_element(cx);
+        let read_aloud_bar = self.read_aloud_bar(cx);
         let table_cursor = self.table_cursor();
         let table_dialog = self.table_dialog_element(cx);
         let mut table_overlays = match &self.document {
@@ -2170,6 +2177,7 @@ impl DocView {
                     .children(comment_bar)
                     .children(story_bar)
                     .children(find_bar)
+                    .children(read_aloud_bar)
                     .child(
                         div()
                             .id("pages")

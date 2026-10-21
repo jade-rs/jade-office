@@ -51,6 +51,7 @@ pub mod proofing;
 pub mod protection;
 pub mod references;
 pub mod review;
+pub mod read_aloud;
 pub mod reviewer;
 pub mod table;
 pub mod table_ui;

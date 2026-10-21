@@ -1530,3 +1530,14 @@ inspect.hidden_found	隠し文字 {n} か所が見つかりました。
 inspect.none	見つかりませんでした。
 inspect.remove_all	すべて削除
 inspect.removed_on_save	保存時に削除されます。
+read.group	音声読み上げ
+read.button	読み上げ
+read.title	読み上げ: カーソルの位置から文書を読み上げ、読んでいる単語を強調表示します
+read.nothing	カーソルの後に読み上げる文字列がありません。
+read.previous	前へ
+read.next	次へ
+read.play	再生
+read.pause	一時停止
+read.slower	読み上げの速度を下げる
+read.faster	読み上げの速度を上げる
+read.stop	閉じる
