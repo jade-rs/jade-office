@@ -252,7 +252,8 @@ impl FontBook {
             .unwrap_or(0)
     }
 
-    /// `font`, unless it lacks `ch` and another face has it.
+    /// `font`, unless it lacks `ch` and another face has it — or, when no
+    /// face has it, [`MARK_FONT`] for a formatting mark it draws.
     fn covering(&self, font: usize, ch: char) -> usize {
         if let Some(&cached) = self.covering.borrow().get(&(font, ch)) {
             return cached;
@@ -272,7 +273,13 @@ impl FontBook {
         }
         (0..self.faces.len())
             .find(|index| has(*index))
-            .unwrap_or(font)
+            .unwrap_or_else(|| {
+                if mark_glyph(ch).is_some() {
+                    MARK_FONT
+                } else {
+                    font
+                }
+            })
     }
 
     /// The glyph's outline in font units, y up, cached.
@@ -280,18 +287,96 @@ impl FontBook {
         if let Some(cached) = self.outlines.borrow().get(&(font, glyph.0)) {
             return cached.clone();
         }
-        let path = self
-            .with_face(font, |face| {
+        let path = if font == MARK_FONT {
+            mark_outline(glyph)
+        } else {
+            self.with_face(font, |face| {
                 let mut builder = OutlineBuilder(PathBuilder::new());
                 face.outline_glyph(glyph, &mut builder)?;
                 builder.0.finish()
             })
-            .flatten();
+            .flatten()
+        };
         self.outlines
             .borrow_mut()
             .insert((font, glyph.0), path.clone());
         path
     }
+}
+
+// ---- formatting marks -------------------------------------------------------
+
+/// A face of its own for Word's formatting-mark arrows, standing in when no
+/// registered face has them. The paragraph mark (U+21B5) and the page-break
+/// mark (U+21D3) are not in a Japanese text face, and in a browser there is
+/// no system face to fall back to, so without these they would draw as tofu.
+/// Its glyphs are drawn here, in units of [`MARK_UNITS_PER_EM`], y up.
+const MARK_FONT: usize = usize::MAX;
+
+/// The mark face's em: the size the painter assumes for a face it has no
+/// metrics of.
+const MARK_UNITS_PER_EM: u16 = 1000;
+
+/// The mark face's glyph for `ch`, and the glyph's advance in font units.
+fn mark_glyph(ch: char) -> Option<(u16, u16)> {
+    let id = match ch {
+        '\u{21B5}' => 1,
+        '\u{21D3}' => 2,
+        '\u{2193}' => 3,
+        _ => return None,
+    };
+    Some((id, MARK_UNITS_PER_EM))
+}
+
+/// The mark face's outline for `glyph`, as a single polygon.
+fn mark_outline(glyph: ttf_parser::GlyphId) -> Option<Path> {
+    let points: &[(f32, f32)] = match glyph.0 {
+        // ↵: down the right, then left to a solid head.
+        1 => &[
+            (170.0, 195.0),
+            (340.0, 335.0),
+            (340.0, 230.0),
+            (720.0, 230.0),
+            (720.0, 720.0),
+            (790.0, 720.0),
+            (790.0, 160.0),
+            (340.0, 160.0),
+            (340.0, 55.0),
+        ],
+        // ⇓: two stems over one wide head.
+        2 => &[
+            (500.0, 20.0),
+            (800.0, 320.0),
+            (660.0, 320.0),
+            (660.0, 720.0),
+            (600.0, 720.0),
+            (600.0, 320.0),
+            (400.0, 320.0),
+            (400.0, 720.0),
+            (340.0, 720.0),
+            (340.0, 320.0),
+            (200.0, 320.0),
+        ],
+        // ↓
+        3 => &[
+            (500.0, 20.0),
+            (680.0, 220.0),
+            (535.0, 220.0),
+            (535.0, 720.0),
+            (465.0, 720.0),
+            (465.0, 220.0),
+            (320.0, 220.0),
+        ],
+        _ => return None,
+    };
+    let mut builder = PathBuilder::new();
+    let (first, rest) = points.split_first()?;
+    builder.move_to(first.0, first.1);
+    for point in rest {
+        builder.line_to(point.0, point.1);
+    }
+    builder.close();
+    builder.finish()
 }
 
 struct OutlineBuilder(PathBuilder);
@@ -1657,7 +1742,19 @@ impl TinySkiaPainter {
             let characters = fonts.characters.borrow();
             text.chars().any(|ch| !characters.contains_key(&(font, ch)))
         };
-        if missing {
+        if missing && font == MARK_FONT {
+            let mut characters = fonts.characters.borrow_mut();
+            for ch in text.chars() {
+                let (id, advance) = mark_glyph(ch).unwrap_or((0, 0));
+                let glyph = CharGlyph {
+                    id,
+                    advance,
+                    bold: false,
+                    italic: false,
+                };
+                characters.insert((font, ch), glyph);
+            }
+        } else if missing {
             let found: Vec<(char, CharGlyph)> = fonts
                 .with_face(font, |face| {
                     text.chars()
@@ -3492,6 +3589,25 @@ mod tests {
         painter.restore();
         assert_eq!(pixel(&painter, 10, 10), [0, 0, 255, 255]);
         assert_eq!(pixel(&painter, 30, 10), [255, 255, 255, 255]);
+    }
+
+    /// The paragraph mark is not in the Japanese face, so it comes from the
+    /// painter's own mark glyphs rather than drawing as tofu.
+    #[test]
+    fn a_paragraph_mark_missing_from_every_face_is_drawn_as_an_arrow() {
+        let painter = TinySkiaPainter::new(40, 50, fonts()).unwrap();
+        painter.set_font("30px 'Noto Sans JP'");
+        // One em wide, as the mark face's advance says.
+        let width = painter.measure_text_width("\u{21B5}").unwrap();
+        assert!((width - 30.0).abs() < 0.01, "{width}");
+        painter.fill_text("\u{21B5}", 0.0, 40.0).unwrap();
+        let dark = |x, y| pixel(&painter, x, y)[0] < 128;
+        // The stem on the right and the head on the left, and nothing above
+        // the head where a tofu box would have its side.
+        assert!(dark(22, 25));
+        assert!(dark(8, 34));
+        assert!(!dark(12, 22));
+        assert!(!dark(3, 22));
     }
 
     #[test]

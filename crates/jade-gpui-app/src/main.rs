@@ -5005,6 +5005,60 @@ mod tests {
         });
     }
 
+    /// Typed with changes tracked, text is drawn as Word marks an insertion
+    /// — in the revision colour, underlined — and rejected, as before.
+    #[gpui::test]
+    fn tracked_typing_is_drawn_as_markup(cx: &mut gpui::TestAppContext) {
+        /// Pixels of the pages in the renderer's insertion colour, and the
+        /// longest horizontal line of them: an underline, not a glyph. The
+        /// line is matched looser, as it is drawn a keystroke's run at a time
+        /// and two runs' anti-aliased ends meet in a lighter pixel.
+        fn inserted(document: &jade_docx_native_render::NativeDocument) -> (usize, usize) {
+            let (mut count, mut longest) = (0, 0);
+            for index in 0..document.page_count() {
+                let (pixels, width, _) = document.page_pixels(index).unwrap();
+                for row in pixels.chunks(width as usize * 4) {
+                    let mut run = 0;
+                    for pixel in row.chunks(4) {
+                        // BGRA, against #1b5e20.
+                        let off = [pixel[2], pixel[1], pixel[0]]
+                            .iter()
+                            .zip([0x1b_u8, 0x5e, 0x20])
+                            .map(|(&have, want)| have.abs_diff(want))
+                            .max()
+                            .unwrap();
+                        run = if off <= 64 { run + 1 } else { 0 };
+                        count += usize::from(off <= 24);
+                        longest = longest.max(run);
+                    }
+                }
+            }
+            (count, longest)
+        }
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "");
+        view.update(cx, |view, cx| {
+            // On white paper, where the colour is the renderer's own.
+            view.document.set_dark_paper(false).unwrap();
+            assert_eq!(inserted(&view.document).0, 0);
+            view.toggle_tracking(cx);
+            view.insert_at = (paragraph, 0);
+            view.caret = view.document.place_caret(paragraph, 0);
+        });
+        let before = view.read_with(cx, |view, _| view.current_paragraph_text());
+        cx.simulate_input("Inserted words ");
+        view.update(cx, |view, cx| {
+            let (count, longest) = inserted(&view.document);
+            assert!(count > 50, "the insertion is coloured: {count} pixels");
+            assert!(longest > 80, "and underlined: its longest line {longest}px");
+            view.insert_at = (paragraph, 1);
+            view.caret = view.document.place_caret(paragraph, 1);
+            view.decide_revision(false, cx);
+            assert_eq!(view.document.paragraph_text(paragraph).unwrap(), before);
+            assert_eq!(inserted(&view.document).0, 0, "rejected, no markup");
+        });
+    }
+
     /// A copy keeps its formatting when it is pasted back; a picture goes
     /// in at the caret, and a click on it lets its wrap be set.
     #[gpui::test]

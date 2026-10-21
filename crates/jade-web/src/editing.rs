@@ -150,13 +150,15 @@ impl EditableDocument {
         } else {
             1.0
         };
+        // Formatting marks on, as in Word and jade. The bundled face lacks the
+        // paragraph- and page-break arrows; the painter draws those itself.
         let mut options = Options::default();
-        options.show_formatting_marks = false;
         let word_document = futures::executor::block_on(WordDocument::load(bytes, &options))
             .map_err(|error| format!("cannot read the document: {error}"))?;
         if word_document.document.is_none() {
             return Err("the document has no main part".to_string());
         }
+        crate::document::show_changes_as_saved(&mut options, &word_document);
         // The section properties decide the page box: a first pass finds it,
         // and the renderer kept is the one built to it. The first pass only
         // lays the document out — painting every page of it was most of what
