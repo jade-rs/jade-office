@@ -79,6 +79,8 @@ pub struct ListLevel {
     /// The level restarts after this level (`w:lvlRestart`); `None` after
     /// the level above, Word's default.
     pub restart_after: Option<u8>,
+    /// The picture bullet the level shows (`w:lvlPicBulletId`).
+    pub picture: Option<String>,
 }
 
 impl ListLevel {
@@ -95,6 +97,7 @@ impl ListLevel {
             style: None,
             font: None,
             restart_after: None,
+            picture: None,
         }
     }
 
@@ -138,6 +141,12 @@ impl ListLevel {
         }
         lvl.children
             .push(Node::Element(Element::with_val("w:lvlText", &self.text)));
+        if let Some(picture) = self.picture.as_deref() {
+            lvl.children.push(Node::Element(Element::with_val(
+                "w:lvlPicBulletId",
+                picture,
+            )));
+        }
         lvl.children
             .push(Node::Element(Element::with_val("w:lvlJc", &self.alignment)));
         lvl.children.push(Node::Element(
@@ -195,6 +204,7 @@ impl ListLevel {
             restart_after: lvl
                 .child_val("w:lvlRestart")
                 .and_then(|value| value.parse().ok()),
+            picture: lvl.child_val("w:lvlPicBulletId"),
         }
     }
 
@@ -571,6 +581,54 @@ impl Numbering {
     }
 }
 
+/// Adds a picture bullet of the image at `target` (a part name, related from
+/// `numbering_part` as `relationship`) to `numbering`, returning its
+/// `w:numPicBulletId`. Written as Word writes one: a VML shape whose
+/// `v:imagedata` names the image.
+pub fn add_picture_bullet(numbering: &mut Element, relationship: &str, size_pt: f32) -> String {
+    for (prefix, uri) in [
+        ("xmlns:v", "urn:schemas-microsoft-com:vml"),
+        ("xmlns:o", "urn:schemas-microsoft-com:office:office"),
+        (
+            "xmlns:r",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        ),
+    ] {
+        if numbering.get(prefix).is_none() {
+            numbering.set_attr(prefix, uri);
+        }
+    }
+    let id = numbering
+        .elements()
+        .filter(|element| element.name == "w:numPicBullet")
+        .filter_map(|element| element.get("w:numPicBulletId")?.parse::<u32>().ok())
+        .max()
+        .map_or(0, |max| max + 1)
+        .to_string();
+    let size = format!("width:{size_pt}pt;height:{size_pt}pt");
+    let bullet = Element::new("w:numPicBullet")
+        .attr("w:numPicBulletId", &id)
+        .child(
+            Element::new("w:pict").child(
+                Element::new("v:shape")
+                    .attr(
+                        "id",
+                        &format!("_x0000_i10{}", 25 + id.parse::<u32>().unwrap_or(0)),
+                    )
+                    .attr("type", "#_x0000_t75")
+                    .attr("style", &size)
+                    .attr("o:bullet", "t")
+                    .child(
+                        Element::new("v:imagedata")
+                            .attr("r:id", relationship)
+                            .attr("o:title", ""),
+                    ),
+            ),
+        );
+    numbering.insert_ordered(bullet, NUMBERING_ORDER);
+    id
+}
+
 /// The `w:numId` of each list style (`w:style w:type="numbering"`) of a
 /// `styles.xml`, by its id and name.
 pub fn list_styles(styles_xml: &str) -> Vec<(String, String, String)> {
@@ -807,6 +865,63 @@ pub trait WordLists: WordSession {
         self.apply_list_definition(&definition, Some(0))
     }
 
+    /// 箇条書き → 図: the selection becomes a list whose bullet is the
+    /// picture `image` (PNG, JPEG or GIF bytes, `extension` naming which).
+    fn apply_picture_bullet(&mut self, image: &[u8], extension: &str) -> Result<(), String> {
+        let extension = extension.trim_start_matches('.').to_ascii_lowercase();
+        let content_type = match extension.as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            _ => return Err(format!("a picture bullet cannot be a .{extension} file")),
+        };
+        let (start, end) = list_span(self);
+        let num_id = next_num_id(&self.numbering());
+        let then = vec![HeadlessStep::boxed(vec![HeadlessCommand::SetNumbering {
+            start_paragraph: start,
+            end_paragraph: end,
+            num_id: Some(num_id.clone()),
+            level: Some(0),
+        }])];
+        let image = image.to_vec();
+        edit_package(
+            self,
+            move |package| {
+                let numbering_part = package.part(PartKind::Numbering)?;
+                let directory = numbering_part
+                    .rsplit_once('/')
+                    .map(|(directory, _)| directory.to_string())
+                    .unwrap_or_default();
+                let media = (1..)
+                    .map(|n| format!("{directory}/media/bullet{n}.{extension}"))
+                    .find(|name| !package.has(name))
+                    .expect("a free name");
+                package.put_bytes(&media, image);
+                package.declare_default(&extension, content_type)?;
+                let relationship = package.relate(&numbering_part, "image", &media, false)?;
+                package.edit(PartKind::Numbering, |numbering| {
+                    let picture = add_picture_bullet(numbering, &relationship, 9.0);
+                    let definition = ListDefinition::from_levels(|level| ListLevel {
+                        picture: (level == 0).then(|| picture.clone()),
+                        font: (level == 0).then(|| "Symbol".to_string()),
+                        ..ListLevel::bullet(
+                            level,
+                            if level == 0 {
+                                "\u{F0B7}"
+                            } else {
+                                ["○", "■", "●"][level as usize % 3]
+                            },
+                        )
+                    });
+                    let made = add_list(numbering, &definition);
+                    debug_assert_eq!(made, num_id);
+                    Ok(())
+                })
+            },
+            then,
+        )
+    }
+
     /// Makes the selection a new list of `definition`, each paragraph at
     /// `level` (or the level it is at, when `None`).
     fn apply_list_definition(
@@ -829,7 +944,7 @@ pub trait WordLists: WordSession {
             })
             .collect();
         let num_id = next_num_id(&self.numbering());
-        let then = vec![HeadlessStep::new(
+        let then = vec![HeadlessStep::boxed(
             runs(start, &levels)
                 .into_iter()
                 .map(|(from, to, level)| HeadlessCommand::SetNumbering {
@@ -888,7 +1003,7 @@ pub trait WordLists: WordSession {
             .iter()
             .map(|&index| (index, paragraph_level(self, index)))
             .collect();
-        let then = vec![HeadlessStep::new(
+        let then = vec![HeadlessStep::boxed(
             levels
                 .iter()
                 .map(|&(index, level)| HeadlessCommand::SetNumbering {
@@ -1055,7 +1170,7 @@ pub trait WordLists: WordSession {
         }
         let num_id = next_num_id(&self.numbering());
         let (start, end) = list_span(self);
-        let then = vec![HeadlessStep::new(vec![HeadlessCommand::SetNumbering {
+        let then = vec![HeadlessStep::boxed(vec![HeadlessCommand::SetNumbering {
             start_paragraph: start,
             end_paragraph: end,
             num_id: Some(num_id.clone()),

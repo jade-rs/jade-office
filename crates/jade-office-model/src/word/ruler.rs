@@ -148,7 +148,7 @@ pub fn format_length(unit: RulerUnit, char_width: f32, points: f32) -> String {
 /// A length typed into a field, in points: a number, with or without a unit
 /// (`mm`, `cm`, `in`, `"`, `pt`, `字`, `ch`); a bare number is in `unit`.
 pub fn parse_length(unit: RulerUnit, char_width: f32, text: &str) -> Option<f32> {
-    let text = text.trim().replace('，', ".").replace('．', ".");
+    let text = text.trim().replace(['，', '．'], ".");
     let text: String = text
         .chars()
         .map(|ch| match ch {
