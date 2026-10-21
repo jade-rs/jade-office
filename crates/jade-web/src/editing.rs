@@ -695,17 +695,21 @@ impl EditableDocument {
                     Motion::LineStart => (f64::MIN / 4.0, line),
                     _ => (f64::MAX / 4.0, line),
                 };
-                let target = match motion {
+                let (target, y) = match motion {
                     // Along the caret's own line: in a table row the far side
                     // of the page is another cell's text.
-                    Motion::LineStart | Motion::LineEnd => self
-                        .renderer
-                        .selection_manager()
-                        .hit_test_matching(x, y, |paragraph| paragraph == focus.0)
-                        .map(|position| (position.paragraph, position.offset)),
-                    _ => self.position_at(x, y),
-                }
-                .unwrap_or(focus);
+                    Motion::LineStart | Motion::LineEnd => (
+                        self.renderer
+                            .selection_manager()
+                            .hit_test_matching(x, y, |paragraph| paragraph == focus.0)
+                            .map(|position| (position.paragraph, position.offset)),
+                        y,
+                    ),
+                    _ => self
+                        .line_beyond(focus, x, line, rect.height, motion == Motion::Down)
+                        .map_or((None, y), |(target, y)| (Some(target), y)),
+                };
+                let target = target.unwrap_or(focus);
                 if extend {
                     self.select(anchor, target)?;
                 } else {
@@ -722,6 +726,48 @@ impl EditableDocument {
             self.place_caret(target.0, target.1);
             Ok(())
         }
+    }
+
+    /// The position at `x` on the line above or below the one through
+    /// `line` — a caret at `from`, `height` tall — and the height it was
+    /// found at; `None` at the top or the bottom of the document.
+    ///
+    /// A probe just past the caret's line can miss the next one: below a
+    /// page's last line are its bottom margin, the gap and the next page's
+    /// top margin, and a hit-test there still lands on the line it is
+    /// nearest. So the probe walks on until it finds a line other than the
+    /// caret's. Body text stays in the body, as a drag does, rather than
+    /// stepping into a footer or a header on the way.
+    fn line_beyond(
+        &self,
+        from: (usize, usize),
+        x: f64,
+        line: f64,
+        height: f64,
+        down: bool,
+    ) -> Option<((usize, usize), f64)> {
+        let body = self.is_body_paragraph(from.0);
+        let hit = |y: f64| {
+            if body {
+                self.body_position_at(x, y)
+            } else {
+                self.position_at(x, y)
+            }
+        };
+        // What the caret's own line has at `x`: the same answer further on
+        // is still that line.
+        let here = hit(line);
+        let direction = if down { 1.0 } else { -1.0 };
+        let step = (height / 2.0).clamp(2.0, 8.0);
+        let end = self.page_count() as f64 * self.page_pitch();
+        let mut y = line + height * direction;
+        while (0.0..end).contains(&y) {
+            if let Some(position) = hit(y).filter(|&position| Some(position) != here) {
+                return Some((position, y));
+            }
+            y += step * direction;
+        }
+        None
     }
 
     /// One character along from `position`, across paragraph ends.
