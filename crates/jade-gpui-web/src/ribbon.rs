@@ -135,6 +135,12 @@ pub enum Popup {
     Columns,
     Breaks,
     PageNumbers,
+    /// レイアウト's 行番号, 文字列の方向 and ページの色, 挿入's 表紙
+    /// (`view::word_setup`).
+    LineNumbers,
+    TextDirection,
+    PageColor,
+    Cover,
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -205,6 +211,8 @@ pub enum Action {
     InsertPicture,
     /// 文字列の折り返し for the picture selected.
     Wrap(jade_web::word::picture::Wrap),
+    /// The ページ設定 dialogs and menus (`view::word_setup`).
+    Setup(crate::view::word_setup::SetupAction),
 }
 
 impl Action {
@@ -581,6 +589,9 @@ pub struct TabState {
     pub comments: bool,
     /// Whether a picture is selected, which 文字列の折り返し acts on.
     pub picture: bool,
+    /// What the text, line number and background groups show, read only
+    /// while レイアウト is up.
+    pub layout: Option<crate::view::word_setup::LayoutState>,
 }
 
 pub fn ribbon(
@@ -615,6 +626,7 @@ pub fn ribbon(
             let mut groups = insert(ribbon, cx);
             groups.push(crate::word_page::pictures(shown.picture, cx));
             groups.push(crate::word_page::header_footer(ribbon, cx));
+            groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
             groups
         }
         Tab::Layout => {
@@ -625,6 +637,18 @@ pub fn ribbon(
                     &page.setup,
                     page.preset,
                     page.japanese,
+                    cx,
+                ));
+            }
+            if let Some(layout) = &shown.layout {
+                groups.extend(crate::view::word_setup::layout_groups(
+                    ribbon.popup,
+                    layout,
+                    cx,
+                ));
+                groups.extend(crate::view::word_setup::background_groups(
+                    ribbon.popup,
+                    layout,
                     cx,
                 ));
             }

@@ -55,8 +55,9 @@ pub enum Key {
 }
 
 /// The dialog open over the pages.
+#[allow(clippy::large_enum_variant)]
 pub enum PageDialog {
-    Setup(PageSetupDialog),
+    Setup(Box<PageSetupDialog>),
     Columns(ColumnsDialog),
     PageNumbers(PageNumberDialog),
     Borders(PageBorderDialog),
@@ -486,7 +487,7 @@ impl DocumentView {
         match action {
             SetupAction::Open(tab) => {
                 self.page_dialog = Some(PageDialogState {
-                    dialog: PageDialog::Setup(document.page_setup_dialog(tab)),
+                    dialog: PageDialog::Setup(Box::new(document.page_setup_dialog(tab))),
                     typing: None,
                     problem: None,
                 });

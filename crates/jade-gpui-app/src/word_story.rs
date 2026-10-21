@@ -415,7 +415,7 @@ impl WordDoc {
         for y in edge..(edge + thickness).min(height) {
             let row = &mut pixels[y as usize * stride..(y as usize + 1) * stride];
             for (x, pixel) in row.chunks_exact_mut(4).enumerate() {
-                if (x / (6 * thickness as usize)) % 2 == 0 {
+                if (x / (6 * thickness as usize)).is_multiple_of(2) {
                     pixel.copy_from_slice(&[0xD6, 0x6C, 0x0F, 0xFF]);
                 }
             }
@@ -441,7 +441,7 @@ impl WordDoc {
         let layout = word.section_layout(Some(section));
         let variant = if first_of_section && layout.different_first_page {
             "first"
-        } else if layout.different_odd_even && (page + 1) % 2 == 0 {
+        } else if layout.different_odd_even && (page + 1).is_multiple_of(2) {
             "even"
         } else {
             "default"
@@ -854,7 +854,7 @@ impl DocumentView {
                             scope: jade_office_model::word::headless::HeadlessSectionScope::Index {
                                 index: section,
                             },
-                            patch,
+                            patch: Box::new(patch),
                         }
                     }
                 };
@@ -1311,7 +1311,7 @@ mod tests {
         let package = jade_opc::OpcPackage::open(&saved).unwrap();
         let media = package
             .part_names()
-            .into_iter()
+            .iter()
             .filter(|name| name.starts_with("word/media/"))
             .count();
         assert!(rels.contains("relationships/image"), "{rels}");

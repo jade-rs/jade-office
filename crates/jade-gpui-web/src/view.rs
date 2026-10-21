@@ -34,6 +34,7 @@ mod deck;
 mod sheet;
 mod word_find;
 mod word_review;
+pub(crate) mod word_setup;
 mod word_story;
 
 /// The deck's slide list, as in the native app.
@@ -484,6 +485,9 @@ pub struct DocView {
     /// Whether the browser's paste event came after the last ⌘V.
     paste_arrived: bool,
     host: Host,
+    /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
+    /// document, while one is open (`word_setup`).
+    page_dialog: Option<Box<word_setup::PageDialogState>>,
 }
 
 impl DocView {
@@ -601,6 +605,7 @@ impl DocView {
             slideshow: false,
             paste_arrived: false,
             host,
+            page_dialog: None,
         })
     }
 
@@ -1464,6 +1469,9 @@ impl DocView {
         if let Action::Review(review) = action {
             return self.review_action(review, cx);
         }
+        if let Action::Setup(setup) = action {
+            return self.setup_action(setup, cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1519,6 +1527,7 @@ impl DocView {
                 jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
             }
             Action::EditStory(_)
+            | Action::Setup(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::Wrap(_)
@@ -1584,6 +1593,8 @@ impl DocView {
                 tracking: document.is_tracking_changes(),
                 comments: *show_comments,
                 picture: object.is_some_and(|grab| grab.object.is_picture()),
+                layout: (ribbon.tab == ribbon::Tab::Layout)
+                    .then(|| word_setup::LayoutState::read(document)),
             }
         };
         ribbon::ribbon(
@@ -1656,6 +1667,7 @@ impl DocView {
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
         let find_bar = self.find_bar_element(cx);
+        let page_dialog = self.page_dialog_element(cx);
         let Document::Pages {
             document,
             pages,
@@ -1948,6 +1960,7 @@ impl DocView {
                     ),
             )
             .children(comments_pane)
+            .children(page_dialog)
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -1971,6 +1984,11 @@ impl DocView {
                 })
                 .ok();
             });
+        }
+        // A dialog over a Word document is modal: it takes every key.
+        if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
         }
         // The find bar over a Word document takes the keys it has.
         if self.commenting() && self.comment_key(event, cx) {
@@ -2014,6 +2032,11 @@ impl DocView {
                 // Find, and Word for Mac's Find and Replace.
                 "f" if pages => self.open_find(false, cx),
                 "h" if pages && modifiers.shift => self.open_find(true, cx),
+                // ⌘↩ is Word's page break (改ページ).
+                "enter" if pages => self.setup_action(
+                    word_setup::SetupAction::Break(jade_web::word::page_setup::PageBreak::Page),
+                    cx,
+                ),
                 "c" if pages => self.word_copy(false, cx),
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.

@@ -13,8 +13,10 @@ use crate::ribbon::{
     dropdown, group, listener, menu_caption, menu_panel, menu_row, row, Action, Popup, Ribbon,
 };
 use crate::tooltip::Tooltip;
+use crate::view::word_setup::SetupAction;
 use crate::view::DocView;
 use crate::{i18n, palette};
+use jade_web::word::page_setup::SetupTab;
 
 /// A text button with a chevron that opens a list.
 fn list_button(
@@ -137,6 +139,13 @@ pub fn page_setup(
                         )
                     }),
             )
+            .child(menu_row(
+                "margins-custom",
+                i18n::text("setup.margins.custom"),
+                false,
+                Action::Setup(SetupAction::Open(SetupTab::Margins)),
+                cx,
+            ))
             .into_any_element()
     });
     let paper = Paper::of(setup.width, setup.height);
@@ -158,20 +167,19 @@ pub fn page_setup(
                     cx,
                 )
             }))
+            .child(menu_row(
+                "paper-more",
+                i18n::text("setup.paper.more"),
+                false,
+                Action::Setup(SetupAction::Open(SetupTab::Paper)),
+                cx,
+            ))
             .into_any_element()
     });
     let columns_menu = (open == Some(Popup::Columns)).then(|| {
         menu_panel("columns-menu")
-            .w(px(120.0))
-            .children((1..=3).map(|count| {
-                menu_row(
-                    ("columns", count as usize),
-                    i18n::format("page.columns.count", &[("n", &count)]),
-                    setup.columns == count,
-                    page(PageCommand::Columns(count)),
-                    cx,
-                )
-            }))
+            .w(px(200.0))
+            .children(crate::view::word_setup::column_rows(setup.columns, cx))
             .into_any_element()
     });
     let breaks_menu = (open == Some(Popup::Breaks)).then(|| {
@@ -183,6 +191,8 @@ pub fn page_setup(
         ];
         menu_panel("breaks-menu")
             .w(px(200.0))
+            .child(menu_caption(i18n::text("setup.break.pages")))
+            .children(crate::view::word_setup::page_break_rows(cx))
             .child(menu_caption(i18n::text("page.break.sections")))
             .children(kinds.into_iter().enumerate().map(|(index, kind)| {
                 menu_row(
@@ -357,6 +367,13 @@ pub fn header_footer(ribbon: &Ribbon, cx: &mut Context<DocView>) -> AnyElement {
                     i18n::text("page.number.remove"),
                     false,
                     Action::Page(PageCommand::RemovePageNumbers),
+                    cx,
+                ))
+                .child(menu_row(
+                    "page-number-format",
+                    i18n::text("setup.numbers.open"),
+                    false,
+                    Action::Setup(SetupAction::OpenPageNumbers),
                     cx,
                 ))
                 .into_any_element()
