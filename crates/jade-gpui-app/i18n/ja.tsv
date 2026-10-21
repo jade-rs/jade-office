@@ -852,3 +852,4 @@ table.prop.anchor_paragraph	段落
 table.prop.distance	文字列との間隔
 table.prop.move_with_text	文字列と一緒に移動する
 table.prop.allow_overlap	重ねて配置する
+table.direction.turn_right	右へ90度回転

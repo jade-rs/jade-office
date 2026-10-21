@@ -953,7 +953,8 @@ pub fn layout_groups(
             .children(
                 [
                     (None, "lrTb", "table.direction.horizontal"),
-                    (Some("tbRl"), "tbRl", "table.direction.vertical"),
+                    (Some("tbRlV"), "tbRlV", "table.direction.vertical"),
+                    (Some("tbRl"), "tbRl", "table.direction.turn_right"),
                     (Some("btLr"), "btLr", "table.direction.bottom_up"),
                 ]
                 .into_iter()

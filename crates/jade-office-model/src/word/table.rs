@@ -325,7 +325,7 @@ pub struct TableProperties {
     pub vertical_align: String,
     /// The cell's own margins, when it has any.
     pub cell_margins: Option<[f32; 4]>,
-    /// `lrTb`, `tbRl`, `btLr`.
+    /// `lrTb`, `tbRlV` (縦書き), `tbRl`, `btLr`.
     pub text_direction: String,
 }
 
@@ -447,8 +447,8 @@ impl TableProperties {
             text_direction: cell_model
                 .and_then(|cell| cell.text_direction)
                 .map(|direction| match direction {
-                    jade_docx_editor::document::TextDirection::TbRl
-                    | jade_docx_editor::document::TextDirection::TbRlV => "tbRl",
+                    jade_docx_editor::document::TextDirection::TbRlV => "tbRlV",
+                    jade_docx_editor::document::TextDirection::TbRl => "tbRl",
                     jade_docx_editor::document::TextDirection::BtLr
                     | jade_docx_editor::document::TextDirection::BtLrV => "btLr",
                     _ => "lrTb",
@@ -716,7 +716,15 @@ impl TablePropertiesDialog {
 
     /// The commands OK applies, for `cells` — the selection's rows and
     /// columns — in the order Word applies them.
-    pub fn commands(&self, span: CellSpan, column_count: usize, column_widths: &[f32]) -> Vec<HeadlessCommand> {
+    /// `column_widths` are the columns as drawn, in points, and
+    /// `content_width` the text column a percentage is a share of.
+    pub fn commands(
+        &self,
+        span: CellSpan,
+        column_count: usize,
+        column_widths: &[f32],
+        content_width: f32,
+    ) -> Vec<HeadlessCommand> {
         let original = &self.original;
         let table_order_index = span.table_order_index;
         let mut commands = Vec::new();
@@ -752,6 +760,10 @@ impl TablePropertiesDialog {
             (None, None) => false,
             _ => true,
         };
+        // The columns as they will be: a new preferred width scales them, as
+        // Word's dialog does — a fixed grid would otherwise keep its width.
+        let mut grid: Vec<f32> = column_widths.to_vec();
+        let mut grid_changed = false;
         if width_changed || (self.autofit != original.autofit && width.is_some()) {
             commands.push(HeadlessCommand::SetTableWidth {
                 table_order_index,
@@ -761,6 +773,19 @@ impl TablePropertiesDialog {
                     None => "auto".to_string(),
                 },
             });
+            let target = match width {
+                Some(PreferredWidth::Points(value)) => Some(value),
+                Some(PreferredWidth::Percent(value)) => Some(content_width * value / 100.0),
+                None => None,
+            };
+            let total: f32 = grid.iter().sum();
+            if let Some(target) = target.filter(|target| *target > 0.0 && total > 0.0) {
+                let scale = target / total;
+                for width in &mut grid {
+                    *width = (*width * scale).max(9.0);
+                }
+                grid_changed = column_widths.len() == column_count;
+            }
         }
         if self.alignment != original.alignment {
             commands.push(HeadlessCommand::SetTableAlignment {
@@ -899,15 +924,17 @@ impl TablePropertiesDialog {
             if original.column_width.is_none_or(|old| changed(width, old))
                 && column_widths.len() == column_count
             {
-                let mut widths = column_widths.to_vec();
                 for column in span.columns.0..=span.columns.1.min(column_count.saturating_sub(1)) {
-                    widths[column] = width;
+                    grid[column] = width;
                 }
-                commands.push(HeadlessCommand::SetTableColumnWidths {
-                    table_order_index,
-                    widths,
-                });
+                grid_changed = true;
             }
+        }
+        if grid_changed {
+            commands.push(HeadlessCommand::SetTableColumnWidths {
+                table_order_index,
+                widths: grid,
+            });
         }
 
         // セル: alignment and margins of every selected cell.
@@ -1597,7 +1624,9 @@ pub trait WordTables: WordSession {
             Some(geometry) if geometry.columns.len() == column_count + 1 => geometry.widths_pt(),
             _ => table.columns.iter().map(|column| column.width.unwrap_or(72.0)).collect(),
         };
-        let commands = dialog.commands(span, column_count, &widths);
+        let setup = super::page::WordPage::page_setup(self);
+        let content_width = (setup.width - setup.margins.left - setup.margins.right).max(72.0);
+        let commands = dialog.commands(span, column_count, &widths, content_width);
         self.apply_commands(commands, true)
     }
 
@@ -1782,12 +1811,14 @@ pub trait WordTables: WordSession {
         Some((width, ((bottom - top) * PT_PER_PX) as f32))
     }
 
-    /// 文字列の方向 of the selected cells: horizontal, then vertical, then
-    /// bottom to top, as the button steps through them.
+    /// 文字列の方向 of the selected cells, as the button steps through
+    /// Word's four: 横書き, 縦書き (upright Japanese, `tbRlV`), turned right
+    /// (`tbRl`) and turned left (`btLr`).
     fn cycle_text_direction(&mut self) -> Result<(), String> {
         let properties = self.table_properties().ok_or("the caret is not in a table")?;
         let next = match properties.text_direction.as_str() {
-            "lrTb" => Some("tbRl"),
+            "lrTb" => Some("tbRlV"),
+            "tbRlV" => Some("tbRl"),
             "tbRl" => Some("btLr"),
             _ => None,
         };
@@ -2303,7 +2334,7 @@ mod tests {
             columns: (0, 0),
         };
         let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Row);
-        assert!(dialog.commands(span, 2, &[100.0, 100.0]).is_empty());
+        assert!(dialog.commands(span, 2, &[100.0, 100.0], 450.0).is_empty());
         dialog.focus = Some(Field::RowHeight);
         dialog.type_text("10");
         dialog.row_exact = true;
@@ -2313,7 +2344,7 @@ mod tests {
         dialog.text.insert(Field::TableWidth, "80".to_string());
         dialog.spacing_on = true;
         dialog.text.insert(Field::Spacing, "1".to_string());
-        let commands = dialog.commands(span, 2, &[100.0, 100.0]);
+        let commands = dialog.commands(span, 2, &[100.0, 100.0], 450.0);
         assert!(commands.contains(&HeadlessCommand::SetTableWidth {
             table_order_index: 0,
             width: "80.00%".to_string()

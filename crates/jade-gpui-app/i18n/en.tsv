@@ -852,3 +852,4 @@ table.prop.anchor_paragraph	Paragraph
 table.prop.distance	Distance from surrounding text
 table.prop.move_with_text	Move with text
 table.prop.allow_overlap	Allow overlap
+table.direction.turn_right	Rotate 90° Right
