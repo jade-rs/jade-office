@@ -1,9 +1,9 @@
 //! Word's small dialogs over a document's pages, as bars that take the
 //! keyboard while they are open, as the header and comment bars do:
-//! ハイパーリンクの挿入 (⌘K). What each does is `jade-office-model`'s; the
+//! ハイパーリンクの挿入 (⌘K), 脚注の挿入 (⌥⌘F) and 文末脚注の挿入 (⌥⌘D). What each does is `jade-office-model`'s; the
 //! native app has the same (`jade-gpui-app/src/word_dialogs.rs`).
 
-use jade_web::word::{LinkForm, LinkTarget, WordLinks};
+use jade_web::word::{LinkForm, LinkTarget, NoteForm, NoteKind, WordLinks};
 
 use super::sheet::caret_line;
 use super::*;
@@ -12,18 +12,22 @@ use super::*;
 pub(super) enum Dialog {
     /// ハイパーリンクの挿入 / ハイパーリンクの編集.
     Link(LinkForm),
+    /// 脚注の挿入 / 文末脚注の挿入: the note's text.
+    Note(NoteForm),
 }
 
 impl Dialog {
     pub fn field(&self) -> Option<&TextEdit> {
         match self {
             Dialog::Link(form) => Some(form.field()),
+            Dialog::Note(form) => Some(&form.text),
         }
     }
 
     pub fn field_mut(&mut self) -> Option<&mut TextEdit> {
         match self {
             Dialog::Link(form) => Some(form.field_mut()),
+            Dialog::Note(form) => Some(&mut form.text),
         }
     }
 }
@@ -122,6 +126,16 @@ impl DocView {
         self.open_dialog(Dialog::Link(form), cx);
     }
 
+    /// ⌥⌘F / ⌥⌘D: the bar the note's text is typed into; its reference goes
+    /// at the caret, or after the selection, when the text is put in.
+    pub(super) fn open_note_dialog(&mut self, kind: NoteKind, cx: &mut Context<Self>) {
+        let Document::Pages { document, .. } = &self.document else {
+            return;
+        };
+        let form = NoteForm::new(document.as_ref(), kind);
+        self.open_dialog(Dialog::Note(form), cx);
+    }
+
     /// ⌘-click: a link's address opened in a new tab, a bookmark's place
     /// given the caret. Returns whether there was a link under the point.
     pub(super) fn follow_link_at(&mut self, x: f64, y: f64, cx: &mut Context<Self>) -> bool {
@@ -164,6 +178,7 @@ impl DocView {
             "enter" => return self.submit_dialog(cx),
             "tab" => match open {
                 Dialog::Link(form) => form.switch_field(),
+                Dialog::Note(form) => form.text.insert("\t"),
             },
             _ => {
                 if !open.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -188,6 +203,7 @@ impl DocView {
         };
         let result = match open.as_ref() {
             Dialog::Link(form) => form.submit(document.as_mut()),
+            Dialog::Note(form) => form.submit(document.as_mut()),
         };
         match result {
             Ok((paragraph, offset)) => {
@@ -235,6 +251,14 @@ impl DocView {
                         280.0,
                     ),
                 ],
+            ),
+            Dialog::Note(form) => bar(
+                i18n::text(match form.kind {
+                    NoteKind::Footnote => "note.footnote_title",
+                    NoteKind::Endnote => "note.endnote_title",
+                }),
+                i18n::text("note.keys"),
+                vec![field_box(i18n::text("note.text"), &form.text, true, 360.0)],
             ),
         })
     }

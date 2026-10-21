@@ -1482,6 +1482,9 @@ impl DocView {
         if action == Action::InsertLink {
             return self.open_link_dialog(cx);
         }
+        if let Action::InsertNote(kind) = action {
+            return self.open_note_dialog(kind, cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1536,10 +1539,17 @@ impl DocView {
             Action::Page(command) => {
                 jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
             }
+            Action::InsertContents => {
+                jade_web::word::WordReferences::insert_table_of_contents(document)
+            }
+            Action::UpdateContents => {
+                jade_web::word::WordReferences::update_table_of_contents(document)
+            }
             Action::EditStory(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
+            | Action::InsertNote(_)
             | Action::Wrap(_)
             | Action::Style(_)
             | Action::Tab(_)
@@ -2037,11 +2047,18 @@ impl DocView {
                 "s" => self.save(cx),
                 "a" if pages => self.word_move(cx, |document| document.select_all()),
                 // Find, and Word for Mac's Find and Replace.
-                "f" if pages => self.open_find(false, cx),
+                "f" if pages && !modifiers.alt => self.open_find(false, cx),
                 "h" if pages && modifiers.shift => self.open_find(true, cx),
                 "c" if pages => self.word_copy(false, cx),
                 // ハイパーリンクの挿入.
                 "k" if pages => self.open_link_dialog(cx),
+                // Word for Mac's ⌥⌘F and ⌥⌘D: 脚注の挿入, 文末脚注の挿入.
+                "f" | "ƒ" if pages && modifiers.alt => {
+                    self.open_note_dialog(jade_web::word::NoteKind::Footnote, cx)
+                }
+                "d" | "∂" if pages && modifiers.alt => {
+                    self.open_note_dialog(jade_web::word::NoteKind::Endnote, cx)
+                }
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.
                 "b" | "i" | "u" if pages => {

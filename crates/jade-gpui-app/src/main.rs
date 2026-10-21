@@ -56,6 +56,7 @@ use jade_office_model::word::review::WordReview;
 use jade_office_model::word::{
     CharacterFormat, FindOptions, FormatState, Found, TableCommand, WordFind, WordFormatting,
 };
+use jade_office_model::word::{NoteKind, WordReferences};
 use ribbon::Action;
 use std::cell::RefCell;
 use std::ops::Range;
@@ -119,6 +120,8 @@ actions!(
         AddComment,
         ToggleChangeTracking,
         InsertHyperlink,
+        InsertFootnote,
+        InsertEndnote,
         ZoomIn,
         ZoomOut,
         ZoomActual,
@@ -173,7 +176,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-f", FindAndReplace, CONTEXT),
         KeyBinding::new("cmd-e", FindSelection, CONTEXT),
         KeyBinding::new("cmd-g", FindNext, CONTEXT),
-        KeyBinding::new("cmd-alt-f", Replace, CONTEXT),
+        // Word for Mac's ⌃H: ⌥⌘F is 脚注の挿入 there.
+        KeyBinding::new("ctrl-h", Replace, CONTEXT),
         KeyBinding::new("cmd-alt-shift-f", ReplaceAll, CONTEXT),
         KeyBinding::new("cmd-b", Bold, CONTEXT),
         KeyBinding::new("cmd-i", Italic, CONTEXT),
@@ -189,6 +193,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
         // Word for Mac's 挿入 menu.
         KeyBinding::new("cmd-k", InsertHyperlink, CONTEXT),
+        KeyBinding::new("cmd-alt-f", InsertFootnote, CONTEXT),
+        KeyBinding::new("cmd-alt-d", InsertEndnote, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
         KeyBinding::new("cmd-=", ZoomIn, None),
@@ -281,10 +287,12 @@ fn menus() -> Vec<Menu> {
         },
         Menu {
             name: t("menu.insert").into(),
-            items: vec![MenuItem::action(
-                t("menu.insert.hyperlink"),
-                InsertHyperlink,
-            )],
+            items: vec![
+                MenuItem::action(t("menu.insert.hyperlink"), InsertHyperlink),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.insert.footnote"), InsertFootnote),
+                MenuItem::action(t("menu.insert.endnote"), InsertEndnote),
+            ],
         },
         Menu {
             name: t("menu.table").into(),
@@ -1938,20 +1946,56 @@ impl DocumentView {
             .into_iter()
             .chain(ribbon::table_tools(&self.ribbon, &state, cx))
             .collect(),
-            RibbonTab::References => vec![Self::ribbon_group(
-                t("doc.toc"),
-                vec![Self::ribbon_row(vec![self
-                    .ribbon_button(
-                        "toc",
-                        t("doc.toc"),
-                        t("doc.toc_title"),
-                        false,
-                        cx,
-                        |view, cx| view.insert_table_of_contents(cx),
-                    )
-                    .into_any_element()])],
-            )
-            .into_any_element()],
+            RibbonTab::References => vec![
+                Self::ribbon_group(
+                    t("doc.toc"),
+                    vec![Self::ribbon_row(vec![
+                        self.ribbon_button(
+                            "toc",
+                            t("doc.toc"),
+                            t("doc.toc_title"),
+                            false,
+                            cx,
+                            |view, cx| view.insert_table_of_contents(cx),
+                        )
+                        .into_any_element(),
+                        self.ribbon_button(
+                            "toc-update",
+                            t("doc.toc_update"),
+                            t("doc.toc_update_title"),
+                            false,
+                            cx,
+                            |view, cx| view.update_table_of_contents(cx),
+                        )
+                        .into_any_element(),
+                    ])],
+                )
+                .into_any_element(),
+                Self::ribbon_group(
+                    t("note.group"),
+                    vec![Self::ribbon_row(vec![
+                        self.ribbon_button(
+                            "footnote",
+                            t("note.footnote"),
+                            t("note.footnote_title"),
+                            false,
+                            cx,
+                            |view, cx| view.open_note_dialog(NoteKind::Footnote, cx),
+                        )
+                        .into_any_element(),
+                        self.ribbon_button(
+                            "endnote",
+                            t("note.endnote"),
+                            t("note.endnote_title"),
+                            false,
+                            cx,
+                            |view, cx| view.open_note_dialog(NoteKind::Endnote, cx),
+                        )
+                        .into_any_element(),
+                    ])],
+                )
+                .into_any_element(),
+            ],
             RibbonTab::Review => self.review_groups(cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
@@ -2810,6 +2854,21 @@ impl DocumentView {
             self.rebuild_after_edit();
             cx.notify();
         }
+    }
+
+    /// 目次の更新: the contents made again from the headings.
+    fn update_table_of_contents(&mut self, cx: &mut Context<Self>) {
+        match WordReferences::update_table_of_contents(&mut self.document) {
+            Ok(()) => {
+                self.table_status = None;
+                self.caret = self
+                    .document
+                    .place_caret(self.insert_at.0, self.insert_at.1);
+                self.rebuild_after_edit();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+        cx.notify();
     }
 
     fn toggle_formatting_marks(&mut self, cx: &mut Context<Self>) {
@@ -4052,6 +4111,12 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &InsertHyperlink, _window, cx| view.open_link_dialog(cx)),
             )
+            .on_action(cx.listener(|view, _: &InsertFootnote, _window, cx| {
+                view.open_note_dialog(NoteKind::Footnote, cx)
+            }))
+            .on_action(cx.listener(|view, _: &InsertEndnote, _window, cx| {
+                view.open_note_dialog(NoteKind::Endnote, cx)
+            }))
             .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
             )
@@ -4954,6 +5019,99 @@ mod tests {
         });
         cx.simulate_keystrokes("escape");
         view.read_with(cx, |view, _| assert!(view.dialog.is_none()));
+    }
+
+    /// ⌥⌘F opens the footnote bar; the text typed goes in with its
+    /// reference at the caret on Enter, one undo step. ⌥⌘D does the same
+    /// for an endnote; Escape leaves the bar without one.
+    #[gpui::test]
+    fn notes_go_in_from_their_shortcuts(cx: &mut gpui::TestAppContext) {
+        use super::word_dialogs::Dialog;
+        use super::{InsertEndnote, InsertFootnote, Undo};
+        use jade_office_model::word::{NoteKind, WordReferences};
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "claim ");
+        let footnotes = view.read_with(cx, |view, _| {
+            view.document.note_texts(NoteKind::Footnote).len()
+        });
+        // Word for Mac's own keys, as the app binds them.
+        cx.update(|_, cx| cx.bind_keys(super::key_bindings()));
+        cx.simulate_keystrokes("cmd-alt-f");
+        view.read_with(cx, |view, _| {
+            assert!(matches!(view.dialog, Some(Dialog::Note(_))));
+        });
+        cx.simulate_input("See the annex.");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.dialog.is_none(), "{:?}", view.table_status);
+            let notes = view.document.note_texts(NoteKind::Footnote);
+            assert_eq!(notes.len(), footnotes + 1);
+            assert!(notes.iter().any(|note| note.contains("See the annex.")));
+            assert_eq!(view.insert_at.0, paragraph);
+        });
+        cx.dispatch_action(Undo);
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.document.note_texts(NoteKind::Footnote).len(),
+                footnotes
+            );
+        });
+        let endnotes = view.read_with(cx, |view, _| {
+            view.document.note_texts(NoteKind::Endnote).len()
+        });
+        cx.dispatch_action(InsertEndnote);
+        cx.simulate_input("巻末");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.document.note_texts(NoteKind::Endnote).len(),
+                endnotes + 1
+            );
+        });
+        // Escape leaves the bar without a note.
+        cx.dispatch_action(InsertFootnote);
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.dialog.is_none());
+            assert_eq!(
+                view.document.note_texts(NoteKind::Footnote).len(),
+                footnotes
+            );
+        });
+    }
+
+    /// 目次の更新 rebuilds an inserted table of contents from a heading
+    /// added after it.
+    #[gpui::test]
+    fn the_contents_update_from_the_headings(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::word::WordFormatting;
+        let (view, cx) = open_contract(cx);
+        let paragraph = type_at_start(&view, cx, "claim ");
+        view.update(cx, |view, cx| {
+            view.document.place_caret(paragraph, 0);
+            WordFormatting::set_paragraph_style(&mut view.document, Some("Heading1")).unwrap();
+            view.insert_at = (0, 0);
+            view.document.place_caret(0, 0);
+            view.insert_table_of_contents(cx);
+            let last = view.document.paragraph_count() - 1;
+            let end = view.document.paragraph_text(last).unwrap().len();
+            view.document.insert_paragraph_break(last, end).unwrap();
+            view.document
+                .insert_text(last + 1, 0, "新しい見出し", 1)
+                .unwrap();
+            view.document.place_caret(last + 1, 0);
+            WordFormatting::set_paragraph_style(&mut view.document, Some("Heading1")).unwrap();
+            let contents = |view: &super::DocumentView| {
+                (0..30)
+                    .filter_map(|index| view.document.paragraph_text(index))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            assert!(!contents(view).contains("新しい見出し"));
+            view.update_table_of_contents(cx);
+            assert!(view.table_status.is_none(), "{:?}", view.table_status);
+            assert!(contents(view).contains("新しい見出し"));
+        });
     }
 
     /// Tab goes from cell to cell with the cell's text selected, ⇧Tab

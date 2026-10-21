@@ -36,10 +36,12 @@ pub mod new;
 pub mod page;
 pub mod picture;
 pub mod platform;
+pub mod references;
 pub mod review;
 
 pub use find::{FindOptions, Found, WordFind};
 pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
+pub use references::{NoteForm, NoteKind, WordReferences};
 
 /// A paragraph and a byte offset into its text.
 pub type Position = (usize, usize);
