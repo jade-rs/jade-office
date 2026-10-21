@@ -21,8 +21,8 @@ use gpui::{
 use jade_docx_native_render::NativeDocument;
 use jade_office_model::word::page::{PageCommand, Story};
 use jade_office_model::word::{
-    style_gallery, CharacterFormat, FormatState, GalleryStyle, ListKind, ParagraphBorders,
-    TableBorders, TableCommand, WordFormatting,
+    CharacterFormat, FormatState, GalleryStyle, ListKind, ParagraphBorders, TableBorders,
+    TableCommand,
 };
 
 use crate::tooltip::Tooltip;
@@ -114,6 +114,8 @@ pub enum Popup {
     Columns,
     Breaks,
     PageNumbers,
+    /// The paragraph, list, style and design tools' lists (`word_tools`).
+    Word(crate::word_tools::ToolMenu),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -131,12 +133,28 @@ impl Ribbon {
     /// Reads the document's paragraph styles into the gallery. Again after a
     /// style is applied: a missing built-in is added on first use.
     pub fn read_styles(&mut self, document: &NativeDocument) {
-        let styles = document.paragraph_styles();
-        self.default_style = styles
+        // Word's gallery: the fixed head, then the quick styles in
+        // w:uiPriority order (`word::styles`).
+        let catalog = jade_office_model::word::styles::WordStyles::style_catalog(document);
+        self.default_style = catalog
             .iter()
-            .find(|style| style.is_default)
+            .find(|style| style.is_default && style.is_paragraph())
             .map(|style| style.id.clone());
-        self.gallery = style_gallery(&styles);
+        self.gallery = jade_office_model::word::styles::quick_style_gallery(&catalog);
+    }
+
+    /// The gallery's entries the document names, in order.
+    #[cfg(test)]
+    pub fn gallery_names(&self) -> Vec<String> {
+        self.gallery
+            .iter()
+            .filter_map(|entry| entry.name.clone())
+            .collect()
+    }
+
+    /// The document's default paragraph style, which 標準 stands for.
+    pub fn default_paragraph_style(&self) -> Option<String> {
+        self.default_style.clone()
     }
 
     /// Whether gallery entry `index` is the paragraph style `style_id`.
@@ -182,6 +200,8 @@ pub enum Action {
     Page(PageCommand),
     /// ヘッダーの編集 / フッターの編集: the bar over the pages.
     EditStory(Story),
+    /// The paragraph, list, style and design tools (`word_tools`).
+    Word(crate::word_tools::ToolCommand),
 }
 
 impl Action {
@@ -213,7 +233,7 @@ pub(crate) fn listener(
 }
 
 /// A square icon button with a tooltip; `active` shows it pressed.
-fn icon_button(
+pub(crate) fn icon_button(
     id: impl Into<ElementId>,
     icon: &'static str,
     tooltip: &'static str,
@@ -293,7 +313,7 @@ fn labeled_button(
 }
 
 /// An icon with a chevron, which opens a list.
-fn menu_button(
+pub(crate) fn menu_button(
     id: impl Into<ElementId>,
     icon: &'static str,
     tooltip: &'static str,

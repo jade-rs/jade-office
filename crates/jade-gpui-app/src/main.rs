@@ -27,8 +27,15 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
+mod word_design;
+mod word_dialog;
+mod word_lists;
 mod word_page;
+mod word_paragraph;
 mod word_review;
+mod word_ruler;
+mod word_styles;
+mod word_tools;
 mod workbook;
 mod workspace;
 
@@ -930,6 +937,14 @@ impl gpui::AssetSource for Assets {
             "wrap-text",
             "x",
             "zap",
+            // The Word view's paragraph, list and design tools.
+            "align-distribute",
+            "blocks",
+            "list-tree",
+            "palette",
+            "ruler",
+            "sparkles",
+            "type-plus",
         );
         Ok(bytes.map(std::borrow::Cow::Borrowed))
     }
@@ -1098,6 +1113,8 @@ struct DocumentView {
     comment_bar: Option<word_review::CommentBar>,
     /// Whether the comments pane is open beside the pages.
     show_comments: bool,
+    /// The paragraph, list, style and design tools' dialog, rulers and pane.
+    tools: word_tools::WordTools,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1297,6 +1314,14 @@ impl DocumentView {
         if self.marked.is_some() {
             return;
         }
+        // A dialog over the pages has every key while it is open.
+        if self.tools.dialog.is_some() {
+            if self.handle_dialog_key(event, cx) {
+                cx.stop_propagation();
+            }
+            // Nothing reaches the document while a dialog is open.
+            return;
+        }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
         if self.comment_bar.is_some() && self.handle_comment_bar_key(event, cx) {
@@ -1477,6 +1502,8 @@ impl DocumentView {
                 cx.notify();
             }
             Ok(CellStep::Stay) => {}
+            // At a list item's start, a level down (or up), as in Word.
+            Ok(CellStep::NotInTable) if self.tab_in_list(backwards, cx) => {}
             Ok(CellStep::NotInTable) if !backwards => {
                 let page = self.caret_page_1idx();
                 let result = self.document.insert_text(paragraph, offset, "\t", page);
@@ -1737,10 +1764,17 @@ impl DocumentView {
             RibbonTab::Home => {
                 let mut groups = vec![self.clipboard_group(cx)];
                 groups.extend(ribbon::home(&self.ribbon, &state, cx));
+                // Lists and the paragraph's settings after 段落, the style
+                // tools after the gallery.
+                let lists = self.list_group(cx);
+                groups.insert(3.min(groups.len()), lists);
+                let styles = self.style_tools_group(cx);
+                groups.insert(5.min(groups.len()), styles);
                 groups
             }
             RibbonTab::Insert => vec![
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
+                self.quick_parts_group(cx),
                 self.picture_group(cx),
                 word_page::header_footer(&self.ribbon, cx),
                 Self::ribbon_group(
@@ -1772,65 +1806,69 @@ impl DocumentView {
                 )
                 .into_any_element(),
             ],
-            RibbonTab::Design => vec![
-                Self::ribbon_group(
-                    t("doc.page_color"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "page-cream",
-                            t("doc.color.cream"),
-                            t("doc.page_color"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_background(Some("FFF9E6"), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "page-grey",
-                            t("doc.color.light_gray"),
-                            t("doc.page_color"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_background(Some("F2F2F2"), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "page-white",
-                            t("doc.none"),
-                            t("doc.page_color_none"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_background(None, cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-                Self::ribbon_group(
-                    t("doc.page_borders"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "page-border",
-                            t("doc.box"),
-                            t("doc.page_borders_box"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_borders(true, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "page-no-border",
-                            t("doc.none"),
-                            t("doc.page_borders_none"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_borders(false, cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-            ],
+            RibbonTab::Design => self
+                .design_groups(cx)
+                .into_iter()
+                .chain([
+                    Self::ribbon_group(
+                        t("doc.page_color"),
+                        vec![Self::ribbon_row(vec![
+                            self.ribbon_button(
+                                "page-cream",
+                                t("doc.color.cream"),
+                                t("doc.page_color"),
+                                false,
+                                cx,
+                                |view, cx| view.set_page_background(Some("FFF9E6"), cx),
+                            )
+                            .into_any_element(),
+                            self.ribbon_button(
+                                "page-grey",
+                                t("doc.color.light_gray"),
+                                t("doc.page_color"),
+                                false,
+                                cx,
+                                |view, cx| view.set_page_background(Some("F2F2F2"), cx),
+                            )
+                            .into_any_element(),
+                            self.ribbon_button(
+                                "page-white",
+                                t("doc.none"),
+                                t("doc.page_color_none"),
+                                false,
+                                cx,
+                                |view, cx| view.set_page_background(None, cx),
+                            )
+                            .into_any_element(),
+                        ])],
+                    )
+                    .into_any_element(),
+                    Self::ribbon_group(
+                        t("doc.page_borders"),
+                        vec![Self::ribbon_row(vec![
+                            self.ribbon_button(
+                                "page-border",
+                                t("doc.box"),
+                                t("doc.page_borders_box"),
+                                false,
+                                cx,
+                                |view, cx| view.set_page_borders(true, cx),
+                            )
+                            .into_any_element(),
+                            self.ribbon_button(
+                                "page-no-border",
+                                t("doc.none"),
+                                t("doc.page_borders_none"),
+                                false,
+                                cx,
+                                |view, cx| view.set_page_borders(false, cx),
+                            )
+                            .into_any_element(),
+                        ])],
+                    )
+                    .into_any_element(),
+                ])
+                .collect(),
             RibbonTab::Layout => vec![
                 {
                     let japanese = i18n::language() == i18n::Language::Japanese;
@@ -1898,6 +1936,7 @@ impl DocumentView {
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
+                    self.ruler_group(cx),
                     Self::ribbon_group(
                         t("doc.group.show"),
                         vec![Self::ribbon_row(vec![self
@@ -2173,6 +2212,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if self.tools.dialog.is_some() {
+            return self.dialog_field();
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2181,6 +2223,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self.tools.dialog.is_some() {
+            return self.dialog_field_mut();
+        }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
             (None, Some(bar)) => Some(&mut bar.text),
@@ -2656,6 +2701,23 @@ impl DocumentView {
             return cx.notify();
         }
         self.ribbon.popup = None;
+        // Direct formatting a self-updating style takes in (自動的に更新する).
+        let formats = matches!(
+            action,
+            Action::Toggle(_)
+                | Action::FontFamily(_)
+                | Action::FontSize(_)
+                | Action::StepFontSize(_)
+                | Action::FontColor(_)
+                | Action::Align(_)
+                | Action::LineSpacing(_)
+                | Action::Indent(_)
+                | Action::Shading(_)
+                | Action::ParagraphBorders(_)
+        );
+        if let Action::Word(command) = action {
+            return self.run_tool(command, cx);
+        }
         let document = &mut self.document;
         let done = match action {
             Action::Undo => return self.step_history(true, cx),
@@ -2687,7 +2749,14 @@ impl DocumentView {
                 WordFormatting::set_paragraph_borders(document, borders)
             }
             Action::Style(style_id) => {
-                let done = WordFormatting::set_paragraph_style(document, style_id.as_deref());
+                // A character or linked style from the gallery goes on as
+                // Word puts it (word_styles).
+                let done = match style_id.as_deref() {
+                    Some(id) => {
+                        jade_office_model::word::styles::WordStyles::apply_style(document, id)
+                    }
+                    None => WordFormatting::set_paragraph_style(document, None),
+                };
                 self.ribbon.read_styles(&self.document);
                 done
             }
@@ -2696,12 +2765,15 @@ impl DocumentView {
                 WordPage::page_command(document, command, japanese)
             }
             Action::EditStory(story) => return self.open_story_bar(story, cx),
-            Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
+            Action::Popup(_) | Action::ClosePopup | Action::Grid(..) | Action::Word(_) => Ok(()),
         };
         match done {
             Ok(()) => {
                 self.dirty = true;
                 self.table_status = None;
+                if formats {
+                    self.auto_update_style();
+                }
                 // A bare caret stays put in its paragraph, but the line it is
                 // on may have moved; a selection hides the caret anyway.
                 if self.document.selection().is_none() {
@@ -3920,8 +3992,16 @@ impl Render for DocumentView {
         };
         let zoom = self.zoom;
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
+        let styles_pane = self.styles_pane(cx);
+        let ruler = self.horizontal_ruler(cx);
+        let dialog = self.dialog_element(cx);
+        let vertical_rulers: Vec<Option<AnyElement>> = (0..self.images.len())
+            .map(|index| self.vertical_ruler(index))
+            .collect();
+        let mut vertical_rulers = vertical_rulers.into_iter();
         div()
             .id("root")
+            .relative()
             .track_focus(&self.focus)
             // What the shortcuts in `key_bindings` are scoped to, so they fire
             // only while a document has the keyboard.
@@ -4040,6 +4120,7 @@ impl Render for DocumentView {
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
+                    .children(ruler)
                     .child(
                         div()
                             .id("pages")
@@ -4094,6 +4175,7 @@ impl Render for DocumentView {
                                             .h(px(page_height * zoom)),
                                     )
                                     .children(self.caret_overlay(index))
+                                    .children(vertical_rulers.next().flatten())
                                     .children(self.object_outline(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
@@ -4140,6 +4222,8 @@ impl Render for DocumentView {
             )
             // ---- the comments pane, beside the pages while it is open ----
             .children(comments_pane)
+            .children(styles_pane)
+            .children(dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4366,6 +4450,7 @@ fn document_view(
         story_bar: None,
         comment_bar: None,
         show_comments: false,
+        tools: word_tools::WordTools::default(),
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,
@@ -4788,6 +4873,25 @@ mod tests {
     fn tab_goes_from_cell_to_cell(cx: &mut gpui::TestAppContext) {
         use super::ribbon::Action;
         let (view, cx) = open_contract(cx);
+        // A paragraph that is not a list item: at an item's start Tab takes
+        // the item a level down instead, as in Word (word_tools).
+        view.update(cx, |view, _| {
+            let plain = (view.insert_at.0..view.document.paragraph_count())
+                .find(|&index| {
+                    view.document
+                        .word_document()
+                        .paragraph(index)
+                        .and_then(|paragraph| paragraph.properties.as_ref())
+                        .and_then(|props| props.numbering.as_ref())
+                        .is_none()
+                        && view
+                            .document
+                            .paragraph_text(index)
+                            .is_some_and(|text| text.chars().count() > 3)
+                })
+                .unwrap();
+            view.insert_at = (plain, 0);
+        });
         let paragraph = type_at_start(&view, cx, "");
         cx.simulate_keystrokes("tab");
         view.read_with(cx, |view, _| {
