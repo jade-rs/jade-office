@@ -1,15 +1,17 @@
-//! Printing a sheet, and exporting it as PDF, as Excel does at its
-//! defaults: the print area if the sheet has one, else the cells in use;
-//! A4 portrait at 100%, Excel's Normal margins; pages cut where the columns
-//! and rows stop fitting and at the sheet's own page breaks, numbered down
-//! and then over; no gridlines; the sheet's header and footer, with their
-//! page numbers, sheet name and date.
+//! Printing a sheet, and exporting it as PDF, as Excel does by the sheet's
+//! Page Setup: the print area if the sheet has one, else the cells in use;
+//! its paper and orientation, margins, and scale or Fit to pages (A4
+//! portrait at 100% with Normal margins when the file says nothing); pages
+//! cut where the columns and rows stop fitting and at the sheet's own page
+//! breaks, numbered down and then over (or over then down); the print
+//! titles repeated on every page; no gridlines; the sheet's header and
+//! footer, with their page numbers, sheet name and date.
 //!
 //! Lengths are CSS px, 96 to the inch, as the sheet's layout measures.
 
 use jade_painter::Painter;
 use jade_xlsx_layout::{Rect, SheetLayout};
-use jade_xlsx_reader::{CellRange, CellRef};
+use jade_xlsx_reader::{CellRange, CellRef, PageMargins, PageOrientation, PageSetup};
 use jade_xlsx_render::RenderOptions;
 
 use crate::sheet::Workbook;
@@ -18,11 +20,58 @@ use crate::Backend;
 /// A4, in px.
 pub const A4: (f64, f64) = (210.0 / 25.4 * 96.0, 297.0 / 25.4 * 96.0);
 
-/// Excel's Normal margins, in px: 0.7" left and right, 0.75" top and
-/// bottom, the header and footer 0.3" from the paper's edge.
-const MARGIN_SIDE: f64 = 0.7 * 96.0;
-const MARGIN_TOP: f64 = 0.75 * 96.0;
-const MARGIN_HEADER: f64 = 0.3 * 96.0;
+/// Paper `code` (`pageSetup/@paperSize`) portrait, in px; A4 for a code
+/// this does not know, as for none.
+pub fn paper_size(code: u32) -> (f64, f64) {
+    let inches = |width: f64, height: f64| (width * 96.0, height * 96.0);
+    let mm = |width: f64, height: f64| (width / 25.4 * 96.0, height / 25.4 * 96.0);
+    match code {
+        1 | 2 | 18 => inches(8.5, 11.0),
+        3 | 17 => inches(11.0, 17.0),
+        4 => inches(17.0, 11.0),
+        5 => inches(8.5, 14.0),
+        6 => inches(5.5, 8.5),
+        7 => inches(7.25, 10.5),
+        8 => mm(297.0, 420.0),
+        11 => mm(148.0, 210.0),
+        12 => mm(257.0, 364.0),
+        13 => mm(182.0, 257.0),
+        14 => inches(8.5, 13.0),
+        15 => mm(215.0, 275.0),
+        16 => inches(10.0, 14.0),
+        20 => inches(4.125, 9.5),
+        27 => mm(110.0, 220.0),
+        28 => mm(162.0, 229.0),
+        34 => mm(176.0, 250.0),
+        43 => mm(100.0, 148.0),
+        66 => mm(420.0, 594.0),
+        70 => mm(105.0, 148.0),
+        _ => A4,
+    }
+}
+
+/// How the active sheet's pages are laid out: the paper they print on, its
+/// margins, and the scale the cells print at.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PageFormat {
+    /// The paper, in px, landscape already turned.
+    pub paper: (f64, f64),
+    /// The margins, in px.
+    pub margins: PageMargins,
+    /// 1.0 prints at 100%.
+    pub scale: f64,
+}
+
+impl PageFormat {
+    /// The room the cells have on a page, in the layout's px: the paper
+    /// inside the margins, at the scale.
+    pub fn room(&self) -> (f64, f64) {
+        (
+            (self.paper.0 - self.margins.left - self.margins.right) / self.scale,
+            (self.paper.1 - self.margins.top - self.margins.bottom) / self.scale,
+        )
+    }
+}
 
 /// What a header or footer's fields read on: the date and time printed,
 /// as the shell's clock and language write them, and the file's name.
@@ -42,50 +91,135 @@ pub fn is_pdf(name: &str) -> bool {
 /// What printing an empty sheet says; the shells show Excel's words.
 pub const NOTHING_TO_PRINT: &str = "there is nothing on the sheet to print";
 
-/// One printed page: the cells on it.
+/// One printed page: the cells on it, and the print titles it repeats
+/// above and to the left of them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PrintPage {
     pub range: CellRange,
+    /// The title rows printed above `range`, first and last.
+    pub title_rows: Option<(u32, u32)>,
+    /// The title columns printed left of `range`, first and last.
+    pub title_columns: Option<(u32, u32)>,
 }
 
 impl<B: Backend> Workbook<B> {
     /// The active sheet's pages, in the order they print: down the first
-    /// columns that fit, then the next.
+    /// columns that fit, then the next — or across first, if the sheet says.
     pub fn print_pages(&self) -> Result<Vec<PrintPage>, String> {
-        let Some(area) = self.print_area() else {
-            return Ok(Vec::new());
+        Ok(self.plan()?.map(|plan| plan.pages).unwrap_or_default())
+    }
+
+    /// The active sheet's paper, margins and scale, as its Page Setup says:
+    /// a Fit to setting shrinks the scale until the pages fit.
+    pub fn page_format(&self) -> Result<PageFormat, String> {
+        Ok(match self.plan()? {
+            Some(plan) => plan.format,
+            None => self.page_format_at(None),
+        })
+    }
+
+    fn setup(&self) -> &PageSetup {
+        &self.engine().workbook().sheets[self.sheet_index()].page_setup
+    }
+
+    /// The paper and margins, at `percent` or the sheet's own scale.
+    fn page_format_at(&self, percent: Option<u32>) -> PageFormat {
+        let setup = self.setup();
+        let (width, height) = paper_size(setup.paper_size.unwrap_or(9));
+        let paper = if setup.orientation == Some(PageOrientation::Landscape) {
+            (height, width)
+        } else {
+            (width, height)
         };
-        let layout = self.print_layout(area.end)?;
-        let width = A4.0 - 2.0 * MARGIN_SIDE;
-        let height = A4.1 - 2.0 * MARGIN_TOP;
+        let inches = setup.margins.unwrap_or_default();
+        let px = |inches: f64| inches * 96.0;
+        let percent = percent.or(setup.scale).unwrap_or(100).clamp(10, 400);
+        PageFormat {
+            paper,
+            margins: PageMargins {
+                left: px(inches.left),
+                right: px(inches.right),
+                top: px(inches.top),
+                bottom: px(inches.bottom),
+                header: px(inches.header),
+                footer: px(inches.footer),
+            },
+            scale: f64::from(percent) / 100.0,
+        }
+    }
+
+    /// The pages and the format they print at; `None` for an empty sheet.
+    /// Fit to N pages wide by M tall tries the largest whole percentage,
+    /// up to 100%, that the area fits in, down to Excel's least, 10%; it
+    /// leaves out the manual page breaks, as Excel does.
+    fn plan(&self) -> Result<Option<Plan>, String> {
+        let Some(area) = self.print_area() else {
+            return Ok(None);
+        };
+        let setup = self.setup().clone();
+        // The titles may lie past the area's last cell.
+        let end = CellRef::new(
+            setup
+                .title_columns
+                .map_or(area.end.column, |(_, last)| last.max(area.end.column)),
+            setup
+                .title_rows
+                .map_or(area.end.row, |(_, last)| last.max(area.end.row)),
+        );
+        let layout = self.print_layout(end)?;
         let sheet = &self.engine().workbook().sheets[self.sheet_index()];
         let column_breaks: Vec<u32> = sheet.column_breaks.iter().map(|b| b.before).collect();
         let row_breaks: Vec<u32> = sheet.row_breaks.iter().map(|b| b.before).collect();
-        let columns = bands(
+        let columns = Axis::new(
             &layout.columns,
             area.start.column,
             area.end.column,
-            width,
-            &column_breaks,
+            setup.title_columns,
         );
-        let rows = bands(
-            &layout.rows,
-            area.start.row,
-            area.end.row,
-            height,
-            &row_breaks,
-        );
-        Ok(columns
-            .iter()
-            .flat_map(|&(left, right)| {
-                rows.iter().map(move |&(top, bottom)| PrintPage {
-                    range: CellRange {
-                        start: CellRef::new(left, top),
-                        end: CellRef::new(right, bottom),
-                    },
-                })
-            })
-            .collect())
+        let rows = Axis::new(&layout.rows, area.start.row, area.end.row, setup.title_rows);
+        let Some((wide, tall)) = setup.fit_to() else {
+            let format = self.page_format_at(None);
+            let (width, height) = format.room();
+            let pages = pages(
+                &columns.bands(width, &column_breaks),
+                &rows.bands(height, &row_breaks),
+                setup.over_then_down,
+            );
+            return Ok(Some(Plan {
+                pages,
+                format,
+                layout,
+            }));
+        };
+        let room = self.page_format_at(Some(100)).room();
+        // A first guess from the lengths alone, then down until it fits.
+        let guess = |pages: u32, room: f64, length: f64| {
+            if pages == 0 || length <= 0.0 {
+                100.0
+            } else {
+                f64::from(pages) * room / length * 100.0
+            }
+        };
+        let mut percent = guess(wide, room.0, columns.length())
+            .min(guess(tall, room.1, rows.length()))
+            .floor()
+            .clamp(10.0, 100.0) as u32;
+        loop {
+            let format = self.page_format_at(Some(percent));
+            let (width, height) = format.room();
+            let across = columns.bands(width, &[]);
+            let down = rows.bands(height, &[]);
+            let fits = |pages: u32, bands: usize| pages == 0 || bands <= pages as usize;
+            if percent == 10 || (fits(wide, across.len()) && fits(tall, down.len())) {
+                let pages = pages(&across, &down, setup.over_then_down);
+                return Ok(Some(Plan {
+                    pages,
+                    format,
+                    layout,
+                }));
+            }
+            percent -= 1;
+        }
     }
 
     /// The print area: the sheet's defined one, else from the first cell in
@@ -115,62 +249,101 @@ impl<B: Backend> Workbook<B> {
         Some(area)
     }
 
-    /// Paints the active sheet's pages, each on a page `page` makes at A4's
-    /// size, for a PDF or a printer.
+    /// Paints the active sheet's pages, each on a page `page` makes at
+    /// the paper's size, for a PDF or a printer.
     pub fn paint_pages<P: Painter>(
         &self,
         fields: &PrintFields,
         page: impl Fn(f64, f64) -> Option<P>,
     ) -> Result<Vec<P>, String> {
-        let pages = self.print_pages()?;
-        let Some(area) = self.print_area() else {
-            return Err(NOTHING_TO_PRINT.to_string());
-        };
-        let mut layout = self.print_layout(area.end)?;
-        layout.show_grid_lines = false;
-        let options = RenderOptions {
-            background: Some("#ffffff".to_string()),
-            origin: (MARGIN_SIDE, MARGIN_TOP),
-            dark: false,
-            ..RenderOptions::default()
-        };
-        let total = pages.len();
-        let mut painted = Vec::with_capacity(total);
-        for (number, printed) in pages.iter().enumerate() {
-            let painter =
-                page(A4.0, A4.1).ok_or_else(|| "cannot create a page to print on".to_string())?;
-            painter.set_fill_style_str("#ffffff");
-            painter.fill_rect(0.0, 0.0, A4.0, A4.1);
-            let x = offset(&layout, true, printed.range.start.column);
-            let y = offset(&layout, false, printed.range.start.row);
-            let viewport = Rect {
-                x,
-                y,
-                width: offset(&layout, true, printed.range.end.column + 1) - x,
-                height: offset(&layout, false, printed.range.end.row + 1) - y,
-            };
-            painter.save();
-            jade_xlsx_render::render_viewport(&painter, &layout, viewport, &options)
-                .map_err(|_| format!("cannot paint page {}", number + 1))?;
-            painter.restore();
-            self.paint_header_footer(&painter, fields, number + 1, total);
-            painted.push(painter);
-        }
-        Ok(painted)
+        let plan = self.plan()?.ok_or_else(|| NOTHING_TO_PRINT.to_string())?;
+        self.paint_plan(plan, fields, page)
     }
 
     /// The active sheet's pages as a PDF: vectors natively, pictures of
     /// the pages in the browser.
     pub fn pdf(&self, fields: &PrintFields) -> Result<Vec<u8>, String> {
+        let plan = self.plan()?.ok_or_else(|| NOTHING_TO_PRINT.to_string())?;
+        let paper = plan.format.paper;
         let backend = self.backend();
-        let pages = self.paint_pages(fields, |width, height| backend.page(width, height))?;
-        B::pdf(&pages, A4)
+        let pages = self.paint_plan(plan, fields, |width, height| backend.page(width, height))?;
+        B::pdf(&pages, paper)
+    }
+
+    fn paint_plan<P: Painter>(
+        &self,
+        plan: Plan,
+        fields: &PrintFields,
+        page: impl Fn(f64, f64) -> Option<P>,
+    ) -> Result<Vec<P>, String> {
+        let Plan {
+            pages,
+            format,
+            mut layout,
+        } = plan;
+        layout.show_grid_lines = false;
+        let (width, height) = format.paper;
+        let total = pages.len();
+        let mut painted = Vec::with_capacity(total);
+        for (number, printed) in pages.iter().enumerate() {
+            let painter = page(width, height)
+                .ok_or_else(|| "cannot create a page to print on".to_string())?;
+            painter.set_fill_style_str("#ffffff");
+            painter.fill_rect(0.0, 0.0, width, height);
+            painter.save();
+            let placed = painter
+                .translate(format.margins.left, format.margins.top)
+                .and_then(|()| painter.scale(format.scale, format.scale));
+            if placed.is_err() {
+                return Err(format!("cannot paint page {}", number + 1));
+            }
+            // The title columns, then the page's own; the title rows above.
+            let columns = [
+                printed.title_columns,
+                Some((printed.range.start.column, printed.range.end.column)),
+            ];
+            let rows = [
+                printed.title_rows,
+                Some((printed.range.start.row, printed.range.end.row)),
+            ];
+            let mut y = 0.0;
+            for (first_row, last_row) in rows.into_iter().flatten() {
+                let top = offset(&layout, false, first_row);
+                let tall = offset(&layout, false, last_row + 1) - top;
+                let mut x = 0.0;
+                for (first_column, last_column) in columns.into_iter().flatten() {
+                    let left = offset(&layout, true, first_column);
+                    let wide = offset(&layout, true, last_column + 1) - left;
+                    let viewport = Rect {
+                        x: left,
+                        y: top,
+                        width: wide,
+                        height: tall,
+                    };
+                    let options = RenderOptions {
+                        background: Some("#ffffff".to_string()),
+                        origin: (x, y),
+                        dark: false,
+                        ..RenderOptions::default()
+                    };
+                    jade_xlsx_render::render_viewport(&painter, &layout, viewport, &options)
+                        .map_err(|_| format!("cannot paint page {}", number + 1))?;
+                    x += wide;
+                }
+                y += tall;
+            }
+            painter.restore();
+            self.paint_header_footer(&painter, &format, fields, number + 1, total);
+            painted.push(painter);
+        }
+        Ok(painted)
     }
 
     /// The sheet's header and footer on page `number` of `total`.
     fn paint_header_footer<P: Painter>(
         &self,
         painter: &P,
+        format: &PageFormat,
         fields: &PrintFields,
         number: usize,
         total: usize,
@@ -203,9 +376,9 @@ impl<B: Backend> Workbook<B> {
             };
             painter.set_text_baseline(if top { "top" } else { "bottom" });
             let y = if top {
-                MARGIN_HEADER
+                format.margins.header
             } else {
-                A4.1 - MARGIN_HEADER
+                format.paper.1 - format.margins.footer
             };
             for (section, line) in sections(text, &on) {
                 if line.is_empty() {
@@ -213,9 +386,9 @@ impl<B: Backend> Workbook<B> {
                 }
                 let width = painter.measure_text_width(&line).unwrap_or(0.0);
                 let x = match section {
-                    Section::Left => MARGIN_SIDE,
-                    Section::Center => (A4.0 - width) / 2.0,
-                    Section::Right => A4.0 - MARGIN_SIDE - width,
+                    Section::Left => format.margins.left,
+                    Section::Center => (format.paper.0 - width) / 2.0,
+                    Section::Right => format.paper.0 - format.margins.right - width,
                 };
                 let _ = painter.fill_text(&line, x, y);
             }
@@ -308,38 +481,115 @@ pub fn sections(text: &str, page: &Page) -> Vec<(Section, String)> {
     parts
 }
 
-/// The bands of `entries` from `first` to `last` that each fit in
-/// `length`, as (first, last), cut before the indices in `breaks` too. A
-/// hidden column or row takes no room; one too long for a page has a page
-/// of its own.
-fn bands(
-    entries: &[jade_xlsx_layout::AxisEntry],
+/// What [`Workbook::plan`] decides: the pages, the format they print at,
+/// and the layout they print from.
+struct Plan {
+    pages: Vec<PrintPage>,
+    format: PageFormat,
+    layout: SheetLayout,
+}
+
+/// The columns (or rows) of the print area, from `first` to `last`, with
+/// their sizes, and the titles every page repeats ahead of them.
+struct Axis {
     first: u32,
-    last: u32,
-    length: f64,
-    breaks: &[u32],
-) -> Vec<(u32, u32)> {
-    let size = |index: u32| {
-        entries
-            .iter()
-            .find(|entry| entry.index == index)
-            .map_or(0.0, |entry| if entry.hidden { 0.0 } else { entry.size })
-    };
-    let mut bands = Vec::new();
-    let mut start = first;
-    let mut used = 0.0;
-    for index in first..=last {
-        let room = size(index);
-        let full = used > 0.0 && used + room > length + 0.01;
-        if index > start && (full || breaks.contains(&index)) {
-            bands.push((start, index - 1));
-            start = index;
-            used = 0.0;
+    sizes: Vec<f64>,
+    titles: Option<(u32, u32)>,
+    /// The titles' length; a hidden title takes no room.
+    titles_length: f64,
+}
+
+impl Axis {
+    fn new(
+        entries: &[jade_xlsx_layout::AxisEntry],
+        first: u32,
+        last: u32,
+        titles: Option<(u32, u32)>,
+    ) -> Self {
+        let size = |index: u32| {
+            entries
+                .iter()
+                .find(|entry| entry.index == index)
+                .map_or(0.0, |entry| if entry.hidden { 0.0 } else { entry.size })
+        };
+        Self {
+            first,
+            sizes: (first..=last).map(size).collect(),
+            titles,
+            titles_length: titles.map_or(0.0, |(start, end)| (start..=end).map(size).sum()),
         }
-        used += room;
     }
-    bands.push((start, last));
-    bands
+
+    /// The area's whole length, with the titles once.
+    fn length(&self) -> f64 {
+        self.sizes.iter().sum::<f64>()
+            + match self.titles {
+                Some((_, end)) if end < self.first => self.titles_length,
+                _ => 0.0,
+            }
+    }
+
+    /// Whether a page starting at `start` repeats the titles: when they
+    /// end above (or left of) it, rather than being on it.
+    fn titled(&self, start: u32) -> Option<(u32, u32)> {
+        self.titles.filter(|&(_, end)| end < start)
+    }
+
+    /// The bands that each fit in `length` with their titles, as (first,
+    /// last, titles), cut before the indices in `breaks` too. One too long
+    /// for a page has a page of its own.
+    fn bands(&self, length: f64, breaks: &[u32]) -> Vec<Band> {
+        let last = self.first + self.sizes.len() as u32 - 1;
+        let room = |start: u32| {
+            length
+                - if self.titled(start).is_some() {
+                    self.titles_length
+                } else {
+                    0.0
+                }
+        };
+        let mut bands = Vec::new();
+        let mut start = self.first;
+        let mut used = 0.0;
+        for (index, &size) in (self.first..).zip(&self.sizes) {
+            let full = used > 0.0 && used + size > room(start) + 0.01;
+            if index > start && (full || breaks.contains(&index)) {
+                bands.push((start, index - 1, self.titled(start)));
+                start = index;
+                used = 0.0;
+            }
+            used += size;
+        }
+        bands.push((start, last, self.titled(start)));
+        bands
+    }
+}
+
+/// A page's columns (or rows), first and last, and the titles it repeats.
+type Band = (u32, u32, Option<(u32, u32)>);
+
+/// The pages from the bands across and down, numbered down then over, or
+/// over then down.
+fn pages(columns: &[Band], rows: &[Band], over_then_down: bool) -> Vec<PrintPage> {
+    let page =
+        |&(left, right, title_columns): &Band, &(top, bottom, title_rows): &Band| PrintPage {
+            range: CellRange {
+                start: CellRef::new(left, top),
+                end: CellRef::new(right, bottom),
+            },
+            title_rows,
+            title_columns,
+        };
+    if over_then_down {
+        rows.iter()
+            .flat_map(|row| columns.iter().map(move |column| page(column, row)))
+            .collect()
+    } else {
+        columns
+            .iter()
+            .flat_map(|column| rows.iter().map(move |row| page(column, row)))
+            .collect()
+    }
 }
 
 /// Where column (or row) `index` starts, in the layout's px.

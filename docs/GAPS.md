@@ -53,7 +53,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | | Remove duplicates, text to columns, flash fill | Medium | no |
 | | Trace precedents, error checking, show formulas | Medium | no |
 | | Excel tables: create, resize, style, total row | Low–Medium | no |
-| | Page setup: margins, orientation, paper size, scaling, print titles — read from the sheet and set in a dialog (printing uses Excel's defaults with the sheet's print area, breaks, header and footer) | Medium | partly — print area, breaks, headers/footers read; `pageSetup`/`pageMargins` not |
+| | Page setup: change margins, orientation, paper, scaling and print titles (printing already follows the file's own, with its print area and header/footer) | Medium | read, not written — jade-rs/jade-core#126; the writer sets only headers/footers |
 | | Insert pictures and shapes | Low–Medium | no |
 | | Calculation mode and F9 | Low | yes |
 | | Threaded comments, multi-sheet selection, Merge Across, split view, cell styles gallery | Low | no |
