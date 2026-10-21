@@ -1997,3 +1997,17 @@ notes.separator	Show separator
 notes.continuation_separator	Show continuation separator
 nav.collapse	Collapse
 nav.expand	Expand
+hyphenation.group	Hyphenation
+hyphenation.button	Hyphenation
+hyphenation.title	Hyphenation
+hyphenation.none	None
+hyphenation.automatic	Automatic
+hyphenation.options	Hyphenation Options...
+hyphenation.auto	Automatically hyphenate document
+hyphenation.caps	Hyphenate words in CAPS
+hyphenation.zone	Hyphenation zone
+hyphenation.limit	Limit consecutive hyphens to
+hyphenation.no_limit	Blank for no limit
+hyphenation.bad_zone	Enter a hyphenation zone of zero or more.
+hyphenation.bad_limit	Enter a whole number of zero or more for the hyphen limit.
+hyphenation.unlimited	No limit

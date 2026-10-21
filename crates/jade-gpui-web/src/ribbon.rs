@@ -154,6 +154,8 @@ pub enum Popup {
     Word(crate::word_tools::ToolMenu),
     /// 参考資料's lists (`view::word_references`).
     References(crate::view::word_references::RefPopup),
+    /// レイアウト's ハイフネーション (`view::word_hyphenation`).
+    Hyphenation,
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -636,6 +638,8 @@ pub struct TabState {
     /// What the text, line number and background groups show, read only
     /// while レイアウト is up.
     pub layout: Option<crate::view::word_setup::LayoutState>,
+    /// What the ハイフネーション list ticks, read while レイアウト is up.
+    pub hyphenation: Option<jade_web::word::hyphenation::HyphenationChoice>,
     /// What the list, paragraph and design tools' open list shows.
     pub tools: crate::word_tools::ToolState,
     /// What 参考資料 shows, read only while it is up.
@@ -735,6 +739,11 @@ pub fn ribbon(
                     cx,
                 ));
             }
+            groups.push(crate::view::word_hyphenation::layout_group(
+                ribbon.popup,
+                shown.hyphenation,
+                cx,
+            ));
             groups
         }
         Tab::References => {
