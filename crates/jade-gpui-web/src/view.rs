@@ -399,6 +399,8 @@ enum Document {
         accessibility: bool,
         /// Whether the 変更履歴ウィンドウ is open beside the pages.
         revisions_pane: bool,
+        /// 編集の制限, 文書の保護 and 最終版.
+        protection: Box<word_review::WebProtection>,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
@@ -530,7 +532,7 @@ impl DocView {
             Kind::Document => {
                 // The first pages only, as pixels: the view keeps the ones on
                 // screen as it scrolls (see `follow_scroll`).
-                let opened = jade_web::editing::EditableDocument::open_resident(
+                let mut opened = jade_web::editing::EditableDocument::open_resident(
                     bytes,
                     fonts.scale,
                     fonts.backend.fonts(),
@@ -554,6 +556,7 @@ impl DocView {
                     markup: Box::new(word_review::markup_as_opened(&opened)),
                     accessibility: false,
                     revisions_pane: false,
+                    protection: Box::new(word_review::WebProtection::opened(&mut opened)),
                     object: None,
                     tables: Box::default(),
                     pages: (0..opened.page_count())
@@ -839,7 +842,13 @@ impl DocView {
         }
         self.commit_slide_text(cx);
         let bytes = match &mut self.document {
-            Document::Pages { document, .. } => document.export_docx(),
+            Document::Pages {
+                document,
+                protection,
+                ..
+            } => document
+                .export_docx()
+                .and_then(|bytes| word_review::finish_save(protection, bytes)),
             Document::Deck { deck, .. } => Ok(deck.save_bytes()),
             // A .csv saves the active sheet as CSV, as Excel does.
             Document::Workbook(sheet) => sheet.book.save_bytes_as(&self.name),
@@ -1740,6 +1749,7 @@ impl DocView {
             markup,
             accessibility,
             revisions_pane,
+            protection,
             object,
             ..
         } = &mut self.document
@@ -1782,6 +1792,8 @@ impl DocView {
                         comments: *show_comments,
                         accessibility: *accessibility,
                         revisions_pane: *revisions_pane,
+                        restrict_pane: protection.pane,
+                        final_: protection.read_only == Some(word_review::ReadOnlyReason::Final),
                         markup: (**markup).clone(),
                         reviewers: document.reviewers(),
                     }
@@ -1864,6 +1876,8 @@ impl DocView {
         let comments_pane = self.comments_pane(cx);
         let accessibility_pane = self.accessibility_pane(cx);
         let revisions_pane = self.revisions_pane(cx);
+        let restrict_pane = self.restrict_pane(cx);
+        let read_only_bar = self.read_only_bar(cx);
         let find_bar = self.find_bar_element(cx);
         let table_cursor = self.table_cursor();
         let table_dialog = self.table_dialog_element(cx);
@@ -2149,6 +2163,7 @@ impl DocView {
                     .flex_col()
                     .child(word_ribbon)
                     .children(dialog_bar)
+                    .children(read_only_bar)
                     .children(comment_bar)
                     .children(story_bar)
                     .children(find_bar)
@@ -2172,6 +2187,7 @@ impl DocView {
             .children(comments_pane)
             .children(accessibility_pane)
             .children(revisions_pane)
+            .children(restrict_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
     }

@@ -230,3 +230,14 @@ impl crate::word::proofing::WordProofingDisplay
         })
     }
 }
+
+/// The native app's document can be opened read-only.
+impl crate::word::protection::WordReadOnly for jade_docx_native_render::document::NativeDocument {
+    fn set_opened_read_only(&mut self, read_only: bool) {
+        NativeDocument::set_opened_read_only(self, read_only)
+    }
+
+    fn opened_read_only(&self) -> bool {
+        NativeDocument::word_document(self).opened_read_only()
+    }
+}

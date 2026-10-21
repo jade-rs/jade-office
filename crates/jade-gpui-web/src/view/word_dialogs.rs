@@ -34,6 +34,11 @@ pub(super) enum Dialog {
         /// Whether the picker is out for the revised document.
         waiting: bool,
     },
+    /// 保護の開始 / 保護の中止: the password.
+    Restrict { stopping: bool, password: TextEdit },
+    /// 文書の保護: 読み取りパスワード, 書き込みパスワード (Tab between),
+    /// 読み取り専用を推奨 (Tab past the second).
+    Protect(Box<jade_web::word::protection::ProtectForm>),
 }
 
 impl Dialog {
@@ -45,6 +50,8 @@ impl Dialog {
             Dialog::Reviewer(form) => Some(form.focused()),
             Dialog::AltText(form) => Some(&form.description),
             Dialog::Compare { author, .. } => Some(author),
+            Dialog::Restrict { password, .. } => Some(password),
+            Dialog::Protect(form) => Some(form.focused()),
         }
     }
 
@@ -56,6 +63,8 @@ impl Dialog {
             Dialog::Reviewer(form) => Some(form.focused_mut()),
             Dialog::AltText(form) => Some(&mut form.description),
             Dialog::Compare { author, .. } => Some(author),
+            Dialog::Restrict { password, .. } => Some(password),
+            Dialog::Protect(form) => Some(form.focused_mut()),
         }
     }
 }
@@ -276,6 +285,13 @@ impl DocView {
                 Dialog::Reviewer(form) => form.next_field(),
                 Dialog::AltText(form) => form.decorative = !form.decorative,
                 Dialog::Compare { form, .. } => form.options.by_word = !form.options.by_word,
+                Dialog::Restrict { .. } => {}
+                Dialog::Protect(form) => {
+                    if form.focus == 1 {
+                        form.recommended = !form.recommended;
+                    }
+                    form.next_field();
+                }
             },
             _ => {
                 if !open.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -285,6 +301,30 @@ impl DocView {
         }
         cx.notify();
         true
+    }
+
+    /// 保護の開始 / 保護の中止: the password bar.
+    pub(super) fn open_dialog_restrict(&mut self, stopping: bool, cx: &mut Context<Self>) {
+        self.open_dialog(
+            Dialog::Restrict {
+                stopping,
+                password: TextEdit::new(String::new()),
+            },
+            cx,
+        );
+    }
+
+    /// 文書の保護….
+    pub(super) fn open_dialog_protect(&mut self, cx: &mut Context<Self>) {
+        use jade_web::word::protection::WordProtection;
+        let Document::Pages { document, .. } = &self.document else {
+            return;
+        };
+        let recommended = document
+            .write_protection()
+            .is_some_and(|protection| protection.recommended);
+        let form = jade_web::word::protection::ProtectForm::new(None, recommended);
+        self.open_dialog(Dialog::Protect(Box::new(form)), cx);
     }
 
     /// 比較… / 組み込み…: this document as the original.
@@ -381,6 +421,24 @@ impl DocView {
             cx.notify();
             return true;
         }
+        if matches!(
+            dialog.as_deref(),
+            Some(Dialog::Restrict { .. } | Dialog::Protect(_))
+        ) {
+            match dialog.take().map(|open| *open) {
+                Some(Dialog::Restrict { stopping, password }) => {
+                    self.apply_restriction(stopping, password.text, cx)
+                }
+                Some(Dialog::Protect(form)) => self.apply_protect(
+                    form.open_password.text,
+                    form.modify_password.text,
+                    form.recommended,
+                    cx,
+                ),
+                _ => {}
+            }
+            return true;
+        }
         let Some(open) = dialog.take() else {
             return false;
         };
@@ -389,7 +447,7 @@ impl DocView {
             Dialog::Note(form) => form.submit(document.as_mut()).map(Some),
             // The caret, or the selection, stays where it is.
             Dialog::Paragraph(form) => form.submit(document.as_mut()).map(|()| None),
-            Dialog::Compare { .. } => Ok(None),
+            Dialog::Compare { .. } | Dialog::Restrict { .. } | Dialog::Protect(_) => Ok(None),
             Dialog::AltText(form) => {
                 use jade_web::word::accessibility::WordAccessibility;
                 document
@@ -469,6 +527,57 @@ impl DocView {
                 vec![field_box(i18n::text("note.text"), &form.text, true, 360.0)],
             ),
             Dialog::Paragraph(form) => self.paragraph_dialog(form, cx),
+            Dialog::Restrict { stopping, password } => bar(
+                i18n::text(if *stopping {
+                    "restrict.stop_title"
+                } else {
+                    "restrict.start_title"
+                }),
+                i18n::text("restrict.keys"),
+                vec![div()
+                    .text_color(palette::text())
+                    .child(format!(
+                        "{}: {}",
+                        i18n::text("restrict.password"),
+                        jade_web::word::protection::masked(&password.text)
+                    ))
+                    .into_any_element()],
+            ),
+            Dialog::Protect(form) => {
+                let label = |focused: bool, key: &'static str, text: &str| {
+                    div()
+                        .text_color(if focused {
+                            palette::accent()
+                        } else {
+                            palette::text()
+                        })
+                        .child(format!(
+                            "{}: {}",
+                            i18n::text(key),
+                            jade_web::word::protection::masked(text)
+                        ))
+                        .into_any_element()
+                };
+                bar(
+                    i18n::text("protect.title"),
+                    i18n::text("link.keys"),
+                    vec![
+                        label(form.focus == 0, "protect.open", &form.open_password.text),
+                        label(
+                            form.focus == 1,
+                            "protect.modify",
+                            &form.modify_password.text,
+                        ),
+                        div()
+                            .child(format!(
+                                "{} {}",
+                                if form.recommended { "☑" } else { "☐" },
+                                i18n::text("protect.recommended")
+                            ))
+                            .into_any_element(),
+                    ],
+                )
+            }
             Dialog::Compare {
                 form,
                 author,

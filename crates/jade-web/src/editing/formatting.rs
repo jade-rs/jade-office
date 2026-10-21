@@ -188,3 +188,14 @@ impl jade_office_model::word::proofing::WordProofingDisplay for EditableDocument
         })
     }
 }
+
+/// The browser build's document can be opened read-only.
+impl jade_office_model::word::protection::WordReadOnly for EditableDocument {
+    fn set_opened_read_only(&mut self, read_only: bool) {
+        self.word_document.set_opened_read_only(read_only);
+    }
+
+    fn opened_read_only(&self) -> bool {
+        self.word_document.opened_read_only()
+    }
+}

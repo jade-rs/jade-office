@@ -1477,3 +1477,39 @@ compare.by_word	単語レベル
 compare.done	比較結果: 挿入 {insertions} 件、削除 {deletions} 件、書式変更 {formatting} 件
 compare.keys	⏎ 変更された文書を選ぶ · ⇥ 文字/単語 · esc キャンセル
 compare.waiting	変更された文書を選んでください…
+protect.group	保護
+protect.button	文書の保護
+protect.title	文書の保護
+protect.open_hint	このドキュメントを開くときのパスワードを設定します
+protect.open	読み取りパスワード
+protect.modify_hint	このドキュメントを変更するときのパスワードを設定します
+protect.modify	書き込みパスワード
+protect.recommended	読み取り専用を推奨する
+protect.final	最終版にする
+protect.final_title	文書を最終版にする
+protect.final_bar	最終版: 作成者がこの文書を最終版として設定し、編集を禁止しています。
+protect.recommended_bar	作成者はこの文書を読み取り専用で開くことを推奨しています。
+protect.edit_anyway	編集する
+protect.password_title	パスワード
+protect.password_prompt	「{name}」はパスワードで保護されています。パスワードを入力してください。
+protect.wrong	パスワードが正しくありません
+restrict.button	編集の制限
+restrict.title	編集の制限
+restrict.formatting_title	1. 書式の制限
+restrict.formatting	利用可能な書式を制限する
+restrict.editing_title	2. 編集の制限
+restrict.none	制限なし
+restrict.read_only	変更不可 (読み取り専用)
+restrict.tracked	変更履歴
+restrict.comments	コメント
+restrict.forms	フォームへの入力
+restrict.exceptions	例外処理 (オプション): 選択した部分の編集を許可
+restrict.everyone	すべてのユーザー
+restrict.start_title	3. 保護の開始
+restrict.stop_title	保護の中止
+restrict.password	パスワード (省略可)
+restrict.start	はい、保護を開始します
+restrict.stop	保護の中止
+restrict.enforced	この文書は保護されています。
+restrict.exception_count	例外 {n} 件
+restrict.keys	⏎ OK · esc キャンセル

@@ -34,6 +34,7 @@ mod word_dialogs;
 mod word_page;
 mod word_page_setup;
 mod word_proofing;
+mod word_protection;
 mod word_review;
 mod word_review_tools;
 mod word_revisions;
@@ -3506,7 +3507,10 @@ impl DocumentView {
     }
 
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
-        match self.document.export_docx() {
+        let exported = self.document.export_docx();
+        // 最終版 and the password to open, written into the package.
+        let exported = exported.and_then(|bytes| word_protection::finish_save(self, bytes));
+        match exported {
             Ok(bytes) => match crate::shell::write_in_place(&target, &bytes) {
                 Ok(()) => {
                     self.dirty = false;
@@ -4328,6 +4332,8 @@ impl Render for DocumentView {
         let proofing_pane = word_proofing::pane(self, cx);
         let accessibility_pane = word_accessibility::pane(self, cx);
         let revisions_pane = word_revisions::pane(self, cx);
+        let restrict_pane = word_protection::pane(self, cx);
+        let read_only_bar = word_protection::banner(self, cx);
         let proofing_menu = word_proofing::menu(self, cx);
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
@@ -4499,6 +4505,7 @@ impl Render for DocumentView {
                     .size_full()
                     .child(self.ribbon(window, cx))
                     .children(self.dialog_element(cx))
+                    .children(read_only_bar)
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
@@ -4620,6 +4627,7 @@ impl Render for DocumentView {
             .children(proofing_pane)
             .children(accessibility_pane)
             .children(revisions_pane)
+            .children(restrict_pane)
             .children(proofing_menu)
             // ---- a table dialog, over everything while it is open ----
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
@@ -4829,7 +4837,7 @@ fn document_view(
         .collect();
     let mut ribbon = ribbon::Ribbon::default();
     ribbon.read_styles(&document);
-    let review = word_review_tools::ReviewTools::opened(&document);
+    let review = word_review_tools::ReviewTools::opened(&mut document);
 
     DocumentView {
         path: SharedString::from(path_text),

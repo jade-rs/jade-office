@@ -185,6 +185,14 @@ impl DocView {
                 return cx.notify();
             }
             ReviewAction::Compare(combine) => return self.open_compare_dialog(combine, cx),
+            ReviewAction::RestrictPane
+            | ReviewAction::RestrictKind(_)
+            | ReviewAction::RestrictFormatting
+            | ReviewAction::RestrictEveryone
+            | ReviewAction::RestrictStartStop
+            | ReviewAction::Protect
+            | ReviewAction::MarkFinal
+            | ReviewAction::EditAnyway => return self.protection_action(action, cx),
             ReviewAction::RevisionsPane => {
                 if let Document::Pages { revisions_pane, .. } = &mut self.document {
                     *revisions_pane = !*revisions_pane;
@@ -823,6 +831,372 @@ impl DocView {
                         .child(i18n::format("review.pane.count", &[("n", &count)])),
                 )
                 .children(cards)
+                .into_any_element(),
+        )
+    }
+}
+
+/// Why the document is read-only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReadOnlyReason {
+    Recommended,
+    Final,
+}
+
+/// The browser shell's share of 保護: the 編集の制限 pane's choices, the
+/// password to open the file is saved with, 最終版, and why the document
+/// is read-only.
+#[derive(Default)]
+pub(crate) struct WebProtection {
+    pub pane: bool,
+    pub kind: Option<jade_web::word::protection::EditingKind>,
+    pub formatting: bool,
+    pub open_password: Option<String>,
+    pub mark_final: Option<bool>,
+    pub read_only: Option<ReadOnlyReason>,
+}
+
+impl WebProtection {
+    /// For a document just opened: read-only when final or recommended.
+    pub(super) fn opened(document: &mut jade_web::editing::EditableDocument) -> Self {
+        use jade_web::editing::WordSession;
+        use jade_web::word::protection::{WordProtection, WordReadOnly};
+        let final_ = document
+            .word_document()
+            .document_properties()
+            .get("_MarkAsFinal")
+            .is_some_and(|value| matches!(value.as_str(), "true" | "1"));
+        let recommended = document
+            .write_protection()
+            .is_some_and(|protection| protection.recommended);
+        let read_only = if final_ {
+            Some(ReadOnlyReason::Final)
+        } else if recommended {
+            Some(ReadOnlyReason::Recommended)
+        } else {
+            None
+        };
+        if read_only.is_some() {
+            document.set_opened_read_only(true);
+        }
+        let restriction = document.editing_restriction();
+        Self {
+            kind: restriction
+                .as_ref()
+                .and_then(|restriction| restriction.kind),
+            formatting: restriction.is_some_and(|restriction| restriction.formatting),
+            read_only,
+            ..Self::default()
+        }
+    }
+}
+
+/// The package a save hands the page: marked final or not, encrypted with
+/// the password to open.
+pub(super) fn finish_save(protection: &WebProtection, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    use jade_web::word::protection::{encrypt_package, mark_final};
+    let bytes = match protection.mark_final {
+        Some(final_) => mark_final(&bytes, final_)?,
+        None => bytes,
+    };
+    match protection.open_password.as_deref() {
+        Some(password) if !password.is_empty() => {
+            encrypt_package(&bytes, password, &mut random).map_err(|error| error.to_string())
+        }
+        _ => Ok(bytes),
+    }
+}
+
+/// Random bytes: the browser's crypto, else the model's fallback.
+pub(crate) fn random(buffer: &mut [u8]) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsCast;
+        let crypto = js_sys::Reflect::get(&js_sys::global(), &"crypto".into()).ok();
+        let fill = crypto.as_ref().and_then(|crypto| {
+            js_sys::Reflect::get(crypto, &"getRandomValues".into())
+                .ok()?
+                .dyn_into::<js_sys::Function>()
+                .ok()
+        });
+        if let (Some(crypto), Some(fill)) = (crypto, fill) {
+            let array = js_sys::Uint8Array::new_with_length(buffer.len() as u32);
+            if fill.call1(&crypto, &array).is_ok() {
+                array.copy_to(buffer);
+                return;
+            }
+        }
+    }
+    jade_web::word::protection::random_bytes(buffer);
+}
+
+fn salt() -> [u8; 16] {
+    let mut salt = [0u8; 16];
+    random(&mut salt);
+    salt
+}
+
+impl DocView {
+    /// The password the file was opened with: it is saved with it again.
+    pub(crate) fn set_open_password(&mut self, password: String) {
+        if let Document::Pages { protection, .. } = &mut self.document {
+            protection.open_password = Some(password);
+        }
+    }
+
+    /// The 保護 group's controls.
+    pub(super) fn protection_action(&mut self, action: ReviewAction, cx: &mut Context<Self>) {
+        use jade_web::word::protection::{WordProtection, WordReadOnly};
+        let Document::Pages {
+            document,
+            protection,
+            ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        match action {
+            ReviewAction::RestrictPane => protection.pane = !protection.pane,
+            ReviewAction::RestrictKind(kind) => protection.kind = kind,
+            ReviewAction::RestrictFormatting => protection.formatting = !protection.formatting,
+            ReviewAction::RestrictEveryone => {
+                return self.word_edit(cx, |document| document.allow_everyone_here());
+            }
+            ReviewAction::RestrictStartStop => {
+                let stopping = document.is_restricted();
+                return self.open_dialog_restrict(stopping, cx);
+            }
+            ReviewAction::Protect => return self.open_dialog_protect(cx),
+            ReviewAction::MarkFinal => {
+                let final_ = protection.read_only != Some(ReadOnlyReason::Final);
+                protection.mark_final = Some(final_);
+                protection.read_only = final_.then_some(ReadOnlyReason::Final);
+                document.set_opened_read_only(final_);
+            }
+            ReviewAction::EditAnyway => {
+                if protection.read_only.take() == Some(ReadOnlyReason::Final) {
+                    protection.mark_final = Some(false);
+                }
+                document.set_opened_read_only(false);
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    /// 保護の開始 (or 中止) with the password typed into its bar.
+    pub(super) fn apply_restriction(
+        &mut self,
+        stopping: bool,
+        password: String,
+        cx: &mut Context<Self>,
+    ) {
+        use jade_web::word::protection::{EditingKind, WordProtection};
+        let Document::Pages { protection, .. } = &self.document else {
+            return;
+        };
+        let (kind, formatting) = (protection.kind, protection.formatting);
+        let salt = salt();
+        self.word_edit(cx, move |document| {
+            if stopping {
+                document.stop_restriction(&password)
+            } else {
+                let result = document.start_restriction(
+                    kind,
+                    formatting,
+                    (!password.is_empty()).then_some(password.as_str()),
+                    salt,
+                );
+                if result.is_ok() && kind == Some(EditingKind::TrackedChanges) {
+                    document.set_tracking_changes(true, &reviewer())?;
+                }
+                result
+            }
+        });
+    }
+
+    /// 文書の保護's OK.
+    pub(super) fn apply_protect(
+        &mut self,
+        open: String,
+        modify: String,
+        recommended: bool,
+        cx: &mut Context<Self>,
+    ) {
+        use jade_web::word::protection::WordProtection;
+        if let Document::Pages { protection, .. } = &mut self.document {
+            protection.open_password = (!open.is_empty()).then_some(open);
+        }
+        let salt = salt();
+        self.word_edit(cx, move |document| {
+            document.set_write_protection(
+                recommended,
+                (!modify.is_empty()).then_some(modify.as_str()),
+                salt,
+            )
+        });
+    }
+
+    /// The bar a read-only document opens under.
+    pub(super) fn read_only_bar(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let Document::Pages { protection, .. } = &self.document else {
+            return None;
+        };
+        let key = match protection.read_only? {
+            ReadOnlyReason::Final => "protect.final_bar",
+            ReadOnlyReason::Recommended => "protect.recommended_bar",
+        };
+        Some(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap_3()
+                .px_4()
+                .py_1p5()
+                .bg(palette::panel())
+                .border_b_1()
+                .border_color(palette::border())
+                .text_xs()
+                .text_color(palette::text())
+                .child(i18n::text(key))
+                .child(
+                    comment_action(("protect-edit-anyway", 0), "protect.edit_anyway").on_click(
+                        cx.listener(|view, _event, _window, cx| {
+                            view.protection_action(ReviewAction::EditAnyway, cx)
+                        }),
+                    ),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// The 編集の制限 pane beside the pages, while it is open.
+    pub(super) fn restrict_pane(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        use jade_web::word::protection::{EditingKind, WordProtection};
+        let Document::Pages {
+            document,
+            protection,
+            ..
+        } = &self.document
+        else {
+            return None;
+        };
+        if !protection.pane {
+            return None;
+        }
+        let enforced = document.is_restricted();
+        let choice = |id: (&'static str, usize),
+                      key: &'static str,
+                      on: bool,
+                      action: ReviewAction,
+                      cx: &mut Context<Self>| {
+            div()
+                .id(id)
+                .cursor_pointer()
+                .text_color(if on {
+                    palette::accent()
+                } else {
+                    palette::text()
+                })
+                .child(format!(
+                    "{} {}",
+                    if on { "☑" } else { "☐" },
+                    i18n::text(key)
+                ))
+                .on_click(cx.listener(move |view, _event, _window, cx| {
+                    view.protection_action(action.clone(), cx)
+                }))
+                .into_any_element()
+        };
+        let mut rows = vec![
+            div()
+                .text_color(palette::dim())
+                .child(i18n::text("restrict.formatting_title"))
+                .into_any_element(),
+            choice(
+                ("restrict-formatting", 0),
+                "restrict.formatting",
+                protection.formatting,
+                ReviewAction::RestrictFormatting,
+                cx,
+            ),
+            div()
+                .text_color(palette::dim())
+                .child(i18n::text("restrict.editing_title"))
+                .into_any_element(),
+        ];
+        for (index, (key, kind)) in [
+            ("restrict.none", None),
+            ("restrict.read_only", Some(EditingKind::ReadOnly)),
+            ("restrict.tracked", Some(EditingKind::TrackedChanges)),
+            ("restrict.comments", Some(EditingKind::Comments)),
+            ("restrict.forms", Some(EditingKind::Forms)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            rows.push(choice(
+                ("restrict-kind", index),
+                key,
+                protection.kind == kind,
+                ReviewAction::RestrictKind(kind),
+                cx,
+            ));
+        }
+        rows.push(
+            div()
+                .text_color(palette::dim())
+                .child(i18n::text("restrict.exceptions"))
+                .into_any_element(),
+        );
+        rows.push(
+            comment_action(("restrict-everyone", 0), "restrict.everyone")
+                .on_click(cx.listener(|view, _event, _window, cx| {
+                    view.protection_action(ReviewAction::RestrictEveryone, cx)
+                }))
+                .into_any_element(),
+        );
+        rows.push(
+            div()
+                .text_color(palette::faint())
+                .child(i18n::format(
+                    "restrict.exception_count",
+                    &[("n", &document.editable_ranges().len())],
+                ))
+                .into_any_element(),
+        );
+        rows.push(
+            comment_action(
+                ("restrict-start", 0),
+                if enforced {
+                    "restrict.stop"
+                } else {
+                    "restrict.start"
+                },
+            )
+            .on_click(cx.listener(|view, _event, _window, cx| {
+                view.protection_action(ReviewAction::RestrictStartStop, cx)
+            }))
+            .into_any_element(),
+        );
+        Some(
+            div()
+                .id("restrict-pane")
+                .flex()
+                .flex_col()
+                .flex_none()
+                .w(px(260.0))
+                .h_full()
+                .gap_1()
+                .px_3()
+                .pt_3()
+                .bg(palette::panel())
+                .border_l_1()
+                .border_color(palette::border())
+                .text_xs()
+                .child(div().text_sm().child(i18n::text("restrict.title")))
+                .children(rows)
                 .into_any_element(),
         )
     }

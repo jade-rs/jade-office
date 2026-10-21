@@ -72,6 +72,20 @@ pub enum ReviewAction {
     RevisionsPane,
     /// 比較… (`false`) or 組み込み….
     Compare(bool),
+    /// 編集の制限: the pane.
+    RestrictPane,
+    /// The pane's choices.
+    RestrictKind(Option<jade_web::word::protection::EditingKind>),
+    RestrictFormatting,
+    RestrictEveryone,
+    /// 保護の開始 / 保護の中止: the password bar.
+    RestrictStartStop,
+    /// 文書の保護….
+    Protect,
+    /// 最終版にする.
+    MarkFinal,
+    /// 編集する, on the read-only bar.
+    EditAnyway,
 }
 
 /// What the tab shows as current.
@@ -80,6 +94,8 @@ pub struct ReviewShown {
     pub comments: bool,
     pub accessibility: bool,
     pub revisions_pane: bool,
+    pub restrict_pane: bool,
+    pub final_: bool,
     pub markup: MarkupOptions,
     pub reviewers: Vec<String>,
 }
@@ -389,6 +405,35 @@ pub fn review(
                     ),
                 ]),
             ],
+        ),
+        group(
+            i18n::text("protect.group"),
+            vec![row(vec![
+                text_button(
+                    "review-restrict",
+                    i18n::text("restrict.button"),
+                    i18n::text("restrict.title"),
+                    shown.restrict_pane,
+                    act(ReviewAction::RestrictPane),
+                    cx,
+                ),
+                text_button(
+                    "review-protect",
+                    i18n::text("protect.button"),
+                    i18n::text("protect.title"),
+                    false,
+                    act(ReviewAction::Protect),
+                    cx,
+                ),
+                text_button(
+                    "review-final",
+                    i18n::text("protect.final"),
+                    i18n::text("protect.final_title"),
+                    shown.final_,
+                    act(ReviewAction::MarkFinal),
+                    cx,
+                ),
+            ])],
         ),
         group(
             i18n::text("compare.group"),
