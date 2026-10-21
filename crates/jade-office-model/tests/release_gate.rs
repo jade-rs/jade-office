@@ -2,14 +2,8 @@
 //! **Blocker**, and a row is closed by marking it **Done** with the pull
 //! request that did it. A release is ready when no **Blocker** row is left.
 //!
-//! Run it before a release:
-//!
-//! ```sh
-//! cargo test --manifest-path crates/jade-office-model/Cargo.toml --test release_gate -- --ignored
-//! ```
-//!
-//! It is ignored in CI until the last blocker closes, so the open ones
-//! do not fail every other change.
+//! Every blocker is closed, so CI runs the gate: a row marked **Blocker**
+//! again — a new gap a release needs — fails it until it is done.
 
 use std::path::PathBuf;
 
@@ -65,7 +59,6 @@ fn the_gate_reads_blockers_and_done_rows() {
 }
 
 #[test]
-#[ignore = "run before a release: open blockers fail it until they close"]
 fn no_blocker_is_left_open() {
     let open = open_blockers(&gaps());
     assert!(
