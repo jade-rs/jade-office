@@ -32,8 +32,8 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 
 mod deck;
 mod sheet;
-mod word_dialogs;
 pub(crate) mod word_characters;
+mod word_dialogs;
 mod word_find;
 mod word_review;
 pub(crate) mod word_setup;

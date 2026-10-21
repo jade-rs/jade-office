@@ -27,13 +27,13 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
-mod word_dialogs;
 mod word_characters;
+mod word_dialogs;
 mod word_page;
 mod word_page_setup;
 mod word_review;
-mod word_table;
 mod word_story;
+mod word_table;
 mod workbook;
 mod workspace;
 
