@@ -372,6 +372,94 @@ pub fn check(docx: &[u8], version: WordVersion) -> Vec<(Issue, usize)> {
     out
 }
 
+/// The layout options Word's 互換性オプション lists that the layout here
+/// follows, by their element in `w:compat`.
+pub const LAYOUT_OPTIONS: [&str; 4] = [
+    // 東アジア言語の文字幅の調整をしない、は逆: on lays out by the line grid.
+    "useFELayout",
+    // 半角文字と全角文字の幅を揃える.
+    "balanceSingleByteDoubleByteWidth",
+    // ぶら下げインデントにタブを追加しない.
+    "noTabHangInd",
+    // 表の行の高さをグリッドに合わせる.
+    "adjustLineHeightInTable",
+];
+
+/// Whether each of [`LAYOUT_OPTIONS`] is on in `docx`.
+pub fn layout_options(docx: &[u8]) -> Vec<(&'static str, bool)> {
+    let settings = OpcPackage::open(docx)
+        .ok()
+        .and_then(|package| package.part_str("word/settings.xml").ok().flatten())
+        .unwrap_or_default();
+    let compat = settings
+        .find("<w:compat>")
+        .and_then(|start| Some(&settings[start..start + settings[start..].find("</w:compat>")?]))
+        .unwrap_or("");
+    LAYOUT_OPTIONS
+        .iter()
+        .map(|name| {
+            let tag = format!("<w:{name}");
+            let on = compat.find(&tag).is_some_and(|at| {
+                let element = &compat[at..at + compat[at..].find('>').unwrap_or(0)];
+                !(element.contains("w:val=\"0\"")
+                    || element.contains("w:val=\"false\"")
+                    || element.contains("w:val=\"off\""))
+            });
+            (*name, on)
+        })
+        .collect()
+}
+
+/// `docx` with the layout option `name` turned on or off in its
+/// `w:compat`, the compatibility settings kept last as the schema wants.
+pub fn set_layout_option(docx: &[u8], name: &str, on: bool) -> Result<Vec<u8>, String> {
+    let mut package = OpcPackage::open(docx).map_err(|error| error.to_string())?;
+    let settings = package
+        .part_str("word/settings.xml")
+        .map_err(|error| error.to_string())?
+        .ok_or("the document has no settings")?;
+    let (start, end) = match settings.find("<w:compat>") {
+        Some(start) => (
+            start + "<w:compat>".len(),
+            start
+                + settings[start..]
+                    .find("</w:compat>")
+                    .ok_or("the settings are damaged")?,
+        ),
+        None => {
+            let at = settings
+                .rfind("</w:settings>")
+                .ok_or("the settings are damaged")?;
+            let settings = format!(
+                "{}<w:compat></w:compat>{}",
+                &settings[..at],
+                &settings[at..]
+            );
+            package.replace("word/settings.xml", settings.into_bytes());
+            let bytes = package.write().map_err(|error| error.to_string())?;
+            return set_layout_option(&bytes, name, on);
+        }
+    };
+    let compat = &settings[start..end];
+    // The option goes, then comes back in front of the compatSettings if on.
+    let tag = format!("<w:{name}");
+    let mut without = compat.to_string();
+    if let Some(at) = without.find(&tag) {
+        let close = without[at..]
+            .find("/>")
+            .map(|end| at + end + 2)
+            .unwrap_or(without.len());
+        without.replace_range(at..close, "");
+    }
+    if on {
+        let insert = without.find("<w:compatSetting").unwrap_or(without.len());
+        without.insert_str(insert, &format!("<w:{name}/>"));
+    }
+    let changed = format!("{}{without}{}", &settings[..start], &settings[end..]);
+    package.replace("word/settings.xml", changed.into_bytes());
+    package.write().map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,6 +504,26 @@ mod tests {
         assert!(settings.contains("enableOpenTypeFeatures"));
         assert!(!settings.contains("useFELayout"));
         assert_eq!(settings.matches("<w:compat>").count(), 1);
+    }
+
+    #[test]
+    fn layout_options_turn_on_and_off() {
+        let blank = blank_document(Blank::Japanese);
+        assert!(layout_options(&blank).iter().all(|(_, on)| !on));
+        let on = set_layout_option(&blank, "adjustLineHeightInTable", true).unwrap();
+        assert!(layout_options(&on).contains(&("adjustLineHeightInTable", true)));
+        let settings = OpcPackage::open(&on)
+            .unwrap()
+            .part_str("word/settings.xml")
+            .unwrap()
+            .unwrap();
+        assert!(
+            settings.find("<w:adjustLineHeightInTable/>").unwrap()
+                < settings.find("<w:compatSetting").unwrap()
+        );
+        assert_eq!(compatibility_mode(&on), 15);
+        let off = set_layout_option(&on, "adjustLineHeightInTable", false).unwrap();
+        assert!(layout_options(&off).iter().all(|(_, on)| !on));
     }
 
     #[test]

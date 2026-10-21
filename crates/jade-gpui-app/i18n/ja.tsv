@@ -1486,3 +1486,21 @@ repair.part_mended	{name} の XML が壊れていました。読み取れた内�
 repair.relationship	見つからない {name} への参照を取り除きました。
 repair.content_types	コンテンツの種類の一覧 ([Content_Types].xml) を作り直しました。
 repair.package_rels	パッケージのリレーションシップを作り直しました。
+# Save options (word_save_options)
+menu.file.compress	ファイル サイズの圧縮…
+compress.title	ファイル サイズの圧縮
+compress.quality	画質
+compress.hd	HD (330 ppi)
+compress.print	印刷用 (220 ppi)
+compress.web	Web (150 ppi)
+compress.email	電子メール用 (96 ppi)
+compress.delete_crops	図のトリミング部分を削除する
+compress.on_save	保存するたびにこの設定で圧縮する
+compress.note	図の表示サイズに対して解像度が高い図だけが縮小されます。
+compress.done	{n} 個の図を圧縮しました (約 {kb} KB 削減)。
+compress.nothing	圧縮できる図はありませんでした。
+compat.layout_options	レイアウトの互換性オプション (この文書)
+compat.layout.fe	東アジア言語の行グリッドに合わせてレイアウトする (useFELayout)
+compat.layout.balance	半角文字と全角文字の幅を調整する
+compat.layout.no_tab_hang	ぶら下げインデントにタブ位置を追加しない
+compat.layout.table_grid	表の行の高さを行グリッドに合わせる

@@ -34,6 +34,8 @@ pub struct Checker {
     pub issues: Vec<(Issue, usize)>,
     /// The save that opened it, made when 続行 is pressed.
     pub then: Option<(Write, Option<SaveOptions>)>,
+    /// The layout options (互換性オプション) and whether each is on.
+    pub layout: Vec<(&'static str, bool)>,
 }
 
 impl DocumentView {
@@ -55,12 +57,47 @@ impl DocumentView {
             WordVersion::Word2003
         };
         let issues = self.compatibility_issues(version);
+        let layout = self
+            .document
+            .export_docx()
+            .map(|docx| compat::layout_options(&docx))
+            .unwrap_or_default();
         self.files.dialog = Some(FileDialog::Compatibility(Checker {
             version,
             issues,
             then,
+            layout,
         }));
         cx.notify();
+    }
+
+    /// Turns a layout option on or off, and lays the document out again.
+    pub(crate) fn toggle_layout_option(
+        &mut self,
+        name: &'static str,
+        on: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let changed = self
+            .document
+            .export_docx()
+            .and_then(|docx| compat::set_layout_option(&docx, name, on))
+            .and_then(|docx| crate::open_document_bytes(&docx));
+        match changed {
+            Ok(document) => {
+                self.replace_document(document);
+                self.dirty = true;
+                if let Some(FileDialog::Compatibility(checker)) = self.files.dialog.as_mut() {
+                    for option in checker.layout.iter_mut() {
+                        if option.0 == name {
+                            option.1 = on;
+                        }
+                    }
+                }
+                cx.notify();
+            }
+            Err(error) => self.show_message(t("compat.title"), &error, cx),
+        }
     }
 
     fn compatibility_issues(&self, version: WordVersion) -> Vec<(Issue, usize)> {
@@ -85,6 +122,7 @@ impl DocumentView {
             version,
             issues,
             then: Some((write.clone(), None)),
+            layout: Vec::new(),
         }));
         cx.notify();
         true
@@ -127,6 +165,16 @@ pub fn confirm(view: &mut DocumentView, checker: Checker, cx: &mut Context<Docum
     if let Some((write, options)) = checker.then {
         view.files.checked = true;
         view.write_file(write, options, cx);
+    }
+}
+
+fn layout_label(name: &str) -> &'static str {
+    match name {
+        "useFELayout" => t("compat.layout.fe"),
+        "balanceSingleByteDoubleByteWidth" => t("compat.layout.balance"),
+        "noTabHangInd" => t("compat.layout.no_tab_hang"),
+        "adjustLineHeightInTable" => t("compat.layout.table_grid"),
+        _ => t("compat.layout_options"),
     }
 }
 
@@ -202,6 +250,20 @@ pub fn dialog(
                 .flex_col()
                 .children(issues),
         )
+        .when(!checker.layout.is_empty(), |body| {
+            body.child(caption(t("compat.layout_options")))
+                .children(checker.layout.iter().map(|(name, on)| {
+                    let (name, on) = (*name, *on);
+                    check(
+                        SharedString::from(format!("compat-layout-{name}")),
+                        layout_label(name),
+                        on,
+                    )
+                    .on_click(cx.listener(
+                        move |view, _: &ClickEvent, _, cx| view.toggle_layout_option(name, !on, cx),
+                    ))
+                }))
+        })
         .child(
             check("compat-on-save", t("compat.check_on_save"), check_on_save).on_click(
                 cx.listener(|view, _: &ClickEvent, _, cx| {
@@ -389,5 +451,39 @@ mod tests {
             "saved in its own mode"
         );
         std::fs::remove_dir_all(directory).ok();
+    }
+
+    /// A layout option turned on in the checker is in the document's
+    /// settings, laid out again.
+    #[gpui::test]
+    fn layout_options_change_the_settings(cx: &mut gpui::TestAppContext) {
+        let path = crate::shell::scratch_copy(
+            &PathBuf::from(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../jade-core/contract.docx"
+            )),
+            "layout-options.docx",
+        );
+        let (view, cx) = open(&path, cx);
+        cx.dispatch_action(CheckCompatibility);
+        let before = view.read_with(cx, |view, _| {
+            let Some(FileDialog::Compatibility(checker)) = &view.files.dialog else {
+                panic!("the checker is open");
+            };
+            checker
+                .layout
+                .iter()
+                .find(|(name, _)| *name == "adjustLineHeightInTable")
+                .unwrap()
+                .1
+        });
+        view.update(cx, |view, cx| {
+            view.toggle_layout_option("adjustLineHeightInTable", !before, cx)
+        });
+        view.read_with(cx, |view, _| {
+            let docx = view.document.export_docx().unwrap();
+            assert!(compat::layout_options(&docx).contains(&("adjustLineHeightInTable", !before)));
+            assert!(view.dirty);
+        });
     }
 }
