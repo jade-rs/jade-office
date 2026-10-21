@@ -811,3 +811,20 @@ chars.compress.title	文字間隔の調整
 chars.compress.none	間隔を詰めない
 chars.compress.punctuation	句読点のみを詰める
 chars.compress.kana	句読点とかなを詰める
+menu.edit.paste_special	形式を選択して貼り付け...
+menu.edit.paste_match	貼り付けて書式を合わせる
+chars.paste.title	形式を選択して貼り付け
+chars.paste.title_menu	形式を選択して貼り付け...
+chars.paste.options	貼り付けのオプション
+chars.paste.keep_source	元の書式を保持
+chars.paste.merge	書式を結合
+chars.paste.text_only	テキストのみ保持
+chars.paste.source	貼り付ける内容
+chars.paste.paste	貼り付け
+chars.paste.link	リンク貼り付け
+chars.paste.as	貼り付ける形式
+chars.paste.format.word	Microsoft Word 文書
+chars.paste.format.rtf	書式付きテキスト (RTF)
+chars.paste.format.html	HTML 形式
+chars.paste.format.text	書式なしテキスト
+chars.paste.format.unicode	書式なしの Unicode テキスト

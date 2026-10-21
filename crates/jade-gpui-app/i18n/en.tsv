@@ -811,3 +811,20 @@ chars.compress.title	Character spacing control
 chars.compress.none	Don't compress
 chars.compress.punctuation	Compress punctuation only
 chars.compress.kana	Compress punctuation and Japanese kana
+menu.edit.paste_special	Paste Special...
+menu.edit.paste_match	Paste and Match Formatting
+chars.paste.title	Paste Special
+chars.paste.title_menu	Paste Special...
+chars.paste.options	Paste Options
+chars.paste.keep_source	Keep Source Formatting
+chars.paste.merge	Merge Formatting
+chars.paste.text_only	Keep Text Only
+chars.paste.source	Source
+chars.paste.paste	Paste
+chars.paste.link	Paste link
+chars.paste.as	As
+chars.paste.format.word	Microsoft Word Document
+chars.paste.format.rtf	Formatted Text (RTF)
+chars.paste.format.html	HTML Format
+chars.paste.format.text	Unformatted Text
+chars.paste.format.unicode	Unformatted Unicode Text
