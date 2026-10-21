@@ -8,7 +8,9 @@ use gpui::{
     anchored, deferred, div, point, prelude::*, px, AnyElement, ClickEvent, Context, ElementId,
     MouseButton, SharedString, Window,
 };
-use jade_web::word::form_view::{FieldView, FormButton, FormEvent, FormId, FormRow, FormView};
+use jade_web::word::form_view::{
+    FieldView, FormButton, FormEvent, FormId, FormRow, FormView, ToolGroup, ToolItem,
+};
 
 use crate::palette as theme;
 use crate::view::DocView as DocumentView;
@@ -190,6 +192,58 @@ fn row(row_view: &FormRow, handler: Handler, cx: &mut Context<DocumentView>) -> 
                 .on_click(listener!(FormEvent::Choose(*id, index), handler, cx))
             }))
             .into_any_element(),
+        FormRow::TextArea {
+            id,
+            label: text,
+            value,
+            focused,
+            width,
+            lines,
+        } => {
+            let full = value.text();
+            let caret_line = value.before.matches('\n').count();
+            let before_last = value.before.rsplit('\n').next().unwrap_or("").to_string();
+            let after_first = value.after.split('\n').next().unwrap_or("").to_string();
+            div()
+                .flex()
+                .items_start()
+                .gap_2()
+                .child(label(text))
+                .child(
+                    div()
+                        .id(element_id(*id, "area"))
+                        .w(px(*width))
+                        .min_h(px(18.0 * (*lines).max(1) as f32 + 6.0))
+                        .px_1()
+                        .py_0p5()
+                        .flex()
+                        .flex_col()
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(if *focused {
+                            theme::accent()
+                        } else {
+                            theme::border()
+                        })
+                        .bg(theme::canvas())
+                        .cursor_text()
+                        .on_click(listener!(FormEvent::Click(*id), handler, cx))
+                        .children(full.split('\n').enumerate().map(|(index, line)| {
+                            if *focused && index == caret_line {
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .h(px(18.0))
+                                    .child(before_last.clone())
+                                    .child(div().w(px(1.0)).h(px(14.0)).bg(theme::accent()))
+                                    .child(after_first.clone())
+                            } else {
+                                div().h(px(18.0)).child(line.to_string())
+                            }
+                        })),
+                )
+                .into_any_element()
+        }
         FormRow::Check {
             id,
             label: text,
@@ -446,4 +500,180 @@ pub fn overlay(
     )
     .with_priority(3)
     .into_any_element()
+}
+
+/// A ribbon tab's groups described as [`ToolGroup`]s: buttons, menus that
+/// drop their entries under them, and text.
+pub fn tool_groups(
+    groups: &[ToolGroup],
+    handler: Handler,
+    cx: &mut Context<DocumentView>,
+) -> Vec<AnyElement> {
+    groups
+        .iter()
+        .map(|group| {
+            let rows: Vec<AnyElement> = group
+                .rows
+                .iter()
+                .map(|row| {
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .children(row.iter().map(|item| tool_item(item, handler, cx)))
+                        .into_any_element()
+                })
+                .collect();
+            tool_group(&group.label, rows)
+        })
+        .collect()
+}
+
+fn tool_group(caption: &str, rows: Vec<AnyElement>) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .flex_none()
+        .items_center()
+        .gap_1()
+        .px_3()
+        .border_r_1()
+        .border_color(theme::border())
+        .child(div().flex().flex_col().gap_1().children(rows))
+        .child(
+            div()
+                .text_xs()
+                .text_color(theme::faint())
+                .child(caption.to_string()),
+        )
+        .into_any_element()
+}
+
+fn tool_item(item: &ToolItem, handler: Handler, cx: &mut Context<DocumentView>) -> AnyElement {
+    let button = |id: ElementId, label: String, title: String, on: bool, enabled: bool| {
+        div()
+            .id(id)
+            .flex()
+            .flex_none()
+            .items_center()
+            .h(px(26.0))
+            .px_2()
+            .rounded_md()
+            .text_xs()
+            .whitespace_nowrap()
+            .text_color(if enabled {
+                theme::text()
+            } else {
+                theme::faint()
+            })
+            .when(on, |button| button.bg(theme::selected()))
+            .when(enabled, |button| {
+                button
+                    .cursor_pointer()
+                    .hover(|button| button.bg(theme::hovered()))
+            })
+            .tooltip(crate::tooltip::Tooltip::text(title))
+            .child(label)
+    };
+    match item {
+        ToolItem::Button {
+            id,
+            label,
+            title,
+            on,
+            enabled,
+        } => {
+            let element = button(
+                element_id(*id, "tool"),
+                label.clone(),
+                title.clone(),
+                *on,
+                *enabled,
+            );
+            if *enabled {
+                element
+                    .on_click(listener!(FormEvent::Click(*id), handler, cx))
+                    .into_any_element()
+            } else {
+                element.into_any_element()
+            }
+        }
+        ToolItem::Text(text) => div()
+            .px_1()
+            .text_xs()
+            .text_color(theme::dim())
+            .whitespace_nowrap()
+            .child(text.clone())
+            .into_any_element(),
+        ToolItem::Menu {
+            id,
+            label,
+            title,
+            enabled,
+            open,
+            items,
+        } => {
+            let trigger = button(
+                element_id(*id, "menu"),
+                format!("{label} ▾"),
+                title.clone(),
+                *open,
+                *enabled,
+            );
+            let trigger = if *enabled {
+                trigger
+                    .on_click(listener!(FormEvent::Click(*id), handler, cx))
+                    .into_any_element()
+            } else {
+                trigger.into_any_element()
+            };
+            let menu = open.then(|| {
+                div()
+                    .id("tool-menu")
+                    .absolute()
+                    .top(px(28.0))
+                    .left_0()
+                    .min_w(px(200.0))
+                    .max_h(px(360.0))
+                    .overflow_y_scroll()
+                    .p_1()
+                    .flex()
+                    .flex_col()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(theme::border())
+                    .bg(theme::panel())
+                    .shadow_lg()
+                    .occlude()
+                    .children(items.iter().enumerate().map(|(index, entry)| {
+                        let row = div()
+                            .id(ElementId::Name(SharedString::from(format!(
+                                "tool-{}-{}-{index}",
+                                id.0, id.1
+                            ))))
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .text_xs()
+                            .whitespace_nowrap()
+                            .when(entry.on, |row| row.bg(theme::selected()))
+                            .when(!entry.enabled, |row| row.text_color(theme::faint()))
+                            .child(entry.label.clone());
+                        if entry.enabled {
+                            row.cursor_pointer()
+                                .hover(|row| row.bg(theme::hovered()))
+                                .on_click(listener!(FormEvent::Choose(*id, index), handler, cx))
+                                .into_any_element()
+                        } else {
+                            row.into_any_element()
+                        }
+                    }))
+            });
+            div()
+                .relative()
+                .child(trigger)
+                .children(menu.map(|menu| gpui::deferred(menu).with_priority(2)))
+                .into_any_element()
+        }
+    }
 }

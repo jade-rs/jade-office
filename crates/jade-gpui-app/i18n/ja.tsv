@@ -1445,3 +1445,170 @@ form.entries	ドロップダウン リストのアイテム
 form.bookmark	ブックマーク
 form.help_text	ヘルプ テキスト
 form.enabled	入力を有効にする
+# 差し込み文書: mail merge (word_mailings)
+mail.tab	差し込み文書
+mail.group.create	作成
+mail.group.start	差し込み印刷の開始
+mail.group.fields	文章入力とフィールドの挿入
+mail.group.preview	結果のプレビュー
+mail.group.finish	完了
+mail.envelopes	封筒
+mail.envelopes_title	封筒を作成して印刷します
+mail.labels	ラベル
+mail.labels_title	ラベルを作成して印刷します
+mail.start	差し込み印刷の開始
+mail.start_title	レター、封筒、ラベル、名簿の差し込み印刷を始めます
+mail.start.letters	レター
+mail.start.envelopes	封筒...
+mail.start.labels	ラベル...
+mail.start.directory	名簿
+mail.start.email	電子メール メッセージ
+mail.start.normal	標準の Word 文書
+mail.recipients	宛先の選択
+mail.recipients_title	差し込み印刷の宛先のリストを選びます
+mail.recipients.new	新しいリストの入力...
+mail.recipients.existing	既存のリストを使用...
+mail.recipients.source	データ ソース: {name}
+mail.recipients.all	すべて選択
+mail.recipients.none	すべてクリア
+mail.recipients.count	{count} 件中 {n} 件の宛先を差し込みます
+mail.edit_recipients	宛先リストの編集
+mail.edit_recipients_title	差し込む宛先を選び、並べ替えて絞り込みます
+mail.highlight	差し込みフィールドの強調表示
+mail.highlight_title	文書の差し込みフィールドに網かけを表示します
+mail.address_block	住所ブロック
+mail.address_block_title	宛先の住所を挿入します
+mail.greeting	あいさつ文
+mail.greeting_title	あいさつ文を挿入します
+mail.insert_field	差し込みフィールドの挿入
+mail.insert_field_title	宛先リストの列を差し込みフィールドとして挿入します
+mail.rules	ルール
+mail.rules_title	差し込み印刷のルールを挿入します
+mail.match	フィールドの対応
+mail.match_title	住所のフィールドを宛先リストの列に対応させます
+mail.update_labels	複数ラベルに反映
+mail.update_labels_title	最初のラベルの内容をほかのすべてのラベルに反映します
+mail.preview	結果のプレビュー
+mail.preview_title	差し込みフィールドを宛先のデータで表示します
+mail.first	|◀
+mail.first_title	先頭のレコード
+mail.previous	◀
+mail.previous_title	前のレコード
+mail.next	▶
+mail.next_title	次のレコード
+mail.last	▶|
+mail.last_title	最後のレコード
+mail.record	レコード {n} / {count}
+mail.record_none	レコードなし
+mail.check	エラーのチェック
+mail.check_title	差し込み印刷のエラーを確認します
+mail.check.note	差し込み印刷をシミュレーションして、エラーを報告します。
+mail.check.none	エラーは見つかりませんでした。
+mail.check.empty	データ ソースに列がありません。
+mail.check.missing	差し込みフィールド「{name}」はデータ ソースにありません。
+mail.check.unmatched	住所ブロックやあいさつ文に使う列が対応していません。[フィールドの対応] で設定してください。
+mail.finish	完了と差し込み
+mail.finish_title	差し込み印刷を完了します
+mail.finish.document	個々のドキュメントの編集...
+mail.finish.print	文書の印刷...
+mail.finish.pdf	PDF に差し込み...
+mail.finish.records	差し込むレコード
+mail.finish.all	すべて
+mail.finish.current	現在のレコード
+mail.finish.range	指定
+mail.finish.from	最初のレコード
+mail.finish.to	最後のレコード
+mail.no_data	宛先リストがありません
+mail.no_recipients	差し込む宛先がありません。
+mail.preview_heading	プレビュー
+mail.preview_none	宛先リストを選ぶと、ここに表示されます。
+mail.print	印刷
+mail.new_document	新規文書
+mail.address.name	受信者名をこの形式で挿入する
+mail.address.name_format	名前の形式
+mail.address.honorific	敬称
+mail.address.company	会社名を挿入する
+mail.address.postal	住所を挿入する
+mail.address.country	国/地域
+mail.address.country_always	常に含める
+mail.address.country_never	含めない
+mail.address.country_except	日本以外の場合のみ含める
+mail.address.by_country	宛先の国/地域に従って住所の書式を設定する
+mail.greeting.before	あいさつ
+mail.greeting.after	後ろに付ける文字
+mail.greeting.invalid	無効な受信者名に使用するあいさつ文
+mail.match.none	(対応なし)
+mail.match.note	住所ブロックとあいさつ文は、ここで対応させた列を使います。
+mail.field.title	敬称
+mail.field.first	名
+mail.field.middle	ミドル ネーム
+mail.field.last	姓
+mail.field.suffix	サフィックス
+mail.field.nickname	ニックネーム
+mail.field.job	役職
+mail.field.company	会社名
+mail.field.department	部署
+mail.field.address1	住所 1
+mail.field.address2	住所 2
+mail.field.city	市区町村
+mail.field.state	都道府県
+mail.field.postal	郵便番号
+mail.field.country	国/地域
+mail.field.phone	勤務先電話番号
+mail.field.email	電子メール アドレス
+mail.filter	フィルター
+mail.filter.column	列
+mail.filter.compare	比較
+mail.filter.value	値
+mail.filter.add	フィルターの追加
+mail.filter.clear	フィルターのクリア
+mail.filter.equal	と等しい
+mail.filter.not_equal	と等しくない
+mail.filter.contains	を含む
+mail.filter.not_contains	を含まない
+mail.filter.empty	が空白
+mail.filter.not_empty	が空白ではない
+mail.filter.less	より小さい
+mail.filter.greater	より大きい
+mail.filter.less_equal	以下
+mail.filter.greater_equal	以上
+mail.list.title	新しいアドレス帳
+mail.list.note	宛先の情報を入力します。Tab で次の列へ、最後の列で Tab を押すと次のエントリが追加されます。
+mail.list.add_row	新しいエントリ
+mail.list.remove_row	エントリの削除
+mail.list.column_name	列名
+mail.list.add_column	列の追加
+mail.list.rename_column	列名の変更
+mail.list.remove_column	列の削除
+mail.list.name	ファイル名
+mail.rule.ask	Ask...
+mail.rule.fill_in	Fill-in...
+mail.rule.if	If...Then...Else...
+mail.rule.merge_record	Merge Record #
+mail.rule.merge_sequence	Merge Sequence #
+mail.rule.next	Next Record
+mail.rule.next_if	Next Record If...
+mail.rule.set	Set Bookmark...
+mail.rule.skip_if	Skip Record If...
+mail.rule.field	フィールド名
+mail.rule.operator	比較
+mail.rule.value	比較対象
+mail.rule.then	挿入する文字列 (条件に一致する場合)
+mail.rule.else	挿入する文字列 (条件に一致しない場合)
+mail.rule.bookmark	ブックマーク
+mail.rule.prompt	メッセージ
+mail.rule.default	既定の文字列
+mail.rule.once	最初に一度だけたずねる
+mail.envelope.options	封筒オプション
+mail.envelope.merge_note	宛先には、差し込みの住所ブロックが入ります。
+mail.envelope.delivery	宛先
+mail.envelope.return	差出人
+mail.envelope.omit_return	差出人を印刷しない
+mail.envelope.size	封筒のサイズ
+mail.envelope.left	宛先の左からの位置 (mm)
+mail.envelope.top	宛先の上からの位置 (mm)
+mail.envelope.auto	空欄のときは自動 (左から {left} mm、上から {top} mm)
+mail.labels.options	ラベル オプション
+mail.labels.address	住所
+mail.labels.product	ラベルの製品番号
+mail.labels.details	{columns} 列 × {rows} 行、ラベル {width} × {height} mm

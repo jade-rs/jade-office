@@ -79,6 +79,15 @@ pub enum FormRow {
         options: Vec<String>,
         selected: Option<usize>,
     },
+    /// A labelled text field of several lines: Enter breaks a line in it.
+    TextArea {
+        id: FormId,
+        label: String,
+        value: FieldView,
+        focused: bool,
+        width: f32,
+        lines: usize,
+    },
     /// A check box and its label.
     Check { id: FormId, label: String, on: bool },
     /// A list to pick one entry from, `rows` tall.
@@ -187,3 +196,53 @@ pub enum FormOutcome<T> {
 
 /// Pass the shell's translation of an i18n key.
 pub type Translate = fn(&'static str) -> &'static str;
+
+/// A group of a ribbon tab described once for both shells: its label and
+/// its rows of buttons and menus. A button's click is
+/// [`FormEvent::Click`]; a menu's button toggles it open, and an entry is
+/// [`FormEvent::Choose`] with the menu's id.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ToolGroup {
+    pub label: String,
+    pub rows: Vec<Vec<ToolItem>>,
+}
+
+/// One control of a [`ToolGroup`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum ToolItem {
+    Button {
+        id: FormId,
+        label: String,
+        title: String,
+        on: bool,
+        enabled: bool,
+    },
+    Menu {
+        id: FormId,
+        label: String,
+        title: String,
+        enabled: bool,
+        open: bool,
+        items: Vec<ToolMenuItem>,
+    },
+    /// Text shown in the row: a record number.
+    Text(String),
+}
+
+/// An entry of a [`ToolItem::Menu`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolMenuItem {
+    pub label: String,
+    pub on: bool,
+    pub enabled: bool,
+}
+
+impl ToolMenuItem {
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            on: false,
+            enabled: true,
+        }
+    }
+}
