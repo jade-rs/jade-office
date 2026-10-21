@@ -129,11 +129,10 @@ impl Session {
             .paragraph(0)
             .map(|paragraph| paragraph.runs.iter().map(|run| run.text.len()).sum())
             .unwrap_or(0);
-        self.selection = Some(SelectionRange {
-            anchor: TextPosition::new(0, 0),
-            focus: TextPosition::new(0, length),
-            ..SelectionRange::collapsed(TextPosition::new(0, 0))
-        });
+        self.selection = Some(SelectionRange::new(
+            TextPosition::new(0, 0),
+            TextPosition::new(0, length),
+        ));
     }
 
     fn undo(&mut self) {

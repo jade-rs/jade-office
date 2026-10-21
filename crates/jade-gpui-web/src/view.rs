@@ -32,6 +32,7 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 
 mod deck;
 mod sheet;
+mod word_fields;
 mod word_find;
 mod word_review;
 mod word_story;
@@ -1982,6 +1983,11 @@ impl DocView {
             return;
         }
         if self.finding() && self.find_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        // Word's field keys: F9, ⌘F11/⌘⇧F11, ⌘⇧F9.
+        if self.field_key(event, cx) {
             cx.stop_propagation();
             return;
         }
