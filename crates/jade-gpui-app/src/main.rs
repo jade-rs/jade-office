@@ -29,6 +29,7 @@ mod shell;
 mod tooltip;
 mod word_page;
 mod word_review;
+mod word_table;
 mod workbook;
 mod workspace;
 
@@ -952,6 +953,9 @@ enum RibbonTab {
     References,
     Review,
     View,
+    /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
+    TableDesign,
+    TableLayout,
 }
 
 impl RibbonTab {
@@ -974,6 +978,8 @@ impl RibbonTab {
             RibbonTab::References => t("doc.tab.references"),
             RibbonTab::Review => t("doc.tab.review"),
             RibbonTab::View => t("doc.tab.view"),
+            RibbonTab::TableDesign => t("doc.tab.table_design"),
+            RibbonTab::TableLayout => t("doc.tab.table_layout"),
         }
     }
 }
@@ -1098,6 +1104,8 @@ struct DocumentView {
     comment_bar: Option<word_review::CommentBar>,
     /// Whether the comments pane is open beside the pages.
     show_comments: bool,
+    /// The table tabs' dialogs, pen and tools, and a border being dragged.
+    tables: word_table::TableUi,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1299,6 +1307,10 @@ impl DocumentView {
         }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
+        if self.tables.dialog.is_some() && self.handle_table_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.comment_bar.is_some() && self.handle_comment_bar_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -1649,7 +1661,22 @@ impl DocumentView {
     }
 
     /// The tab strip, and the tab's own groups under it.
+    /// The tabs to show: Word's seven, and the two table tabs while the
+    /// caret is in a table.
+    fn ribbon_tabs(&mut self) -> Vec<RibbonTab> {
+        let mut tabs = RibbonTab::ALL.to_vec();
+        if self.format_state().table.is_some() {
+            tabs.extend([RibbonTab::TableDesign, RibbonTab::TableLayout]);
+        }
+        tabs
+    }
+
     fn ribbon(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let tabs = self.ribbon_tabs();
+        // A table tab goes when the caret leaves the table.
+        if !tabs.contains(&self.ribbon_tab) {
+            self.ribbon_tab = RibbonTab::Home;
+        }
         let active = self.ribbon_tab;
         div()
             .flex()
@@ -1665,7 +1692,7 @@ impl DocumentView {
                     .gap_1()
                     .px_4()
                     .pt(px(8.0))
-                    .children(RibbonTab::ALL.map(|tab| {
+                    .children(tabs.into_iter().map(|tab| {
                         div()
                             .id(tab.label())
                             .px_3()
@@ -1876,10 +1903,9 @@ impl DocumentView {
                         .into_any_element()])],
                 )
                 .into_any_element(),
-            ]
-            .into_iter()
-            .chain(ribbon::table_tools(&self.ribbon, &state, cx))
-            .collect(),
+            ],
+            RibbonTab::TableDesign => word_table::design_groups(self, &state, cx),
+            RibbonTab::TableLayout => word_table::layout_groups(self, &state, cx),
             RibbonTab::References => vec![Self::ribbon_group(
                 t("doc.toc"),
                 vec![Self::ribbon_row(vec![self
@@ -2696,6 +2722,7 @@ impl DocumentView {
                 WordPage::page_command(document, command, japanese)
             }
             Action::EditStory(story) => return self.open_story_bar(story, cx),
+            Action::Tables(action) => return self.table_action(action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -3297,6 +3324,9 @@ impl DocumentView {
 
     /// Extends the selection from the drag anchor to the pointer.
     fn drag_to(&mut self, page_index: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if self.table_mouse_drag(page_index, event, cx) {
+            return;
+        }
         if self.object_drag.is_some() {
             return self.drag_object_to(page_index, event, cx);
         }
@@ -3415,6 +3445,9 @@ impl DocumentView {
         }
 
         self.selected_object = None;
+        if self.table_mouse_down(page_index, local_x, document_y, event, cx) {
+            return;
+        }
         if let Some(position) = self.document.position_at(local_x, document_y) {
             self.insert_at = position;
             self.current_page = page_index;
@@ -3920,6 +3953,8 @@ impl Render for DocumentView {
         };
         let zoom = self.zoom;
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
+        let page_cursor = self.tables.cursor();
+        let table_dialog = self.table_dialog_element(cx);
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -4061,7 +4096,7 @@ impl Render for DocumentView {
                                     .relative()
                                     .flex_none()
                                     .shadow_lg()
-                                    .cursor_pointer()
+                                    .cursor(page_cursor)
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(
@@ -4077,14 +4112,17 @@ impl Render for DocumentView {
                                         move |view, event: &MouseMoveEvent, _window, cx| {
                                             if event.dragging() {
                                                 view.drag_to(index, event, cx);
+                                            } else {
+                                                view.table_hover(index, event, cx);
                                             }
                                         },
                                     ))
                                     .on_mouse_up(
                                         MouseButton::Left,
                                         cx.listener(
-                                            move |view, _event: &MouseUpEvent, _window, _cx| {
+                                            move |view, _event: &MouseUpEvent, _window, cx| {
                                                 view.drag_anchor = None;
+                                                view.table_mouse_up(cx);
                                             },
                                         ),
                                     )
@@ -4094,6 +4132,7 @@ impl Render for DocumentView {
                                             .h(px(page_height * zoom)),
                                     )
                                     .children(self.caret_overlay(index))
+                                    .children(self.table_overlay(index))
                                     .children(self.object_outline(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
@@ -4140,6 +4179,8 @@ impl Render for DocumentView {
             )
             // ---- the comments pane, beside the pages while it is open ----
             .children(comments_pane)
+            // ---- a table dialog, over everything while it is open ----
+            .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4366,6 +4407,7 @@ fn document_view(
         story_bar: None,
         comment_bar: None,
         show_comments: false,
+        tables: word_table::TableUi::default(),
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,

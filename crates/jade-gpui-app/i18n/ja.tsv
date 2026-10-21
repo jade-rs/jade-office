@@ -675,3 +675,180 @@ format.fill.none	色なし
 format.ok	OK
 format.cancel	キャンセル
 sheet.protected	変更しようとしているセルやグラフは保護されているシート上にあります。
+doc.tab.table_design	テーブル デザイン
+doc.tab.table_layout	テーブル レイアウト
+table.group.style_options	表スタイルのオプション
+table.group.styles	表のスタイル
+table.group.borders	罫線
+table.group.table	表
+table.group.draw	罫線の作成
+table.group.cells	セル
+table.group.cell_size	セルのサイズ
+table.group.alignment	配置
+table.group.data	データ
+table.look.header_row	タイトル行
+table.look.total_row	集計行
+table.look.banded_rows	縞模様 (行)
+table.look.first_column	最初の列
+table.look.last_column	最後の列
+table.look.banded_columns	縞模様 (列)
+table.more_styles	スタイル
+table.style_clear	表 (標準)
+table.shading	網かけ
+table.no_color	色なし
+table.fill_keep	変更しない
+table.pen_style	線種
+table.pen_width	太さ
+table.pen_color	ペンの色
+table.border_sets	罫線
+table.borders_dialog	線種とページ罫線と網かけ...
+table.borders_title	線種とページ罫線と網かけ
+table.borders_kind	種類
+table.borders_edges	罫線
+table.apply_to	設定対象
+table.apply_table	表
+table.apply_cell	セル
+table.line.single	実線
+table.line.dotted	点線
+table.line.dashed	破線
+table.line.dot_dash	一点鎖線
+table.line.double	二重線
+table.line.triple	三重線
+table.line.thick	太線
+table.line.wave	波線
+table.border.bottom	下罫線
+table.border.top	上罫線
+table.border.left	左罫線
+table.border.right	右罫線
+table.border.none	枠なし
+table.border.all	格子
+table.border.outside	外枠
+table.border.inside	内側
+table.border.inside_h	横罫線 (内側)
+table.border.inside_v	縦罫線 (内側)
+table.draw	罫線を引く
+table.draw_title	ドラッグして表を描く、セルを分割する
+table.eraser	消しゴム
+table.eraser_title	罫線をクリックしてセルを結合する
+table.select	選択
+table.select.cell	セルの選択
+table.select.column	列の選択
+table.select.row	行の選択
+table.select.table	表の選択
+table.properties	表のプロパティ
+table.properties_title	表・行・列・セルのプロパティ
+table.insert_cells	セルの挿入...
+table.insert_cells_title	セルの挿入
+table.delete_cells	セルの削除...
+table.delete_cells_title	セルの削除
+table.split_cells	セルの分割...
+table.split_cells_title	セルの分割
+table.autofit	自動調整
+table.autofit.contents	文字列の幅に合わせる
+table.autofit.window	ウィンドウ幅に合わせる
+table.autofit.fixed	列の幅を固定する
+table.height	高さ
+table.width	幅
+table.step_up	▲
+table.step_down	▼
+table.distribute_rows	高さを揃える
+table.distribute_columns	幅を揃える
+table.align.top_left	上揃え (左)
+table.align.top_center	上揃え (中央)
+table.align.top_right	上揃え (右)
+table.align.center_left	中央揃え (左)
+table.align.center	中央揃え
+table.align.center_right	中央揃え (右)
+table.align.bottom_left	下揃え (左)
+table.align.bottom_center	下揃え (中央)
+table.align.bottom_right	下揃え (右)
+table.text_direction	文字列の方向
+table.direction.horizontal	横書き
+table.direction.vertical	縦書き
+table.direction.bottom_up	左へ90度回転
+table.cell_margins	セルの配置
+table.cell_margins_title	セルの余白と間隔
+table.sort	並べ替え
+table.sort_title	並べ替え
+table.repeat_header	タイトル行の繰り返し
+table.to_text	表の解除
+table.to_text_title	表を文字列に変換
+table.to_table	文字列を表にする...
+table.to_table_title	文字列を表にする
+table.formula	計算式
+table.formula_title	計算式
+table.formula_format	表示形式
+table.formula_paste	関数の貼り付け
+table.update_formulas	フィールド更新
+table.update_formulas_title	表の計算式をすべて更新する
+table.shift.right	右方向にシフト
+table.shift.down	下方向にシフト
+table.shift.insert_row	行全体を挿入
+table.shift.insert_column	列全体を挿入
+table.shift.left	左方向にシフト
+table.shift.up	上方向にシフト
+table.shift.delete_row	行全体を削除
+table.shift.delete_column	列全体を削除
+table.columns	列数
+table.rows	行数
+table.separator	文字列の区切り
+table.separator.paragraph	段落
+table.separator.paragraph_mark	段落記号
+table.separator.tab	タブ
+table.separator.comma	カンマ
+table.separator.other	その他
+table.sort.first	最優先されるキー
+table.sort.second	2 番目に優先されるキー
+table.sort.third	3 番目に優先されるキー
+table.sort.none	(なし)
+table.sort.text	文字列
+table.sort.number	数値
+table.sort.date	日付
+table.sort.ascending	昇順
+table.sort.descending	降順
+table.sort.header	タイトル行
+table.sort.header_yes	あり
+table.sort.header_no	なし
+table.tab.table	表
+table.tab.row	行
+table.tab.column	列
+table.tab.cell	セル
+table.prop.width	幅を指定する
+table.prop.unit	単位
+table.prop.alignment	配置
+table.prop.left	左揃え
+table.prop.center	中央揃え
+table.prop.right	右揃え
+table.prop.inside	内側
+table.prop.outside	外側
+table.prop.indent	左端からのインデント
+table.prop.wrapping	文字列の折り返し
+table.prop.wrap_none	なし
+table.prop.wrap_around	する
+table.prop.position	位置...
+table.prop.options	オプション...
+table.prop.default_margins	既定のセルの余白
+table.prop.top	上
+table.prop.bottom	下
+table.prop.left_margin	左
+table.prop.right_margin	右
+table.prop.spacing	セルの間隔を指定する
+table.prop.autofit	自動的にセルのサイズを変更する
+table.prop.height	高さを指定する
+table.prop.height_rule	高さの基準
+table.prop.at_least	最小値
+table.prop.exact	固定値
+table.prop.allow_break	行の途中で改ページする
+table.prop.repeat_header	各ページにタイトル行を表示する
+table.prop.vertical	上下の配置
+table.prop.same_as_table	表全体を同じ設定にする
+table.prop.horizontal	横
+table.prop.vertical_position	縦
+table.prop.relative_to	基準
+table.prop.anchor_margin	余白
+table.prop.anchor_page	ページ
+table.prop.anchor_column	列
+table.prop.anchor_paragraph	段落
+table.prop.distance	文字列との間隔
+table.prop.move_with_text	文字列と一緒に移動する
+table.prop.allow_overlap	重ねて配置する
