@@ -147,6 +147,8 @@ pub enum Popup {
     Cover,
     /// The font group's third row (`view::word_characters`).
     Characters(crate::view::word_characters::CharPopup),
+    /// 参考資料's lists (`view::word_references`).
+    References(crate::view::word_references::RefPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -233,10 +235,6 @@ pub enum Action {
     ParagraphDialog,
     /// 書式のコピー/貼り付け: the brush taken up, sticky on a double-click.
     FormatPainter(bool),
-    /// 参考資料 → 目次.
-    InsertContents,
-    /// 参考資料 → 目次の更新.
-    UpdateContents,
     /// 参考資料 → 脚注の挿入 / 文末脚注の挿入: the note's bar.
     InsertNote(jade_web::word::NoteKind),
     /// 文字列の折り返し for the picture selected.
@@ -245,6 +243,8 @@ pub enum Action {
     Tables(crate::word_table::TableAction),
     /// The ページ設定 dialogs and menus (`view::word_setup`).
     Setup(crate::view::word_setup::SetupAction),
+    /// 参考資料, ジャンプ and the navigation pane (`view::word_references`).
+    References(crate::view::word_references::RefAction),
 }
 
 impl Action {
@@ -626,6 +626,8 @@ pub struct TabState {
     /// What the text, line number and background groups show, read only
     /// while レイアウト is up.
     pub layout: Option<crate::view::word_setup::LayoutState>,
+    /// What 参考資料 shows, read only while it is up.
+    pub references: Option<crate::view::word_references::RibbonState>,
 }
 
 pub fn ribbon(
@@ -684,6 +686,7 @@ pub fn ribbon(
                     cx,
                 )])],
             ));
+            groups.push(crate::view::word_references::links_group(cx));
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
             groups.push(crate::view::word_characters::insert_group(cx));
@@ -714,7 +717,11 @@ pub fn ribbon(
             }
             groups
         }
-        Tab::References => references(cx),
+        Tab::References => crate::view::word_references::ribbon_groups(
+            ribbon.popup,
+            shown.references.as_ref(),
+            cx,
+        ),
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
@@ -1435,57 +1442,6 @@ fn insert(ribbon: &Ribbon, cx: &mut Context<DocView>) -> Vec<AnyElement> {
             picker,
         )],
     )]
-}
-
-// ---- 参考資料 -------------------------------------------------------------------
-
-fn references(cx: &mut Context<DocView>) -> Vec<AnyElement> {
-    use crate::word_page::text_button;
-    use jade_web::word::NoteKind;
-    vec![
-        group(
-            i18n::text("doc.toc"),
-            vec![row(vec![
-                text_button(
-                    "toc",
-                    i18n::text("doc.toc"),
-                    i18n::text("doc.toc_title"),
-                    false,
-                    Action::InsertContents,
-                    cx,
-                ),
-                text_button(
-                    "toc-update",
-                    i18n::text("doc.toc_update"),
-                    i18n::text("doc.toc_update_title"),
-                    false,
-                    Action::UpdateContents,
-                    cx,
-                ),
-            ])],
-        ),
-        group(
-            i18n::text("note.group"),
-            vec![row(vec![
-                text_button(
-                    "footnote",
-                    i18n::text("note.footnote"),
-                    i18n::text("note.footnote_title"),
-                    false,
-                    Action::InsertNote(NoteKind::Footnote),
-                    cx,
-                ),
-                text_button(
-                    "endnote",
-                    i18n::text("note.endnote"),
-                    i18n::text("note.endnote_title"),
-                    false,
-                    Action::InsertNote(NoteKind::Endnote),
-                    cx,
-                ),
-            ])],
-        ),
-    ]
 }
 
 // ---- レイアウト (表ツール) -------------------------------------------------------
