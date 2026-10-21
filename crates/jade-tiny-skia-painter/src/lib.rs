@@ -957,6 +957,11 @@ struct Inner {
     /// What measures text in place of the faces, when a host gave one. See
     /// [`TinySkiaPainter::measure_text_with`].
     measure: RefCell<Option<Rc<dyn TextMeasure>>>,
+    /// The transparent layer shadows and blurs are drawn on, kept between
+    /// draws: a surface-sized layer made per shadowed glyph spent more on
+    /// zeroing megabytes than on drawing. Only what was drawn on it is
+    /// cleared after each use.
+    effect_layer: RefCell<Option<TinySkiaPainter>>,
 }
 
 /// Text measurement a host puts in place of the painter's own.
@@ -1063,6 +1068,7 @@ impl TinySkiaPainter {
                 unpainted: Cell::new(true),
                 blends: RefCell::new(Vec::new()),
                 measure: RefCell::new(None),
+                effect_layer: RefCell::new(None),
             }),
         })
     }
@@ -2619,11 +2625,21 @@ impl TinySkiaPainter {
             return false;
         }
         let (width, height) = (self.width(), self.height());
-        let Some(layer) = TinySkiaPainter::new(width, height, Rc::clone(&self.inner.fonts)) else {
+        let kept = self
+            .inner
+            .effect_layer
+            .borrow_mut()
+            .take()
+            .filter(|layer| layer.width() == width && layer.height() == height);
+        let Some(layer) =
+            kept.or_else(|| TinySkiaPainter::new(width, height, Rc::clone(&self.inner.fonts)))
+        else {
             return false;
         };
         layer.inner.unpainted.set(false);
         layer.inner.blank.set(false);
+        layer.inner.damage.set(None);
+        layer.inner.stack.borrow_mut().clear();
         *layer.inner.measure.borrow_mut() = self.inner.measure.borrow().clone();
         *layer.inner.state.borrow_mut() = State {
             clip: None,
@@ -2634,6 +2650,7 @@ impl TinySkiaPainter {
         *layer.inner.path.borrow_mut() = self.inner.path.borrow().clone();
         draw(&layer);
         let Some(drawn) = layer.inner.damage.get() else {
+            *self.inner.effect_layer.borrow_mut() = Some(layer);
             return blur;
         };
         // Radii and offsets are in user space, as Skia's filters take them.
@@ -2727,6 +2744,21 @@ impl TinySkiaPainter {
                 ]
             });
         }
+        drop(layer_pixels);
+        // Back to transparent where it was drawn on, for the next use.
+        let (left, top, right, bottom) = region(2.0);
+        {
+            let mut pixels = layer.inner.pixmap.borrow_mut();
+            let row_bytes = width as usize * 4;
+            let data = pixels.data_mut();
+            for row in top as usize..bottom as usize {
+                let start = row * row_bytes + left as usize * 4;
+                let end = row * row_bytes + right as usize * 4;
+                data[start..end].fill(0);
+            }
+        }
+        layer.inner.damage.set(None);
+        *self.inner.effect_layer.borrow_mut() = Some(layer);
         blur
     }
 }
