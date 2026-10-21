@@ -36,6 +36,7 @@ pub(crate) mod word_characters;
 mod word_dialogs;
 mod word_fields;
 mod word_find;
+pub(crate) mod word_hyphenation;
 pub(crate) mod word_references;
 mod word_review;
 pub(crate) mod word_setup;
@@ -507,6 +508,12 @@ pub struct DocView {
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
     page_dialog: Option<Box<word_setup::PageDialogState>>,
+    /// The ハイフネーション dialog and why OK did nothing, while it is open
+    /// (`word_hyphenation`).
+    hyphenation_dialog: Option<(
+        jade_web::word::hyphenation::HyphenationDialog,
+        Option<&'static str>,
+    )>,
 }
 
 impl DocView {
@@ -630,6 +637,7 @@ impl DocView {
             references: word_references::References::default(),
             host,
             page_dialog: None,
+            hyphenation_dialog: None,
         })
     }
 
@@ -1805,6 +1813,8 @@ impl DocView {
                 table,
                 layout: (ribbon.tab == ribbon::Tab::Layout)
                     .then(|| word_setup::LayoutState::read(document)),
+                hyphenation: (ribbon.tab == ribbon::Tab::Layout)
+                    .then(|| word_hyphenation::current_choice(document)),
                 references: (ribbon.tab == ribbon::Tab::References)
                     .then(|| word_references::ribbon_state(document, &self.references)),
             }
@@ -1890,6 +1900,7 @@ impl DocView {
         }
         .into_iter();
         let page_dialog = self.page_dialog_element(cx);
+        let hyphenation_dialog = self.hyphenation_dialog_element(cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
         let Document::Pages {
@@ -2191,6 +2202,7 @@ impl DocView {
             .children(comments_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
+            .children(hyphenation_dialog)
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -2221,6 +2233,10 @@ impl DocView {
             return;
         }
         // A dialog over a Word document is modal: it takes every key.
+        if self.hyphenation_dialog.is_some() && self.hyphenation_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
             cx.stop_propagation();
             return;

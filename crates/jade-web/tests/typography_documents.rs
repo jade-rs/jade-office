@@ -37,3 +37,38 @@ fn ligatures_from_the_font_dialog_are_drawn() {
         "undo draws the letters again"
     );
 }
+
+/// レイアウト ▸ ハイフネーション ▸ 自動 breaks long English words at line
+/// ends with a hyphen the text does not have; なし, or the paragraph's
+/// 段落の自動ハイフネーションを行わない, takes them away again.
+#[test]
+fn automatic_hyphenation_redraws_the_page() {
+    use jade_office_model::word::hyphenation::WordHyphenation;
+    use jade_office_model::word::paragraph_options::{ParagraphSwitch, WordParagraphOptions};
+    use jade_web::word::new::{blank_document, Blank};
+
+    let mut document = common::open_bytes(&blank_document(Blank::English));
+    document.place_caret(0, 0);
+    let text = "Automatic hyphenation divides considerable international responsibilities \
+        between representatives of organizations, documentation departments and \
+        administrative committees, characteristically accommodating extraordinary \
+        circumstances whenever practicable, notwithstanding unpredictable interruptions.";
+    document.insert_text(text).unwrap();
+    let plain = page_pixels(&document);
+
+    document.set_auto_hyphenation(true).unwrap();
+    let hyphenated = page_pixels(&document);
+    assert!(plain != hyphenated, "the lines break inside words");
+    assert_eq!(document.paragraph_text(0).as_deref(), Some(text));
+
+    document.select((0, 0), (0, 1)).unwrap();
+    document
+        .set_paragraph_switch(ParagraphSwitch::DontHyphenate, true)
+        .unwrap();
+    assert!(page_pixels(&document) == plain, "the paragraph opts out");
+    document.undo().unwrap();
+    assert!(page_pixels(&document) == hyphenated);
+
+    document.set_auto_hyphenation(false).unwrap();
+    assert!(page_pixels(&document) == plain);
+}

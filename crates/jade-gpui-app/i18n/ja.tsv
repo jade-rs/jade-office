@@ -1997,3 +1997,17 @@ notes.separator	境界線を表示する
 notes.continuation_separator	継続境界線を表示する
 nav.collapse	折りたたむ
 nav.expand	展開
+hyphenation.group	ハイフネーション
+hyphenation.button	ハイフネーション
+hyphenation.title	ハイフネーション
+hyphenation.none	なし
+hyphenation.automatic	自動
+hyphenation.options	ハイフネーションのオプション...
+hyphenation.auto	文書を自動的にハイフネーションする
+hyphenation.caps	英大文字の単語をハイフネーションする
+hyphenation.zone	ハイフネーション ゾーン
+hyphenation.limit	連続するハイフンの制限
+hyphenation.no_limit	空欄で制限なし
+hyphenation.bad_zone	ハイフネーション ゾーンには 0 以上の長さを入力してください。
+hyphenation.bad_limit	連続するハイフンの制限には 0 以上の整数を入力してください。
+hyphenation.unlimited	制限なし

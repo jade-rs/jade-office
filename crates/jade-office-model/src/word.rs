@@ -37,6 +37,7 @@ pub mod design;
 pub mod fields;
 pub mod find;
 pub mod font;
+pub mod hyphenation;
 pub mod insert;
 pub mod links;
 pub mod lists;

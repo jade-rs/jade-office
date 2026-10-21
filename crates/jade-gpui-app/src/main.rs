@@ -32,6 +32,7 @@ mod word_design;
 mod word_dialog;
 mod word_dialogs;
 mod word_fields;
+mod word_hyphenation;
 mod word_lists;
 mod word_page;
 mod word_page_setup;
@@ -2091,6 +2092,7 @@ impl DocumentView {
             }]
             .into_iter()
             .chain(self.page_setup_groups(cx))
+            .chain([word_hyphenation::layout_group(self, cx)])
             .chain([
                 Self::ribbon_group(
                     t("doc.group.paragraph"),
