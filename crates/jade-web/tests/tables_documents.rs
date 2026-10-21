@@ -411,6 +411,8 @@ fn a_table_inside_a_cell_is_edited_as_a_table() {
     let cell = document.caret_table_cell().unwrap();
     assert_eq!(cell.table_order_index, 1, "the caret is in the nested table");
     assert_eq!((cell.rows, cell.columns), (2, 2));
+    // Word's 挿入 ▸ 表 gives a table its lines: 表 (格子).
+    assert_eq!(document.table_style_id().as_deref(), Some("TableGrid"));
     document.insert_text("内側").unwrap();
     let caret = document.table_command(TableCommand::InsertRowBelow).unwrap();
     document.place_caret(caret.0, caret.1);

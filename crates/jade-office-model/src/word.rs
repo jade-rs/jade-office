@@ -875,14 +875,19 @@ pub trait WordFormatting: WordSession {
             .map(|cell| cell.table_id);
         // The caret moves into the table, so no highlight is to be painted.
         self.collapse_to((paragraph, offset));
-        self.apply_command(
-            HeadlessCommand::InsertTable {
-                after_paragraph: paragraph,
-                rows: rows.max(1),
-                columns: columns.max(1),
-                column_widths: Vec::new(),
-                caret_offset: Some(offset),
-            },
+        // With Word's 表 (格子) style, as Word's 挿入 ▸ 表 gives every table:
+        // without it Word shows the table with no lines.
+        self.execute_command(
+            Box::new(
+                jade_docx_editor::commands::insert_table::InsertTableCommand::at_caret(
+                    paragraph,
+                    offset,
+                    rows.max(1),
+                    columns.max(1),
+                    Vec::new(),
+                )
+                .with_style("TableGrid"),
+            ),
             false,
         )?;
         // In a cell the new table is nested in it: its first cell is the
