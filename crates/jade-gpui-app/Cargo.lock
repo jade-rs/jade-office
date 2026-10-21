@@ -3258,6 +3258,7 @@ dependencies = [
  "fontdue",
  "indexmap",
  "jade-docx-reader",
+ "jade-painter",
  "jade-selection",
  "jade-text-layout",
  "rustc-hash 2.1.3",
@@ -3456,6 +3457,7 @@ version = "0.1.0"
 dependencies = [
  "jade-painter",
  "lopdf",
+ "rustybuzz 0.20.1",
  "skia-safe",
 ]
 

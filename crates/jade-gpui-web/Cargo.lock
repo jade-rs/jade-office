@@ -1893,6 +1893,7 @@ dependencies = [
  "fontdue",
  "indexmap",
  "jade-docx-reader",
+ "jade-painter",
  "jade-selection",
  "jade-text-layout",
  "rustc-hash 2.1.3",
@@ -2058,6 +2059,7 @@ dependencies = [
  "image",
  "jade-painter",
  "resvg 0.45.1",
+ "rustybuzz",
  "tiny-skia",
  "ttf-parser",
 ]
