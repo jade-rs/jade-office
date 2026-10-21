@@ -1048,6 +1048,7 @@ dependencies = [
  "rustybuzz",
  "serde",
  "smallvec",
+ "ttf-parser",
  "unicode-bidi",
  "unicode-script",
  "unicode-segmentation",
@@ -1120,6 +1121,7 @@ dependencies = [
  "jade-xlsx-reader",
  "jade-xlsx-render",
  "png 0.17.16",
+ "zip",
 ]
 
 [[package]]

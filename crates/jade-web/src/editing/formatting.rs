@@ -133,6 +133,10 @@ impl WordSession for EditableDocument {
         self.renderer.set_cell_selection(anchor_cell, focus_cell);
         Ok(())
     }
+
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        self.renderer.math_zones().to_vec()
+    }
 }
 
 impl EditableDocument {
