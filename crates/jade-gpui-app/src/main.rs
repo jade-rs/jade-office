@@ -27,6 +27,7 @@ mod native_print;
 mod ribbon;
 mod shell;
 mod tooltip;
+mod word_fields;
 mod word_page;
 mod word_review;
 mod workbook;
@@ -121,6 +122,15 @@ actions!(
         ZoomOut,
         ZoomActual,
         ZoomFit,
+        InsertField,
+        EditField,
+        UpdateFields,
+        ToggleFieldCodes,
+        ToggleFieldCode,
+        LockFields,
+        UnlockFields,
+        UnlinkFields,
+        DocumentProperties,
     ]
 );
 
@@ -191,6 +201,17 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd--", ZoomOut, None),
         KeyBinding::new("cmd-0", ZoomActual, None),
         KeyBinding::new("cmd-9", ZoomFit, None),
+        // Word's field keys: ⌘F9 a new field, F9 update, ⌥F9 every code,
+        // ⇧F9 the selected ones', ⌘F11/⌘⇧F11 lock and unlock, ⌘⇧F9 unlink.
+        KeyBinding::new("cmd-f9", InsertField, CONTEXT),
+        KeyBinding::new("ctrl-f9", EditField, CONTEXT),
+        KeyBinding::new("f9", UpdateFields, CONTEXT),
+        KeyBinding::new("alt-f9", ToggleFieldCodes, CONTEXT),
+        KeyBinding::new("shift-f9", ToggleFieldCode, CONTEXT),
+        KeyBinding::new("cmd-f11", LockFields, CONTEXT),
+        KeyBinding::new("cmd-shift-f11", UnlockFields, CONTEXT),
+        KeyBinding::new("cmd-shift-f9", UnlinkFields, CONTEXT),
+        KeyBinding::new("cmd-alt-shift-i", DocumentProperties, CONTEXT),
     ]
 }
 
@@ -239,6 +260,8 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.print"), Print),
                 MenuItem::action(t("menu.file.export_pdf"), ExportPdf),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.file.properties"), DocumentProperties),
             ],
         },
         Menu {
@@ -273,6 +296,20 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.indent_more"), IndentMore),
                 MenuItem::action(t("menu.format.indent_less"), IndentLess),
+            ],
+        },
+        Menu {
+            name: t("menu.insert").into(),
+            items: vec![
+                MenuItem::action(t("menu.insert.field"), InsertField),
+                MenuItem::action(t("menu.insert.edit_field"), EditField),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.insert.update_fields"), UpdateFields),
+                MenuItem::action(t("menu.insert.toggle_field_codes"), ToggleFieldCodes),
+                MenuItem::action(t("menu.insert.toggle_field_code"), ToggleFieldCode),
+                MenuItem::action(t("menu.insert.lock_fields"), LockFields),
+                MenuItem::action(t("menu.insert.unlock_fields"), UnlockFields),
+                MenuItem::action(t("menu.insert.unlink_fields"), UnlinkFields),
             ],
         },
         Menu {
@@ -1141,6 +1178,8 @@ struct DocumentView {
     show_inspector: bool,
     /// Whether there are edits since the document was opened or saved.
     dirty: bool,
+    /// The Field, prompt and Properties dialogs, and the user information.
+    fields: word_fields::FieldsUi,
     scroll: ScrollHandle,
     focus: FocusHandle,
 }
@@ -1299,6 +1338,12 @@ impl DocumentView {
         }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
+        if self.fields.dialog.is_some() {
+            if self.handle_fields_key(event, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         if self.comment_bar.is_some() && self.handle_comment_bar_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -1743,6 +1788,7 @@ impl DocumentView {
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
                 self.picture_group(cx),
                 word_page::header_footer(&self.ribbon, cx),
+                self.fields_group(cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -1909,7 +1955,7 @@ impl DocumentView {
                                 cx,
                                 |view, cx| view.toggle_formatting_marks(cx),
                             )
-                            .into_any_element()])],
+                            .into_any_element(), self.field_codes_button(cx)])],
                     )
                     .into_any_element(),
                     Self::ribbon_group(
@@ -2173,6 +2219,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(dialog) = self.fields.dialog.as_ref() {
+            return dialog.text();
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2181,6 +2230,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if let Some(dialog) = self.fields.dialog.as_mut() {
+            return dialog.text_mut();
+        }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
             (None, Some(bar)) => Some(&mut bar.text),
@@ -3920,6 +3972,7 @@ impl Render for DocumentView {
         };
         let zoom = self.zoom;
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
+        let fields_dialog = self.fields_dialog_element(cx);
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -3982,6 +4035,23 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &ToggleChangeTracking, _window, cx| view.toggle_tracking(cx)),
             )
+            .on_action(cx.listener(|view, _: &InsertField, _window, cx| {
+                view.open_field_dialog(None, cx)
+            }))
+            .on_action(cx.listener(|view, _: &EditField, _window, cx| view.open_edit_field_dialog(cx)))
+            .on_action(cx.listener(|view, _: &UpdateFields, _window, cx| view.update_fields(cx)))
+            .on_action(cx.listener(|view, _: &ToggleFieldCodes, _window, cx| {
+                view.toggle_all_field_codes(cx)
+            }))
+            .on_action(cx.listener(|view, _: &ToggleFieldCode, _window, cx| {
+                view.toggle_selected_field_codes(cx)
+            }))
+            .on_action(cx.listener(|view, _: &LockFields, _window, cx| view.lock_fields(true, cx)))
+            .on_action(cx.listener(|view, _: &UnlockFields, _window, cx| view.lock_fields(false, cx)))
+            .on_action(cx.listener(|view, _: &UnlinkFields, _window, cx| view.unlink_fields(cx)))
+            .on_action(cx.listener(|view, _: &DocumentProperties, _window, cx| {
+                view.open_properties_dialog(cx)
+            }))
             .on_action(cx.listener(|view, _: &ToggleInspector, _window, cx| {
                 view.show_inspector = !view.show_inspector;
                 cx.notify();
@@ -4288,6 +4358,8 @@ impl Render for DocumentView {
                         ),
                 )
             })
+            // The Field, prompt and Properties dialogs, over everything.
+            .children(fields_dialog)
     }
 }
 
@@ -4335,6 +4407,8 @@ fn document_view(
 ) -> DocumentView {
     // Placed before the window opens so the caret is visible from the first
     // frame rather than only after the first click.
+    // DATE and TIME show today, as Word updates them on opening.
+    word_fields::set_clock_on_open(&mut document);
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
     let images: Vec<_> = (0..document.page_count())
         .filter_map(|index| page_image(&document, index))
@@ -4379,6 +4453,7 @@ fn document_view(
         current_page: 0,
         show_inspector: false,
         dirty: false,
+        fields: word_fields::FieldsUi::default(),
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
     }
