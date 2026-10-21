@@ -697,3 +697,5 @@ note.endnote	文末脚注の挿入
 note.endnote_title	文末脚注の挿入 (⌥⌘D)
 note.text	内容
 note.keys	⏎ 挿入 · esc キャンセル
+doc.word_count	文字数: {characters} · 単語数: {words}
+doc.word_count_selection	文字数: {selected_characters}/{characters} · 単語数: {selected_words}/{words}

@@ -30,6 +30,7 @@ pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
 pub mod clipboard;
+pub mod count;
 pub mod find;
 pub mod links;
 pub mod new;
@@ -39,6 +40,7 @@ pub mod platform;
 pub mod references;
 pub mod review;
 
+pub use count::{WordCount, WordCounting};
 pub use find::{FindOptions, Found, WordFind};
 pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
 pub use references::{NoteForm, NoteKind, WordReferences};

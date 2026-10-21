@@ -487,6 +487,9 @@ pub struct DocView {
     slideshow: bool,
     /// Whether the browser's paste event came after the last ⌘V.
     paste_arrived: bool,
+    /// The status bar's 文字カウント and the caret, selection and edit it
+    /// was counted for: counting reads every paragraph.
+    word_count: RefCell<Option<(FormatKey, SharedString)>>,
     host: Host,
 }
 
@@ -605,6 +608,7 @@ impl DocView {
             show_notes: true,
             slideshow: false,
             paste_arrived: false,
+            word_count: RefCell::new(None),
             host,
         })
     }
@@ -615,13 +619,21 @@ impl DocView {
     pub fn status_items(&self) -> Vec<SharedString> {
         let mut items: Vec<SharedString> = Vec::new();
         match &self.document {
-            Document::Pages { pages, current, .. } => items.push(
-                i18n::format(
-                    "doc.position",
-                    &[("current", &(current + 1)), ("count", &pages.len())],
-                )
-                .into(),
-            ),
+            Document::Pages {
+                pages,
+                current,
+                document,
+                ..
+            } => {
+                items.push(
+                    i18n::format(
+                        "doc.position",
+                        &[("current", &(current + 1)), ("count", &pages.len())],
+                    )
+                    .into(),
+                );
+                items.push(self.word_count_status(document));
+            }
             Document::Deck {
                 deck,
                 current,
@@ -645,6 +657,41 @@ impl DocView {
             items.push(self.status.clone());
         }
         items
+    }
+
+    /// 文字カウント for the status bar, as Word shows it: the document's
+    /// words and characters, and the selection's out of them.
+    fn word_count_status(&self, document: &jade_web::editing::EditableDocument) -> SharedString {
+        use jade_web::word::count::grouped;
+        use jade_web::word::WordCounting;
+        let key = (document.caret(), document.selection(), self.generation);
+        if let Some((cached, status)) = self.word_count.borrow().as_ref() {
+            if *cached == key {
+                return status.clone();
+            }
+        }
+        let whole = document.document_count();
+        let status: SharedString = match document.selection_count() {
+            Some(selected) => i18n::format(
+                "doc.word_count_selection",
+                &[
+                    ("selected_words", &grouped(selected.words)),
+                    ("words", &grouped(whole.words)),
+                    ("selected_characters", &grouped(selected.characters)),
+                    ("characters", &grouped(whole.characters)),
+                ],
+            ),
+            None => i18n::format(
+                "doc.word_count",
+                &[
+                    ("words", &grouped(whole.words)),
+                    ("characters", &grouped(whole.characters)),
+                ],
+            ),
+        }
+        .into();
+        *self.word_count.borrow_mut() = Some((key, status.clone()));
+        status
     }
 
     /// The chosen zoom, or the fitted one last shown: the workspace's status
