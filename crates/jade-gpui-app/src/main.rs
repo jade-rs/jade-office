@@ -29,8 +29,10 @@ mod shell;
 mod tooltip;
 mod word_dialogs;
 mod word_page;
+mod word_page_setup;
 mod word_review;
 mod word_table;
+mod word_story;
 mod workbook;
 mod workspace;
 
@@ -51,7 +53,7 @@ use gpui::{
 };
 use jade_docx_native_render::{CaretAffinity, CaretRect, FontFace, NativeDocument, ObjectHit};
 use jade_office_model::word::clipboard::{RichClip, WordClipboard};
-use jade_office_model::word::page::{Story, WordPage};
+use jade_office_model::word::page::WordPage;
 use jade_office_model::word::picture::{ObjectTarget, PlacedObject, WordPicture, Wrap};
 use jade_office_model::word::review::WordReview;
 use jade_office_model::word::{
@@ -1006,6 +1008,8 @@ enum RibbonTab {
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
     TableDesign,
     TableLayout,
+    /// ヘッダーとフッター, shown while a header or footer is open.
+    HeaderFooter,
 }
 
 impl RibbonTab {
@@ -1030,6 +1034,7 @@ impl RibbonTab {
             RibbonTab::View => t("doc.tab.view"),
             RibbonTab::TableDesign => t("doc.tab.table_design"),
             RibbonTab::TableLayout => t("doc.tab.table_layout"),
+            RibbonTab::HeaderFooter => t("story.tab"),
         }
     }
 }
@@ -1101,7 +1106,8 @@ type FormatKey = (
 struct DocumentView {
     path: SharedString,
     file_size: u64,
-    document: NativeDocument,
+    /// The document, or the header or footer open over it (`word_story`).
+    document: word_story::WordDoc,
     /// One image per page, rebuilt only for the page an edit touched.
     images: Vec<Arc<RenderImage>>,
     /// Where to write the session when `JADE_DUMP_PAGE` names a directory,
@@ -1163,6 +1169,8 @@ struct DocumentView {
     painter: Option<(jade_office_model::word::CopiedFormat, bool)>,
     /// The format ⌘⇧C took up, for ⌘⇧V.
     copied_format: Option<jade_office_model::word::CopiedFormat>,
+    /// The ページ設定, 段組み or ページ番号の書式 dialog, while one is open.
+    page_dialog: Option<word_page_setup::PageDialogState>,
     /// Whether the comments pane is open beside the pages.
     show_comments: bool,
     /// The table tabs' dialogs, pen and tools, and a border being dragged.
@@ -1366,6 +1374,11 @@ impl DocumentView {
         if self.marked.is_some() {
             return;
         }
+        // A dialog is modal: it takes every key while it is open.
+        if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
         if self.dialog.is_some() && self.handle_dialog_key(event, cx) {
@@ -1478,7 +1491,7 @@ impl DocumentView {
             // ⇧Enter: a line break (`w:br`) inside the paragraph, as in Word.
             // The break is one character of the paragraph's text; the lines
             // after it move down, so every page is re-read.
-            "enter" if modifiers.shift => {
+            "enter" if modifiers.shift && !modifiers.platform => {
                 // Taken here: the platform would also type the `\n` through
                 // the input handler.
                 cx.stop_propagation();
@@ -1501,6 +1514,13 @@ impl DocumentView {
                     Err(error) => self.after_edit(Err(error), (paragraph, offset), cx),
                 }
             }
+            // ⌘↩ is Word for Mac's page break (改ページ).
+            "enter" if modifiers.platform => self.run_ribbon(
+                Action::Setup(word_page_setup::SetupAction::Break(
+                    jade_office_model::word::page_setup::PageBreak::Page,
+                )),
+                cx,
+            ),
             "enter" => {
                 // The split re-flows everything below, so the whole document is
                 // repainted rather than the visible page.
@@ -1755,11 +1775,13 @@ impl DocumentView {
             .into_any_element()
     }
 
-    /// The tab strip, and the tab's own groups under it.
-    /// The tabs to show: Word's seven, and the two table tabs while the
-    /// caret is in a table.
+    /// The tabs to show: Word's seven, ヘッダーとフッター while a header or
+    /// footer is open, and the two table tabs while the caret is in a table.
     fn ribbon_tabs(&mut self) -> Vec<RibbonTab> {
         let mut tabs = RibbonTab::ALL.to_vec();
+        if self.editing_story() {
+            tabs.push(RibbonTab::HeaderFooter);
+        }
         if self.format_state().table.is_some() {
             tabs.extend([RibbonTab::TableDesign, RibbonTab::TableLayout]);
         }
@@ -1879,6 +1901,7 @@ impl DocumentView {
                 )
                 .into_any_element(),
                 word_page::header_footer(&self.ribbon, cx),
+                self.cover_group(cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -1908,72 +1931,16 @@ impl DocumentView {
                 )
                 .into_any_element(),
             ],
-            RibbonTab::Design => vec![
-                Self::ribbon_group(
-                    t("doc.page_color"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "page-cream",
-                            t("doc.color.cream"),
-                            t("doc.page_color"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_background(Some("FFF9E6"), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "page-grey",
-                            t("doc.color.light_gray"),
-                            t("doc.page_color"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_background(Some("F2F2F2"), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "page-white",
-                            t("doc.none"),
-                            t("doc.page_color_none"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_background(None, cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-                Self::ribbon_group(
-                    t("doc.page_borders"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "page-border",
-                            t("doc.box"),
-                            t("doc.page_borders_box"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_borders(true, cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "page-no-border",
-                            t("doc.none"),
-                            t("doc.page_borders_none"),
-                            false,
-                            cx,
-                            |view, cx| view.set_page_borders(false, cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-            ],
-            RibbonTab::Layout => vec![
-                {
-                    let japanese = i18n::language() == i18n::Language::Japanese;
-                    let setup = self.document.page_setup();
-                    let preset = self.document.margin_preset(japanese);
-                    word_page::page_setup(&self.ribbon, &setup, preset, japanese, cx)
-                },
+            RibbonTab::Design => self.design_groups(cx),
+            RibbonTab::Layout => vec![{
+                let japanese = i18n::language() == i18n::Language::Japanese;
+                let setup = self.document.page_setup();
+                let preset = self.document.margin_preset(japanese);
+                word_page::page_setup(&self.ribbon, &setup, preset, japanese, cx)
+            }]
+            .into_iter()
+            .chain(self.page_setup_groups(cx))
+            .chain([
                 Self::ribbon_group(
                     t("doc.group.paragraph"),
                     vec![Self::ribbon_row(vec![
@@ -2012,7 +1979,8 @@ impl DocumentView {
                         .into_any_element()])],
                 )
                 .into_any_element(),
-            ],
+            ])
+            .collect(),
             RibbonTab::TableDesign => {
                 let tabs = self.tables.tab_state(&self.document);
                 word_table::design_groups(self.ribbon.popup, &tabs, &state, cx)
@@ -2078,6 +2046,7 @@ impl DocumentView {
                 .into_any_element(),
             ],
             RibbonTab::Review => self.review_groups(cx),
+            RibbonTab::HeaderFooter => self.story_groups(cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
@@ -2406,20 +2375,6 @@ impl DocumentView {
             (None, Some(bar)) => Some(&mut bar.text),
             (None, None) => None,
         }
-    }
-
-    /// ヘッダーの編集 / フッターの編集: the bar over the pages, holding the
-    /// story's first line (its tab-separated left, centre and right).
-    fn open_story_bar(&mut self, story: Story, cx: &mut Context<Self>) {
-        self.find_bar = None;
-        self.comment_bar = None;
-        self.dialog = None;
-        let text = self.document.story_text(story);
-        self.story_bar = Some(word_page::StoryBar {
-            story,
-            text: jade_office_model::text::TextEdit::new(text),
-        });
-        cx.notify();
     }
 
     /// Keys the header and footer bar takes: Enter puts the text in, Escape
@@ -2828,20 +2783,6 @@ impl DocumentView {
         }
     }
 
-    fn set_page_background(&mut self, color: Option<&str>, cx: &mut Context<Self>) {
-        if self.document.set_page_background(color).is_ok() {
-            self.rebuild_after_edit();
-            cx.notify();
-        }
-    }
-
-    fn set_page_borders(&mut self, boxed: bool, cx: &mut Context<Self>) {
-        if self.document.set_page_borders(boxed).is_ok() {
-            self.rebuild_after_edit();
-            cx.notify();
-        }
-    }
-
     // ---- the ribbon's commands ----------------------------------------------
 
     /// The formatting at the caret, read again only when the caret, the
@@ -2968,7 +2909,14 @@ impl DocumentView {
             return cx.notify();
         }
         self.ribbon.popup = None;
-        let document = &mut self.document;
+        // Page setup acts on the body's sections: an open header or footer
+        // is written back first.
+        if matches!(action, Action::Page(_)) {
+            if let Err(error) = self.close_story_editing() {
+                self.table_status = Some(SharedString::from(error));
+            }
+        }
+        let document: &mut NativeDocument = &mut self.document;
         let done = match action {
             Action::Undo => return self.step_history(true, cx),
             Action::Redo => return self.step_history(false, cx),
@@ -3007,7 +2955,9 @@ impl DocumentView {
                 let japanese = i18n::language() == i18n::Language::Japanese;
                 WordPage::page_command(document, command, japanese)
             }
-            Action::EditStory(story) => return self.open_story_bar(story, cx),
+            Action::EditStory(story) => return self.edit_story_in_place(story, cx),
+            Action::Story(story) => self.run_story_action(story, cx),
+            Action::Setup(setup) => self.run_setup_action(setup, cx),
             Action::ParagraphDialog => return self.open_paragraph_dialog(cx),
             Action::Tables(action) => return self.table_action(action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
@@ -3424,6 +3374,10 @@ impl DocumentView {
     /// ファイル → PDF として書き出す: asks where, then writes the pages as
     /// the editor paints them, their text searchable.
     fn export_pdf(&mut self, cx: &mut Context<Self>) {
+        // The PDF is the body's pages: an open header or footer goes in first.
+        if let Err(error) = self.close_story_editing() {
+            self.table_status = Some(SharedString::from(error));
+        }
         let source = PathBuf::from(self.path.to_string());
         let suggested = format!(
             "{}.pdf",
@@ -3718,6 +3672,11 @@ impl DocumentView {
         let zoom = f64::from(self.zoom);
         let local_x = f64::from(event.position.x - bounds.origin.x) / zoom;
         let local_y = f64::from(event.position.y - bounds.origin.y) / zoom;
+        // A double-click in the top or bottom margin opens the header or
+        // footer there; an open one takes clicks only inside it.
+        if self.story_click(page_index, local_y, event.click_count, cx) {
+            return;
+        }
 
         // Through the document's own mapping rather than page height times
         // index: the renderer leaves a gap between pages, so the height alone
@@ -4041,6 +4000,10 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A dialog is modal: its key handler takes the digits it wants.
+        if self.page_dialog.is_some() {
+            return;
+        }
         if let Some(field) = self.text_bar_mut() {
             field.replace(range, text, false);
             return cx.notify();
@@ -4074,6 +4037,9 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.page_dialog.is_some() {
+            return;
+        }
         if let Some(field) = self.text_bar_mut() {
             field.replace(range, new_text, true);
             return cx.notify();
@@ -4469,6 +4435,7 @@ impl Render for DocumentView {
                                     )
                                     .children(self.caret_overlay(index))
                                     .children(self.table_overlay(index))
+                                    .children(self.story_label(index))
                                     .children(self.object_outline(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
@@ -4517,6 +4484,8 @@ impl Render for DocumentView {
             .children(comments_pane)
             // ---- a table dialog, over everything while it is open ----
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
+            // ---- a ページ設定 dialog, over everything while it is open ----
+            .children(self.page_dialog_element(cx))
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4722,7 +4691,7 @@ fn document_view(
     DocumentView {
         path: SharedString::from(path_text),
         file_size,
-        document,
+        document: word_story::WordDoc::new(document),
         images,
         retired_images: Vec::new(),
         dump_directory: std::env::var_os("JADE_DUMP_PAGE").map(PathBuf::from),
@@ -4745,6 +4714,7 @@ fn document_view(
         dialog: None,
         painter: None,
         copied_format: None,
+        page_dialog: None,
         show_comments: false,
         tables: word_table::TableUi::default(),
         ribbon_tab: RibbonTab::Home,
@@ -5659,20 +5629,18 @@ mod tests {
             assert_eq!(view.document.page_setup().margins.top, 36.0);
             view.run_ribbon(Action::Page(PageCommand::Landscape(!before.landscape)), cx);
             assert_eq!(view.document.page_setup().landscape, !before.landscape);
+            // ヘッダーの編集 opens the header in place, over the caret's page.
             view.run_ribbon(Action::EditStory(Story::Header), cx);
-            assert!(view.story_bar.is_some());
+            assert!(view.editing_story());
         });
-        view.update(cx, |view, _| {
-            view.story_bar.as_mut().unwrap().text =
-                jade_office_model::text::TextEdit::new(String::new());
-        });
-        cx.simulate_input("jade");
-        cx.simulate_keystrokes("tab");
-        cx.simulate_input("header");
-        cx.simulate_keystrokes("enter");
+        cx.simulate_input("jade header");
         view.update(cx, |view, cx| {
-            assert!(view.story_bar.is_none());
-            assert_eq!(view.document.story_text(Story::Header), "jade\theader");
+            view.run_ribbon(Action::Story(super::word_story::StoryAction::Close), cx);
+            assert!(!view.editing_story());
+            assert!(view
+                .document
+                .story_text(Story::Header)
+                .starts_with("jade header"));
             view.run_ribbon(
                 Action::Page(PageCommand::PageNumber(
                     Story::Footer,

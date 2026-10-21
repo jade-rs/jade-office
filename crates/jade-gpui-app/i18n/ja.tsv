@@ -916,3 +916,213 @@ table.prop.distance	文字列との間隔
 table.prop.move_with_text	文字列と一緒に移動する
 table.prop.allow_overlap	重ねて配置する
 table.direction.turn_right	右へ90度回転
+# Page setup, sections, headers and footers
+setup.title	ページ設定
+setup.open	ページ設定…
+setup.tab.grid	文字数と行数
+setup.tab.margins	余白
+setup.tab.paper	用紙
+setup.tab.other	その他
+setup.apply	設定対象
+setup.apply.whole	文書全体
+setup.apply.section	このセクション
+setup.apply.selected	選択しているセクション
+setup.apply.forward	これ以降
+setup.direction	文字列の方向
+setup.direction.heading	文字方向
+setup.direction.label	方向
+setup.direction.horizontal	横書き
+setup.direction.vertical	縦書き
+setup.direction.options	縦書きと横書きのオプション…
+setup.columns.count	段数
+setup.grid.heading	文字数と行数の指定
+setup.grid.default	標準の文字数を使う
+setup.grid.lines	行数だけを指定する
+setup.grid.chars_and_lines	文字数と行数を指定する
+setup.grid.manuscript	原稿用紙の設定にする
+setup.chars.heading	文字数
+setup.chars	文字数
+setup.char_pitch	字送り
+setup.lines.heading	行数
+setup.lines_per_page	行数
+setup.line_pitch	行送り
+setup.margins.heading	余白
+setup.margin.top	上
+setup.margin.bottom	下
+setup.margin.left	左
+setup.margin.right	右
+setup.margin.inside	内側
+setup.margin.outside	外側
+setup.gutter	とじしろ
+setup.gutter_side	とじしろの位置
+setup.orientation.heading	印刷の向き
+setup.orientation	向き
+setup.pages.heading	複数ページの印刷設定
+setup.pages	印刷の形式
+setup.pages.normal	標準
+setup.pages.mirror	見開きページ
+setup.pages.two_on_one	袋とじ
+setup.pages.book_fold	本 (縦方向に谷折り)
+setup.paper.heading	用紙サイズ
+setup.paper.custom	サイズを指定
+setup.paper.width	幅
+setup.paper.height	高さ
+setup.paper.more	その他の用紙サイズ…
+setup.margins.custom	ユーザー設定の余白…
+setup.section.heading	セクション
+setup.section.start	セクションの開始位置
+setup.start.continuous	現在の位置から開始
+setup.start.next_column	新しい段から開始
+setup.start.next_page	次のページから開始
+setup.start.even_page	偶数ページから開始
+setup.start.odd_page	奇数ページから開始
+setup.header_footer.heading	ヘッダーとフッター
+setup.header_footer.odd_even	奇数/偶数ページ別指定
+setup.header_footer.first_page	先頭ページのみ別指定
+setup.header_distance	ヘッダー
+setup.footer_distance	フッター
+setup.page.heading	ページ
+setup.valign	垂直方向の配置
+setup.valign.top	上寄せ
+setup.valign.center	中央寄せ
+setup.valign.both	両端揃え
+setup.valign.bottom	下寄せ
+setup.lines	行番号
+setup.lines.button	行番号…
+setup.lines.title	行番号
+setup.lines.add	行番号を追加する
+setup.lines.start	開始番号
+setup.lines.count_by	行番号の間隔
+setup.lines.distance	文字列との間隔
+setup.lines.auto	0 は自動
+setup.lines.restart	番号の付け方
+setup.lines.none	なし
+setup.lines.continuous	連続番号
+setup.lines.new_page	ページごとに振り直し
+setup.lines.new_section	セクションごとに振り直し
+setup.lines.options	行番号オプション…
+setup.group.text	文字列と行番号
+setup.ltr	左から右
+setup.ltr_title	段落を左から右へ書く
+setup.rtl	右から左
+setup.rtl_title	段落を右から左へ書く
+setup.unit.mm	mm
+setup.unit.pt	pt
+setup.unit.chars	字
+setup.unit.lines	行
+setup.unit.columns	段
+setup.unit.none	 
+setup.problem.margins	余白が大きすぎて文字列を配置できません。
+setup.break.pages	ページ区切り
+setup.break.page	改ページ
+setup.break.column	段区切り
+setup.break.text_wrapping	文字列の折り返し
+setup.columns.title	段組み
+setup.columns.kind	種類
+setup.columns.one	1 段
+setup.columns.two	2 段
+setup.columns.three	3 段
+setup.columns.left	1 段目を狭く
+setup.columns.right	2 段目を狭く
+setup.columns.more	段組みの詳細設定…
+setup.columns.widths	段の幅と間隔
+setup.columns.width	段の幅
+setup.columns.space	間隔
+setup.columns.equal	段の幅をすべて同じにする
+setup.columns.line	境界線を引く
+setup.numbers.open	ページ番号の書式設定…
+setup.numbers.title	ページ番号の書式
+setup.numbers.format	番号書式
+setup.numbers.chapter	章番号を含める
+setup.numbers.chapter_style	章タイトルのスタイル
+setup.numbers.heading_level	見出し {n}
+setup.numbers.separator	区切り文字
+setup.numbers.numbering	連続番号
+setup.numbers.continue	前のセクションから継続
+setup.numbers.start	開始番号
+story.tab	ヘッダーとフッター
+story.header	ヘッダー
+story.header.first	先頭ページのヘッダー
+story.header.even	偶数ページのヘッダー
+story.footer	フッター
+story.footer.first	先頭ページのフッター
+story.footer.even	偶数ページのフッター
+story.section	セクション {n}
+story.linked	前と同じ
+story.group.insert	挿入
+story.field.page	ページ番号
+story.field.page_title	カーソルの位置にページ番号 (PAGE) を挿入
+story.field.pages	総ページ数
+story.field.pages_title	カーソルの位置に総ページ数 (NUMPAGES) を挿入
+story.field.date	日付
+story.field.date_title	カーソルの位置に日付 (DATE) を挿入
+story.field.file	ファイル名
+story.field.file_title	カーソルの位置にファイル名 (FILENAME) を挿入
+story.group.navigation	ナビゲーション
+story.goto.header	ヘッダーに移動
+story.goto.footer	フッターに移動
+story.previous	前へ
+story.previous_title	前のセクションのヘッダーまたはフッターへ
+story.next	次へ
+story.next_title	次のセクションのヘッダーまたはフッターへ
+story.link	前と同じヘッダー/フッター
+story.link_title	前のセクションと同じヘッダーまたはフッターを使う
+story.group.options	オプション
+story.group.position	位置
+story.distance_title	用紙の端からの距離を 1 mm 変える
+story.distance.header	上からのヘッダー位置 {mm} mm
+story.distance.footer	下からのフッター位置 {mm} mm
+story.group.close	閉じる
+story.close	ヘッダーとフッターを閉じる
+story.close_title	本文の編集に戻る (本文をダブルクリックしても戻ります)
+setup.snap	グリッドに合わせる
+setup.snap_title	1 ページの行数を指定時に文字を行グリッド線に合わせる
+story.field.heading	見出しの参照
+story.field.heading_title	カーソルの位置にこのページの見出し 1 (STYLEREF) を挿入
+story.field.heading_missing	見出し 1
+setup.borders.title	線種とページ罫線と網かけの設定 (ページ罫線)
+setup.borders.open	ページ罫線…
+setup.borders.setting	種類
+setup.borders.none	罫線なし
+setup.borders.box	囲む
+setup.borders.custom	指定
+setup.borders.style	線種
+setup.borders.single	実線
+setup.borders.double	二重線
+setup.borders.dotted	点線
+setup.borders.dashed	破線
+setup.borders.dot_dash	一点鎖線
+setup.borders.triple	三重線
+setup.borders.thin_thick	太線と細線
+setup.borders.wave	波線
+setup.borders.color	色
+setup.borders.auto	自動
+setup.borders.width	線の太さ
+setup.borders.offset	基準
+setup.borders.from_text	本文
+setup.borders.from_page	ページの端
+setup.borders.preview	プレビュー
+setup.color.white	白
+setup.color.light_gray	薄い灰色
+setup.color.cream	クリーム
+setup.color.rose	薄いバラ色
+setup.color.pale_green	薄い緑
+setup.color.pale_blue	薄い青
+setup.color.lavender	ラベンダー
+setup.color.dark_red	濃い赤
+setup.color.red	赤
+setup.color.orange	オレンジ
+setup.color.yellow	黄
+setup.color.light_green	薄い緑 (濃)
+setup.color.green	緑
+setup.color.light_blue	水色
+setup.color.blue	青
+setup.color.purple	紫
+setup.color.none	色なし
+setup.group.background	ページの背景
+setup.page_color	ページの色
+setup.cover	表紙
+setup.cover.group	ページ
+setup.cover.simple	シンプル
+setup.cover.banner	帯
+setup.cover.lined	罫線
