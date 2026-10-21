@@ -142,6 +142,18 @@ impl WordSession for WordDoc {
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
         WordSession::select_cells(&mut **self, anchor_cell, focus_cell)
     }
+
+    fn page_count(&self) -> Option<usize> {
+        WordSession::page_count(&**self)
+    }
+
+    fn paragraph_page(&self, paragraph: usize) -> Option<usize> {
+        WordSession::paragraph_page(&**self, paragraph)
+    }
+
+    fn position_metrics(&self, at: jade_office_model::word::Position) -> Option<(f64, f64, f64)> {
+        WordSession::position_metrics(&**self, at)
+    }
 }
 
 fn role_name(role: Story) -> &'static str {

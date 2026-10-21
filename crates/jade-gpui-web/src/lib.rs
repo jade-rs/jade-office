@@ -23,6 +23,7 @@ mod view;
 mod word_page;
 mod word_review;
 mod word_table;
+mod word_tools;
 mod workspace;
 
 use std::borrow::Cow;

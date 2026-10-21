@@ -42,6 +42,10 @@ jade-xlsx-render = { path = "../../jade-core/crates/jade-xlsx-render" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter", optional = true }
 jade-docx-native-render = { path = "../../jade-core/crates/jade-docx-native-render", optional = true }
 jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter", optional = true }
+# Word's styles, lists and theme parts, rewritten in place (word/xml.rs), and
+# the edited package read back (word/package.rs).
+quick-xml = "0.39"
+futures = "0.3"
 # Shift_JIS, for the CSV a Japanese Excel writes.
 encoding_rs = "0.8"
 # The browser build's PDF of page pictures.

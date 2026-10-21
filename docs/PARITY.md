@@ -80,3 +80,36 @@ Word moved from 70 to 165 of its 506 items being full.
 - **PowerPoint drawing**: shadows, glow, reflection, soft edges, chart labels
   and combos, all built-in table styles, picture bullets, arched WordArt;
   autofit drawn at its recorded scale, as PowerPoint opens a deck.
+
+## Batch 2
+
+Word: fields (a Field dialog, update, toggle codes, lock and unlink, every
+field type evaluated with Word's switches and 和暦), paragraphs and lists
+(tabs dialog and ruler, borders and shading, drop caps, picture bullets,
+numbering formats, multilevel and list styles), styles (character and
+linked styles, new/modify/update, Styles pane, themes, style sets,
+templates, Quick Parts), and references (notes options and conversion,
+bookmarks, cross-references, captions, citations and bibliography, TOC
+options, table of figures, index and table of authorities, the navigation
+pane with collapsible headings, Go To). Rows full: 350 of 506, counting a
+few dialogs that are native-only for now (listed in
+`docs/word/web-vs-desktop.md`).
+
+## Word reference documents
+
+Per-area detail behind the Word numbers above, in `docs/word/`:
+
+- [coverage.md](word/coverage.md) — the test that covers each row of the
+  reference list, and the rows no test covers.
+- [enumerations.md](word/enumerations.md) — border, underline, highlight,
+  shape, text-effect, emphasis and number-format values one by one.
+- [compatibility-modes.md](word/compatibility-modes.md) — compatibility modes,
+  legacy layout options and Word for Mac vs Windows, with jade's handling.
+- [fields.md](word/fields.md) — every field type and switch: parsed,
+  evaluated, insertable.
+- [japanese-typesetting.md](word/japanese-typesetting.md) — each Japanese
+  typesetting option against its element, JIS X 4051 rule, code and tests.
+- [web-vs-desktop.md](word/web-vs-desktop.md) — what the browser build does
+  differently from the native app, why, and what is left to port.
+- [ribbon-map.md](word/ribbon-map.md) — Word's ribbon tabs, context tabs,
+  dialogs and shortcuts (Mac and Windows) mapped to jade's two shells.
