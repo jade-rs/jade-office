@@ -337,6 +337,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.edit.find_next"), FindNext),
                 MenuItem::action(t("menu.edit.replace"), Replace),
                 MenuItem::action(t("menu.edit.replace_all"), ReplaceAll),
+                MenuItem::action(t("find.menu"), word_views::AdvancedFind),
                 MenuItem::action(t("goto.menu"), word_references::GoTo),
             ],
         },
