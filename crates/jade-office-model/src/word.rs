@@ -30,12 +30,18 @@ pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
 pub mod clipboard;
+pub mod design;
 pub mod find;
+pub mod lists;
 pub mod new;
+pub mod package;
 pub mod page;
+pub mod paragraph_options;
 pub mod picture;
 pub mod platform;
 pub mod review;
+pub mod styles;
+pub mod xml;
 
 pub use find::{FindOptions, Found, WordFind};
 
