@@ -1504,3 +1504,5 @@ compat.layout.fe	東アジア言語の行グリッドに合わせてレイアウ
 compat.layout.balance	半角文字と全角文字の幅を調整する
 compat.layout.no_tab_hang	ぶら下げインデントにタブ位置を追加しない
 compat.layout.table_grid	表の行の高さを行グリッドに合わせる
+pdf_import.title	PDF の変換
+pdf_import.body	PDF を編集可能な Word 文書に変換しました。変換後の文書は、特に図が多い場合、元の PDF と見た目が異なることがあります。保存すると Word 文書 (.docx) として保存されます。

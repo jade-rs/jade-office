@@ -1504,3 +1504,5 @@ compat.layout.fe	Lay out East Asian text on the line grid (useFELayout)
 compat.layout.balance	Balance SBCS characters and DBCS characters
 compat.layout.no_tab_hang	Don't add an automatic tab stop for hanging indent
 compat.layout.table_grid	Adjust line height to grid height in the table
+pdf_import.title	PDF Conversion
+pdf_import.body	The PDF was converted to an editable Word document. The result may not look exactly like the original PDF, especially if it had many graphics. It is saved as a Word Document (.docx).
