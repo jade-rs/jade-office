@@ -33,6 +33,7 @@ mod word_dialogs;
 mod word_files;
 mod word_page;
 mod word_page_setup;
+mod word_print;
 mod word_review;
 mod word_story;
 mod word_table;
@@ -1269,6 +1270,8 @@ struct DocumentView {
     files: word_files::Files,
     /// The 自動回復 copy of the unsaved edits.
     recovery: autorecover::Recovery,
+    /// The 印刷 panel, while it is open.
+    printing: Option<word_print::PrintPanel>,
     scroll: ScrollHandle,
     focus: FocusHandle,
 }
@@ -1423,6 +1426,11 @@ impl DocumentView {
         // A composition owns the keyboard while it is running; letting these
         // through would edit around the preedit.
         if self.marked.is_some() {
+            return;
+        }
+        // The 印刷 panel takes every key while it is open.
+        if word_print::handle_key(self, event.keystroke.key.as_str(), cx) {
+            cx.stop_propagation();
             return;
         }
         // A file dialog is modal: it takes every key while it is open.
@@ -2422,6 +2430,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = self.printing.as_ref().and_then(|panel| panel.field()) {
+            return Some(field);
+        }
         if let Some(field) = self.dialog.as_ref().and_then(|dialog| dialog.field()) {
             return Some(field);
         }
@@ -2436,6 +2447,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self.printing.as_ref().is_some_and(|panel| panel.typing) {
+            return self.printing.as_mut().and_then(|panel| panel.field_mut());
+        }
         if self.dialog.is_some() {
             return self.dialog.as_mut().and_then(|dialog| dialog.field_mut());
         }
@@ -3469,25 +3483,6 @@ impl DocumentView {
         }
     }
 
-    /// Prints the same vector PDF bytes produced by the export renderer.
-    fn print(&mut self) {
-        let result = self
-            .document
-            .export_docx()
-            .map_err(|error| format!("export failed: {error}"))
-            .and_then(|docx| {
-                jade_docx_pdf_renderer::render_docx_to_pdf(
-                    &docx,
-                    &jade_docx_pdf_renderer::RenderOptions::default(),
-                )
-                .map_err(|error| format!("PDF render failed: {error:?}"))
-            })
-            .and_then(|pdf| native_print::show_pdf_print_dialog(&pdf));
-        if let Err(error) = result {
-            eprintln!("print failed: {error}");
-        }
-    }
-
     /// Extends the selection to the caret, anchored where it was before the
     /// last extension.
     ///
@@ -4267,6 +4262,7 @@ impl Render for DocumentView {
         let table_dialog = self.table_dialog_element(cx);
         let dialog = word_characters::overlay(self, window, cx);
         let file_dialog = word_files::overlay(self, window, cx);
+        let print_panel = word_print::overlay(self, window, cx);
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -4288,7 +4284,7 @@ impl Render for DocumentView {
                     view.save_as_template(cx)
                 }),
             )
-            .on_action(cx.listener(|view, _: &Print, _window, _cx| view.print()))
+            .on_action(cx.listener(|view, _: &Print, _window, cx| view.open_print_panel(cx)))
             .on_action(cx.listener(|view, _: &ExportPdf, _window, cx| view.export_pdf(cx)))
             .on_action(cx.listener(|view, _: &Undo, _window, cx| view.step_history(true, cx)))
             .on_action(cx.listener(|view, _: &Redo, _window, cx| view.step_history(false, cx)))
@@ -4560,6 +4556,7 @@ impl Render for DocumentView {
             // ---- the open dialog, over everything ----
             .children(dialog)
             .children(file_dialog)
+            .children(print_panel)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4819,6 +4816,7 @@ fn document_view(
         dirty: false,
         files: word_files::Files::default(),
         recovery: autorecover::Recovery::default(),
+        printing: None,
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
     }

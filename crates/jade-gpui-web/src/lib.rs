@@ -67,6 +67,20 @@ impl Host {
             .ok();
     }
 
+    /// Hands a PDF to the page to print: the browser's print dialog opens
+    /// on it.
+    fn print(&self, name: &str, bytes: &[u8]) {
+        let array = js_sys::Uint8Array::from(bytes);
+        self.save
+            .call3(
+                &JsValue::NULL,
+                &JsValue::from_str(name),
+                &array,
+                &JsValue::TRUE,
+            )
+            .ok();
+    }
+
     /// Asks the page for a sample; it answers through [`open_file`].
     fn load(&self, name: &str) {
         self.load

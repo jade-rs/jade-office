@@ -1121,6 +1121,7 @@ version = "0.1.0"
 dependencies = [
  "encoding_rs",
  "flate2",
+ "futures",
  "jade-doc-reader",
  "jade-docx-convert",
  "jade-docx-editor",
@@ -1141,6 +1142,7 @@ dependencies = [
  "jade-xlsx-layout",
  "jade-xlsx-reader",
  "jade-xlsx-render",
+ "lopdf",
  "png 0.17.16",
 ]
 

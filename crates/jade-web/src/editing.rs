@@ -33,6 +33,7 @@ use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, INITIAL_PAGE};
 
 mod formatting;
+mod print;
 pub use formatting::{
     style_gallery, CellStep, CharacterFormat, FindOptions, FormatState, Found, GalleryStyle,
     Hyperlink, LinkDraft, LinkTarget, ListKind, ParagraphBorders, ParagraphStyle, TableBorders,
@@ -374,6 +375,14 @@ impl EditableDocument {
 
     pub fn page_count(&self) -> usize {
         self.rendered_pages.get().min(self.pages.borrow().len())
+    }
+
+    /// Each page's section (from 0) and the number its `PAGE` field shows:
+    /// what a print range such as `p1s2-p3s3` names.
+    pub fn page_labels(&self) -> Vec<(usize, usize)> {
+        let mut labels = self.renderer.page_labels();
+        labels.truncate(self.page_count());
+        labels
     }
 
     /// Page `index`'s surface, as last painted.

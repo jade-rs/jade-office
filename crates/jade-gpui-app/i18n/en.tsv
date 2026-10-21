@@ -1399,3 +1399,31 @@ prefs.choose	Choose
 prefs.this_document	Preserve fidelity when sharing this document
 prefs.embed_fonts	Embed TrueType fonts in the file
 prefs.embed_subset	Embed only characters used in the document (best for reducing file size)
+# Print (word_print)
+print.title	Print
+print.copies	Copies
+print.collate	Collated
+print.pages	Pages
+print.all	All
+print.current	Current Page
+print.selection	Selection
+print.custom	Page Range
+print.range_hint	For example 1,3,5-12 or p1s2-p3s3 (page 1 of section 2 to page 3 of section 3)
+print.range_syntax	Not a page range: {part}
+print.range_missing	No such page: {part}
+print.duplex	Two-Sided
+print.one_sided	One-Sided
+print.long_edge	Two-Sided (Long-Edge Binding)
+print.short_edge	Two-Sided (Short-Edge Binding)
+print.per_sheet	Pages per Sheet
+print.scale_to	Scale to Paper Size
+print.no_scaling	No Scaling
+print.options	Print Options
+print.markup	Print Markup
+print.update_fields	Update fields before printing
+print.background	Print background colors and images
+print.hidden_text	Print hidden text
+print.pdf	Save as PDF…
+print.print	Print
+print.fit	Fit
+print.sheet_of	{n} of {count}
