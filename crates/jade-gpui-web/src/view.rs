@@ -2395,6 +2395,9 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.page_dialog.is_some() {
+            return self.page_dialog_input(text, cx);
+        }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
             && !self.story_editing()
@@ -2436,6 +2439,10 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // No composition while a dialog is open: its fields take digits.
+        if self.page_dialog.is_some() {
+            return;
+        }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
             && !self.story_editing()
