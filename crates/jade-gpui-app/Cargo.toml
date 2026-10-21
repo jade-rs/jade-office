@@ -40,6 +40,6 @@ gpui = { version = "0.2", default-features = false, features = ["macos-blade", "
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSPrintInfo", "NSPrintOperation"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSData", "NSLocale", "NSString"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSPrintInfo", "NSPrintOperation", "NSSpellChecker"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSData", "NSDictionary", "NSLocale", "NSRange", "NSString"] }
 objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "objc2-app-kit"] }

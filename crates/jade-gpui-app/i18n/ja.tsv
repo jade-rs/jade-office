@@ -1388,3 +1388,20 @@ review.reject.visible	表示されたすべての変更を元に戻す
 review.reject.all	すべての変更を元に戻す
 review.reject.all_stop	すべての変更を元に戻し、変更の記録を停止
 menu.app.user_info	ユーザー情報…
+proof.group	文章校正
+proof.button	スペルチェックと文章校正
+proof.title	スペル チェックと文章校正
+proof.marks	入力時にチェック
+proof.marks_title	入力時にスペル チェックと文章校正を行う
+proof.spelling	スペル ミス
+proof.grammar	文法
+proof.suggestions	候補
+proof.no_suggestions	候補はありません
+proof.change	変更
+proof.change_all	すべて変更
+proof.ignore	無視
+proof.ignore_all	すべて無視
+proof.learn	辞書に追加
+proof.open_pane	スペル チェックと文章校正…
+proof.finished	文章校正が完了しました。
+menu.review.spelling	スペル チェックと文章校正…

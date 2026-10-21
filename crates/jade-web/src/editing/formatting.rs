@@ -168,3 +168,23 @@ impl jade_office_model::word::markup::WordMarkupDisplay for EditableDocument {
         EditableDocument::set_revision_display(self, markup, original, view)
     }
 }
+
+/// The browser build's pages show proofing marks from any checker.
+impl jade_office_model::word::proofing::WordProofingDisplay for EditableDocument {
+    fn set_proofing(&mut self, on: bool) -> Result<(), String> {
+        EditableDocument::set_proofing(self, on)
+    }
+
+    fn proofing(&self) -> bool {
+        EditableDocument::proofing(self)
+    }
+
+    fn proof_with(
+        &mut self,
+        checker: &mut dyn jade_office_model::word::proofing::SpellChecker,
+    ) -> Result<bool, String> {
+        EditableDocument::proof_pending(self, &mut |text, start, end, language| {
+            checker.check(text, start, end, language)
+        })
+    }
+}
