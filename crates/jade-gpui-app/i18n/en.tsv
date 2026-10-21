@@ -738,3 +738,181 @@ menu.format.copy_format	Copy Formatting
 menu.format.paste_format	Paste Formatting
 painter.title	Format Painter (double-click to keep painting)
 painter.armed	Format Painter: select the text to format · esc to stop
+doc.tab.table_design	Table Design
+doc.tab.table_layout	Table Layout
+table.group.style_options	Table Style Options
+table.group.styles	Table Styles
+table.group.borders	Borders
+table.group.table	Table
+table.group.draw	Draw
+table.group.cells	Cells
+table.group.cell_size	Cell Size
+table.group.alignment	Alignment
+table.group.data	Data
+table.look.header_row	Header Row
+table.look.total_row	Total Row
+table.look.banded_rows	Banded Rows
+table.look.first_column	First Column
+table.look.last_column	Last Column
+table.look.banded_columns	Banded Columns
+table.more_styles	Styles
+table.style_clear	Table Normal
+table.shading	Shading
+table.no_color	No Color
+table.fill_keep	Unchanged
+table.pen_style	Line Style
+table.pen_width	Line Weight
+table.pen_color	Pen Color
+table.border_sets	Borders
+table.borders_dialog	Borders and Shading...
+table.borders_title	Borders and Shading
+table.borders_kind	Setting
+table.borders_edges	Borders
+table.apply_to	Apply to
+table.apply_table	Table
+table.apply_cell	Cell
+table.line.single	Single
+table.line.dotted	Dotted
+table.line.dashed	Dashed
+table.line.dot_dash	Dot Dash
+table.line.double	Double
+table.line.triple	Triple
+table.line.thick	Thick
+table.line.wave	Wave
+table.border.bottom	Bottom Border
+table.border.top	Top Border
+table.border.left	Left Border
+table.border.right	Right Border
+table.border.none	No Border
+table.border.all	All Borders
+table.border.outside	Outside Borders
+table.border.inside	Inside Borders
+table.border.inside_h	Inside Horizontal Border
+table.border.inside_v	Inside Vertical Border
+table.draw	Draw Table
+table.draw_title	Drag to draw a table or split a cell
+table.eraser	Eraser
+table.eraser_title	Click a line to merge the cells beside it
+table.select	Select
+table.select.cell	Select Cell
+table.select.column	Select Column
+table.select.row	Select Row
+table.select.table	Select Table
+table.properties	Table Properties
+table.properties_title	Properties of the table, rows, columns and cells
+table.insert_cells	Insert Cells...
+table.insert_cells_title	Insert Cells
+table.delete_cells	Delete Cells...
+table.delete_cells_title	Delete Cells
+table.split_cells	Split Cells...
+table.split_cells_title	Split Cells
+table.autofit	AutoFit
+table.autofit.contents	AutoFit Contents
+table.autofit.window	AutoFit Window
+table.autofit.fixed	Fixed Column Width
+table.height	Height
+table.width	Width
+table.step_up	▲
+table.step_down	▼
+table.distribute_rows	Distribute Rows
+table.distribute_columns	Distribute Columns
+table.align.top_left	Align Top Left
+table.align.top_center	Align Top Center
+table.align.top_right	Align Top Right
+table.align.center_left	Align Center Left
+table.align.center	Align Center
+table.align.center_right	Align Center Right
+table.align.bottom_left	Align Bottom Left
+table.align.bottom_center	Align Bottom Center
+table.align.bottom_right	Align Bottom Right
+table.text_direction	Text Direction
+table.direction.horizontal	Horizontal
+table.direction.vertical	Vertical
+table.direction.bottom_up	Rotate 90° Left
+table.cell_margins	Cell Margins
+table.cell_margins_title	Cell margins and spacing
+table.sort	Sort
+table.sort_title	Sort
+table.repeat_header	Repeat Header Rows
+table.to_text	Convert to Text
+table.to_text_title	Convert Table to Text
+table.to_table	Convert Text to Table...
+table.to_table_title	Convert Text to Table
+table.formula	Formula
+table.formula_title	Formula
+table.formula_format	Number format
+table.formula_paste	Paste function
+table.update_formulas	Update Fields
+table.update_formulas_title	Update every formula in the tables
+table.shift.right	Shift cells right
+table.shift.down	Shift cells down
+table.shift.insert_row	Insert entire row
+table.shift.insert_column	Insert entire column
+table.shift.left	Shift cells left
+table.shift.up	Shift cells up
+table.shift.delete_row	Delete entire row
+table.shift.delete_column	Delete entire column
+table.columns	Number of columns
+table.rows	Number of rows
+table.separator	Separate text at
+table.separator.paragraph	Paragraphs
+table.separator.paragraph_mark	Paragraph marks
+table.separator.tab	Tabs
+table.separator.comma	Commas
+table.separator.other	Other
+table.sort.first	Sort by
+table.sort.second	Then by
+table.sort.third	Then by
+table.sort.none	(none)
+table.sort.text	Text
+table.sort.number	Number
+table.sort.date	Date
+table.sort.ascending	Ascending
+table.sort.descending	Descending
+table.sort.header	Header row
+table.sort.header_yes	Yes
+table.sort.header_no	No
+table.tab.table	Table
+table.tab.row	Row
+table.tab.column	Column
+table.tab.cell	Cell
+table.prop.width	Preferred width
+table.prop.unit	Measure in
+table.prop.alignment	Alignment
+table.prop.left	Left
+table.prop.center	Center
+table.prop.right	Right
+table.prop.inside	Inside
+table.prop.outside	Outside
+table.prop.indent	Indent from left
+table.prop.wrapping	Text wrapping
+table.prop.wrap_none	None
+table.prop.wrap_around	Around
+table.prop.position	Positioning...
+table.prop.options	Options...
+table.prop.default_margins	Default cell margins
+table.prop.top	Top
+table.prop.bottom	Bottom
+table.prop.left_margin	Left
+table.prop.right_margin	Right
+table.prop.spacing	Allow spacing between cells
+table.prop.autofit	Automatically resize to fit contents
+table.prop.height	Specify height
+table.prop.height_rule	Row height is
+table.prop.at_least	At least
+table.prop.exact	Exactly
+table.prop.allow_break	Allow row to break across pages
+table.prop.repeat_header	Repeat as header row at the top of each page
+table.prop.vertical	Vertical alignment
+table.prop.same_as_table	Same as the whole table
+table.prop.horizontal	Horizontal
+table.prop.vertical_position	Vertical
+table.prop.relative_to	Relative to
+table.prop.anchor_margin	Margin
+table.prop.anchor_page	Page
+table.prop.anchor_column	Column
+table.prop.anchor_paragraph	Paragraph
+table.prop.distance	Distance from surrounding text
+table.prop.move_with_text	Move with text
+table.prop.allow_overlap	Allow overlap
+table.direction.turn_right	Rotate 90° Right

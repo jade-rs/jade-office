@@ -121,6 +121,18 @@ impl WordSession for EditableDocument {
         self.renderer
             .derive_hyperlink_regions_from_document(&self.word_document)
     }
+
+    fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
+        let range = self
+            .renderer
+            .cell_selection_range(anchor_cell, focus_cell)
+            .ok_or_else(|| "the cells are not in one table".to_string())?;
+        self.composition = None;
+        self.selection = Some(range);
+        self.renderer.set_selection_range(Some(range));
+        self.renderer.set_cell_selection(anchor_cell, focus_cell);
+        Ok(())
+    }
 }
 
 impl EditableDocument {

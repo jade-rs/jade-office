@@ -114,6 +114,16 @@ pub enum Popup {
     Columns,
     Breaks,
     PageNumbers,
+    /// The table tabs' lists (`word_table`).
+    TableSelect,
+    TableStyles,
+    TableShading,
+    PenStyle,
+    PenWidth,
+    PenColor,
+    BorderSets,
+    AutoFit,
+    TextDirection,
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -184,6 +194,8 @@ pub enum Action {
     EditStory(Story),
     /// 段落…: the paragraph dialog.
     ParagraphDialog,
+    /// The table tabs, dialogs and tools (`word_table`).
+    Tables(crate::word_table::TableAction),
 }
 
 impl Action {
@@ -1165,6 +1177,7 @@ pub fn insert_table(ribbon: &Ribbon, cx: &mut Context<DocumentView>) -> Vec<AnyE
                     )),
             )
             .children(cells)
+            .children(crate::word_table::insert_menu_rows(cx))
             .into_any_element()
     });
     vec![group(

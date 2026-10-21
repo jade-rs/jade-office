@@ -190,4 +190,8 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
         self.renderer()
             .derive_hyperlink_regions_from_document(NativeDocument::word_document(self))
     }
+
+    fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
+        NativeDocument::select_cells(self, anchor_cell, focus_cell)
+    }
 }
