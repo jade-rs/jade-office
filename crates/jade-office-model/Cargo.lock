@@ -1144,6 +1144,7 @@ dependencies = [
  "jade-xlsx-render",
  "lopdf",
  "png 0.17.16",
+ "quick-xml",
 ]
 
 [[package]]

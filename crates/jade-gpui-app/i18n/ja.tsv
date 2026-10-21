@@ -1477,3 +1477,12 @@ templates.normal_custom	新しい文書は、保存した Normal テンプレー
 templates.save_normal	この文書のスタイルとページを既定に設定
 templates.reset_normal	既定に戻す
 templates.normal_saved	新しい文書は、この文書のスタイルとページで作成されます。
+# Repair (word::repair)
+repair.title	文書の修復
+repair.intro	この文書には読み取れない内容が含まれていたため、修復できた部分を開きました。保存すると、修復後の内容で保存されます。
+repair.archive	ファイルの目次 (ZIP の中央ディレクトリ) が壊れていたため、各部分を順に読み直しました。
+repair.entry_lost	{name} は読み取れなかったため、取り除きました。
+repair.part_mended	{name} の XML が壊れていました。読み取れた内容 (約 {percent}%) を残しました。
+repair.relationship	見つからない {name} への参照を取り除きました。
+repair.content_types	コンテンツの種類の一覧 ([Content_Types].xml) を作り直しました。
+repair.package_rels	パッケージのリレーションシップを作り直しました。

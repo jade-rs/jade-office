@@ -1987,6 +1987,7 @@ dependencies = [
  "jade-xlsx-layout",
  "jade-xlsx-reader",
  "jade-xlsx-render",
+ "quick-xml",
 ]
 
 [[package]]
