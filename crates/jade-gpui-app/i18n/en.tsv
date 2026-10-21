@@ -2031,3 +2031,32 @@ word.art.sun	Suns
 word.art.snowflakes	Snowflakes
 word.art.zigzag	Zigzag
 word.art.triangles	Triangles
+menu.format.justify	Justify
+menu.format.bullets	Bullets
+menu.format.subscript	Subscript
+menu.format.superscript	Superscript
+menu.insert.page_break	Page Break
+menu.insert.column_break	Column Break
+word.ctx.cut	Cut
+word.ctx.copy	Copy
+word.ctx.paste	Paste
+word.ctx.paste_special	Paste Special...
+word.ctx.font	Font...
+word.ctx.paragraph	Paragraph...
+word.ctx.bullets	Bullets
+word.ctx.numbering	Numbering
+word.ctx.hyperlink	Link...
+word.ctx.new_comment	New Comment
+word.ctx.insert_row_above	Insert Rows Above
+word.ctx.insert_row_below	Insert Rows Below
+word.ctx.insert_column_left	Insert Columns to the Left
+word.ctx.insert_column_right	Insert Columns to the Right
+word.ctx.delete_row	Delete Rows
+word.ctx.delete_column	Delete Columns
+word.ctx.delete_table	Delete Table
+word.ctx.merge_cells	Merge Cells
+word.ctx.split_cells	Split Cells...
+word.ctx.table_properties	Table Properties...
+word.ctx.edit_header	Edit Header
+word.ctx.edit_footer	Edit Footer
+word.ctx.close_header_footer	Close Header and Footer
