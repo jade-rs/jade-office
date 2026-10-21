@@ -1592,6 +1592,12 @@ impl DocView {
             "tab" => {
                 let backwards = extend;
                 self.word_edit(cx, |document| {
+                    // A document protected for forms goes from field to field.
+                    if jade_web::word::controls::WordControls::tab_to_form_field(
+                        document, backwards,
+                    ) {
+                        return Ok(());
+                    }
                     if document.step_cell(!backwards)? || backwards {
                         Ok(())
                     } else {

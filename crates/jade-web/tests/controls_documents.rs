@@ -276,3 +276,45 @@ fn a_selection_saved_to_the_gallery_fills_a_gallery_control() {
         .unwrap();
     assert!(document.content_controls()[0].text.starts_with("敬具"));
 }
+
+#[test]
+fn tab_goes_from_field_to_field_in_a_protected_form() {
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "A  B ");
+    document.place_caret(paragraph, 1);
+    document
+        .run_control_action(ContentControlAction::InsertFormField {
+            kind: FormFieldKind::Text,
+        })
+        .unwrap();
+    document.place_caret(paragraph, 0);
+    document
+        .insert_content_control(ContentControlKind::PlainText, false)
+        .unwrap();
+    document
+        .run_control_action(ContentControlAction::ProtectForms(true))
+        .unwrap();
+    document.place_caret(paragraph, 0);
+    assert!(document.tab_to_form_field(false));
+    let control = document.content_controls().remove(0);
+    let field = document.form_fields().remove(0);
+    let selected = document.selection().unwrap();
+    // Two stops, visited in order and round again.
+    let stops = [
+        (
+            (control.start.paragraph, control.start.offset),
+            (control.end.paragraph, control.end.offset),
+        ),
+        (
+            (field.result_start.paragraph, field.result_start.offset),
+            (field.result_end.paragraph, field.result_end.offset),
+        ),
+    ];
+    assert!(stops.contains(&selected));
+    assert!(document.tab_to_form_field(false));
+    let second = document.selection().unwrap();
+    assert!(stops.contains(&second));
+    assert_ne!(selected, second);
+    assert!(document.tab_to_form_field(false));
+    assert_eq!(document.selection().unwrap(), selected);
+}

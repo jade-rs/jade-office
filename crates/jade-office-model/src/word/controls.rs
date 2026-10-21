@@ -460,6 +460,57 @@ pub trait WordControls: WordSession {
         }))
     }
 
+    /// Tab in a document protected for forms: the next form field or
+    /// content control after the caret (⇧Tab the one before), its content
+    /// selected, round to the first after the last. `false` when the
+    /// document is not protected so, and Tab does what it always does.
+    fn tab_to_form_field(&mut self, backwards: bool) -> bool {
+        if !self.protected_for_forms() {
+            return false;
+        }
+        let mut stops: Vec<(TextPosition, TextPosition)> = self
+            .form_fields()
+            .into_iter()
+            .filter(|field| field.enabled)
+            .map(|field| (field.result_start, field.result_end))
+            .chain(
+                self.content_controls()
+                    .into_iter()
+                    .filter(|control| {
+                        !control.block
+                            && !control.cannot_edit
+                            && control.kind != ContentControlKind::Group
+                    })
+                    .map(|control| (control.start, control.end)),
+            )
+            .collect();
+        if stops.is_empty() {
+            return true;
+        }
+        stops.sort();
+        stops.dedup();
+        let caret = self
+            .selection_range()
+            .map(|range| range.normalized().0)
+            .unwrap_or_else(|| TextPosition::new(0, 0));
+        let next = if backwards {
+            stops
+                .iter()
+                .rev()
+                .find(|(start, _)| *start < caret)
+                .or(stops.last())
+        } else {
+            stops
+                .iter()
+                .find(|(start, _)| *start > caret)
+                .or(stops.first())
+        };
+        if let Some((start, end)) = next {
+            self.set_selection_range(Some(SelectionRange::new(*start, *end)));
+        }
+        true
+    }
+
     /// What to draw over the pages: the caret control's box, and in design
     /// mode the tags of every control; the form fields' grey.
     fn control_chrome(&self) -> Vec<ControlChrome> {

@@ -1669,6 +1669,10 @@ impl DocumentView {
         use jade_office_model::word::CellStep;
         let (paragraph, offset) = self.insert_at;
         self.document.place_caret(paragraph, offset);
+        // A document protected for forms goes from field to field.
+        if self.tab_to_form_field(backwards, cx) {
+            return;
+        }
         let step = WordFormatting::step_cell(&mut self.document, !backwards);
         match step {
             Ok(CellStep::Select(from, to)) => {
