@@ -83,15 +83,18 @@ pub enum Tab {
     Layout,
     References,
     Review,
+    /// 描画 (`view::word_draw`).
+    Draw,
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
     TableDesign,
     TableLayout,
 }
 
 impl Tab {
-    const ALL: [Tab; 6] = [
+    const ALL: [Tab; 7] = [
         Tab::Home,
         Tab::Insert,
+        Tab::Draw,
         Tab::Design,
         Tab::Layout,
         Tab::References,
@@ -102,6 +105,7 @@ impl Tab {
         i18n::text(match self {
             Tab::Home => "doc.tab.home",
             Tab::Insert => "doc.tab.insert",
+            Tab::Draw => "draw.tab",
             Tab::Design => "doc.tab.design",
             Tab::Layout => "doc.tab.layout",
             Tab::References => "doc.tab.references",
@@ -156,6 +160,8 @@ pub enum Popup {
     References(crate::view::word_references::RefPopup),
     /// レイアウト's ハイフネーション (`view::word_hyphenation`).
     Hyphenation,
+    /// 描画's lists (`view::word_draw`).
+    Draw(crate::view::word_draw::DrawPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -640,6 +646,8 @@ pub struct TabState {
     pub layout: Option<crate::view::word_setup::LayoutState>,
     /// What the ハイフネーション list ticks, read while レイアウト is up.
     pub hyphenation: Option<jade_web::word::hyphenation::HyphenationChoice>,
+    /// The 描画 tab's tools, while it is up.
+    pub draw: Option<jade_web::word::ink_tools::DrawController>,
     /// What the list, paragraph and design tools' open list shows.
     pub tools: crate::word_tools::ToolState,
     /// What 参考資料 shows, read only while it is up.
@@ -750,6 +758,11 @@ pub fn ribbon(
             crate::view::word_references::ribbon_groups(ribbon.popup, shown.references.as_ref(), cx)
         }
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
+        Tab::Draw => shown
+            .draw
+            .as_ref()
+            .map(|draw| crate::view::word_draw::ribbon_groups(draw, ribbon.popup, cx))
+            .unwrap_or_default(),
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
             crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)

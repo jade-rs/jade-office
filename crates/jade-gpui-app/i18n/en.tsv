@@ -2011,3 +2011,34 @@ hyphenation.no_limit	Blank for no limit
 hyphenation.bad_zone	Enter a hyphenation zone of zero or more.
 hyphenation.bad_limit	Enter a whole number of zero or more for the hyphen limit.
 hyphenation.unlimited	No limit
+draw.tab	Draw
+draw.group.tools	Drawing Tools
+draw.group.mode	Mode
+draw.group.convert	Convert
+draw.group.selection	Selected Ink
+draw.select	Select
+draw.lasso	Lasso Select
+draw.eraser	Eraser
+draw.eraser.stroke	Stroke Eraser
+draw.eraser.point	Point Eraser
+draw.pen	Pen
+draw.pencil	Pencil
+draw.highlighter	Highlighter
+draw.effect	Effect Pen
+draw.add_pen	Add Pen
+draw.touch	Draw with Touch
+draw.ink_to_shape	Ink to Shape
+draw.ink_editor	Ink Editor
+draw.delete	Delete
+draw.to_shapes	Convert to Shapes
+draw.thickness	Thickness
+draw.color	Color
+draw.effects	Effects
+draw.effect.rainbow	Rainbow
+draw.effect.galaxy	Galaxy
+draw.effect.lava	Lava
+draw.effect.ocean	Ocean
+draw.effect.gold	Gold
+draw.effect.silver	Silver
+draw.effect.rosegold	Rose Gold
+draw.effect.bronze	Bronze
