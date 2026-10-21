@@ -854,6 +854,7 @@ dependencies = [
  "jade-docx-reader",
  "jade-docx-writer",
  "jade-painter",
+ "jade-pptx-layout",
  "jade-preview-plugin-api",
  "js-sys",
  "png 0.17.16",
