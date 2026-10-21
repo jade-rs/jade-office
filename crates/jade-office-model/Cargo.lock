@@ -1086,6 +1086,7 @@ version = "0.1.0"
 dependencies = [
  "encoding_rs",
  "flate2",
+ "futures",
  "jade-docx-editor",
  "jade-docx-headless-api",
  "jade-docx-layout",
@@ -1105,6 +1106,7 @@ dependencies = [
  "jade-xlsx-reader",
  "jade-xlsx-render",
  "png 0.17.16",
+ "quick-xml",
 ]
 
 [[package]]
