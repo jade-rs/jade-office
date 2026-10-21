@@ -101,9 +101,11 @@ pub struct EditableDocument {
     /// Each page's box, for giving a page its surface back.
     page_sizes: Rc<RefCell<Vec<(f64, f64)>>>,
     fonts: Rc<FontBook>,
+    measurer: Rc<ShapingMeasurer>,
+    /// The page box the renderer was built to: see [`Self::follow_page_box`].
+    built_for: (f64, f64),
     scale: f64,
     options: Options,
-    page_height: f64,
     dirty: bool,
     /// The x a run of Up and Down keeps to, so passing a short line does
     /// not pull the caret to its end for good.
@@ -172,7 +174,9 @@ impl EditableDocument {
             0..0,
         )?;
         let size = opened.renderer.layout_page_size();
+        let mut built_for = INITIAL_PAGE;
         if size != INITIAL_PAGE && size.0 > 1.0 && size.1 > 1.0 {
+            built_for = size;
             opened = Self::render(
                 &word_document,
                 &options,
@@ -193,7 +197,6 @@ impl EditableDocument {
             )?;
         }
         let Opened { renderer, host } = opened;
-        let page_height = renderer.layout_page_size().1;
         Ok(Self {
             word_document,
             executor: CommandExecutor::default(),
@@ -208,9 +211,10 @@ impl EditableDocument {
             resident: host.resident,
             page_sizes: host.sizes,
             fonts,
+            measurer,
+            built_for,
             scale,
             options,
-            page_height,
             dirty: false,
             goal_x: None,
             affinity: CaretAffinity::Upstream,
@@ -387,9 +391,10 @@ impl EditableDocument {
         self.renderer.layout_page_size()
     }
 
-    /// From the top of one page to the top of the next.
+    /// From the top of one page to the top of the next: the page box as
+    /// laid out now, which a page turned or another paper changes.
     pub fn page_pitch(&self) -> f64 {
-        self.page_height + PAGE_GAP_PX
+        self.page_size().1 + PAGE_GAP_PX
     }
 
     /// Which page a document coordinate is on, and where on it.
@@ -1277,6 +1282,47 @@ impl EditableDocument {
         self.consume_dirty_regions(usize::MAX);
         if let Some(error) = self.renderer.take_render_error() {
             return Err(error);
+        }
+        self.follow_page_box()
+    }
+
+    /// When an edit has changed the page box — the page turned, another
+    /// paper — the renderer is built again to it, as opening the document
+    /// builds it. One built to another box went on laying the text out to
+    /// that box's width: turned to landscape, the lines kept their portrait
+    /// width and ran over each other on the wider pages.
+    fn follow_page_box(&mut self) -> Result<(), String> {
+        let size = self.renderer.layout_page_size();
+        if size == self.built_for || size.0 <= 1.0 || size.1 <= 1.0 {
+            return Ok(());
+        }
+        let resident = self.resident.borrow().clone();
+        let Opened { renderer, host } = Self::render(
+            &self.word_document,
+            &self.options,
+            size,
+            self.scale,
+            &self.fonts,
+            &self.measurer,
+            resident,
+        )?;
+        let dark = self.dark_paper.get();
+        self.renderer = renderer;
+        self.pages = host.pages;
+        self.rendered_pages = host.rendered;
+        self.pass_covers_whole_document = host.whole;
+        self.last_paintable_page = host.limit;
+        self.dark_paper = host.dark;
+        self.resident = host.resident;
+        self.page_sizes = host.sizes;
+        self.built_for = size;
+        self.renderer.set_caret_affinity(self.affinity);
+        self.renderer.set_selection_range(self.selection);
+        self.repainted_from = Some(0);
+        self.repainted_pages.extend(0..self.page_count());
+        // Painted on the document's own paper: back on the paper on show.
+        if dark {
+            self.set_dark_paper(true)?;
         }
         Ok(())
     }
