@@ -113,6 +113,20 @@ pub trait WordSession {
     /// their ids in the last paint's cell registry — and repaints so the
     /// cells show selected, as Word's row, column and table selections do.
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String>;
+
+    /// The page (1-based) a paragraph starts on at the last layout, when it
+    /// has been laid out: what an index, a table of contents' page numbers
+    /// and the navigation pane show.
+    fn paragraph_page(&self, _paragraph: usize) -> Option<usize> {
+        None
+    }
+
+    /// Where a caret at a position would be drawn at the last layout —
+    /// its x, its top in document coordinates and its height — without
+    /// moving the selection.
+    fn position_metrics(&self, _at: Position) -> Option<(f64, f64, f64)> {
+        None
+    }
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
