@@ -501,6 +501,27 @@ impl WordDoc {
     }
 }
 
+/// Today, as a DATE field shows it before it is laid out (`2026/10/21`).
+fn today() -> String {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() as libc::time_t)
+        .unwrap_or(0);
+    // SAFETY: `localtime_r` writes only into the `tm` it is given, which is
+    // plain data that all zeroes is a valid value of.
+    let local = unsafe {
+        let mut local: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&seconds, &mut local);
+        local
+    };
+    format!(
+        "{}/{}/{}",
+        local.tm_year + 1900,
+        local.tm_mon + 1,
+        local.tm_mday
+    )
+}
+
 /// The ヘッダーとフッター tab's commands.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StoryAction {
@@ -752,10 +773,24 @@ impl DocumentView {
             StoryAction::Field(kind) => {
                 let range = self.document.selection_range().ok_or("no caret")?;
                 let (start, end) = range.normalized();
+                // What the field shows until the page lays it out: Word
+                // writes the result it computed when it was inserted.
                 let cached = match kind {
                     HeadlessFieldKind::Page => (page + 1).to_string(),
                     HeadlessFieldKind::NumPages => self.document.page_count().to_string(),
-                    _ => String::new(),
+                    HeadlessFieldKind::Date | HeadlessFieldKind::Time => today(),
+                    HeadlessFieldKind::FileName => std::path::Path::new(self.path.as_ref())
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .filter(|name| !name.is_empty())
+                        .unwrap_or_else(|| "document.docx".to_string()),
+                    HeadlessFieldKind::StyleRef => self
+                        .document
+                        .main()
+                        .word_document()
+                        .first_paragraph_text_in_style("heading 1")
+                        .filter(|text| !text.trim().is_empty())
+                        .unwrap_or_else(|| i18n::text("story.field.heading_missing").to_string()),
                 };
                 self.document.apply_command(
                     HeadlessCommand::InsertField {
@@ -912,6 +947,15 @@ impl DocumentView {
                             false,
                             true,
                             StoryAction::Field(HeadlessFieldKind::Date),
+                            cx,
+                        ),
+                        button(
+                            "story-heading",
+                            t("story.field.heading"),
+                            t("story.field.heading_title"),
+                            false,
+                            true,
+                            StoryAction::Field(HeadlessFieldKind::StyleRef),
                             cx,
                         ),
                         button(
@@ -1166,6 +1210,18 @@ mod tests {
                 Action::Story(StoryAction::Field(HeadlessFieldKind::NumPages)),
                 cx,
             );
+            for kind in [
+                HeadlessFieldKind::Date,
+                HeadlessFieldKind::FileName,
+                HeadlessFieldKind::StyleRef,
+            ] {
+                view.run_ribbon(Action::Story(StoryAction::Field(kind)), cx);
+                assert!(
+                    view.table_status.is_none(),
+                    "{kind:?}: {:?}",
+                    view.table_status
+                );
+            }
         });
         let saved = view.read_with(cx, |view, _| {
             assert!(view.editing_story());
@@ -1174,6 +1230,9 @@ mod tests {
         let footer = part(&saved, "word/footer1.xml");
         assert!(footer.contains("NUMPAGES"), "{footer}");
         assert!(footer.contains("PAGE"));
+        for code in ["DATE", "FILENAME", "STYLEREF"] {
+            assert!(footer.contains(code), "{code} missing from {footer}");
+        }
     }
 
     /// 先頭ページのみ別指定 from the tab gives the first page a header of
