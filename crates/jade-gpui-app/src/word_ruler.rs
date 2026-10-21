@@ -27,6 +27,9 @@ use crate::{i18n, theme, DocumentView};
 
 /// The ruler's height on screen.
 const RULER_HEIGHT: f32 = 20.0;
+/// The page is drawn in CSS px, 96 to the inch.
+const PX_PER_PT: f32 = 96.0 / 72.0;
+const PT_PER_PX: f32 = 72.0 / 96.0;
 /// How near (points) a click must be to grab a marker.
 const GRAB: f32 = 4.0;
 
@@ -115,8 +118,10 @@ impl DocumentView {
         let setup = self.document.page_setup();
         let (width, height) = self.document.layout_page_size();
         Measure {
-            width: width as f32,
-            height: height as f32,
+            // The layout's page box is in CSS px; the rulers measure in
+            // points, as the margins, indents and tab stops are.
+            width: width as f32 * PT_PER_PX,
+            height: height as f32 * PT_PER_PX,
             left: setup.margins.left,
             right: setup.margins.right,
             top: setup.margins.top,
@@ -127,7 +132,7 @@ impl DocumentView {
     /// Points from the page's left edge under a window x.
     fn ruler_point(&self, x: gpui::Pixels) -> Option<f32> {
         let bounds = self.tools.ruler_bounds.get()?;
-        Some(f32::from(x - bounds.origin.x) / self.zoom)
+        Some(f32::from(x - bounds.origin.x) / (self.zoom * PX_PER_PT))
     }
 
     /// What a press on the ruler at `at` (points from the page edge) grabs,
@@ -260,7 +265,7 @@ impl DocumentView {
         let indents = self.document.ruler_indents(char_width);
         let tabs = self.document.paragraph_options().tabs;
         let drag = self.tools.ruler_drag;
-        let x = |points: f32| px(points * zoom);
+        let x = |points: f32| px(points * zoom * PX_PER_PT);
         let mut strip = div()
             .id("ruler-strip")
             .relative()
@@ -379,6 +384,19 @@ impl DocumentView {
             .left_0()
             .size_full(),
         );
+        // Lined up with the page the caret is on, as it was last drawn: the
+        // pages scroll and centre in their own box, which a wide page
+        // overflows.
+        let row_bounds = std::rc::Rc::clone(&self.tools.ruler_row);
+        let offset = self.tools.ruler_row.get().and_then(|row| {
+            let page = self
+                .page_bounds
+                .borrow()
+                .get(self.caret_page_1idx().saturating_sub(1))
+                .copied()
+                .flatten()?;
+            Some(page.origin.x - row.origin.x)
+        });
         let selector = div()
             .id("ruler-tab-kind")
             .absolute()
@@ -407,14 +425,33 @@ impl DocumentView {
                 .relative()
                 .flex()
                 .flex_none()
-                .justify_center()
+                .when(offset.is_none(), |row| row.justify_center())
                 .w_full()
+                .overflow_hidden()
                 .py(px(2.0))
                 .bg(theme::panel())
                 .border_b_1()
                 .border_color(theme::border())
+                .child(
+                    canvas(
+                        move |area, window, _cx| {
+                            // Drawn once more where the row turned out to
+                            // be, so the strip lines up from then on.
+                            if row_bounds.get() != Some(area) {
+                                row_bounds.set(Some(area));
+                                window.refresh();
+                            }
+                            area
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                )
                 .child(selector)
-                .child(strip)
+                .child(strip.when_some(offset, |strip, offset| strip.ml(offset)))
                 .into_any_element(),
         )
     }
@@ -438,7 +475,7 @@ impl DocumentView {
             RulerUnit::Characters => (RulerUnit::Characters, char_width * 1.5),
             unit => (unit, char_width),
         };
-        let y = |points: f32| px(points * zoom);
+        let y = |points: f32| px(points * zoom * PX_PER_PT);
         let mut ruler = div()
             .absolute()
             .top_0()

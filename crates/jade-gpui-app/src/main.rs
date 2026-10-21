@@ -4116,6 +4116,10 @@ impl Render for DocumentView {
                     .flex()
                     .flex_col()
                     .size_full()
+                    // Narrower than the ribbon's groups when the window is:
+                    // they scroll, rather than pushing the panes beside the
+                    // pages out of the window.
+                    .min_w_0()
                     .child(self.ribbon(window, cx))
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())

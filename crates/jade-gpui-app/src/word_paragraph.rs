@@ -511,7 +511,7 @@ impl DocumentView {
             .w(px(200.0))
             .h(px(90.0))
             .p_2()
-            .bg(theme::paper())
+            .bg(gpui::rgb(0xffffff))
             .text_color(rgb(0x404040))
             .text_size(px(8.0))
             .child("あいうえお かきくけこ さしすせそ たちつてと なにぬねの はひふへほ まみむめも");

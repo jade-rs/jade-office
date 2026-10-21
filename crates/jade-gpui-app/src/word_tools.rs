@@ -100,6 +100,8 @@ pub struct WordTools {
     pub ruler_drag: Option<crate::word_ruler::RulerDrag>,
     /// Where the ruler was drawn, for turning a click into a position.
     pub ruler_bounds: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
+    /// Where the ruler's row was drawn, to line the strip up with the page.
+    pub ruler_row: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     /// Why the last tool command did nothing, shown in the status bar.
     pub status: Option<SharedString>,
 }
@@ -114,6 +116,7 @@ impl Default for WordTools {
             tab_kind: TabAlignment::Left,
             ruler_drag: None,
             ruler_bounds: Default::default(),
+            ruler_row: Default::default(),
             status: None,
         }
     }
@@ -348,7 +351,7 @@ mod tests {
         assert_eq!(unit, RulerUnit::Millimeters);
         let bounds = bounds.expect("the ruler was drawn");
         let y = bounds.origin.y + bounds.size.height / 2.0;
-        let at = |points: f32| bounds.origin.x + px(points * zoom);
+        let at = |points: f32| bounds.origin.x + px(points * zoom * 96.0 / 72.0);
         cx.simulate_click(point(at(left + 50.0), y), Modifiers::default());
         let expected = snap(RulerUnit::Millimeters, 10.5, 50.0);
         let tabs = view.read_with(cx, |view, _| view.document.paragraph_options().tabs);

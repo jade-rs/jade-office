@@ -432,7 +432,7 @@ impl DocumentView {
         let sample_size = dialog.format.size.unwrap_or(10.5).clamp(6.0, 28.0);
         let mut sample = div()
             .p_2()
-            .bg(theme::paper())
+            .bg(gpui::rgb(0xffffff))
             .text_color(rgb(dialog
                 .format
                 .color

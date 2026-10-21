@@ -475,7 +475,13 @@ impl StyleInfo {
     /// Whether the pane shows it: not hidden, not a table style, not one of
     /// Word's implementation styles.
     pub fn listed(&self) -> bool {
-        !self.hidden
+        // Word's implementation styles stay out of the pane.
+        let implementation = matches!(
+            self.name.to_ascii_lowercase().as_str(),
+            "default paragraph font" | "no list" | "normal table"
+        );
+        !implementation
+            && !self.hidden
             && !self.semi_hidden
             && matches!(
                 self.kind,
