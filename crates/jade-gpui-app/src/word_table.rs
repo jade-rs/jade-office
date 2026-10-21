@@ -14,10 +14,10 @@ use gpui::{
 };
 use jade_office_model::word::table::{
     AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field, LookOption,
-    Pen, PropertiesTab, SortKey as HeadlessTableSortKey, SortKind as HeadlessTableSortKind,
-    SortSpec, TableHit, TablePart, TablePropertiesDialog, TextSeparator, WordTables, MM_PER_PT,
+    Pen, PropertiesTab, SortKind as HeadlessTableSortKind, TablePart, TablePropertiesDialog,
+    WordTables, MM_PER_PT,
 };
-use jade_office_model::word::{FormatState, TableCommand, WordFormatting, WordSession};
+use jade_office_model::word::{FormatState, TableCommand, WordSession};
 
 use crate::ribbon::{dropdown, group, listener, menu_caption, menu_panel, menu_row, row, Action, Popup};
 use crate::tooltip::Tooltip;
@@ -40,222 +40,20 @@ const FUNCTIONS: [&str; 9] = [
     "SUM", "AVERAGE", "COUNT", "MAX", "MIN", "PRODUCT", "ROUND", "ABS", "INT",
 ];
 
-/// What a table control does.
-#[derive(Clone, Debug, PartialEq)]
-pub enum TableAction {
-    Look(LookOption, bool),
-    Style(Option<String>),
-    Select(TablePart),
-    Properties(PropertiesTab),
-    /// セルの配置's 余白: 表のプロパティ's table options.
-    CellMargins,
-    Borders,
-    BorderSet(BorderSet),
-    PenStyle(&'static str),
-    PenWidth(f32),
-    PenColor(&'static str),
-    Shading(Option<&'static str>),
-    Tool(DrawTool),
-    InsertCells,
-    DeleteCells,
-    SplitCells,
-    AutoFit(AutoFit),
-    /// セルのサイズ's ▲▼: a millimetre taller or wider, or less.
-    StepHeight(bool),
-    StepWidth(bool),
-    Align(&'static str, &'static str),
-    TextDirection(Option<&'static str>),
-    Sort,
-    Formula,
-    UpdateFormulas,
-    ToText,
-    ToTable,
-}
+pub use jade_office_model::word::table_ui::{
+    DialogBox, Separator, TableAction, TableCursor, TableDialog, TableDrag, TableOutcome,
+    TableTools as TableUi,
+};
 
-/// A dialog's own boxes, besides 表のプロパティ's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DialogBox {
-    Columns,
-    Rows,
-    Other,
-}
-
-/// The separator a conversion dialog has chosen.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Separator {
-    Paragraph,
-    Tab,
-    Comma,
-    Other,
-}
-
-/// The table dialog that is open.
-#[derive(Clone, Debug, PartialEq)]
-pub enum TableDialog {
-    Properties(TablePropertiesDialog),
-    Borders(BordersDialog),
-    Cells {
-        delete: bool,
-        shift: CellShift,
-    },
-    Split {
-        columns: String,
-        rows: String,
-        focus: DialogBox,
-    },
-    ToTable {
-        separator: Separator,
-        other: String,
-        columns: String,
-        focus: DialogBox,
-    },
-    ToText {
-        separator: Separator,
-        other: String,
-    },
-    Sort {
-        /// Up to three keys: a column, its kind, descending. The first is
-        /// always set.
-        keys: [Option<(usize, HeadlessTableSortKind, bool)>; 3],
-        header: bool,
-        headings: Vec<String>,
-    },
-    Formula {
-        formula: String,
-        format: &'static str,
-    },
-}
-
-impl TableDialog {
-    /// Typing into the focused box.
-    fn type_text(&mut self, text: &str) {
-        let digits = |target: &mut String| {
-            for ch in text.chars() {
-                let ch = match ch {
-                    '０'..='９' => char::from_u32(ch as u32 - '０' as u32 + '0' as u32).unwrap_or(ch),
-                    other => other,
-                };
-                if ch.is_ascii_digit() {
-                    target.push(ch);
-                }
-            }
-        };
-        match self {
-            TableDialog::Properties(dialog) => dialog.type_text(text),
-            TableDialog::Split { columns, rows, focus } => match focus {
-                DialogBox::Rows => digits(rows),
-                _ => digits(columns),
-            },
-            TableDialog::ToTable {
-                other,
-                columns,
-                focus,
-                separator,
-            } => match focus {
-                DialogBox::Other => {
-                    *other = text.chars().last().map(String::from).unwrap_or_default();
-                    *separator = Separator::Other;
-                }
-                _ => digits(columns),
-            },
-            TableDialog::ToText { other, separator } => {
-                *other = text.chars().last().map(String::from).unwrap_or_default();
-                *separator = Separator::Other;
-            }
-            TableDialog::Formula { formula, .. } => formula.push_str(text),
-            TableDialog::Borders(_) | TableDialog::Cells { .. } | TableDialog::Sort { .. } => {}
-        }
-    }
-
-    fn backspace(&mut self) {
-        match self {
-            TableDialog::Properties(dialog) => dialog.backspace(),
-            TableDialog::Split { columns, rows, focus } => {
-                match focus {
-                    DialogBox::Rows => rows.pop(),
-                    _ => columns.pop(),
-                };
-            }
-            TableDialog::ToTable {
-                other,
-                columns,
-                focus,
-                ..
-            } => {
-                match focus {
-                    DialogBox::Other => other.pop(),
-                    _ => columns.pop(),
-                };
-            }
-            TableDialog::ToText { other, .. } => {
-                other.pop();
-            }
-            TableDialog::Formula { formula, .. } => {
-                formula.pop();
-            }
-            TableDialog::Borders(_) | TableDialog::Cells { .. } | TableDialog::Sort { .. } => {}
-        }
-    }
-
-    fn title(&self) -> &'static str {
-        t(match self {
-            TableDialog::Properties(_) => "table.properties",
-            TableDialog::Borders(_) => "table.borders_title",
-            TableDialog::Cells { delete: false, .. } => "table.insert_cells_title",
-            TableDialog::Cells { delete: true, .. } => "table.delete_cells_title",
-            TableDialog::Split { .. } => "table.split_cells_title",
-            TableDialog::ToTable { .. } => "table.to_table_title",
-            TableDialog::ToText { .. } => "table.to_text_title",
-            TableDialog::Sort { .. } => "table.sort_title",
-            TableDialog::Formula { .. } => "table.formula_title",
-        })
-    }
-}
-
-/// A drag the mouse began in a table.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TableDrag {
-    Column {
-        table_id: usize,
-        boundary: usize,
-    },
-    Row {
-        table_id: usize,
-        row: usize,
-    },
-    /// The pencil, from where it went down.
-    Stroke,
-}
-
-/// The table tools' state, kept with the document.
-#[derive(Default)]
-pub struct TableUi {
-    pub dialog: Option<TableDialog>,
-    /// The pen 罫線 draws with.
-    pub pen: Pen,
-    /// 罫線を引く or 消しゴム, while one is on.
-    pub tool: Option<DrawTool>,
-    /// A border or a pencil stroke being dragged: what, on which page, from
-    /// and to where in layout pixels.
-    pub drag: Option<(TableDrag, usize, (f64, f64), (f64, f64))>,
-    /// What the pointer is over, for its shape.
-    pub hover: Option<TableHit>,
-}
-
-impl TableUi {
-    /// The pointer over the pages.
-    pub fn cursor(&self) -> CursorStyle {
-        match (self.tool, self.drag.map(|drag| drag.0), self.hover) {
-            (Some(DrawTool::Pencil), ..) => CursorStyle::Crosshair,
-            (Some(DrawTool::Eraser), ..) => CursorStyle::PointingHand,
-            (_, Some(TableDrag::Column { .. }), _)
-            | (_, _, Some(TableHit::ColumnBorder { .. })) => CursorStyle::ResizeLeftRight,
-            (_, Some(TableDrag::Row { .. }), _) | (_, _, Some(TableHit::RowBorder { .. })) => {
-                CursorStyle::ResizeUpDown
-            }
-            (_, _, Some(_)) => CursorStyle::Arrow,
-            _ => CursorStyle::IBeam,
-        }
+/// The pointer over the pages, in gpui's shapes.
+pub fn cursor_style(tools: &TableUi) -> CursorStyle {
+    match tools.cursor() {
+        TableCursor::Text => CursorStyle::IBeam,
+        TableCursor::Arrow => CursorStyle::Arrow,
+        TableCursor::ResizeColumns => CursorStyle::ResizeLeftRight,
+        TableCursor::ResizeRows => CursorStyle::ResizeUpDown,
+        TableCursor::Pencil => CursorStyle::Crosshair,
+        TableCursor::Eraser => CursorStyle::PointingHand,
     }
 }
 
@@ -1051,161 +849,21 @@ pub fn insert_menu_rows(cx: &mut Context<DocumentView>) -> Vec<AnyElement> {
 impl DocumentView {
     /// A table control was clicked.
     pub(crate) fn table_action(&mut self, action: TableAction, cx: &mut Context<Self>) {
-        let document = &mut self.document;
-        let result: Result<Option<(usize, usize)>, String> = match action {
-            TableAction::Look(option, on) => document.set_look_option(option, on).map(|_| None),
-            TableAction::Style(style) => document.apply_table_style(style.as_deref()).map(|_| None),
-            TableAction::Select(part) => {
-                let done = document.select_table_part(part);
-                return self.table_selected(done, cx);
-            }
-            TableAction::Properties(tab) => {
-                return self.open_table_dialog(
-                    self.document
-                        .table_properties()
-                        .map(|properties| TableDialog::Properties(TablePropertiesDialog::new(properties, tab))),
-                    cx,
-                )
-            }
-            TableAction::CellMargins => {
-                return self.open_table_dialog(
-                    self.document.table_properties().map(|properties| {
-                        let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Table);
-                        dialog.options_open = true;
-                        TableDialog::Properties(dialog)
-                    }),
-                    cx,
-                )
-            }
-            TableAction::Borders => {
-                let mut dialog = BordersDialog::new(BorderTarget::Table);
-                dialog.pen = self.tables.pen.clone();
-                return self.open_table_dialog(Some(TableDialog::Borders(dialog)), cx);
-            }
-            TableAction::BorderSet(set) => {
-                let pen = self.tables.pen.clone();
-                document.apply_border_set(set, &pen).map(|_| None)
-            }
-            TableAction::PenStyle(style) => {
-                self.tables.pen.style = style.to_string();
-                return cx.notify();
-            }
-            TableAction::PenWidth(width) => {
-                self.tables.pen.width = width;
-                return cx.notify();
-            }
-            TableAction::PenColor(color) => {
-                self.tables.pen.color = color.to_string();
-                return cx.notify();
-            }
-            TableAction::Shading(color) => document.shade_cells(color).map(|_| None),
-            TableAction::Tool(tool) => {
-                self.tables.tool = (self.tables.tool != Some(tool)).then_some(tool);
-                return cx.notify();
-            }
-            TableAction::InsertCells => {
-                return self.open_table_dialog(
-                    Some(TableDialog::Cells {
-                        delete: false,
-                        shift: CellShift::Vertical,
-                    }),
-                    cx,
-                )
-            }
-            TableAction::DeleteCells => {
-                return self.open_table_dialog(
-                    Some(TableDialog::Cells {
-                        delete: true,
-                        shift: CellShift::Horizontal,
-                    }),
-                    cx,
-                )
-            }
-            TableAction::SplitCells => {
-                return self.open_table_dialog(
-                    Some(TableDialog::Split {
-                        columns: "2".to_string(),
-                        rows: "1".to_string(),
-                        focus: DialogBox::Columns,
-                    }),
-                    cx,
-                )
-            }
-            TableAction::AutoFit(fit) => document.autofit(fit).map(|_| None),
-            TableAction::StepHeight(grow) => {
-                let (_, height) = document.cell_size().unwrap_or((0.0, 0.0));
-                let step = 1.0 / MM_PER_PT;
-                document
-                    .set_row_height((height + if grow { step } else { -step }).max(step))
-                    .map(|_| None)
-            }
-            TableAction::StepWidth(grow) => {
-                let (width, _) = document.cell_size().unwrap_or((0.0, 0.0));
-                let step = 1.0 / MM_PER_PT;
-                document
-                    .set_column_width(width + if grow { step } else { -step })
-                    .map(|_| None)
-            }
-            TableAction::Align(horizontal, vertical) => {
-                document.align_cells(horizontal, vertical).map(|_| None)
-            }
-            TableAction::TextDirection(direction) => {
-                document.set_text_direction(direction).map(|_| None)
-            }
-            TableAction::Sort => {
-                let header = document
-                    .table_properties()
-                    .is_some_and(|properties| properties.repeat_header)
-                    || document.table_look().is_some_and(|look| look.header_row);
-                let headings = document.sort_columns(header);
-                return self.open_table_dialog(
-                    Some(TableDialog::Sort {
-                        keys: [Some((0, HeadlessTableSortKind::Text, false)), None, None],
-                        header,
-                        headings,
-                    }),
-                    cx,
-                );
-            }
-            TableAction::Formula => {
-                let formula = document.suggested_formula();
-                return self.open_table_dialog(Some(TableDialog::Formula { formula, format: "" }), cx);
-            }
-            TableAction::UpdateFormulas => document.update_formulas().map(|_| None),
-            TableAction::ToText => {
-                return self.open_table_dialog(
-                    Some(TableDialog::ToText {
-                        separator: Separator::Tab,
-                        other: "-".to_string(),
-                    }),
-                    cx,
-                )
-            }
-            TableAction::ToTable => {
-                let (columns, _) = document.text_table_shape(&TextSeparator::Tab);
-                return self.open_table_dialog(
-                    Some(TableDialog::ToTable {
-                        separator: Separator::Tab,
-                        other: "-".to_string(),
-                        columns: columns.to_string(),
-                        focus: DialogBox::Columns,
-                    }),
-                    cx,
-                );
-            }
-        };
-        self.table_done(result, cx);
+        let outcome = self.tables.action(&mut self.document, action);
+        // A dialog takes the keyboard from the find bar.
+        if self.tables.dialog.is_some() {
+            self.find_bar = None;
+        }
+        self.table_outcome(outcome, cx);
     }
 
-    fn open_table_dialog(&mut self, dialog: Option<TableDialog>, cx: &mut Context<Self>) {
-        match dialog {
-            Some(dialog) => {
-                self.find_bar = None;
-                self.tables.dialog = Some(dialog);
-            }
-            None => self.table_status = Some(SharedString::from(t("ribbon.needs_table"))),
+    /// What a table action, a dialog or the mouse did, shown.
+    pub(crate) fn table_outcome(&mut self, outcome: TableOutcome, cx: &mut Context<Self>) {
+        match outcome {
+            TableOutcome::NotMine | TableOutcome::Redraw => cx.notify(),
+            TableOutcome::Edited(result) => self.table_done(result, cx),
+            TableOutcome::Selected(result) => self.table_selected(result, cx),
         }
-        cx.notify();
     }
 
     /// The tail of a table command: the caret where it went, every page
@@ -1250,77 +908,25 @@ impl DocumentView {
 
     /// OK in the open dialog.
     pub(crate) fn apply_table_dialog(&mut self, cx: &mut Context<Self>) {
-        let Some(dialog) = self.tables.dialog.take() else {
-            return;
-        };
-        let document = &mut self.document;
-        let result: Result<Option<(usize, usize)>, String> = match dialog {
-            TableDialog::Properties(dialog) => document.apply_table_properties(&dialog).map(|_| None),
-            TableDialog::Borders(dialog) => document.apply_borders(&dialog).map(|_| None),
-            TableDialog::Cells { delete: false, shift } => document.insert_cells(shift).map(Some),
-            TableDialog::Cells { delete: true, shift } => document.delete_cells(shift).map(Some),
-            TableDialog::Split { columns, rows, .. } => document
-                .table_command(TableCommand::SplitCell {
-                    columns: columns.parse().unwrap_or(2).clamp(1, 63),
-                    rows: rows.parse().unwrap_or(1).clamp(1, 63),
-                })
-                .map(Some),
-            TableDialog::ToTable {
-                separator,
-                other,
-                columns,
-                ..
-            } => document
-                .convert_text_to_table(&separator_of(separator, &other), columns.parse().ok().filter(|count: &usize| *count > 0))
-                .map(Some),
-            TableDialog::ToText { separator, other } => document
-                .convert_table_to_text(&separator_of(separator, &other))
-                .map(Some),
-            TableDialog::Sort { keys, header, .. } => document
-                .sort_table(&SortSpec {
-                    keys: keys
-                        .iter()
-                        .flatten()
-                        .map(|(column, kind, descending)| HeadlessTableSortKey {
-                            column: *column,
-                            kind: *kind,
-                            descending: *descending,
-                        })
-                        .collect(),
-                    header_row: header,
-                })
-                .map(|_| None),
-            TableDialog::Formula { formula, format } => document
-                .insert_formula(&formula, Some(format))
-                .map(|_| None),
-        };
-        self.table_done(result, cx);
+        let outcome = self.tables.apply_dialog(&mut self.document);
+        self.table_outcome(outcome, cx);
     }
 
     /// Keys while a table dialog is open: Enter is OK, Escape cancels,
     /// Backspace edits the focused box and other text types into it.
     pub(crate) fn handle_table_dialog_key(&mut self, event: &gpui::KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        let Some(dialog) = self.tables.dialog.as_mut() else {
-            return false;
-        };
         let keystroke = &event.keystroke;
         if keystroke.modifiers.platform || keystroke.modifiers.control {
             return false;
         }
-        match keystroke.key.as_str() {
-            "escape" => self.tables.dialog = None,
-            "enter" | "return" => {
-                self.apply_table_dialog(cx);
-                return true;
-            }
-            "backspace" => dialog.backspace(),
-            _ => {
-                if let Some(text) = keystroke.key_char.as_deref() {
-                    dialog.type_text(text);
-                }
-            }
-        }
-        cx.notify();
+        let Some(outcome) = self.tables.dialog_key(
+            &mut self.document,
+            keystroke.key.as_str(),
+            keystroke.key_char.as_deref(),
+        ) else {
+            return false;
+        };
+        self.table_outcome(outcome, cx);
         true
     }
 
@@ -1337,57 +943,14 @@ impl DocumentView {
         event: &MouseDownEvent,
         cx: &mut Context<Self>,
     ) -> bool {
-        if event.click_count >= 2 {
+        let outcome = self
+            .tables
+            .mouse_down(&mut self.document, page, (x, document_y), event.click_count);
+        if outcome == TableOutcome::NotMine {
             return false;
-        }
-        match self.tables.tool {
-            Some(DrawTool::Pencil) => {
-                self.tables.drag = Some((TableDrag::Stroke, page, (x, document_y), (x, document_y)));
-                self.drag_anchor = None;
-                cx.notify();
-                return true;
-            }
-            Some(DrawTool::Eraser) => {
-                let result = self.document.erase_border(x, document_y);
-                self.drag_anchor = None;
-                match result {
-                    Ok(true) => self.table_done(Ok(None), cx),
-                    Ok(false) => {}
-                    Err(error) => self.table_done(Err(error), cx),
-                }
-                return true;
-            }
-            None => {}
-        }
-        let Some(hit) = self.document.table_hit(x, document_y) else {
-            return false;
-        };
-        match hit {
-            TableHit::ColumnBorder { table_id, boundary, .. } => {
-                self.tables.drag = Some((
-                    TableDrag::Column { table_id, boundary },
-                    page,
-                    (x, document_y),
-                    (x, document_y),
-                ));
-            }
-            TableHit::RowBorder { table_id, row, .. } => {
-                self.tables.drag = Some((
-                    TableDrag::Row { table_id, row },
-                    page,
-                    (x, document_y),
-                    (x, document_y),
-                ));
-            }
-            _ => {
-                let result = self.document.click_table_hit(hit).map(|_| ());
-                self.drag_anchor = None;
-                self.table_selected(result, cx);
-                return true;
-            }
         }
         self.drag_anchor = None;
-        cx.notify();
+        self.table_outcome(outcome, cx);
         true
     }
 
@@ -1395,69 +958,38 @@ impl DocumentView {
     /// follows it; a drag from one cell into another selects whole cells.
     pub(crate) fn table_mouse_drag(&mut self, page: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) -> bool {
         let point = self.page_point(page, event.position);
-        if let Some(drag) = self.tables.drag.as_mut() {
-            if let Some(point) = point {
-                drag.3 = point;
+        let outcome = self.tables.mouse_drag(&mut self.document, point, self.drag_anchor);
+        if outcome == TableOutcome::NotMine {
+            return false;
+        }
+        if matches!(outcome, TableOutcome::Selected(Ok(()))) {
+            if let Some((x, y)) = point {
+                if let Some(focus) = self.document.position_at(x, y) {
+                    self.insert_at = focus;
+                }
             }
+            self.rebuild_all_images();
             cx.notify();
             return true;
         }
-        let (Some(anchor), Some((x, y))) = (self.drag_anchor, point) else {
-            return false;
-        };
-        let Some(focus) = self.document.position_at(x, y) else {
-            return false;
-        };
-        let crossed = self.document.cell_id_for_paragraph(anchor.0).is_some()
-            && self.document.cell_id_for_paragraph(focus.0).is_some()
-            && self.document.cell_id_for_paragraph(anchor.0) != self.document.cell_id_for_paragraph(focus.0);
-        if !crossed {
-            return false;
-        }
-        match self.document.select_cells_between(anchor.0, focus.0) {
-            Ok(true) => {
-                self.insert_at = focus;
-                self.rebuild_all_images();
-                cx.notify();
-                true
-            }
-            _ => false,
-        }
+        self.table_outcome(outcome, cx);
+        true
     }
 
     /// The button came up: a dragged border lands, a pencil stroke draws.
     pub(crate) fn table_mouse_up(&mut self, cx: &mut Context<Self>) {
-        let Some((drag, _page, from, to)) = self.tables.drag.take() else {
-            return;
-        };
-        let result = match drag {
-            TableDrag::Column { table_id, boundary } => {
-                if (to.0 - from.0).abs() < 1.0 {
-                    return cx.notify();
-                }
-                self.document.drag_column_border(table_id, boundary, to.0).map(|_| None)
-            }
-            TableDrag::Row { table_id, row } => {
-                if (to.1 - from.1).abs() < 1.0 {
-                    return cx.notify();
-                }
-                self.document.drag_row_border(table_id, row, to.1).map(|_| None)
-            }
-            TableDrag::Stroke => {
-                let at = self.document.position_at(from.0.min(to.0), from.1.min(to.1));
-                self.document.draw_stroke(from, to, at)
-            }
-        };
-        self.table_done(result, cx);
+        let outcome = self
+            .tables
+            .mouse_up(&mut self.document, |document, x, y| document.position_at(x, y));
+        if outcome != TableOutcome::NotMine {
+            self.table_outcome(outcome, cx);
+        }
     }
 
     /// The pointer moved without a button: what it is over decides its shape.
     pub(crate) fn table_hover(&mut self, page: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) {
-        let hover = self
-            .page_point(page, event.position)
-            .and_then(|(x, y)| self.document.table_hit(x, y));
-        if hover != self.tables.hover {
-            self.tables.hover = hover;
+        let point = self.page_point(page, event.position);
+        if self.tables.hover(&self.document, point) {
             cx.notify();
         }
     }
@@ -1616,7 +1148,7 @@ impl DocumentView {
                         .shadow_lg()
                         .text_xs()
                         .text_color(theme::text())
-                        .child(div().text_sm().child(dialog.title()))
+                        .child(div().text_sm().child(t(dialog.title_key())))
                         .child(body)
                         .child(
                             div()
@@ -1639,19 +1171,6 @@ impl DocumentView {
                         ),
                 ),
         )
-    }
-}
-
-fn separator_of(separator: Separator, other: &str) -> TextSeparator {
-    match separator {
-        Separator::Paragraph => TextSeparator::Paragraph,
-        Separator::Tab => TextSeparator::Tab,
-        Separator::Comma => TextSeparator::Comma,
-        Separator::Other => other
-            .chars()
-            .next()
-            .map(TextSeparator::Other)
-            .unwrap_or(TextSeparator::Tab),
     }
 }
 
@@ -2508,7 +2027,7 @@ mod tests {
             assert_eq!(view.document.cell_span().unwrap().rows, (1, 1));
 
             view.run_ribbon(Action::Tables(TableAction::Tool(jade_office_model::word::table::DrawTool::Pencil)), cx);
-            assert_eq!(view.tables.cursor(), gpui::CursorStyle::Crosshair);
+            assert_eq!(super::cursor_style(&view.tables), gpui::CursorStyle::Crosshair);
             let x = (geometry.columns[0] + geometry.columns[1]) / 2.0;
             let (top, bottom) = geometry.rows[2];
             view.tables.drag = Some((super::TableDrag::Stroke, 0, (x, top + 1.0), (x, bottom - 1.0)));
