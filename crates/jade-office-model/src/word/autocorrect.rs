@@ -314,8 +314,7 @@ pub fn corrections(text: &str, caret: usize, options: &AutoCorrectOptions) -> Ve
         }
         // word - word: an en dash.
         let before = &text[..word_start];
-        if before.ends_with(" - ") {
-            let ahead = &before[..before.len() - 3];
+        if let Some(ahead) = before.strip_suffix(" - ") {
             if ahead.chars().next_back().is_some_and(char::is_alphanumeric) {
                 let at = word_start - 2;
                 fixes.push(fix(at, at + 1, "–"));

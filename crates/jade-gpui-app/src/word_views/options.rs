@@ -310,7 +310,7 @@ pub fn overlay(dialog: &AutoCorrectDialog, cx: &mut Context<DocumentView>) -> An
         520.0,
         body,
         cx,
-        |view, cx| confirm(view, cx),
+        confirm,
     )
 }
 
