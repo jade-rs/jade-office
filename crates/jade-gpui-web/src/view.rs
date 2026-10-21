@@ -393,6 +393,8 @@ enum Document {
         dialog: Option<Box<word_dialogs::Dialog>>,
         /// Whether the comments pane is open beside the pages.
         show_comments: bool,
+        /// 変更内容の表示 and 変更履歴とコメントの表示.
+        markup: Box<jade_web::word::markup::MarkupOptions>,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
@@ -545,6 +547,7 @@ impl DocView {
                     comment: None,
                     dialog: None,
                     show_comments: false,
+                    markup: Box::new(word_review::markup_as_opened(&opened)),
                     object: None,
                     tables: Box::default(),
                     pages: (0..opened.page_count())
@@ -1728,6 +1731,7 @@ impl DocView {
             current,
             dragging,
             show_comments,
+            markup,
             object,
             ..
         } = &mut self.document
@@ -1760,11 +1764,18 @@ impl DocView {
             }
         });
         let tabs = {
+            use jade_web::word::markup::WordMarkup;
             use jade_web::word::review::WordReview;
             ribbon::TabState {
                 page,
-                tracking: document.is_tracking_changes(),
-                comments: *show_comments,
+                review: (ribbon.tab == ribbon::Tab::Review).then(|| {
+                    crate::word_review::ReviewShown {
+                        tracking: document.is_tracking_changes(),
+                        comments: *show_comments,
+                        markup: (**markup).clone(),
+                        reviewers: document.reviewers(),
+                    }
+                }),
                 picture: object.is_some_and(|grab| grab.object.is_picture()),
                 table,
                 layout: (ribbon.tab == ribbon::Tab::Layout)

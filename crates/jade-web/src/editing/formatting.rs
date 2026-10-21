@@ -156,3 +156,15 @@ impl EditableDocument {
         self.repaint_all()
     }
 }
+
+/// The browser build's pages show tracked changes as the markup views say.
+impl jade_office_model::word::markup::WordMarkupDisplay for EditableDocument {
+    fn set_revision_display(
+        &mut self,
+        markup: bool,
+        original: bool,
+        view: jade_docx_editor::revision_view::RevisionView,
+    ) -> Result<bool, String> {
+        EditableDocument::set_revision_display(self, markup, original, view)
+    }
+}

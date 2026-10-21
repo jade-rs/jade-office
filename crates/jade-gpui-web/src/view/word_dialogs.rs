@@ -21,6 +21,8 @@ pub(super) enum Dialog {
     Note(NoteForm),
     /// 段落: indents, spacing, line spacing, pagination.
     Paragraph(Box<ParagraphForm>),
+    /// ユーザー情報: the reviewer's name and initials.
+    Reviewer(jade_web::word::reviewer::ReviewerForm),
 }
 
 impl Dialog {
@@ -29,6 +31,7 @@ impl Dialog {
             Dialog::Link(form) => Some(form.field()),
             Dialog::Note(form) => Some(&form.text),
             Dialog::Paragraph(form) => Some(form.focused()),
+            Dialog::Reviewer(form) => Some(form.focused()),
         }
     }
 
@@ -37,6 +40,7 @@ impl Dialog {
             Dialog::Link(form) => Some(form.field_mut()),
             Dialog::Note(form) => Some(&mut form.text),
             Dialog::Paragraph(form) => Some(form.focused_mut()),
+            Dialog::Reviewer(form) => Some(form.focused_mut()),
         }
     }
 }
@@ -155,6 +159,12 @@ impl DocView {
         self.open_dialog(Dialog::Paragraph(Box::new(form)), cx);
     }
 
+    /// 校閲 › ユーザー情報: who comments and changes are put down to.
+    pub(super) fn open_reviewer_dialog(&mut self, cx: &mut Context<Self>) {
+        let form = jade_web::word::reviewer::ReviewerForm::new(&super::word_review::reviewer());
+        self.open_dialog(Dialog::Reviewer(form), cx);
+    }
+
     /// Changes the open 段落 dialog from a click on one of its controls.
     fn edit_paragraph_form(
         &mut self,
@@ -217,6 +227,7 @@ impl DocView {
                 Dialog::Link(form) => form.switch_field(),
                 Dialog::Note(form) => form.text.insert("\t"),
                 Dialog::Paragraph(form) => form.step_focus(!event.keystroke.modifiers.shift),
+                Dialog::Reviewer(form) => form.next_field(),
             },
             _ => {
                 if !open.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -244,6 +255,20 @@ impl DocView {
             Dialog::Note(form) => form.submit(document.as_mut()).map(Some),
             // The caret, or the selection, stays where it is.
             Dialog::Paragraph(form) => form.submit(document.as_mut()).map(|()| None),
+            Dialog::Reviewer(form) => {
+                use jade_web::word::review::WordReview;
+                if let Some(chosen) = form.reviewer() {
+                    super::word_review::set_reviewer(chosen.clone());
+                    // Changes typed from now on go down to the new name.
+                    if document.is_tracking_changes() {
+                        document.set_tracking_changes(true, &chosen).map(|()| None)
+                    } else {
+                        Ok(None)
+                    }
+                } else {
+                    Ok(None)
+                }
+            }
         };
         match result {
             Ok(caret) => {
@@ -303,6 +328,27 @@ impl DocView {
                 vec![field_box(i18n::text("note.text"), &form.text, true, 360.0)],
             ),
             Dialog::Paragraph(form) => self.paragraph_dialog(form, cx),
+            Dialog::Reviewer(form) => {
+                use jade_web::word::reviewer::ReviewerField;
+                bar(
+                    i18n::text("review.user.title"),
+                    i18n::text("link.keys"),
+                    vec![
+                        field_box(
+                            i18n::text("review.user.name"),
+                            &form.name,
+                            form.focus == ReviewerField::Name,
+                            200.0,
+                        ),
+                        field_box(
+                            i18n::text("review.user.initials"),
+                            &form.initials,
+                            form.focus == ReviewerField::Initials,
+                            80.0,
+                        ),
+                    ],
+                )
+            }
         })
     }
 

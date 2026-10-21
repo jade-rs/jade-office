@@ -113,6 +113,8 @@ pub enum Popup {
     Cover,
     /// The font group's third row (`word_characters`).
     Characters(crate::word_characters::CharPopup),
+    /// The 校閲 tab's lists (`word_review_tools`).
+    Review(crate::word_review_tools::ReviewPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -196,6 +198,8 @@ pub enum Action {
     /// The font group's third row, the colour lists and the dialogs
     /// (`word_characters`).
     Characters(crate::word_characters::CharAction),
+    /// The 校閲 tab (`word_review_tools`).
+    Review(crate::word_review_tools::ReviewAction),
 }
 
 impl Action {

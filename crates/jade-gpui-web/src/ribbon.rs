@@ -147,6 +147,8 @@ pub enum Popup {
     Cover,
     /// The font group's third row (`view::word_characters`).
     Characters(crate::view::word_characters::CharPopup),
+    /// The 校閲 tab's lists (`word_review`).
+    Review(crate::word_review::ReviewPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -615,10 +617,8 @@ pub struct PageState {
 pub struct TabState {
     /// The page, read only while レイアウト shows it.
     pub page: Option<PageState>,
-    /// Whether changes are tracked.
-    pub tracking: bool,
-    /// Whether the comments pane is open.
-    pub comments: bool,
+    /// What the 校閲 tab shows, read only while it is up.
+    pub review: Option<crate::word_review::ReviewShown>,
     /// Whether a picture is selected, which 文字列の折り返し acts on.
     pub picture: bool,
     /// What the table tabs show, read while one of them is showing.
@@ -715,7 +715,11 @@ pub fn ribbon(
             groups
         }
         Tab::References => references(cx),
-        Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
+        Tab::Review => shown
+            .review
+            .as_ref()
+            .map(|review| crate::word_review::review(review, ribbon.popup, cx))
+            .unwrap_or_default(),
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
             crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)
