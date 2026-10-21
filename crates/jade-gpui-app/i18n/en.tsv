@@ -2204,3 +2204,23 @@ views.group.window	Window
 views.new_window	New Window
 views.split	Split
 views.window_hint	Another window on this document: edits here show in the first window at once.
+language.group	Language
+language.button	Set Proofing Language…
+language.title	Language
+language.mark_as	Mark selected text as
+language.no_proof	Do not check spelling or grammar
+language.detect	Detect language automatically
+language.ja_jp	Japanese
+language.en_us	English (United States)
+language.en_gb	English (United Kingdom)
+language.zh_cn	Chinese (Simplified)
+language.zh_tw	Chinese (Traditional)
+language.ko_kr	Korean
+language.fr_fr	French
+language.de_de	German
+language.es_es	Spanish
+language.it_it	Italian
+language.pt_br	Portuguese (Brazil)
+language.ru_ru	Russian
+language.th_th	Thai
+language.ar_sa	Arabic

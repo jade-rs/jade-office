@@ -40,6 +40,7 @@ pub mod fields;
 pub mod find;
 pub mod font;
 pub mod insert;
+pub mod language;
 pub mod links;
 pub mod lists;
 pub mod new;

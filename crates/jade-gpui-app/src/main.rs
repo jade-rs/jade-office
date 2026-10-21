@@ -2189,7 +2189,12 @@ impl DocumentView {
                     .collect()
             }
             RibbonTab::References => word_references::ribbon_groups(self, cx),
-            RibbonTab::Review => self.review_groups(cx),
+            RibbonTab::Review => {
+                let mut groups = self.review_groups(cx);
+                // 言語: 校正言語の設定 (`word_views`).
+                groups.push(word_views::language::review_group(cx));
+                groups
+            }
             RibbonTab::HeaderFooter => self.story_groups(cx),
             RibbonTab::View => word_views::view_tab(self, cx),
         }
@@ -4328,7 +4333,7 @@ impl editor::Editor for DocumentView {
         if self.document.is_tracking_changes() {
             items.push(i18n::text("doc.tracking").into());
         }
-        items.extend(word_views::status_items());
+        items.extend(word_views::status_items(self));
         items
     }
 

@@ -18,6 +18,7 @@ pub mod context;
 pub mod customize;
 pub mod find;
 pub mod input;
+pub mod language;
 pub mod marks;
 pub mod mini;
 pub mod modes;
@@ -142,6 +143,8 @@ pub enum ViewDialog {
     Find(Box<find::FindDialog>),
     /// Word のオプション, at one of its pages.
     Options(prefs::OptionsPage),
+    /// 校正言語の設定.
+    Language(jade_office_model::word::language::LanguageChoice),
 }
 
 /// The view's state of the 表示 tab.
@@ -196,7 +199,7 @@ impl Views {
             ViewDialog::Zoom { percent, .. } => Some(percent),
             ViewDialog::AutoCorrect(dialog) => dialog.fields.get(dialog.focus),
             ViewDialog::Find(dialog) => dialog.fields.get(dialog.focus),
-            ViewDialog::Options(_) => None,
+            ViewDialog::Options(_) | ViewDialog::Language(_) => None,
         }
     }
 
@@ -209,7 +212,7 @@ impl Views {
                 dialog.current = None;
                 dialog.fields.get_mut(focus)
             }
-            Some(ViewDialog::Options(_)) => None,
+            Some(ViewDialog::Options(_)) | Some(ViewDialog::Language(_)) => None,
             None => None,
         }
     }
@@ -353,13 +356,14 @@ pub fn before_render(view: &mut DocumentView, window: &Window, cx: &mut Context<
     marks::apply(view);
 }
 
-/// What the status bar adds: 上書き while typing replaces.
-pub fn status_items() -> Vec<gpui::SharedString> {
+/// What the status bar adds: the caret's language, and 上書き while typing
+/// replaces.
+pub fn status_items(view: &DocumentView) -> Vec<gpui::SharedString> {
+    let mut items: Vec<gpui::SharedString> = language::status(view).into_iter().collect();
     if input::overtype() {
-        vec![t("views.status.overtype").into()]
-    } else {
-        Vec::new()
+        items.push(t("views.status.overtype").into());
     }
+    items
 }
 
 /// The band between the margins of page `index`, from its section.
@@ -635,6 +639,15 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
     if matches!(view.views.dialog, Some(ViewDialog::Find(_))) {
         return find::handle_key(view, key, cx);
     }
+    if matches!(view.views.dialog, Some(ViewDialog::Language(_))) {
+        match key {
+            "escape" => view.views.dialog = None,
+            "enter" | "return" => language::confirm(view, cx),
+            _ => {}
+        }
+        cx.notify();
+        return true;
+    }
     if matches!(view.views.dialog, Some(ViewDialog::Options(_))) {
         if matches!(key, "escape" | "enter" | "return") {
             view.views.dialog = None;
@@ -675,6 +688,7 @@ pub fn overlay(view: &DocumentView, cx: &mut Context<DocumentView>) -> Option<An
         ViewDialog::AutoCorrect(dialog) => return Some(options::overlay(dialog, cx)),
         ViewDialog::Find(dialog) => return Some(find::overlay(view, dialog, cx)),
         ViewDialog::Options(page) => return Some(prefs::overlay(view, *page, cx)),
+        ViewDialog::Language(choice) => return Some(language::overlay(choice, cx)),
     };
     let (choice, pages) = (*choice, *pages);
     fn set(
