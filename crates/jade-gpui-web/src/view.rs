@@ -35,6 +35,7 @@ mod sheet;
 mod word_dialogs;
 mod word_find;
 mod word_review;
+pub(crate) mod word_setup;
 mod word_story;
 mod word_table;
 
@@ -495,6 +496,9 @@ pub struct DocView {
     /// was counted for: counting reads every paragraph.
     word_count: RefCell<Option<(FormatKey, SharedString)>>,
     host: Host,
+    /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
+    /// document, while one is open (`word_setup`).
+    page_dialog: Option<Box<word_setup::PageDialogState>>,
 }
 
 impl DocView {
@@ -615,6 +619,7 @@ impl DocView {
             paste_arrived: false,
             word_count: RefCell::new(None),
             host,
+            page_dialog: None,
         })
     }
 
@@ -1614,6 +1619,9 @@ impl DocView {
         if let Action::InsertNote(kind) = action {
             return self.open_note_dialog(kind, cx);
         }
+        if let Action::Setup(setup) = action {
+            return self.setup_action(setup, cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1678,6 +1686,7 @@ impl DocView {
                 jade_web::word::WordReferences::update_table_of_contents(document)
             }
             Action::EditStory(_)
+            | Action::Setup(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -1750,6 +1759,8 @@ impl DocView {
                 comments: *show_comments,
                 picture: object.is_some_and(|grab| grab.object.is_picture()),
                 table,
+                layout: (ribbon.tab == ribbon::Tab::Layout)
+                    .then(|| word_setup::LayoutState::read(document)),
             }
         };
         ribbon::ribbon(
@@ -1832,6 +1843,7 @@ impl DocView {
             _ => Vec::new(),
         }
         .into_iter();
+        let page_dialog = self.page_dialog_element(cx);
         let Document::Pages {
             document,
             pages,
@@ -2128,6 +2140,7 @@ impl DocView {
             )
             .children(comments_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
+            .children(page_dialog)
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -2154,6 +2167,11 @@ impl DocView {
         }
         // An open table dialog takes the keys it has.
         if self.table_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        // A dialog over a Word document is modal: it takes every key.
+        if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
             cx.stop_propagation();
             return;
         }
@@ -2206,6 +2224,11 @@ impl DocView {
                 // Word for Mac's 書式のコピー / 書式の貼り付け.
                 "c" if pages && modifiers.shift => self.pick_up_format(false, cx),
                 "v" if pages && modifiers.shift => self.paint_format(true, cx),
+                // ⌘↩ is Word's page break (改ページ).
+                "enter" if pages => self.setup_action(
+                    word_setup::SetupAction::Break(jade_web::word::page_setup::PageBreak::Page),
+                    cx,
+                ),
                 "c" if pages => self.word_copy(false, cx),
                 // ハイパーリンクの挿入.
                 "k" if pages => self.open_link_dialog(cx),
@@ -2586,6 +2609,9 @@ impl EntityInputHandler for DocView {
         if self.table_dialog_typed(text, cx) {
             return;
         }
+        if self.page_dialog.is_some() {
+            return self.page_dialog_input(text, cx);
+        }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
             && !self.story_editing()
@@ -2627,7 +2653,7 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.table_dialog_open() {
+        if self.table_dialog_open() || self.page_dialog.is_some() {
             return;
         }
         if matches!(self.document, Document::Pages { .. })

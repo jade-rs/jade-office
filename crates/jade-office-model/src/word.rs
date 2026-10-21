@@ -37,6 +37,7 @@ pub mod new;
 pub mod page;
 pub mod painter;
 pub mod paragraph;
+pub mod page_setup;
 pub mod picture;
 pub mod platform;
 pub mod references;
@@ -53,6 +54,10 @@ pub use paragraph::{
     WordParagraphs,
 };
 pub use references::{NoteForm, NoteKind, WordReferences};
+/// The engine's command and query types, for shells that build commands.
+pub use jade_docx_headless_api as headless;
+/// The selection type [`WordSession`] speaks, for shells that wrap one.
+pub use jade_selection::SelectionRange as SelectionRangeOf;
 
 /// A paragraph and a byte offset into its text.
 pub type Position = (usize, usize);

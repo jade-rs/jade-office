@@ -158,6 +158,12 @@ pub enum Popup {
     BorderSets,
     AutoFit,
     TextDirection,
+    /// レイアウト's 行番号, 文字列の方向 and ページの色, 挿入's 表紙
+    /// (`view::word_setup`).
+    LineNumbers,
+    PageTextDirection,
+    PageColor,
+    Cover,
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -247,6 +253,8 @@ pub enum Action {
     Wrap(jade_web::word::picture::Wrap),
     /// The table tabs, dialogs and tools (`word_table`).
     Tables(crate::word_table::TableAction),
+    /// The ページ設定 dialogs and menus (`view::word_setup`).
+    Setup(crate::view::word_setup::SetupAction),
 }
 
 impl Action {
@@ -625,6 +633,9 @@ pub struct TabState {
     pub picture: bool,
     /// What the table tabs show, read while one of them is showing.
     pub table: Option<crate::word_table::TableTabState>,
+    /// What the text, line number and background groups show, read only
+    /// while レイアウト is up.
+    pub layout: Option<crate::view::word_setup::LayoutState>,
 }
 
 pub fn ribbon(
@@ -684,6 +695,7 @@ pub fn ribbon(
                 )])],
             ));
             groups.push(crate::word_page::header_footer(ribbon, cx));
+            groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
             groups
         }
         Tab::Layout => {
@@ -694,6 +706,18 @@ pub fn ribbon(
                     &page.setup,
                     page.preset,
                     page.japanese,
+                    cx,
+                ));
+            }
+            if let Some(layout) = &shown.layout {
+                groups.extend(crate::view::word_setup::layout_groups(
+                    ribbon.popup,
+                    layout,
+                    cx,
+                ));
+                groups.extend(crate::view::word_setup::background_groups(
+                    ribbon.popup,
+                    layout,
                     cx,
                 ));
             }

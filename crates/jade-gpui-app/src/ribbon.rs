@@ -124,6 +124,12 @@ pub enum Popup {
     BorderSets,
     AutoFit,
     TextDirection,
+    /// レイアウト's 行番号 and 文字列の方向 (`word_page_setup`).
+    LineNumbers,
+    PageTextDirection,
+    /// デザイン's ページの色 and 挿入's 表紙.
+    PageColor,
+    Cover,
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -196,6 +202,10 @@ pub enum Action {
     ParagraphDialog,
     /// The table tabs, dialogs and tools (`word_table`).
     Tables(crate::word_table::TableAction),
+    /// The ページ設定 dialogs and menus (`word_page_setup`).
+    Setup(crate::word_page_setup::SetupAction),
+    /// The ヘッダーとフッター tab (`word_story`).
+    Story(crate::word_story::StoryAction),
 }
 
 impl Action {
