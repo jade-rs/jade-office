@@ -155,6 +155,13 @@ impl DocumentView {
                     }),
                 ))
                 .child(menu_row(
+                    "bullet-picture",
+                    i18n::text("word.list.picture_bullet"),
+                    false,
+                    Action::Word(ToolCommand::PictureBullet),
+                    cx,
+                ))
+                .child(menu_row(
                     "bullets-none",
                     i18n::text("doc.none"),
                     false,
@@ -343,6 +350,47 @@ impl DocumentView {
         )
     }
 
+    /// 箇条書き → 図: asks for a picture and makes it the bullet.
+    pub(crate) fn prompt_for_picture_bullet(&mut self, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(i18n::text("word.list.picture_bullet").into()),
+        });
+        cx.spawn(async move |view, cx| {
+            let Ok(Ok(Some(paths))) = paths.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            let Ok(bytes) = std::fs::read(&path) else {
+                return;
+            };
+            let extension = path
+                .extension()
+                .map(|extension| extension.to_string_lossy().to_string())
+                .unwrap_or_default();
+            view.update(cx, |view, cx| {
+                view.set_picture_bullet(&bytes, &extension, cx)
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(crate) fn set_picture_bullet(
+        &mut self,
+        bytes: &[u8],
+        extension: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.tools_caret();
+        let result = self.document.apply_picture_bullet(bytes, extension);
+        self.tool_done(result, cx);
+    }
+
     pub(crate) fn open_list_start_dialog(&mut self, cx: &mut Context<Self>) {
         let Some(state) = self.document.list_state() else {
             return self.tool_done(Err(i18n::text("word.error.not_in_list").to_string()), cx);
@@ -397,7 +445,7 @@ impl DocumentView {
                 .set_list_start(value)
                 .map_err(DialogError::Failed),
             _ => Err(DialogError::Stay(
-                WordDialog::ListStart(dialog),
+                Box::new(WordDialog::ListStart(dialog)),
                 i18n::text("word.error.value").to_string(),
             )),
         }
@@ -467,7 +515,7 @@ impl DocumentView {
             parse_length(unit, char_width, dialog.inputs.text(1)),
         ) else {
             return Err(DialogError::Stay(
-                WordDialog::ListIndent(dialog),
+                Box::new(WordDialog::ListIndent(dialog)),
                 i18n::text("word.error.length").to_string(),
             ));
         };
@@ -736,7 +784,7 @@ impl DocumentView {
         if let Some(name) = dialog.style_name.clone() {
             if name.trim().is_empty() {
                 return Err(DialogError::Stay(
-                    WordDialog::DefineList(dialog),
+                    Box::new(WordDialog::DefineList(dialog)),
                     i18n::text("word.error.name").to_string(),
                 ));
             }

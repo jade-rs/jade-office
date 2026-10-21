@@ -384,7 +384,7 @@ impl DocumentView {
             Some(_) => {}
             None => {
                 return Err(DialogError::Stay(
-                    WordDialog::Tabs(dialog),
+                    Box::new(WordDialog::Tabs(dialog)),
                     i18n::text("word.error.length").to_string(),
                 ))
             }
@@ -801,7 +801,7 @@ impl DocumentView {
             Ok(lines) if (1..=10).contains(&lines) => lines,
             _ => {
                 return Err(DialogError::Stay(
-                    WordDialog::DropCap(dialog),
+                    Box::new(WordDialog::DropCap(dialog)),
                     i18n::text("word.error.lines").to_string(),
                 ))
             }

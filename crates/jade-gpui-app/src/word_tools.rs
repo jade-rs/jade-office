@@ -54,6 +54,8 @@ pub enum ToolCommand {
     NumberFormat(usize),
     /// 箇条書き library entry, by index into `BULLETS`.
     Bullet(usize),
+    /// 箇条書き → 図: a picture file as the bullet.
+    PictureBullet,
     Multilevel(MultilevelPreset),
     ListLevel(u8),
     RestartList,
@@ -166,6 +168,7 @@ impl DocumentView {
                     let (glyph, font) = BULLETS[index];
                     document.apply_list_format("bullet", glyph, font)
                 }
+                ToolCommand::PictureBullet => return self.prompt_for_picture_bullet(cx),
                 ToolCommand::Multilevel(preset) => document.apply_multilevel_preset(preset),
                 ToolCommand::ListLevel(level) => document.set_list_level(level),
                 ToolCommand::RestartList => document.set_list_start(1),

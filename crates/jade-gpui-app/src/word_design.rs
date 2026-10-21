@@ -468,7 +468,7 @@ impl DocumentView {
         let name = dialog.inputs.text(0).trim().to_string();
         if name.is_empty() {
             return Err(DialogError::Stay(
-                WordDialog::QuickPart(dialog),
+                Box::new(WordDialog::QuickPart(dialog)),
                 i18n::text("word.error.name").to_string(),
             ));
         }

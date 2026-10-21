@@ -466,7 +466,7 @@ impl DocumentView {
         let name = dialog.inputs.text(0).trim().to_string();
         if name.is_empty() {
             return Err(DialogError::Stay(
-                WordDialog::Style(dialog),
+                Box::new(WordDialog::Style(dialog)),
                 i18n::text("word.error.name").to_string(),
             ));
         }
@@ -482,7 +482,7 @@ impl DocumentView {
             .collect();
         let Ok(fields) = fields else {
             return Err(DialogError::Stay(
-                WordDialog::Style(dialog),
+                Box::new(WordDialog::Style(dialog)),
                 i18n::text("word.error.value").to_string(),
             ));
         };
