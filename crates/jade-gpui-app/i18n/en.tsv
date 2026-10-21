@@ -1997,3 +1997,27 @@ notes.separator	Show separator
 notes.continuation_separator	Show continuation separator
 nav.collapse	Collapse
 nav.expand	Expand
+# ---- View, Find and Replace, input aids (word_views) ----
+views.group.views	Views
+views.read	Read Mode
+views.print	Print Layout
+views.web	Web Layout
+views.outline	Outline
+views.draft	Draft
+views.group.movement	Page Movement
+views.vertical	Vertical
+views.side_to_side	Side to Side
+views.gridlines	Gridlines
+views.white_space	Hide White Space
+views.white_space_title	Hide the white space between pages (or double-click between pages)
+views.zoom.button	Zoom
+views.zoom.title	Zoom
+views.zoom.page_width	Page width
+views.zoom.text_width	Text width
+views.zoom.whole_page	Whole page
+views.zoom.many_pages	Many pages
+views.zoom.pages	Pages
+views.zoom.percent	Percent
+views.one_page	One Page
+views.multiple_pages	Multiple Pages
+views.page_width	Page Width

@@ -220,6 +220,8 @@ pub enum Action {
     Word(crate::word_tools::ToolCommand),
     /// 参考資料, ジャンプ and the navigation pane (`word_references`).
     References(crate::word_references::RefAction),
+    /// 表示: views, page movement, zoom and the grid (`word_views`).
+    Views(crate::word_views::ViewAction),
 }
 
 impl Action {
