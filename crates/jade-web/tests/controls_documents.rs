@@ -8,6 +8,8 @@
 
 mod common;
 
+use jade_web::editing::WordSession;
+
 use jade_web::word::controls::{
     ContentControlAction, ContentControlKind, ControlChrome, ControlClick, ControlPropertiesForm,
     FormFieldKind, WordControls,
@@ -235,4 +237,42 @@ fn form_fields_are_filled_in_a_document_protected_for_forms() {
     assert_eq!(fields[0].result, "Hanakoさん");
     assert!(fields[1].checked);
     assert!(reopened.protected_for_forms());
+}
+
+#[test]
+fn a_selection_saved_to_the_gallery_fills_a_gallery_control() {
+    use jade_web::word::controls::SaveBlockForm;
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "敬具 ");
+    document.select((paragraph, 0), (paragraph, 6)).unwrap();
+    let mut form = SaveBlockForm::default();
+    form.name.insert("結び");
+    let FormOutcome::Do(action) = form.event(FormEvent::Enter) else {
+        panic!("Enter saves the block");
+    };
+    document.run_control_action(action).unwrap();
+    assert_eq!(
+        document
+            .word_document()
+            .building_blocks(Some("Quick Parts")),
+        vec!["結び"]
+    );
+    document.place_caret(paragraph, 0);
+    document
+        .insert_content_control(ContentControlKind::BuildingBlockGallery, true)
+        .unwrap();
+    let gallery = document.content_controls().remove(0);
+    let ControlClick::Gallery { control, blocks } =
+        document.click_control((gallery.start.paragraph, gallery.start.offset + 3), TODAY)
+    else {
+        panic!("a click drops the gallery");
+    };
+    assert_eq!(blocks, vec!["結び"]);
+    document
+        .run_control_action(ContentControlAction::InsertBuildingBlock {
+            control,
+            name: blocks[0].clone(),
+        })
+        .unwrap();
+    assert!(document.content_controls()[0].text.starts_with("敬具"));
 }

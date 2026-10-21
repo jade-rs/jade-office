@@ -1612,3 +1612,7 @@ mail.labels.options	Label Options
 mail.labels.address	Address
 mail.labels.product	Product number
 mail.labels.details	{columns} across × {rows} down, labels {width} × {height} mm
+cc.save_block	Save to Gallery
+cc.save_block_title	Save the selected paragraphs as a building block for building block galleries
+cc.save_block.title	Create New Building Block
+cc.save_block.name	Name

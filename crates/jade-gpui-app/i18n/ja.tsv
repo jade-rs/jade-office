@@ -1612,3 +1612,7 @@ mail.labels.options	ラベル オプション
 mail.labels.address	住所
 mail.labels.product	ラベルの製品番号
 mail.labels.details	{columns} 列 × {rows} 行、ラベル {width} × {height} mm
+cc.save_block	ギャラリーに保存
+cc.save_block_title	選択した段落を構成要素として保存し、構成要素ギャラリーで使えるようにします
+cc.save_block.title	新しい構成要素の作成
+cc.save_block.name	名前

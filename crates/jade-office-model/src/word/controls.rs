@@ -1234,3 +1234,73 @@ pub fn character_styles<S: WordSession + ?Sized>(session: &S) -> Vec<(String, St
         .filter(|(_, name)| !name.eq_ignore_ascii_case("Placeholder Text"))
         .collect()
 }
+
+/// 選択範囲をギャラリーに保存: a name and a gallery for the selected
+/// paragraphs, kept as a building block.
+pub struct SaveBlockForm {
+    pub name: TextEdit,
+    pub gallery: usize,
+}
+
+impl Default for SaveBlockForm {
+    fn default() -> Self {
+        Self {
+            name: TextEdit::new(String::new()),
+            gallery: 0,
+        }
+    }
+}
+
+const BLOCK_NAME: FormId = FormId::new("block-name");
+const BLOCK_GALLERY: FormId = FormId::new("block-gallery");
+
+impl SaveBlockForm {
+    pub fn view(&self, t: Translate) -> FormView {
+        FormView {
+            title: t("cc.save_block.title").to_string(),
+            width: 420.0,
+            rows: vec![
+                FormRow::Field {
+                    id: BLOCK_NAME,
+                    label: t("cc.save_block.name").to_string(),
+                    value: FieldView::of(&self.name),
+                    focused: true,
+                    width: 220.0,
+                },
+                FormRow::Choice {
+                    id: BLOCK_GALLERY,
+                    label: t("cc.props.gallery").to_string(),
+                    options: BUILDING_BLOCK_GALLERIES
+                        .iter()
+                        .map(|gallery| gallery.to_string())
+                        .collect(),
+                    selected: Some(self.gallery),
+                },
+            ],
+            buttons: vec![
+                FormButton::new(CANCEL, t("format.cancel")),
+                FormButton::new(OK, t("format.ok")).primary(),
+            ],
+            problem: None,
+        }
+    }
+
+    pub fn event(&mut self, event: FormEvent) -> FormOutcome<ContentControlAction> {
+        match event {
+            FormEvent::Click(OK) | FormEvent::Enter if !self.name.text.trim().is_empty() => {
+                FormOutcome::Do(ContentControlAction::SaveBuildingBlock {
+                    name: self.name.text.trim().to_string(),
+                    gallery: BUILDING_BLOCK_GALLERIES
+                        [self.gallery.min(BUILDING_BLOCK_GALLERIES.len() - 1)]
+                    .to_string(),
+                })
+            }
+            FormEvent::Click(CANCEL) | FormEvent::Escape => FormOutcome::Close,
+            FormEvent::Choose(BLOCK_GALLERY, index) => {
+                self.gallery = index;
+                FormOutcome::Stay
+            }
+            _ => FormOutcome::Stay,
+        }
+    }
+}
