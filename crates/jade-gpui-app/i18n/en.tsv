@@ -903,3 +903,6 @@ chars.ruby.font_same	(same as base)
 chars.ruby.size	Size
 chars.ruby.offset	Offset
 chars.ruby.auto	Auto
+chars.enclose.title	Enclose Characters
+chars.enclose.text	Text
+chars.enclose.enclosure	Enclosure

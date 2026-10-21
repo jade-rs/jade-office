@@ -147,8 +147,71 @@ impl RubyDialog {
     }
 }
 
+/// 囲い文字's enclosures, in Word's order.
+pub const ENCLOSURES: [&str; 4] = ["○", "□", "△", "◇"];
+
 /// The commands, for every session.
 pub trait WordAsian: WordSession {
+    /// What 囲い文字 opens on: the selection's first character, or the one
+    /// before the caret.
+    fn enclosed_character_text(&self) -> String {
+        let Some(range) = self.selection_range() else {
+            return String::new();
+        };
+        let (start, end) = range.normalized();
+        let text = self.text_of(start.paragraph).unwrap_or_default();
+        let slice = if range.is_collapsed() {
+            text.get(..start.offset)
+                .and_then(|before| before.chars().next_back())
+                .map(String::from)
+        } else {
+            let to = if end.paragraph == start.paragraph {
+                end.offset
+            } else {
+                text.len()
+            };
+            text.get(start.offset..to)
+                .and_then(|selected| selected.chars().next())
+                .map(String::from)
+        };
+        slice.unwrap_or_default()
+    }
+
+    /// 囲い文字's OK: `text` in `enclosure` in place of the selection — or
+    /// of the character before a caret, which is what it opened on.
+    fn insert_enclosed_character(&mut self, text: &str, enclosure: &str) -> Result<(), String> {
+        let range = self.selection_range().ok_or("no caret")?;
+        let (mut start, end) = range.normalized();
+        if range.is_collapsed() {
+            let before = self
+                .text_of(start.paragraph)
+                .unwrap_or_default()
+                .get(..start.offset)
+                .and_then(|before| before.chars().next_back())
+                .map_or(0, char::len_utf8);
+            start.offset -= before;
+        }
+        let end_offset = if end.paragraph == start.paragraph {
+            end.offset
+        } else {
+            self.text_of(start.paragraph).map_or(0, |text| text.len())
+        };
+        if text.trim().is_empty() {
+            return Err("type the character to enclose".to_string());
+        }
+        self.apply_command(
+            HeadlessCommand::InsertEnclosedCharacter {
+                start_paragraph: start.paragraph,
+                start_offset: start.offset,
+                end_paragraph: start.paragraph,
+                end_offset,
+                text: text.trim().to_string(),
+                enclosure: enclosure.to_string(),
+            },
+            false,
+        )
+    }
+
     /// The ルビ dialog on the selection — or the word at a bare caret —
     /// within its first paragraph, with the rubies already there.
     fn ruby_dialog(&self) -> Result<RubyDialog, String> {
