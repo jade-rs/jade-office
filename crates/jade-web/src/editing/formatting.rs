@@ -116,6 +116,18 @@ impl WordSession for EditableDocument {
     fn table_order_for(&self, table_id: usize) -> Option<usize> {
         self.renderer.table_order_for(table_id)
     }
+
+    fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
+        let range = self
+            .renderer
+            .cell_selection_range(anchor_cell, focus_cell)
+            .ok_or_else(|| "the cells are not in one table".to_string())?;
+        self.composition = None;
+        self.selection = Some(range);
+        self.renderer.set_selection_range(Some(range));
+        self.renderer.set_cell_selection(anchor_cell, focus_cell);
+        Ok(())
+    }
 }
 
 impl EditableDocument {
