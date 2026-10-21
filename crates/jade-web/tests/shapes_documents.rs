@@ -537,3 +537,59 @@ fn pen_strokes_go_in_as_word_ink_and_are_drawn() {
         .unwrap();
     assert_eq!(image.format().ink.as_ref().map(|ink| ink.strokes.len()), Some(2));
 }
+
+#[test]
+fn a_picture_groups_with_a_shape_and_is_drawn_inside_the_group() {
+    use jade_web::word::picture::{WordPicture, Wrap};
+    let mut document = contract();
+    let paragraph = typed(&mut document, "group ");
+    document.place_caret(paragraph, 0);
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(60, 40, image::Rgba([220, 0, 0, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    document.insert_picture(png).unwrap();
+    let picture = objects(&document, paragraph)[0];
+    document.set_object_wrap(picture, Wrap::InFrontOfText).unwrap();
+    let start = document.object_region(picture).unwrap();
+    document.place_object(start, (100.0, 200.0, 60.0, 40.0)).unwrap();
+    document.place_caret(paragraph, 0);
+    document
+        .insert_shape(TextBoxShape::Ellipse, drawn(250.0, 260.0, 80.0, 80.0), false)
+        .unwrap();
+    let placed: Vec<_> = objects(&document, paragraph)
+        .iter()
+        .map(|target| document.object_region(*target).unwrap())
+        .collect();
+    assert_eq!(placed.len(), 2);
+    document.group_objects(&placed).unwrap();
+    let group = objects(&document, paragraph)[0];
+    let image = document.word_document().paragraph(paragraph).unwrap().runs[group.run_index]
+        .image
+        .clone()
+        .unwrap();
+    let children = image.shape_group.unwrap().children;
+    let grouped = children
+        .iter()
+        .find_map(|child| child.picture.as_ref())
+        .expect("the picture is a member of the group");
+    assert!(grouped.data_uri.as_deref().is_some_and(|uri| uri.starts_with("data:image/png")));
+    assert!(package_part(&mut document, "word/document.xml").contains("<pic:pic"));
+
+    // Drawn: the picture's red fills its box inside the group.
+    let page = document.page(0).unwrap();
+    let rgba = page.rgba_premultiplied();
+    let width = page.width() as usize;
+    let scale = width as f64 / document.page_size().0;
+    let at = ((220.0 * scale) as usize * width + (130.0 * scale) as usize) * 4;
+    assert!(rgba[at] > 180 && rgba[at + 1] < 60, "{:?}", &rgba[at..at + 4]);
+
+    let region = document.object_region(group).unwrap();
+    document.ungroup_object(region).unwrap();
+    let pictures: Vec<_> = objects(&document, paragraph)
+        .into_iter()
+        .filter_map(|target| document.word_document().paragraph(paragraph).unwrap().runs[target.run_index].image.clone())
+        .filter(|image| image.data_uri.is_some())
+        .collect();
+    assert_eq!(pictures.len(), 1, "the picture comes out of the group as a picture");
+}
