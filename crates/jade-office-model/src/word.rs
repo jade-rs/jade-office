@@ -30,6 +30,7 @@ pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
 pub mod clipboard;
+pub mod fields;
 pub mod find;
 pub mod new;
 pub mod page;
@@ -80,6 +81,16 @@ pub trait WordSession {
     fn cell_layouts(&self) -> &[CellLayout];
     /// A laid-out table's order in the body, which table commands take.
     fn table_order_for(&self, table_id: usize) -> Option<usize>;
+    /// Pages in the laid-out document, when the session lays out pages
+    /// (NUMPAGES, SECTIONPAGES).
+    fn page_count(&self) -> Option<usize> {
+        None
+    }
+    /// The page (1-based) a paragraph starts on at the last paint (PAGE,
+    /// PAGEREF).
+    fn paragraph_page(&self, _paragraph: usize) -> Option<usize> {
+        None
+    }
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
