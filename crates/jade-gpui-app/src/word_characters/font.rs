@@ -479,6 +479,37 @@ fn font_tab(
         |dialog, value: String| dialog.format.font_size = value.parse().ok(),
         cx,
     );
+    // The complex-script style: Word keeps it apart (w:bCs, w:iCs).
+    let (complex_bold, complex_italic) = (
+        format.complex_bold.or(format.bold) == Some(true),
+        format.complex_italic.or(format.italic) == Some(true),
+    );
+    let complex_styles = div()
+        .flex()
+        .gap_1()
+        .children(
+            styles
+                .into_iter()
+                .enumerate()
+                .map(|(index, (b, i, label))| {
+                    list_row(
+                        ("complex-style", index),
+                        i18n::text(label),
+                        complex_bold == b && complex_italic == i,
+                    )
+                    .when(b, |row| row.font_weight(FontWeight::BOLD))
+                    .when(i, |row| row.italic())
+                    .on_click(cx.listener(
+                        move |view, _: &ClickEvent, _, cx| {
+                            edit(view, |dialog| {
+                                dialog.format.complex_bold = Some(b);
+                                dialog.format.complex_italic = Some(i);
+                            });
+                            cx.notify();
+                        },
+                    ))
+                }),
+        );
     let complex_size = format.complex_font_size.unwrap_or(size);
     let complex_sizes = stepper(
         "complex-size",
@@ -618,7 +649,8 @@ fn font_tab(
                         .flex_col()
                         .gap_2()
                         .child(labelled("chars.font.size", sizes))
-                        .child(labelled("chars.font.complex_size", complex_sizes)),
+                        .child(labelled("chars.font.complex_size", complex_sizes))
+                        .child(labelled("chars.font.complex_style", complex_styles)),
                 ),
         )
         .child(
