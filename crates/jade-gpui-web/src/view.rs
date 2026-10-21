@@ -32,6 +32,7 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 
 mod deck;
 mod sheet;
+pub(crate) mod word_characters;
 mod word_find;
 mod word_review;
 mod word_story;
@@ -483,6 +484,8 @@ pub struct DocView {
     slideshow: bool,
     /// Whether the browser's paste event came after the last ⌘V.
     paste_arrived: bool,
+    /// The フォント dialog and the other character tools' dialogs.
+    characters: word_characters::Characters,
     host: Host,
 }
 
@@ -600,6 +603,7 @@ impl DocView {
             show_notes: true,
             slideshow: false,
             paste_arrived: false,
+            characters: word_characters::Characters::default(),
             host,
         })
     }
@@ -1464,6 +1468,9 @@ impl DocView {
         if let Action::Review(review) = action {
             return self.review_action(review, cx);
         }
+        if let Action::Characters(action) = action {
+            return word_characters::run(self, action, cx);
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1491,7 +1498,7 @@ impl DocView {
         self.word_edit(cx, move |document| match action {
             Action::Toggle(format) => document.toggle_format(format),
             Action::ClearFormatting => document.clear_formatting(),
-            Action::FontFamily(family) => document.set_font_family(family),
+            Action::FontFamilyName(family) => document.set_font_family(&family),
             Action::FontSize(points) => document.set_font_size(points),
             Action::StepFontSize(grow) => document.step_font_size(grow),
             Action::FontColor(color) => document.set_font_color(&color),
@@ -1519,6 +1526,7 @@ impl DocView {
                 jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
             }
             Action::EditStory(_)
+            | Action::Characters(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::Wrap(_)
@@ -1972,6 +1980,14 @@ impl DocView {
                 .ok();
             });
         }
+        // A dialog takes the keyboard while it is open: its own keys stop
+        // here, and typing goes on to the input handler, into its field.
+        if self.characters.is_open() {
+            if word_characters::handle_key(self, key, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // The find bar over a Word document takes the keys it has.
         if self.commenting() && self.comment_key(event, cx) {
             cx.stop_propagation();
@@ -2015,6 +2031,8 @@ impl DocView {
                 "f" if pages => self.open_find(false, cx),
                 "h" if pages && modifiers.shift => self.open_find(true, cx),
                 "c" if pages => self.word_copy(false, cx),
+                // Word for Mac's フォント… (書式 menu).
+                "d" if pages => word_characters::open_font_dialog(self, cx),
                 "x" if pages => self.word_copy(true, cx),
                 // Word's own shortcuts for the ribbon's three toggles.
                 "b" | "i" | "u" if pages => {
@@ -2047,6 +2065,9 @@ impl DocView {
     fn typing_target(&mut self, cx: &mut Context<Self>) -> Option<&mut TextEdit> {
         if self.slideshow {
             return None;
+        }
+        if self.characters.is_open() {
+            return self.characters.text_field_mut();
         }
         match &self.document {
             // Typing into a selected cell replaces it, as in Excel.
@@ -2086,6 +2107,9 @@ impl DocView {
     }
 
     fn current_text(&self) -> Option<&TextEdit> {
+        if let Some(field) = self.characters.text_field() {
+            return Some(field);
+        }
         match &self.document {
             Document::Workbook(sheet) => sheet.typed(),
             Document::Deck {
@@ -2514,6 +2538,7 @@ impl Render for DocView {
                 Document::Workbook(_) => self.workbook_body(window, cx),
             }
         };
+        let dialog = word_characters::overlay(self, window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -2521,5 +2546,6 @@ impl Render for DocView {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::handle_key))
             .child(body)
+            .children(dialog)
     }
 }
