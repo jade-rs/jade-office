@@ -675,3 +675,127 @@ format.fill.none	No color
 format.ok	OK
 format.cancel	Cancel
 sheet.protected	The cell or sheet you are trying to change is protected.
+# Page setup, sections, headers and footers
+setup.title	Page Setup
+setup.open	Page Setup…
+setup.tab.grid	Document Grid
+setup.tab.margins	Margins
+setup.tab.paper	Paper
+setup.tab.other	Layout
+setup.apply	Apply to
+setup.apply.whole	Whole document
+setup.apply.section	This section
+setup.apply.selected	Selected sections
+setup.apply.forward	This point forward
+setup.direction	Text Direction
+setup.direction.heading	Text flow
+setup.direction.label	Orientation
+setup.direction.horizontal	Horizontal
+setup.direction.vertical	Vertical
+setup.direction.options	Text Direction Options…
+setup.columns.count	Number of columns
+setup.grid.heading	Grid
+setup.grid.default	No grid
+setup.grid.lines	Specify line grid only
+setup.grid.chars_and_lines	Specify line and character grid
+setup.grid.manuscript	Text snaps to character grid
+setup.chars.heading	Characters
+setup.chars	Per line
+setup.char_pitch	Pitch
+setup.lines.heading	Lines
+setup.lines_per_page	Per page
+setup.line_pitch	Pitch
+setup.margins.heading	Margins
+setup.margin.top	Top
+setup.margin.bottom	Bottom
+setup.margin.left	Left
+setup.margin.right	Right
+setup.margin.inside	Inside
+setup.margin.outside	Outside
+setup.gutter	Gutter
+setup.gutter_side	Gutter position
+setup.orientation.heading	Orientation
+setup.orientation	Orientation
+setup.pages.heading	Pages
+setup.pages	Multiple pages
+setup.pages.normal	Normal
+setup.pages.mirror	Mirror margins
+setup.pages.two_on_one	2 pages per sheet
+setup.pages.book_fold	Book fold
+setup.paper.heading	Paper size
+setup.paper.custom	Custom size
+setup.paper.width	Width
+setup.paper.height	Height
+setup.paper.more	More Paper Sizes…
+setup.margins.custom	Custom Margins…
+setup.section.heading	Section
+setup.section.start	Section start
+setup.start.continuous	Continuous
+setup.start.next_column	New column
+setup.start.next_page	New page
+setup.start.even_page	Even page
+setup.start.odd_page	Odd page
+setup.header_footer.heading	Headers and footers
+setup.header_footer.odd_even	Different odd and even
+setup.header_footer.first_page	Different first page
+setup.header_distance	Header
+setup.footer_distance	Footer
+setup.page.heading	Page
+setup.valign	Vertical alignment
+setup.valign.top	Top
+setup.valign.center	Center
+setup.valign.both	Justified
+setup.valign.bottom	Bottom
+setup.lines	Line Numbers
+setup.lines.button	Line Numbers…
+setup.lines.title	Line Numbers
+setup.lines.add	Add line numbering
+setup.lines.start	Start at
+setup.lines.count_by	Count by
+setup.lines.distance	From text
+setup.lines.auto	0 is Auto
+setup.lines.restart	Numbering
+setup.lines.none	None
+setup.lines.continuous	Continuous
+setup.lines.new_page	Restart Each Page
+setup.lines.new_section	Restart Each Section
+setup.lines.options	Line Numbering Options…
+setup.group.text	Text and Lines
+setup.ltr	Left-to-Right
+setup.ltr_title	Paragraph reads left to right
+setup.rtl	Right-to-Left
+setup.rtl_title	Paragraph reads right to left
+setup.unit.mm	mm
+setup.unit.pt	pt
+setup.unit.chars	chars
+setup.unit.lines	lines
+setup.unit.columns	columns
+setup.unit.none	 
+setup.problem.margins	The margins leave no room for text.
+setup.break.pages	Page Breaks
+setup.break.page	Page
+setup.break.column	Column
+setup.break.text_wrapping	Text Wrapping
+setup.columns.title	Columns
+setup.columns.kind	Presets
+setup.columns.one	One
+setup.columns.two	Two
+setup.columns.three	Three
+setup.columns.left	Left
+setup.columns.right	Right
+setup.columns.more	More Columns…
+setup.columns.widths	Width and spacing
+setup.columns.width	Width
+setup.columns.space	Spacing
+setup.columns.equal	Equal column width
+setup.columns.line	Line between
+setup.numbers.open	Format Page Numbers…
+setup.numbers.title	Page Number Format
+setup.numbers.format	Number format
+setup.numbers.chapter	Include chapter number
+setup.numbers.chapter_style	Chapter starts with style
+setup.numbers.heading_level	Heading {n}
+setup.numbers.separator	Use separator
+setup.numbers.numbering	Page numbering
+setup.numbers.continue	Continue from previous section
+setup.numbers.start	Start at

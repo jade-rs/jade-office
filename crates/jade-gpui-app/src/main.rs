@@ -28,6 +28,7 @@ mod ribbon;
 mod shell;
 mod tooltip;
 mod word_page;
+mod word_page_setup;
 mod word_review;
 mod workbook;
 mod workspace;
@@ -1096,6 +1097,8 @@ struct DocumentView {
     story_bar: Option<word_page::StoryBar>,
     /// A comment being typed — new, a reply, an edit — in its bar.
     comment_bar: Option<word_review::CommentBar>,
+    /// The ページ設定, 段組み or ページ番号の書式 dialog, while one is open.
+    page_dialog: Option<word_page_setup::PageDialogState>,
     /// Whether the comments pane is open beside the pages.
     show_comments: bool,
     /// Display scale. The pages are rasterised at their own size and drawn
@@ -1297,6 +1300,11 @@ impl DocumentView {
         if self.marked.is_some() {
             return;
         }
+        // A dialog is modal: it takes every key while it is open.
+        if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         // The bar owns the keyboard while it is open, so Enter means "next
         // match" and Backspace edits the query rather than the document.
         if self.comment_bar.is_some() && self.handle_comment_bar_key(event, cx) {
@@ -1394,6 +1402,13 @@ impl DocumentView {
                 let result = self.document.delete_text(paragraph, offset, false, 1, page);
                 self.after_edit(result, (paragraph, offset), cx);
             }
+            // ⌘↩ is Word for Mac's page break (改ページ).
+            "enter" if modifiers.platform => self.run_ribbon(
+                Action::Setup(word_page_setup::SetupAction::Break(
+                    jade_office_model::word::page_setup::PageBreak::Page,
+                )),
+                cx,
+            ),
             "enter" => {
                 // The split re-flows everything below, so the whole document is
                 // repainted rather than the visible page.
@@ -1831,13 +1846,15 @@ impl DocumentView {
                 )
                 .into_any_element(),
             ],
-            RibbonTab::Layout => vec![
-                {
-                    let japanese = i18n::language() == i18n::Language::Japanese;
-                    let setup = self.document.page_setup();
-                    let preset = self.document.margin_preset(japanese);
-                    word_page::page_setup(&self.ribbon, &setup, preset, japanese, cx)
-                },
+            RibbonTab::Layout => vec![{
+                let japanese = i18n::language() == i18n::Language::Japanese;
+                let setup = self.document.page_setup();
+                let preset = self.document.margin_preset(japanese);
+                word_page::page_setup(&self.ribbon, &setup, preset, japanese, cx)
+            }]
+            .into_iter()
+            .chain(self.page_setup_groups(cx))
+            .chain([
                 Self::ribbon_group(
                     t("doc.group.paragraph"),
                     vec![Self::ribbon_row(vec![
@@ -1876,8 +1893,7 @@ impl DocumentView {
                         .into_any_element()])],
                 )
                 .into_any_element(),
-            ]
-            .into_iter()
+            ])
             .chain(ribbon::table_tools(&self.ribbon, &state, cx))
             .collect(),
             RibbonTab::References => vec![Self::ribbon_group(
@@ -2696,6 +2712,7 @@ impl DocumentView {
                 WordPage::page_command(document, command, japanese)
             }
             Action::EditStory(story) => return self.open_story_bar(story, cx),
+            Action::Setup(setup) => self.run_setup_action(setup, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) => Ok(()),
         };
         match done {
@@ -4140,6 +4157,8 @@ impl Render for DocumentView {
             )
             // ---- the comments pane, beside the pages while it is open ----
             .children(comments_pane)
+            // ---- a ページ設定 dialog, over everything while it is open ----
+            .children(self.page_dialog_element(cx))
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4365,6 +4384,7 @@ fn document_view(
         find_bar: None,
         story_bar: None,
         comment_bar: None,
+        page_dialog: None,
         show_comments: false,
         ribbon_tab: RibbonTab::Home,
         ribbon,
