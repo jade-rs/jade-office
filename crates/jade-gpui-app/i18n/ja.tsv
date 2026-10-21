@@ -1357,3 +1357,45 @@ chars.enclose.title	囲い文字
 chars.enclose.text	文字
 chars.enclose.enclosure	囲い文字の種類
 chars.font.complex_style	複合フォントのスタイル
+# Files: formats, copies, templates, recovery (word_files, autorecover)
+menu.file.save_copy	コピーを保存…
+menu.file.save_template	テンプレートとして保存…
+files.too_old	{name} は Word 97 より前の形式のため開けません。
+files.damaged	{name} は壊れているため開けません: {error}
+files.failed	{name} を変換できませんでした: {error}
+files.cannot_write_doc	Word 97-2004 文書 (.doc) 形式では保存できません。Word 文書 (.docx) として保存してください。
+files.doc_title	Word 97-2004 文書
+files.save_failed	保存できませんでした
+files.copy_name	{name} のコピー
+files.encoding_title	ファイルの変換
+files.encoding_title_named	ファイルの変換 - {name}
+files.encoding	エンコード
+files.preview	プレビュー
+files.line_ending	行の終わり
+files.crlf	CR/LF
+files.lf	LF のみ
+files.cr	CR のみ
+files.text_only	テキストのみが保存されます。書式、画像、表の罫線は失われます。
+files.lost_characters	次の文字は選択したエンコードで保存できません: {chars}
+files.backup_name	{name} のバックアップ
+recent.pin	一覧にピン留めする
+recent.unpin	ピン留めを外す
+recent.folders	最近使ったフォルダー
+recovered.title	回復されたファイル
+recovered.delete	削除
+recovered.name	{name} (回復済み)
+menu.app.save_preferences	環境設定 (保存)…
+prefs.save_title	保存
+prefs.save_options	保存オプション
+prefs.always_backup	バックアップ ファイルを常に作成する
+prefs.autorecover	自動回復用データを保存する:
+prefs.minutes	分ごと
+prefs.recovery_folder	自動回復ファイルの保存先
+prefs.save_folder	既定の保存先 (文書)
+prefs.default_folder	既定 (アプリケーション サポート内の AutoRecovery)
+prefs.documents	書類フォルダー
+prefs.change	変更…
+prefs.choose	選択
+prefs.this_document	このドキュメントの共有時に忠実度を保つ
+prefs.embed_fonts	TrueType フォントをファイルに埋め込む
+prefs.embed_subset	ドキュメントで使用されている文字だけを埋め込む (ファイル サイズを縮小する場合)

@@ -1357,3 +1357,45 @@ chars.enclose.title	Enclose Characters
 chars.enclose.text	Text
 chars.enclose.enclosure	Enclosure
 chars.font.complex_style	Complex scripts style
+# Files: formats, copies, templates, recovery (word_files, autorecover)
+menu.file.save_copy	Save a Copy…
+menu.file.save_template	Save as Template…
+files.too_old	{name} is from a Word older than Word 97 and cannot be opened.
+files.damaged	{name} is damaged and cannot be opened: {error}
+files.failed	{name} could not be converted: {error}
+files.cannot_write_doc	Documents cannot be saved as Word 97-2004 (.doc). Save as a Word Document (.docx).
+files.doc_title	Word 97-2004 Document
+files.save_failed	The document could not be saved
+files.copy_name	Copy of {name}
+files.encoding_title	File Conversion
+files.encoding_title_named	File Conversion - {name}
+files.encoding	Text encoding
+files.preview	Preview
+files.line_ending	End lines with
+files.crlf	CR/LF
+files.lf	LF only
+files.cr	CR only
+files.text_only	Only the text is saved. Formatting, pictures and table borders are lost.
+files.lost_characters	These characters cannot be saved in the chosen encoding: {chars}
+files.backup_name	Backup of {name}
+recent.pin	Pin to list
+recent.unpin	Unpin from list
+recent.folders	Recent Folders
+recovered.title	Recovered Files
+recovered.delete	Delete
+recovered.name	{name} (Recovered)
+menu.app.save_preferences	Preferences (Save)…
+prefs.save_title	Save
+prefs.save_options	Save options
+prefs.always_backup	Always create backup copy
+prefs.autorecover	Save AutoRecover info every
+prefs.minutes	minutes
+prefs.recovery_folder	AutoRecover files location
+prefs.save_folder	Default file location (Documents)
+prefs.default_folder	Default (AutoRecovery in Application Support)
+prefs.documents	Documents folder
+prefs.change	Change…
+prefs.choose	Choose
+prefs.this_document	Preserve fidelity when sharing this document
+prefs.embed_fonts	Embed TrueType fonts in the file
+prefs.embed_subset	Embed only characters used in the document (best for reducing file size)

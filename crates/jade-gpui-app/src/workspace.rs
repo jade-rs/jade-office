@@ -66,7 +66,16 @@ pub fn editor_area(window: &Window, cx: &App) -> (f32, f32) {
 /// A colour per format, so a tab or a tree row says what it is at a glance:
 /// the 400 shades on the dark chrome, a step deeper on the light one, where
 /// the 400s wash out against white.
-fn kind_color(kind: Kind) -> Rgba {
+/// Whether the compound file at `path` is a Word 97–2004 document rather
+/// than an encrypted package.
+fn is_word_97(path: &Path) -> bool {
+    std::fs::read(path).is_ok_and(|bytes| {
+        jade_office_model::word::formats::WordFormat::sniff(&bytes)
+            == Some(jade_office_model::word::formats::WordFormat::Doc)
+    })
+}
+
+pub(crate) fn kind_color(kind: Kind) -> Rgba {
     let (dark, light) = match kind {
         Kind::Document => (0x60a5fa, 0x3b82f6),
         Kind::Workbook => (0x34d399, 0x059669),
@@ -75,7 +84,7 @@ fn kind_color(kind: Kind) -> Rgba {
     gpui::rgb(if theme::is_dark() { dark } else { light })
 }
 
-fn kind_icon(kind: Kind) -> &'static str {
+pub(crate) fn kind_icon(kind: Kind) -> &'static str {
     match kind {
         Kind::Document => "icons/file-text.svg",
         Kind::Workbook => "icons/sheet.svg",
@@ -148,7 +157,9 @@ pub struct Workspace {
     /// every frame anything in it changes, scrolling included, and the disk
     /// should not be read that often.
     listings: HashMap<PathBuf, Vec<Entry>>,
-    recent: Vec<PathBuf>,
+    recent: Vec<recent::Entry>,
+    /// Documents 自動回復 kept that were never saved.
+    recovered: Vec<crate::autorecover::Recovered>,
     error: Option<SharedString>,
     focus: FocusHandle,
 }
@@ -162,7 +173,8 @@ impl Workspace {
             root: None,
             expanded: HashSet::new(),
             listings: HashMap::new(),
-            recent: recent::load(),
+            recent: recent::entries(),
+            recovered: crate::autorecover::recovered(),
             error: None,
             focus: cx.focus_handle(),
         }
@@ -187,7 +199,7 @@ impl Workspace {
             return result;
         }
         recent::remember(&path);
-        self.recent = recent::load();
+        self.recent = recent::entries();
         if self.root.is_none() {
             if let Some(parent) = path.parent() {
                 self.set_root(parent.to_path_buf());
@@ -227,7 +239,8 @@ impl Workspace {
                 &[("name", &shell::file_name(path))],
             )
         })?;
-        if shell::is_compound_file(path) {
+        // A Word 97–2004 document is a compound file too, and opens.
+        if shell::is_compound_file(path) && !is_word_97(path) {
             return Err(i18n::format(
                 "workspace.protected",
                 &[("name", &shell::file_name(path))],
@@ -317,6 +330,53 @@ impl Workspace {
         if let Err(error) = self.open(&path, window, cx) {
             eprintln!("{error}");
         }
+    }
+
+    pub(crate) fn open_path_from_ui(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_from_ui(path, window, cx);
+    }
+
+    pub(crate) fn recent_entries(&self) -> &[recent::Entry] {
+        &self.recent
+    }
+
+    pub(crate) fn reload_recent(&mut self) {
+        self.recent = recent::entries();
+    }
+
+    pub(crate) fn recovered(&self) -> &[crate::autorecover::Recovered] {
+        &self.recovered
+    }
+
+    pub(crate) fn reload_recovered(&mut self) {
+        self.recovered = crate::autorecover::recovered();
+    }
+
+    /// Opens a document 自動回復 kept, as a new document under its own
+    /// name marked 回復済み; the copy goes, the document making its own.
+    pub(crate) fn open_recovered(
+        &mut self,
+        copy: &crate::autorecover::Recovered,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let name = crate::workspace_files::recovered_name(copy);
+        match std::fs::read(&copy.copy) {
+            Ok(bytes) => match self.open_untitled(&name, &bytes, window, cx) {
+                Ok(()) => {
+                    crate::autorecover::discard(&copy.copy);
+                    self.reload_recovered();
+                }
+                Err(error) => self.error = Some(SharedString::from(error)),
+            },
+            Err(error) => self.error = Some(SharedString::from(error.to_string())),
+        }
+        cx.notify();
     }
 
     fn prompt_for_folder(&mut self, cx: &mut Context<Self>) {
@@ -635,45 +695,8 @@ impl Workspace {
             })
             .collect();
 
-        let recent: Vec<_> = self
-            .recent
-            .iter()
-            .take(8)
-            .enumerate()
-            .map(|(index, path)| {
-                let kind = Kind::of(path);
-                let path = path.clone();
-                div()
-                    .id(("recent-row", index))
-                    .flex()
-                    .items_center()
-                    .gap_1p5()
-                    .mx_1()
-                    .px_2()
-                    .py(px(4.0))
-                    .rounded_md()
-                    .cursor_pointer()
-                    .text_xs()
-                    .text_color(theme::text_dim())
-                    .hover(|row| row.bg(theme::hovered()).text_color(theme::text()))
-                    .children(kind.map(|kind| {
-                        svg()
-                            .path(kind_icon(kind))
-                            .size_3p5()
-                            .text_color(kind_color(kind))
-                    }))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .child(shell::file_name(&path)),
-                    )
-                    .on_click(cx.listener(move |workspace, _event, window, cx| {
-                        workspace.open_from_ui(path.clone(), window, cx)
-                    }))
-            })
-            .collect();
+        let recent = crate::workspace_files::recent_rows(&self.recent, 8, "recent-row", cx);
+        let recovered = crate::workspace_files::recovered_rows(&self.recovered, cx);
 
         div()
             .w(px(EXPLORER_WIDTH))
@@ -753,6 +776,30 @@ impl Workspace {
                         )
                     }),
             )
+            .when(!recovered.is_empty(), |explorer| {
+                explorer
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .px_3()
+                            .pt_2()
+                            .pb_1()
+                            .border_t_1()
+                            .border_color(theme::border())
+                            .text_xs()
+                            .text_color(theme::accent())
+                            .child(
+                                svg()
+                                    .path("icons/life-buoy.svg")
+                                    .size_3()
+                                    .text_color(theme::accent()),
+                            )
+                            .child(i18n::text("recovered.title")),
+                    )
+                    .child(div().flex().flex_col().pb_2().children(recovered))
+            })
             .when(!recent.is_empty(), |explorer| {
                 explorer
                     .child(
@@ -1079,6 +1126,7 @@ impl Workspace {
                     .text_color(theme::text_faint())
                     .child(i18n::text("workspace.drop_hint")),
             )
+            .child(crate::workspace_files::start_lists(self, cx))
             .children(
                 self.error
                     .clone()

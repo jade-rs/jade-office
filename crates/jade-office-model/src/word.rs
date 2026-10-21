@@ -34,6 +34,7 @@ pub mod clipboard;
 pub mod count;
 pub mod find;
 pub mod font;
+pub mod formats;
 pub mod insert;
 pub mod links;
 pub mod new;

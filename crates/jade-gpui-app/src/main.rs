@@ -20,6 +20,7 @@
 //! and with it editing and IME — needs the renderer driven from gpui's own
 //! paint cycle, which is the next step, not this one.
 
+mod autorecover;
 mod deck;
 mod editor;
 mod i18n;
@@ -29,13 +30,16 @@ mod shell;
 mod tooltip;
 mod word_characters;
 mod word_dialogs;
+mod word_files;
 mod word_page;
 mod word_page_setup;
 mod word_review;
 mod word_story;
 mod word_table;
+mod word_templates;
 mod workbook;
 mod workspace;
+mod workspace_files;
 
 use editor::Editor;
 use i18n::text as t;
@@ -150,6 +154,8 @@ fn key_bindings() -> Vec<KeyBinding> {
     const CONTEXT: Option<&str> = Some("Document");
     vec![
         KeyBinding::new("cmd-q", Quit, None),
+        // 環境設定 → 保存.
+        KeyBinding::new("cmd-,", word_files::SavePreferences, CONTEXT),
         // Opening and closing belong to the app, not to one kind of window:
         // they work from the start window and from every view.
         KeyBinding::new("cmd-n", NewDocument, None),
@@ -169,6 +175,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         // kind of tab; each view that has them answers with its own handler.
         KeyBinding::new("cmd-s", Save, None),
         KeyBinding::new("cmd-shift-s", SaveAs, None),
+        // コピーを保存 and テンプレートとして保存.
+        KeyBinding::new("ctrl-cmd-s", word_files::SaveCopy, CONTEXT),
+        KeyBinding::new("ctrl-cmd-t", word_files::SaveAsTemplate, CONTEXT),
         // Unscoped so each view that can print answers it with its own
         // handler; a view without one leaves it alone.
         KeyBinding::new("cmd-p", Print, None),
@@ -260,7 +269,11 @@ fn menus() -> Vec<Menu> {
     vec![
         Menu {
             name: "jade".into(),
-            items: vec![MenuItem::action(t("menu.app.quit"), Quit)],
+            items: vec![
+                MenuItem::action(t("menu.app.save_preferences"), word_files::SavePreferences),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.app.quit"), Quit),
+            ],
         },
         Menu {
             name: t("menu.file").into(),
@@ -274,6 +287,8 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.save"), Save),
                 MenuItem::action(t("menu.file.save_as"), SaveAs),
+                MenuItem::action(t("menu.file.save_copy"), word_files::SaveCopy),
+                MenuItem::action(t("menu.file.save_template"), word_files::SaveAsTemplate),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.print"), Print),
                 MenuItem::action(t("menu.file.export_pdf"), ExportPdf),
@@ -491,12 +506,6 @@ pub(crate) fn skia_backend() -> Result<jade_office_model::skia::SkiaBackend, Str
         *backend.borrow_mut() = Some(made.clone());
         Ok(made)
     })
-}
-
-/// Opens `path` and paints it, ready to be edited.
-fn open_document(path: &str) -> Result<NativeDocument, String> {
-    let bytes = std::fs::read(path).map_err(|err| format!("{path}: {err}"))?;
-    open_document_bytes(&bytes)
 }
 
 /// Whether documents are drawn in their own fonts where those are
@@ -988,6 +997,7 @@ impl gpui::AssetSource for Assets {
             "indent-decrease",
             "indent-increase",
             "italic",
+            "life-buoy",
             "list",
             "list-ordered",
             "merge",
@@ -996,6 +1006,7 @@ impl gpui::AssetSource for Assets {
             "paintbrush",
             "panels-top-left",
             "panel-right",
+            "pin",
             "play",
             "presentation",
             "printer",
@@ -1254,6 +1265,10 @@ struct DocumentView {
     show_inspector: bool,
     /// Whether there are edits since the document was opened or saved.
     dirty: bool,
+    /// The file's format and encoding, and the dialogs about them.
+    files: word_files::Files,
+    /// The 自動回復 copy of the unsaved edits.
+    recovery: autorecover::Recovery,
     scroll: ScrollHandle,
     focus: FocusHandle,
 }
@@ -1408,6 +1423,11 @@ impl DocumentView {
         // A composition owns the keyboard while it is running; letting these
         // through would edit around the preedit.
         if self.marked.is_some() {
+            return;
+        }
+        // A file dialog is modal: it takes every key while it is open.
+        if word_files::handle_key(self, event.keystroke.key.as_str(), cx) {
+            cx.stop_propagation();
             return;
         }
         // A dialog is modal: it takes every key while it is open.
@@ -3381,34 +3401,15 @@ impl DocumentView {
         }
     }
 
-    /// Saves over the document that was opened, as Word does; a new one
-    /// asks where to go first.
+    /// Saves over the document that was opened, in its format, as Word
+    /// does; a new one asks where to go first (`word_files`).
     fn save(&mut self, cx: &mut Context<Self>) {
-        if self.untitled {
-            return self.save_as(cx);
-        }
-        let target = PathBuf::from(self.path.to_string());
-        self.write_to(target, cx);
+        self.save_file(cx);
     }
 
-    /// Asks where to save, then saves there.
+    /// Asks where to save, then saves there in the format its name says.
     fn save_as(&mut self, cx: &mut Context<Self>) {
-        let source = PathBuf::from(self.path.to_string());
-        let directory = self.save_directory();
-        // The name it has, extension and all: a .docm stays macro-enabled.
-        let suggested = source
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "document.docx".to_string());
-        let prompt = cx.prompt_for_new_path(&directory, Some(&suggested));
-        cx.spawn(async move |view, cx| {
-            let Ok(Ok(Some(path))) = prompt.await else {
-                // Cancelled, or the platform had nothing to say.
-                return;
-            };
-            view.update(cx, |view, cx| view.write_to(path, cx)).ok();
-        })
-        .detach();
+        self.save_file_as(cx);
     }
 
     /// Where a save prompt starts: the document's folder, or for a new
@@ -3417,8 +3418,12 @@ impl DocumentView {
         let source = PathBuf::from(self.path.to_string());
         match source.parent() {
             Some(parent) if !self.untitled && !parent.as_os_str().is_empty() => parent.into(),
-            _ => std::env::var_os("HOME")
-                .map(|home| PathBuf::from(home).join("Documents"))
+            _ => autorecover::settings()
+                .save_folder
+                .filter(|folder| folder.is_dir())
+                .or_else(|| {
+                    std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Documents"))
+                })
                 .filter(|documents| documents.is_dir())
                 .unwrap_or_else(|| PathBuf::from(".")),
         }
@@ -3461,30 +3466,6 @@ impl DocumentView {
                 cx.notify();
             }
             Err(error) => eprintln!("PDF export failed: {error}"),
-        }
-    }
-
-    fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
-        match self.document.export_docx() {
-            Ok(bytes) => match crate::shell::write_in_place(&target, &bytes) {
-                Ok(()) => {
-                    self.dirty = false;
-                    // Saved as, the document is that file from now on.
-                    if self.untitled {
-                        self.untitled = false;
-                        self.path = SharedString::from(target.to_string_lossy().into_owned());
-                    }
-                    self.saved_to = Some(SharedString::from(
-                        target
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default(),
-                    ));
-                    cx.notify();
-                }
-                Err(error) => eprintln!("save failed: {error}"),
-            },
-            Err(error) => eprintln!("export failed: {error}"),
         }
     }
 
@@ -4285,6 +4266,7 @@ impl Render for DocumentView {
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
         let dialog = word_characters::overlay(self, window, cx);
+        let file_dialog = word_files::overlay(self, window, cx);
         div()
             .id("root")
             .track_focus(&self.focus)
@@ -4293,6 +4275,19 @@ impl Render for DocumentView {
             .key_context("Document")
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
             .on_action(cx.listener(|view, _: &SaveAs, _window, cx| view.save_as(cx)))
+            .on_action(
+                cx.listener(|view, _: &word_files::SavePreferences, _window, cx| {
+                    view.open_save_preferences(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_files::SaveCopy, _window, cx| view.save_copy(cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_files::SaveAsTemplate, _window, cx| {
+                    view.save_as_template(cx)
+                }),
+            )
             .on_action(cx.listener(|view, _: &Print, _window, _cx| view.print()))
             .on_action(cx.listener(|view, _: &ExportPdf, _window, cx| view.export_pdf(cx)))
             .on_action(cx.listener(|view, _: &Undo, _window, cx| view.step_history(true, cx)))
@@ -4564,6 +4559,7 @@ impl Render for DocumentView {
             .children(self.page_dialog_element(cx))
             // ---- the open dialog, over everything ----
             .children(dialog)
+            .children(file_dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4721,7 +4717,10 @@ pub(crate) fn new_document_view(
     cx: &mut App,
 ) -> Result<gpui::Entity<DocumentView>, String> {
     let view = open_document_view(path, cx)?;
-    Ok(cx.new(|_| view))
+    Ok(cx.new(|cx| {
+        autorecover::start(cx);
+        view
+    }))
 }
 
 /// A new document — blank, or made from a template — in a view of its own,
@@ -4732,7 +4731,10 @@ pub(crate) fn untitled_document_view(
     cx: &mut App,
 ) -> Result<gpui::Entity<DocumentView>, String> {
     let view = untitled_view(bytes, name, cx)?;
-    Ok(cx.new(|_| view))
+    Ok(cx.new(|cx| {
+        autorecover::start(cx);
+        view
+    }))
 }
 
 fn untitled_view(bytes: &[u8], name: &str, cx: &mut App) -> Result<DocumentView, String> {
@@ -4745,9 +4747,13 @@ fn untitled_view(bytes: &[u8], name: &str, cx: &mut App) -> Result<DocumentView,
 /// Reads `path` and paints its pages, ready to be shown.
 fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentView, String> {
     let path_text = path.to_string_lossy().into_owned();
-    let document = open_document(&path_text)?;
+    // Any format Word opens: converted to a .docx for the editor.
+    let (opened, source) = word_files::read(path)?;
+    let document = open_document_bytes(&opened.docx)?;
     let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
-    Ok(document_view(document, path_text, file_size, cx))
+    let mut view = document_view(document, path_text, file_size, cx);
+    view.opened_as(&opened, source);
+    Ok(view)
 }
 
 /// The view over a document just opened.
@@ -4811,6 +4817,8 @@ fn document_view(
         current_page: 0,
         show_inspector: false,
         dirty: false,
+        files: word_files::Files::default(),
+        recovery: autorecover::Recovery::default(),
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
     }

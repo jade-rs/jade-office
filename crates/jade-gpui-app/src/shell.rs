@@ -30,6 +30,10 @@ impl Kind {
         let extension = path.extension()?.to_string_lossy().to_lowercase();
         match extension.as_str() {
             "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
+            // Word's other formats, converted as they open (`word_files`).
+            "doc" | "dot" | "wbk" | "rtf" | "txt" | "odt" | "fodt" | "htm" | "html" => {
+                Some(Kind::Document)
+            }
             // A CSV opens as a workbook of one sheet, as in Excel.
             "xlsx" | "xlsm" | "xltx" | "xltm" | "csv" => Some(Kind::Workbook),
             "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
@@ -225,11 +229,20 @@ pub fn prompt_and_open(cx: &mut App) {
 }
 
 /// The files opened most recently, newest first, kept in a plain text file
-/// with one path per line.
+/// with one path per line; a pinned one (ピン留め) is marked, stays at the
+/// top and is never pushed off the list.
 pub mod recent {
     use std::path::{Path, PathBuf};
 
     const LIMIT: usize = 12;
+    const PINNED: &str = "pinned\t";
+
+    /// A file on the list.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Entry {
+        pub path: PathBuf,
+        pub pinned: bool,
+    }
 
     fn store() -> Option<PathBuf> {
         // Tests open files too, and must not rewrite the user's list.
@@ -240,60 +253,139 @@ pub mod recent {
         Some(PathBuf::from(home).join("Library/Application Support/jade-office/recent.txt"))
     }
 
-    pub fn load() -> Vec<PathBuf> {
+    /// The files on the list that are still there, pinned ones first.
+    pub fn entries() -> Vec<Entry> {
         let Some(contents) = store().and_then(|store| std::fs::read_to_string(store).ok()) else {
             return Vec::new();
         };
         parse(&contents)
             .into_iter()
-            .filter(|path| path.exists())
+            .filter(|entry| entry.path.exists())
             .collect()
     }
 
-    pub fn remember(path: &Path) {
+    fn write(entries: &[Entry]) {
         let Some(store) = store() else {
             return;
         };
-        let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        let existing = std::fs::read_to_string(&store).unwrap_or_default();
-        let contents = push(parse(&existing), path);
         if let Some(directory) = store.parent() {
             std::fs::create_dir_all(directory).ok();
         }
-        let text: Vec<String> = contents
-            .iter()
-            .map(|path| path.to_string_lossy().into_owned())
-            .collect();
-        std::fs::write(store, text.join("\n")).ok();
+        std::fs::write(store, format(entries)).ok();
     }
 
-    fn parse(contents: &str) -> Vec<PathBuf> {
-        contents
+    fn read_all() -> Vec<Entry> {
+        store()
+            .and_then(|store| std::fs::read_to_string(store).ok())
+            .map(|contents| parse(&contents))
+            .unwrap_or_default()
+    }
+
+    pub fn remember(path: &Path) {
+        let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        write(&push(read_all(), path));
+    }
+
+    /// Pins `path` to the top of the list, or unpins it.
+    pub fn set_pinned(path: &Path, pinned: bool) {
+        write(&pin(read_all(), path, pinned));
+    }
+
+    fn parse(contents: &str) -> Vec<Entry> {
+        let mut entries: Vec<Entry> = contents
             .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(PathBuf::from)
-            .collect()
+            .map(str::trim_end)
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| match line.strip_prefix(PINNED) {
+                Some(path) => Entry {
+                    path: PathBuf::from(path),
+                    pinned: true,
+                },
+                None => Entry {
+                    path: PathBuf::from(line.trim()),
+                    pinned: false,
+                },
+            })
+            .collect();
+        entries.sort_by_key(|entry| !entry.pinned);
+        entries
     }
 
-    /// `path` moved to the front, without duplicates, cut to the limit.
-    fn push(mut paths: Vec<PathBuf>, path: PathBuf) -> Vec<PathBuf> {
-        paths.retain(|existing| *existing != path);
-        paths.insert(0, path);
-        paths.truncate(LIMIT);
-        paths
+    fn format(entries: &[Entry]) -> String {
+        entries
+            .iter()
+            .map(|entry| {
+                let path = entry.path.to_string_lossy();
+                if entry.pinned {
+                    format!("{PINNED}{path}")
+                } else {
+                    path.into_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// `path` moved to the front of its group, without duplicates, the
+    /// unpinned ones cut to the limit.
+    fn push(mut entries: Vec<Entry>, path: PathBuf) -> Vec<Entry> {
+        let pinned = entries
+            .iter()
+            .any(|entry| entry.path == path && entry.pinned);
+        entries.retain(|entry| entry.path != path);
+        entries.insert(0, Entry { path, pinned });
+        entries.sort_by_key(|entry| !entry.pinned);
+        let mut unpinned = 0;
+        entries.retain(|entry| {
+            if entry.pinned {
+                return true;
+            }
+            unpinned += 1;
+            unpinned <= LIMIT
+        });
+        entries
+    }
+
+    fn pin(mut entries: Vec<Entry>, path: &Path, pinned: bool) -> Vec<Entry> {
+        match entries.iter_mut().find(|entry| entry.path == path) {
+            Some(entry) => entry.pinned = pinned,
+            None => entries.push(Entry {
+                path: path.to_path_buf(),
+                pinned,
+            }),
+        }
+        entries.sort_by_key(|entry| !entry.pinned);
+        entries
+    }
+
+    /// The folders the recent files are in, most recent first: where Word
+    /// suggests saving and opening (最近使ったフォルダー).
+    pub fn folders(entries: &[Entry]) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = Vec::new();
+        for entry in entries {
+            if let Some(parent) = entry.path.parent() {
+                if !out.iter().any(|folder| folder == parent) && parent.is_dir() {
+                    out.push(parent.to_path_buf());
+                }
+            }
+        }
+        out
     }
 
     #[cfg(test)]
     mod tests {
         use super::*;
 
+        fn paths(entries: &[Entry]) -> Vec<PathBuf> {
+            entries.iter().map(|entry| entry.path.clone()).collect()
+        }
+
         #[test]
         fn a_reopened_file_moves_to_the_front_once() {
-            let paths = parse("/a.docx\n/b.xlsx\n\n/c.pptx\n");
-            let paths = push(paths, PathBuf::from("/b.xlsx"));
+            let entries = parse("/a.docx\n/b.xlsx\n\n/c.pptx\n");
+            let entries = push(entries, PathBuf::from("/b.xlsx"));
             assert_eq!(
-                paths,
+                paths(&entries),
                 ["/b.xlsx", "/a.docx", "/c.pptx"]
                     .map(PathBuf::from)
                     .to_vec()
@@ -301,13 +393,34 @@ pub mod recent {
         }
 
         #[test]
-        fn the_list_is_capped() {
-            let mut paths = Vec::new();
+        fn the_list_is_capped_but_pinned_files_stay() {
+            let mut entries = pin(Vec::new(), Path::new("/kept.docx"), true);
             for index in 0..20 {
-                paths = push(paths, PathBuf::from(format!("/{index}.docx")));
+                entries = push(entries, PathBuf::from(format!("/{index}.docx")));
             }
-            assert_eq!(paths.len(), LIMIT);
-            assert_eq!(paths[0], PathBuf::from("/19.docx"));
+            assert_eq!(entries.len(), LIMIT + 1);
+            assert_eq!(entries[0].path, PathBuf::from("/kept.docx"));
+            assert!(entries[0].pinned);
+            assert_eq!(entries[1].path, PathBuf::from("/19.docx"));
+        }
+
+        #[test]
+        fn pins_survive_the_file_and_can_be_taken_off() {
+            let entries = push(parse("/a.docx\n/b.docx"), PathBuf::from("/c.docx"));
+            let entries = pin(entries, Path::new("/b.docx"), true);
+            let read = parse(&format(&entries));
+            assert_eq!(
+                read[0],
+                Entry {
+                    path: PathBuf::from("/b.docx"),
+                    pinned: true
+                }
+            );
+            // Reopening a pinned file keeps it pinned.
+            let read = push(read, PathBuf::from("/b.docx"));
+            assert!(read[0].pinned);
+            let read = pin(read, Path::new("/b.docx"), false);
+            assert!(read.iter().all(|entry| !entry.pinned));
         }
     }
 }
@@ -387,7 +500,9 @@ mod tests {
         assert_eq!(Kind::of(Path::new("a.xlsm")), Some(Kind::Workbook));
         assert_eq!(Kind::of(Path::new("a.CSV")), Some(Kind::Workbook));
         assert_eq!(Kind::of(Path::new("a.pptx")), Some(Kind::Deck));
-        assert_eq!(Kind::of(Path::new("a.txt")), None);
+        // A text file opens as a Word document, as in Word.
+        assert_eq!(Kind::of(Path::new("a.txt")), Some(Kind::Document));
+        assert_eq!(Kind::of(Path::new("a.zip")), None);
         assert_eq!(Kind::of(Path::new("pptx")), None);
     }
 }

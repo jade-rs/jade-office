@@ -26,6 +26,9 @@ tiny-skia = ["dep:jade-tiny-skia-painter", "dep:flate2"]
 [dependencies]
 jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
 jade-docx-headless-api = { path = "../../jade-core/crates/jade-docx-headless-api" }
+# Word's other formats: .doc, RTF, text, ODT, HTML (word::formats).
+jade-docx-convert = { path = "../../jade-core/crates/jade-docx-convert" }
+jade-doc-reader = { path = "../../jade-core/crates/jade-doc-reader" }
 jade-docx-layout = { path = "../../jade-core/crates/jade-docx-layout" }
 jade-selection = { path = "../../jade-core/crates/jade-selection" }
 jade-opc = { path = "../../jade-core/crates/jade-opc" }
