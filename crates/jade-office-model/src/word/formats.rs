@@ -161,11 +161,6 @@ impl WordFormat {
         matches!(self, Self::Docx | Self::Docm | Self::Dotx | Self::Dotm)
     }
 
-    /// Whether a document can be saved in this format.
-    pub fn can_save(self) -> bool {
-        !matches!(self, Self::Doc | Self::Dot)
-    }
-
     /// Whether saving in this format keeps less than the editor has, so
     /// Word warns first: text keeps only the words, the others lose what
     /// they have no place for.
@@ -200,8 +195,6 @@ pub enum FormatError {
     TooOld,
     /// The file is damaged: what failed.
     Damaged(String),
-    /// Word 97–2003 documents are read, not written.
-    CannotWriteDoc,
     /// The conversion failed: why.
     Failed(String),
 }
@@ -213,10 +206,6 @@ impl std::fmt::Display for FormatError {
             FormatError::Encrypted => write!(f, "the document is password-protected"),
             FormatError::TooOld => write!(f, "the document is from a Word older than Word 97"),
             FormatError::Damaged(what) => write!(f, "the document is damaged: {what}"),
-            FormatError::CannotWriteDoc => write!(
-                f,
-                "Word 97-2004 documents (.doc) cannot be saved; save as a Word document (.docx)"
-            ),
             FormatError::Failed(why) => write!(f, "{why}"),
         }
     }
@@ -348,7 +337,15 @@ pub fn save_from_docx(
         WordFormat::Dotx | WordFormat::Dotm => {
             template_from_document(docx, format == WordFormat::Dotm)
         }
-        WordFormat::Doc | WordFormat::Dot => Err(FormatError::CannotWriteDoc),
+        WordFormat::Doc | WordFormat::Dot => {
+            let flow = jade_docx_convert::read_docx(docx).map_err(FormatError::Failed)?;
+            if format == WordFormat::Dot {
+                jade_doc_writer::write_dot(&flow)
+            } else {
+                jade_doc_writer::write_doc(&flow)
+            }
+            .map_err(FormatError::Failed)
+        }
         WordFormat::Pdf => Err(FormatError::Failed(
             "a PDF is printed, not converted".into(),
         )),
@@ -510,14 +507,33 @@ mod tests {
         assert!(unencodable_characters(&opened.docx, TextEncoding::Windows1252).contains(&'一'));
     }
 
+    /// Word 97-2004 文書 and テンプレート are written as Word 97–2003 binary
+    /// files, which open again with what was written.
     #[test]
-    fn a_doc_cannot_be_written() {
-        let blank = blank_document(Blank::English);
-        assert_eq!(
-            save_from_docx(WordFormat::Doc, &blank, SaveOptions::default()),
-            Err(FormatError::CannotWriteDoc)
-        );
-        assert!(!WordFormat::Doc.can_save());
+    fn a_doc_and_a_dot_are_written() {
+        let blank = blank_document(Blank::Japanese);
+        let mut flow = jade_docx_convert::read_docx(&blank).unwrap();
+        flow.sections[0].blocks = vec![jade_docx_convert::flow::Block::Paragraph(
+            jade_docx_convert::flow::Paragraph::with_text("互換形式で保存"),
+        )];
+        let docx = jade_docx_convert::docx_write::write_docx(&flow).unwrap();
+        for format in [WordFormat::Doc, WordFormat::Dot] {
+            let bytes = save_from_docx(format, &docx, SaveOptions::default()).unwrap();
+            assert_eq!(WordFormat::sniff(&bytes), Some(WordFormat::Doc));
+            // fDot marks the template.
+            let word = {
+                let mut file = cfb::CompoundFile::open(std::io::Cursor::new(&bytes)).unwrap();
+                let mut stream = file.open_stream("/WordDocument").unwrap();
+                let mut word = Vec::new();
+                std::io::Read::read_to_end(&mut stream, &mut word).unwrap();
+                word
+            };
+            assert_eq!(word[10] & 1 == 1, format == WordFormat::Dot);
+            let name = format!("copy.{}", format.extension());
+            let opened = open_as_docx(&name, &bytes, OpenOptions::default(), &|_| None).unwrap();
+            let back = jade_docx_convert::read_docx(&opened.docx).unwrap();
+            assert_eq!(back.plain_text().trim(), "互換形式で保存");
+        }
     }
 
     #[test]

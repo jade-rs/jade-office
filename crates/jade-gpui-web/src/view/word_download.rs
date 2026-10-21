@@ -11,9 +11,10 @@ use super::{DocView, Document};
 use crate::i18n;
 
 /// The formats the download menu offers, with a text file's encoding.
-pub(crate) const DOWNLOADS: [(WordFormat, Option<TextEncoding>); 7] = [
+pub(crate) const DOWNLOADS: [(WordFormat, Option<TextEncoding>); 8] = [
     (WordFormat::Docx, None),
     (WordFormat::Dotx, None),
+    (WordFormat::Doc, None),
     (WordFormat::Rtf, None),
     (WordFormat::Odt, None),
     (WordFormat::Html, None),

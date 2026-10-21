@@ -839,6 +839,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "jade-doc-writer"
+version = "0.1.0"
+dependencies = [
+ "cfb",
+ "jade-docx-convert",
+]
+
+[[package]]
 name = "jade-docx-annotations"
 version = "0.1.0"
 dependencies = [
@@ -947,6 +955,7 @@ dependencies = [
  "futures",
  "image",
  "jade-doc-reader",
+ "jade-doc-writer",
  "jade-docx-convert",
  "jade-docx-editor",
  "jade-docx-headless-api",

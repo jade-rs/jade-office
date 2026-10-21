@@ -90,7 +90,7 @@ pub enum Write {
 }
 
 impl Write {
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         match self {
             Write::Save(path) | Write::Copy(path) => path,
         }
@@ -148,9 +148,13 @@ fn japanese() -> bool {
     i18n::language() == i18n::Language::Japanese
 }
 
+/// A file read for the editor, and the bytes it was read from when they
+/// are not the editor's own package.
+pub type FileRead = (Opened, Option<Rc<Vec<u8>>>);
+
 /// Reads `path` for the editor: its bytes, converted when it is not a
 /// Word package.
-pub fn read(path: &Path) -> Result<(Opened, Option<Rc<Vec<u8>>>), String> {
+pub fn read(path: &Path) -> Result<FileRead, String> {
     let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let name = crate::shell::file_name(path);
     let directory = path.parent().map(Path::to_path_buf);
@@ -213,7 +217,6 @@ pub fn describe(error: &FormatError, name: &str) -> String {
         FormatError::Damaged(what) => {
             i18n::format("files.damaged", &[("name", &name), ("error", what)])
         }
-        FormatError::CannotWriteDoc => i18n::text("files.cannot_write_doc").to_string(),
         FormatError::Failed(why) => {
             i18n::format("files.failed", &[("name", &name), ("error", why)])
         }
@@ -275,14 +278,10 @@ impl DocumentView {
         }
     }
 
-    /// ⌘S: back over the file, in its own format; a new document, or one
-    /// whose format cannot be written, asks where first.
+    /// ⌘S: back over the file, in its own format; a new document asks
+    /// where first.
     pub(crate) fn save_file(&mut self, cx: &mut Context<Self>) {
         if self.untitled {
-            return self.save_file_as(cx);
-        }
-        if !self.files.format.can_save() {
-            self.show_message(t("files.doc_title"), t("files.cannot_write_doc"), cx);
             return self.save_file_as(cx);
         }
         let target = PathBuf::from(self.path.to_string());
@@ -301,11 +300,7 @@ impl DocumentView {
         let stem = source
             .rsplit_once('.')
             .map_or(source.as_str(), |(stem, _)| stem);
-        let format = if self.files.format.can_save() {
-            self.files.format
-        } else {
-            WordFormat::Docx
-        };
+        let format = self.files.format;
         let name = format!(
             "{}.{}",
             i18n::format("files.copy_name", &[("name", &stem)]),
@@ -336,15 +331,11 @@ impl DocumentView {
         .detach();
     }
 
-    /// The name a save prompt suggests: the document's, in `format` — or
-    /// in its own format when that can be written, `.docx` when not.
+    /// The name a save prompt suggests: the document's, in `format` or in
+    /// its own.
     fn suggested_name(&self, format: Option<WordFormat>) -> String {
         let source = crate::shell::file_name(Path::new(self.path.as_ref()));
-        let format = format.unwrap_or(if self.files.format.can_save() {
-            self.files.format
-        } else {
-            WordFormat::Docx
-        });
+        let format = format.unwrap_or(self.files.format);
         renamed(&source, format)
     }
 
@@ -384,12 +375,10 @@ impl DocumentView {
         if format == WordFormat::Pdf {
             return self.write_pdf_to(&target, cx);
         }
-        if !format.can_save() {
-            return self.show_message(t("files.doc_title"), t("files.cannot_write_doc"), cx);
-        }
-        // A document in 互換モード is checked before it is saved, as Word
-        // does, unless the checker has just let this save through.
-        if format.is_package()
+        // A document in 互換モード, or one saved as Word 97-2004, is checked
+        // before it is saved, as Word does, unless the checker has just let
+        // this save through.
+        if (format.is_package() || format.is_legacy())
             && !std::mem::take(&mut self.files.checked)
             && self.check_before_saving(&write, cx)
         {
@@ -1127,8 +1116,8 @@ mod tests {
     }
 
     /// Each of Word's other formats opens converted, and ⌘S writes it back
-    /// in its own format — except a Word 97–2004 document, which says why
-    /// it cannot be and leaves the file as it was.
+    /// in its own format — a Word 97–2004 document after the compatibility
+    /// checker has had its say.
     #[gpui::test]
     fn every_format_opens_and_saves_back_as_itself(cx: &mut gpui::TestAppContext) {
         for (fixture, format) in [
@@ -1160,19 +1149,15 @@ mod tests {
             cx.simulate_input("jadesaved");
             cx.dispatch_action(crate::Save);
             cx.run_until_parked();
-            if format == WordFormat::Doc {
-                view.read_with(cx, |view, _| {
-                    assert!(matches!(
-                        view.files.dialog,
-                        Some(FileDialog::Message { .. })
-                    ));
-                    assert!(view.dirty);
-                });
-                assert_eq!(
-                    std::fs::read(&path).unwrap(),
-                    std::fs::read(&source).unwrap()
-                );
-                continue;
+            // Saving as Word 97-2004 goes through the compatibility checker
+            // first; 続行 writes it.
+            let checking = view.read_with(cx, |view, _| {
+                matches!(view.files.dialog, Some(FileDialog::Compatibility(_)))
+            });
+            assert!(!checking || format == WordFormat::Doc, "{name}");
+            if checking {
+                cx.simulate_keystrokes("enter");
+                cx.run_until_parked();
             }
             view.read_with(cx, |view, _| assert!(!view.dirty, "{name}"));
             let saved = std::fs::read(&path).unwrap();
@@ -1290,17 +1275,18 @@ mod tests {
             assert!(!view.dirty);
             assert_eq!(view.files.format, WordFormat::Dotx);
         });
-        // A .doc is refused by name.
-        let doc = path.with_file_name("old.doc");
+        // A .dot by name is a Word 97-2004 template (past the checker).
+        let dot = path.with_file_name("old.dot");
         view.update(cx, |view, cx| {
-            view.write_file(Write::Save(doc.clone()), None, cx)
+            view.files.checked = true;
+            view.write_file(Write::Save(dot.clone()), None, cx)
         });
-        assert!(!doc.exists());
+        assert_eq!(
+            WordFormat::sniff(&std::fs::read(&dot).unwrap()),
+            Some(WordFormat::Doc)
+        );
         view.read_with(cx, |view, _| {
-            assert!(matches!(
-                view.files.dialog,
-                Some(FileDialog::Message { .. })
-            ))
+            assert_eq!(view.files.format, WordFormat::Dot);
         });
     }
 

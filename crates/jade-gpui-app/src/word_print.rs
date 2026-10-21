@@ -455,7 +455,9 @@ fn settings_column(
         ("print-long", "print.long_edge", Duplex::LongEdge),
         ("print-short", "print.short_edge", Duplex::ShortEdge),
     ];
-    let options: [(&'static str, &'static str, bool, fn(&mut PrintSettings)); 4] = [
+    /// A checkbox: its id, label key, whether it is on, and its toggle.
+    type Toggle = (&'static str, &'static str, bool, fn(&mut PrintSettings));
+    let options: [Toggle; 4] = [
         ("print-markup", "print.markup", settings.markup, |s| {
             s.markup = !s.markup
         }),
