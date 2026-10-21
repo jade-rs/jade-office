@@ -178,7 +178,7 @@ impl WordFormat {
 
     /// Whether this is one of the formats a Word document opens from.
     pub fn opens(self) -> bool {
-        !matches!(self, Self::Pdf)
+        !matches!(self, Self::Pdf) || cfg!(feature = "skia")
     }
 
     /// Whether a document in this format opens in 互換モード: the binary
@@ -314,6 +314,14 @@ pub fn open_as_docx(
     })
 }
 
+/// A PDF as an editable document (natively: the browser build has no PDF
+/// reader).
+#[cfg(feature = "skia")]
+fn read_pdf(bytes: &[u8]) -> Result<FlowDocument, FormatError> {
+    jade_docx_convert::pdf::read_pdf(bytes).map_err(FormatError::Damaged)
+}
+
+#[cfg(not(feature = "skia"))]
 fn read_pdf(_bytes: &[u8]) -> Result<FlowDocument, FormatError> {
     Err(FormatError::Unsupported)
 }

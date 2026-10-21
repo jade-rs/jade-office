@@ -236,6 +236,17 @@ impl DocumentView {
             jade_office_model::word::embedding::embedding_settings(&opened.docx);
         self.files.embed_fonts = embed_fonts;
         self.files.embed_subset = embed_subset || !embed_fonts;
+        // A PDF becomes a Word document: saved, it is a .docx beside it.
+        if opened.format == WordFormat::Pdf {
+            let path = PathBuf::from(self.path.as_ref()).with_extension("docx");
+            self.path = SharedString::from(path.to_string_lossy().into_owned());
+            self.files.format = WordFormat::Docx;
+            self.untitled = true;
+            self.files.dialog = Some(FileDialog::Message {
+                title: t("pdf_import.title").into(),
+                body: t("pdf_import.body").into(),
+            });
+        }
         if !opened.repairs.is_empty() {
             let report = repair_report(&opened.repairs);
             self.files.dialog = Some(FileDialog::Message {
@@ -1352,5 +1363,37 @@ mod tests {
             assert!(body.contains(i18n::text("repair.archive")));
         });
         std::fs::remove_dir_all(directory).ok();
+    }
+
+    /// A PDF opens as an editable Word document, says so, and saves as a
+    /// .docx.
+    #[gpui::test]
+    fn a_pdf_opens_as_an_editable_document(cx: &mut gpui::TestAppContext) {
+        let source = core_fixture("crates/jade-docx-convert/tests/fixtures/contract.pdf");
+        let path = crate::shell::scratch_copy(&source, "converted.pdf");
+        let (view, cx) = open(&path, cx);
+        view.read_with(cx, |view, _| {
+            assert!(text_of(view).contains("秘密保持契約書"));
+            assert_eq!(view.files.format, WordFormat::Docx);
+            assert!(view.untitled);
+            assert!(view.path.ends_with("converted.docx"));
+            assert!(matches!(
+                view.files.dialog,
+                Some(FileDialog::Message { .. })
+            ));
+        });
+        let target = path.with_file_name("converted.docx");
+        view.update(cx, |view, cx| {
+            view.write_file(Write::Save(target.clone()), None, cx)
+        });
+        assert_eq!(
+            WordFormat::sniff(&std::fs::read(&target).unwrap()),
+            Some(WordFormat::Docx)
+        );
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            std::fs::read(&source).unwrap(),
+            "the PDF is untouched"
+        );
     }
 }

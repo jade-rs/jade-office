@@ -31,7 +31,8 @@ impl Kind {
         match extension.as_str() {
             "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
             // Word's other formats, converted as they open (`word_files`).
-            "doc" | "dot" | "wbk" | "rtf" | "txt" | "odt" | "fodt" | "htm" | "html" => {
+            // A PDF opens converted to an editable document, as in Word.
+            "doc" | "dot" | "wbk" | "rtf" | "txt" | "odt" | "fodt" | "htm" | "html" | "pdf" => {
                 Some(Kind::Document)
             }
             // A CSV opens as a workbook of one sheet, as in Excel.

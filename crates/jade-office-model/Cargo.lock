@@ -1009,7 +1009,9 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "encoding_rs",
+ "flate2",
  "jade-opc",
+ "lopdf",
  "quick-xml",
  "zip",
 ]

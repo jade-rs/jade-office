@@ -20,7 +20,7 @@ path = "src/lib.rs"
 
 [features]
 default = []
-skia = ["dep:jade-skia-painter", "dep:jade-docx-native-render", "dep:lopdf"]
+skia = ["dep:jade-skia-painter", "dep:jade-docx-native-render", "dep:lopdf", "jade-docx-convert/pdf"]
 tiny-skia = ["dep:jade-tiny-skia-painter"]
 
 [dependencies]
