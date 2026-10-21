@@ -19,12 +19,14 @@ impl DocView {
             document,
             story: bar,
             find,
+            dialog,
             ..
         } = &mut self.document
         else {
             return;
         };
         *find = None;
+        *dialog = None;
         *bar = Some(Box::new(crate::word_page::StoryBar {
             story,
             text: TextEdit::new(document.story_text(story)),

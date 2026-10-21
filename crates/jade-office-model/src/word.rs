@@ -31,6 +31,7 @@ use jade_selection::{SelectionRange, TextPosition};
 
 pub mod clipboard;
 pub mod find;
+pub mod links;
 pub mod new;
 pub mod page;
 pub mod picture;
@@ -38,6 +39,7 @@ pub mod platform;
 pub mod review;
 
 pub use find::{FindOptions, Found, WordFind};
+pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
 
 /// A paragraph and a byte offset into its text.
 pub type Position = (usize, usize);
@@ -80,6 +82,10 @@ pub trait WordSession {
     fn cell_layouts(&self) -> &[CellLayout];
     /// A laid-out table's order in the body, which table commands take.
     fn table_order_for(&self, table_id: usize) -> Option<usize>;
+    /// Where the pages show hyperlinks, from the document as it now is and
+    /// the last layout: a rectangle a line of each, in the document's
+    /// coordinates.
+    fn hyperlink_regions(&self) -> Vec<jade_docx_editor::canvas_renderer::HyperlinkRegion>;
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {

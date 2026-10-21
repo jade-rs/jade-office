@@ -136,4 +136,9 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
     fn table_order_for(&self, table_id: usize) -> Option<usize> {
         self.renderer().table_order_for(table_id)
     }
+
+    fn hyperlink_regions(&self) -> Vec<jade_docx_editor::canvas_renderer::HyperlinkRegion> {
+        self.renderer()
+            .derive_hyperlink_regions_from_document(NativeDocument::word_document(self))
+    }
 }

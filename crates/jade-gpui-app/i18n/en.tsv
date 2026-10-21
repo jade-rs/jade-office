@@ -675,3 +675,14 @@ format.fill.none	No color
 format.ok	OK
 format.cancel	Cancel
 sheet.protected	The cell or sheet you are trying to change is protected.
+menu.insert	Insert
+menu.insert.hyperlink	Link…
+link.group	Links
+link.button	Link
+link.button_title	Insert Hyperlink (⌘K)
+link.insert	Insert Hyperlink
+link.edit	Edit Hyperlink
+link.display	Text to display
+link.address	Address
+link.keys	⇥ next field · ⏎ OK · esc cancel · an empty address removes the link
+link.missing_bookmark	The bookmark this link goes to is not in the document

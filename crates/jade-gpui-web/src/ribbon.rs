@@ -203,6 +203,8 @@ pub enum Action {
     Review(crate::word_review::ReviewAction),
     /// 挿入 → 画像: a picture picked from the device.
     InsertPicture,
+    /// 挿入 → リンク (⌘K): the hyperlink dialog.
+    InsertLink,
     /// 文字列の折り返し for the picture selected.
     Wrap(jade_web::word::picture::Wrap),
 }
@@ -614,6 +616,17 @@ pub fn ribbon(
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
             groups.push(crate::word_page::pictures(shown.picture, cx));
+            groups.push(group(
+                i18n::text("link.group"),
+                vec![row(vec![crate::word_page::text_button(
+                    "hyperlink",
+                    i18n::text("link.button"),
+                    i18n::text("link.button_title"),
+                    false,
+                    Action::InsertLink,
+                    cx,
+                )])],
+            ));
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups
         }

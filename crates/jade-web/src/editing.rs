@@ -35,8 +35,8 @@ use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, 
 mod formatting;
 pub use formatting::{
     style_gallery, CellStep, CharacterFormat, FindOptions, FormatState, Found, GalleryStyle,
-    ListKind, ParagraphBorders, ParagraphStyle, TableBorders, TableCell, TableCommand, WordFind,
-    WordFormatting, WordSession,
+    Hyperlink, LinkDraft, LinkTarget, ListKind, ParagraphBorders, ParagraphStyle, TableBorders,
+    TableCell, TableCommand, WordFind, WordFormatting, WordLinks, WordSession,
 };
 
 /// Where the caret is drawn: in the document's coordinate space, which
