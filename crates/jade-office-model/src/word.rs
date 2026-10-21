@@ -37,6 +37,7 @@ pub mod count;
 pub mod find;
 pub mod font;
 pub mod insert;
+pub mod inspect;
 pub mod links;
 pub mod markup;
 pub mod new;

@@ -86,6 +86,10 @@ pub enum ReviewAction {
     MarkFinal,
     /// 編集する, on the read-only bar.
     EditAnyway,
+    /// ドキュメント検査: the pane.
+    Inspect,
+    /// ドキュメント検査's すべて削除.
+    InspectRemove(jade_web::word::inspect::InspectCategory),
 }
 
 /// What the tab shows as current.
@@ -96,6 +100,7 @@ pub struct ReviewShown {
     pub revisions_pane: bool,
     pub restrict_pane: bool,
     pub final_: bool,
+    pub inspect: bool,
     pub markup: MarkupOptions,
     pub reviewers: Vec<String>,
 }
@@ -431,6 +436,14 @@ pub fn review(
                     i18n::text("protect.final_title"),
                     shown.final_,
                     act(ReviewAction::MarkFinal),
+                    cx,
+                ),
+                text_button(
+                    "review-inspect",
+                    i18n::text("inspect.button"),
+                    i18n::text("inspect.tooltip"),
+                    shown.inspect,
+                    act(ReviewAction::Inspect),
                     cx,
                 ),
             ])],

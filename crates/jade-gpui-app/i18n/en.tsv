@@ -1513,3 +1513,20 @@ restrict.stop	Stop Protection
 restrict.enforced	This document is protected.
 restrict.exception_count	{n} exceptions
 restrict.keys	⏎ OK · esc Cancel
+inspect.button	Inspect Document
+inspect.tooltip	Inspect Document: check for hidden data and personal information and remove it
+inspect.title	Inspect Document
+inspect.intro	Check for hidden data and personal information before you share the document.
+inspect.comments	Comments and Revisions
+inspect.comments_found	Found {comments} comments and {revisions} revisions.
+inspect.personal	Document Properties and Personal Information
+inspect.personal_found	Found personal information: {names}
+inspect.custom_xml	Custom XML Data
+inspect.custom_xml_found	Found {n} custom XML parts.
+inspect.headers	Headers and Footers
+inspect.headers_found	Found {n} lines of text in headers or footers.
+inspect.hidden	Hidden Text
+inspect.hidden_found	Found hidden text in {n} places.
+inspect.none	Nothing was found.
+inspect.remove_all	Remove All
+inspect.removed_on_save	Removed when the document is saved.

@@ -1513,3 +1513,20 @@ restrict.stop	保護の中止
 restrict.enforced	この文書は保護されています。
 restrict.exception_count	例外 {n} 件
 restrict.keys	⏎ OK · esc キャンセル
+inspect.button	ドキュメント検査
+inspect.tooltip	ドキュメント検査: 文書に含まれる非表示のデータや個人情報を調べて削除します
+inspect.title	ドキュメント検査
+inspect.intro	文書を共有する前に、非表示のデータや個人情報を確認します。
+inspect.comments	コメント、変更履歴
+inspect.comments_found	コメント {comments} 件、変更履歴 {revisions} 件が見つかりました。
+inspect.personal	ドキュメントのプロパティと個人情報
+inspect.personal_found	次の個人情報が見つかりました: {names}
+inspect.custom_xml	カスタム XML データ
+inspect.custom_xml_found	カスタム XML データ {n} 件が見つかりました。
+inspect.headers	ヘッダー、フッター
+inspect.headers_found	ヘッダーまたはフッターに {n} 行の文字列が見つかりました。
+inspect.hidden	隠し文字
+inspect.hidden_found	隠し文字 {n} か所が見つかりました。
+inspect.none	見つかりませんでした。
+inspect.remove_all	すべて削除
+inspect.removed_on_save	保存時に削除されます。

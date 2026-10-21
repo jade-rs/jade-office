@@ -35,6 +35,7 @@ mod sheet;
 pub(crate) mod word_characters;
 mod word_dialogs;
 mod word_find;
+mod word_inspect;
 mod word_review;
 pub(crate) mod word_setup;
 mod word_story;
@@ -1794,6 +1795,7 @@ impl DocView {
                         revisions_pane: *revisions_pane,
                         restrict_pane: protection.pane,
                         final_: protection.read_only == Some(word_review::ReadOnlyReason::Final),
+                        inspect: protection.inspect,
                         markup: (**markup).clone(),
                         reviewers: document.reviewers(),
                     }
@@ -1877,6 +1879,7 @@ impl DocView {
         let accessibility_pane = self.accessibility_pane(cx);
         let revisions_pane = self.revisions_pane(cx);
         let restrict_pane = self.restrict_pane(cx);
+        let inspect_pane = self.inspect_pane(cx);
         let read_only_bar = self.read_only_bar(cx);
         let find_bar = self.find_bar_element(cx);
         let table_cursor = self.table_cursor();
@@ -2188,6 +2191,7 @@ impl DocView {
             .children(accessibility_pane)
             .children(revisions_pane)
             .children(restrict_pane)
+            .children(inspect_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
     }
