@@ -23,6 +23,7 @@
 mod deck;
 mod editor;
 mod i18n;
+mod keyboard_access;
 mod native_print;
 mod ribbon;
 mod shell;
@@ -87,6 +88,7 @@ actions!(
     [
         Quit,
         UserInformation,
+        FocusRibbon,
         NewDocument,
         NewFromTemplate,
         Open,
@@ -160,6 +162,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-q", Quit, None),
         // Word's 環境設定 (⌘,), where ユーザー情報 is.
         KeyBinding::new("cmd-,", UserInformation, CONTEXT),
+        // F6: to the ribbon and back, as Word moves between its areas.
+        KeyBinding::new("f6", FocusRibbon, CONTEXT),
         // Opening and closing belong to the app, not to one kind of window:
         // they work from the start window and from every view.
         KeyBinding::new("cmd-n", NewDocument, None),
@@ -1811,7 +1815,7 @@ impl DocumentView {
             .when(title != glyph, |button| {
                 button.tooltip(Tooltip::text(title.to_string()))
             })
-            .on_click(cx.listener(move |view, _event, _window, cx| action(view, cx)))
+            .map(|button| keyboard_access::activatable(button, cx, action))
     }
 
     /// A group of buttons with Word's caption under it.
@@ -1865,6 +1869,8 @@ impl DocumentView {
         }
         let active = self.ribbon_tab;
         div()
+            .id("ribbon")
+            .on_key_down(cx.listener(keyboard_access::ribbon_key))
             .flex()
             .flex_col()
             .flex_none()
@@ -1894,11 +1900,13 @@ impl DocumentView {
                             })
                             .hover(|element| element.bg(theme::hovered()))
                             .child(tab.label())
-                            .on_click(cx.listener(move |view, _event, _window, cx| {
-                                view.ribbon_tab = tab;
-                                view.ribbon.popup = None;
-                                cx.notify();
-                            }))
+                            .map(|element| {
+                                keyboard_access::activatable(element, cx, move |view, cx| {
+                                    view.ribbon_tab = tab;
+                                    view.ribbon.popup = None;
+                                    cx.notify();
+                                })
+                            })
                     }))
                     // Word 出力 sits at the right of the strip, as it does in
                     // the browser shell.
@@ -4398,6 +4406,9 @@ impl Render for DocumentView {
                 view.run_ribbon(Action::Table(TableCommand::DeleteRow), cx)
             }))
             .on_action(cx.listener(|view, _: &AddComment, _window, cx| view.add_comment(cx)))
+            .on_action(cx.listener(|view, _: &FocusRibbon, window, cx| {
+                keyboard_access::toggle_ribbon_focus(view, window, cx)
+            }))
             .on_action(cx.listener(|view, _: &SpellingAndGrammar, _window, cx| {
                 word_proofing::open_pane(view, cx)
             }))
