@@ -139,6 +139,8 @@ pub enum ReviewAction {
     Accessibility,
     /// 代替テキスト… for the picture or shape last clicked.
     AltText,
+    /// 変更履歴ウィンドウ.
+    RevisionsPane,
 }
 
 /// The dialog the tab opens.
@@ -173,6 +175,8 @@ pub struct ReviewTools {
     pub proofing: crate::word_proofing::Proofing,
     /// The アクセシビリティ pane, while it is open (`word_accessibility`).
     pub accessibility: Option<crate::word_accessibility::A11yPane>,
+    /// Whether the 変更履歴ウィンドウ is open (`word_revisions`).
+    pub revisions_pane: bool,
 }
 
 impl ReviewTools {
@@ -259,6 +263,7 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
         ReviewAction::Proofing => return crate::word_proofing::open_pane(view, cx),
         ReviewAction::Accessibility => return crate::word_accessibility::toggle(view, cx),
         ReviewAction::AltText => return open_alt_text(view, cx),
+        ReviewAction::RevisionsPane => return crate::word_revisions::toggle(view, cx),
         ReviewAction::ProofingMarks => {
             let on = !view.document.proofing();
             return crate::word_proofing::set_marks(view, on, cx);

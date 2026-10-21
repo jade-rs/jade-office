@@ -1433,3 +1433,25 @@ a11y.fix.decorative	装飾用にする
 a11y.fix.header	最初の行をヘッダーとして使用
 a11y.fix.inline	行内に配置
 alt.keys	⇥ 装飾用にする · ⏎ OK · esc キャンセル
+review.format.bold	太字
+review.format.not_bold	太字 (解除)
+review.format.italic	斜体
+review.format.not_italic	斜体 (解除)
+review.format.underline	下線
+review.format.strike	取り消し線
+review.format.size	フォント サイズ
+review.format.font	フォント
+review.format.color	フォントの色
+review.format.highlight	蛍光ペン/網かけ
+review.format.position	文字位置
+review.format.style	文字スタイル
+review.format.other	文字書式
+review.format.paragraph	段落の書式
+review.kind.inserted	挿入
+review.kind.deleted	削除
+review.kind.moved_from	移動元
+review.kind.moved_to	移動先
+review.kind.formatted	書式変更
+review.pane	変更履歴ウィンドウ
+review.pane_title	変更履歴ウィンドウ
+review.pane.count	変更 {n} 件

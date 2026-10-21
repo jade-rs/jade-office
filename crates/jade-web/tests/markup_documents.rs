@@ -199,3 +199,75 @@ fn next_and_previous_comment_walk_the_comments() {
         .unwrap();
     assert_eq!(round.id, first_of_all.1);
 }
+
+/// With changes tracked, bold and a paragraph's alignment are formatting
+/// changes: listed as Word lists them, named as its balloons name them,
+/// taken back by undo, and rejected back to what they were.
+#[test]
+fn formatting_changes_are_tracked_described_and_decided() {
+    use jade_web::word::markup::describe_formatting;
+    use jade_web::word::WordFormatting;
+    let mut document = contract();
+    let paragraph = typed(&mut document, "Bold words ");
+    let before_alignment = document.format_state().alignment;
+    document
+        .set_tracking_changes(true, &Reviewer::named("Ann"))
+        .unwrap();
+    document.select((paragraph, 0), (paragraph, 4)).unwrap();
+    document
+        .toggle_format(jade_web::editing::CharacterFormat::Bold)
+        .unwrap();
+    let formatted: Vec<_> = document
+        .revisions()
+        .into_iter()
+        .filter(|revision| revision.is_formatting())
+        .collect();
+    assert_eq!(formatted.len(), 1, "{formatted:?}");
+    assert_eq!(formatted[0].author.as_deref(), Some("Ann"));
+    assert_eq!(
+        describe_formatting(&document, &formatted[0]),
+        ["review.format.bold"]
+    );
+    // Undone, the change goes with the bold.
+    document.undo().unwrap();
+    assert!(document
+        .revisions()
+        .iter()
+        .all(|revision| !revision.is_formatting()));
+    document.redo().unwrap();
+    assert_eq!(
+        document
+            .revisions()
+            .iter()
+            .filter(|revision| revision.is_formatting())
+            .count(),
+        1
+    );
+
+    // The paragraph centred: its own change.
+    document.place_caret(paragraph, 0);
+    WordFormatting::set_alignment(&mut document, "center").unwrap();
+    let changes: Vec<_> = document
+        .revisions()
+        .into_iter()
+        .filter(|revision| revision.is_formatting())
+        .collect();
+    assert_eq!(changes.len(), 2, "{changes:?}");
+    // Rejected, both go back.
+    document.decide_revisions(&changes, false).unwrap();
+    assert!(document
+        .revisions()
+        .iter()
+        .all(|revision| !revision.is_formatting()));
+    document.place_caret(paragraph, 1);
+    let state = document.format_state();
+    assert!(!state.bold);
+    assert_eq!(state.alignment, before_alignment);
+    let saved = document.export_docx().unwrap();
+    let xml = jade_opc::OpcPackage::open(&saved)
+        .unwrap()
+        .part_str("word/document.xml")
+        .unwrap()
+        .unwrap();
+    assert!(!xml.contains("PrChange"));
+}
