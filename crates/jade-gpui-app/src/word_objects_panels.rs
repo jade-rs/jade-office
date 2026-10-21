@@ -1207,3 +1207,76 @@ fn pane_button(id: &'static str, label: &'static str, edit: PaneEdit, cx: &mut C
         .on_click(cx.listener(move |view, _event, _window, cx| view.pane_edit(edit.clone(), cx)))
         .into_any_element()
 }
+
+/// The object tools' entry points into the view: the field typing goes
+/// into, the keys they take, their panes and overlays.
+impl DocumentView {
+    /// The text field one of the object tools has focused, if any.
+    pub(crate) fn object_field(&self) -> Option<&TextEdit> {
+        if let Some(field) = self.objects.panels.dialog.as_ref().and_then(|dialog| dialog.focused()) {
+            return Some(field);
+        }
+        if let Some((_, field)) = self.objects.panels.renaming.as_ref() {
+            return Some(field);
+        }
+        self.objects.diagrams.focused()
+    }
+
+    pub(crate) fn object_field_mut(&mut self) -> Option<&mut TextEdit> {
+        if self
+            .objects
+            .panels
+            .dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.focus.is_some())
+        {
+            return self.objects.panels.dialog.as_mut().and_then(|dialog| dialog.focused_mut());
+        }
+        if self.objects.panels.renaming.is_some() {
+            return self.objects.panels.renaming.as_mut().map(|(_, field)| field);
+        }
+        self.objects.diagrams.focused_mut()
+    }
+
+    /// A key for the object tools: the dialog's, a rename's, the text pane's
+    /// or the chart sheet's field, then the selected object.
+    pub(crate) fn object_tools_key(&mut self, key: &str, shift: bool, alt: bool, cx: &mut Context<Self>) -> bool {
+        (self.objects.panels.dialog.is_some() && self.dialog_key(key, shift, cx))
+            || self.rename_key(key, cx)
+            || self.chart_sheet_key(key, shift, cx)
+            || self.text_pane_key(key, shift, cx)
+            || self.object_key(key, alt, cx)
+    }
+
+    /// The object tools' panes beside the pages.
+    pub(crate) fn object_panes(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let mut panes = Vec::new();
+        if self.objects.panels.selection_pane {
+            panes.push(self.selection_pane(cx));
+        }
+        if self.objects.panels.format_pane {
+            panes.push(self.format_pane(cx));
+        }
+        panes.extend(self.text_pane_element(cx));
+        panes
+    }
+
+    /// The object tools' dialogs, over everything.
+    pub(crate) fn object_dialogs(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let mut dialogs = Vec::new();
+        dialogs.extend(self.layout_dialog_element(cx));
+        dialogs.extend(self.chart_sheet_element(cx));
+        dialogs
+            .into_iter()
+            .map(|dialog| {
+                gpui::deferred(
+                    gpui::anchored()
+                        .position(gpui::point(px(260.0), px(140.0)))
+                        .child(dialog),
+                )
+                .with_priority(3)
+                .into_any_element()
+            })
+            .collect()
+    }
+}

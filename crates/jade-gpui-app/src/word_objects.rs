@@ -106,8 +106,16 @@ pub struct ObjectTools {
     pub drawing: Option<crate::word_objects_ribbon::DrawTool>,
     /// The rectangle being drawn, on its page: (page, x0, y0, x1, y1).
     pub sketch: Option<(usize, f64, f64, f64, f64)>,
+    /// A freeform's points so far, on its page.
+    pub freeform: Option<(usize, Vec<(f64, f64)>)>,
+    /// 頂点の編集: the selected freeform's points are shown and dragged;
+    /// the point being dragged.
+    pub editing_points: bool,
+    pub point_drag: Option<(usize, (f64, f64))>,
     /// What the last object command said when it did nothing.
     pub status: Option<SharedString>,
+    /// SmartArt's text pane and a chart's data sheet.
+    pub diagrams: crate::word_objects_diagrams::DiagramTools,
 }
 
 const HANDLE: f64 = 8.0;
@@ -220,6 +228,30 @@ impl DocumentView {
         click_count: usize,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.objects.drawing == Some(crate::word_objects_ribbon::DrawTool::Freeform) {
+            // A click per point; a double click, or a click on the first
+            // point, finishes it.
+            let points = self.objects.freeform.get_or_insert_with(|| (page_index, Vec::new()));
+            let closes = points.1.len() >= 3
+                && points
+                    .1
+                    .first()
+                    .is_some_and(|first| (first.0 - x).abs() < 6.0 && (first.1 - y).abs() < 6.0);
+            if !closes {
+                points.1.push((x, y));
+            }
+            if closes || click_count >= 2 {
+                self.finish_freeform(closes, cx);
+            }
+            cx.notify();
+            return true;
+        }
+        if self.objects.editing_points {
+            if let Some(index) = self.point_at((x, y), page_index) {
+                self.objects.point_drag = Some((index, (x, y)));
+                return true;
+            }
+        }
         if self.objects.drawing.is_some() {
             self.objects.sketch = Some((page_index, x, y, x, y));
             self.selected_object = None;
@@ -359,6 +391,11 @@ impl DocumentView {
             cx.notify();
             return true;
         }
+        if let Some(drag) = self.objects.point_drag.as_mut() {
+            drag.1 = (x, y);
+            cx.notify();
+            return true;
+        }
         let Some(drag) = self.objects.drag else {
             return false;
         };
@@ -434,6 +471,9 @@ impl DocumentView {
 
     /// The mouse coming up: ends a drag, or puts in the shape being drawn.
     pub(crate) fn release_object(&mut self, cx: &mut Context<Self>) {
+        if let Some((index, point)) = self.objects.point_drag.take() {
+            return self.move_point(index, point, cx);
+        }
         if let Some((page, x0, y0, x1, y1)) = self.objects.sketch.take() {
             let tool = self.objects.drawing.take();
             if let Some(tool) = tool {
@@ -441,10 +481,62 @@ impl DocumentView {
             }
             return;
         }
-        if self.objects.drag.take().is_some() {
+        if let Some(drag) = self.objects.drag.take() {
+            if drag.applied && matches!(drag.grip, Grip::Move | Grip::Resize(_)) {
+                self.reroute_connectors();
+            }
             self.refresh_selection();
             cx.notify();
         }
+    }
+
+    /// The freeform being drawn goes in.
+    pub(crate) fn finish_freeform(&mut self, closed: bool, cx: &mut Context<Self>) {
+        use jade_office_model::word::connectors::WordConnectors;
+        let Some((page_index, points)) = self.objects.freeform.take() else {
+            return;
+        };
+        self.objects.drawing = None;
+        self.objects.status = None;
+        if points.len() < 2 {
+            return cx.notify();
+        }
+        let document_y = self.document.document_y(page_index, points[0].1);
+        if let Some(position) = self.document.position_at(points[0].0, document_y) {
+            self.insert_at = position;
+        }
+        self.place_document_caret();
+        self.object_edit(cx, |view| view.document.insert_freeform(&points, closed));
+    }
+
+    /// The selected freeform's path and box, when it is one.
+    fn freeform_path(&self) -> Option<(jade_docx_editor::document::GeometryPath, ObjectHit)> {
+        let object = self.selected_object?;
+        let run = jade_office_model::word::objects::object_run(self.document.word_document(), target_of(&object))?;
+        let path = run.text_box.as_ref()?.extras().custom_geometry.as_ref()?.paths.first()?.clone();
+        Some((path, object))
+    }
+
+    /// The freeform point near `point`.
+    fn point_at(&self, point: (f64, f64), page_index: usize) -> Option<usize> {
+        let (path, object) = self.freeform_path()?;
+        if object.page.saturating_sub(1) != page_index {
+            return None;
+        }
+        jade_office_model::word::connectors::path_points(&path, &placed(&object))
+            .iter()
+            .position(|(x, y)| (x - point.0).abs() <= 5.0 && (y - point.1).abs() <= 5.0)
+    }
+
+    /// A dragged point's new place goes into the path.
+    fn move_point(&mut self, index: usize, point: (f64, f64), cx: &mut Context<Self>) {
+        use jade_office_model::word::connectors::{move_path_point, WordConnectors};
+        let Some((path, object)) = self.freeform_path() else {
+            return;
+        };
+        let moved = move_path_point(&path, &placed(&object), index, point);
+        let target = target_of(&object);
+        self.object_edit(cx, |view| view.document.set_freeform_path(target, moved));
     }
 
     /// Keys for the selected object: Delete removes it, the arrows nudge it
@@ -453,6 +545,16 @@ impl DocumentView {
         if self.objects.drawing.is_some() && key == "escape" {
             self.objects.drawing = None;
             self.objects.sketch = None;
+            self.objects.freeform = None;
+            cx.notify();
+            return true;
+        }
+        if self.objects.freeform.is_some() && matches!(key, "enter" | "return") {
+            self.finish_freeform(false, cx);
+            return true;
+        }
+        if self.objects.editing_points && key == "escape" {
+            self.objects.editing_points = false;
             cx.notify();
             return true;
         }
@@ -693,6 +795,35 @@ impl DocumentView {
                             .child(format!("{:.0}°", format.rotation))
                             .into_any_element(),
                     );
+                }
+            }
+        }
+        // A freeform's points so far, and the selected freeform's points
+        // while 頂点の編集 is on.
+        let dot = |(x, y): (f64, f64), color: gpui::Hsla| {
+            div()
+                .absolute()
+                .left(px((x * zoom - 4.0) as f32))
+                .top(px((y * zoom - 4.0) as f32))
+                .size(px(8.0))
+                .bg(color)
+                .into_any_element()
+        };
+        if let Some((page, points)) = self.objects.freeform.as_ref() {
+            if *page == page_index {
+                elements.extend(points.iter().map(|point| dot(*point, gpui::black())));
+            }
+        }
+        if self.objects.editing_points {
+            if let Some((path, object)) = self.freeform_path() {
+                if object.page.saturating_sub(1) == page_index {
+                    let mut points = jade_office_model::word::connectors::path_points(&path, &placed(&object));
+                    if let Some((index, point)) = self.objects.point_drag {
+                        if let Some(dragged) = points.get_mut(index) {
+                            *dragged = point;
+                        }
+                    }
+                    elements.extend(points.into_iter().map(|point| dot(point, gpui::red())));
                 }
             }
         }
@@ -1135,5 +1266,208 @@ mod scenarios {
             .find(|(field, _)| *field == crate::word_objects_panels::Field::Height)
             .map(|(_, edit)| edit.text.clone())
             .unwrap()
+    }
+}
+
+/// The diagram, connector and freeform tools as a user drives them.
+#[cfg(test)]
+mod more_scenarios {
+    use super::scenarios::{drag, on_page, open_contract, picture};
+    use super::*;
+    use crate::word_objects_diagrams::DiagramAction;
+    use crate::word_objects_ribbon::{DrawTool, ObjectAction};
+    use gpui::{Modifiers, MouseButton};
+    use jade_docx_editor::document::{ChartKind, TextBoxShape};
+    use jade_office_model::word::connectors::ConnectorKind;
+    use jade_office_model::word::diagrams::WordDiagrams;
+    use jade_office_model::word::objects::ObjectSort;
+
+    fn sorts(view: &gpui::Entity<DocumentView>, cx: &mut gpui::VisualTestContext) -> Vec<ObjectSort> {
+        view.read_with(cx, |view, _| {
+            view.document.body_objects().into_iter().map(|object| object.sort).collect()
+        })
+    }
+
+    /// 挿入 → SmartArt → 基本ステップ, then its text typed in the text pane:
+    /// the graphic is drawn with it; a chart goes in and its data is edited
+    /// in the sheet.
+    #[gpui::test]
+    fn smartart_and_a_chart_from_the_insert_tab(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        view.update(cx, |view, cx| {
+            view.run_object_action(
+                ObjectAction::Diagram(DiagramAction::InsertSmartArt(
+                    jade_docx_editor::smartart::LAYOUTS[2].0,
+                )),
+                cx,
+            );
+            assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
+            assert!(view.objects.diagrams.text_pane.is_some(), "the text pane opens");
+        });
+        cx.simulate_input("企画");
+        view.update(cx, |view, cx| {
+            assert!(view.object_tools_key("enter", false, false, cx));
+        });
+        cx.simulate_input("実装");
+        view.update(cx, |view, cx| {
+            assert!(view.object_tools_key("down", false, false, cx));
+            assert!(view.object_tools_key("tab", false, false, cx), "demoted under 実装");
+        });
+        let diagram = view.update(cx, |view, _| {
+            let target = view.object_target().unwrap();
+            view.document.smartart(target).unwrap()
+        });
+        assert_eq!(diagram.nodes[0].text, "企画");
+        assert_eq!(diagram.nodes[1].text, "実装");
+        assert_eq!(diagram.nodes[1].children.len(), 1, "{diagram:?}");
+        assert!(sorts(&view, cx).contains(&ObjectSort::SmartArt));
+
+        view.update(cx, |view, cx| {
+            view.objects.diagrams.text_pane = None;
+            view.selected_object = None;
+            view.run_object_action(ObjectAction::Diagram(DiagramAction::InsertChart(ChartKind::Pie)), cx);
+            assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
+            assert!(view.object_target().is_some(), "the chart is selected");
+            view.run_object_action(ObjectAction::Diagram(DiagramAction::EditData), cx);
+            let sheet = view.objects.diagrams.chart_sheet.as_mut().unwrap();
+            sheet.focus = Some((1, 1));
+            sheet.cells[1][1] = jade_office_model::text::TextEdit::new("42".into());
+            assert!(view.object_tools_key("enter", false, false, cx));
+            let target = view.object_target().unwrap();
+            let chart = view.document.chart_data(target).unwrap();
+            assert_eq!(chart.kind, ChartKind::Pie);
+            assert_eq!(chart.series[0].values[0], Some(42.0));
+        });
+    }
+
+    /// A connector drawn from one shape to another is glued to both, and
+    /// follows when one is dragged away.
+    #[gpui::test]
+    fn a_connector_follows_the_shape_it_is_glued_to(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        for (shape, from, to) in [
+            (TextBoxShape::Rectangle, (120.0, 300.0), (220.0, 360.0)),
+            (TextBoxShape::Ellipse, (420.0, 300.0), (520.0, 360.0)),
+        ] {
+            view.update(cx, |view, cx| view.run_object_action(ObjectAction::Draw(DrawTool::Shape(shape)), cx));
+            drag(&view, cx, from, to);
+        }
+        view.update(cx, |view, cx| {
+            view.run_object_action(ObjectAction::Draw(DrawTool::Connector(ConnectorKind::Straight, true)), cx)
+        });
+        drag(&view, cx, (215.0, 330.0), (425.0, 330.0));
+        let connector = view.read_with(cx, |view, _| {
+            view.document
+                .body_objects()
+                .into_iter()
+                .find(|object| {
+                    jade_office_model::word::objects::object_run(view.document.word_document(), object.target)
+                        .and_then(|run| run.text_box.as_ref())
+                        .is_some_and(|text_box| text_box.extras().connector.is_some())
+                })
+                .expect("a glued connector")
+                .target
+        });
+        let line = view.read_with(cx, |view, _| region_hit(&view.document, connector).unwrap());
+        assert!((line.x - 220.0).abs() < 1.5 && (line.x + line.width - 420.0).abs() < 1.5, "{line:?}");
+        // Drag the ellipse down; the connector's end goes with it.
+        let ellipse_center = (470.0, 330.0);
+        let at = on_page(&view, cx, 0, (600.0, 700.0));
+        cx.simulate_click(at, Modifiers::none());
+        drag(&view, cx, ellipse_center, (470.0, 430.0));
+        let (line, ellipse) = view.read_with(cx, |view, _| {
+            let ellipse = view
+                .document
+                .body_objects()
+                .into_iter()
+                .filter_map(|object| region_hit(&view.document, object.target))
+                .find(|object| object.x > 400.0)
+                .unwrap();
+            (region_hit(&view.document, connector).unwrap(), ellipse)
+        });
+        // Glued to the ellipse's left point, wherever the drag left it.
+        assert!(ellipse.y > 380.0, "the ellipse moved down: {ellipse:?}");
+        assert!((line.y + line.height - (ellipse.y + ellipse.height / 2.0)).abs() < 2.0, "{line:?} {ellipse:?}");
+    }
+
+    /// フリーフォーム: a click per point, a double click to finish; 頂点の
+    /// 編集 drags a point.
+    #[gpui::test]
+    fn a_freeform_is_drawn_and_its_points_dragged(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        view.update(cx, |view, cx| view.run_object_action(ObjectAction::Draw(DrawTool::Freeform), cx));
+        for point in [(100.0, 400.0), (200.0, 300.0)] {
+            let at = on_page(&view, cx, 0, point);
+            cx.simulate_click(at, Modifiers::none());
+        }
+        let last = on_page(&view, cx, 0, (300.0, 400.0));
+        cx.simulate_event(gpui::MouseDownEvent {
+            position: last,
+            modifiers: Modifiers::none(),
+            button: MouseButton::Left,
+            click_count: 2,
+            first_mouse: false,
+        });
+        cx.simulate_mouse_up(last, MouseButton::Left, Modifiers::none());
+        cx.run_until_parked();
+        let target = view.read_with(cx, |view, _| {
+            view.document
+                .body_objects()
+                .into_iter()
+                .find(|object| {
+                    jade_office_model::word::objects::object_run(view.document.word_document(), object.target)
+                        .and_then(|run| run.text_box.as_ref())
+                        .is_some_and(|text_box| text_box.extras().custom_geometry.is_some())
+                })
+                .expect("the freeform")
+                .target
+        });
+        view.update(cx, |view, cx| {
+            view.select_object(target, cx);
+            view.run_object_action(ObjectAction::EditPoints, cx);
+        });
+        drag(&view, cx, (200.0, 300.0), (200.0, 250.0));
+        let points = view.read_with(cx, |view, _| {
+            let (path, object) = view.freeform_path().unwrap();
+            jade_office_model::word::connectors::path_points(&path, &placed(&object))
+        });
+        assert!(points.iter().any(|(x, y)| (x - 200.0).abs() < 2.0 && (y - 250.0).abs() < 2.0), "{points:?}");
+    }
+
+    /// ⇧-click two pictures, 配置 → 左揃え lines them up; グループ化 makes
+    /// them one; グループ解除 takes them apart.
+    #[gpui::test]
+    fn shift_selection_aligns_and_groups(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        for (shape, from, to) in [
+            (TextBoxShape::Rectangle, (120.0, 300.0), (220.0, 360.0)),
+            (TextBoxShape::Triangle, (300.0, 420.0), (380.0, 500.0)),
+        ] {
+            view.update(cx, |view, cx| view.run_object_action(ObjectAction::Draw(DrawTool::Shape(shape)), cx));
+            drag(&view, cx, from, to);
+        }
+        let at = on_page(&view, cx, 0, (170.0, 330.0));
+        cx.simulate_click(at, Modifiers::none());
+        let at = on_page(&view, cx, 0, (340.0, 470.0));
+        cx.simulate_click(at, Modifiers::shift());
+        cx.run_until_parked();
+        view.update(cx, |view, cx| {
+            assert_eq!(view.selected_objects().len(), 2);
+            view.run_object_action(ObjectAction::AlignTo(jade_office_model::word::objects::AlignTo::Selection), cx);
+            view.run_object_action(ObjectAction::Align(jade_office_model::word::objects::Align::Left), cx);
+            assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
+            let lefts: Vec<f64> = view.selected_objects().iter().map(|object| object.x).collect();
+            assert!((lefts[0] - lefts[1]).abs() < 1.0, "{lefts:?}");
+            view.run_object_action(ObjectAction::Group(true), cx);
+            assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
+        });
+        assert_eq!(sorts(&view, cx), vec![ObjectSort::Group]);
+        view.update(cx, |view, cx| {
+            view.refresh_selection();
+            view.run_object_action(ObjectAction::Group(false), cx);
+            assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
+        });
+        assert_eq!(sorts(&view, cx).len(), 2);
+        let _ = picture;
     }
 }

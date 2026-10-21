@@ -30,6 +30,10 @@ use crate::{theme, DocumentView};
 pub enum DrawTool {
     Shape(TextBoxShape),
     TextBox,
+    /// A connector, with an arrowhead at its end or not.
+    Connector(jade_office_model::word::connectors::ConnectorKind, bool),
+    /// フリーフォーム: a click per point.
+    Freeform,
 }
 
 /// The object tools' lists.
@@ -60,6 +64,8 @@ pub enum ObjectPopup {
     TextFill,
     TextEffects,
     TextAlign,
+    /// SmartArt's and charts' lists (`word_objects_diagrams`).
+    Diagram(crate::word_objects_diagrams::DiagramPopup),
 }
 
 /// What an object control does.
@@ -102,6 +108,10 @@ pub enum ObjectAction {
     SelectionPane,
     FormatPane,
     EditWrapPoints,
+    /// 頂点の編集 for the selected freeform.
+    EditPoints,
+    /// SmartArt's and charts' controls (`word_objects_diagrams`).
+    Diagram(crate::word_objects_diagrams::DiagramAction),
 }
 
 /// Colours the outline, fill and text lists offer: the Office theme's
@@ -566,6 +576,14 @@ impl DocumentView {
                     gallery,
                 )]),
                 row(vec![text_button(
+                    "edit-points",
+                    t("objects.edit_points"),
+                    t("objects.edit_points_title"),
+                    self.objects.editing_points,
+                    ObjectAction::EditPoints,
+                    cx,
+                )]),
+                row(vec![text_button(
                     "format-pane",
                     t("objects.format_pane"),
                     t("objects.format_pane_title"),
@@ -855,6 +873,9 @@ impl DocumentView {
                 .map(|_| SharedString::from(t("objects.draw_hint")));
             return cx.notify();
         }
+        if let ObjectAction::Diagram(action) = action {
+            return self.run_diagram_action(action, cx);
+        }
         if let ObjectAction::InsertWordArt(style) = action {
             self.place_document_caret();
             return self.object_edit(cx, |view| view.document.insert_wordart(style, "", None));
@@ -871,6 +892,10 @@ impl DocumentView {
             }
             ObjectAction::EditWrapPoints => {
                 self.objects.panels.wrap_points = !self.objects.panels.wrap_points;
+                return cx.notify();
+            }
+            ObjectAction::EditPoints => {
+                self.objects.editing_points = !self.objects.editing_points;
                 return cx.notify();
             }
             ObjectAction::AlignTo(to) => {
@@ -924,6 +949,9 @@ impl DocumentView {
         (x0, y0, x1, y1): (f64, f64, f64, f64),
         cx: &mut Context<Self>,
     ) {
+        if let DrawTool::Connector(kind, arrow) = tool {
+            return self.draw_connector(kind, arrow, page_index, (x0, y0), (x1, y1), cx);
+        }
         let (x, y) = (x0.min(x1), y0.min(y1));
         let (width, height) = ((x1 - x0).abs(), (y1 - y0).abs());
         // A click rather than a drag puts it in at its default size there.
@@ -945,6 +973,7 @@ impl DocumentView {
         self.object_edit(cx, |view| match tool {
             DrawTool::Shape(shape) => view.document.insert_shape(shape, Some(drawn), false),
             DrawTool::TextBox => view.document.insert_shape(TextBoxShape::Rectangle, Some(drawn), true),
+            DrawTool::Connector(..) | DrawTool::Freeform => Ok(()),
         });
         // Select what went in: the object drawn at that spot.
         let point_y = self.document.document_y(page_index, drawn.y + drawn.height / 2.0);
@@ -1024,10 +1053,20 @@ fn shape_gallery(id: &'static str, change: bool, cx: &mut Context<DocumentView>)
         }
         panel = panel.child(menu_caption(if japanese() { category.ja } else { category.en }));
         for (shape, ja, en) in category.shapes {
+            use jade_office_model::word::connectors::ConnectorKind;
             let action = if change {
                 ObjectAction::ChangeShape(*shape)
             } else {
-                ObjectAction::Draw(DrawTool::Shape(*shape))
+                // The 線 gallery draws connectors, which glue to shapes.
+                ObjectAction::Draw(match shape {
+                    TextBoxShape::Line => DrawTool::Connector(ConnectorKind::Straight, false),
+                    TextBoxShape::LineArrow | TextBoxShape::LineArrowDouble => {
+                        DrawTool::Connector(ConnectorKind::Straight, true)
+                    }
+                    TextBoxShape::LineBent => DrawTool::Connector(ConnectorKind::Elbow, true),
+                    TextBoxShape::LineCurved => DrawTool::Connector(ConnectorKind::Curved, true),
+                    other => DrawTool::Shape(*other),
+                })
             };
             panel = panel.child(menu_row(
                 (id, index),
@@ -1037,6 +1076,15 @@ fn shape_gallery(id: &'static str, change: bool, cx: &mut Context<DocumentView>)
                 cx,
             ));
             index += 1;
+        }
+        if !change && category.en == "Lines" {
+            panel = panel.child(menu_row(
+                (id, 999usize),
+                t("objects.freeform"),
+                false,
+                act(ObjectAction::Draw(DrawTool::Freeform)),
+                cx,
+            ));
         }
     }
     panel.into_any_element()
@@ -1208,5 +1256,85 @@ fn warp_label(preset: &str) -> &'static str {
         "textFadeLeft" => "objects.warp.fade_left",
         "textCanUp" => "objects.warp.can_up",
         _ => "objects.warp.can_down",
+    }
+}
+
+impl DocumentView {
+    /// A connector's drag ended: each end glued to the shape it is on, at
+    /// the connection point nearest it.
+    fn draw_connector(
+        &mut self,
+        kind: jade_office_model::word::connectors::ConnectorKind,
+        arrow: bool,
+        page_index: usize,
+        start: (f64, f64),
+        end: (f64, f64),
+        cx: &mut Context<Self>,
+    ) {
+        use jade_office_model::word::connectors::{nearest_connection, ConnectorEnd, WordConnectors};
+        let end = if (end.0 - start.0).abs() + (end.1 - start.1).abs() < 4.0 {
+            (start.0 + 96.0, start.1)
+        } else {
+            end
+        };
+        let glue = |view: &Self, point: (f64, f64)| {
+            let document_y = view.document.document_y(page_index, point.1);
+            view.document
+                .object_at(point.0, document_y)
+                .filter(|object| object.kind == jade_docx_editor::word_document::FloatingObjectKind::TextBox)
+                .map(|object| {
+                    let placed = crate::word_objects::placed(&object);
+                    (crate::word_objects::target_of(&object), nearest_connection(&placed, point))
+                })
+        };
+        let first = ConnectorEnd {
+            point: start,
+            glued: glue(self, start),
+        };
+        let last = ConnectorEnd {
+            point: end,
+            glued: glue(self, end),
+        };
+        // Glued ends start and stop at the connection points.
+        let snap = |view: &Self, end: ConnectorEnd| match end.glued {
+            Some((target, index)) => crate::word_objects::region_hit(&view.document, target)
+                .map(|object| {
+                    jade_office_model::word::connectors::connection_point(
+                        &crate::word_objects::placed(&object),
+                        index,
+                    )
+                })
+                .map(|point| ConnectorEnd { point, ..end })
+                .unwrap_or(end),
+            None => end,
+        };
+        let (first, last) = (snap(self, first), snap(self, last));
+        let document_y = self.document.document_y(page_index, start.1);
+        if let Some(position) = self.document.position_at(start.0, document_y) {
+            self.insert_at = position;
+        }
+        self.place_document_caret();
+        self.object_edit(cx, |view| view.document.insert_connector(kind, arrow, first, last));
+        cx.notify();
+    }
+
+    /// After objects moved: the connectors glued to them follow.
+    pub(crate) fn reroute_connectors(&mut self) {
+        use jade_office_model::word::connectors::WordConnectors;
+        let regions: Vec<_> = self
+            .document
+            .body_objects()
+            .iter()
+            .filter_map(|object| crate::word_objects::region_hit(&self.document, object.target))
+            .map(|object| crate::word_objects::placed(&object))
+            .collect();
+        match self.document.reroute_connectors(&regions) {
+            Ok(true) => {
+                self.rebuild_after_edit();
+                self.refresh_selection();
+            }
+            Ok(false) => {}
+            Err(error) => self.objects.status = Some(error.into()),
+        }
     }
 }

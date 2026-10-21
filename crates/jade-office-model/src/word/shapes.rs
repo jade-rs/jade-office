@@ -11,7 +11,7 @@ use jade_docx_editor::commands::insert_shape::InsertShapeCommand;
 use jade_docx_editor::commands::transform_object::TransformObjectCommand;
 use jade_docx_editor::commands::{Command, CommandContext, CommandError, CommandResult};
 use jade_docx_editor::docx_xml::{XmlElement, XmlNode};
-use jade_docx_editor::document::TextBoxShape;
+pub use jade_docx_editor::document::TextBoxShape;
 use jade_docx_editor::drawing_xml::{
     self, child, child_mut, descendant_mut, get_attr, put_shape_property, remove_children,
     set_attr,
