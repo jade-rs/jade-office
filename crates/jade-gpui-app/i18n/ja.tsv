@@ -1997,3 +1997,27 @@ notes.separator	境界線を表示する
 notes.continuation_separator	継続境界線を表示する
 nav.collapse	折りたたむ
 nav.expand	展開
+# ---- 表示, 検索と置換, 入力支援 (word_views) ----
+views.group.views	表示
+views.read	閲覧モード
+views.print	印刷レイアウト
+views.web	Web レイアウト
+views.outline	アウトライン
+views.draft	下書き
+views.group.movement	ページ移動
+views.vertical	縦
+views.side_to_side	横
+views.gridlines	グリッド線
+views.white_space	余白を表示しない
+views.white_space_title	ページ間の余白を表示しない (ページ間をダブルクリックでも切り替え)
+views.zoom.button	ズーム
+views.zoom.title	ズーム
+views.zoom.page_width	ページ幅を基準に表示
+views.zoom.text_width	文字列の幅を基準に表示
+views.zoom.whole_page	ページ全体を表示
+views.zoom.many_pages	複数ページ
+views.zoom.pages	ページ数
+views.zoom.percent	倍率
+views.one_page	1 ページ
+views.multiple_pages	複数ページ
+views.page_width	ページ幅

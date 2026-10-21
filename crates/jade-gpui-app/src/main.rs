@@ -43,6 +43,7 @@ mod word_story;
 mod word_styles;
 mod word_table;
 mod word_tools;
+mod word_views;
 mod workbook;
 mod workspace;
 
@@ -1323,6 +1324,8 @@ struct DocumentView {
     dirty: bool,
     /// The Field, prompt and Properties dialogs, and the user information.
     fields: word_fields::FieldsUi,
+    /// 表示: the view, page movement, zoom fit, grid and white space.
+    views: word_views::Views,
     scroll: ScrollHandle,
     focus: FocusHandle,
 }
@@ -1333,6 +1336,11 @@ impl DocumentView {
     /// The sidebar highlight followed clicks only, so scrolling left it
     /// pointing at wherever you last clicked.
     fn page_from_scroll(&self) -> usize {
+        // Wherever the view laid the pages out — several across, side by
+        // side, cropped — the page under the viewport.
+        if let Some(page) = word_views::page_in_view(&self.scroll, self.images.len()) {
+            return page;
+        }
         // Scroll is in screen pixels and the pitch is in document pixels.
         let offset = -f64::from(self.scroll.offset().y) / f64::from(self.zoom);
         let pitch = self.document.page_pitch();
@@ -1498,6 +1506,12 @@ impl DocumentView {
                 cx.stop_propagation();
             }
             // Nothing reaches the document while a dialog is open.
+            return;
+        }
+        if self.views.is_open() {
+            if word_views::handle_key(self, event.keystroke.key.as_str(), cx) {
+                cx.stop_propagation();
+            }
             return;
         }
         if self.references.is_open() || self.references.searching {
@@ -2149,94 +2163,7 @@ impl DocumentView {
             RibbonTab::References => word_references::ribbon_groups(self, cx),
             RibbonTab::Review => self.review_groups(cx),
             RibbonTab::HeaderFooter => self.story_groups(cx),
-            RibbonTab::View => {
-                let marks = self.document.formatting_marks();
-                vec![
-                    self.ruler_group(cx),
-                    Self::ribbon_group(
-                        t("doc.group.show"),
-                        vec![Self::ribbon_row(vec![
-                            self.ribbon_button(
-                                "marks",
-                                t("doc.marks"),
-                                t("doc.marks_title"),
-                                marks,
-                                cx,
-                                |view, cx| view.toggle_formatting_marks(cx),
-                            )
-                            .into_any_element(),
-                            self.field_codes_button(cx),
-                        ])]
-                        .into_iter()
-                        .chain([Self::ribbon_row(word_references::view_buttons(self, cx))])
-                        .collect(),
-                    )
-                    .into_any_element(),
-                    Self::ribbon_group(
-                        t("doc.group.zoom"),
-                        vec![Self::ribbon_row(vec![
-                            self.ribbon_button(
-                                "zoom-out",
-                                t("doc.zoom_out"),
-                                t("doc.zoom_out"),
-                                false,
-                                cx,
-                                |view, cx| {
-                                    let zoom = view.zoom / 1.1;
-                                    view.set_zoom(zoom, cx)
-                                },
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "zoom-reset",
-                                t("doc.zoom_actual"),
-                                t("doc.zoom_actual"),
-                                false,
-                                cx,
-                                |view, cx| view.set_zoom(1.0, cx),
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "zoom-in",
-                                t("doc.zoom_in"),
-                                t("doc.zoom_in"),
-                                false,
-                                cx,
-                                |view, cx| {
-                                    let zoom = view.zoom * 1.1;
-                                    view.set_zoom(zoom, cx)
-                                },
-                            )
-                            .into_any_element(),
-                        ])],
-                    )
-                    .into_any_element(),
-                    Self::ribbon_group(
-                        t("doc.group.pages"),
-                        vec![Self::ribbon_row(vec![
-                            self.ribbon_button(
-                                "prev-page",
-                                t("doc.previous"),
-                                t("doc.previous_page"),
-                                false,
-                                cx,
-                                |view, cx| view.go_to_page(-1, cx),
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "next-page",
-                                t("doc.next"),
-                                t("doc.next_page"),
-                                false,
-                                cx,
-                                |view, cx| view.go_to_page(1, cx),
-                            )
-                            .into_any_element(),
-                        ])],
-                    )
-                    .into_any_element(),
-                ]
-            }
+            RibbonTab::View => word_views::view_tab(self, cx),
         }
     }
 
@@ -2480,6 +2407,9 @@ impl DocumentView {
         if let Some(field) = self.references.text_field() {
             return Some(field);
         }
+        if let Some(field) = self.views.text_field() {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2506,6 +2436,9 @@ impl DocumentView {
         }
         if self.references.is_open() || self.references.searching {
             return self.references.text_field_mut();
+        }
+        if self.views.is_open() {
+            return self.views.text_field_mut();
         }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
@@ -3123,6 +3056,7 @@ impl DocumentView {
             Action::FontFamilyName(name) => WordFormatting::set_font_family(document, &name),
             Action::Characters(action) => return word_characters::run(self, action, cx),
             Action::References(action) => return word_references::run(self, action, cx),
+            Action::Views(action) => return word_views::run(self, action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) | Action::Word(_) => Ok(()),
         };
         match done {
@@ -4388,6 +4322,8 @@ impl Render for DocumentView {
             }
         }
 
+        // A zoom fit (1 ページ, ページ幅…) follows the window.
+        word_views::before_render(self, window, cx);
         let page_count = self.images.len();
         // Recomputed each frame: gpui does not notify on scroll, and this is
         // cheap next to laying the frame out.
@@ -4412,6 +4348,7 @@ impl Render for DocumentView {
             .collect();
         let mut vertical_rulers = vertical_rulers.into_iter();
         let reference_dialog = word_references::overlay(self, window, cx);
+        let views_dialog = word_views::overlay(self, cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
         word_references::on_actions(div().id("root"), cx)
@@ -4606,112 +4543,126 @@ impl Render for DocumentView {
                     .children(self.find_bar_element(cx))
                     .children(ruler)
                     .child(
-                        div()
-                            .id("pages")
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_6()
-                            .p_8()
-                            .size_full()
-                            .bg(theme::canvas())
-                            .overflow_scroll()
+                        // Laid out as the view has them: one under another,
+                        // several across, side by side (`word_views`).
+                        word_views::arrange_pages(div().id("pages"), &self.views)
+                            // A double-click between pages hides the white
+                            // space, or shows it again.
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|view, event: &MouseDownEvent, _window, cx| {
+                                    word_views::white_space_click(
+                                        view,
+                                        event.position,
+                                        event.click_count,
+                                        cx,
+                                    );
+                                }),
+                            )
                             // Tracked so the sidebar can jump to a page.
                             .track_scroll(&self.scroll)
                             .children(self.images.iter().enumerate().map(|(index, page)| {
                                 let bounds_store = Rc::clone(&self.page_bounds);
                                 let entity = cx.entity();
-                                div()
-                                    .id(("page-surface", index))
-                                    .relative()
-                                    .flex_none()
-                                    .shadow_lg()
-                                    .cursor(page_cursor)
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(
-                                            move |view, event: &MouseDownEvent, _window, cx| {
-                                                view.click_page(index, event, cx);
-                                                if event.click_count >= 2 {
-                                                    view.select_word_at_caret(cx);
-                                                }
-                                            },
-                                        ),
-                                    )
-                                    .on_mouse_move(cx.listener(
-                                        move |view, event: &MouseMoveEvent, _window, cx| {
-                                            if event.dragging() {
-                                                view.drag_to(index, event, cx);
-                                            } else {
-                                                view.table_hover(index, event, cx);
+                                let crop = word_views::page_crop(self, index);
+                                word_views::frame_page(
+                                    div().id(("page-surface", index)).relative().flex_none(),
+                                    &self.views,
+                                    crop,
+                                    zoom,
+                                )
+                                .cursor(page_cursor)
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(
+                                        move |view, event: &MouseDownEvent, _window, cx| {
+                                            view.click_page(index, event, cx);
+                                            if event.click_count >= 2 {
+                                                view.select_word_at_caret(cx);
                                             }
                                         },
-                                    ))
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(
-                                            move |view, _event: &MouseUpEvent, _window, cx| {
-                                                view.drag_anchor = None;
-                                                // The brush paints what was
-                                                // just clicked or dragged over.
-                                                if view.painter.is_some() {
-                                                    view.paint_format(false, cx);
-                                                }
-                                                view.table_mouse_up(cx);
-                                            },
-                                        ),
-                                    )
-                                    .child(
-                                        img(page.clone())
-                                            .w(px(page_width * zoom))
-                                            .h(px(page_height * zoom)),
-                                    )
-                                    .children(self.caret_overlay(index))
-                                    .children(word_references::page_marks(&marks, index, zoom, cx))
-                                    .children(self.table_overlay(index))
-                                    .children(self.story_label(index))
-                                    .children(vertical_rulers.next().flatten())
-                                    .children(self.object_outline(index))
-                                    // Records where this page ended up. A click arrives
-                                    // in window coordinates and has to be made local
-                                    // before the renderer can hit-test it.
-                                    .child(
-                                        canvas(
-                                            move |bounds, _window, _cx| {
-                                                let mut store = bounds_store.borrow_mut();
-                                                if store.len() <= index {
-                                                    store.resize(index + 1, None);
-                                                }
-                                                store[index] = Some(bounds);
-                                                bounds
-                                            },
-                                            move |_bounds, page_bounds, window, cx| {
-                                                // Registered during paint, which is what
-                                                // `handle_input` requires, and only for the
-                                                // page the caret is on — the handler is
-                                                // per-focus, not per-element, so registering
-                                                // it three times would just be the last one.
-                                                if index == 0 {
-                                                    window.handle_input(
-                                                        &entity.focus_handle(cx),
-                                                        ElementInputHandler::new(
-                                                            page_bounds,
-                                                            entity.clone(),
-                                                        ),
-                                                        cx,
-                                                    );
-                                                }
-                                            },
+                                    ),
+                                )
+                                .on_mouse_move(cx.listener(
+                                    move |view, event: &MouseMoveEvent, _window, cx| {
+                                        if event.dragging() {
+                                            view.drag_to(index, event, cx);
+                                        } else {
+                                            view.table_hover(index, event, cx);
+                                        }
+                                    },
+                                ))
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _event: &MouseUpEvent, _window, cx| {
+                                        view.drag_anchor = None;
+                                        // The brush paints what was
+                                        // just clicked or dragged over.
+                                        if view.painter.is_some() {
+                                            view.paint_format(false, cx);
+                                        }
+                                        view.table_mouse_up(cx);
+                                    }),
+                                )
+                                // What the view shows of the page, moved
+                                // so its band is in the frame.
+                                .child(
+                                    word_views::page_contents(crop, zoom)
+                                        .child(
+                                            img(page.clone())
+                                                .w(px(page_width * zoom))
+                                                .h(px(page_height * zoom)),
                                         )
-                                        // `absolute` without an offset keeps the element's
-                                        // static position, which here is the slot after the
-                                        // image — a whole page too low. `top_0().left_0()`
-                                        // is what actually pins it over the page.
-                                        .absolute()
-                                        .top_0()
-                                        .left_0()
-                                        .size_full(),
-                                    )
+                                        .children(word_views::grid_overlay(self, index))
+                                        .children(self.caret_overlay(index))
+                                        .children(word_references::page_marks(
+                                            &marks, index, zoom, cx,
+                                        ))
+                                        .children(self.table_overlay(index))
+                                        .children(self.story_label(index))
+                                        .children(vertical_rulers.next().flatten())
+                                        .children(self.object_outline(index))
+                                        // Records where this page ended up. A click arrives
+                                        // in window coordinates and has to be made local
+                                        // before the renderer can hit-test it.
+                                        .child(
+                                            canvas(
+                                                move |bounds, _window, _cx| {
+                                                    let mut store = bounds_store.borrow_mut();
+                                                    if store.len() <= index {
+                                                        store.resize(index + 1, None);
+                                                    }
+                                                    store[index] = Some(bounds);
+                                                    bounds
+                                                },
+                                                move |_bounds, page_bounds, window, cx| {
+                                                    // Registered during paint, which is what
+                                                    // `handle_input` requires, and only for the
+                                                    // page the caret is on — the handler is
+                                                    // per-focus, not per-element, so registering
+                                                    // it three times would just be the last one.
+                                                    if index == 0 {
+                                                        window.handle_input(
+                                                            &entity.focus_handle(cx),
+                                                            ElementInputHandler::new(
+                                                                page_bounds,
+                                                                entity.clone(),
+                                                            ),
+                                                            cx,
+                                                        );
+                                                    }
+                                                },
+                                            )
+                                            // `absolute` without an offset keeps the element's
+                                            // static position, which here is the slot after the
+                                            // image — a whole page too low. `top_0().left_0()`
+                                            // is what actually pins it over the page.
+                                            .absolute()
+                                            .top_0()
+                                            .left_0()
+                                            .size_full(),
+                                        ),
+                                )
                             })),
                     ),
             )
@@ -4727,6 +4678,7 @@ impl Render for DocumentView {
             .children(dialog)
             .children(tool_dialog)
             .children(reference_dialog)
+            .children(views_dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4981,6 +4933,7 @@ fn document_view(
         show_inspector: false,
         dirty: false,
         fields: word_fields::FieldsUi::default(),
+        views: word_views::Views::default(),
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
     }

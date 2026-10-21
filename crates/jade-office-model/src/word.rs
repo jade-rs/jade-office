@@ -56,6 +56,7 @@ pub mod styles;
 pub mod table;
 pub mod table_ui;
 pub mod typography;
+pub mod view;
 pub mod xml;
 
 pub use count::{WordCount, WordCounting};
