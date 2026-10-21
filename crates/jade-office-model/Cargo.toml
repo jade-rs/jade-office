@@ -46,6 +46,8 @@ jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter", optional = true }
 # the edited package read back (word/package.rs).
 quick-xml = "0.39"
 futures = "0.3"
+# An SVG picture's PNG fallback, drawn as Word stores one beside it.
+resvg = { version = "0.45.1", default-features = false }
 # Shift_JIS, for the CSV a Japanese Excel writes.
 encoding_rs = "0.8"
 # The browser build's PDF of page pictures.

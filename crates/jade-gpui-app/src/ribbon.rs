@@ -117,6 +117,8 @@ pub enum Popup {
     Word(crate::word_tools::ToolMenu),
     /// 参考資料's lists (`word_references`).
     References(crate::word_references::RefPopup),
+    /// The drawing-object tools' lists (`word_objects_ribbon`).
+    Object(crate::word_objects_ribbon::ObjectPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -220,6 +222,8 @@ pub enum Action {
     Word(crate::word_tools::ToolCommand),
     /// 参考資料, ジャンプ and the navigation pane (`word_references`).
     References(crate::word_references::RefAction),
+    /// A drawing-object tool (`word_objects_ribbon`).
+    Object(crate::word_objects_ribbon::ObjectAction),
 }
 
 impl Action {

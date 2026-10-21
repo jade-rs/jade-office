@@ -1997,3 +1997,290 @@ notes.separator	境界線を表示する
 notes.continuation_separator	継続境界線を表示する
 nav.collapse	折りたたむ
 nav.expand	展開
+# word-objects: pictures, shapes and drawing objects
+objects.align	配置
+objects.align.bottom	下揃え
+objects.align.center	左右中央揃え
+objects.align.distribute_h	左右に整列
+objects.align.distribute_v	上下に整列
+objects.align.left	左揃え
+objects.align.margin	余白に合わせて配置
+objects.align.middle	上下中央揃え
+objects.align.page	用紙に合わせて配置
+objects.align.relative	基準
+objects.align.right	右揃え
+objects.align.selection	選択したオブジェクトを揃える
+objects.align.top	上揃え
+objects.arrow.both	矢印: 両端
+objects.arrow.end	矢印: 終点
+objects.arrow.none	矢印なし
+objects.arrow.start	矢印: 始点
+objects.artistic	アート効果
+objects.artistic.blur	ぼかし
+objects.artistic.line_drawing	線画
+objects.artistic.none	なし
+objects.artistic.pencil_grayscale	鉛筆: モノクロ
+objects.background.remove	背景の削除
+objects.background.restore	背景を元に戻す
+objects.background.title	図の背景を自動で透明にします
+objects.backward	背面へ移動
+objects.behind_text	テキストの背面へ移動
+objects.bevel.angle	角度
+objects.bevel.circle	丸
+objects.bevel.cool_slant	クール スラント
+objects.bevel.cross	十字
+objects.bevel.relaxed_inset	緩やかな傾斜
+objects.bevel.soft_round	ソフト ラウンド
+objects.change.clipboard	クリップボードから
+objects.change.file	ファイルから
+objects.change_picture	図の変更
+objects.change_shape	図形の変更
+objects.chart	グラフ
+objects.chart.add_category	行を追加
+objects.chart.add_series	列を追加
+objects.chart.category	分類
+objects.chart.column	集合縦棒
+objects.chart.default_title	グラフ タイトル
+objects.chart.edit_data	データの編集
+objects.chart.edit_data_title	グラフのデータをシートで編集します
+objects.chart.elements	グラフ要素を追加
+objects.chart.line	折れ線
+objects.chart.pie	円
+objects.chart.remove_category	行を削除
+objects.chart.remove_series	列を削除
+objects.chart.series	系列
+objects.chart.title	グラフ タイトル
+objects.chart.title_off	グラフ タイトルなし
+objects.chart.title_on	グラフ タイトルを表示
+objects.chart.type	グラフの種類の変更
+objects.color	色
+objects.color.accent_dark	アクセント {n} (濃色)
+objects.color.accent_light	アクセント {n} (淡色)
+objects.color.black	黒
+objects.color.black_white	白黒: 50%
+objects.color.blue	青、アクセント 1
+objects.color.blue_gray	青灰色、テキスト 2
+objects.color.bright_green	緑
+objects.color.dark_red	濃い赤
+objects.color.gold	ゴールド、アクセント 4
+objects.color.gray	灰色、アクセント 3
+objects.color.grayscale	グレースケール
+objects.color.green	緑、アクセント 6
+objects.color.light_blue	青、アクセント 5
+objects.color.none	色の変更なし
+objects.color.orange	オレンジ、アクセント 2
+objects.color.purple	紫
+objects.color.recolor	色の変更
+objects.color.red	赤
+objects.color.saturation	色の彩度
+objects.color.sepia	セピア
+objects.color.tone	色のトーン
+objects.color.transparent_white	白を透明にする
+objects.color.white	白
+objects.color.yellow	黄
+objects.corrections	修整
+objects.corrections.caption	明るさ / コントラスト
+objects.corrections.cell	明るさ / コントラスト
+objects.crop	トリミング
+objects.crop.aspect	縦横比
+objects.crop.shape	図形に合わせてトリミング
+objects.dash.dash	破線
+objects.dash.dash_dot	一点鎖線
+objects.dash.long_dash	長破線
+objects.dash.long_dash_dot	長一点鎖線
+objects.dash.long_dash_dot_dot	長二点鎖線
+objects.dash.round_dot	丸点線
+objects.dash.solid	実線
+objects.dash.square_dot	角点線
+objects.dialog.allow_overlap	重なりを許可する
+objects.dialog.below	下方向の距離
+objects.dialog.both_sides	両側
+objects.dialog.bottom	下
+objects.dialog.distance	文字列との間隔
+objects.dialog.horizontal	水平方向
+objects.dialog.inline_note	行内に配置された図は位置を指定できません。OK で折り返しが四角形になります。
+objects.dialog.largest_only	大きい側
+objects.dialog.layout_in_cell	表のセル内に配置する
+objects.dialog.left	左
+objects.dialog.left_only	左側
+objects.dialog.lock_anchor	アンカーを段落に固定する
+objects.dialog.lock_ratio	縦横比を固定する
+objects.dialog.move_with_text	文字列と一緒に移動する
+objects.dialog.offset	右方向の距離 / 下方向の距離
+objects.dialog.options	オプション
+objects.dialog.position	位置
+objects.dialog.relative_to	基準
+objects.dialog.right	右
+objects.dialog.right_of	右方向の距離
+objects.dialog.right_only	右側
+objects.dialog.rotation	回転角度
+objects.dialog.size	サイズ
+objects.dialog.title	レイアウトの詳細設定
+objects.dialog.top	上
+objects.dialog.vertical	垂直方向
+objects.dialog.wrap_style	折り返しの種類と配置
+objects.dialog.wrap_text	文字列の折り返し
+objects.dialog.wrapping	文字列の折り返し
+objects.draw_hint	ページ上をドラッグして図形を描きます。esc で取り消します。
+objects.edit_points	頂点の編集
+objects.edit_points_title	フリーフォームの頂点をドラッグして形を変えます
+objects.effect.bevel	面取り
+objects.effect.glow	光彩
+objects.effect.no_bevel	面取りなし
+objects.effect.no_glow	光彩なし
+objects.effect.no_reflection	反射なし
+objects.effect.no_shadow	影なし
+objects.effect.no_soft_edges	ぼかしなし
+objects.effect.none	なし
+objects.effect.reflection	反射
+objects.effect.shadow	影
+objects.effect.soft_edges	ぼかし
+objects.effects	図の効果
+objects.fill	図形の塗りつぶし
+objects.fill.none	塗りつぶしなし
+objects.format_pane	書式設定ウィンドウ
+objects.format_pane_title	図形の書式設定ウィンドウを表示します
+objects.forward	前面へ移動
+objects.freeform	フリーフォーム: 図形
+objects.glow.size	光彩: {n} pt
+objects.group	グループ化
+objects.group.adjust	調整
+objects.group.arrange	配置
+objects.group.chart	グラフのデザイン
+objects.group.insert_shapes	図形の挿入
+objects.group.picture_styles	図のスタイル
+objects.group.shape_styles	図形のスタイル
+objects.group.size	サイズ
+objects.group.smartart	SmartArt のデザイン
+objects.group.wordart_styles	ワードアートのスタイル
+objects.hide_all	すべて非表示
+objects.in_front_of_text	テキストの前面へ移動
+objects.layout_more	その他のレイアウト オプション...
+objects.legend.bottom	凡例: 下
+objects.legend.left	凡例: 左
+objects.legend.none	凡例なし
+objects.legend.right	凡例: 右
+objects.legend.top	凡例: 上
+objects.link	リンクの作成
+objects.link_hint	リンク先の空のテキスト ボックスをクリックします
+objects.link_title	あふれた文字を次のテキスト ボックスに流し込みます
+objects.no_clipboard_picture	クリップボードに図がありません
+objects.no_objects	このページにはオブジェクトがありません
+objects.nothing_selected	図や図形が選択されていません
+objects.outline	図の枠線
+objects.outline.arrows	矢印
+objects.outline.dash	実線/点線
+objects.outline.none	枠線なし
+objects.outline.weight	太さ
+objects.pen	ペン
+objects.position	位置
+objects.position.bottom_center	下中央に配置し、四角の枠に沿って文字列を折り返す
+objects.position.bottom_left	左下に配置し、四角の枠に沿って文字列を折り返す
+objects.position.bottom_right	右下に配置し、四角の枠に沿って文字列を折り返す
+objects.position.middle_center	中段中央に配置し、四角の枠に沿って文字列を折り返す
+objects.position.middle_left	中段左に配置し、四角の枠に沿って文字列を折り返す
+objects.position.middle_right	中段右に配置し、四角の枠に沿って文字列を折り返す
+objects.position.top_center	上中央に配置し、四角の枠に沿って文字列を折り返す
+objects.position.top_left	左上に配置し、四角の枠に沿って文字列を折り返す
+objects.position.top_right	右上に配置し、四角の枠に沿って文字列を折り返す
+objects.position.with_wrapping	文字列の折り返し
+objects.reflection.full	反射 (強): 接触
+objects.reflection.half	反射 (中): 接触
+objects.reflection.tight	反射 (弱): 接触
+objects.relative.bottom_margin	下余白
+objects.relative.character	文字
+objects.relative.column	段
+objects.relative.inside	内側
+objects.relative.inside_margin	内側の余白
+objects.relative.left_margin	左余白
+objects.relative.line	行
+objects.relative.margin	余白
+objects.relative.outside	外側
+objects.relative.outside_margin	外側の余白
+objects.relative.page	ページ
+objects.relative.paragraph	段落
+objects.relative.right_margin	右余白
+objects.relative.top_margin	上余白
+objects.reset	図のリセット
+objects.reset_size	図とサイズのリセット
+objects.rotate	回転
+objects.rotate.flip_h	左右反転
+objects.rotate.flip_v	上下反転
+objects.rotate.left	左へ 90 度回転
+objects.rotate.more	その他の回転オプション...
+objects.rotate.right	右へ 90 度回転
+objects.selection_pane	オブジェクトの選択と表示
+objects.selection_pane_title	オブジェクトの一覧を表示し、選択・表示・順序を変更します
+objects.shadow.bottom	オフセット: 下
+objects.shadow.bottom_left	オフセット: 左下
+objects.shadow.bottom_right	オフセット: 右下
+objects.shadow.center	オフセット: 中央
+objects.shadow.inner_bottom_right	内側: 右下
+objects.shadow.inner_center	内側: 中央
+objects.shadow.inner_top_left	内側: 左上
+objects.shadow.left	オフセット: 左
+objects.shadow.right	オフセット: 右
+objects.shadow.top	オフセット: 上
+objects.shadow.top_left	オフセット: 左上
+objects.shadow.top_right	オフセット: 右上
+objects.shape_effects	図形の効果
+objects.shape_outline	図形の枠線
+objects.shape_styles	図形のスタイル
+objects.shapes	図形
+objects.show_all	すべて表示
+objects.size.height	高さ
+objects.size.larger	大きく
+objects.size.smaller	小さく
+objects.size.summary	幅 {w} mm × 高さ {h} mm、回転 {r}°
+objects.size.width	幅
+objects.smartart	SmartArt
+objects.smartart.apply	反映
+objects.smartart.layouts	レイアウトの変更
+objects.smartart.placeholder	[テキスト]
+objects.smartart.text_pane	テキスト ウィンドウ
+objects.smartart.text_pane_hint	Enter で追加、Tab でレベル下げ、⇧Tab でレベル上げ、空の行で ⌫ で削除
+objects.smartart.text_pane_title	SmartArt の文字と構造を編集します
+objects.tab.picture_format	図の形式
+objects.tab.shape_format	図形の書式
+objects.text.bottom	下揃え
+objects.text.middle	上下中央揃え
+objects.text.top	上揃え
+objects.text_align	文字の配置
+objects.text_box	テキスト ボックス
+objects.text_box_title	テキスト ボックスを描画します
+objects.text_effects	文字の効果
+objects.text_fill	文字の塗りつぶし
+objects.to_back	最背面へ移動
+objects.to_front	最前面へ移動
+objects.transparency	透明度
+objects.ungroup	グループ解除
+objects.warp	変形
+objects.warp.arch_down	アーチ: 下向き
+objects.warp.arch_up	アーチ: 上向き
+objects.warp.button	ボタン
+objects.warp.can_down	凹レンズ: 下
+objects.warp.can_up	凹レンズ: 上
+objects.warp.chevron	山形
+objects.warp.chevron_inverted	山形: 下向き
+objects.warp.circle	円
+objects.warp.deflate	縮小
+objects.warp.double_wave	小波: 両端
+objects.warp.fade_left	左すぼまり
+objects.warp.fade_right	右すぼまり
+objects.warp.inflate	膨張
+objects.warp.none	変形なし
+objects.warp.slant_down	傾斜: 下
+objects.warp.slant_up	傾斜: 上
+objects.warp.triangle	三角形: 上向き
+objects.warp.triangle_inverted	三角形: 下向き
+objects.warp.wave1	波: 上向き
+objects.warp.wave2	波: 下向き
+objects.wordart	ワードアート
+objects.wordart.accent_shadow	塗りつぶし: 青、アクセントカラー 1; 影
+objects.wordart.black_shadow	塗りつぶし: 黒、文字色 1; 影
+objects.wordart.gray_bevel	塗りつぶし: 灰色; 面取り (ソフト)
+objects.wordart.orange_outline	塗りつぶし: オレンジ; 輪郭: オレンジ
+objects.wordart.outline_only	塗りつぶしなし; 輪郭: 青、アクセントカラー 1
+objects.wordart.white_outline_glow	塗りつぶし: 白; 輪郭: 青; 光彩
+objects.wrap_points	折り返し点の編集
+# word-objects end
