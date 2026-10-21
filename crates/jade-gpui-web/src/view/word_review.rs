@@ -193,6 +193,9 @@ impl DocView {
             | ReviewAction::Protect
             | ReviewAction::MarkFinal
             | ReviewAction::EditAnyway => return self.protection_action(action, cx),
+            ReviewAction::Inspect | ReviewAction::InspectRemove(_) => {
+                return self.inspect_action(action, cx)
+            }
             ReviewAction::RevisionsPane => {
                 if let Document::Pages { revisions_pane, .. } = &mut self.document {
                     *revisions_pane = !*revisions_pane;
@@ -854,6 +857,10 @@ pub(crate) struct WebProtection {
     pub open_password: Option<String>,
     pub mark_final: Option<bool>,
     pub read_only: Option<ReadOnlyReason>,
+    /// Whether the ドキュメント検査 pane is open (`word_inspect`).
+    pub inspect: bool,
+    /// What ドキュメント検査 left out of every later save.
+    pub cleaning: jade_web::word::inspect::PackageCleaning,
 }
 
 impl WebProtection {
@@ -891,10 +898,11 @@ impl WebProtection {
     }
 }
 
-/// The package a save hands the page: marked final or not, encrypted with
-/// the password to open.
+/// The package a save hands the page: without what ドキュメント検査 removed,
+/// marked final or not, encrypted with the password to open.
 pub(super) fn finish_save(protection: &WebProtection, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     use jade_web::word::protection::{encrypt_package, mark_final};
+    let bytes = jade_web::word::inspect::clean_package(&bytes, protection.cleaning)?;
     let bytes = match protection.mark_final {
         Some(final_) => mark_final(&bytes, final_)?,
         None => bytes,

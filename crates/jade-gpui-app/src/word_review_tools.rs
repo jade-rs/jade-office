@@ -150,6 +150,8 @@ pub enum ReviewAction {
     Protect,
     /// 最終版にする.
     MarkFinal,
+    /// ドキュメント検査: the pane.
+    Inspect,
 }
 
 /// The dialog the tab opens.
@@ -196,6 +198,10 @@ pub struct ReviewTools {
     pub revisions_pane: bool,
     /// 編集の制限, 文書の保護 and 最終版 (`word_protection`).
     pub protection: crate::word_protection::ProtectionUi,
+    /// The ドキュメント検査 pane, while it is open (`word_inspect`).
+    pub inspect: Option<crate::word_inspect::InspectPane>,
+    /// What ドキュメント検査 left out of every later save.
+    pub cleaning: jade_office_model::word::inspect::PackageCleaning,
 }
 
 impl ReviewTools {
@@ -298,6 +304,7 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
         ReviewAction::RestrictPane => return crate::word_protection::toggle_pane(view, cx),
         ReviewAction::Protect => return crate::word_protection::open_protect_dialog(view, cx),
         ReviewAction::MarkFinal => return crate::word_protection::toggle_final(view, cx),
+        ReviewAction::Inspect => return crate::word_inspect::toggle(view, cx),
         ReviewAction::ProofingMarks => {
             let on = !view.document.proofing();
             return crate::word_proofing::set_marks(view, on, cx);

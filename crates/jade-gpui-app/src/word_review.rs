@@ -402,6 +402,14 @@ impl DocumentView {
                         ReviewAction::MarkFinal,
                         cx,
                     ),
+                    tools::text_button(
+                        "review-inspect",
+                        "inspect.button",
+                        "inspect.tooltip",
+                        self.review.inspect.is_some(),
+                        ReviewAction::Inspect,
+                        cx,
+                    ),
                 ])],
             )
             .into_any_element(),

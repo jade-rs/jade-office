@@ -31,6 +31,7 @@ mod tooltip;
 mod word_accessibility;
 mod word_characters;
 mod word_compare;
+mod word_inspect;
 mod word_dialogs;
 mod word_page;
 mod word_page_setup;
@@ -3517,7 +3518,9 @@ impl DocumentView {
     fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
         let exported = self.document.export_docx();
         // 最終版 and the password to open, written into the package.
-        let exported = exported.and_then(|bytes| word_protection::finish_save(self, bytes));
+        let exported = exported
+            .and_then(|bytes| word_inspect::finish_save(self, bytes))
+            .and_then(|bytes| word_protection::finish_save(self, bytes));
         match exported {
             Ok(bytes) => match crate::shell::write_in_place(&target, &bytes) {
                 Ok(()) => {
@@ -4339,6 +4342,7 @@ impl Render for DocumentView {
         word_proofing::start_once(self, cx);
         let proofing_pane = word_proofing::pane(self, cx);
         let accessibility_pane = word_accessibility::pane(self, cx);
+        let inspect_pane = word_inspect::pane(self, cx);
         let revisions_pane = word_revisions::pane(self, cx);
         let restrict_pane = word_protection::pane(self, cx);
         let read_only_bar = word_protection::banner(self, cx);
@@ -4637,6 +4641,7 @@ impl Render for DocumentView {
             // ---- 文章校正, beside the pages while it is open ----
             .children(proofing_pane)
             .children(accessibility_pane)
+            .children(inspect_pane)
             .children(revisions_pane)
             .children(restrict_pane)
             .children(proofing_menu)
