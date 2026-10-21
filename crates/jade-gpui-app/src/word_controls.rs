@@ -9,7 +9,7 @@
 
 use std::cell::RefCell;
 
-use gpui::{div, prelude::*, px, AnyElement, ClickEvent, Context, ElementId, SharedString, Window};
+use gpui::{div, prelude::*, px, AnyElement, Context, ElementId, SharedString, Window};
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::controls::{
     character_styles, kind_key, ContentControlAction, ContentControlKind, ControlChrome,
@@ -729,7 +729,12 @@ impl DocumentView {
                                                     |control| {
                                                         (
                                                             control.start.paragraph,
-                                                            control.start.offset + 1,
+                                                            control.start.offset
+                                                                + control
+                                                                    .text
+                                                                    .chars()
+                                                                    .next()
+                                                                    .map_or(0, char::len_utf8),
                                                         )
                                                     },
                                                 );
@@ -844,7 +849,12 @@ impl DocumentView {
                 }
             }
         }
-        out.extend(self.controls_popup(page, cx));
+        // Deferred, so it is over the pages and the overlays after it, and
+        // takes the clicks on it.
+        out.extend(
+            self.controls_popup(page, cx)
+                .map(|popup| gpui::deferred(popup).with_priority(2).into_any_element()),
+        );
         out
     }
 
@@ -898,8 +908,10 @@ impl DocumentView {
                         entry.clone(),
                         *selected == Some(index),
                     )
-                    .on_click(cx.listener(
-                        move |view, _: &ClickEvent, _, cx| {
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
                             view.controls.popup = None;
                             view.run_control(
                                 ContentControlAction::ChooseEntry {
@@ -908,8 +920,8 @@ impl DocumentView {
                                 },
                                 cx,
                             )
-                        },
-                    ))
+                        }),
+                    )
                 }))
             }
             ControlPopup::FormList {
@@ -924,8 +936,10 @@ impl DocumentView {
                         entry.clone(),
                         *selected == index,
                     )
-                    .on_click(cx.listener(
-                        move |view, _: &ClickEvent, _, cx| {
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
                             view.controls.popup = None;
                             view.run_control(
                                 ContentControlAction::ChooseFormEntry {
@@ -934,8 +948,8 @@ impl DocumentView {
                                 },
                                 cx,
                             )
-                        },
-                    ))
+                        }),
+                    )
                 }))
             }
             ControlPopup::Gallery { control, blocks } => {
@@ -950,8 +964,10 @@ impl DocumentView {
                 } else {
                     panel.children(blocks.iter().enumerate().map(|(index, name)| {
                         let name = name.clone();
-                        entry_row(format!("cc-block-{index}"), name.clone(), false).on_click(
-                            cx.listener(move |view, _: &ClickEvent, _, cx| {
+                        entry_row(format!("cc-block-{index}"), name.clone(), false).on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
                                 view.controls.popup = None;
                                 view.run_control(
                                     ContentControlAction::InsertBuildingBlock {
@@ -985,14 +1001,18 @@ impl DocumentView {
                             .cursor_pointer()
                             .hover(|button| button.bg(theme::hovered()))
                             .child("◀")
-                            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
-                                if let Some((ControlPopup::Date(picker), _)) =
-                                    view.controls.popup.as_mut()
-                                {
-                                    picker.step(false);
-                                }
-                                cx.notify();
-                            })),
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(|view, _: &gpui::MouseDownEvent, _, cx| {
+                                    cx.stop_propagation();
+                                    if let Some((ControlPopup::Date(picker), _)) =
+                                        view.controls.popup.as_mut()
+                                    {
+                                        picker.step(false);
+                                    }
+                                    cx.notify();
+                                }),
+                            ),
                     )
                     .child(picker.title(japanese))
                     .child(
@@ -1002,14 +1022,18 @@ impl DocumentView {
                             .cursor_pointer()
                             .hover(|button| button.bg(theme::hovered()))
                             .child("▶")
-                            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
-                                if let Some((ControlPopup::Date(picker), _)) =
-                                    view.controls.popup.as_mut()
-                                {
-                                    picker.step(true);
-                                }
-                                cx.notify();
-                            })),
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(|view, _: &gpui::MouseDownEvent, _, cx| {
+                                    cx.stop_propagation();
+                                    if let Some((ControlPopup::Date(picker), _)) =
+                                        view.controls.popup.as_mut()
+                                    {
+                                        picker.step(true);
+                                    }
+                                    cx.notify();
+                                }),
+                            ),
                     );
                 let cell = |content: AnyElement| {
                     div()
@@ -1028,20 +1052,20 @@ impl DocumentView {
                             .into_any_element(),
                     )
                 }));
-                let weeks = picker
-                    .weeks()
-                    .into_iter()
-                    .enumerate()
-                    .map(|(week_index, week)| {
-                        div()
-                            .flex()
-                            .children(week.into_iter().enumerate().map(|(column, day)| match day {
-                                Some(day) => {
-                                    let date = (picker_state.year, picker_state.month, day);
-                                    let selected = picker_state.selected == Some(date);
-                                    let today = picker_state.today == date;
-                                    let action = picker_state.choose(day);
-                                    cell(
+                let weeks =
+                    picker
+                        .weeks()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(week_index, week)| {
+                            div().flex().children(week.into_iter().enumerate().map(
+                                |(column, day)| match day {
+                                    Some(day) => {
+                                        let date = (picker_state.year, picker_state.month, day);
+                                        let selected = picker_state.selected == Some(date);
+                                        let today = picker_state.today == date;
+                                        let action = picker_state.choose(day);
+                                        cell(
                                         div()
                                             .id(ElementId::Name(SharedString::from(format!(
                                                 "cc-day-{week_index}-{column}"
@@ -1059,18 +1083,20 @@ impl DocumentView {
                                             })
                                             .hover(|day| day.bg(theme::hovered()))
                                             .child(day.to_string())
-                                            .on_click(cx.listener(
-                                                move |view, _: &ClickEvent, _, cx| {
+                                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(
+                                                move |view, _: &gpui::MouseDownEvent, _, cx| {
+ cx.stop_propagation();
                                                     view.controls.popup = None;
                                                     view.run_control(action.clone(), cx)
                                                 },
                                             ))
                                             .into_any_element(),
                                     )
-                                }
-                                None => cell(div().into_any_element()),
-                            }))
-                    });
+                                    }
+                                    None => cell(div().into_any_element()),
+                                },
+                            ))
+                        });
                 let today = picker_state.today;
                 let control = picker_state.control;
                 panel.child(header).child(names).children(weeks).child(
@@ -1082,16 +1108,23 @@ impl DocumentView {
                         .text_color(theme::accent())
                         .hover(|row| row.bg(theme::hovered()))
                         .child(t("cc.today"))
-                        .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                            view.controls.popup = None;
-                            view.run_control(
-                                ContentControlAction::SetDate {
-                                    control,
-                                    date: format!("{:04}-{:02}-{:02}", today.0, today.1, today.2),
-                                },
-                                cx,
-                            )
-                        })),
+                        .on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
+                                view.controls.popup = None;
+                                view.run_control(
+                                    ContentControlAction::SetDate {
+                                        control,
+                                        date: format!(
+                                            "{:04}-{:02}-{:02}",
+                                            today.0, today.1, today.2
+                                        ),
+                                    },
+                                    cx,
+                                )
+                            }),
+                        ),
                 )
             }
         };

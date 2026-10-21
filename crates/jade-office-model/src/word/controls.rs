@@ -784,8 +784,7 @@ impl ControlPropertiesForm {
                 rows.push(self.field_row(ENTRY_VALUE, "cc.props.value", &self.entry_value, t));
                 let selected = self.selected_entry.is_some();
                 rows.push(FormRow::Buttons(vec![
-                    FormButton::new(ENTRY_ADD, t("cc.props.add"))
-                        .enabled(!self.entry_display.text.trim().is_empty()),
+                    FormButton::new(ENTRY_ADD, t("cc.props.add")),
                     FormButton::new(ENTRY_CHANGE, t("cc.props.modify")).enabled(selected),
                     FormButton::new(ENTRY_REMOVE, t("cc.props.remove")).enabled(selected),
                     FormButton::new(ENTRY_UP, t("cc.props.up")).enabled(selected),
@@ -1127,8 +1126,7 @@ impl FormFieldForm {
                 });
                 let selected = self.selected_entry.is_some();
                 rows.push(FormRow::Buttons(vec![
-                    FormButton::new(ENTRY_ADD, t("cc.props.add"))
-                        .enabled(!self.entry.text.trim().is_empty()),
+                    FormButton::new(ENTRY_ADD, t("cc.props.add")),
                     FormButton::new(ENTRY_REMOVE, t("cc.props.remove")).enabled(selected),
                     FormButton::new(ENTRY_UP, t("cc.props.up")).enabled(selected),
                     FormButton::new(ENTRY_DOWN, t("cc.props.down")).enabled(selected),
@@ -1225,6 +1223,8 @@ pub fn character_styles<S: WordSession + ?Sized>(session: &S) -> Vec<(String, St
     };
     styles
         .character_style_gallery_definitions()
+        // 既定の段落フォント is the first choice already.
+        .filter(|style| !style.is_default)
         .map(|style| {
             (
                 style.style_id.clone(),

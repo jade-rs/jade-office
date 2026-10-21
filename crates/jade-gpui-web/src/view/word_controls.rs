@@ -6,7 +6,7 @@
 
 use std::cell::RefCell;
 
-use gpui::{div, prelude::*, px, AnyElement, ClickEvent, Context, ElementId, SharedString, Window};
+use gpui::{div, prelude::*, px, AnyElement, Context, ElementId, SharedString, Window};
 use jade_web::text::TextEdit;
 use jade_web::word::controls::{
     character_styles, kind_key, ContentControlAction, ContentControlKind, ControlChrome,
@@ -669,7 +669,12 @@ pub fn overlay(
                                                 .map(|control| {
                                                     (
                                                         control.start.paragraph,
-                                                        control.start.offset + 1,
+                                                        control.start.offset
+                                                            + control
+                                                                .text
+                                                                .chars()
+                                                                .next()
+                                                                .map_or(0, char::len_utf8),
                                                     )
                                                 });
                                             if let Some(at) = start {
@@ -785,7 +790,12 @@ pub fn overlay(
             }
         }
     }
-    out.extend(popup(view, page, zoom, cx));
+    // Deferred, so it is over the pages and the overlays after it, and
+    // takes the clicks on it.
+    out.extend(
+        popup(view, page, zoom, cx)
+            .map(|popup| gpui::deferred(popup).with_priority(2).into_any_element()),
+    );
     out
 }
 
@@ -837,17 +847,21 @@ fn popup(view: &DocView, page: usize, zoom: f32, cx: &mut Context<DocView>) -> O
                     entry.clone(),
                     *selected == Some(index),
                 )
-                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                    view.controls.popup = None;
-                    run_action(
-                        view,
-                        ContentControlAction::ChooseEntry {
-                            control,
-                            entry: index,
-                        },
-                        cx,
-                    )
-                }))
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        view.controls.popup = None;
+                        run_action(
+                            view,
+                            ContentControlAction::ChooseEntry {
+                                control,
+                                entry: index,
+                            },
+                            cx,
+                        )
+                    }),
+                )
             }))
         }
         ControlPopup::FormList {
@@ -862,17 +876,21 @@ fn popup(view: &DocView, page: usize, zoom: f32, cx: &mut Context<DocView>) -> O
                     entry.clone(),
                     *selected == index,
                 )
-                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                    view.controls.popup = None;
-                    run_action(
-                        view,
-                        ContentControlAction::ChooseFormEntry {
-                            field,
-                            entry: index,
-                        },
-                        cx,
-                    )
-                }))
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        view.controls.popup = None;
+                        run_action(
+                            view,
+                            ContentControlAction::ChooseFormEntry {
+                                field,
+                                entry: index,
+                            },
+                            cx,
+                        )
+                    }),
+                )
             }))
         }
         ControlPopup::Gallery { control, blocks } => {
@@ -887,8 +905,10 @@ fn popup(view: &DocView, page: usize, zoom: f32, cx: &mut Context<DocView>) -> O
             } else {
                 panel.children(blocks.iter().enumerate().map(|(index, name)| {
                     let name = name.clone();
-                    entry_row(format!("cc-block-{index}"), name.clone(), false).on_click(
-                        cx.listener(move |view, _: &ClickEvent, _, cx| {
+                    entry_row(format!("cc-block-{index}"), name.clone(), false).on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
                             view.controls.popup = None;
                             run_action(
                                 view,
@@ -913,9 +933,10 @@ fn popup(view: &DocView, page: usize, zoom: f32, cx: &mut Context<DocView>) -> O
             let state = picker.clone();
             let step = |forwards: bool| {
                 move |view: &mut DocView,
-                      _: &ClickEvent,
+                      _: &gpui::MouseDownEvent,
                       _: &mut Window,
                       cx: &mut Context<DocView>| {
+                    cx.stop_propagation();
                     if let Some((ControlPopup::Date(picker), _)) = view.controls.popup.as_mut() {
                         picker.step(forwards);
                     }
@@ -934,7 +955,7 @@ fn popup(view: &DocView, page: usize, zoom: f32, cx: &mut Context<DocView>) -> O
                         .cursor_pointer()
                         .hover(|button| button.bg(theme::hovered()))
                         .child("◀")
-                        .on_click(cx.listener(step(false))),
+                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(step(false))),
                 )
                 .child(picker.title(japanese))
                 .child(
@@ -944,7 +965,7 @@ fn popup(view: &DocView, page: usize, zoom: f32, cx: &mut Context<DocView>) -> O
                         .cursor_pointer()
                         .hover(|button| button.bg(theme::hovered()))
                         .child("▶")
-                        .on_click(cx.listener(step(true))),
+                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(step(true))),
                 );
             let cell = |content: AnyElement| {
                 div()
@@ -993,12 +1014,16 @@ fn popup(view: &DocView, page: usize, zoom: f32, cx: &mut Context<DocView>) -> O
                                         })
                                         .hover(|day| day.bg(theme::hovered()))
                                         .child(day.to_string())
-                                        .on_click(cx.listener(
-                                            move |view, _: &ClickEvent, _, cx| {
-                                                view.controls.popup = None;
-                                                run_action(view, action.clone(), cx)
-                                            },
-                                        ))
+                                        .on_mouse_down(
+                                            gpui::MouseButton::Left,
+                                            cx.listener(
+                                                move |view, _: &gpui::MouseDownEvent, _, cx| {
+                                                    cx.stop_propagation();
+                                                    view.controls.popup = None;
+                                                    run_action(view, action.clone(), cx)
+                                                },
+                                            ),
+                                        )
                                         .into_any_element(),
                                 )
                             }
@@ -1017,17 +1042,21 @@ fn popup(view: &DocView, page: usize, zoom: f32, cx: &mut Context<DocView>) -> O
                     .text_color(theme::accent())
                     .hover(|row| row.bg(theme::hovered()))
                     .child(t("cc.today"))
-                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                        view.controls.popup = None;
-                        run_action(
-                            view,
-                            ContentControlAction::SetDate {
-                                control,
-                                date: format!("{:04}-{:02}-{:02}", today.0, today.1, today.2),
-                            },
-                            cx,
-                        )
-                    })),
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            view.controls.popup = None;
+                            run_action(
+                                view,
+                                ContentControlAction::SetDate {
+                                    control,
+                                    date: format!("{:04}-{:02}-{:02}", today.0, today.1, today.2),
+                                },
+                                cx,
+                            )
+                        }),
+                    ),
             )
         }
     };

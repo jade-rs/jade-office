@@ -615,7 +615,7 @@ fn tool_item(item: &ToolItem, handler: Handler, cx: &mut Context<DocumentView>) 
         } => {
             let trigger = button(
                 element_id(*id, "menu"),
-                format!("{label} ▾"),
+                format!("{label} ▼"),
                 title.clone(),
                 *open,
                 *enabled,
