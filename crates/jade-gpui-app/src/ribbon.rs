@@ -478,6 +478,11 @@ pub(crate) fn menu_row(
         .whitespace_nowrap()
         .cursor_pointer()
         .hover(|row| row.bg(theme::hovered()))
+        // リアルタイムのプレビュー: a font, size, colour or style shows on
+        // the selection while the pointer rests on it.
+        .when(crate::word_views::mini::previewable(&action), |row| {
+            row.on_hover(crate::word_views::mini::hover(action.clone(), cx))
+        })
         .on_click(listener(action, cx))
         .child(div().size_4().flex_none().when(checked, |cell| {
             cell.child(
@@ -519,6 +524,9 @@ fn swatch(
         .cursor_pointer()
         .hover(|square| square.border_color(theme::accent()))
         .tooltip(Tooltip::text(tooltip))
+        .when(crate::word_views::mini::previewable(&action), |square| {
+            square.on_hover(crate::word_views::mini::hover(action.clone(), cx))
+        })
         .on_click(listener(action, cx))
         .into_any_element()
 }
@@ -1066,6 +1074,10 @@ fn styles_group(
             .text_color(theme::text())
             .tooltip(Tooltip::text(style_label(entry)))
             .child(style_label(entry))
+            .on_hover(crate::word_views::mini::hover(
+                Action::Style(entry.id.clone()),
+                cx,
+            ))
             .on_click(listener(Action::Style(entry.id.clone()), cx))
             .into_any_element()
     };
