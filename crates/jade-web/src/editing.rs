@@ -255,7 +255,7 @@ impl EditableDocument {
         };
         let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
             .map_err(|_| "renderer setup failed".to_string())?;
-        renderer.sync_document_header_footer_stories(word_document);
+        renderer.sync_word_document(word_document);
         // The shell draws the selection over the pages.
         renderer.set_use_selection_overlay(true);
         Self::paint_every_page(
@@ -325,9 +325,9 @@ impl EditableDocument {
                 let (width, height) = sizes.get(index).copied().unwrap_or(INITIAL_PAGE);
                 let replacement = if keep {
                     arriving.push(index);
-                    surface(&self.fonts, width, height, self.scale)
+                    surface(&self.fonts, &self.measurer, width, height, self.scale)
                 } else {
-                    placeholder(&self.fonts, self.scale)
+                    placeholder(&self.fonts, &self.measurer, self.scale)
                 }
                 .ok_or("cannot allocate a page surface")?;
                 replacement.set_dark_paper(self.dark_paper.get());
@@ -1262,8 +1262,7 @@ impl EditableDocument {
             .as_ref()
             .ok_or_else(|| "document went missing".to_string())?
             .clone();
-        self.renderer
-            .sync_document_header_footer_stories(&self.word_document);
+        self.renderer.sync_word_document(&self.word_document);
         self.renderer.invalidate_paragraph_content_hash_cache();
         self.renderer.mark_full_repaint();
         self.pass_covers_whole_document.set(true);

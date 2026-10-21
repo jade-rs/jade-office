@@ -854,6 +854,25 @@ struct Inner {
     unpainted: Cell<bool>,
     /// The blends of the text colours drawn lately, newest first.
     blends: RefCell<Vec<Rc<BlendTable>>>,
+    /// What measures text in place of the faces, when a host gave one. See
+    /// [`TinySkiaPainter::measure_text_with`].
+    measure: RefCell<Option<Rc<dyn TextMeasure>>>,
+}
+
+/// Text measurement a host puts in place of the painter's own.
+///
+/// The docx renderer measures most text through its host, which lays it out
+/// with the shaping measurer, but some — the lines of a table cell — through
+/// the painter it draws with. In a browser both are the canvas, so they
+/// agree; here the painter would measure a sum of advances in whichever of
+/// its faces resolves, and a cell's lines would break where body text in the
+/// same font would not. A host that lays text out with a measurer of its own
+/// hands it to every surface, and the two agree again.
+pub trait TextMeasure {
+    /// `text`'s advance, in px, in the CSS font shorthand `font`.
+    fn width(&self, text: &str, font: &str) -> Option<f64>;
+    /// `text`'s metrics in `font`, as a canvas's `measureText` gives them.
+    fn metrics(&self, text: &str, font: &str) -> Option<TextMetrics>;
 }
 
 /// The most pixels a path's coverage buffer covers: past it, a large shape's
@@ -943,8 +962,26 @@ impl TinySkiaPainter {
                 blank: Cell::new(true),
                 unpainted: Cell::new(true),
                 blends: RefCell::new(Vec::new()),
+                measure: RefCell::new(None),
             }),
         })
+    }
+
+    /// Measures text with `measure` rather than the faces from here on; the
+    /// faces still draw it. See [`TextMeasure`].
+    pub fn measure_text_with(&self, measure: Rc<dyn TextMeasure>) {
+        *self.inner.measure.borrow_mut() = Some(measure);
+    }
+
+    /// What a host's [`TextMeasure`] makes of `text` in the current font.
+    fn host_measure<T>(
+        &self,
+        text: &str,
+        measure: impl FnOnce(&dyn TextMeasure, &str, &str) -> Option<T>,
+    ) -> Option<T> {
+        let host = self.inner.measure.borrow().clone()?;
+        let font = self.font_descriptor();
+        measure(host.as_ref(), text, &font)
     }
 
     /// The surface's pixels, the paper painted in first if it is not yet.
@@ -2509,11 +2546,18 @@ impl Painter for TinySkiaPainter {
     }
 
     fn measure_text_width(&self, text: &str) -> Result<f64, Self::Error> {
+        if let Some(width) = self.host_measure(text, |host, text, font| host.width(text, font)) {
+            return Ok(width);
+        }
         let size = self.inner.state.borrow().font_size_px;
         Ok(f64::from(self.text_width(size, text)))
     }
 
     fn measure_text_metrics(&self, text: &str) -> Result<TextMetrics, Self::Error> {
+        if let Some(metrics) = self.host_measure(text, |host, text, font| host.metrics(text, font))
+        {
+            return Ok(metrics);
+        }
         let (font, size) = {
             let state = self.inner.state.borrow();
             (state.font, state.font_size_px)
