@@ -136,4 +136,8 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
     fn table_order_for(&self, table_id: usize) -> Option<usize> {
         self.renderer().table_order_for(table_id)
     }
+
+    fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
+        NativeDocument::select_cells(self, anchor_cell, focus_cell)
+    }
 }

@@ -36,6 +36,7 @@ pub mod page;
 pub mod picture;
 pub mod platform;
 pub mod review;
+pub mod table;
 
 pub use find::{FindOptions, Found, WordFind};
 
@@ -80,6 +81,10 @@ pub trait WordSession {
     fn cell_layouts(&self) -> &[CellLayout];
     /// A laid-out table's order in the body, which table commands take.
     fn table_order_for(&self, table_id: usize) -> Option<usize>;
+    /// Selects whole cells — the rectangle from one cell to another, by
+    /// their ids in the last paint's cell registry — and repaints so the
+    /// cells show selected, as Word's row, column and table selections do.
+    fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String>;
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {
@@ -864,6 +869,10 @@ pub trait WordFormatting: WordSession {
                 (start.paragraph, start.offset)
             })
             .unwrap_or((0, 0));
+        let outer_table = self
+            .cell_id_for_paragraph(paragraph)
+            .and_then(|id| self.cell_layout(id))
+            .map(|cell| cell.table_id);
         // The caret moves into the table, so no highlight is to be painted.
         self.collapse_to((paragraph, offset));
         self.apply_command(
@@ -876,6 +885,18 @@ pub trait WordFormatting: WordSession {
             },
             false,
         )?;
+        // In a cell the new table is nested in it: its first cell is the
+        // first paragraph after the caret's laid out in another table.
+        if let Some(outer) = outer_table {
+            let inner = (paragraph + 1..paragraph + 256)
+                .find(|&candidate| {
+                    self.cell_id_for_paragraph(candidate)
+                        .and_then(|id| self.cell_layout(id))
+                        .is_some_and(|cell| cell.table_id != outer)
+                })
+                .unwrap_or(paragraph);
+            return Ok((inner, 0));
+        }
         // Above the paragraph at its start, after it otherwise: the first
         // cell is whichever of the two is now in a table.
         let first_cell = [paragraph, paragraph + 1]
