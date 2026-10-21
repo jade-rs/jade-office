@@ -15,6 +15,7 @@ use jade_office_model::word::view::{
 };
 
 pub mod mini;
+pub mod select;
 
 use crate::ribbon::{group, listener, row, Action};
 use crate::tooltip::Tooltip;
@@ -79,6 +80,15 @@ pub struct Views {
     /// Set while a preview runs its command, so the command does not
     /// settle the preview it is.
     pub previewing: bool,
+    /// Ranges selected beside the document's own (⌘-drag, ⌥-drag).
+    pub extra_ranges: Vec<(
+        jade_office_model::word::Position,
+        jade_office_model::word::Position,
+    )>,
+    /// A drag-and-drop or a block selection under way.
+    pub gesture: Option<select::MouseGesture>,
+    /// Set while a command runs on each of several ranges.
+    pub on_ranges: bool,
 }
 
 impl Views {
