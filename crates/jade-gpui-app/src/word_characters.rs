@@ -743,6 +743,21 @@ impl DocumentView {
     }
 }
 
+/// A system face with Hebrew and Arabic, for complex-script text the
+/// bundled faces do not carry: Arial Unicode on a Mac, or another face Word
+/// would use.
+pub fn complex_script_fallback() -> Option<std::path::PathBuf> {
+    [
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/Library/Fonts/Arial Unicode.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    .into_iter()
+    .map(std::path::PathBuf::from)
+    .find(|path| path.exists())
+}
+
 /// At open: a document with `DATE` or `TIME` fields shows today's date and
 /// time in them, as Word does, rather than the result it was saved with.
 pub fn start_field_clock(document: &mut jade_docx_native_render::NativeDocument) {
@@ -1140,6 +1155,23 @@ mod tests {
         });
         let xml = view.read_with(cx, |view, _| document_xml(view));
         assert!(xml.contains(&format!("EQ \\o\\ac(□,{first})")), "{xml}");
+    }
+
+    /// Complex-script text has a face to fall back to on a Mac, so Hebrew
+    /// and Arabic do not come out as boxes.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn complex_script_text_has_a_fallback_face() {
+        let path = super::complex_script_fallback().expect("a system face for Hebrew and Arabic");
+        let bytes = std::fs::read(path).unwrap();
+        let painter = jade_skia_painter::SkiaPainter::new(8, 8).unwrap();
+        painter
+            .register_font_bytes("Complex Script Fallback", 400, &bytes)
+            .expect("Skia reads the face");
+        let (_, _, typeface) = painter.registered_faces().pop().unwrap();
+        for ch in ['ש', 'ل'] {
+            assert_ne!(typeface.unichar_to_glyph(ch as i32), 0, "{ch} is covered");
+        }
     }
 
     /// 文字種の変換: 全角, then 半角, change the selected text.
