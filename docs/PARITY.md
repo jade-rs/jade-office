@@ -80,3 +80,10 @@ Word moved from 70 to 165 of its 506 items being full.
 - **PowerPoint drawing**: shadows, glow, reflection, soft edges, chart labels
   and combos, all built-in table styles, picture bullets, arched WordArt;
   autofit drawn at its recorded scale, as PowerPoint opens a deck.
+
+## Word reference documents
+
+Per-area detail behind the Word numbers above, in `docs/word/`:
+
+- [coverage.md](word/coverage.md) — the test that covers each row of the
+  reference list, and the rows no test covers.
