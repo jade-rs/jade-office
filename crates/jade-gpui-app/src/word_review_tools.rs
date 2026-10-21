@@ -405,6 +405,12 @@ fn list_button(
         .hover(|button| button.bg(theme::hovered()))
         .tooltip(Tooltip::text(tooltip))
         .on_click(listener(Action::Popup(Popup::Review(popup)), cx))
+        .tab_index(0)
+        .focus(crate::ribbon::focus_ring)
+        .on_key_down(crate::ribbon::key_listener(
+            Action::Popup(Popup::Review(popup)),
+            cx,
+        ))
         .child(label)
         .child(
             gpui::svg()
@@ -629,7 +635,10 @@ pub fn text_button(
         .text_color(theme::text())
         .child(i18n::text(key))
         .tooltip(Tooltip::text(i18n::text(tooltip)))
-        .on_click(listener(review(action), cx))
+        .on_click(listener(review(action.clone()), cx))
+        .tab_index(0)
+        .focus(crate::ribbon::focus_ring)
+        .on_key_down(crate::ribbon::key_listener(review(action), cx))
         .into_any_element()
 }
 

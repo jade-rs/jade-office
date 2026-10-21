@@ -41,7 +41,10 @@ fn list_button(
         .cursor_pointer()
         .when(open, |button| button.bg(palette::selected()))
         .hover(|button| button.bg(palette::hovered()))
-        .on_click(listener(Action::Popup(popup), cx))
+        .on_click(listener(Action::Popup(popup).clone(), cx))
+        .tab_index(0)
+        .focus(crate::ribbon::focus_ring)
+        .on_key_down(crate::ribbon::key_listener(Action::Popup(popup), cx))
         .child(label)
         .child(
             gpui::svg()
@@ -76,7 +79,10 @@ pub(crate) fn text_button(
         .when(active, |button| button.bg(palette::selected()))
         .hover(|button| button.bg(palette::hovered()))
         .tooltip(Tooltip::text(tooltip))
-        .on_click(listener(action, cx))
+        .on_click(listener(action.clone(), cx))
+        .tab_index(0)
+        .focus(crate::ribbon::focus_ring)
+        .on_key_down(crate::ribbon::key_listener(action, cx))
         .child(label)
         .into_any_element()
 }

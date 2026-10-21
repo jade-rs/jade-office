@@ -937,6 +937,15 @@ fn salt() -> [u8; 16] {
 }
 
 impl DocView {
+    /// Escape from the ribbon: the keyboard back on the page.
+    pub(crate) fn focus_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Document::Pages { ribbon, .. } = &mut self.document {
+            ribbon.popup = None;
+        }
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
     /// The password the file was opened with: it is saved with it again.
     pub(crate) fn set_open_password(&mut self, password: String) {
         if let Document::Pages { protection, .. } = &mut self.document {

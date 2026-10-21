@@ -2195,6 +2195,12 @@ impl DocView {
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        // F6: the keyboard to the ribbon's controls (and Escape back).
+        if key == "f6" && matches!(&self.document, Document::Pages { .. }) {
+            window.focus_next(cx);
+            cx.stop_propagation();
+            return;
+        }
         // ⌘V is left to the browser, whose paste event brings the clipboard
         // here. A browser that kept the copy off the clipboard (an embedding
         // page without clipboard access) sends no paste event for an empty
