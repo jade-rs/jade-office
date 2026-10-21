@@ -15,6 +15,7 @@ use jade_office_model::word::view::{
 };
 
 pub mod context;
+pub mod find;
 pub mod input;
 pub mod mini;
 pub mod options;
@@ -31,17 +32,18 @@ gpui::actions!(
     [
         /// ツール → オートコレクト….
         AutoCorrect,
+        /// 編集 → 検索 → 高度な検索と置換….
+        AdvancedFind,
     ]
 );
 
 /// The keys of this module's commands, in the document's context.
 pub fn key_bindings() -> Vec<gpui::KeyBinding> {
     const CONTEXT: Option<&str> = Some("Document");
-    vec![gpui::KeyBinding::new(
-        "ctrl-alt-cmd-a",
-        AutoCorrect,
-        CONTEXT,
-    )]
+    vec![
+        gpui::KeyBinding::new("ctrl-alt-cmd-a", AutoCorrect, CONTEXT),
+        gpui::KeyBinding::new("cmd-alt-shift-h", AdvancedFind, CONTEXT),
+    ]
 }
 
 /// Word for Mac's ツール menu, as far as this module has it.
@@ -63,6 +65,10 @@ pub fn on_actions(
     root.on_action(
         cx.listener(|view, _: &AutoCorrect, _, cx| run(view, ViewAction::OpenAutoCorrect, cx)),
     )
+    .on_action(cx.listener(|view, _: &AdvancedFind, _, cx| {
+        find::open(view, false);
+        cx.notify();
+    }))
 }
 
 /// What the 表示 tab's controls do.
@@ -106,6 +112,8 @@ pub enum ViewDialog {
     },
     /// ツール → オートコレクト.
     AutoCorrect(Box<options::AutoCorrectDialog>),
+    /// 高度な検索と置換.
+    Find(Box<find::FindDialog>),
 }
 
 /// The view's state of the 表示 tab.
@@ -150,6 +158,7 @@ impl Views {
         match self.dialog.as_ref()? {
             ViewDialog::Zoom { percent, .. } => Some(percent),
             ViewDialog::AutoCorrect(dialog) => dialog.fields.get(dialog.focus),
+            ViewDialog::Find(dialog) => dialog.fields.get(dialog.focus),
         }
     }
 
@@ -157,6 +166,11 @@ impl Views {
         match self.dialog.as_mut() {
             Some(ViewDialog::Zoom { percent, .. }) => Some(percent),
             Some(ViewDialog::AutoCorrect(dialog)) => dialog.fields.get_mut(dialog.focus),
+            Some(ViewDialog::Find(dialog)) => {
+                let focus = dialog.focus;
+                dialog.current = None;
+                dialog.fields.get_mut(focus)
+            }
             None => None,
         }
     }
@@ -562,6 +576,9 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
     if matches!(view.views.dialog, Some(ViewDialog::AutoCorrect(_))) {
         return options::handle_key(view, key, cx);
     }
+    if matches!(view.views.dialog, Some(ViewDialog::Find(_))) {
+        return find::handle_key(view, key, cx);
+    }
     match key {
         "escape" => view.views.dialog = None,
         "enter" | "return" => {
@@ -593,6 +610,7 @@ pub fn overlay(view: &DocumentView, cx: &mut Context<DocumentView>) -> Option<An
             pages,
         } => (choice, percent, pages),
         ViewDialog::AutoCorrect(dialog) => return Some(options::overlay(dialog, cx)),
+        ViewDialog::Find(dialog) => return Some(find::overlay(view, dialog, cx)),
     };
     let (choice, pages) = (*choice, *pages);
     fn set(
@@ -719,7 +737,7 @@ pub fn dialog_frame_with(
     title: &'static str,
     width: f32,
     body: AnyElement,
-    cx: &mut Context<DocumentView>,
+    cx: &Context<DocumentView>,
     ok: fn(&mut DocumentView, &mut Context<DocumentView>),
 ) -> AnyElement {
     div()

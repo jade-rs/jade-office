@@ -2091,3 +2091,64 @@ context.wrap	Wrap Text
 context.edit_header	Edit Header
 context.edit_footer	Edit Footer
 context.close_header_footer	Close Header and Footer
+find.menu	Advanced Find and Replace…
+find.title	Find and Replace
+find.title_replace	Find and Replace
+find.tab.find	Find
+find.tab.replace	Replace
+find.query	Find what
+find.replacement	Replace with
+find.more	More ▼
+find.less	Less ▲
+find.next	Find Next
+find.replace	Replace
+find.replace_all	Replace All
+find.direction	Search
+find.down	Down
+find.up	Up
+find.all	All
+find.scope	Find in
+find.scope.main	Main Document
+find.scope.notes	Footnotes and Endnotes
+find.scope.selection	Current Selection
+find.scope.headers	Headers and Footers
+find.match_prefix	Match prefix
+find.match_suffix	Match suffix
+find.wildcards	Use wildcards
+find.match_width	Match half/full width forms
+find.match_kana	Match hiragana and katakana
+find.ignore_punctuation	Ignore punctuation characters
+find.ignore_whitespace	Ignore white-space characters
+find.format	Format
+find.special	Special
+find.no_format	No Formatting
+find.format.bold	Bold
+find.format.not_bold	Not Bold
+find.format.italic	Italic
+find.format.not_italic	Not Italic
+find.format.underline	Underline
+find.format.no_underline	No underline
+find.format.highlight	Highlight
+find.format.no_highlight	Not Highlight
+find.format.style	Style:
+find.special.paragraph	Paragraph Mark
+find.special.tab	Tab Character
+find.special.any_char	Any Character
+find.special.any_digit	Any Digit
+find.special.any_letter	Any Letter
+find.special.caret	Caret Character
+find.special.column_break	Column Break
+find.special.em_dash	Em Dash
+find.special.en_dash	En Dash
+find.special.line_break	Manual Line Break
+find.special.page_break	Manual Page Break
+find.special.nonbreaking_hyphen	Nonbreaking Hyphen
+find.special.nonbreaking_space	Nonbreaking Space
+find.special.optional_hyphen	Optional Hyphen
+find.special.white_space	White Space
+find.special.found_text	Find What Text
+find.end_reached	Word has reached the end of the document.
+find.start_reached	Word has reached the beginning of the document.
+find.not_found	The search item was not found.
+find.bad_pattern	The text to find is not valid: {why}
+find.replaced_count	{n} replacements made.

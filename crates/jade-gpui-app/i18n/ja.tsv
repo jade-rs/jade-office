@@ -2091,3 +2091,64 @@ context.wrap	文字列の折り返し
 context.edit_header	ヘッダーの編集
 context.edit_footer	フッターの編集
 context.close_header_footer	ヘッダーとフッターを閉じる
+find.menu	高度な検索と置換…
+find.title	検索と置換
+find.title_replace	検索と置換
+find.tab.find	検索
+find.tab.replace	置換
+find.query	検索する文字列
+find.replacement	置換後の文字列
+find.more	オプション ▼
+find.less	オプション ▲
+find.next	次を検索
+find.replace	置換
+find.replace_all	すべて置換
+find.direction	検索方向
+find.down	下へ
+find.up	上へ
+find.all	すべて
+find.scope	検索する場所
+find.scope.main	メイン文書
+find.scope.notes	脚注と文末脚注
+find.scope.selection	選択範囲
+find.scope.headers	ヘッダーとフッター
+find.match_prefix	接頭辞に一致する
+find.match_suffix	接尾辞に一致する
+find.wildcards	ワイルドカードを使用する
+find.match_width	半角と全角を区別する
+find.match_kana	ひらがなとカタカナを区別する
+find.ignore_punctuation	句読点を無視する
+find.ignore_whitespace	空白文字を無視する
+find.format	書式
+find.special	特殊文字
+find.no_format	書式の削除
+find.format.bold	太字
+find.format.not_bold	太字なし
+find.format.italic	斜体
+find.format.not_italic	斜体なし
+find.format.underline	下線
+find.format.no_underline	下線なし
+find.format.highlight	蛍光ペン
+find.format.no_highlight	蛍光ペンなし
+find.format.style	スタイル:
+find.special.paragraph	段落記号
+find.special.tab	タブ文字
+find.special.any_char	任意の 1 文字
+find.special.any_digit	任意の数字
+find.special.any_letter	任意の英字
+find.special.caret	キャレット記号
+find.special.column_break	段区切り
+find.special.em_dash	全角ダッシュ
+find.special.en_dash	半角ダッシュ
+find.special.line_break	任意指定の行区切り
+find.special.page_break	任意指定の改ページ
+find.special.nonbreaking_hyphen	改行をしないハイフン
+find.special.nonbreaking_space	改行をしないスペース
+find.special.optional_hyphen	任意指定のハイフン
+find.special.white_space	空白文字
+find.special.found_text	検索する文字列
+find.end_reached	文書の最後まで検索しました。
+find.start_reached	文書の先頭まで検索しました。
+find.not_found	検索項目は見つかりませんでした。
+find.bad_pattern	検索する文字列が正しくありません: {why}
+find.replaced_count	{n} 個の項目を置換しました。
