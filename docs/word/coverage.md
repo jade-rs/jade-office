@@ -72,7 +72,7 @@ evaluation shares one code path with fields that are tested
 | 1 | typing, Backspace, Delete | `jade-web/tests/new_documents.rs::a_blank_document_opens_and_takes_typing` <br> `jade-web/tests/edits_documents.rs::typing_deleting_and_undo_edit_the_text_and_repaint_the_page` |
 | 2 | IME composition | `jade-web/tests/edits_documents.rs::a_composition_replaces_itself_until_committed` <br> `jade-docx-native-render/tests/composition.rs::a_paragraph_reads_back_as_text` |
 | 3 | select word / paragraph / all | `jade-web/tests/edits_documents.rs::a_double_click_selects_a_word_and_a_triple_click_the_paragraph` <br> `jade-web/tests/edits_documents.rs::select_all_takes_every_paragraph` |
-| 4 | multi-range selection | **none** |
+| 4 | multi-range selection | `jade-gpui-app/src/word_views/select.rs::formatting_goes_on_every_range` <br> `core/jade-docx-native-render/tests/command_batches.rs::steps_merged_since_a_mark_undo_as_one` |
 | 5 | Enter splits, joins paragraphs | `jade-web/tests/edits_documents.rs::enter_splits_the_paragraph_and_the_caret_follows` <br> `jade-docx-editor/tests/word_schema.rs::joining_paragraphs_moves_a_floating_shape_as_authored` |
 | 6 | Shift+Enter, Tab | `jade-web/tests/edits_documents.rs::shift_enter_breaks_the_line_inside_the_paragraph` <br> `jade-web/tests/edits_documents.rs::tab_goes_from_cell_to_cell_and_adds_a_row_at_the_end` |
 | 7 | cut / copy | `jade-web/tests/clipboard_documents.rs::a_paragraph_copied_with_its_mark_keeps_its_style` <br> `jade-web/tests/edits_documents.rs::a_selection_is_highlighted_copied_and_replaced_by_typing` |
@@ -240,7 +240,7 @@ evaluation shares one code path with fields that are tested
 | 169 | snap to grid | `jade-web/tests/section_setup_documents.rs::a_paragraph_leaves_the_grid` |
 | 170 | RTL paragraphs | `jade-docx-reader/tests/generated_fixtures.rs::bidi_visual_alignment_fixture_preserves_justification_and_leading_indent` <br> `jade-docx-reader/src/numbering.rs::hebrew_and_arabic_formats` |
 | 171 | complex-script font & size | `jade-web/tests/thai_in_documents.rs::thai_is_measured_in_the_thai_face` <br> `jade-skia-painter/tests/font_fallback.rs::thai_after_latin_draws_in_the_thai_face` |
-| 172 | proofing language | `jade-docx-editor/src/typed_autoformat.rs::language_and_capitalization_options_are_respected` |
+| 172 | proofing language | `jade-office-model/tests/editing_aids_like_word.rs::a_language_is_set_and_detected` <br> `core/jade-docx-native-render/tests/proofing_language.rs::a_selection_takes_a_language_and_gives_it_back` |
 | 173 | full / half width | `core/jade-docx-reader/src/numbering.rs::formats_decimal_full_width_numbers` |
 | 174 | paper size | `jade-office-model/src/word/page.rs::papers_are_known_either_way_up` <br> `jade-web/tests/pages_documents.rs::the_page_takes_margins_orientation_paper_and_columns` |
 | 175 | orientation | `jade-web/tests/pages_documents.rs::the_page_takes_margins_orientation_paper_and_columns` <br> `jade-docx-native-render/tests/page_box.rs::a_page_turned_to_landscape_paints_as_one_opened_landscape` |
@@ -410,7 +410,7 @@ evaluation shares one code path with fields that are tested
 | 339 | tagged PDF | `jade-web/tests/new_documents.rs::every_page_goes_into_the_pdf` <br> `core/jade-docx-pdf-renderer/tests/pdf_fixtures.rs::renders_pdf_from_hello_fixture` |
 | 340 | compatibility checker | **none** |
 | 341 | .doc / RTF / text | **none** |
-| 342 | customise ribbon / QAT | **none** |
+| 342 | customise ribbon / QAT | `jade-gpui-app/src/word_views/prefs.rs::the_options_dialog_draws_and_takes_effect` <br> `jade-gpui-app/src/word_views/customize.rs::the_lists_round_trip_through_the_settings` |
 | 343 | ADVANCE | **none** |
 | 344 | ASK | `jade-docx-reader/src/parser.rs::parses_fragmented_ask_with_blank_default` <br> `jade-docx-editor/src/word_document.rs::extract_header_lines_hides_ask_saved_result_at_field_position` |
 | 345 | AUTHOR | **none** |
@@ -503,25 +503,25 @@ evaluation shares one code path with fields that are tested
 | 432 | OMML round trip | `jade-docx-reader/src/parser.rs::parses_inline_math_as_raw_omml` <br> `jade-docx-editor/src/canvas_renderer/math.rs::block_alignment_honors_omml_justification` |
 | 433 | math version matrix | **none** |
 | 434 | Print Layout | `jade-web/tests/opens_every_document.rs::every_document_opens_and_its_pages_paint` |
-| 435 | Web Layout | **none** |
-| 436 | Draft | **none** |
-| 437 | Outline view | **none** |
-| 438 | Read Mode | **none** |
-| 439 | Focus | **none** |
+| 435 | Web Layout | `jade-gpui-app/src/word_views/layout.rs::web_layout_wraps_to_the_window` <br> `core/jade-docx-native-render/tests/view_geometry.rs::the_text_wraps_to_the_view_and_comes_back` |
+| 436 | Draft | `jade-gpui-app/src/word_views.rs::movement_and_bands` <br> `jade-office-model/src/word/view.rs::the_band_is_the_page_between_its_margins` |
+| 437 | Outline view | `jade-gpui-app/src/word_views/outline.rs::the_outline_sets_levels_moves_and_shows` <br> `core/jade-docx-native-render/tests/view_geometry.rs::outline_indents_set_paragraphs_in` |
+| 438 | Read Mode | `jade-gpui-app/src/word_views/layout.rs::read_mode_turns_columns` |
+| 439 | Focus | `jade-gpui-app/src/word_views/modes.rs::focus_mode_comes_and_goes` |
 | 440 | vertical paging | `jade-web/tests/edits_documents.rs::up_and_down_cross_page_breaks` |
-| 441 | side-to-side paging | **none** |
-| 442 | one / many pages, page width | `jade-gpui-app/src/editor.rs::a_fitted_zoom_moves_to_the_nearest_stop` |
+| 441 | side-to-side paging | `jade-gpui-app/src/word_views.rs::movement_and_bands` <br> `jade-office-model/src/word/view.rs::the_scrolled_to_page_follows_rows_and_columns` |
+| 442 | one / many pages, page width | `jade-gpui-app/src/word_views.rs::the_zoom_fits_follow_the_window` <br> `jade-office-model/src/word/view.rs::fits_follow_the_window` |
 | 443 | zoom percentage | `jade-gpui-app/src/editor.rs::zoom_is_clamped_and_never_nan` |
 | 444 | horizontal ruler | **none** |
 | 445 | vertical ruler | **none** |
 | 446 | ruler units | `jade-web/tests/paragraphs_documents.rs::an_english_document_measures_in_millimetres_and_hanging_indents` |
-| 447 | gridlines | **none** |
+| 447 | gridlines | `jade-gpui-app/src/word_views.rs::gridlines_draw_over_the_page` <br> `jade-office-model/src/word/view.rs::the_grid_comes_from_the_settings` |
 | 448 | navigation pane view | `core/jade-docx-editor/src/headless_api.rs::document_outline_lists_every_navigation_pane_heading` |
 | 449 | formatting marks | `jade-docx-editor/src/canvas_renderer.rs::try_prepare_seek_start_allows_formatting_marks` |
-| 450 | hide white space | **none** |
-| 451 | new window | **none** |
-| 452 | split window | **none** |
-| 453 | editing / reviewing / viewing | `jade-docx-editor/src/canvas_renderer.rs::header_editing_mode_alone_keeps_body_top_stable` |
+| 450 | hide white space | `jade-gpui-app/src/word_views.rs::movement_and_bands` |
+| 451 | new window | `jade-gpui-app/src/word_views/split.rs::a_new_window_shows_the_same_document` |
+| 452 | split window | `jade-gpui-app/src/word_views/split.rs::a_split_pane_shows_and_takes_clicks` |
+| 453 | editing / reviewing / viewing | `jade-gpui-app/src/word_views/modes.rs::the_modes_guard_and_record` |
 | 454 | new blank document | `jade-web/tests/new_documents.rs::a_blank_document_opens_and_takes_typing` <br> `jade-office-model/src/word/new.rs::a_blank_document_is_a_package_word_reads` |
 | 455 | new from template | `jade-office-model/src/word/new.rs::a_template_opens_as_a_document` <br> `jade-web/tests/new_documents.rs::a_template_opens_as_a_document` |
 | 456 | open | `jade-web/tests/opens_every_document.rs::every_document_opens_and_its_pages_paint` |
@@ -550,28 +550,28 @@ evaluation shares one code path with fields that are tested
 | 479 | draw with touch | **none** |
 | 480 | ink to shape | **none** |
 | 481 | ink editor | **none** |
-| 482 | mini toolbar, live preview | **none** |
+| 482 | mini toolbar, live preview | `jade-gpui-app/src/word_views/mini.rs::a_previewed_size_shows_and_goes` <br> `jade-gpui-app/src/word_views/mini.rs::the_mini_toolbar_comes_with_a_mouse_selection` |
 | 483 | ScreenTips | **none** |
 | 484 | user name / initials | `jade-docx-editor/src/lib.rs::author_name_falls_back_when_unset_or_blank` |
-| 485 | overtype | **none** |
-| 486 | drag & drop | `core/jade-docx-native-render/tests/header_and_objects.rs::the_moves_of_one_drag_undo_together` <br> `jade-web/tests/tables_documents.rs::borders_drag_to_resize_columns_and_rows` |
-| 487 | default paste | **none** |
-| 488 | AutoCorrect / AutoFormat | `core/jade-docx-editor/src/typed_autoformat.rs::language_and_capitalization_options_are_respected` |
-| 489 | show marks & hidden text | `core/jade-docx-editor/src/canvas_renderer.rs::run_is_hidden_text_only_when_vanish_is_true` <br> `core/jade-docx-editor/src/canvas_renderer.rs::try_prepare_seek_start_allows_formatting_marks` |
+| 485 | overtype | `jade-gpui-app/src/word_views/input.rs::overtype_replaces_what_follows` |
+| 486 | drag & drop | `jade-gpui-app/src/word_views/select.rs::dragged_text_moves_or_copies` <br> `jade-web/tests/edits_documents.rs::a_double_click_takes_a_run_of_one_script` |
+| 487 | default paste | `jade-gpui-app/src/word_views/paste.rs::the_default_decides_what_a_paste_keeps` |
+| 488 | AutoCorrect / AutoFormat | `jade-office-model/src/word/autocorrect.rs::the_japanese_rules` <br> `jade-gpui-app/src/word_views/input.rs::markers_and_dashes_format_as_typed` |
+| 489 | show marks & hidden text | `core/jade-docx-native-render/tests/formatting_mark_kinds.rs::marks_show_by_kind` <br> `core/jade-docx-native-render/tests/formatting_mark_kinds.rs::hidden_text_is_laid_out_when_shown` |
 | 490 | update before print | **none** |
 | 491 | print backgrounds / hidden | **none** |
 | 492 | image compression | **none** |
 | 493 | AutoRecover options | **none** |
 | 494 | font embedding | `core/jade-docx-reader/src/font_table.rs::parses_embedded_font_references` |
-| 495 | ribbon tabs | `jade-web/tests/section_setup_documents.rs::the_ribbon_shows_and_sets_the_caret_section` <br> `jade-web/tests/paragraphs_documents.rs::the_ribbon_line_spacing_reads_back` |
-| 496 | context tabs & menus | **none** |
+| 495 | ribbon tabs | `jade-gpui-app/src/word_views/prefs.rs::the_options_dialog_draws_and_takes_effect` <br> `jade-web/tests/edits_documents.rs::formatting_marks_toggle_from_the_view_tab` |
+| 496 | context tabs & menus | `jade-gpui-app/src/word_views/context.rs::the_table_menu_inserts_a_row` <br> `jade-office-model/src/word/context_menu.rs::each_target_has_word_s_items` |
 | 497 | find | `jade-web/tests/finds_documents.rs::the_options_narrow_what_is_found` <br> `core/jade-docx-native-render/tests/search_and_paragraph_format.rs::an_empty_query_finds_nothing` |
 | 498 | replace | `jade-web/tests/finds_documents.rs::replace_all_is_one_undo_step` <br> `jade-web/tests/finds_documents.rs::a_failed_batch_takes_back_what_it_did` |
 | 499 | match case | `jade-office-model/src/word/find.rs::case_folds_unless_asked_not_to` <br> `jade-web/tests/finds_documents.rs::the_options_narrow_what_is_found` |
 | 500 | whole words | `jade-office-model/src/word/find.rs::whole_words_skip_matches_inside_a_word` |
-| 501 | wildcards | **none** |
-| 502 | wildcard groups | **none** |
-| 503 | special characters | **none** |
-| 504 | find formatting | **none** |
-| 505 | scope & direction | `jade-web/tests/finds_documents.rs::the_options_narrow_what_is_found` |
+| 501 | wildcards | `jade-office-model/src/word/search.rs::word_wildcards` <br> `jade-office-model/tests/editing_aids_like_word.rs::wildcards_find_and_groups_replace` |
+| 502 | wildcard groups | `jade-office-model/tests/editing_aids_like_word.rs::wildcards_find_and_groups_replace` <br> `jade-gpui-app/src/word_views/find.rs::the_dialog_replaces_with_wildcards` |
+| 503 | special characters | `jade-office-model/src/word/search.rs::special_characters` <br> `jade-office-model/tests/editing_aids_like_word.rs::paragraph_marks_are_found_and_put_in` |
+| 504 | find formatting | `jade-office-model/tests/editing_aids_like_word.rs::formatting_is_found_and_given` |
+| 505 | scope & direction | `jade-office-model/tests/editing_aids_like_word.rs::direction_and_selection_scope` <br> `jade-gpui-app/src/word_views/find.rs::find_next_follows_the_direction` |
 | 506 | Go To | **none** |
