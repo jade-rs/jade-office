@@ -9,17 +9,19 @@
 //! shell runs too.
 
 use gpui::{
-    div, prelude::*, px, AnyElement, ClickEvent, Context, CursorStyle, MouseButton,
-    MouseDownEvent, MouseMoveEvent, SharedString, Window,
+    div, prelude::*, px, AnyElement, ClickEvent, Context, CursorStyle, MouseButton, MouseDownEvent,
+    MouseMoveEvent, SharedString, Window,
 };
 use jade_office_model::word::table::{
-    AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field, LookOption,
-    Pen, PropertiesTab, SortKind as HeadlessTableSortKind, TablePart, TablePropertiesDialog,
-    WordTables, MM_PER_PT,
+    AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field, LookOption, Pen,
+    PropertiesTab, SortKind as HeadlessTableSortKind, TablePart, TablePropertiesDialog, WordTables,
+    MM_PER_PT,
 };
 use jade_office_model::word::{FormatState, TableCommand, WordSession};
 
-use crate::ribbon::{dropdown, group, listener, menu_caption, menu_panel, menu_row, row, Action, Popup};
+use crate::ribbon::{
+    dropdown, group, listener, menu_caption, menu_panel, menu_row, row, Action, Popup,
+};
 use crate::tooltip::Tooltip;
 use crate::{t, theme, DocumentView};
 
@@ -41,7 +43,7 @@ const FUNCTIONS: [&str; 9] = [
 ];
 
 pub use jade_office_model::word::table_ui::{
-    DialogBox, Separator, TableAction, TableCursor, TableDialog, TableDrag, TableOutcome,
+    DialogBox, Separator, SortSlot, TableAction, TableCursor, TableDialog, TableDrag, TableOutcome,
     TableTools as TableUi,
 };
 
@@ -161,7 +163,11 @@ fn text_button(
         .rounded_md()
         .text_xs()
         .whitespace_nowrap()
-        .text_color(if enabled { theme::text() } else { theme::text_faint() })
+        .text_color(if enabled {
+            theme::text()
+        } else {
+            theme::text_faint()
+        })
         .when(active, |button| button.bg(theme::selected()))
         .when(enabled, |button| {
             button
@@ -194,7 +200,11 @@ fn list_button(
         .rounded_md()
         .text_xs()
         .whitespace_nowrap()
-        .text_color(if enabled { theme::text() } else { theme::text_faint() })
+        .text_color(if enabled {
+            theme::text()
+        } else {
+            theme::text_faint()
+        })
         .when(open, |button| button.bg(theme::selected()))
         .when(enabled, |button| {
             button
@@ -257,7 +267,9 @@ pub fn design_groups(
 
     let styles = view.document.table_styles();
     let current = view.document.table_style_id();
-    let tile = |index: usize, style: &jade_office_model::word::table::TableStyleChoice, cx: &mut Context<DocumentView>| {
+    let tile = |index: usize,
+                style: &jade_office_model::word::table::TableStyleChoice,
+                cx: &mut Context<DocumentView>| {
         let (header, band, border) = style.preview.clone();
         let color = |value: Option<String>, fallback: u32| {
             value
@@ -283,7 +295,10 @@ pub fn design_groups(
             .when(in_table, |tile| {
                 tile.cursor_pointer()
                     .hover(|tile| tile.border_color(theme::accent()))
-                    .on_click(listener(tables(TableAction::Style(Some(style.id.clone()))), cx))
+                    .on_click(listener(
+                        tables(TableAction::Style(Some(style.id.clone()))),
+                        cx,
+                    ))
             })
             .tooltip(Tooltip::text(style.name.clone()))
             .children((0..4).map(move |row| {
@@ -301,7 +316,12 @@ pub fn design_groups(
             }))
             .into_any_element()
     };
-    let inline: Vec<AnyElement> = styles.iter().take(6).enumerate().map(|(index, style)| tile(index, style, cx)).collect();
+    let inline: Vec<AnyElement> = styles
+        .iter()
+        .take(6)
+        .enumerate()
+        .map(|(index, style)| tile(index, style, cx))
+        .collect();
     let menu = (open == Some(Popup::TableStyles)).then(|| {
         menu_panel("table-styles-menu")
             .w(px(260.0))
@@ -420,7 +440,14 @@ pub fn design_groups(
             vec![row(inline
                 .into_iter()
                 .chain([dropdown(
-                    list_button("table-styles", "table.more_styles", in_table, open == Some(Popup::TableStyles), Popup::TableStyles, cx),
+                    list_button(
+                        "table-styles",
+                        "table.more_styles",
+                        in_table,
+                        open == Some(Popup::TableStyles),
+                        Popup::TableStyles,
+                        cx,
+                    ),
                     menu,
                 )])
                 .collect())],
@@ -430,25 +457,60 @@ pub fn design_groups(
             vec![
                 row(vec![
                     dropdown(
-                        list_button("table-shading", "table.shading", in_table, open == Some(Popup::TableShading), Popup::TableShading, cx),
+                        list_button(
+                            "table-shading",
+                            "table.shading",
+                            in_table,
+                            open == Some(Popup::TableShading),
+                            Popup::TableShading,
+                            cx,
+                        ),
                         shading_menu,
                     ),
                     dropdown(
-                        list_button("pen-style", "table.pen_style", in_table, open == Some(Popup::PenStyle), Popup::PenStyle, cx),
+                        list_button(
+                            "pen-style",
+                            "table.pen_style",
+                            in_table,
+                            open == Some(Popup::PenStyle),
+                            Popup::PenStyle,
+                            cx,
+                        ),
                         style_menu,
                     ),
                     dropdown(
-                        list_button("pen-width", "table.pen_width", in_table, open == Some(Popup::PenWidth), Popup::PenWidth, cx),
+                        list_button(
+                            "pen-width",
+                            "table.pen_width",
+                            in_table,
+                            open == Some(Popup::PenWidth),
+                            Popup::PenWidth,
+                            cx,
+                        ),
                         width_menu,
                     ),
                 ]),
                 row(vec![
                     dropdown(
-                        list_button("pen-color", "table.pen_color", in_table, open == Some(Popup::PenColor), Popup::PenColor, cx),
+                        list_button(
+                            "pen-color",
+                            "table.pen_color",
+                            in_table,
+                            open == Some(Popup::PenColor),
+                            Popup::PenColor,
+                            cx,
+                        ),
                         color_menu,
                     ),
                     dropdown(
-                        list_button("border-sets", "table.border_sets", in_table, open == Some(Popup::BorderSets), Popup::BorderSets, cx),
+                        list_button(
+                            "border-sets",
+                            "table.border_sets",
+                            in_table,
+                            open == Some(Popup::BorderSets),
+                            Popup::BorderSets,
+                            cx,
+                        ),
                         sets_menu,
                     ),
                     text_button(
@@ -528,7 +590,13 @@ pub fn layout_groups(
                 .into_iter()
                 .enumerate()
                 .map(|(index, (part, key))| {
-                    menu_row(("table-select", index), t(key), false, tables(TableAction::Select(part)), cx)
+                    menu_row(
+                        ("table-select", index),
+                        t(key),
+                        false,
+                        tables(TableAction::Select(part)),
+                        cx,
+                    )
                 }),
             )
             .into_any_element()
@@ -537,7 +605,14 @@ pub fn layout_groups(
         t("table.group.table"),
         vec![
             row(vec![dropdown(
-                list_button("table-select", "table.select", in_table, open == Some(Popup::TableSelect), Popup::TableSelect, cx),
+                list_button(
+                    "table-select",
+                    "table.select",
+                    in_table,
+                    open == Some(Popup::TableSelect),
+                    Popup::TableSelect,
+                    cx,
+                ),
                 select_menu,
             )]),
             row(vec![text_button(
@@ -619,19 +694,35 @@ pub fn layout_groups(
                 .into_iter()
                 .enumerate()
                 .map(|(index, (fit, key))| {
-                    menu_row(("autofit", index), t(key), false, tables(TableAction::AutoFit(fit)), cx)
+                    menu_row(
+                        ("autofit", index),
+                        t(key),
+                        false,
+                        tables(TableAction::AutoFit(fit)),
+                        cx,
+                    )
                 }),
             )
             .into_any_element()
     });
     let (width, height) = view.document.cell_size().unwrap_or((0.0, 0.0));
-    let stepper = |id: &'static str, caption: &'static str, value: f32, grow: TableAction, shrink: TableAction, cx: &mut Context<DocumentView>| {
+    let stepper = |id: &'static str,
+                   caption: &'static str,
+                   value: f32,
+                   grow: TableAction,
+                   shrink: TableAction,
+                   cx: &mut Context<DocumentView>| {
         div()
             .flex()
             .items_center()
             .gap_1()
             .text_xs()
-            .child(div().w(px(24.0)).text_color(theme::text_dim()).child(t(caption)))
+            .child(
+                div()
+                    .w(px(24.0))
+                    .text_color(theme::text_dim())
+                    .child(t(caption)),
+            )
             .child(
                 div()
                     .w(px(56.0))
@@ -641,8 +732,24 @@ pub fn layout_groups(
                     .border_color(theme::border())
                     .child(format!("{} mm", mm(value))),
             )
-            .child(text_button((id, 0usize), "table.step_down", "table.step_down", false, in_table, tables(shrink), cx))
-            .child(text_button((id, 1usize), "table.step_up", "table.step_up", false, in_table, tables(grow), cx))
+            .child(text_button(
+                (id, 0usize),
+                "table.step_down",
+                "table.step_down",
+                false,
+                in_table,
+                tables(shrink),
+                cx,
+            ))
+            .child(text_button(
+                (id, 1usize),
+                "table.step_up",
+                "table.step_up",
+                false,
+                in_table,
+                tables(grow),
+                cx,
+            ))
             .into_any_element()
     };
     let size_group = group(
@@ -650,7 +757,14 @@ pub fn layout_groups(
         vec![
             row(vec![
                 dropdown(
-                    list_button("autofit", "table.autofit", in_table, open == Some(Popup::AutoFit), Popup::AutoFit, cx),
+                    list_button(
+                        "autofit",
+                        "table.autofit",
+                        in_table,
+                        open == Some(Popup::AutoFit),
+                        Popup::AutoFit,
+                        cx,
+                    ),
                     autofit_menu,
                 ),
                 stepper(
@@ -717,7 +831,10 @@ pub fn layout_groups(
                             button
                                 .cursor_pointer()
                                 .hover(|button| button.bg(theme::hovered()))
-                                .on_click(listener(tables(TableAction::Align(horizontal, vertical)), cx))
+                                .on_click(listener(
+                                    tables(TableAction::Align(horizontal, vertical)),
+                                    cx,
+                                ))
                         })
                         .tooltip(Tooltip::text(t(match (vertical, horizontal) {
                             ("top", "left") => "table.align.top_left",
@@ -734,7 +851,11 @@ pub fn layout_groups(
                             gpui::svg()
                                 .path(icon)
                                 .size(px(12.0))
-                                .text_color(if in_table { theme::text() } else { theme::text_faint() }),
+                                .text_color(if in_table {
+                                    theme::text()
+                                } else {
+                                    theme::text_faint()
+                                }),
                         )
                         .into_any_element()
                 })
@@ -781,7 +902,14 @@ pub fn layout_groups(
                     .flex_col()
                     .gap_0p5()
                     .child(dropdown(
-                        list_button("text-direction", "table.text_direction", in_table, open == Some(Popup::TextDirection), Popup::TextDirection, cx),
+                        list_button(
+                            "text-direction",
+                            "table.text_direction",
+                            in_table,
+                            open == Some(Popup::TextDirection),
+                            Popup::TextDirection,
+                            cx,
+                        ),
                         direction_menu,
                     ))
                     .child(text_button(
@@ -801,7 +929,15 @@ pub fn layout_groups(
         t("table.group.data"),
         vec![
             row(vec![
-                text_button("sort", "table.sort", "table.sort_title", false, in_table, tables(TableAction::Sort), cx),
+                text_button(
+                    "sort",
+                    "table.sort",
+                    "table.sort_title",
+                    false,
+                    in_table,
+                    tables(TableAction::Sort),
+                    cx,
+                ),
                 text_button(
                     "repeat-header",
                     "table.repeat_header",
@@ -811,10 +947,26 @@ pub fn layout_groups(
                     Action::Table(TableCommand::RepeatHeader(!repeat)),
                     cx,
                 ),
-                text_button("to-text", "table.to_text", "table.to_text_title", false, in_table, tables(TableAction::ToText), cx),
+                text_button(
+                    "to-text",
+                    "table.to_text",
+                    "table.to_text_title",
+                    false,
+                    in_table,
+                    tables(TableAction::ToText),
+                    cx,
+                ),
             ]),
             row(vec![
-                text_button("formula", "table.formula", "table.formula_title", false, in_table, tables(TableAction::Formula), cx),
+                text_button(
+                    "formula",
+                    "table.formula",
+                    "table.formula_title",
+                    false,
+                    in_table,
+                    tables(TableAction::Formula),
+                    cx,
+                ),
                 text_button(
                     "update-formulas",
                     "table.update_formulas",
@@ -839,8 +991,20 @@ pub fn layout_groups(
 /// 挿入 ▸ 表's list, under the grid: 罫線を引く and 文字列を表にする.
 pub fn insert_menu_rows(cx: &mut Context<DocumentView>) -> Vec<AnyElement> {
     vec![
-        menu_row("menu-draw-table", t("table.draw"), false, tables(TableAction::Tool(DrawTool::Pencil)), cx),
-        menu_row("menu-to-table", t("table.to_table"), false, tables(TableAction::ToTable), cx),
+        menu_row(
+            "menu-draw-table",
+            t("table.draw"),
+            false,
+            tables(TableAction::Tool(DrawTool::Pencil)),
+            cx,
+        ),
+        menu_row(
+            "menu-to-table",
+            t("table.to_table"),
+            false,
+            tables(TableAction::ToTable),
+            cx,
+        ),
     ]
 }
 
@@ -868,7 +1032,11 @@ impl DocumentView {
 
     /// The tail of a table command: the caret where it went, every page
     /// re-read.
-    pub(crate) fn table_done(&mut self, result: Result<Option<(usize, usize)>, String>, cx: &mut Context<Self>) {
+    pub(crate) fn table_done(
+        &mut self,
+        result: Result<Option<(usize, usize)>, String>,
+        cx: &mut Context<Self>,
+    ) {
         match result {
             Ok(Some(caret)) => self.ribbon_moved(Ok(caret), cx),
             Ok(None) => {
@@ -914,7 +1082,11 @@ impl DocumentView {
 
     /// Keys while a table dialog is open: Enter is OK, Escape cancels,
     /// Backspace edits the focused box and other text types into it.
-    pub(crate) fn handle_table_dialog_key(&mut self, event: &gpui::KeyDownEvent, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn handle_table_dialog_key(
+        &mut self,
+        event: &gpui::KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let keystroke = &event.keystroke;
         if keystroke.modifiers.platform || keystroke.modifiers.control {
             return false;
@@ -943,9 +1115,9 @@ impl DocumentView {
         event: &MouseDownEvent,
         cx: &mut Context<Self>,
     ) -> bool {
-        let outcome = self
-            .tables
-            .mouse_down(&mut self.document, page, (x, document_y), event.click_count);
+        let outcome =
+            self.tables
+                .mouse_down(&mut self.document, page, (x, document_y), event.click_count);
         if outcome == TableOutcome::NotMine {
             return false;
         }
@@ -956,9 +1128,16 @@ impl DocumentView {
 
     /// The pointer moved with the button down: a border or the pencil
     /// follows it; a drag from one cell into another selects whole cells.
-    pub(crate) fn table_mouse_drag(&mut self, page: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn table_mouse_drag(
+        &mut self,
+        page: usize,
+        event: &MouseMoveEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let point = self.page_point(page, event.position);
-        let outcome = self.tables.mouse_drag(&mut self.document, point, self.drag_anchor);
+        let outcome = self
+            .tables
+            .mouse_drag(&mut self.document, point, self.drag_anchor);
         if outcome == TableOutcome::NotMine {
             return false;
         }
@@ -978,16 +1157,21 @@ impl DocumentView {
 
     /// The button came up: a dragged border lands, a pencil stroke draws.
     pub(crate) fn table_mouse_up(&mut self, cx: &mut Context<Self>) {
-        let outcome = self
-            .tables
-            .mouse_up(&mut self.document, |document, x, y| document.position_at(x, y));
+        let outcome = self.tables.mouse_up(&mut self.document, |document, x, y| {
+            document.position_at(x, y)
+        });
         if outcome != TableOutcome::NotMine {
             self.table_outcome(outcome, cx);
         }
     }
 
     /// The pointer moved without a button: what it is over decides its shape.
-    pub(crate) fn table_hover(&mut self, page: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+    pub(crate) fn table_hover(
+        &mut self,
+        page: usize,
+        event: &MouseMoveEvent,
+        cx: &mut Context<Self>,
+    ) {
         let point = self.page_point(page, event.position);
         if self.tables.hover(&self.document, point) {
             cx.notify();
@@ -1105,7 +1289,11 @@ impl DocumentView {
             TableDialog::Properties(properties) => properties_body(properties, cx),
             TableDialog::Borders(borders) => borders_body(borders, cx),
             TableDialog::Cells { delete, shift } => cells_body(*delete, *shift, cx),
-            TableDialog::Split { columns, rows, focus } => split_body(columns, rows, *focus, cx),
+            TableDialog::Split {
+                columns,
+                rows,
+                focus,
+            } => split_body(columns, rows, *focus, cx),
             TableDialog::ToTable {
                 separator,
                 other,
@@ -1113,7 +1301,11 @@ impl DocumentView {
                 focus,
             } => to_table_body(*separator, other, columns, *focus, cx),
             TableDialog::ToText { separator, other } => to_text_body(*separator, other, cx),
-            TableDialog::Sort { keys, header, headings } => sort_body(keys, *header, headings, cx),
+            TableDialog::Sort {
+                keys,
+                header,
+                headings,
+            } => sort_body(keys, *header, headings, cx),
             TableDialog::Formula { formula, format } => formula_body(formula, format, cx),
         };
         let width = match dialog {
@@ -1156,18 +1348,19 @@ impl DocumentView {
                                 .justify_end()
                                 .gap_2()
                                 .child(
-                                    chip("table-dialog-cancel", t("format.cancel"), false).on_click(cx.listener(
-                                        |view, _: &ClickEvent, _: &mut Window, cx| {
-                                            view.tables.dialog = None;
-                                            cx.notify();
-                                        },
-                                    )),
+                                    chip("table-dialog-cancel", t("format.cancel"), false)
+                                        .on_click(cx.listener(
+                                            |view, _: &ClickEvent, _: &mut Window, cx| {
+                                                view.tables.dialog = None;
+                                                cx.notify();
+                                            },
+                                        )),
                                 )
-                                .child(
-                                    chip("table-dialog-ok", t("format.ok"), true).on_click(cx.listener(
-                                        |view, _: &ClickEvent, _: &mut Window, cx| view.apply_table_dialog(cx),
-                                    )),
-                                ),
+                                .child(chip("table-dialog-ok", t("format.ok"), true).on_click(
+                                    cx.listener(|view, _: &ClickEvent, _: &mut Window, cx| {
+                                        view.apply_table_dialog(cx)
+                                    }),
+                                )),
                         ),
                 ),
         )
@@ -1224,7 +1417,11 @@ fn number_box(
                 .px_1()
                 .rounded_sm()
                 .border_1()
-                .border_color(if focused { theme::accent() } else { theme::border() })
+                .border_color(if focused {
+                    theme::accent()
+                } else {
+                    theme::border()
+                })
                 .bg(theme::window())
                 .cursor_pointer()
                 .child(dialog.value(field).to_string())
@@ -1243,25 +1440,28 @@ fn number_box(
 }
 
 fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView>) -> AnyElement {
-    let tabs = PropertiesTab::ALL.iter().enumerate().map(|(index, tab)| {
-        let tab = *tab;
-        chip(
-            ("properties-tab", index),
-            t(match tab {
-                PropertiesTab::Table => "table.tab.table",
-                PropertiesTab::Row => "table.tab.row",
-                PropertiesTab::Column => "table.tab.column",
-                PropertiesTab::Cell => "table.tab.cell",
-            }),
-            dialog.tab == tab,
-        )
-        .on_click(props(cx, move |dialog| {
-            dialog.tab = tab;
-            dialog.focus = None;
-        }))
-        .into_any_element()
-    })
-    .collect::<Vec<_>>();
+    let tabs = PropertiesTab::ALL
+        .iter()
+        .enumerate()
+        .map(|(index, tab)| {
+            let tab = *tab;
+            chip(
+                ("properties-tab", index),
+                t(match tab {
+                    PropertiesTab::Table => "table.tab.table",
+                    PropertiesTab::Row => "table.tab.row",
+                    PropertiesTab::Column => "table.tab.column",
+                    PropertiesTab::Cell => "table.tab.cell",
+                }),
+                dialog.tab == tab,
+            )
+            .on_click(props(cx, move |dialog| {
+                dialog.tab = tab;
+                dialog.focus = None;
+            }))
+            .into_any_element()
+        })
+        .collect::<Vec<_>>();
     let mm_unit = "mm";
     let body = match dialog.tab {
         PropertiesTab::Table => {
@@ -1275,8 +1475,17 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
                             checkbox("width-on", t("table.prop.width"), dialog.width_on)
                                 .on_click(props(cx, |dialog| dialog.width_on = !dialog.width_on)),
                         )
-                        .child(number_box(dialog, Field::TableWidth, if dialog.width_percent { "%" } else { mm_unit }, cx))
-                        .child(div().text_color(theme::text_dim()).child(t("table.prop.unit")))
+                        .child(number_box(
+                            dialog,
+                            Field::TableWidth,
+                            if dialog.width_percent { "%" } else { mm_unit },
+                            cx,
+                        ))
+                        .child(
+                            div()
+                                .text_color(theme::text_dim())
+                                .child(t("table.prop.unit")),
+                        )
                         .child(
                             chip("unit-mm", "mm", !dialog.width_percent)
                                 .on_click(props(cx, |dialog| dialog.width_percent = false)),
@@ -1287,18 +1496,31 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
                         ),
                 )
                 .child(
-                    line()
-                        .child(label("table.prop.alignment"))
-                        .children(
-                            [("left", "table.prop.left"), ("center", "table.prop.center"), ("right", "table.prop.right")]
-                                .into_iter()
-                                .map(|(value, key)| {
-                                    chip(SharedString::from(format!("table-align-{value}")), t(key), dialog.alignment == value)
-                                        .on_click(props(cx, move |dialog| dialog.alignment = value.to_string()))
-                                }),
-                        ),
+                    line().child(label("table.prop.alignment")).children(
+                        [
+                            ("left", "table.prop.left"),
+                            ("center", "table.prop.center"),
+                            ("right", "table.prop.right"),
+                        ]
+                        .into_iter()
+                        .map(|(value, key)| {
+                            chip(
+                                SharedString::from(format!("table-align-{value}")),
+                                t(key),
+                                dialog.alignment == value,
+                            )
+                            .on_click(props(cx, move |dialog| {
+                                dialog.alignment = value.to_string()
+                            }))
+                        }),
+                    ),
                 )
-                .child(line().child(label("table.prop.indent")).child(number_box(dialog, Field::Indent, mm_unit, cx)))
+                .child(line().child(label("table.prop.indent")).child(number_box(
+                    dialog,
+                    Field::Indent,
+                    mm_unit,
+                    cx,
+                )))
                 .child(
                     line()
                         .child(label("table.prop.wrapping"))
@@ -1311,17 +1533,21 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
                                 .on_click(props(cx, |dialog| dialog.floating = true)),
                         )
                         .child(
-                            chip("position-open", t("table.prop.position"), dialog.position_open).on_click(props(
-                                cx,
-                                |dialog| {
-                                    dialog.position_open = !dialog.position_open;
-                                    dialog.floating = true;
-                                },
-                            )),
+                            chip(
+                                "position-open",
+                                t("table.prop.position"),
+                                dialog.position_open,
+                            )
+                            .on_click(props(cx, |dialog| {
+                                dialog.position_open = !dialog.position_open;
+                                dialog.floating = true;
+                            })),
                         )
                         .child(
                             chip("options-open", t("table.prop.options"), dialog.options_open)
-                                .on_click(props(cx, |dialog| dialog.options_open = !dialog.options_open)),
+                                .on_click(props(cx, |dialog| {
+                                    dialog.options_open = !dialog.options_open
+                                })),
                         ),
                 );
             if dialog.position_open {
@@ -1355,8 +1581,14 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
                         .child(
                             line()
                                 .child(
-                                    checkbox("spacing-on", t("table.prop.spacing"), dialog.spacing_on)
-                                        .on_click(props(cx, |dialog| dialog.spacing_on = !dialog.spacing_on)),
+                                    checkbox(
+                                        "spacing-on",
+                                        t("table.prop.spacing"),
+                                        dialog.spacing_on,
+                                    )
+                                    .on_click(props(cx, |dialog| {
+                                        dialog.spacing_on = !dialog.spacing_on
+                                    })),
                                 )
                                 .child(number_box(dialog, Field::Spacing, mm_unit, cx)),
                         )
@@ -1380,11 +1612,21 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
             .child(
                 line()
                     .child(
-                        checkbox("row-height-on", t("table.prop.height"), dialog.row_height_on)
-                            .on_click(props(cx, |dialog| dialog.row_height_on = !dialog.row_height_on)),
+                        checkbox(
+                            "row-height-on",
+                            t("table.prop.height"),
+                            dialog.row_height_on,
+                        )
+                        .on_click(props(cx, |dialog| {
+                            dialog.row_height_on = !dialog.row_height_on
+                        })),
                     )
                     .child(number_box(dialog, Field::RowHeight, mm_unit, cx))
-                    .child(div().text_color(theme::text_dim()).child(t("table.prop.height_rule")))
+                    .child(
+                        div()
+                            .text_color(theme::text_dim())
+                            .child(t("table.prop.height_rule")),
+                    )
                     .child(
                         chip("rule-at-least", t("table.prop.at_least"), !dialog.row_exact)
                             .on_click(props(cx, |dialog| dialog.row_exact = false)),
@@ -1395,12 +1637,22 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
                     ),
             )
             .child(
-                checkbox("allow-break", t("table.prop.allow_break"), dialog.allow_break)
-                    .on_click(props(cx, |dialog| dialog.allow_break = !dialog.allow_break)),
+                checkbox(
+                    "allow-break",
+                    t("table.prop.allow_break"),
+                    dialog.allow_break,
+                )
+                .on_click(props(cx, |dialog| dialog.allow_break = !dialog.allow_break)),
             )
             .child(
-                checkbox("repeat-header", t("table.prop.repeat_header"), dialog.repeat_header)
-                    .on_click(props(cx, |dialog| dialog.repeat_header = !dialog.repeat_header)),
+                checkbox(
+                    "repeat-header",
+                    t("table.prop.repeat_header"),
+                    dialog.repeat_header,
+                )
+                .on_click(props(cx, |dialog| {
+                    dialog.repeat_header = !dialog.repeat_header
+                })),
             ),
         PropertiesTab::Column => div()
             .flex()
@@ -1414,8 +1666,14 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
             .child(
                 line()
                     .child(
-                        checkbox("column-width-on", t("table.prop.width"), dialog.column_width_on)
-                            .on_click(props(cx, |dialog| dialog.column_width_on = !dialog.column_width_on)),
+                        checkbox(
+                            "column-width-on",
+                            t("table.prop.width"),
+                            dialog.column_width_on,
+                        )
+                        .on_click(props(cx, |dialog| {
+                            dialog.column_width_on = !dialog.column_width_on
+                        })),
                     )
                     .child(number_box(dialog, Field::ColumnWidth, mm_unit, cx)),
             ),
@@ -1428,7 +1686,9 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
                     line()
                         .child(
                             checkbox("cell-width-on", t("table.prop.width"), dialog.cell_width_on)
-                                .on_click(props(cx, |dialog| dialog.cell_width_on = !dialog.cell_width_on)),
+                                .on_click(props(cx, |dialog| {
+                                    dialog.cell_width_on = !dialog.cell_width_on
+                                })),
                         )
                         .child(number_box(dialog, Field::CellWidth, mm_unit, cx)),
                 )
@@ -1436,16 +1696,32 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
                     line()
                         .child(label("table.prop.vertical"))
                         .children(
-                            [("top", "table.prop.top"), ("center", "table.prop.center"), ("bottom", "table.prop.bottom")]
-                                .into_iter()
-                                .map(|(value, key)| {
-                                    chip(SharedString::from(format!("cell-valign-{value}")), t(key), dialog.vertical_align == value)
-                                        .on_click(props(cx, move |dialog| dialog.vertical_align = value.to_string()))
-                                }),
+                            [
+                                ("top", "table.prop.top"),
+                                ("center", "table.prop.center"),
+                                ("bottom", "table.prop.bottom"),
+                            ]
+                            .into_iter()
+                            .map(|(value, key)| {
+                                chip(
+                                    SharedString::from(format!("cell-valign-{value}")),
+                                    t(key),
+                                    dialog.vertical_align == value,
+                                )
+                                .on_click(props(cx, move |dialog| {
+                                    dialog.vertical_align = value.to_string()
+                                }))
+                            }),
                         )
                         .child(
-                            chip("cell-options-open", t("table.prop.options"), dialog.cell_options_open)
-                                .on_click(props(cx, |dialog| dialog.cell_options_open = !dialog.cell_options_open)),
+                            chip(
+                                "cell-options-open",
+                                t("table.prop.options"),
+                                dialog.cell_options_open,
+                            )
+                            .on_click(props(cx, |dialog| {
+                                dialog.cell_options_open = !dialog.cell_options_open
+                            })),
                         ),
                 );
             if dialog.cell_options_open {
@@ -1459,8 +1735,14 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentView
                         .border_1()
                         .border_color(theme::border())
                         .child(
-                            checkbox("cell-margins-same", t("table.prop.same_as_table"), dialog.cell_margins_same)
-                                .on_click(props(cx, |dialog| dialog.cell_margins_same = !dialog.cell_margins_same)),
+                            checkbox(
+                                "cell-margins-same",
+                                t("table.prop.same_as_table"),
+                                dialog.cell_margins_same,
+                            )
+                            .on_click(props(cx, |dialog| {
+                                dialog.cell_margins_same = !dialog.cell_margins_same
+                            })),
                         )
                         .child(
                             line()
@@ -1505,8 +1787,16 @@ fn position_section(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentVie
         ("center", "table.prop.center"),
         ("bottom", "table.prop.bottom"),
     ];
-    let anchors_x = [("margin", "table.prop.anchor_margin"), ("page", "table.prop.anchor_page"), ("text", "table.prop.anchor_column")];
-    let anchors_y = [("margin", "table.prop.anchor_margin"), ("page", "table.prop.anchor_page"), ("text", "table.prop.anchor_paragraph")];
+    let anchors_x = [
+        ("margin", "table.prop.anchor_margin"),
+        ("page", "table.prop.anchor_page"),
+        ("text", "table.prop.anchor_column"),
+    ];
+    let anchors_y = [
+        ("margin", "table.prop.anchor_margin"),
+        ("page", "table.prop.anchor_page"),
+        ("text", "table.prop.anchor_paragraph"),
+    ];
     div()
         .flex()
         .flex_col()
@@ -1519,31 +1809,59 @@ fn position_section(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentVie
         .child(
             line()
                 .children(horizontal.into_iter().map(|(value, key)| {
-                    chip(SharedString::from(format!("pos-x-{value}")), t(key), dialog.position_x_align.as_deref() == Some(value))
-                        .on_click(props(cx, move |dialog| dialog.position_x_align = Some(value.to_string())))
+                    chip(
+                        SharedString::from(format!("pos-x-{value}")),
+                        t(key),
+                        dialog.position_x_align.as_deref() == Some(value),
+                    )
+                    .on_click(props(cx, move |dialog| {
+                        dialog.position_x_align = Some(value.to_string())
+                    }))
                 }))
                 .child(number_box(dialog, Field::PositionHorizontal, mm_unit, cx)),
         )
         .child(
-            line().child(label("table.prop.relative_to")).children(anchors_x.into_iter().map(|(value, key)| {
-                chip(SharedString::from(format!("anchor-x-{value}")), t(key), dialog.horizontal_anchor == value)
-                    .on_click(props(cx, move |dialog| dialog.horizontal_anchor = value.to_string()))
-            })),
+            line()
+                .child(label("table.prop.relative_to"))
+                .children(anchors_x.into_iter().map(|(value, key)| {
+                    chip(
+                        SharedString::from(format!("anchor-x-{value}")),
+                        t(key),
+                        dialog.horizontal_anchor == value,
+                    )
+                    .on_click(props(cx, move |dialog| {
+                        dialog.horizontal_anchor = value.to_string()
+                    }))
+                })),
         )
         .child(menu_caption(t("table.prop.vertical_position")))
         .child(
             line()
                 .children(vertical.into_iter().map(|(value, key)| {
-                    chip(SharedString::from(format!("pos-y-{value}")), t(key), dialog.position_y_align.as_deref() == Some(value))
-                        .on_click(props(cx, move |dialog| dialog.position_y_align = Some(value.to_string())))
+                    chip(
+                        SharedString::from(format!("pos-y-{value}")),
+                        t(key),
+                        dialog.position_y_align.as_deref() == Some(value),
+                    )
+                    .on_click(props(cx, move |dialog| {
+                        dialog.position_y_align = Some(value.to_string())
+                    }))
                 }))
                 .child(number_box(dialog, Field::PositionVertical, mm_unit, cx)),
         )
         .child(
-            line().child(label("table.prop.relative_to")).children(anchors_y.into_iter().map(|(value, key)| {
-                chip(SharedString::from(format!("anchor-y-{value}")), t(key), dialog.vertical_anchor == value)
-                    .on_click(props(cx, move |dialog| dialog.vertical_anchor = value.to_string()))
-            })),
+            line()
+                .child(label("table.prop.relative_to"))
+                .children(anchors_y.into_iter().map(|(value, key)| {
+                    chip(
+                        SharedString::from(format!("anchor-y-{value}")),
+                        t(key),
+                        dialog.vertical_anchor == value,
+                    )
+                    .on_click(props(cx, move |dialog| {
+                        dialog.vertical_anchor = value.to_string()
+                    }))
+                })),
         )
         .child(menu_caption(t("table.prop.distance")))
         .child(
@@ -1563,18 +1881,28 @@ fn position_section(dialog: &TablePropertiesDialog, cx: &mut Context<DocumentVie
         .child(
             line()
                 .child(
-                    checkbox("move-with-text", t("table.prop.move_with_text"), dialog.vertical_anchor == "text")
-                        .on_click(props(cx, |dialog| {
-                            dialog.vertical_anchor = if dialog.vertical_anchor == "text" {
-                                "margin".to_string()
-                            } else {
-                                "text".to_string()
-                            }
-                        })),
+                    checkbox(
+                        "move-with-text",
+                        t("table.prop.move_with_text"),
+                        dialog.vertical_anchor == "text",
+                    )
+                    .on_click(props(cx, |dialog| {
+                        dialog.vertical_anchor = if dialog.vertical_anchor == "text" {
+                            "margin".to_string()
+                        } else {
+                            "text".to_string()
+                        }
+                    })),
                 )
                 .child(
-                    checkbox("allow-overlap", t("table.prop.allow_overlap"), dialog.allow_overlap)
-                        .on_click(props(cx, |dialog| dialog.allow_overlap = !dialog.allow_overlap)),
+                    checkbox(
+                        "allow-overlap",
+                        t("table.prop.allow_overlap"),
+                        dialog.allow_overlap,
+                    )
+                    .on_click(props(cx, |dialog| {
+                        dialog.allow_overlap = !dialog.allow_overlap
+                    })),
                 ),
         )
         .into_any_element()
@@ -1608,55 +1936,112 @@ fn borders_body(dialog: &BordersDialog, cx: &mut Context<DocumentView>) -> AnyEl
         .child(
             line()
                 .child(label("table.borders_kind"))
-                .child(chip("preset-none", t("table.border.none"), dialog.edges == [false; 6]).on_click(borders(cx, |d| d.preset(BorderSet::None))))
                 .child(
-                    chip("preset-box", t("table.border.outside"), dialog.edges == [true, true, true, true, false, false])
-                        .on_click(borders(cx, |d| d.preset(BorderSet::Outside))),
+                    chip(
+                        "preset-none",
+                        t("table.border.none"),
+                        dialog.edges == [false; 6],
+                    )
+                    .on_click(borders(cx, |d| d.preset(BorderSet::None))),
                 )
-                .child(chip("preset-all", t("table.border.all"), dialog.edges == [true; 6]).on_click(borders(cx, |d| d.preset(BorderSet::All)))),
+                .child(
+                    chip(
+                        "preset-box",
+                        t("table.border.outside"),
+                        dialog.edges == [true, true, true, true, false, false],
+                    )
+                    .on_click(borders(cx, |d| d.preset(BorderSet::Outside))),
+                )
+                .child(
+                    chip(
+                        "preset-all",
+                        t("table.border.all"),
+                        dialog.edges == [true; 6],
+                    )
+                    .on_click(borders(cx, |d| d.preset(BorderSet::All))),
+                ),
+        )
+        .child(line().child(label("table.borders_edges")).children(
+            edge_names.into_iter().enumerate().map(|(index, key)| {
+                chip(("edge", index), t(key), dialog.edges[index])
+                    .on_click(borders(cx, move |d| d.edges[index] = !d.edges[index]))
+            }),
+        ))
+        .child(
+            line()
+                .child(label("table.pen_style"))
+                .children(Pen::STYLES.iter().enumerate().map(|(index, style)| {
+                    let style = *style;
+                    chip(
+                        ("border-style", index),
+                        t(line_key(style)),
+                        dialog.pen.style == style,
+                    )
+                    .on_click(borders(cx, move |d| d.pen.style = style.to_string()))
+                })),
         )
         .child(
-            line().child(label("table.borders_edges")).children(edge_names.into_iter().enumerate().map(|(index, key)| {
-                chip(("edge", index), t(key), dialog.edges[index]).on_click(borders(cx, move |d| d.edges[index] = !d.edges[index]))
-            })),
+            line()
+                .child(label("table.pen_width"))
+                .children(Pen::WIDTHS.iter().enumerate().map(|(index, width)| {
+                    let width = *width;
+                    chip(
+                        ("border-width", index),
+                        format!("{width} pt"),
+                        (dialog.pen.width - width).abs() < 0.01,
+                    )
+                    .on_click(borders(cx, move |d| d.pen.width = width))
+                })),
         )
-        .child(line().child(label("table.pen_style")).children(Pen::STYLES.iter().enumerate().map(|(index, style)| {
-            let style = *style;
-            chip(("border-style", index), t(line_key(style)), dialog.pen.style == style)
-                .on_click(borders(cx, move |d| d.pen.style = style.to_string()))
-        })))
-        .child(line().child(label("table.pen_width")).children(Pen::WIDTHS.iter().enumerate().map(|(index, width)| {
-            let width = *width;
-            chip(("border-width", index), format!("{width} pt"), (dialog.pen.width - width).abs() < 0.01)
-                .on_click(borders(cx, move |d| d.pen.width = width))
-        })))
-        .child(line().child(label("table.pen_color")).children(PEN_COLORS.iter().enumerate().map(|(index, color)| {
-            let color = *color;
-            let shown = if color == "auto" { "000000" } else { color };
-            swatch_box(("border-color", index), shown, dialog.pen.color == color)
-                .on_click(borders(cx, move |d| d.pen.color = color.to_string()))
-        })))
+        .child(
+            line()
+                .child(label("table.pen_color"))
+                .children(PEN_COLORS.iter().enumerate().map(|(index, color)| {
+                    let color = *color;
+                    let shown = if color == "auto" { "000000" } else { color };
+                    swatch_box(("border-color", index), shown, dialog.pen.color == color)
+                        .on_click(borders(cx, move |d| d.pen.color = color.to_string()))
+                })),
+        )
         .child(
             line()
                 .child(label("table.shading"))
-                .child(chip("fill-keep", t("table.fill_keep"), dialog.fill.is_none()).on_click(borders(cx, |d| d.fill = None)))
-                .child(chip("fill-none", t("table.no_color"), dialog.fill == Some(None)).on_click(borders(cx, |d| d.fill = Some(None))))
+                .child(
+                    chip("fill-keep", t("table.fill_keep"), dialog.fill.is_none())
+                        .on_click(borders(cx, |d| d.fill = None)),
+                )
+                .child(
+                    chip("fill-none", t("table.no_color"), dialog.fill == Some(None))
+                        .on_click(borders(cx, |d| d.fill = Some(None))),
+                )
                 .children(SHADES.iter().enumerate().map(|(index, color)| {
                     let color = *color;
-                    swatch_box(("fill", index), color, dialog.fill.as_ref().and_then(|fill| fill.as_deref()) == Some(color))
-                        .on_click(borders(cx, move |d| d.fill = Some(Some(color.to_string()))))
+                    swatch_box(
+                        ("fill", index),
+                        color,
+                        dialog.fill.as_ref().and_then(|fill| fill.as_deref()) == Some(color),
+                    )
+                    .on_click(borders(cx, move |d| d.fill = Some(Some(color.to_string()))))
                 })),
         )
         .child(
             line()
                 .child(label("table.apply_to"))
                 .child(
-                    chip("target-table", t("table.apply_table"), dialog.target == BorderTarget::Table)
-                        .on_click(borders(cx, |d| d.target = BorderTarget::Table)),
+                    chip(
+                        "target-table",
+                        t("table.apply_table"),
+                        dialog.target == BorderTarget::Table,
+                    )
+                    .on_click(borders(cx, |d| d.target = BorderTarget::Table)),
                 )
                 .child(
-                    chip("target-cell", t("table.apply_cell"), dialog.target == BorderTarget::Cell)
-                        .on_click(borders(cx, |d| d.target = BorderTarget::Cell)),
+                    chip(
+                        "target-cell",
+                        t("table.apply_cell"),
+                        dialog.target == BorderTarget::Cell,
+                    )
+                    .on_click(borders(cx, |d| d.target = BorderTarget::Cell)),
                 ),
         )
         .into_any_element()
@@ -1682,46 +2067,87 @@ fn cells_body(delete: bool, shift: CellShift, cx: &mut Context<DocumentView>) ->
         .flex()
         .flex_col()
         .gap_1()
-        .children(choices.into_iter().enumerate().map(|(index, (choice, key))| {
-            chip(("shift", index), t(key), shift == choice).on_click(edit(cx, move |dialog| {
-                if let TableDialog::Cells { shift, .. } = dialog {
-                    *shift = choice;
-                }
-            }))
-        }))
+        .children(
+            choices
+                .into_iter()
+                .enumerate()
+                .map(|(index, (choice, key))| {
+                    chip(("shift", index), t(key), shift == choice).on_click(edit(
+                        cx,
+                        move |dialog| {
+                            if let TableDialog::Cells { shift, .. } = dialog {
+                                *shift = choice;
+                            }
+                        },
+                    ))
+                }),
+        )
         .into_any_element()
 }
 
 /// A plain box of the small dialogs.
-fn plain_box(id: &'static str, value: &str, focused: bool, focus: DialogBox, cx: &mut Context<DocumentView>) -> AnyElement {
+fn plain_box(
+    id: &'static str,
+    value: &str,
+    focused: bool,
+    focus: DialogBox,
+    cx: &mut Context<DocumentView>,
+) -> AnyElement {
     div()
         .id(id)
         .min_w(px(54.0))
         .px_1()
         .rounded_sm()
         .border_1()
-        .border_color(if focused { theme::accent() } else { theme::border() })
+        .border_color(if focused {
+            theme::accent()
+        } else {
+            theme::border()
+        })
         .bg(theme::window())
         .cursor_pointer()
         .child(value.to_string())
         .on_click(edit(cx, move |dialog| match dialog {
-            TableDialog::Split { focus: current, .. } | TableDialog::ToTable { focus: current, .. } => *current = focus,
+            TableDialog::Split { focus: current, .. }
+            | TableDialog::ToTable { focus: current, .. } => *current = focus,
             _ => {}
         }))
         .into_any_element()
 }
 
-fn split_body(columns: &str, rows: &str, focus: DialogBox, cx: &mut Context<DocumentView>) -> AnyElement {
+fn split_body(
+    columns: &str,
+    rows: &str,
+    focus: DialogBox,
+    cx: &mut Context<DocumentView>,
+) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .gap_2()
-        .child(line().child(label("table.columns")).child(plain_box("split-columns", columns, focus == DialogBox::Columns, DialogBox::Columns, cx)))
-        .child(line().child(label("table.rows")).child(plain_box("split-rows", rows, focus == DialogBox::Rows, DialogBox::Rows, cx)))
+        .child(line().child(label("table.columns")).child(plain_box(
+            "split-columns",
+            columns,
+            focus == DialogBox::Columns,
+            DialogBox::Columns,
+            cx,
+        )))
+        .child(line().child(label("table.rows")).child(plain_box(
+            "split-rows",
+            rows,
+            focus == DialogBox::Rows,
+            DialogBox::Rows,
+            cx,
+        )))
         .into_any_element()
 }
 
-fn separator_line(current: Separator, other: &str, paragraph_key: &'static str, cx: &mut Context<DocumentView>) -> AnyElement {
+fn separator_line(
+    current: Separator,
+    other: &str,
+    paragraph_key: &'static str,
+    cx: &mut Context<DocumentView>,
+) -> AnyElement {
     let choices = [
         (Separator::Paragraph, paragraph_key),
         (Separator::Tab, "table.separator.tab"),
@@ -1730,37 +2156,68 @@ fn separator_line(current: Separator, other: &str, paragraph_key: &'static str, 
     ];
     line()
         .child(label("table.separator"))
-        .children(choices.into_iter().enumerate().map(|(index, (choice, key))| {
-            chip(("separator", index), t(key), current == choice).on_click(edit(cx, move |dialog| match dialog {
-                TableDialog::ToTable { separator, focus, .. } => {
-                    *separator = choice;
-                    if choice == Separator::Other {
-                        *focus = DialogBox::Other;
-                    }
-                }
-                TableDialog::ToText { separator, .. } => *separator = choice,
-                _ => {}
-            }))
-        }))
+        .children(
+            choices
+                .into_iter()
+                .enumerate()
+                .map(|(index, (choice, key))| {
+                    chip(("separator", index), t(key), current == choice).on_click(edit(
+                        cx,
+                        move |dialog| match dialog {
+                            TableDialog::ToTable {
+                                separator, focus, ..
+                            } => {
+                                *separator = choice;
+                                if choice == Separator::Other {
+                                    *focus = DialogBox::Other;
+                                }
+                            }
+                            TableDialog::ToText { separator, .. } => *separator = choice,
+                            _ => {}
+                        },
+                    ))
+                }),
+        )
         .child(
             div()
                 .w(px(28.0))
                 .px_1()
                 .rounded_sm()
                 .border_1()
-                .border_color(if current == Separator::Other { theme::accent() } else { theme::border() })
+                .border_color(if current == Separator::Other {
+                    theme::accent()
+                } else {
+                    theme::border()
+                })
                 .child(other.to_string()),
         )
         .into_any_element()
 }
 
-fn to_table_body(separator: Separator, other: &str, columns: &str, focus: DialogBox, cx: &mut Context<DocumentView>) -> AnyElement {
+fn to_table_body(
+    separator: Separator,
+    other: &str,
+    columns: &str,
+    focus: DialogBox,
+    cx: &mut Context<DocumentView>,
+) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .gap_2()
-        .child(line().child(label("table.columns")).child(plain_box("to-table-columns", columns, focus == DialogBox::Columns, DialogBox::Columns, cx)))
-        .child(separator_line(separator, other, "table.separator.paragraph", cx))
+        .child(line().child(label("table.columns")).child(plain_box(
+            "to-table-columns",
+            columns,
+            focus == DialogBox::Columns,
+            DialogBox::Columns,
+            cx,
+        )))
+        .child(separator_line(
+            separator,
+            other,
+            "table.separator.paragraph",
+            cx,
+        ))
         .into_any_element()
 }
 
@@ -1769,41 +2226,49 @@ fn to_text_body(separator: Separator, other: &str, cx: &mut Context<DocumentView
 }
 
 fn sort_body(
-    keys: &[Option<(usize, HeadlessTableSortKind, bool)>; 3],
+    keys: &[SortSlot; 3],
     header: bool,
     headings: &[String],
     cx: &mut Context<DocumentView>,
 ) -> AnyElement {
     let key_names = ["table.sort.first", "table.sort.second", "table.sort.third"];
-    let edit_key = |cx: &mut Context<DocumentView>, slot: usize, change: Box<dyn Fn(&mut Option<(usize, HeadlessTableSortKind, bool)>)>| {
-        edit(cx, move |dialog| {
-            if let TableDialog::Sort { keys, .. } = dialog {
-                change(&mut keys[slot]);
-                // The first key is always there.
-                if keys[0].is_none() {
-                    keys[0] = Some((0, HeadlessTableSortKind::Text, false));
+    let edit_key =
+        |cx: &mut Context<DocumentView>, slot: usize, change: Box<dyn Fn(&mut SortSlot)>| {
+            edit(cx, move |dialog| {
+                if let TableDialog::Sort { keys, .. } = dialog {
+                    change(&mut keys[slot]);
+                    // The first key is always there.
+                    if keys[0].is_none() {
+                        keys[0] = Some((0, HeadlessTableSortKind::Text, false));
+                    }
                 }
-            }
-        })
-    };
+            })
+        };
     let mut body = div().flex().flex_col().gap_2();
     for (slot, name) in key_names.into_iter().enumerate() {
         let key = keys[slot];
         let mut columns = line().child(label(name));
         if slot > 0 {
-            columns = columns.child(
-                chip(("sort-none", slot), t("table.sort.none"), key.is_none())
-                    .on_click(edit_key(cx, slot, Box::new(|key| *key = None))),
-            );
+            columns =
+                columns.child(
+                    chip(("sort-none", slot), t("table.sort.none"), key.is_none())
+                        .on_click(edit_key(cx, slot, Box::new(|key| *key = None))),
+                );
         }
         for (column, heading) in headings.iter().enumerate() {
             let on = key.is_some_and(|key| key.0 == column);
             columns = columns.child(
-                chip(SharedString::from(format!("sort-{slot}-{column}")), heading.clone(), on).on_click(edit_key(
+                chip(
+                    SharedString::from(format!("sort-{slot}-{column}")),
+                    heading.clone(),
+                    on,
+                )
+                .on_click(edit_key(
                     cx,
                     slot,
                     Box::new(move |key| {
-                        let (kind, descending) = key.map_or((HeadlessTableSortKind::Text, false), |key| (key.1, key.2));
+                        let (kind, descending) =
+                            key.map_or((HeadlessTableSortKind::Text, false), |key| (key.1, key.2));
                         *key = Some((column, kind, descending));
                     }),
                 )),
@@ -1816,58 +2281,86 @@ fn sort_body(
                 (HeadlessTableSortKind::Number, "table.sort.number"),
                 (HeadlessTableSortKind::Date, "table.sort.date"),
             ];
-            body = body.child(
-                line()
-                    .child(div().w(px(112.0)))
-                    .children(kinds.into_iter().enumerate().map(|(index, (choice, key_name))| {
-                        chip(SharedString::from(format!("sort-kind-{slot}-{index}")), t(key_name), kind == choice).on_click(edit_key(
-                            cx,
-                            slot,
-                            Box::new(move |key| {
-                                if let Some(key) = key.as_mut() {
-                                    key.1 = choice;
-                                }
-                            }),
+            body =
+                body.child(
+                    line()
+                        .child(div().w(px(112.0)))
+                        .children(kinds.into_iter().enumerate().map(
+                            |(index, (choice, key_name))| {
+                                chip(
+                                    SharedString::from(format!("sort-kind-{slot}-{index}")),
+                                    t(key_name),
+                                    kind == choice,
+                                )
+                                .on_click(edit_key(
+                                    cx,
+                                    slot,
+                                    Box::new(move |key| {
+                                        if let Some(key) = key.as_mut() {
+                                            key.1 = choice;
+                                        }
+                                    }),
+                                ))
+                            },
                         ))
-                    }))
-                    .child(
-                        chip(("sort-ascending", slot), t("table.sort.ascending"), !descending).on_click(edit_key(
-                            cx,
-                            slot,
-                            Box::new(|key| {
-                                if let Some(key) = key.as_mut() {
-                                    key.2 = false;
-                                }
-                            }),
-                        )),
-                    )
-                    .child(
-                        chip(("sort-descending", slot), t("table.sort.descending"), descending).on_click(edit_key(
-                            cx,
-                            slot,
-                            Box::new(|key| {
-                                if let Some(key) = key.as_mut() {
-                                    key.2 = true;
-                                }
-                            }),
-                        )),
-                    ),
-            );
+                        .child(
+                            chip(
+                                ("sort-ascending", slot),
+                                t("table.sort.ascending"),
+                                !descending,
+                            )
+                            .on_click(edit_key(
+                                cx,
+                                slot,
+                                Box::new(|key| {
+                                    if let Some(key) = key.as_mut() {
+                                        key.2 = false;
+                                    }
+                                }),
+                            )),
+                        )
+                        .child(
+                            chip(
+                                ("sort-descending", slot),
+                                t("table.sort.descending"),
+                                descending,
+                            )
+                            .on_click(edit_key(
+                                cx,
+                                slot,
+                                Box::new(|key| {
+                                    if let Some(key) = key.as_mut() {
+                                        key.2 = true;
+                                    }
+                                }),
+                            )),
+                        ),
+                );
         }
     }
     body.child(
         line()
             .child(label("table.sort.header"))
-            .child(chip("sort-header-yes", t("table.sort.header_yes"), header).on_click(edit(cx, |dialog| {
-                if let TableDialog::Sort { header, .. } = dialog {
-                    *header = true;
-                }
-            })))
-            .child(chip("sort-header-no", t("table.sort.header_no"), !header).on_click(edit(cx, |dialog| {
-                if let TableDialog::Sort { header, .. } = dialog {
-                    *header = false;
-                }
-            }))),
+            .child(
+                chip("sort-header-yes", t("table.sort.header_yes"), header).on_click(edit(
+                    cx,
+                    |dialog| {
+                        if let TableDialog::Sort { header, .. } = dialog {
+                            *header = true;
+                        }
+                    },
+                )),
+            )
+            .child(
+                chip("sort-header-no", t("table.sort.header_no"), !header).on_click(edit(
+                    cx,
+                    |dialog| {
+                        if let TableDialog::Sort { header, .. } = dialog {
+                            *header = false;
+                        }
+                    },
+                )),
+            ),
     )
     .into_any_element()
 }
@@ -1889,27 +2382,39 @@ fn formula_body(formula: &str, format: &str, cx: &mut Context<DocumentView>) -> 
                     .child(formula.to_string()),
             ),
         )
-        .child(line().child(label("table.formula_format")).children(NUMBER_FORMATS.iter().enumerate().map(|(index, picture)| {
-            let picture = *picture;
-            chip(("number-format", index), if picture.is_empty() { t("table.sort.none").to_string() } else { picture.to_string() }, format == picture)
+        .child(line().child(label("table.formula_format")).children(
+            NUMBER_FORMATS.iter().enumerate().map(|(index, picture)| {
+                let picture = *picture;
+                chip(
+                    ("number-format", index),
+                    if picture.is_empty() {
+                        t("table.sort.none").to_string()
+                    } else {
+                        picture.to_string()
+                    },
+                    format == picture,
+                )
                 .on_click(edit(cx, move |dialog| {
                     if let TableDialog::Formula { format, .. } = dialog {
                         *format = picture;
                     }
                 }))
-        })))
-        .child(line().child(label("table.formula_paste")).children(FUNCTIONS.iter().enumerate().map(|(index, function)| {
-            let function = *function;
-            chip(("paste-function", index), function, false).on_click(edit(cx, move |dialog| {
-                if let TableDialog::Formula { formula, .. } = dialog {
-                    if formula.trim().is_empty() || formula.trim() == "=" {
-                        *formula = "=".to_string();
+            }),
+        ))
+        .child(line().child(label("table.formula_paste")).children(
+            FUNCTIONS.iter().enumerate().map(|(index, function)| {
+                let function = *function;
+                chip(("paste-function", index), function, false).on_click(edit(cx, move |dialog| {
+                    if let TableDialog::Formula { formula, .. } = dialog {
+                        if formula.trim().is_empty() || formula.trim() == "=" {
+                            *formula = "=".to_string();
+                        }
+                        formula.push_str(function);
+                        formula.push_str("()");
                     }
-                    formula.push_str(function);
-                    formula.push_str("()");
-                }
-            }))
-        })))
+                }))
+            }),
+        ))
         .into_any_element()
 }
 
@@ -1918,16 +2423,24 @@ mod tests {
     use super::{Separator, TableAction, TableDialog};
     use crate::ribbon::Action;
     use crate::RibbonTab;
-    use jade_office_model::word::table::{LookOption, PropertiesTab, TableHit, TablePart, WordTables};
+    use jade_office_model::word::table::{
+        LookOption, PropertiesTab, TableHit, TablePart, WordTables,
+    };
     use jade_office_model::word::WordSession;
 
     /// A blank document in a window, with a 3 × 3 table and the caret in it.
     fn with_table(
         cx: &mut gpui::TestAppContext,
-    ) -> (gpui::Entity<crate::DocumentView>, &mut gpui::VisualTestContext) {
+    ) -> (
+        gpui::Entity<crate::DocumentView>,
+        &mut gpui::VisualTestContext,
+    ) {
         use gpui::Focusable;
-        let bytes = jade_office_model::word::new::blank_document(jade_office_model::word::new::Blank::Japanese);
-        let (view, cx) = cx.add_window_view(|_window, cx| crate::untitled_view(&bytes, "表.docx", cx).unwrap());
+        let bytes = jade_office_model::word::new::blank_document(
+            jade_office_model::word::new::Blank::Japanese,
+        );
+        let (view, cx) =
+            cx.add_window_view(|_window, cx| crate::untitled_view(&bytes, "表.docx", cx).unwrap());
         cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
         cx.run_until_parked();
         view.update(cx, |view, cx| {
@@ -1945,9 +2458,18 @@ mod tests {
         view.update(cx, |view, cx| {
             assert!(view.ribbon_tabs().contains(&RibbonTab::TableDesign));
             view.ribbon_tab = RibbonTab::TableDesign;
-            view.run_ribbon(Action::Tables(TableAction::Style(Some("GridTable4-Accent1".to_string()))), cx);
-            view.run_ribbon(Action::Tables(TableAction::Look(LookOption::TotalRow, true)), cx);
-            assert_eq!(view.document.table_style_id().as_deref(), Some("GridTable4-Accent1"));
+            view.run_ribbon(
+                Action::Tables(TableAction::Style(Some("GridTable4-Accent1".to_string()))),
+                cx,
+            );
+            view.run_ribbon(
+                Action::Tables(TableAction::Look(LookOption::TotalRow, true)),
+                cx,
+            );
+            assert_eq!(
+                view.document.table_style_id().as_deref(),
+                Some("GridTable4-Accent1")
+            );
             assert!(view.document.table_look().unwrap().total_row);
             view.ribbon_tab = RibbonTab::TableLayout;
             view.run_ribbon(Action::Tables(TableAction::Select(TablePart::Column)), cx);
@@ -1958,13 +2480,19 @@ mod tests {
         // Drawn with the table tabs showing.
         cx.run_until_parked();
         view.update(cx, |view, cx| {
-            view.run_ribbon(Action::Tables(TableAction::Properties(PropertiesTab::Row)), cx);
+            view.run_ribbon(
+                Action::Tables(TableAction::Properties(PropertiesTab::Row)),
+                cx,
+            );
             let Some(TableDialog::Properties(dialog)) = view.tables.dialog.as_mut() else {
                 panic!("the properties dialog is open");
             };
             dialog.row_height_on = true;
             dialog.focus = Some(jade_office_model::word::table::Field::RowHeight);
-            dialog.text.insert(jade_office_model::word::table::Field::RowHeight, String::new());
+            dialog.text.insert(
+                jade_office_model::word::table::Field::RowHeight,
+                String::new(),
+            );
             cx.notify();
         });
         cx.simulate_keystrokes("1 5");
@@ -1972,7 +2500,11 @@ mod tests {
         view.update(cx, |view, _| {
             assert!(view.tables.dialog.is_none());
             let properties = view.document.table_properties().unwrap();
-            assert!((properties.row_height.unwrap() - 15.0 / jade_office_model::word::table::MM_PER_PT).abs() < 0.5);
+            assert!(
+                (properties.row_height.unwrap() - 15.0 / jade_office_model::word::table::MM_PER_PT)
+                    .abs()
+                    < 0.5
+            );
         });
         // Out of the table, the tabs go away.
         view.update(cx, |view, cx| {
@@ -2005,7 +2537,10 @@ mod tests {
             let y = (top + bottom) / 2.0;
             let before = geometry.widths_pt();
             view.tables.drag = Some((
-                super::TableDrag::Column { table_id, boundary: 1 },
+                super::TableDrag::Column {
+                    table_id,
+                    boundary: 1,
+                },
                 0,
                 (geometry.columns[1], y),
                 (geometry.columns[1] + 30.0, y),
@@ -2013,26 +2548,52 @@ mod tests {
             view.table_mouse_up(cx);
             let table_id = view
                 .document
-                .cell_layout(view.document.cell_id_for_paragraph(view.insert_at.0).unwrap())
+                .cell_layout(
+                    view.document
+                        .cell_id_for_paragraph(view.insert_at.0)
+                        .unwrap(),
+                )
                 .unwrap()
                 .table_id;
             let after = view.document.table_geometry(table_id).unwrap().widths_pt();
-            assert!((after[0] - before[0] - 22.5).abs() < 1.0, "{before:?} {after:?}");
+            assert!(
+                (after[0] - before[0] - 22.5).abs() < 1.0,
+                "{before:?} {after:?}"
+            );
 
             let geometry = view.document.table_geometry(table_id).unwrap();
             let (top, bottom) = geometry.rows[1];
-            let hit = view.document.table_hit(geometry.left() - 8.0, (top + bottom) / 2.0).unwrap();
+            let hit = view
+                .document
+                .table_hit(geometry.left() - 8.0, (top + bottom) / 2.0)
+                .unwrap();
             assert!(matches!(hit, TableHit::RowSelector { row: 1, .. }));
             view.document.click_table_hit(hit).unwrap();
             assert_eq!(view.document.cell_span().unwrap().rows, (1, 1));
 
-            view.run_ribbon(Action::Tables(TableAction::Tool(jade_office_model::word::table::DrawTool::Pencil)), cx);
-            assert_eq!(super::cursor_style(&view.tables), gpui::CursorStyle::Crosshair);
+            view.run_ribbon(
+                Action::Tables(TableAction::Tool(
+                    jade_office_model::word::table::DrawTool::Pencil,
+                )),
+                cx,
+            );
+            assert_eq!(
+                super::cursor_style(&view.tables),
+                gpui::CursorStyle::Crosshair
+            );
             let x = (geometry.columns[0] + geometry.columns[1]) / 2.0;
             let (top, bottom) = geometry.rows[2];
-            view.tables.drag = Some((super::TableDrag::Stroke, 0, (x, top + 1.0), (x, bottom - 1.0)));
+            view.tables.drag = Some((
+                super::TableDrag::Stroke,
+                0,
+                (x, top + 1.0),
+                (x, bottom - 1.0),
+            ));
             view.table_mouse_up(cx);
-            assert_eq!(view.document.word_document().table_dimensions(0), Some((3, 4)));
+            assert_eq!(
+                view.document.word_document().table_dimensions(0),
+                Some((3, 4))
+            );
         });
     }
 
@@ -2044,9 +2605,15 @@ mod tests {
         view.update(cx, |view, cx| {
             view.run_ribbon(Action::Tables(TableAction::InsertCells), cx);
             view.apply_table_dialog(cx);
-            assert_eq!(view.document.word_document().table_dimensions(0), Some((4, 3)));
+            assert_eq!(
+                view.document.word_document().table_dimensions(0),
+                Some((4, 3))
+            );
             view.run_ribbon(Action::Tables(TableAction::Formula), cx);
-            assert!(matches!(view.tables.dialog, Some(TableDialog::Formula { .. })));
+            assert!(matches!(
+                view.tables.dialog,
+                Some(TableDialog::Formula { .. })
+            ));
             view.tables.dialog = None;
             view.run_ribbon(Action::Tables(TableAction::ToText), cx);
             if let Some(TableDialog::ToText { separator, .. }) = view.tables.dialog.as_mut() {
