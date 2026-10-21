@@ -1112,6 +1112,8 @@ enum RibbonTab {
     TableLayout,
     /// ヘッダーとフッター, shown while a header or footer is open.
     HeaderFooter,
+    /// アウトライン, shown in the アウトライン view (`word_views`).
+    Outlining,
 }
 
 impl RibbonTab {
@@ -1137,6 +1139,7 @@ impl RibbonTab {
             RibbonTab::TableDesign => t("doc.tab.table_design"),
             RibbonTab::TableLayout => t("doc.tab.table_layout"),
             RibbonTab::HeaderFooter => t("story.tab"),
+            RibbonTab::Outlining => t("outline.tab"),
         }
     }
 }
@@ -1490,6 +1493,12 @@ impl DocumentView {
         // it any ranges selected beside the selection.
         self.views.mini = false;
         self.views.extra_ranges.clear();
+        // 閲覧モード's keys turn its columns.
+        if !self.views.is_open()
+            && word_views::layout::read_key(self, event.keystroke.key.as_str(), cx)
+        {
+            return;
+        }
         // 閲覧: nothing the keyboard does changes the document.
         if word_views::modes::read_only(self)
             && word_views::modes::is_edit_key(event.keystroke.key.as_str())
@@ -1955,6 +1964,9 @@ impl DocumentView {
         if self.editing_story() {
             tabs.push(RibbonTab::HeaderFooter);
         }
+        if self.views.kind == jade_office_model::word::view::ViewKind::Outline {
+            tabs.insert(0, RibbonTab::Outlining);
+        }
         if self.format_state().table.is_some() {
             tabs.extend([RibbonTab::TableDesign, RibbonTab::TableLayout]);
         }
@@ -2196,6 +2208,7 @@ impl DocumentView {
                 groups
             }
             RibbonTab::HeaderFooter => self.story_groups(cx),
+            RibbonTab::Outlining => word_views::outline::groups(self, cx),
             RibbonTab::View => word_views::view_tab(self, cx),
         }
     }
@@ -4576,7 +4589,9 @@ impl Render for DocumentView {
             // ---- sidebar: the document's pages ----------------------------
             .child(
                 div()
-                    .when(self.views.focus, |sidebar| sidebar.hidden())
+                    .when(word_views::layout::hides_chrome(self), |sidebar| {
+                        sidebar.hidden()
+                    })
                     .flex()
                     .flex_col()
                     .flex_none()
@@ -4616,8 +4631,11 @@ impl Render for DocumentView {
                     // they scroll, rather than pushing the panes beside the
                     // pages out of the window.
                     .min_w_0()
-                    // フォーカス: no ribbon.
-                    .children((!self.views.focus).then(|| self.ribbon(window, cx)))
+                    // フォーカス and 閲覧モード: no ribbon.
+                    .children(
+                        (!word_views::layout::hides_chrome(self)).then(|| self.ribbon(window, cx)),
+                    )
+                    .children(word_views::layout::read_bar(self, cx))
                     .children(self.dialog_element(cx))
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
@@ -4717,6 +4735,7 @@ impl Render for DocumentView {
                                         )
                                         .children(word_views::grid_overlay(self, index))
                                         .children(word_views::select::overlay(self, index))
+                                        .children(word_views::outline::symbols(self, index, cx))
                                         .children(self.caret_overlay(index))
                                         .children(word_references::page_marks(
                                             &marks, index, zoom, cx,

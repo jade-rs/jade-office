@@ -2224,3 +2224,22 @@ language.pt_br	Portuguese (Brazil)
 language.ru_ru	Russian
 language.th_th	Thai
 language.ar_sa	Arabic
+outline.tab	Outlining
+outline.group.tools	Outline Tools
+outline.group.close	Close
+outline.level	Level {n}
+outline.body	Body Text
+outline.all	All Levels
+outline.show_level	Show Level
+outline.to_top	Promote to Heading 1
+outline.promote	Promote
+outline.demote	Demote
+outline.to_body	Demote to Body Text
+outline.move_up	Move Up
+outline.move_down	Move Down
+outline.expand	Expand
+outline.collapse	Collapse
+outline.close	Close Outline View
+views.read.edit	Edit Document
+views.read.position	Screen {current} of {count}
+views.read.keys	← → to turn, Esc to go back
