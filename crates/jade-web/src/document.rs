@@ -489,8 +489,7 @@ impl Document {
         } else {
             1.0
         };
-        // A viewer: no formatting marks, which the bundled face cannot draw
-        // the arrows of anyway.
+        // A viewer: no formatting marks.
         let mut options = Options::default();
         options.show_formatting_marks = false;
         let word_document = futures::executor::block_on(WordDocument::load(bytes, &options))
