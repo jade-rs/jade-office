@@ -697,3 +697,5 @@ note.endnote	Insert Endnote
 note.endnote_title	Insert Endnote (⌥⌘D)
 note.text	Text
 note.keys	⏎ insert · esc cancel
+doc.word_count	{words} words · {characters} characters
+doc.word_count_selection	{selected_words} of {words} words · {selected_characters} of {characters} characters

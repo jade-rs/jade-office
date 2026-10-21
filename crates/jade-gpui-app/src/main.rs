@@ -1107,6 +1107,9 @@ struct DocumentView {
     /// The formatting at the caret, and the caret, selection and edit it was
     /// read for: reading it runs queries, so not on every frame.
     format: Option<(FormatKey, FormatState)>,
+    /// The status bar's 文字カウント and what it was counted for: counting
+    /// reads every paragraph, so not on every frame.
+    word_count: RefCell<Option<(FormatKey, SharedString)>>,
     /// The find bar, while it is open. Open, it takes the keyboard: typing goes
     /// into its field rather than into the document.
     find_bar: Option<FindBar>,
@@ -2746,6 +2749,41 @@ impl DocumentView {
         }
     }
 
+    /// 文字カウント for the status bar, as Word shows it: the document's
+    /// words and characters, and the selection's out of them.
+    fn word_count_status(&self) -> SharedString {
+        use jade_office_model::word::count::grouped;
+        use jade_office_model::word::WordCounting;
+        let key = (self.insert_at, self.document.selection(), self.edits);
+        if let Some((cached, status)) = self.word_count.borrow().as_ref() {
+            if *cached == key {
+                return status.clone();
+            }
+        }
+        let document = self.document.document_count();
+        let status: SharedString = match self.document.selection_count() {
+            Some(selected) => i18n::format(
+                "doc.word_count_selection",
+                &[
+                    ("selected_words", &grouped(selected.words)),
+                    ("words", &grouped(document.words)),
+                    ("selected_characters", &grouped(selected.characters)),
+                    ("characters", &grouped(document.characters)),
+                ],
+            ),
+            None => i18n::format(
+                "doc.word_count",
+                &[
+                    ("words", &grouped(document.words)),
+                    ("characters", &grouped(document.characters)),
+                ],
+            ),
+        }
+        .into();
+        *self.word_count.borrow_mut() = Some((key, status.clone()));
+        status
+    }
+
     /// A ribbon control was clicked.
     fn ribbon_action(&mut self, action: Action, _window: &mut Window, cx: &mut Context<Self>) {
         self.run_ribbon(action, cx);
@@ -3969,6 +4007,7 @@ impl editor::Editor for DocumentView {
                 ("count", &self.images.len()),
             ],
         ))];
+        items.push(self.word_count_status());
         let comments = self.document.comment_count();
         if comments > 0 {
             items.push(i18n::format("doc.comments", &[("n", &comments)]).into());
@@ -4510,6 +4549,7 @@ fn document_view(
         ribbon,
         edits: 0,
         format: None,
+        word_count: RefCell::new(None),
         saved_to: None,
         untitled: false,
         marked: None,
@@ -5111,6 +5151,43 @@ mod tests {
             view.update_table_of_contents(cx);
             assert!(view.table_status.is_none(), "{:?}", view.table_status);
             assert!(contents(view).contains("新しい見出し"));
+        });
+    }
+
+    /// The status bar counts the document's words and characters as Word
+    /// does — a Japanese character a word — and a selection's out of them.
+    #[gpui::test]
+    fn the_status_bar_counts_words_and_characters(cx: &mut gpui::TestAppContext) {
+        use super::Editor;
+        use jade_office_model::word::count::grouped;
+        use jade_office_model::word::WordCounting;
+        let (view, cx) = open_contract(cx);
+        let before = view.read_with(cx, |view, _| view.document.document_count());
+        let paragraph = type_at_start(&view, cx, "jade 文書 ");
+        view.update(cx, |view, _| {
+            let items = view.status_items();
+            let shown = super::i18n::format(
+                "doc.word_count",
+                &[
+                    ("words", &grouped(before.words + 3)),
+                    ("characters", &grouped(before.characters + 6)),
+                ],
+            );
+            assert!(items.iter().any(|item| item.as_ref() == shown), "{items:?}");
+            view.document
+                .select((paragraph, 0), (paragraph, "jade 文書".len()), 1)
+                .unwrap();
+            let items = view.status_items();
+            let shown = super::i18n::format(
+                "doc.word_count_selection",
+                &[
+                    ("selected_words", &"3"),
+                    ("words", &grouped(before.words + 3)),
+                    ("selected_characters", &"6"),
+                    ("characters", &grouped(before.characters + 6)),
+                ],
+            );
+            assert!(items.iter().any(|item| item.as_ref() == shown), "{items:?}");
         });
     }
 

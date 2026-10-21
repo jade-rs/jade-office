@@ -86,7 +86,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | **Done** | Footnotes and endnotes: insert (⌥⌘F, ⌥⌘D) | Medium | yes |
 | **Done** | Table of contents: update; none in the browser | Medium | yes |
 | | Table column resizing by drag, AutoFit, table properties | Medium | yes |
-| | Word count; spelling | Medium | no |
+| | Word count (**done**: status bar, Japanese counted as Word counts it); spelling | Medium | no |
 | | Save failures only printed to the console (native) | Medium | — |
 | | Shapes, text boxes, symbols, equations, fields, bookmarks | Low–Medium | yes for most |
 | | Japanese word selection on double-click; drag-and-drop text | Low | no |
