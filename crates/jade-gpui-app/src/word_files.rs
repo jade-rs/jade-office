@@ -123,6 +123,8 @@ pub enum FileDialog {
     /// 互換性チェック: what the chosen version loses, and the save waiting
     /// on it when it was opened by one.
     Compatibility(crate::word_compat::Checker),
+    /// テンプレートとアドイン.
+    Templates(crate::word_templates::TemplatesDialog),
 }
 
 /// The 保存 preferences as the dialog holds them until OK.
@@ -158,8 +160,12 @@ pub fn read(path: &Path) -> Result<(Opened, Option<Rc<Vec<u8>>>), String> {
         };
         std::fs::read(full).ok()
     };
-    let opened = open_as_docx(&name, &bytes, OpenOptions::default(), &resolve)
+    let mut opened = open_as_docx(&name, &bytes, OpenOptions::default(), &resolve)
         .map_err(|error| describe(&error, &name))?;
+    // 文書のスタイルを自動的に更新する: the attached template's styles, now.
+    if opened.format.is_package() {
+        opened.docx = crate::word_templates::refresh_linked_styles(opened.docx);
+    }
     let source = (opened.format == WordFormat::Text).then(|| Rc::new(bytes));
     Ok((opened, source))
 }
@@ -550,6 +556,7 @@ fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         ),
         FileDialog::Message { .. } => {}
         FileDialog::Compatibility(checker) => crate::word_compat::confirm(view, checker, cx),
+        FileDialog::Templates(_) => {}
         FileDialog::PdfOptions { target, tagged } => view.write_pdf_with(
             &target,
             jade_docx_native_render::PdfExportOptions {
@@ -594,6 +601,7 @@ pub fn overlay(
         FileDialog::Compatibility(checker) => {
             crate::word_compat::dialog(checker, view.files.check_on_save, cx)
         }
+        FileDialog::Templates(state) => crate::word_templates::dialog(&state.clone(), cx),
         FileDialog::PdfOptions { tagged, .. } => {
             let tagged = *tagged;
             let choices = [

@@ -1463,3 +1463,17 @@ compat.issue.smartart	SmartArt グラフィックは、1 つの画像になり�
 compat.issue.charts	グラフは画像になります。
 compat.issue.moves	移動の変更履歴は、挿入と削除になります。
 compat.issue.themes	テーマのフォントと色は、固定のフォントと色になります。
+# Templates (word_templates)
+menu.file.templates	テンプレートとアドイン…
+templates.title	テンプレートとアドイン
+templates.document_template	文書テンプレート
+templates.normal	Normal (既定のテンプレート)
+templates.attach	添付…
+templates.detach	切り離す
+templates.link_styles	文書のスタイルを自動的に更新する
+templates.normal_heading	Normal テンプレート
+templates.normal_default	新しい文書は、既定のスタイルとページで作成されます。
+templates.normal_custom	新しい文書は、保存した Normal テンプレートから作成されます。
+templates.save_normal	この文書のスタイルとページを既定に設定
+templates.reset_normal	既定に戻す
+templates.normal_saved	新しい文書は、この文書のスタイルとページで作成されます。

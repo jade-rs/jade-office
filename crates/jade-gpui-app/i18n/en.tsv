@@ -1463,3 +1463,17 @@ compat.issue.smartart	SmartArt graphics become a single picture.
 compat.issue.charts	Charts become pictures.
 compat.issue.moves	Tracked moves become insertions and deletions.
 compat.issue.themes	Theme fonts and colors become fixed fonts and colors.
+# Templates (word_templates)
+menu.file.templates	Templates and Add-ins…
+templates.title	Templates and Add-ins
+templates.document_template	Document template
+templates.normal	Normal (the default template)
+templates.attach	Attach…
+templates.detach	Detach
+templates.link_styles	Automatically update document styles
+templates.normal_heading	Normal template
+templates.normal_default	New documents start with the default styles and page.
+templates.normal_custom	New documents start from the saved Normal template.
+templates.save_normal	Set this document's styles and page as the default
+templates.reset_normal	Reset to defaults
+templates.normal_saved	New documents will start with this document's styles and page.

@@ -50,6 +50,7 @@ pub mod references;
 pub mod review;
 pub mod table;
 pub mod table_ui;
+pub mod templates;
 pub mod typography;
 
 pub use count::{WordCount, WordCounting};

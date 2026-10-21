@@ -183,6 +183,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         // 互換性チェック and 変換 (互換モードの文書を現在の形式に).
         KeyBinding::new("ctrl-cmd-k", word_compat::CheckCompatibility, CONTEXT),
         KeyBinding::new("ctrl-cmd-u", word_compat::ConvertDocument, CONTEXT),
+        // テンプレートとアドイン.
+        KeyBinding::new("ctrl-cmd-a", word_templates::TemplatesAndAddIns, CONTEXT),
         // Unscoped so each view that can print answers it with its own
         // handler; a view without one leaves it alone.
         KeyBinding::new("cmd-p", Print, None),
@@ -300,6 +302,7 @@ fn menus() -> Vec<Menu> {
                     word_compat::CheckCompatibility,
                 ),
                 MenuItem::action(t("menu.file.convert"), word_compat::ConvertDocument),
+                MenuItem::action(t("menu.file.templates"), word_templates::TemplatesAndAddIns),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.print"), Print),
                 MenuItem::action(t("menu.file.export_pdf"), ExportPdf),
@@ -4314,6 +4317,11 @@ impl Render for DocumentView {
                     view.convert_document(cx)
                 }),
             )
+            .on_action(cx.listener(
+                |view, _: &word_templates::TemplatesAndAddIns, _window, cx| {
+                    view.open_templates_dialog(cx)
+                },
+            ))
             .on_action(
                 cx.listener(|view, _: &word_files::SaveAsTemplate, _window, cx| {
                     view.save_as_template(cx)

@@ -167,7 +167,11 @@ pub fn open_blank(cx: &mut App) {
         crate::i18n::Language::English => Blank::English,
         _ => Blank::Japanese,
     };
-    open_untitled(untitled_name("docx"), blank_document(blank), cx);
+    // A new document starts from the Normal template, once one is saved.
+    let document = crate::word_templates::normal_template()
+        .and_then(|normal| jade_office_model::word::new::document_from_template(&normal).ok())
+        .unwrap_or_else(|| blank_document(blank));
+    open_untitled(untitled_name("docx"), document, cx);
 }
 
 /// 新規テンプレートから: asks for a Word template, and opens a new document
