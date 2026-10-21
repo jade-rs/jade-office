@@ -3953,7 +3953,7 @@ impl Render for DocumentView {
         };
         let zoom = self.zoom;
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
-        let page_cursor = self.tables.cursor();
+        let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
         div()
             .id("root")

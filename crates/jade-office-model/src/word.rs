@@ -37,6 +37,7 @@ pub mod picture;
 pub mod platform;
 pub mod review;
 pub mod table;
+pub mod table_ui;
 
 pub use find::{FindOptions, Found, WordFind};
 
