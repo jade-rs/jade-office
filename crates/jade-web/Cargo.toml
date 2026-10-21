@@ -39,6 +39,16 @@ console_error_panic_hook = "0.1"
 # The comparison bin reads the Skia PNGs back; native only.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
+# The Word glyph sweep (`src/bin/word_glyph_sweep.rs`): the documents' font
+# names, the installed fonts that answer for them, the reference JSON and its
+# source hashes.
+jade-docx-reader = { path = "../../jade-core/crates/jade-docx-reader" }
+jade-opc = { path = "../../jade-core/crates/jade-opc" }
+fontdb = "0.23"
+ttf-parser = "0.25"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
 
 
 [dev-dependencies]

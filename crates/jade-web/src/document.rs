@@ -20,7 +20,7 @@ use std::cell::{Cell, RefCell};
 use std::ops::Range;
 use std::rc::Rc;
 
-use jade_docx_editor::canvas_renderer::CanvasRenderer;
+use jade_docx_editor::canvas_renderer::{CanvasRenderer, FullLayoutDebugSnapshot};
 use jade_docx_editor::render_host::{CanvasRenderHost, ImageCropMapping};
 use jade_docx_editor::word_document::WordDocument;
 use jade_docx_editor::Options;
@@ -29,7 +29,7 @@ use jade_docx_layout::layout_cache::TextMeasurer;
 pub use jade_docx_layout::shaping_measurer::ShapingMeasurer;
 use jade_docx_layout::shaping_measurer::ShapingOptions;
 use jade_painter::{ImageRect, Painter, TextMetrics};
-use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
+use jade_tiny_skia_painter::{FontBook, TextMeasure, TinySkiaPainter};
 use wasm_bindgen::JsValue;
 
 /// Letter, the box a render starts from before the document's own section
@@ -106,9 +106,9 @@ impl TinySkiaRenderHost {
         resident: Range<usize>,
     ) -> Option<Self> {
         let first = if resident.contains(&0) {
-            surface(&fonts, page_width, page_height, scale)?
+            surface(&fonts, &measurer, page_width, page_height, scale)?
         } else {
-            placeholder(&fonts, scale)?
+            placeholder(&fonts, &measurer, scale)?
         };
         Some(Self {
             pages: Rc::new(RefCell::new(vec![first])),
@@ -138,9 +138,10 @@ impl TinySkiaRenderHost {
             return;
         }
         let page = if resident {
-            surface(&self.fonts, width, height, self.scale).expect("a page-sized surface")
+            surface(&self.fonts, &self.measurer, width, height, self.scale)
+                .expect("a page-sized surface")
         } else {
-            placeholder(&self.fonts, self.scale).expect("a one-pixel surface")
+            placeholder(&self.fonts, &self.measurer, self.scale).expect("a one-pixel surface")
         };
         page.set_dark_paper(self.dark_paper.get());
         let mut sizes = self.page_sizes.borrow_mut();
@@ -167,8 +168,12 @@ pub(crate) fn show_changes_as_saved(options: &mut Options, word_document: &WordD
 
 /// A page's surface while it is not kept as pixels: one pixel, which every
 /// draw lands outside of.
-pub(crate) fn placeholder(fonts: &Rc<FontBook>, scale: f64) -> Option<TinySkiaPainter> {
-    surface(fonts, 1.0 / scale, 1.0 / scale, scale)
+pub(crate) fn placeholder(
+    fonts: &Rc<FontBook>,
+    measurer: &Rc<ShapingMeasurer>,
+    scale: f64,
+) -> Option<TinySkiaPainter> {
+    surface(fonts, measurer, 1.0 / scale, 1.0 / scale, scale)
 }
 
 /// Whether `page` is a [`placeholder`] rather than a page's pixels.
@@ -176,8 +181,12 @@ pub(crate) fn is_placeholder(page: &TinySkiaPainter) -> bool {
     page.width() <= 1 && page.height() <= 1
 }
 
+/// A page's surface, measuring text with `measurer` as the host does: the
+/// renderer measures a table cell's lines through the painter, and they
+/// have to break as body text in the same font does.
 pub(crate) fn surface(
     fonts: &Rc<FontBook>,
+    measurer: &Rc<ShapingMeasurer>,
     width: f64,
     height: f64,
     scale: f64,
@@ -188,7 +197,35 @@ pub(crate) fn surface(
         Rc::clone(fonts),
     )?;
     painter.scale(scale, scale).ok()?;
+    painter.measure_text_with(Rc::new(MeasurerText(Rc::clone(measurer))));
     Some(painter)
+}
+
+/// The shaping measurer as a painter measures text: widths, and the font and
+/// ink boxes canvas `measureText` reports.
+struct MeasurerText(Rc<ShapingMeasurer>);
+
+impl TextMeasure for MeasurerText {
+    fn width(&self, text: &str, font: &str) -> Option<f64> {
+        Some(self.0.measure_text(text, font).unwrap_or(0.0))
+    }
+
+    fn metrics(&self, text: &str, font: &str) -> Option<TextMetrics> {
+        let width = self.width(text, font)?;
+        let (font_ascent, font_descent) = self.0.font_bounding_box(font).unwrap_or((0.0, 0.0));
+        let (ink_ascent, ink_descent) = self
+            .0
+            .measure_font_vertical_metrics(font)
+            .unwrap_or((font_ascent, font_descent));
+        Some(TextMetrics {
+            width,
+            font_bounding_box_ascent: font_ascent,
+            font_bounding_box_descent: font_descent,
+            actual_bounding_box_ascent: ink_ascent,
+            actual_bounding_box_descent: ink_descent,
+            actual_bounding_box_right: width,
+        })
+    }
 }
 
 impl CanvasRenderHost for TinySkiaRenderHost {
@@ -203,7 +240,13 @@ impl CanvasRenderHost for TinySkiaRenderHost {
             // nothing rather than a page's worth of pixels.
             let mut scratch = self.scratch.borrow_mut();
             if scratch.is_none() {
-                *scratch = surface(&self.fonts, 1.0 / self.scale, 1.0 / self.scale, self.scale);
+                *scratch = surface(
+                    &self.fonts,
+                    &self.measurer,
+                    1.0 / self.scale,
+                    1.0 / self.scale,
+                    self.scale,
+                );
             }
             if let Some(scratch) = scratch.as_ref() {
                 return scratch.clone();
@@ -276,32 +319,16 @@ impl CanvasRenderHost for TinySkiaRenderHost {
         self.render_error.borrow_mut().take()
     }
 
+    // Through the painter, which measures with the shaping measurer (see
+    // `surface`), in the font the renderer last set on it.
     fn measure_text_width(&self, text: &str) -> Result<f64, JsValue> {
-        Ok(self
-            .measurer
-            .measure_text(text, &self.painter().font_descriptor())
-            .unwrap_or(0.0))
+        let Ok(width) = self.painter().measure_text_width(text);
+        Ok(width)
     }
 
     fn measure_text_metrics(&self, text: &str) -> Result<TextMetrics, JsValue> {
-        let descriptor = self.painter().font_descriptor();
-        let width = self.measure_text_width(text)?;
-        let (font_ascent, font_descent) = self
-            .measurer
-            .font_bounding_box(&descriptor)
-            .unwrap_or((0.0, 0.0));
-        let (ink_ascent, ink_descent) = self
-            .measurer
-            .measure_font_vertical_metrics(&descriptor)
-            .unwrap_or((font_ascent, font_descent));
-        Ok(TextMetrics {
-            width,
-            font_bounding_box_ascent: font_ascent,
-            font_bounding_box_descent: font_descent,
-            actual_bounding_box_ascent: ink_ascent,
-            actual_bounding_box_descent: ink_descent,
-            actual_bounding_box_right: width,
-        })
+        let Ok(metrics) = self.painter().measure_text_metrics(text);
+        Ok(metrics)
     }
 
     fn device_pixel_ratio(&self) -> f64 {
@@ -484,72 +511,12 @@ impl Document {
         fonts: Rc<FontBook>,
         measurer: Rc<ShapingMeasurer>,
     ) -> Result<Self, String> {
-        let scale = if scale.is_finite() && scale > 0.0 {
-            scale
-        } else {
-            1.0
-        };
-        // A viewer: no formatting marks.
-        let mut options = Options::default();
-        options.show_formatting_marks = false;
-        let word_document = futures::executor::block_on(WordDocument::load(bytes, &options))
-            .map_err(|error| format!("cannot read the document: {error}"))?;
-        show_changes_as_saved(&mut options, &word_document);
-        let document = word_document
-            .document
-            .as_ref()
-            .ok_or_else(|| "the document has no main part".to_string())?
-            .clone();
-
-        let render = |width: f64, height: f64| -> Result<_, String> {
-            let host = TinySkiaRenderHost::new(
-                width,
-                height,
-                scale,
-                Rc::clone(&fonts),
-                Rc::clone(&measurer),
-            )
-            .ok_or_else(|| "cannot allocate a page surface".to_string())?;
-            let pages = Rc::clone(&host.pages);
-            let rendered = Rc::clone(&host.rendered_pages);
-            let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
-                .map_err(|_| "renderer setup failed".to_string())?;
-            renderer.sync_document_header_footer_stories(&word_document);
-            // There is no overlay to draw the selection on; and without a
-            // declared full repaint the first render leaves the first
-            // paragraph of later pages unpainted (see jade-docx-native-render).
-            renderer.set_use_selection_overlay(false);
-            renderer.mark_full_repaint();
-            renderer
-                .render_with_numbering(
-                    &document,
-                    &options,
-                    word_document.numbering_part.as_ref(),
-                    word_document.header_lines.as_deref(),
-                    word_document.footer_lines.as_deref(),
-                    Some(&word_document.comments),
-                )
-                .map_err(|_| "render failed".to_string())?;
-            if let Some(error) = renderer.take_render_error() {
-                return Err(error);
-            }
-            Ok((renderer.layout_page_size(), pages, rendered))
-        };
-
-        // The section properties decide the page box; a first pass finds it,
-        // and a host sized to it paints the pages — as the native app does.
-        let ((width, height), pages, rendered) = render(INITIAL_PAGE.0, INITIAL_PAGE.1)?;
-        let (pages, rendered) = if (width, height) != INITIAL_PAGE && width > 1.0 && height > 1.0 {
-            let (_, pages, rendered) = render(width, height)?;
-            (pages, rendered)
-        } else {
-            (pages, rendered)
-        };
-        let page_count = rendered.get().min(pages.borrow().len());
+        let laid_out = lay_out(bytes, scale, fonts, measurer, Changes::AsSaved)?;
+        let page_count = laid_out.rendered.get().min(laid_out.pages.borrow().len());
         Ok(Self {
-            pages,
+            pages: laid_out.pages,
             page_count,
-            page_size: (width, height),
+            page_size: laid_out.page_size,
         })
     }
 
@@ -567,6 +534,118 @@ impl Document {
             return None;
         }
         self.pages.borrow().get(index).cloned()
+    }
+}
+
+/// Every line of `bytes` laid out as [`Document::open`] lays it out, from
+/// page one, as the browser editor's `captureFullLayoutDebug()` reports it:
+/// what a Word glyph reference is compared with (`bin/word_glyph_sweep.rs`).
+/// Tracked changes are laid out without their markup, the view Word's
+/// references are printed in.
+pub fn full_layout_debug(
+    bytes: &[u8],
+    fonts: Rc<FontBook>,
+    measurer: Rc<ShapingMeasurer>,
+) -> Result<FullLayoutDebugSnapshot, String> {
+    lay_out(bytes, 1.0, fonts, measurer, Changes::Hidden)?
+        .renderer
+        .capture_full_layout_debug()
+        .map_err(|_| "the layout capture failed".to_string())
+}
+
+/// A document laid out and painted, with the renderer that did it.
+struct LaidOut {
+    renderer: CanvasRenderer<TinySkiaPainter>,
+    pages: Rc<RefCell<Vec<TinySkiaPainter>>>,
+    rendered: Rc<Cell<usize>>,
+    /// The first page's size in CSS px.
+    page_size: (f64, f64),
+}
+
+/// How tracked changes are laid out.
+#[derive(Clone, Copy)]
+enum Changes {
+    /// As the document was saved to show them: see [`show_changes_as_saved`].
+    AsSaved,
+    /// The final document, without markup.
+    Hidden,
+}
+
+fn lay_out(
+    bytes: &[u8],
+    scale: f64,
+    fonts: Rc<FontBook>,
+    measurer: Rc<ShapingMeasurer>,
+    changes: Changes,
+) -> Result<LaidOut, String> {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    // A viewer: no formatting marks.
+    let mut options = Options::default();
+    options.show_formatting_marks = false;
+    let word_document = futures::executor::block_on(WordDocument::load(bytes, &options))
+        .map_err(|error| format!("cannot read the document: {error}"))?;
+    match changes {
+        Changes::AsSaved => show_changes_as_saved(&mut options, &word_document),
+        Changes::Hidden => options.set_render_changes(false),
+    }
+    let document = word_document
+        .document
+        .as_ref()
+        .ok_or_else(|| "the document has no main part".to_string())?
+        .clone();
+
+    let render = |width: f64, height: f64| -> Result<LaidOut, String> {
+        let host = TinySkiaRenderHost::new(
+            width,
+            height,
+            scale,
+            Rc::clone(&fonts),
+            Rc::clone(&measurer),
+        )
+        .ok_or_else(|| "cannot allocate a page surface".to_string())?;
+        let pages = Rc::clone(&host.pages);
+        let rendered = Rc::clone(&host.rendered_pages);
+        let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
+            .map_err(|_| "renderer setup failed".to_string())?;
+        renderer.sync_word_document(&word_document);
+        // There is no overlay to draw the selection on; and without a
+        // declared full repaint the first render leaves the first
+        // paragraph of later pages unpainted (see jade-docx-native-render).
+        renderer.set_use_selection_overlay(false);
+        renderer.mark_full_repaint();
+        renderer
+            .render_with_numbering(
+                &document,
+                &options,
+                word_document.numbering_part.as_ref(),
+                word_document.header_lines.as_deref(),
+                word_document.footer_lines.as_deref(),
+                Some(&word_document.comments),
+            )
+            .map_err(|_| "render failed".to_string())?;
+        if let Some(error) = renderer.take_render_error() {
+            return Err(error);
+        }
+        Ok(LaidOut {
+            page_size: renderer.layout_page_size(),
+            renderer,
+            pages,
+            rendered,
+        })
+    };
+
+    // The section properties decide the page box; a first pass finds it,
+    // and a host sized to it paints the pages — as the native app does.
+    let first = render(INITIAL_PAGE.0, INITIAL_PAGE.1)?;
+    let (width, height) = first.page_size;
+    if (width, height) != INITIAL_PAGE && width > 1.0 && height > 1.0 {
+        render(width, height)
+    } else {
+        Ok(first)
     }
 }
 
