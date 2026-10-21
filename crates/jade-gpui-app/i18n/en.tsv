@@ -675,3 +675,685 @@ format.fill.none	No color
 format.ok	OK
 format.cancel	Cancel
 sheet.protected	The cell or sheet you are trying to change is protected.
+menu.insert	Insert
+menu.insert.hyperlink	Link…
+link.group	Links
+link.button	Link
+link.button_title	Insert Hyperlink (⌘K)
+link.insert	Insert Hyperlink
+link.edit	Edit Hyperlink
+link.display	Text to display
+link.address	Address
+link.keys	⇥ next field · ⏎ OK · esc cancel · an empty address removes the link
+link.missing_bookmark	The bookmark this link goes to is not in the document
+menu.insert.footnote	Footnote
+menu.insert.endnote	Endnote
+doc.toc_update	Update Table
+doc.toc_update_title	Rebuild the table of contents from the headings
+note.group	Footnotes
+note.footnote	Insert Footnote
+note.footnote_title	Insert Footnote (⌥⌘F)
+note.endnote	Insert Endnote
+note.endnote_title	Insert Endnote (⌥⌘D)
+note.text	Text
+note.keys	⏎ insert · esc cancel
+doc.word_count	{words} words · {characters} characters
+doc.word_count_selection	{selected_words} of {words} words · {selected_characters} of {characters} characters
+menu.format.paragraph	Paragraph…
+paragraph.title	Paragraph
+paragraph.button_title	Paragraph settings (⌥⌘M)
+paragraph.alignment	Alignment
+paragraph.align.left	Left
+paragraph.align.center	Centered
+paragraph.align.right	Right
+paragraph.align.both	Justified
+paragraph.indent	Indentation
+paragraph.left	Left
+paragraph.right	Right
+paragraph.special	Special
+paragraph.special.none	(none)
+paragraph.special.first_line	First line
+paragraph.special.hanging	Hanging
+paragraph.by	By
+paragraph.spacing	Spacing
+paragraph.before	Before
+paragraph.after	After
+paragraph.line	Line spacing
+paragraph.line.single	Single
+paragraph.line.one_and_half	1.5 lines
+paragraph.line.double	Double
+paragraph.line.at_least	At least
+paragraph.line.exactly	Exactly
+paragraph.line.multiple	Multiple
+paragraph.unit.chars	ch
+paragraph.unit.mm	mm
+paragraph.unit.lines	lines
+paragraph.pagination	Line and Page Breaks
+paragraph.widow_control	Widow/Orphan control
+paragraph.keep_next	Keep with next
+paragraph.keep_lines	Keep lines together
+paragraph.page_break_before	Page break before
+paragraph.keys	⇥ next field · ⏎ OK · esc cancel
+menu.format.copy_format	Copy Formatting
+menu.format.paste_format	Paste Formatting
+painter.title	Format Painter (double-click to keep painting)
+painter.armed	Format Painter: select the text to format · esc to stop
+doc.tab.table_design	Table Design
+doc.tab.table_layout	Table Layout
+table.group.style_options	Table Style Options
+table.group.styles	Table Styles
+table.group.borders	Borders
+table.group.table	Table
+table.group.draw	Draw
+table.group.cells	Cells
+table.group.cell_size	Cell Size
+table.group.alignment	Alignment
+table.group.data	Data
+table.look.header_row	Header Row
+table.look.total_row	Total Row
+table.look.banded_rows	Banded Rows
+table.look.first_column	First Column
+table.look.last_column	Last Column
+table.look.banded_columns	Banded Columns
+table.more_styles	Styles
+table.style_clear	Table Normal
+table.shading	Shading
+table.no_color	No Color
+table.fill_keep	Unchanged
+table.pen_style	Line Style
+table.pen_width	Line Weight
+table.pen_color	Pen Color
+table.border_sets	Borders
+table.borders_dialog	Borders and Shading...
+table.borders_title	Borders and Shading
+table.borders_kind	Setting
+table.borders_edges	Borders
+table.apply_to	Apply to
+table.apply_table	Table
+table.apply_cell	Cell
+table.line.single	Single
+table.line.dotted	Dotted
+table.line.dashed	Dashed
+table.line.dot_dash	Dot Dash
+table.line.double	Double
+table.line.triple	Triple
+table.line.thick	Thick
+table.line.wave	Wave
+table.border.bottom	Bottom Border
+table.border.top	Top Border
+table.border.left	Left Border
+table.border.right	Right Border
+table.border.none	No Border
+table.border.all	All Borders
+table.border.outside	Outside Borders
+table.border.inside	Inside Borders
+table.border.inside_h	Inside Horizontal Border
+table.border.inside_v	Inside Vertical Border
+table.draw	Draw Table
+table.draw_title	Drag to draw a table or split a cell
+table.eraser	Eraser
+table.eraser_title	Click a line to merge the cells beside it
+table.select	Select
+table.select.cell	Select Cell
+table.select.column	Select Column
+table.select.row	Select Row
+table.select.table	Select Table
+table.properties	Table Properties
+table.properties_title	Properties of the table, rows, columns and cells
+table.insert_cells	Insert Cells...
+table.insert_cells_title	Insert Cells
+table.delete_cells	Delete Cells...
+table.delete_cells_title	Delete Cells
+table.split_cells	Split Cells...
+table.split_cells_title	Split Cells
+table.autofit	AutoFit
+table.autofit.contents	AutoFit Contents
+table.autofit.window	AutoFit Window
+table.autofit.fixed	Fixed Column Width
+table.height	Height
+table.width	Width
+table.step_up	▲
+table.step_down	▼
+table.distribute_rows	Distribute Rows
+table.distribute_columns	Distribute Columns
+table.align.top_left	Align Top Left
+table.align.top_center	Align Top Center
+table.align.top_right	Align Top Right
+table.align.center_left	Align Center Left
+table.align.center	Align Center
+table.align.center_right	Align Center Right
+table.align.bottom_left	Align Bottom Left
+table.align.bottom_center	Align Bottom Center
+table.align.bottom_right	Align Bottom Right
+table.text_direction	Text Direction
+table.direction.horizontal	Horizontal
+table.direction.vertical	Vertical
+table.direction.bottom_up	Rotate 90° Left
+table.cell_margins	Cell Margins
+table.cell_margins_title	Cell margins and spacing
+table.sort	Sort
+table.sort_title	Sort
+table.repeat_header	Repeat Header Rows
+table.to_text	Convert to Text
+table.to_text_title	Convert Table to Text
+table.to_table	Convert Text to Table...
+table.to_table_title	Convert Text to Table
+table.formula	Formula
+table.formula_title	Formula
+table.formula_format	Number format
+table.formula_paste	Paste function
+table.update_formulas	Update Fields
+table.update_formulas_title	Update every formula in the tables
+table.shift.right	Shift cells right
+table.shift.down	Shift cells down
+table.shift.insert_row	Insert entire row
+table.shift.insert_column	Insert entire column
+table.shift.left	Shift cells left
+table.shift.up	Shift cells up
+table.shift.delete_row	Delete entire row
+table.shift.delete_column	Delete entire column
+table.columns	Number of columns
+table.rows	Number of rows
+table.separator	Separate text at
+table.separator.paragraph	Paragraphs
+table.separator.paragraph_mark	Paragraph marks
+table.separator.tab	Tabs
+table.separator.comma	Commas
+table.separator.other	Other
+table.sort.first	Sort by
+table.sort.second	Then by
+table.sort.third	Then by
+table.sort.none	(none)
+table.sort.text	Text
+table.sort.number	Number
+table.sort.date	Date
+table.sort.ascending	Ascending
+table.sort.descending	Descending
+table.sort.header	Header row
+table.sort.header_yes	Yes
+table.sort.header_no	No
+table.tab.table	Table
+table.tab.row	Row
+table.tab.column	Column
+table.tab.cell	Cell
+table.prop.width	Preferred width
+table.prop.unit	Measure in
+table.prop.alignment	Alignment
+table.prop.left	Left
+table.prop.center	Center
+table.prop.right	Right
+table.prop.inside	Inside
+table.prop.outside	Outside
+table.prop.indent	Indent from left
+table.prop.wrapping	Text wrapping
+table.prop.wrap_none	None
+table.prop.wrap_around	Around
+table.prop.position	Positioning...
+table.prop.options	Options...
+table.prop.default_margins	Default cell margins
+table.prop.top	Top
+table.prop.bottom	Bottom
+table.prop.left_margin	Left
+table.prop.right_margin	Right
+table.prop.spacing	Allow spacing between cells
+table.prop.autofit	Automatically resize to fit contents
+table.prop.height	Specify height
+table.prop.height_rule	Row height is
+table.prop.at_least	At least
+table.prop.exact	Exactly
+table.prop.allow_break	Allow row to break across pages
+table.prop.repeat_header	Repeat as header row at the top of each page
+table.prop.vertical	Vertical alignment
+table.prop.same_as_table	Same as the whole table
+table.prop.horizontal	Horizontal
+table.prop.vertical_position	Vertical
+table.prop.relative_to	Relative to
+table.prop.anchor_margin	Margin
+table.prop.anchor_page	Page
+table.prop.anchor_column	Column
+table.prop.anchor_paragraph	Paragraph
+table.prop.distance	Distance from surrounding text
+table.prop.move_with_text	Move with text
+table.prop.allow_overlap	Allow overlap
+table.direction.turn_right	Rotate 90° Right
+# Page setup, sections, headers and footers
+setup.title	Page Setup
+setup.open	Page Setup…
+setup.tab.grid	Document Grid
+setup.tab.margins	Margins
+setup.tab.paper	Paper
+setup.tab.other	Layout
+setup.apply	Apply to
+setup.apply.whole	Whole document
+setup.apply.section	This section
+setup.apply.selected	Selected sections
+setup.apply.forward	This point forward
+setup.direction	Text Direction
+setup.direction.heading	Text flow
+setup.direction.label	Orientation
+setup.direction.horizontal	Horizontal
+setup.direction.vertical	Vertical
+setup.direction.options	Text Direction Options…
+setup.columns.count	Number of columns
+setup.grid.heading	Grid
+setup.grid.default	No grid
+setup.grid.lines	Specify line grid only
+setup.grid.chars_and_lines	Specify line and character grid
+setup.grid.manuscript	Text snaps to character grid
+setup.chars.heading	Characters
+setup.chars	Per line
+setup.char_pitch	Pitch
+setup.lines.heading	Lines
+setup.lines_per_page	Per page
+setup.line_pitch	Pitch
+setup.margins.heading	Margins
+setup.margin.top	Top
+setup.margin.bottom	Bottom
+setup.margin.left	Left
+setup.margin.right	Right
+setup.margin.inside	Inside
+setup.margin.outside	Outside
+setup.gutter	Gutter
+setup.gutter_side	Gutter position
+setup.orientation.heading	Orientation
+setup.orientation	Orientation
+setup.pages.heading	Pages
+setup.pages	Multiple pages
+setup.pages.normal	Normal
+setup.pages.mirror	Mirror margins
+setup.pages.two_on_one	2 pages per sheet
+setup.pages.book_fold	Book fold
+setup.paper.heading	Paper size
+setup.paper.custom	Custom size
+setup.paper.width	Width
+setup.paper.height	Height
+setup.paper.more	More Paper Sizes…
+setup.margins.custom	Custom Margins…
+setup.section.heading	Section
+setup.section.start	Section start
+setup.start.continuous	Continuous
+setup.start.next_column	New column
+setup.start.next_page	New page
+setup.start.even_page	Even page
+setup.start.odd_page	Odd page
+setup.header_footer.heading	Headers and footers
+setup.header_footer.odd_even	Different odd and even
+setup.header_footer.first_page	Different first page
+setup.header_distance	Header
+setup.footer_distance	Footer
+setup.page.heading	Page
+setup.valign	Vertical alignment
+setup.valign.top	Top
+setup.valign.center	Center
+setup.valign.both	Justified
+setup.valign.bottom	Bottom
+setup.lines	Line Numbers
+setup.lines.button	Line Numbers…
+setup.lines.title	Line Numbers
+setup.lines.add	Add line numbering
+setup.lines.start	Start at
+setup.lines.count_by	Count by
+setup.lines.distance	From text
+setup.lines.auto	0 is Auto
+setup.lines.restart	Numbering
+setup.lines.none	None
+setup.lines.continuous	Continuous
+setup.lines.new_page	Restart Each Page
+setup.lines.new_section	Restart Each Section
+setup.lines.options	Line Numbering Options…
+setup.group.text	Text and Lines
+setup.ltr	Left-to-Right
+setup.ltr_title	Paragraph reads left to right
+setup.rtl	Right-to-Left
+setup.rtl_title	Paragraph reads right to left
+setup.unit.mm	mm
+setup.unit.pt	pt
+setup.unit.chars	chars
+setup.unit.lines	lines
+setup.unit.columns	columns
+setup.unit.none	 
+setup.problem.margins	The margins leave no room for text.
+setup.break.pages	Page Breaks
+setup.break.page	Page
+setup.break.column	Column
+setup.break.text_wrapping	Text Wrapping
+setup.columns.title	Columns
+setup.columns.kind	Presets
+setup.columns.one	One
+setup.columns.two	Two
+setup.columns.three	Three
+setup.columns.left	Left
+setup.columns.right	Right
+setup.columns.more	More Columns…
+setup.columns.widths	Width and spacing
+setup.columns.width	Width
+setup.columns.space	Spacing
+setup.columns.equal	Equal column width
+setup.columns.line	Line between
+setup.numbers.open	Format Page Numbers…
+setup.numbers.title	Page Number Format
+setup.numbers.format	Number format
+setup.numbers.chapter	Include chapter number
+setup.numbers.chapter_style	Chapter starts with style
+setup.numbers.heading_level	Heading {n}
+setup.numbers.separator	Use separator
+setup.numbers.numbering	Page numbering
+setup.numbers.continue	Continue from previous section
+setup.numbers.start	Start at
+story.tab	Header & Footer
+story.header	Header
+story.header.first	First Page Header
+story.header.even	Even Page Header
+story.footer	Footer
+story.footer.first	First Page Footer
+story.footer.even	Even Page Footer
+story.section	Section {n}
+story.linked	Same as Previous
+story.group.insert	Insert
+story.field.page	Page Number
+story.field.page_title	Insert the page number (PAGE) at the caret
+story.field.pages	Page Count
+story.field.pages_title	Insert the number of pages (NUMPAGES) at the caret
+story.field.date	Date
+story.field.date_title	Insert the date (DATE) at the caret
+story.field.file	File Name
+story.field.file_title	Insert the file name (FILENAME) at the caret
+story.group.navigation	Navigation
+story.goto.header	Go to Header
+story.goto.footer	Go to Footer
+story.previous	Previous
+story.previous_title	The previous section's header or footer
+story.next	Next
+story.next_title	The next section's header or footer
+story.link	Link to Previous
+story.link_title	Use the previous section's header or footer
+story.group.options	Options
+story.group.position	Position
+story.distance_title	Move it a millimetre from the page edge
+story.distance.header	Header from Top {mm} mm
+story.distance.footer	Footer from Bottom {mm} mm
+story.group.close	Close
+story.close	Close Header and Footer
+story.close_title	Back to the body (or double-click it)
+setup.snap	Snap to Grid
+setup.snap_title	Snap to grid when the document grid is defined
+story.field.heading	Heading Reference
+story.field.heading_title	Insert this page's Heading 1 (STYLEREF) at the caret
+story.field.heading_missing	Heading 1
+setup.borders.title	Borders and Shading (Page Border)
+setup.borders.open	Page Borders…
+setup.borders.setting	Setting
+setup.borders.none	None
+setup.borders.box	Box
+setup.borders.custom	Custom
+setup.borders.style	Style
+setup.borders.single	Single
+setup.borders.double	Double
+setup.borders.dotted	Dotted
+setup.borders.dashed	Dashed
+setup.borders.dot_dash	Dot dash
+setup.borders.triple	Triple
+setup.borders.thin_thick	Thin thick
+setup.borders.wave	Wave
+setup.borders.color	Color
+setup.borders.auto	Automatic
+setup.borders.width	Width
+setup.borders.offset	Measure from
+setup.borders.from_text	Text
+setup.borders.from_page	Edge of page
+setup.borders.preview	Preview
+setup.color.white	White
+setup.color.light_gray	Light Gray
+setup.color.cream	Cream
+setup.color.rose	Pale Rose
+setup.color.pale_green	Pale Green
+setup.color.pale_blue	Pale Blue
+setup.color.lavender	Lavender
+setup.color.dark_red	Dark Red
+setup.color.red	Red
+setup.color.orange	Orange
+setup.color.yellow	Yellow
+setup.color.light_green	Light Green
+setup.color.green	Green
+setup.color.light_blue	Light Blue
+setup.color.blue	Blue
+setup.color.purple	Purple
+setup.color.none	No Color
+setup.group.background	Page Background
+setup.page_color	Page Color
+setup.cover	Cover Page
+setup.cover.group	Pages
+setup.cover.simple	Simple
+setup.cover.banner	Banner
+setup.cover.lined	Lined
+# ---- Character formatting and Japanese text (word_characters) ----
+menu.format.font	Font...
+chars.none	None
+chars.font.title	Font
+chars.font.tab_font	Font
+chars.font.tab_advanced	Advanced
+chars.font.japanese	Asian text font
+chars.font.latin	Latin text font
+chars.font.complex	Complex scripts font
+chars.font.complex_size	Complex scripts size
+chars.font.style	Font style
+chars.font.size	Size
+chars.font.all_text	All text
+chars.font.color	Font color
+chars.font.underline	Underline style
+chars.font.underline_color	Underline color
+chars.font.emphasis	Emphasis mark
+chars.font.decorations	Effects
+chars.font.preview	Preview
+chars.font.type_to_filter	Type to filter
+chars.font.launcher	Font... (⌘D)
+chars.font.all_fonts	All fonts
+chars.style.regular	Regular
+chars.style.italic	Italic
+chars.style.bold	Bold
+chars.style.bold_italic	Bold Italic
+chars.underline.none	(none)
+chars.underline.single	Single
+chars.underline.words	Words only
+chars.underline.double	Double
+chars.underline.thick	Thick
+chars.underline.dotted	Dotted
+chars.underline.dotted_heavy	Heavy dotted
+chars.underline.dash	Dash
+chars.underline.dash_heavy	Heavy dash
+chars.underline.dash_long	Long dash
+chars.underline.dash_long_heavy	Heavy long dash
+chars.underline.dot_dash	Dot dash
+chars.underline.dot_dash_heavy	Heavy dot dash
+chars.underline.dot_dot_dash	Dot dot dash
+chars.underline.dot_dot_dash_heavy	Heavy dot dot dash
+chars.underline.wave	Wave
+chars.underline.wave_heavy	Heavy wave
+chars.underline.wave_double	Double wave
+chars.emphasis.none	(none)
+chars.emphasis.dot	Dot
+chars.emphasis.comma	Comma
+chars.emphasis.circle	Circle
+chars.emphasis.under_dot	Under dot
+chars.effect.strike	Strikethrough
+chars.effect.double_strike	Double strikethrough
+chars.effect.superscript	Superscript
+chars.effect.subscript	Subscript
+chars.effect.small_caps	Small caps
+chars.effect.all_caps	All caps
+chars.effect.hidden	Hidden
+chars.effect.outline	Outline
+chars.effect.shadow	Shadow
+chars.effect.emboss	Emboss
+chars.effect.engrave	Engrave
+chars.advanced.spacing	Character spacing
+chars.advanced.scale	Scale
+chars.advanced.char_spacing	Spacing
+chars.advanced.position	Position
+chars.advanced.opentype	OpenType features
+chars.advanced.ligatures	Ligatures
+chars.advanced.number_spacing	Number spacing
+chars.advanced.number_form	Number forms
+chars.advanced.stylistic_set	Stylistic sets
+chars.advanced.alternates	Use contextual alternates
+chars.advanced.effects	Text effects
+chars.advanced.glow	Glow
+chars.advanced.text_outline	Text outline
+chars.spacing.normal	Normal
+chars.spacing.expanded	Expanded
+chars.spacing.condensed	Condensed
+chars.position.normal	Normal
+chars.position.raised	Raised
+chars.position.lowered	Lowered
+chars.kerning	Kerning for fonts
+chars.kerning_from	points and above
+chars.ligatures.none	None
+chars.ligatures.standard	Standard only
+chars.ligatures.standard_contextual	Standard and contextual
+chars.ligatures.historical	Historical and discretionary
+chars.ligatures.all	All
+chars.number.default	Default
+chars.number.proportional	Proportional
+chars.number.tabular	Tabular
+chars.number.lining	Lining
+chars.number.old_style	Old-style
+chars.color.title	Colors
+chars.color.theme	Theme colors
+chars.color.standard	Standard colors
+chars.color.more	More colors...
+chars.color.code	Hex code
+chars.case.title_tip	Change case
+chars.case.sentence	Sentence case.
+chars.case.lower	lowercase
+chars.case.upper	UPPERCASE
+chars.case.title	Capitalize Each Word
+chars.case.toggle	tOGGLE cASE
+chars.case.half_width	Half-width
+chars.case.full_width	Full-width
+chars.case.katakana	Katakana
+chars.case.hiragana	Hiragana
+chars.shading	Character shading
+chars.border	Character border
+chars.asian.title	Asian layout
+chars.asian.vertical	Horizontal in vertical
+chars.asian.vertical_fit	Horizontal in vertical (fit line)
+chars.asian.combine	Combine characters
+chars.asian.warichu	Two lines in one
+chars.asian.warichu_none	Two lines in one (no brackets)
+chars.asian.remove	Remove Asian layout
+chars.asian.scale	Character scale
+menu.format.typography	Asian Typography...
+chars.typography.title	Asian Typography
+chars.typography.paragraph	Line breaking (selected paragraphs)
+chars.typography.document	Typography (whole document)
+chars.typography.kinsoku	Use Asian rules for first and last characters
+chars.typography.word_wrap	Allow Latin text to wrap in the middle of a word
+chars.typography.overflow_punct	Allow hanging punctuation
+chars.typography.top_line_punct	Compress punctuation at the start of a line
+chars.typography.auto_space_de	Adjust space between Asian and Latin text
+chars.typography.auto_space_dn	Adjust space between Asian text and numbers
+chars.kinsoku.level	First and last characters
+chars.kinsoku.standard	Normal
+chars.kinsoku.strict	Strict
+chars.kinsoku.custom	Custom
+chars.kinsoku.line_start	Not at start of line
+chars.kinsoku.line_end	Not at end of line
+chars.compress.title	Character spacing control
+chars.compress.none	Don't compress
+chars.compress.punctuation	Compress punctuation only
+chars.compress.kana	Compress punctuation and Japanese kana
+menu.edit.paste_special	Paste Special...
+menu.edit.paste_match	Paste and Match Formatting
+chars.paste.title	Paste Special
+chars.paste.title_menu	Paste Special...
+chars.paste.options	Paste Options
+chars.paste.keep_source	Keep Source Formatting
+chars.paste.merge	Merge Formatting
+chars.paste.text_only	Keep Text Only
+chars.paste.source	Source
+chars.paste.paste	Paste
+chars.paste.link	Paste link
+chars.paste.as	As
+chars.paste.format.word	Microsoft Word Document
+chars.paste.format.rtf	Formatted Text (RTF)
+chars.paste.format.html	HTML Format
+chars.paste.format.text	Unformatted Text
+chars.paste.format.unicode	Unformatted Unicode Text
+menu.insert.symbol	Symbol...
+menu.insert.date_time	Date and Time...
+chars.insert.group	Symbols
+chars.symbol.title	Symbol
+chars.symbol.title_menu	Symbol
+chars.symbol.tab_symbols	Symbols
+chars.symbol.tab_special	Special Characters
+chars.symbol.subset	Subset
+chars.symbol.recent	Recently used symbols
+chars.symbol.code	Character code
+chars.symbol.subset.latin	Basic Latin
+chars.symbol.subset.latin1	Latin-1 Supplement
+chars.symbol.subset.greek	Greek
+chars.symbol.subset.cyrillic	Cyrillic
+chars.symbol.subset.punctuation	General Punctuation
+chars.symbol.subset.currency	Currency Symbols
+chars.symbol.subset.letterlike	Letterlike Symbols
+chars.symbol.subset.number_forms	Number Forms
+chars.symbol.subset.arrows	Arrows
+chars.symbol.subset.math	Mathematical Operators
+chars.symbol.subset.technical	Miscellaneous Technical
+chars.symbol.subset.enclosed	Enclosed Alphanumerics
+chars.symbol.subset.box	Box Drawing
+chars.symbol.subset.shapes	Geometric Shapes
+chars.symbol.subset.misc	Miscellaneous Symbols
+chars.symbol.subset.cjk	CJK Symbols and Punctuation
+chars.symbol.subset.hiragana	Hiragana
+chars.symbol.subset.katakana	Katakana
+chars.symbol.subset.enclosed_cjk	Enclosed CJK Letters and Months
+chars.symbol.subset.fullwidth	Halfwidth and Fullwidth Forms
+chars.special.em_dash	Em Dash
+chars.special.en_dash	En Dash
+chars.special.nonbreaking_hyphen	Nonbreaking Hyphen
+chars.special.optional_hyphen	Optional Hyphen
+chars.special.em_space	Em Space
+chars.special.en_space	En Space
+chars.special.quarter_em_space	1/4 Em Space
+chars.special.nonbreaking_space	Nonbreaking Space
+chars.special.copyright	Copyright
+chars.special.registered	Registered
+chars.special.trademark	Trademark
+chars.special.section	Section
+chars.special.paragraph	Paragraph
+chars.special.ellipsis	Ellipsis
+chars.special.no_width_break	No-Width Optional Break
+chars.special.no_width_join	No-Width Non Break
+chars.date.title	Date and Time
+chars.date.title_menu	Date and Time
+chars.date.language	Language
+chars.date.japanese	Japanese
+chars.date.english	English (United States)
+chars.date.calendar	Calendar type
+chars.date.gregorian	Gregorian
+chars.date.era	Japanese era
+chars.date.formats	Available formats
+chars.date.auto_update	Update automatically
+chars.ruby.title	Phonetic Guide
+chars.ruby.base	Base text
+chars.ruby.ruby	Ruby text
+chars.ruby.whole	Group
+chars.ruby.per_character	Mono
+chars.ruby.clear	Clear all
+chars.ruby.align	Alignment
+chars.ruby.align.center	Center
+chars.ruby.align.distribute_letter	Distributed
+chars.ruby.align.distribute_space	1:2:1
+chars.ruby.align.left	Left
+chars.ruby.align.right	Right
+chars.ruby.align.right_vertical	Right vertical
+chars.ruby.font	Font
+chars.ruby.font_same	(same as base)
+chars.ruby.size	Size
+chars.ruby.offset	Offset
+chars.ruby.auto	Auto
+chars.enclose.title	Enclose Characters
+chars.enclose.text	Text
+chars.enclose.enclosure	Enclosure
+chars.font.complex_style	Complex scripts style

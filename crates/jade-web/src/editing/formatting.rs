@@ -8,8 +8,8 @@ use jade_docx_editor::word_document::WordDocument;
 use jade_docx_headless_api::{HeadlessCommand, HeadlessEditRequest};
 pub use jade_office_model::word::{
     style_gallery, CellLayout, CellStep, CharacterFormat, FindOptions, FormatState, Found,
-    GalleryStyle, ListKind, ParagraphBorders, ParagraphStyle, TableBorders, TableCell,
-    TableCommand, WordFind, WordFormatting, WordSession,
+    GalleryStyle, Hyperlink, LinkDraft, LinkTarget, ListKind, ParagraphBorders, ParagraphStyle,
+    TableBorders, TableCell, TableCommand, WordFind, WordFormatting, WordLinks, WordSession,
 };
 use jade_selection::SelectionRange;
 
@@ -115,6 +115,23 @@ impl WordSession for EditableDocument {
 
     fn table_order_for(&self, table_id: usize) -> Option<usize> {
         self.renderer.table_order_for(table_id)
+    }
+
+    fn hyperlink_regions(&self) -> Vec<jade_docx_editor::canvas_renderer::HyperlinkRegion> {
+        self.renderer
+            .derive_hyperlink_regions_from_document(&self.word_document)
+    }
+
+    fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
+        let range = self
+            .renderer
+            .cell_selection_range(anchor_cell, focus_cell)
+            .ok_or_else(|| "the cells are not in one table".to_string())?;
+        self.composition = None;
+        self.selection = Some(range);
+        self.renderer.set_selection_range(Some(range));
+        self.renderer.set_cell_selection(anchor_cell, focus_cell);
+        Ok(())
     }
 }
 

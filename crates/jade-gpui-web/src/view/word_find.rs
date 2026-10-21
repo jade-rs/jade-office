@@ -95,9 +95,16 @@ impl DocView {
     /// ⌘F (or ⌘⇧H, on the replacement): opens the bar with the selection
     /// as the query, or focuses the field when it is open.
     pub(super) fn open_find(&mut self, replacing: bool, cx: &mut Context<Self>) {
-        let Document::Pages { document, find, .. } = &mut self.document else {
+        let Document::Pages {
+            document,
+            find,
+            dialog,
+            ..
+        } = &mut self.document
+        else {
             return;
         };
+        *dialog = None;
         let selected = document
             .selected_text()
             .filter(|text| !text.trim().is_empty() && !text.contains('\n'));

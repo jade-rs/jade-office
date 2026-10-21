@@ -193,6 +193,7 @@ pub struct Deck<B: Backend> {
 
 impl<B: Backend> Deck<B> {
     pub fn open(bytes: &[u8], backend: B) -> Result<Self, String> {
+        backend.prepare_fonts(bytes);
         let session = EditSession::open(bytes)
             .map_err(|error| format!("cannot read the presentation: {error}"))?;
         let (deck, parts) = read(bytes)?;

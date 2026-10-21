@@ -23,8 +23,12 @@
 //! first registered face that has the run's first character. Font metrics
 //! come from `hhea`, rounded per half the way Chromium's canvas rounds them.
 //!
-//! Not drawn yet: canvas shadows and the blur filter (Word's shadow, emboss
-//! and glow effects), and SVG pictures. Those calls are accepted and ignored.
+//! The blur filter (glows, soft edges, blurred shadows of slide shapes) is
+//! drawn on a layer of its own and blurred there with three box passes, the
+//! usual stand-in for a Gaussian.
+//!
+//! Not drawn yet: canvas shadows (Word's shadow and emboss character
+//! effects), and SVG pictures. Those calls are accepted and ignored.
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
@@ -820,6 +824,8 @@ struct State {
     font_descriptor: Rc<str>,
     baseline: TextBaseline,
     clip: Option<Rc<Clip>>,
+    /// The blur filter's standard deviation in user px; zero for none.
+    blur: f32,
 }
 
 impl Default for State {
@@ -836,6 +842,7 @@ impl Default for State {
             font_descriptor: Rc::from("16px sans-serif"),
             baseline: TextBaseline::Alphabetic,
             clip: None,
+            blur: 0.0,
         }
     }
 }
@@ -1534,7 +1541,80 @@ impl TinySkiaPainter {
         self.note_damage(device, clip.as_deref());
     }
 
+    /// Fills `path` blurred by the current blur filter, if there is one:
+    /// drawn sharp on a layer padded by three deviations, blurred there, and
+    /// laid on the surface under the clip. `false` when no blur is set.
+    fn blurred(&self, path: &Path, color: Color, transform: Transform) -> bool {
+        let (blur, clip, user) = {
+            let state = self.inner.state.borrow();
+            (state.blur, state.clip.clone(), state.transform)
+        };
+        if blur <= 0.0 {
+            return false;
+        }
+        // The deviation is in user px and follows the painter's scale, as
+        // Skia's mask filter's does — not a glyph's font-unit transform.
+        let scale = (user.sx * user.sy - user.kx * user.ky).abs().sqrt();
+        let sigma = blur
+            * if scale.is_finite() && scale > 0.0 {
+                scale
+            } else {
+                1.0
+            };
+        let pad = (sigma * 3.0).ceil();
+        let device = device_bounds(path.bounds(), transform);
+        let (surface_width, surface_height) = {
+            let pixmap = self.inner.pixmap.borrow();
+            (pixmap.width() as f32, pixmap.height() as f32)
+        };
+        // The layer is the blurred drawing's extent on the surface, and a
+        // deviation's worth around it so the blur reads true at the cut.
+        let left = (device[0] - pad).max(-pad).floor();
+        let top = (device[1] - pad).max(-pad).floor();
+        let right = (device[2] + pad).min(surface_width + pad).ceil();
+        let bottom = (device[3] + pad).min(surface_height + pad).ceil();
+        if !(right > left && bottom > top && left.is_finite() && top.is_finite()) {
+            return true;
+        }
+        let Some(mut layer) = Pixmap::new((right - left) as u32, (bottom - top) as u32) else {
+            return true;
+        };
+        let paint = self.paint(color);
+        layer.fill_path(
+            path,
+            &paint,
+            FillRule::Winding,
+            transform.post_translate(-left, -top),
+            None,
+        );
+        blur_layer(&mut layer, sigma);
+        let layer_bounds = [left, top, right, bottom];
+        let mut pixmap = self.pixels();
+        let mask = match clip.as_deref() {
+            None => None,
+            Some(clip) => match clip.coverage(layer_bounds) {
+                Coverage::Hidden => return true,
+                Coverage::Whole => None,
+                Coverage::Partial => Some(clip.whole_mask()),
+            },
+        };
+        pixmap.draw_pixmap(
+            left as i32,
+            top as i32,
+            layer.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            mask,
+        );
+        drop(pixmap);
+        self.note_damage(layer_bounds, clip.as_deref());
+        true
+    }
+
     fn fill_path_with(&self, path: &Path, color: Color, transform: Transform) {
+        if self.blurred(path, color, transform) {
+            return;
+        }
         if self.fill_area(path, color, transform) {
             return;
         }
@@ -1571,6 +1651,16 @@ impl TinySkiaPainter {
         let stroke = self.stroke_style();
         // The stroke's outline, filled as any other path is.
         let resolution = tiny_skia::PathStroker::compute_resolution_scale(&transform);
+        if self.inner.state.borrow().blur > 0.0 {
+            let dashed = stroke
+                .dash
+                .as_ref()
+                .and_then(|dash| path.dash(dash, resolution));
+            if let Some(outline) = dashed.as_ref().unwrap_or(path).stroke(&stroke, resolution) {
+                self.blurred(&outline, color, transform);
+            }
+            return;
+        }
         let dashed = match &stroke.dash {
             Some(dash) => path.dash(dash, resolution),
             None => None,
@@ -2026,6 +2116,11 @@ impl TinySkiaPainter {
             .map(|face| face.units_per_em)
             .unwrap_or(1000.0);
         let scale = size / units;
+        // Outlines are in font units, so a stroke's width is too.
+        let line_width = self.inner.state.borrow().line_width;
+        if stroke {
+            self.inner.state.borrow_mut().line_width = line_width / scale;
+        }
         for glyph in self.styled_glyphs(font, size, text) {
             // Font units, y up → px at the pen, y down; a synthetic italic
             // leans 12° as the letter rises.
@@ -2034,7 +2129,11 @@ impl TinySkiaPainter {
                 scale, 0.0, slant, -scale, pen, baseline_y,
             ));
             let bold_width = glyph.bold.then_some(size / scale / 30.0);
-            if !stroke && self.blit_glyph(font, glyph.id, glyph_transform, bold_width, color) {
+            let blurred = self.inner.state.borrow().blur > 0.0;
+            if !stroke
+                && !blurred
+                && self.blit_glyph(font, glyph.id, glyph_transform, bold_width, color)
+            {
                 pen += glyph.advance;
                 continue;
             }
@@ -2049,6 +2148,9 @@ impl TinySkiaPainter {
                 }
             }
             pen += glyph.advance;
+        }
+        if stroke {
+            self.inner.state.borrow_mut().line_width = line_width;
         }
         pen
     }
@@ -2129,6 +2231,89 @@ impl TinySkiaPainter {
 
 /// Device-px bounds as `[left, top, right, bottom]`.
 type Bounds = [f32; 4];
+
+/// Blurs a layer in place: three box passes each way, whose widths add up
+/// to the Gaussian of standard deviation `sigma` (device px) that canvas
+/// and Skia draw.
+fn blur_layer(layer: &mut Pixmap, sigma: f32) {
+    let (width, height) = (layer.width() as usize, layer.height() as usize);
+    // Box widths for three passes (W. Jarosz, "Fast Image Convolutions").
+    let ideal = (12.0 * sigma * sigma / 3.0 + 1.0).sqrt();
+    let mut lower = ideal.floor() as usize;
+    if lower.is_multiple_of(2) {
+        lower = lower.saturating_sub(1);
+    }
+    let lower = lower.max(1);
+    let upper = lower + 2;
+    let m = ((12.0 * sigma * sigma - 3.0 * (lower * lower) as f32 - 12.0 * lower as f32 - 9.0)
+        / (-4.0 * lower as f32 - 4.0))
+        .round()
+        .clamp(0.0, 3.0) as usize;
+    let data = layer.data_mut();
+    let mut scratch = vec![0u8; data.len()];
+    for pass in 0..3 {
+        let radius = (if pass < m { lower } else { upper } - 1) / 2;
+        if radius == 0 {
+            continue;
+        }
+        box_pass(data, &mut scratch, width, height, radius, true);
+        box_pass(&scratch, data, width, height, radius, false);
+    }
+}
+
+/// One box blur of `radius` along rows (`horizontal`) or columns, from
+/// `source` into `target`, treating what lies outside as clear.
+fn box_pass(
+    source: &[u8],
+    target: &mut [u8],
+    width: usize,
+    height: usize,
+    radius: usize,
+    horizontal: bool,
+) {
+    let (lines, length) = if horizontal {
+        (height, width)
+    } else {
+        (width, height)
+    };
+    let index = |line: usize, at: usize| {
+        if horizontal {
+            (line * width + at) * 4
+        } else {
+            (at * width + line) * 4
+        }
+    };
+    let span = (2 * radius + 1) as u32;
+    for line in 0..lines {
+        let mut sums = [0u32; 4];
+        // Prime the window with the pixels right of (below) the first.
+        for at in 0..radius.min(length) {
+            let i = index(line, at);
+            for channel in 0..4 {
+                sums[channel] += u32::from(source[i + channel]);
+            }
+        }
+        for at in 0..length {
+            let entering = at + radius;
+            if entering < length {
+                let i = index(line, entering);
+                for channel in 0..4 {
+                    sums[channel] += u32::from(source[i + channel]);
+                }
+            }
+            let o = index(line, at);
+            for channel in 0..4 {
+                target[o + channel] = ((sums[channel] + span / 2) / span) as u8;
+            }
+            if at >= radius {
+                let i = index(line, at - radius);
+                for channel in 0..4 {
+                    sums[channel] -= u32::from(source[i + channel]);
+                }
+            }
+        }
+    }
+}
 
 /// A transparent layer for drawing within `device` that crosses the edge of
 /// the clip rectangle `clip` (both device px), on a surface of `size`:
@@ -2603,12 +2788,19 @@ impl Painter for TinySkiaPainter {
             .collect();
     }
 
-    // Shadows and blur are not drawn yet; see the module docs.
+    // Shadows are not drawn yet; see the module docs.
     fn set_shadow_color(&self, _value: &str) {}
     fn set_shadow_blur(&self, _value: f64) {}
     fn set_shadow_offset_x(&self, _value: f64) {}
     fn set_shadow_offset_y(&self, _value: f64) {}
-    fn set_blur_filter(&self, _radius_px: f64) {}
+    fn set_blur_filter(&self, radius_px: f64) {
+        let blur = if radius_px.is_finite() && radius_px > 0.0 {
+            radius_px as f32
+        } else {
+            0.0
+        };
+        self.inner.state.borrow_mut().blur = blur;
+    }
 
     fn set_font(&self, value: &str) {
         let fonts = &self.inner.fonts;
