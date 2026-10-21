@@ -150,8 +150,9 @@ impl EditableDocument {
         } else {
             1.0
         };
+        // Formatting marks on, as in Word and jade. The bundled face lacks the
+        // paragraph- and page-break arrows; the painter draws those itself.
         let mut options = Options::default();
-        options.show_formatting_marks = false;
         let word_document = futures::executor::block_on(WordDocument::load(bytes, &options))
             .map_err(|error| format!("cannot read the document: {error}"))?;
         if word_document.document.is_none() {
