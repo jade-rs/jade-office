@@ -885,3 +885,21 @@ chars.date.gregorian	Gregorian
 chars.date.era	Japanese era
 chars.date.formats	Available formats
 chars.date.auto_update	Update automatically
+chars.ruby.title	Phonetic Guide
+chars.ruby.base	Base text
+chars.ruby.ruby	Ruby text
+chars.ruby.whole	Group
+chars.ruby.per_character	Mono
+chars.ruby.clear	Clear all
+chars.ruby.align	Alignment
+chars.ruby.align.center	Center
+chars.ruby.align.distribute_letter	Distributed
+chars.ruby.align.distribute_space	1:2:1
+chars.ruby.align.left	Left
+chars.ruby.align.right	Right
+chars.ruby.align.right_vertical	Right vertical
+chars.ruby.font	Font
+chars.ruby.font_same	(same as base)
+chars.ruby.size	Size
+chars.ruby.offset	Offset
+chars.ruby.auto	Auto

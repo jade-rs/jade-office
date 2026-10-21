@@ -273,6 +273,14 @@ pub fn font_row(
             layout_menu,
         ),
         glyph_button(
+            "ruby-dialog",
+            "亜",
+            i18n::text("chars.ruby.title"),
+            false,
+            action(CharAction::OpenRuby),
+            cx,
+        ),
+        glyph_button(
             "typography-dialog",
             "体裁",
             i18n::text("chars.typography.title"),
