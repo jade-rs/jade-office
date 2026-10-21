@@ -1555,7 +1555,12 @@ impl TinySkiaPainter {
         // The deviation is in user px and follows the painter's scale, as
         // Skia's mask filter's does — not a glyph's font-unit transform.
         let scale = (user.sx * user.sy - user.kx * user.ky).abs().sqrt();
-        let sigma = blur * if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+        let sigma = blur
+            * if scale.is_finite() && scale > 0.0 {
+                scale
+            } else {
+                1.0
+            };
         let pad = (sigma * 3.0).ceil();
         let device = device_bounds(path.bounds(), transform);
         let (surface_width, surface_height) = {
@@ -1568,7 +1573,7 @@ impl TinySkiaPainter {
         let top = (device[1] - pad).max(-pad).floor();
         let right = (device[2] + pad).min(surface_width + pad).ceil();
         let bottom = (device[3] + pad).min(surface_height + pad).ceil();
-        if !(right > left && bottom > top) || !left.is_finite() || !top.is_finite() {
+        if !(right > left && bottom > top && left.is_finite() && top.is_finite()) {
             return true;
         }
         let Some(mut layer) = Pixmap::new((right - left) as u32, (bottom - top) as u32) else {
@@ -1647,7 +1652,10 @@ impl TinySkiaPainter {
         // The stroke's outline, filled as any other path is.
         let resolution = tiny_skia::PathStroker::compute_resolution_scale(&transform);
         if self.inner.state.borrow().blur > 0.0 {
-            let dashed = stroke.dash.as_ref().and_then(|dash| path.dash(dash, resolution));
+            let dashed = stroke
+                .dash
+                .as_ref()
+                .and_then(|dash| path.dash(dash, resolution));
             if let Some(outline) = dashed.as_ref().unwrap_or(path).stroke(&stroke, resolution) {
                 self.blurred(&outline, color, transform);
             }
@@ -2232,15 +2240,12 @@ fn blur_layer(layer: &mut Pixmap, sigma: f32) {
     // Box widths for three passes (W. Jarosz, "Fast Image Convolutions").
     let ideal = (12.0 * sigma * sigma / 3.0 + 1.0).sqrt();
     let mut lower = ideal.floor() as usize;
-    if lower % 2 == 0 {
+    if lower.is_multiple_of(2) {
         lower = lower.saturating_sub(1);
     }
     let lower = lower.max(1);
     let upper = lower + 2;
-    let m = ((12.0 * sigma * sigma
-        - 3.0 * (lower * lower) as f32
-        - 12.0 * lower as f32
-        - 9.0)
+    let m = ((12.0 * sigma * sigma - 3.0 * (lower * lower) as f32 - 12.0 * lower as f32 - 9.0)
         / (-4.0 * lower as f32 - 4.0))
         .round()
         .clamp(0.0, 3.0) as usize;

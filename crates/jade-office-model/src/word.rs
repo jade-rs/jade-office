@@ -33,14 +33,14 @@ pub mod asian;
 pub mod clipboard;
 pub mod count;
 pub mod find;
-pub mod links;
 pub mod font;
 pub mod insert;
+pub mod links;
 pub mod new;
 pub mod page;
+pub mod page_setup;
 pub mod painter;
 pub mod paragraph;
-pub mod page_setup;
 pub mod picture;
 pub mod platform;
 pub mod references;
@@ -51,6 +51,10 @@ pub mod typography;
 
 pub use count::{WordCount, WordCounting};
 pub use find::{FindOptions, Found, WordFind};
+/// The engine's command and query types, for shells that build commands.
+pub use jade_docx_headless_api as headless;
+/// The selection type [`WordSession`] speaks, for shells that wrap one.
+pub use jade_selection::SelectionRange as SelectionRangeOf;
 pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
 pub use painter::{CopiedFormat, WordFormatPainter};
 pub use paragraph::{
@@ -58,10 +62,6 @@ pub use paragraph::{
     WordParagraphs,
 };
 pub use references::{NoteForm, NoteKind, WordReferences};
-/// The engine's command and query types, for shells that build commands.
-pub use jade_docx_headless_api as headless;
-/// The selection type [`WordSession`] speaks, for shells that wrap one.
-pub use jade_selection::SelectionRange as SelectionRangeOf;
 
 /// A paragraph and a byte offset into its text.
 pub type Position = (usize, usize);

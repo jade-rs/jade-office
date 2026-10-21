@@ -299,7 +299,10 @@ fn table_properties_set_the_table_rows_columns_and_cells() {
     let paragraph = cell_paragraph(&document, 0, 1, 1);
     document.place_caret(paragraph, 0);
     let properties = document.table_properties().unwrap();
-    assert!(!properties.autofit, "an inserted table keeps its column widths");
+    assert!(
+        !properties.autofit,
+        "an inserted table keeps its column widths"
+    );
     let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Table);
     dialog.width_on = true;
     dialog.width_percent = true;
