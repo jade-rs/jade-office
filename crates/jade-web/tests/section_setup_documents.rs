@@ -241,3 +241,23 @@ fn page_borders_color_and_a_cover_page() {
     assert!(document.section_layout().page_borders.is_empty());
     assert_eq!(document.paragraph_count(), paragraphs);
 }
+
+#[test]
+fn the_ribbon_shows_and_sets_the_caret_section() {
+    use jade_web::word::page::PageCommand;
+    let mut document = contract();
+    let paragraph = typed(&mut document, "one|two ");
+    document.place_caret(paragraph, "one|".len());
+    document
+        .insert_section_break(SectionBreak::NextPage)
+        .unwrap();
+    document.place_caret(0, 0);
+    let first = document.page_setup();
+    document
+        .page_command(PageCommand::Landscape(!first.landscape), true)
+        .unwrap();
+    assert_eq!(document.page_setup().landscape, !first.landscape);
+    // The second section keeps its page, and the ribbon shows it there.
+    document.place_caret(paragraph + 1, 0);
+    assert_eq!(document.page_setup().landscape, first.landscape);
+}

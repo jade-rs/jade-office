@@ -201,27 +201,26 @@ pub trait WordPage: WordSession {
         })
     }
 
+    /// The page of the section the caret is in (the final section without
+    /// a caret), as the ribbon shows it: Word's page tools act on that
+    /// section.
     fn page_setup(&self) -> PageSetup {
-        let snapshot = match query(self.word_document(), HeadlessQuery::PageSetup) {
-            Some(HeadlessQueryResult::PageSetup { page_setup }) => page_setup,
-            _ => Default::default(),
-        };
-        let width = snapshot.width.unwrap_or(612.0);
-        let height = snapshot.height.unwrap_or(792.0);
+        let section = self.selection_range().and_then(|range| {
+            self.word_document()
+                .section_index_for_paragraph(range.focus.paragraph)
+        });
+        let layout = self.word_document().section_layout(section);
         PageSetup {
-            width,
-            height,
-            landscape: snapshot
-                .orientation
-                .as_deref()
-                .map_or(width > height, |orientation| orientation == "landscape"),
+            width: layout.width,
+            height: layout.height,
+            landscape: layout.landscape,
             margins: Margins {
-                top: snapshot.margin_top.unwrap_or(72.0),
-                bottom: snapshot.margin_bottom.unwrap_or(72.0),
-                left: snapshot.margin_left.unwrap_or(72.0),
-                right: snapshot.margin_right.unwrap_or(72.0),
+                top: layout.margin_top,
+                bottom: layout.margin_bottom,
+                left: layout.margin_left,
+                right: layout.margin_right,
             },
-            columns: snapshot.column_count.unwrap_or(1).max(1),
+            columns: layout.columns.count.max(1),
         }
     }
 
