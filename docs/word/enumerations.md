@@ -39,49 +39,62 @@ no shell offers it.
 
 Read: `build_border_edge` (`jade-docx-reader/src/parser.rs`) keeps `w:val` as
 a raw string on `BorderEdge.val`; every value survives a save. Draw:
-`parse_border_kind` (`jade-docx-editor/src/canvas_renderer/table.rs:9216`)
-maps the string to one of ten drawn kinds for paragraph, page, table-cell
-and character borders. Character borders (`w:bdr`) are always drawn as a
-solid box.
+`parse_border_kind` (`jade-docx-editor/src/canvas_renderer/table.rs`) maps the
+string to a `BorderKind`, and `canvas_renderer/border_styles.rs` describes
+each kind once — its rules across the band from the outer edge, their
+shading, and the pattern along it — for paragraph borders (fill rectangles
+and `DrawCommand::StrokePolyline`, both cached), table cell borders and page
+borders (strokes about the edge, the outer side known per edge). Character
+borders (`w:bdr`) are always drawn as a solid box. Commands write `w:val` in
+the schema's spelling (`canonical_border_style`,
+`jade-docx-editor/src/word_document.rs`).
 
 | Value | Read | Draw | Edit | Note |
 |---|---|---|---|---|
 | nil, none | Y | (no line) | Y | |
 | single | Y | Y | Y | paragraph Borders button always writes black ¾ pt single |
 | thick | Y | Y | Y table pen | |
-| double | Y | Y | Y table pen, page borders | Mac and Windows rule spacing differ (`jade-docx-layout/src/border_geometry.rs`) |
-| triple | Y | Y | Y table pen, page borders | |
-| dotted | Y | Y | Y table pen, page borders | |
-| dashed | Y | Y | Y table pen, page borders | |
-| dashSmallGap | Y | Y | API only | |
-| dotDash | Y | Y | Y table pen, page borders | |
-| dotDotDash | Y | Y | API only | |
-| dashDotStroked | Y | →dotDash | – | |
-| wave | Y | ≈ evenly dashed, not a wave | Y table pen, page borders | |
-| doubleWave | Y | →wave | – | |
-| thinThickSmallGap | Y | →single | **Y page borders** | the dialog offers a style it cannot draw |
-| thickThinSmallGap, thinThickThinSmallGap, thinThickMediumGap, thickThinMediumGap, thinThickThinMediumGap, thinThickLargeGap, thickThinLargeGap, thinThickThinLargeGap | Y | →single | – | |
-| threeDEmboss, threeDEngrave, outset, inset | Y | →single | – | |
+| double | Y | Y | Y | Mac and Windows rule spacing differ (`jade-docx-layout/src/border_geometry.rs`) |
+| triple | Y | Y | Y | |
+| dotted, dashed, dashSmallGap, dotDash, dotDotDash | Y | Y | Y | |
+| dashDotStroked | Y | Y (dashes and leaning strokes) | Y | |
+| wave | Y | Y (one wavy line) | Y | |
+| doubleWave | Y | Y (two wavy lines) | Y | |
+| thinThickSmallGap, thickThinSmallGap, thinThickThinSmallGap | Y | Y | Y | thin rule outside the box; gap = thin rule |
+| thinThickMediumGap, thickThinMediumGap, thinThickThinMediumGap | Y | Y | Y | gap = half the thick rule |
+| thinThickLargeGap, thickThinLargeGap, thinThickThinLargeGap | Y | Y | Y | gap = the thick rule |
+| threeDEmboss, threeDEngrave | Y | Y (light/dark halves) | Y | emboss light outside, engrave dark outside |
+| outset, inset | Y | Y (shaded by side) | Y | outset lights top/left, inset bottom/right |
 
-Pickers: table pen `Pen::STYLES` (`crates/jade-office-model/src/word/table.rs:226`):
-single, dotted, dashed, dotDash, double, triple, thick, wave. Page borders
-`PAGE_BORDER_STYLES` (`crates/jade-office-model/src/word/page_setup.rs:929`):
-single, double, dotted, dashed, dotDash, triple, thinThickSmallGap, wave.
-Engine validation `TableBorderSpec::STYLES` (`jade-docx-editor/src/word_document.rs:772`)
-adds none, nil, dashSmallGap, dotDotDash.
+Pickers: Word's whole line list (`crates/jade-office-model/src/word/borders.rs`
+`LINE_STYLES`, 24 styles) in the paragraph borders dialog, the table pen
+(`Pen::STYLES`, plus thick) and the page border dialog
+(`PAGE_BORDER_STYLES`). Engine validation `TableBorderSpec::STYLES` is
+`BORDER_LINE_STYLES` (all 27 values).
 
 Print (`jade-docx-pdf-renderer`) draws no border styles.
 
 Pinned by: `jade-docx-editor/src/canvas_renderer/table.rs::parse_border_kind_recognizes_ooxml_styles`;
+`jade-docx-editor/src/canvas_renderer/border_styles.rs` (`tests::*`, and
+`rendering::a_thin_thick_paragraph_border_draws_a_thin_rule_above_a_thick_one`,
+`rendering::a_wave_paragraph_border_is_a_wavy_stroke`,
+`rendering::an_outset_page_border_lights_its_top_and_darkens_its_bottom`);
+`jade-docx-editor/src/commands/set_page_borders.rs::line_styles_keep_their_schema_spelling_and_art_takes_whole_points`;
 `jade-docx-reader/src/parser.rs::paragraph_border_edge_round_trips`,
 `parses_page_borders_all_sides`.
 
 ## ST_Border — art borders
 
 Word's page-border art (`w:pgBorders` with an art value) is read and kept
-verbatim, then **drawn as a plain single line** (the `_ => Single` arm); the
-art images and `w:frame`/`w:shadow` on them are not drawn, and no picker
-offers them. This applies to every art value:
+verbatim and drawn by `canvas_renderer/art_borders.rs`: every art value maps
+to a vector motif (dots, squares, dashes, hearts, stars, trees, apples,
+flowers, balloons, snowflakes, suns, moons, waves, zigzags, sawtooth,
+braids, checks, rules, …) in the art's colours — or the border colour for
+the `basic*` and `*Black` values — tiled at `w:sz` points (an art border's
+`w:sz` is in whole points) as Word tiles its bitmaps. The motifs are
+approximations of Word's imagery, not copies. `w:frame`/`w:shadow` on art
+are not drawn. The page border dialog offers 16 of them (絵柄,
+`ART_STYLES`); the engine accepts all.
 
 apples, archedScallops, babyPacifier, babyRattle, balloons3Colors,
 balloonsHotAir, basicBlackDashes, basicBlackDots, basicBlackSquares,
@@ -117,7 +130,12 @@ custom.
 
 | | Read | Draw | Edit |
 |---|---|---|---|
-| all art values | Y (kept) | →single | – |
+| all art values | Y (kept) | ≈ vector motif | 16 in the dialog, all through the API |
+
+Pinned by: `jade-docx-editor/src/canvas_renderer/art_borders.rs::every_art_value_has_a_motif`,
+`tiles_repeat_along_the_edge_in_the_art_colours`;
+`jade-docx-editor/src/canvas_renderer/border_styles.rs::rendering::an_art_page_border_draws_its_motif_in_its_colours`;
+`crates/jade-office-model/src/word/page_setup.rs::an_art_page_border_takes_art_widths_and_switching_back_restores_a_line`.
 
 ## ST_Underline (`w:u`)
 
@@ -394,9 +412,8 @@ Edit: only solid fills, written as `w:val="clear"`.
 
 ## Gaps found
 
-- Double-line border families (thin-thick etc.), 3-D, inset/outset and all
-  art borders draw as a single line; the page-border dialog offers
-  thinThickSmallGap, which it then draws as single.
+- Art borders are vector approximations of Word's imagery; character
+  borders are always a solid box.
 - 75 of 187 preset shapes are rectangles in Word, and no Word shape honours
   its adjust values; there is no shape gallery in either shell.
 - `comma` emphasis is drawn as a dot; Print draws no emphasis, no
