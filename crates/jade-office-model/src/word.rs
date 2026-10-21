@@ -32,6 +32,8 @@ use jade_selection::{SelectionRange, TextPosition};
 pub mod asian;
 pub mod clipboard;
 pub mod count;
+
+pub mod fields;
 pub mod find;
 pub mod font;
 pub mod insert;
@@ -113,6 +115,17 @@ pub trait WordSession {
     /// their ids in the last paint's cell registry — and repaints so the
     /// cells show selected, as Word's row, column and table selections do.
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String>;
+
+    /// Pages in the laid-out document, when the session lays out pages
+    /// (NUMPAGES, SECTIONPAGES).
+    fn page_count(&self) -> Option<usize> {
+        None
+    }
+    /// The page (1-based) a paragraph starts on at the last paint (PAGE,
+    /// PAGEREF).
+    fn paragraph_page(&self, _paragraph: usize) -> Option<usize> {
+        None
+    }
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {

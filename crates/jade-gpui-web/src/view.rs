@@ -34,6 +34,7 @@ mod deck;
 mod sheet;
 pub(crate) mod word_characters;
 mod word_dialogs;
+mod word_fields;
 mod word_find;
 mod word_review;
 pub(crate) mod word_setup;
@@ -2205,6 +2206,11 @@ impl DocView {
             return;
         }
         if self.finding() && self.find_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        // Word's field keys: F9, ⌘F11/⌘⇧F11, ⌘⇧F9.
+        if self.field_key(event, cx) {
             cx.stop_propagation();
             return;
         }

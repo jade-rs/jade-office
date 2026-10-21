@@ -1357,3 +1357,245 @@ chars.enclose.title	Enclose Characters
 chars.enclose.text	Text
 chars.enclose.enclosure	Enclosure
 chars.font.complex_style	Complex scripts style
+# Fields: Insert › Field, F9 and its kin, File › Properties
+menu.file.properties	Properties…
+menu.insert.field	Field…
+menu.insert.edit_field	Edit Field…
+menu.insert.update_fields	Update Fields
+menu.insert.toggle_field_codes	Toggle Field Codes
+menu.insert.toggle_field_code	Toggle Selected Field Codes
+menu.insert.lock_fields	Lock Fields
+menu.insert.unlock_fields	Unlock Fields
+menu.insert.unlink_fields	Unlink Fields
+field.ok	OK
+field.cancel	Cancel
+field.status.none	There is no field in the selection.
+field.group	Text
+field.insert	Field
+field.insert_title	Insert a field
+field.date_time	Date & Time
+field.date_time_title	Insert a date and time that updates automatically
+field.update	Update Fields
+field.update_title	Update the selected fields (F9); select all to update headers and footers too
+field.properties	Properties
+field.properties_title	Document properties
+field.codes	Field Codes
+field.codes_title	Show or hide field codes (⌥F9)
+field.dialog.title	Field
+field.dialog.edit_title	Edit Field
+field.dialog.categories	Categories
+field.dialog.names	Field names
+field.dialog.options	Options
+field.dialog.code	Field code
+field.dialog.preserve	Preserve formatting during updates
+field.switch.on	On
+field.switch.add	Add
+field.prompt.ask	Ask
+field.prompt.fillin	Fill-in
+field.prompt.progress	{index} of {count}
+field.category.all	(All)
+field.category.date_time	Date and Time
+field.category.automation	Document Automation
+field.category.information	Document Information
+field.category.formulas	Equations and Formulas
+field.category.index	Index and Tables
+field.category.links	Links and References
+field.category.mail_merge	Mail Merge
+field.category.numbering	Numbering
+field.category.user	User Information
+field.properties.title_dialog	Document Properties
+field.properties.summary	Summary
+field.properties.statistics	Statistics
+field.properties.custom	Custom
+field.properties.user	User Information
+field.properties.title	Title
+field.properties.subject	Subject
+field.properties.author	Author
+field.properties.manager	Manager
+field.properties.company	Company
+field.properties.category	Category
+field.properties.keywords	Keywords
+field.properties.comments	Comments
+field.properties.hyperlink_base	Hyperlink base
+field.properties.created	Created
+field.properties.modified	Modified
+field.properties.printed	Printed
+field.properties.last_saved_by	Last saved by
+field.properties.revision	Revision number
+field.properties.total_time	Total editing time (minutes)
+field.properties.pages	Pages
+field.properties.words	Words
+field.properties.characters	Characters
+field.properties.custom_name	Name
+field.properties.custom_kind	Type
+field.properties.custom_value	Value
+field.properties.kind_text	Text
+field.properties.kind_number	Number
+field.properties.kind_date	Date
+field.properties.kind_yes_no	Yes or no
+field.properties.add	Add
+field.properties.remove	Delete
+field.properties.name_missing	Type a name.
+field.properties.not_a_number	The value is not a number.
+field.properties.not_a_date	The value is not a date (for example 2026/10/21).
+field.properties.user_name	Name
+field.properties.user_initials	Initials
+field.properties.user_address	Address
+field.operand.address	Address
+field.operand.autotext	AutoText entry
+field.operand.bookmark	Bookmark
+field.operand.character_code	Character code
+field.operand.comparison	Comparison
+field.operand.condition	Condition
+field.operand.destination	Destination
+field.operand.display_text	Display text
+field.operand.equation	Equation
+field.operand.file	File name
+field.operand.formula	Formula
+field.operand.info_type	Info type
+field.operand.list_name	List name
+field.operand.macro	Macro name
+field.operand.merge_field	Merge field
+field.operand.new_value	New value
+field.operand.prompt	Prompt
+field.operand.property	Property
+field.operand.sequence	Identifier
+field.operand.source_tag	Source tag
+field.operand.style	Style name
+field.operand.text	Text
+field.operand.variable	Variable name
+field.switch.advance_down	Down (pt)
+field.switch.advance_up	Up (pt)
+field.switch.advance_left	Left (pt)
+field.switch.advance_right	Right (pt)
+field.switch.advance_x	From the column's left (pt)
+field.switch.advance_y	From the page's top (pt)
+field.switch.bold	Bold page number
+field.switch.category	Category
+field.switch.category_heading	Category headings
+field.switch.citation_page	Page
+field.switch.columns	Columns
+field.switch.cross_reference	Cross-reference text
+field.switch.date_picture	Date-time format
+field.switch.default_response	Default response
+field.switch.entry_separator	Entry separator
+field.switch.entry_type	Entry type
+field.switch.font	Font
+field.switch.format	Format
+field.switch.from_bottom	Search from the bottom
+field.switch.full_number	Full paragraph number
+field.switch.full_path	Full path
+field.switch.hide	Hide the result
+field.switch.hide_web_pages	Hide page numbers in web layout
+field.switch.hyperlink	As a hyperlink
+field.switch.hyperlinks	Entries as hyperlinks
+field.switch.italic	Italic page number
+field.switch.keep_line_height	Keep the line height
+field.switch.kilobytes	In kilobytes
+field.switch.language	Language ID
+field.switch.level	Level
+field.switch.location	Location in the document
+field.switch.long_citation	Long citation
+field.switch.megabytes	In megabytes
+field.switch.new_window	Open in a new window
+field.switch.next	Next number
+field.switch.no_author	Suppress the author
+field.switch.no_page	No page number
+field.switch.no_page_numbers	Levels without page numbers
+field.switch.no_period	No trailing period
+field.switch.no_store	Do not store the picture
+field.switch.no_update_inside	Do not update the included fields
+field.switch.no_year	Suppress the year
+field.switch.note_format	Note formatting
+field.switch.number_picture	Numeric format
+field.switch.outline_levels	Outline levels
+field.switch.outline_paragraphs	Use paragraph outline levels
+field.switch.page_range	Page range bookmark
+field.switch.page_separator	Page number separator
+field.switch.paragraph_number	Paragraph number
+field.switch.passim	"passim" for five or more pages
+field.switch.prefix	Prefix
+field.switch.prompt_once	Prompt once
+field.switch.reading	Reading
+field.switch.relative	Above or below
+field.switch.relative_number	Relative paragraph number
+field.switch.repeat	Previous number
+field.switch.reset_at_heading	Restart at heading level
+field.switch.reset_to	Restart at
+field.switch.separator	Separator
+field.switch.sequence	Sequence identifier
+field.switch.shift_jis	Shift_JIS
+field.switch.short_citation	Short citation
+field.switch.size	Size (pt)
+field.switch.start_at	Start at
+field.switch.style	Style
+field.switch.styles	Styles
+field.switch.suffix	Suffix
+field.switch.target	Target
+field.switch.text_after	Text after
+field.switch.text_before	Text before
+field.switch.tip	Tip
+field.switch.tooltip	ScreenTip
+field.switch.unicode	Unicode
+field.describe.=	The result of a formula
+field.describe.ADVANCE	Offsets the text that follows
+field.describe.ASK	Prompts for a response and assigns it to a bookmark
+field.describe.AUTHOR	The author from the document's properties
+field.describe.AUTONUM	Numbers paragraphs automatically
+field.describe.AUTONUMLGL	Numbers paragraphs in legal format
+field.describe.AUTONUMOUT	Numbers paragraphs in outline format
+field.describe.AUTOTEXT	Inserts an AutoText entry
+field.describe.AUTOTEXTLIST	Text chosen from an AutoText list
+field.describe.BIBLIOGRAPHY	A bibliography of the document's sources
+field.describe.CITATION	A citation of a source
+field.describe.COMMENTS	The comments from the document's properties
+field.describe.COMPARE	Compares two values: 1 if true, 0 if false
+field.describe.CREATEDATE	The date the document was created
+field.describe.DATE	Today's date, updated on opening and update
+field.describe.DOCPROPERTY	The value of a document property
+field.describe.DOCVARIABLE	The value of a document variable
+field.describe.EQ	Draws an equation
+field.describe.FILENAME	The document's file name
+field.describe.FILESIZE	The document's size on disk
+field.describe.FILLIN	Prompts for text and shows it
+field.describe.GOTOBUTTON	A button that jumps to a location
+field.describe.HYPERLINK	A link to another document or place
+field.describe.IF	One of two texts, by a condition
+field.describe.INCLUDEPICTURE	Inserts a picture from a file
+field.describe.INCLUDETEXT	Inserts the text of a file
+field.describe.INDEX	Builds an index
+field.describe.INFO	Information about the document
+field.describe.KEYWORDS	The keywords from the document's properties
+field.describe.LASTSAVEDBY	Who saved the document last
+field.describe.LISTNUM	Inserts a number anywhere in a paragraph
+field.describe.MACROBUTTON	A button that runs a macro
+field.describe.MERGEFIELD	A mail merge field
+field.describe.NOTEREF	A reference to a footnote or endnote number
+field.describe.NUMCHARS	The document's character count
+field.describe.NUMPAGES	The document's page count
+field.describe.NUMWORDS	The document's word count
+field.describe.PAGE	The current page number
+field.describe.PAGEREF	The page a bookmark is on
+field.describe.PRINTDATE	The date the document was last printed
+field.describe.QUOTE	Literal text
+field.describe.REF	The text of a bookmark
+field.describe.REVNUM	How many times the document was saved
+field.describe.SAVEDATE	The date the document was last saved
+field.describe.SECTION	The current section number
+field.describe.SECTIONPAGES	The pages in the section
+field.describe.SEQ	A sequence number, as for captions
+field.describe.SET	Assigns text to a bookmark
+field.describe.STYLEREF	The text of a paragraph in a style
+field.describe.SUBJECT	The subject from the document's properties
+field.describe.SYMBOL	Inserts a symbol
+field.describe.TA	A table of authorities entry
+field.describe.TC	A table of contents entry
+field.describe.TEMPLATE	The document's template
+field.describe.TIME	The current time, updated on opening and update
+field.describe.TITLE	The title from the document's properties
+field.describe.TOA	Builds a table of authorities
+field.describe.TOC	Builds a table of contents
+field.describe.USERADDRESS	The address from the user information
+field.describe.USERINITIALS	The initials from the user information
+field.describe.USERNAME	The name from the user information
+field.describe.XE	An index entry

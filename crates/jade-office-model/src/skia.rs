@@ -194,4 +194,12 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
         NativeDocument::select_cells(self, anchor_cell, focus_cell)
     }
+
+    fn page_count(&self) -> Option<usize> {
+        Some(NativeDocument::page_count(self))
+    }
+
+    fn paragraph_page(&self, paragraph: usize) -> Option<usize> {
+        self.renderer().cached_paragraph_start_page(paragraph)
+    }
 }
