@@ -1357,3 +1357,91 @@ chars.enclose.title	囲い文字
 chars.enclose.text	文字
 chars.enclose.enclosure	囲い文字の種類
 chars.font.complex_style	複合フォントのスタイル
+# 開発: content controls and legacy form fields (word_controls)
+cc.tab	開発
+cc.group.controls	コントロール
+cc.rich_text	リッチ テキスト
+cc.plain_text	テキスト
+cc.picture	画像
+cc.building_block	構成要素ギャラリー
+cc.check_box	チェック ボックス
+cc.combo_box	コンボ ボックス
+cc.drop_down	ドロップダウン リスト
+cc.date	日付選択
+cc.repeating	繰り返しセクション
+cc.repeating_item	繰り返しセクション アイテム
+cc.group	グループ化
+cc.group_title	選択範囲をグループ化して、コンテンツ コントロール以外を編集できないようにします
+cc.ungroup	グループ解除
+cc.ungroup_title	カーソルのあるグループを解除します
+cc.design_mode	デザイン モード
+cc.design_mode_title	コンテンツ コントロールのタグを表示して編集します
+cc.properties	プロパティ
+cc.properties_title	カーソルのあるコンテンツ コントロールのプロパティ
+cc.no_group	カーソルはグループの中にありません。
+cc.nothing_at_caret	カーソルの位置にコンテンツ コントロールまたはフォーム フィールドがありません。
+cc.no_blocks	この文書にはこのギャラリーの構成要素がありません。
+cc.today	今日
+cc.props.dialog	コンテンツ コントロールのプロパティ
+cc.props.general	全般
+cc.props.title	タイトル
+cc.props.tag	タグ
+cc.props.show_as	表示方法
+cc.props.bounding_box	境界ボックス
+cc.props.tags	開始/終了タグ
+cc.props.none	なし
+cc.props.color	色
+cc.props.automatic	自動
+cc.props.style	スタイル
+cc.props.default_style	既定の段落フォント
+cc.props.temporary	内容が編集されたら削除する
+cc.props.multi_line	複数の段落を許可する
+cc.props.locking	ロック
+cc.props.no_delete	コンテンツ コントロールの削除不可
+cc.props.no_edit	コンテンツの編集不可
+cc.props.list	ドロップダウン リストのプロパティ
+cc.props.entries	表示名 — 値
+cc.props.display_name	表示名
+cc.props.value	値
+cc.props.add	追加
+cc.props.modify	変更
+cc.props.remove	削除
+cc.props.up	上へ
+cc.props.down	下へ
+cc.props.date	日付選択のプロパティ
+cc.props.date_format	日付の表示形式
+cc.props.check_box	チェック ボックスのプロパティ
+cc.props.checked_symbol	選択時の記号
+cc.props.unchecked_symbol	非選択時の記号
+cc.props.gallery_heading	ドキュメント パーツのプロパティ
+cc.props.gallery	ギャラリー
+cc.props.category	分類
+cc.props.repeating	繰り返しセクションのプロパティ
+cc.props.section_title	セクションのタイトル
+cc.props.allow_insert	挿入と削除のコントロールを許可する
+cc.props.remove_control	コントロールの削除
+form.group	従来のフォーム
+form.group.protect	保護
+form.text	テキスト ボックス
+form.text_title	テキスト フォーム フィールドを挿入します
+form.check	チェック ボックス
+form.check_title	チェック ボックス フォーム フィールドを挿入します
+form.dropdown	ドロップダウン
+form.dropdown_title	ドロップダウン フォーム フィールドを挿入します
+form.options	オプション
+form.options_title	カーソルのあるフォーム フィールドのオプション
+form.shading	フォーム フィールドの網かけ
+form.shading_title	フォーム フィールドに網かけを表示します
+form.protect	フォームの保護
+form.protect_title	フォーム フィールドとコンテンツ コントロールにだけ入力できるように文書を保護します
+form.text_options	テキスト フォーム フィールドのオプション
+form.check_options	チェック ボックス フォーム フィールドのオプション
+form.dropdown_options	ドロップダウン フォーム フィールドのオプション
+form.default_text	既定の文字列
+form.max_length	最大文字数
+form.default_checked	既定でオン
+form.entry	ドロップダウン アイテム
+form.entries	ドロップダウン リストのアイテム
+form.bookmark	ブックマーク
+form.help_text	ヘルプ テキスト
+form.enabled	入力を有効にする

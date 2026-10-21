@@ -1357,3 +1357,91 @@ chars.enclose.title	Enclose Characters
 chars.enclose.text	Text
 chars.enclose.enclosure	Enclosure
 chars.font.complex_style	Complex scripts style
+# Developer: content controls and legacy form fields (word_controls)
+cc.tab	Developer
+cc.group.controls	Controls
+cc.rich_text	Rich Text
+cc.plain_text	Plain Text
+cc.picture	Picture
+cc.building_block	Building Block Gallery
+cc.check_box	Check Box
+cc.combo_box	Combo Box
+cc.drop_down	Drop-Down List
+cc.date	Date Picker
+cc.repeating	Repeating Section
+cc.repeating_item	Repeating Section Item
+cc.group	Group
+cc.group_title	Group the selection so only its content controls can be edited
+cc.ungroup	Ungroup
+cc.ungroup_title	Ungroup the group the cursor is in
+cc.design_mode	Design Mode
+cc.design_mode_title	Show the content controls' tags to edit them
+cc.properties	Properties
+cc.properties_title	Properties of the content control at the cursor
+cc.no_group	The cursor is not in a group.
+cc.nothing_at_caret	There is no content control or form field at the cursor.
+cc.no_blocks	This document has no building blocks in this gallery.
+cc.today	Today
+cc.props.dialog	Content Control Properties
+cc.props.general	General
+cc.props.title	Title
+cc.props.tag	Tag
+cc.props.show_as	Show as
+cc.props.bounding_box	Bounding Box
+cc.props.tags	Start/End Tag
+cc.props.none	None
+cc.props.color	Color
+cc.props.automatic	Automatic
+cc.props.style	Style
+cc.props.default_style	Default Paragraph Font
+cc.props.temporary	Remove content control when contents are edited
+cc.props.multi_line	Allow carriage returns (multiple paragraphs)
+cc.props.locking	Locking
+cc.props.no_delete	Content control cannot be deleted
+cc.props.no_edit	Contents cannot be edited
+cc.props.list	Drop-Down List Properties
+cc.props.entries	Display Name — Value
+cc.props.display_name	Display Name
+cc.props.value	Value
+cc.props.add	Add
+cc.props.modify	Modify
+cc.props.remove	Remove
+cc.props.up	Move Up
+cc.props.down	Move Down
+cc.props.date	Date Picker Properties
+cc.props.date_format	Display the date like this
+cc.props.check_box	Check Box Properties
+cc.props.checked_symbol	Checked symbol
+cc.props.unchecked_symbol	Unchecked symbol
+cc.props.gallery_heading	Document Building Block Properties
+cc.props.gallery	Gallery
+cc.props.category	Category
+cc.props.repeating	Repeating Section Properties
+cc.props.section_title	Section title
+cc.props.allow_insert	Allow users to add and remove sections
+cc.props.remove_control	Remove Control
+form.group	Legacy Forms
+form.group.protect	Protect
+form.text	Text Box
+form.text_title	Insert a text form field
+form.check	Check Box
+form.check_title	Insert a check box form field
+form.dropdown	Combo Box
+form.dropdown_title	Insert a drop-down form field
+form.options	Options
+form.options_title	Options of the form field at the cursor
+form.shading	Form Field Shading
+form.shading_title	Show form fields shaded
+form.protect	Protect Form
+form.protect_title	Protect the document so only form fields and content controls can be filled in
+form.text_options	Text Form Field Options
+form.check_options	Check Box Form Field Options
+form.dropdown_options	Drop-Down Form Field Options
+form.default_text	Default text
+form.max_length	Maximum length
+form.default_checked	Checked by default
+form.entry	Drop-down item
+form.entries	Items in drop-down list
+form.bookmark	Bookmark
+form.help_text	Help text
+form.enabled	Fill-in enabled

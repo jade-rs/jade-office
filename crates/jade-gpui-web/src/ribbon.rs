@@ -82,18 +82,21 @@ pub enum Tab {
     Layout,
     References,
     Review,
+    /// 開発: content controls and forms (`view::word_controls`).
+    Developer,
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
     TableDesign,
     TableLayout,
 }
 
 impl Tab {
-    const ALL: [Tab; 5] = [
+    const ALL: [Tab; 6] = [
         Tab::Home,
         Tab::Insert,
         Tab::Layout,
         Tab::References,
         Tab::Review,
+        Tab::Developer,
     ];
 
     fn label(self) -> &'static str {
@@ -103,6 +106,7 @@ impl Tab {
             Tab::Layout => "doc.tab.layout",
             Tab::References => "doc.tab.references",
             Tab::Review => "doc.tab.review",
+            Tab::Developer => "cc.tab",
             Tab::TableDesign => "doc.tab.table_design",
             Tab::TableLayout => "doc.tab.table_layout",
         })
@@ -225,6 +229,8 @@ pub enum Action {
     EditStory(Story),
     /// The 校閲 tab.
     Review(crate::word_review::ReviewAction),
+    /// The 開発 tab (`view::word_controls`).
+    Controls(crate::view::word_controls::ControlsAction),
     /// 挿入 → 画像: a picture picked from the device.
     InsertPicture,
     /// 挿入 → リンク (⌘K): the hyperlink dialog.
@@ -626,6 +632,8 @@ pub struct TabState {
     /// What the text, line number and background groups show, read only
     /// while レイアウト is up.
     pub layout: Option<crate::view::word_setup::LayoutState>,
+    /// What the 開発 tab shows as on, read while it is showing.
+    pub developer: Option<crate::view::word_controls::DeveloperState>,
 }
 
 pub fn ribbon(
@@ -716,6 +724,9 @@ pub fn ribbon(
         }
         Tab::References => references(cx),
         Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
+        Tab::Developer => {
+            crate::view::word_controls::developer(&shown.developer.clone().unwrap_or_default(), cx)
+        }
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
             crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)
