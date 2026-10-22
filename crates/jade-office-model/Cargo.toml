@@ -30,6 +30,8 @@ jade-docx-headless-api = { path = "../../jade-core/crates/jade-docx-headless-api
 jade-docx-diff = { path = "../../jade-core/crates/jade-docx-diff" }
 jade-docx-merge = { path = "../../jade-core/crates/jade-docx-merge" }
 hypher = { version = "0.1", default-features = false, features = ["english"] }
+# 署名欄: the signature line's picture.
+png = "0.17"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 jade-docx-layout = { path = "../../jade-core/crates/jade-docx-layout" }
 jade-selection = { path = "../../jade-core/crates/jade-selection" }

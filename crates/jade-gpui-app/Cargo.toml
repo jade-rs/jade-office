@@ -39,6 +39,8 @@ jade-opc = { path = "../../jade-core/crates/jade-opc" }
 gpui = { version = "0.2", default-features = false, features = ["macos-blade", "font-kit", "test-support"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# 署名: the keychain's certificates and signing with their keys.
+security-framework = "3"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSPrintInfo", "NSPrintOperation", "NSSpeechSynthesizer", "NSSpellChecker"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSData", "NSDictionary", "NSLocale", "NSRange", "NSString"] }

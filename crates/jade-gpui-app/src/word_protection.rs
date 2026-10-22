@@ -23,6 +23,8 @@ use crate::{i18n, theme, DocumentView};
 pub enum ReadOnlyReason {
     Recommended,
     Final,
+    /// The document carries digital signatures (`word_signatures`).
+    Signed,
 }
 
 /// The view's share of 保護.
@@ -95,9 +97,13 @@ pub fn finish_save(view: &DocumentView, bytes: Vec<u8>) -> Result<Vec<u8>, Strin
 /// 編集する: the read-only bar's way out. A final document stops being
 /// final with the next save, as Word's 編集する does.
 pub fn edit_anyway(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
-    if view.review.protection.read_only.take() == Some(ReadOnlyReason::Final) {
-        view.review.protection.mark_final = Some(false);
-        view.dirty = true;
+    match view.review.protection.read_only.take() {
+        Some(ReadOnlyReason::Final) => {
+            view.review.protection.mark_final = Some(false);
+            view.dirty = true;
+        }
+        Some(ReadOnlyReason::Signed) => crate::word_signatures::edited(view),
+        _ => {}
     }
     view.document.set_opened_read_only(false);
     cx.notify();
@@ -239,6 +245,7 @@ pub fn banner(view: &DocumentView, cx: &mut Context<DocumentView>) -> Option<Any
     let key = match reason {
         ReadOnlyReason::Final => "protect.final_bar",
         ReadOnlyReason::Recommended => "protect.recommended_bar",
+        ReadOnlyReason::Signed => "sign.bar",
     };
     Some(
         div()

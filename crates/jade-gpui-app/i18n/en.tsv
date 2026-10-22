@@ -1568,3 +1568,27 @@ side.sync_title	Synchronous Scrolling: scroll both documents together
 side.reset	Reset Window Position
 side.reset_title	Reset Window Position: line up the documents being compared
 side.needs_two	Open another Word document to view side by side.
+sign.bar	Signed: this document contains signatures. Editing it makes them invalid.
+sign.button	Sign
+sign.tooltip	Sign: add a digital signature with a certificate from the keychain
+sign.pane	Signatures
+sign.pane_tooltip	Signatures: show the document's signatures and the signature lines waiting to be signed
+sign.title	Sign
+sign.hint	Signing saves the document. Editing it after signing makes the signature invalid.
+sign.certificate	Certificate to sign with
+sign.purpose	Purpose for signing
+sign.no_certificate	There is no certificate in the keychain to sign with.
+sign.valid_heading	Valid signatures
+sign.valid	Valid signature
+sign.invalid	Invalid signature
+sign.none	This document has no signatures.
+sign.issuer	Issued by: {issuer}
+sign.requested	Requested signatures
+sign.line.group	Signature Line
+sign.line.button	Signature Line
+sign.line.tooltip	Signature Line: insert a line where the document is to be signed
+sign.line.title	Signature Setup
+sign.line.signer	Suggested signer
+sign.line.title_field	Suggested signer's title
+sign.line.email	E-mail
+sign.line.instructions	Instructions to the signer

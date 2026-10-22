@@ -194,6 +194,8 @@ impl DocView {
             | ReviewAction::MarkFinal
             | ReviewAction::EditAnyway => return self.protection_action(action, cx),
             ReviewAction::ReadAloud => return self.toggle_read_aloud(cx),
+            ReviewAction::SignaturesPane => return self.toggle_signatures_pane(cx),
+            ReviewAction::SignatureLine => return self.open_signature_line_dialog(cx),
             ReviewAction::SideBySide => {
                 return cx.dispatch_action(&crate::workspace::side_by_side::ViewSideBySide)
             }
@@ -855,6 +857,8 @@ impl DocView {
 pub(crate) enum ReadOnlyReason {
     Recommended,
     Final,
+    /// The document carries digital signatures.
+    Signed,
 }
 
 /// The browser shell's share of 保護: the 編集の制限 pane's choices, the
@@ -872,6 +876,12 @@ pub(crate) struct WebProtection {
     pub inspect: bool,
     /// What ドキュメント検査 left out of every later save.
     pub cleaning: jade_web::word::inspect::PackageCleaning,
+    /// デジタル署名 (`word_signatures`).
+    pub signatures: jade_web::word::signatures::SignatureState,
+    /// Whether the 署名 pane is open.
+    pub signatures_pane: bool,
+    /// Draws a signature line's picture with the page's fonts.
+    pub line_picture: Option<super::word_signatures::LinePicture>,
 }
 
 impl WebProtection {
@@ -911,9 +921,15 @@ impl WebProtection {
 
 /// The package a save hands the page: without what ドキュメント検査 removed,
 /// marked final or not, encrypted with the password to open.
-pub(super) fn finish_save(protection: &WebProtection, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+pub(super) fn finish_save(
+    protection: &mut WebProtection,
+    bytes: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     use jade_web::word::protection::{encrypt_package, mark_final};
     let bytes = jade_web::word::inspect::clean_package(&bytes, protection.cleaning)?;
+    // Edited, a signed document loses its signatures; the browser has no
+    // certificate to sign with.
+    let bytes = protection.signatures.finish_save(bytes, None)?;
     let bytes = match protection.mark_final {
         Some(final_) => mark_final(&bytes, final_)?,
         None => bytes,
@@ -1010,8 +1026,10 @@ impl DocView {
                 document.set_opened_read_only(final_);
             }
             ReviewAction::EditAnyway => {
-                if protection.read_only.take() == Some(ReadOnlyReason::Final) {
-                    protection.mark_final = Some(false);
+                match protection.read_only.take() {
+                    Some(ReadOnlyReason::Final) => protection.mark_final = Some(false),
+                    Some(ReadOnlyReason::Signed) => protection.signatures.edited = true,
+                    _ => {}
                 }
                 document.set_opened_read_only(false);
             }
@@ -1081,6 +1099,7 @@ impl DocView {
         let key = match protection.read_only? {
             ReadOnlyReason::Final => "protect.final_bar",
             ReadOnlyReason::Recommended => "protect.recommended_bar",
+            ReadOnlyReason::Signed => "sign.bar",
         };
         Some(
             div()

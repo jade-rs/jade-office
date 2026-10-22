@@ -415,6 +415,22 @@ impl DocumentView {
                         cx,
                     ),
                     tools::text_button(
+                        "review-sign",
+                        "sign.button",
+                        "sign.tooltip",
+                        false,
+                        ReviewAction::Sign,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-signatures",
+                        "sign.pane",
+                        "sign.pane_tooltip",
+                        self.review.signatures.pane,
+                        ReviewAction::SignaturesPane,
+                        cx,
+                    ),
+                    tools::text_button(
                         "review-inspect",
                         "inspect.button",
                         "inspect.tooltip",

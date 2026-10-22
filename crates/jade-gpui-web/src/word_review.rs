@@ -92,6 +92,10 @@ pub enum ReviewAction {
     ReadAloud,
     /// イマーシブ リーダー: open or close.
     Immersive,
+    /// 署名の表示: the pane.
+    SignaturesPane,
+    /// 署名欄.
+    SignatureLine,
     /// 並べて比較, 同時にスクロール, ウィンドウの位置を元に戻す.
     SideBySide,
     SyncScroll,
@@ -109,6 +113,7 @@ pub struct ReviewShown {
     pub restrict_pane: bool,
     pub final_: bool,
     pub inspect: bool,
+    pub signatures_pane: bool,
     pub reading: bool,
     pub immersive: bool,
     pub side_by_side: bool,
@@ -469,6 +474,22 @@ pub fn review(
                     i18n::text("protect.final_title"),
                     shown.final_,
                     act(ReviewAction::MarkFinal),
+                    cx,
+                ),
+                text_button(
+                    "review-signatures",
+                    i18n::text("sign.pane"),
+                    i18n::text("sign.pane_tooltip"),
+                    shown.signatures_pane,
+                    act(ReviewAction::SignaturesPane),
+                    cx,
+                ),
+                text_button(
+                    "review-signature-line",
+                    i18n::text("sign.line.button"),
+                    i18n::text("sign.line.tooltip"),
+                    false,
+                    act(ReviewAction::SignatureLine),
                     cx,
                 ),
                 text_button(

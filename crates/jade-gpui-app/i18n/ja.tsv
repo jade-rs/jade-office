@@ -1568,3 +1568,27 @@ side.sync_title	同時にスクロール: 2 つの文書を一緒にスクロー
 side.reset	ウィンドウの位置を元に戻す
 side.reset_title	ウィンドウの位置を元に戻す: 並べて比較している文書の表示位置をそろえます
 side.needs_two	並べて比較するには、Word 文書をもう 1 つ開いてください。
+sign.bar	署名済み: この文書には署名が含まれています。編集すると署名は無効になります。
+sign.button	署名
+sign.tooltip	署名: キーチェーンの証明書で文書にデジタル署名します
+sign.pane	署名の表示
+sign.pane_tooltip	署名の表示: 文書の署名と、署名が必要な署名欄を表示します
+sign.title	署名
+sign.hint	署名すると文書は保存されます。署名後に文書を編集すると署名は無効になります。
+sign.certificate	署名に使用する証明書
+sign.purpose	署名の目的
+sign.no_certificate	署名に使用できる証明書がキーチェーンにありません。
+sign.valid_heading	有効な署名
+sign.valid	有効な署名
+sign.invalid	無効な署名
+sign.none	この文書には署名がありません。
+sign.issuer	発行者: {issuer}
+sign.requested	必要な署名
+sign.line.group	署名欄
+sign.line.button	署名欄
+sign.line.tooltip	署名欄: 署名が必要な場所に署名欄を挿入します
+sign.line.title	署名欄の設定
+sign.line.signer	署名者
+sign.line.title_field	署名者の役職
+sign.line.email	電子メール
+sign.line.instructions	署名者への説明

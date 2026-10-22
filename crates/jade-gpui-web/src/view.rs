@@ -38,6 +38,7 @@ mod word_find;
 mod word_immersive;
 mod word_inspect;
 mod word_read_aloud;
+mod word_signatures;
 mod word_review;
 pub(crate) mod word_setup;
 mod word_story;
@@ -563,7 +564,12 @@ impl DocView {
                     markup: Box::new(word_review::markup_as_opened(&opened)),
                     accessibility: false,
                     revisions_pane: false,
-                    protection: Box::new(word_review::WebProtection::opened(&mut opened)),
+                    protection: Box::new(word_signatures::with_signatures(
+                        word_review::WebProtection::opened(&mut opened),
+                        bytes,
+                        fonts,
+                        &mut opened,
+                    )),
                     read_aloud: None,
                     immersive: None,
                     object: None,
@@ -1810,6 +1816,7 @@ impl DocView {
                         restrict_pane: protection.pane,
                         final_: protection.read_only == Some(word_review::ReadOnlyReason::Final),
                         inspect: protection.inspect,
+                        signatures_pane: protection.signatures_pane,
                         reading: read_aloud.is_some(),
                         immersive: immersive.is_some(),
                         side_by_side: side.on,
@@ -1897,6 +1904,7 @@ impl DocView {
         let accessibility_pane = self.accessibility_pane(cx);
         let revisions_pane = self.revisions_pane(cx);
         let restrict_pane = self.restrict_pane(cx);
+        let signatures_pane = self.signatures_pane(cx);
         let inspect_pane = self.inspect_pane(cx);
         let read_only_bar = self.read_only_bar(cx);
         let find_bar = self.find_bar_element(cx);
@@ -2211,6 +2219,7 @@ impl DocView {
             .children(accessibility_pane)
             .children(revisions_pane)
             .children(restrict_pane)
+            .children(signatures_pane)
             .children(inspect_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
