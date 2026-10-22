@@ -33,6 +33,7 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 mod deck;
 mod sheet;
 pub(crate) mod word_characters;
+mod word_context_menu;
 mod word_dialogs;
 mod word_fields;
 mod word_find;
@@ -507,6 +508,8 @@ pub struct DocView {
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
     page_dialog: Option<Box<word_setup::PageDialogState>>,
+    /// The right-click menu over a Word page, while it is open.
+    word_menu: Option<word_context_menu::WordMenu>,
 }
 
 impl DocView {
@@ -630,6 +633,7 @@ impl DocView {
             references: word_references::References::default(),
             host,
             page_dialog: None,
+            word_menu: None,
         })
     }
 
@@ -1890,6 +1894,7 @@ impl DocView {
         }
         .into_iter();
         let page_dialog = self.page_dialog_element(cx);
+        let word_menu = self.word_menu_element(cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
         let Document::Pages {
@@ -2019,6 +2024,12 @@ impl DocView {
                             view.page_mouse_down(index, event, window, cx)
                         }),
                     )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |view, event, window, cx| {
+                            view.page_right_click(index, event, window, cx)
+                        }),
+                    )
                     .child(div().w(px(width)).h(px(height)).child(page.element()))
                     // The selection, over the picture, in the renderer's own
                     // fill and edges.
@@ -2127,6 +2138,7 @@ impl DocView {
             .size_full()
             .flex()
             .bg(palette::window())
+            .children(word_menu)
             .children(navigation)
             .child(
                 div()
