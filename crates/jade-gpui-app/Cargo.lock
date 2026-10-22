@@ -3472,6 +3472,7 @@ dependencies = [
  "encoding_rs",
  "flate2",
  "futures",
+ "getrandom 0.2.17",
  "hypher",
  "image",
  "jade-doc-reader",
