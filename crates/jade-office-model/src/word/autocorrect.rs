@@ -57,6 +57,8 @@ pub struct AutoCorrectOptions {
     pub closing_phrases: bool,
     /// 記書きに対応する"以上"を挿入する.
     pub kiki: bool,
+    /// 日本語と英数字の間の不要なスペースを削除する.
+    pub cjk_spaces: bool,
 }
 
 impl Default for AutoCorrectOptions {
@@ -79,6 +81,7 @@ impl Default for AutoCorrectOptions {
             brackets: true,
             closing_phrases: true,
             kiki: true,
+            cjk_spaces: true,
         }
     }
 }
@@ -242,6 +245,25 @@ pub fn corrections(text: &str, caret: usize, options: &AutoCorrectOptions) -> Ve
                 {
                     return vec![fix(start, caret, to)];
                 }
+            }
+        }
+    }
+    // 日本語と英数字の間の不要なスペース: "日本 Word" as the W goes in, or
+    // "Word 日本" as the 日 does.
+    if options.cjk_spaces && !typed.is_whitespace() {
+        let mut back = text[..typed_at].chars().rev();
+        if let (Some(' '), Some(before)) = (back.next(), back.next()) {
+            let japanese = |ch: char| {
+                matches!(
+                    super::selection::char_class(ch),
+                    super::selection::CharClass::Kanji
+                        | super::selection::CharClass::Hiragana
+                        | super::selection::CharClass::Katakana
+                )
+            };
+            let latin = |ch: char| ch.is_ascii_alphanumeric();
+            if (japanese(before) && latin(typed)) || (latin(before) && japanese(typed)) {
+                return vec![fix(typed_at - 1, typed_at, "")];
             }
         }
     }
@@ -883,6 +905,7 @@ fn flags(options: &AutoCorrectOptions) -> Vec<(&'static str, bool)> {
         ("brackets", options.brackets),
         ("closing_phrases", options.closing_phrases),
         ("kiki", options.kiki),
+        ("cjk_spaces", options.cjk_spaces),
     ]
 }
 
@@ -905,6 +928,7 @@ pub fn flag_mut<'a>(options: &'a mut AutoCorrectOptions, key: &str) -> Option<&'
         "brackets" => &mut options.brackets,
         "closing_phrases" => &mut options.closing_phrases,
         "kiki" => &mut options.kiki,
+        "cjk_spaces" => &mut options.cjk_spaces,
         _ => return None,
     })
 }
@@ -917,7 +941,7 @@ pub const AUTOCORRECT_KEYS: [&str; 4] = [
     "capitalize_days",
     "replace_text",
 ];
-pub const AUTOFORMAT_KEYS: [&str; 12] = [
+pub const AUTOFORMAT_KEYS: [&str; 13] = [
     "smart_quotes",
     "ordinals",
     "fractions",
@@ -930,6 +954,7 @@ pub const AUTOFORMAT_KEYS: [&str; 12] = [
     "brackets",
     "closing_phrases",
     "kiki",
+    "cjk_spaces",
 ];
 
 /// Where a position ends up after `fixes` in its paragraph.
@@ -1003,6 +1028,10 @@ mod tests {
         assert_eq!(after("（注意", "」"), "（注意）");
         assert_eq!(after("「引用", "」"), "「引用」");
         assert_eq!(after("「a（b", "」"), "「a（b）");
+        // 日本語と英数字の間の不要なスペース.
+        assert_eq!(after("日本 ", "W"), "日本W");
+        assert_eq!(after("Word ", "の"), "Wordの");
+        assert_eq!(after("日本 ", "語"), "日本 語");
     }
 
     #[test]
