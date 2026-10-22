@@ -50,6 +50,9 @@ pub enum ObjectAction {
     CropToShape(TextBoxShape),
     Reset,
     ShapeStyle(usize, usize),
+    /// トリミング, the pens, リンクの作成, 折り返し点の編集 and the Selection
+    /// Pane (`view::word_objects_ui`).
+    Ui(crate::view::word_objects_ui::ObjectUi),
 }
 
 fn act(action: ObjectAction) -> Action {
@@ -386,8 +389,18 @@ fn adjust_list(picture: bool, cx: &mut Context<DocView>) -> AnyElement {
 pub fn objects(
     open: Option<Popup>,
     selected: Option<PlacedObject>,
+    modes: crate::view::word_objects_ui::ObjectModes,
     cx: &mut Context<DocView>,
 ) -> AnyElement {
+    use crate::view::word_objects_ui::ObjectUi;
+    let mode_button = |id: &'static str,
+                       label: &'static str,
+                       tooltip: &'static str,
+                       on: bool,
+                       ui: ObjectUi,
+                       cx: &mut Context<DocView>| {
+        crate::word_page::text_button(id, label, tooltip, on, act(ObjectAction::Ui(ui)), cx)
+    };
     let is_open = |which| open == Some(Popup::Object(which));
     let inserts = vec![
         dropdown(
@@ -411,6 +424,15 @@ pub fn objects(
             is_open(ObjectPopup::Insert).then(|| insert_list(cx)),
         ),
     ];
+    let mut inserts = inserts;
+    inserts.push(mode_button(
+        "selection-pane",
+        t("objects.selection_pane"),
+        t("objects.selection_pane_title"),
+        modes.selection_pane,
+        ObjectUi::SelectionPane,
+        cx,
+    ));
     let mut lines = vec![row(inserts)];
     if let Some(selected) = selected {
         let adjust = if selected.is_picture() {
@@ -418,7 +440,7 @@ pub fn objects(
         } else {
             t("objects.shape_styles")
         };
-        lines.push(row(vec![
+        let mut tools = vec![
             dropdown(
                 list_button(
                     "web-object-arrange-button",
@@ -449,7 +471,43 @@ pub fn objects(
                 ),
                 is_open(ObjectPopup::Adjust).then(|| adjust_list(selected.is_picture(), cx)),
             ),
-        ]));
+        ];
+        let mut modes_row = Vec::new();
+        if modes.wrap_editable {
+            modes_row.push(mode_button(
+                "wrap-points",
+                t("objects.wrap_points"),
+                t("objects.wrap_points"),
+                modes.wrap_points,
+                ObjectUi::EditWrapPoints,
+                cx,
+            ));
+        }
+        if selected.is_picture() {
+            modes_row.insert(
+                0,
+                mode_button(
+                    "crop",
+                    t("objects.crop"),
+                    t("objects.crop"),
+                    modes.cropping,
+                    ObjectUi::ToggleCrop,
+                    cx,
+                ),
+            );
+        }
+        if selected.target.kind == jade_web::word::picture::ObjectKind::TextBox {
+            modes_row.push(mode_button(
+                "link-text-box",
+                t("objects.link"),
+                t("objects.link_title"),
+                modes.linking,
+                ObjectUi::LinkTextBox,
+                cx,
+            ));
+        }
+        tools.extend(modes_row);
+        lines.push(row(tools));
     }
     group(t("objects.shapes"), lines)
 }
@@ -484,5 +542,7 @@ pub fn run(
         ObjectAction::ShapeStyle(row, column) => {
             document.apply_shape_style(need()?, ShapeStyle::gallery(row, column))
         }
+        // The view's own (`view::word_objects_ui`).
+        ObjectAction::Ui(_) => Ok(()),
     }
 }

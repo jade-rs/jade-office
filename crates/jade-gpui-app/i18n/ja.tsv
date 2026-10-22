@@ -3346,3 +3346,5 @@ menu.format.superscript	上付き
 menu.insert.page_break	改ページ
 menu.insert.column_break	段区切り
 context.paste_special	形式を選択して貼り付け...
+# Browser shell: Word ports (header/footer, fields, paste, tools, objects)
+objects.draw	描画

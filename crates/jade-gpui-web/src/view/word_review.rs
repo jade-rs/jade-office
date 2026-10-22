@@ -136,7 +136,6 @@ impl DocView {
     fn open_comment_bar(&mut self, entry: CommentEntry, text: String, cx: &mut Context<Self>) {
         let Document::Pages {
             comment,
-            story,
             find,
             show_comments,
             dialog,
@@ -146,7 +145,6 @@ impl DocView {
             return;
         };
         *find = None;
-        *story = None;
         *dialog = None;
         *show_comments = true;
         *comment = Some(Box::new(CommentBar {
