@@ -59,6 +59,9 @@ pub struct Workspace {
     locked: Option<Box<Locked>>,
     /// 並べて比較 (`side_by_side`).
     side: side_by_side::SideBySide,
+    /// 回復されたファイル: the copies 自動回復 left in the browser, offered
+    /// back (`view::word_recover`).
+    recovered: Vec<jade_web::word::recovery::RecoveredCopy>,
 }
 
 /// A file waiting for its password to open.
@@ -86,7 +89,77 @@ impl Workspace {
             download_menu: false,
             locked: None,
             side: Default::default(),
+            recovered: Vec::new(),
         }
+        .loading_from_store(cx)
+    }
+
+    /// The browser's store, read once the page is up: the copies 自動回復
+    /// left there by an earlier visit, and the Normal template.
+    fn loading_from_store(self, cx: &mut Context<Self>) -> Self {
+        use crate::view::word_recover::store;
+        cx.spawn(async move |workspace, cx| {
+            let copies = store::all("recovery").await;
+            let normal = store::bytes("templates", "normal").await;
+            if let Some(normal) = normal {
+                crate::view::word_files::NORMAL
+                    .with(|cell| *cell.borrow_mut() = Some(Rc::new(normal)));
+            }
+            workspace
+                .update(cx, |workspace, cx| {
+                    let open: Vec<String> = workspace
+                        .tabs
+                        .iter()
+                        .filter_map(|tab| tab.read(cx).recovery_key())
+                        .collect();
+                    workspace.recovered = jade_web::word::recovery::to_offer(
+                        copies
+                            .into_iter()
+                            .map(|(key, name, saved_at, _)| {
+                                jade_web::word::recovery::RecoveredCopy {
+                                    key,
+                                    name,
+                                    saved_at,
+                                }
+                            })
+                            .collect(),
+                        &open,
+                    );
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
+        self
+    }
+
+    /// Opens a recovered copy as `<name> (回復済み).docx`; the copy leaves
+    /// the store, the document taking its own as it is edited.
+    fn open_recovered(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
+        use crate::view::word_recover::store;
+        let Some(copy) = self.recovered.iter().find(|copy| copy.key == key).cloned() else {
+            return;
+        };
+        cx.spawn_in(window, async move |workspace, cx| {
+            let Some(bytes) = store::bytes("recovery", &copy.key).await else {
+                return;
+            };
+            workspace
+                .update_in(cx, |workspace, window, cx| {
+                    let name =
+                        jade_web::word::recovery::recovered_name(&copy.name, !i18n::is_english());
+                    workspace.open(name.into(), Rc::new(bytes), window, cx);
+                    workspace.discard_recovered(&copy.key, cx);
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    fn discard_recovered(&mut self, key: &str, cx: &mut Context<Self>) {
+        crate::view::word_recover::store::remove("recovery", key);
+        self.recovered.retain(|copy| copy.key != key);
+        cx.notify();
     }
 
     /// Opens `bytes` as `name` in a new tab, or brings its tab forward when
@@ -225,7 +298,12 @@ impl Workspace {
             Blank::Japanese
         };
         let name = self.untitled_name("docx");
-        self.open(name, Rc::new(blank_document(blank)), window, cx);
+        // The Normal template the user saved (テンプレートとアドイン), or
+        // Word's own blank.
+        let bytes = crate::view::word_files::normal_template()
+            .and_then(|normal| jade_web::word::new::document_from_template(&normal).ok())
+            .unwrap_or_else(|| blank_document(blank));
+        self.open(name, Rc::new(bytes), window, cx);
     }
 
     /// A sample or a recent file, from the explorer.
@@ -250,6 +328,9 @@ impl Workspace {
         if index >= self.tabs.len() {
             return;
         }
+        // 自動回復: a copy stays only for a document closed with edits
+        // unsaved.
+        self.tabs[index].update(cx, |view, _| view.recovery_closing());
         self.tabs.remove(index);
         if self.tabs.is_empty() {
             self.active = None;
@@ -391,11 +472,14 @@ impl Workspace {
                                     })),
                             )
                             .when(self.download_menu, |anchor| {
+                                // Over the editor below, which paints after
+                                // the title bar.
                                 anchor.child(
+                                    div().absolute().top(px(26.0)).right(px(300.0)).child(
+                                gpui::deferred(gpui::anchored().snap_to_window_with_margin(px(8.0)).child(
                                     div()
-                                        .absolute()
-                                        .top(px(26.0))
-                                        .right_0()
+                                        .id("download-menu")
+                                        .occlude()
                                         .w(px(300.0))
                                         .py_1()
                                         .rounded_md()
@@ -429,7 +513,7 @@ impl Workspace {
                                                         ))
                                                 }),
                                         ),
-                                )
+                                )).with_priority(2)))
                             }),
                     )
                     .child(
@@ -653,6 +737,9 @@ impl Workspace {
                     .flex_col()
                     .children(tree),
             )
+            .when(!self.recovered.is_empty(), |explorer| {
+                explorer.child(self.recovered_section(cx))
+            })
             .when(!recent.is_empty(), |explorer| {
                 explorer
                     .child(
@@ -677,6 +764,78 @@ impl Workspace {
                     )
                     .child(div().flex().flex_col().pb_2().children(recent))
             })
+    }
+
+    /// 回復されたファイル: each copy, when it was made, 開く and 削除.
+    fn recovered_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let rows = self.recovered.iter().enumerate().map(|(index, copy)| {
+            let (open_key, discard_key) = (copy.key.clone(), copy.key.clone());
+            let when = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(copy.saved_at));
+            let when = format!(
+                "{}/{:02}/{:02} {:02}:{:02}",
+                when.get_full_year(),
+                when.get_month() + 1,
+                when.get_date(),
+                when.get_hours(),
+                when.get_minutes()
+            );
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .mx_1()
+                .px_2()
+                .py_1()
+                .rounded_md()
+                .text_xs()
+                .hover(|row| row.bg(palette::hovered()))
+                .child(
+                    div()
+                        .id(("recovered-open", index))
+                        .flex_1()
+                        .min_w_0()
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |workspace, _event, window, cx| {
+                            workspace.open_recovered(open_key.clone(), window, cx)
+                        }))
+                        .child(
+                            div()
+                                .truncate()
+                                .text_color(palette::text())
+                                .child(copy.name.clone()),
+                        )
+                        .child(div().text_color(palette::faint()).child(when)),
+                )
+                .child(
+                    div()
+                        .id(("recovered-discard", index))
+                        .px_1()
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .text_color(palette::dim())
+                        .hover(|button| button.bg(palette::selected()))
+                        .on_click(cx.listener(move |workspace, _event, _window, cx| {
+                            workspace.discard_recovered(&discard_key, cx)
+                        }))
+                        .child(i18n::text("recovered.delete")),
+                )
+        });
+        div()
+            .flex()
+            .flex_col()
+            .pb_2()
+            .border_t_1()
+            .border_color(palette::border())
+            .child(
+                div()
+                    .px_3()
+                    .pt_2()
+                    .pb_1()
+                    .text_xs()
+                    .text_color(palette::accent())
+                    .child(i18n::text("recovered.title")),
+            )
+            .children(rows)
     }
 
     fn tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {

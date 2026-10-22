@@ -82,6 +82,7 @@ pub mod printing;
 pub mod proofing;
 pub mod protection;
 pub mod read_aloud;
+pub mod recovery;
 pub mod references;
 pub mod repair;
 pub mod review;

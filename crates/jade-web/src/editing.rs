@@ -1450,6 +1450,51 @@ impl EditableDocument {
         self.view.geometry
     }
 
+    /// Lays the document out again from `docx` — a change made to the
+    /// package as a whole (互換モードの変換, a template attached or detached,
+    /// pictures compressed, a layout option) — keeping the view's page box,
+    /// the marks and the paper, the pages it keeps as pixels and the caret
+    /// where it can. The undo history starts afresh; the document is
+    /// unsaved.
+    pub fn reload(&mut self, docx: &[u8]) -> Result<(), String> {
+        let resident = self.resident.borrow().clone();
+        let caret = self.caret();
+        let mut fresh = Self::open_resident(
+            docx,
+            self.scale,
+            Rc::clone(&self.fonts),
+            Rc::clone(&self.measurer),
+            resident,
+        )?;
+        fresh.dirty = true;
+        fresh.field_codes = self.field_codes.clone();
+        fresh.field_datetime = self.field_datetime;
+        fresh.options.show_formatting_marks = self.options.show_formatting_marks;
+        fresh
+            .options
+            .set_formatting_mark_kinds(self.options.formatting_mark_kinds());
+        let dark = self.dark_paper.get();
+        let view = self.view.clone();
+        *self = fresh;
+        if view.geometry.is_some() {
+            self.set_view_geometry(view.geometry)?;
+        }
+        if view.indents.is_some() {
+            self.set_outline_indents(view.indents.map(|indents| (*indents).clone()))?;
+        }
+        if dark {
+            self.set_dark_paper(true)?;
+        } else {
+            self.repaint_all()?;
+        }
+        if let Some((paragraph, offset)) = caret {
+            let paragraph = paragraph.min(self.paragraph_count().saturating_sub(1));
+            let length = self.paragraph_text(paragraph).map_or(0, |text| text.len());
+            self.place_caret(paragraph, offset.min(length));
+        }
+        Ok(())
+    }
+
     /// The page setup of the section page `page` (0-based) is in: what
     /// 下書き and 余白を表示しない cut each page to.
     pub fn page_section_layout(

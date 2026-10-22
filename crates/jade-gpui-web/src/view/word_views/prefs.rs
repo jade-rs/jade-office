@@ -1,8 +1,9 @@
 //! Word のオプション in the browser (Word for Mac's 環境設定): 表示 (which
 //! 編集記号 always show), 編集 (上書き入力, the Insert key, 貼り付けの既定),
 //! リボンとツール バー (which tabs show, the クイック アクセス ツール バー's
-//! commands and a group of the user's own on ホーム). Each change takes
-//! effect at once and is kept in the browser for the next visit.
+//! commands and a group of the user's own on ホーム) and 保存 (自動回復,
+//! バックアップ, `word_recover`). Each change takes effect at once and is
+//! kept in the browser for the next visit.
 
 use std::cell::RefCell;
 
@@ -25,6 +26,7 @@ pub enum OptionsPage {
     View,
     Edit,
     Ribbon,
+    Save,
 }
 
 const OPTIONS: &str = "options.txt";
@@ -170,11 +172,17 @@ pub fn overlay(page: OptionsPage, window: &Window, cx: &mut Context<DocumentView
             "options-ribbon",
             "options.page.ribbon",
             OptionsPage::Ribbon,
+        ))
+        .child(page_chip(
+            "options-save",
+            "prefs.save_title",
+            OptionsPage::Save,
         ));
     let body = match page {
         OptionsPage::View => view_page(cx),
         OptionsPage::Edit => edit_page(cx),
         OptionsPage::Ribbon => ribbon_page(cx),
+        OptionsPage::Save => crate::view::word_recover::options_page(cx),
     };
     let buttons = div()
         .flex()
