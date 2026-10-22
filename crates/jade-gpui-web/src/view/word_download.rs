@@ -54,6 +54,13 @@ impl DocView {
         encoding: Option<TextEncoding>,
         cx: &mut Context<Self>,
     ) {
+        if !matches!(self.document, Document::Pages { .. }) {
+            return;
+        }
+        // Word 97-2004, or a document in 互換モード: checked first.
+        if self.check_before_saving(super::word_files::Then::Download(format, encoding), cx) {
+            return;
+        }
         let Document::Pages { document, .. } = &mut self.document else {
             return;
         };

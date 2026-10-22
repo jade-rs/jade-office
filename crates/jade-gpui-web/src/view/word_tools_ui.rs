@@ -20,10 +20,13 @@ use crate::word_tools::ToolCommand;
 /// What a file the page's picker brings is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pick {
-    /// テンプレートとアドイン: its styles come in.
+    /// テンプレートとアドイン → 添付…: the document is attached to it
+    /// (`word_files`).
     Template,
     /// 箇条書き → 図: it becomes the bullet.
     PictureBullet,
+    /// 図の形式 → 図の変更: it replaces the selected picture.
+    ChangePicture,
 }
 
 /// The tools' state, kept with the document view.
@@ -133,7 +136,7 @@ impl DocView {
                 self.tools.styles_pane = !self.tools.styles_pane;
                 cx.notify();
             }
-            ToolCommand::AttachTemplate => self.prompt_for_template(cx),
+            ToolCommand::AttachTemplate => self.open_templates_dialog(cx),
             ToolCommand::ToggleRuler => {
                 self.tools.ruler = !self.tools.ruler;
                 cx.notify();
@@ -186,7 +189,8 @@ impl DocView {
     /// The file the page's picker brought for a tool.
     pub(crate) fn take_picked(&mut self, name: &str, bytes: &[u8], cx: &mut Context<Self>) {
         match self.tools.picking.take() {
-            Some(Pick::Template) => self.attach_template_bytes(bytes, name, cx),
+            Some(Pick::Template) => self.attach_template_file(name, bytes, cx),
+            Some(Pick::ChangePicture) => self.change_selected_picture(bytes.to_vec(), cx),
             Some(Pick::PictureBullet) => {
                 let extension = name.rsplit_once('.').map_or("", |(_, extension)| extension);
                 self.set_picture_bullet(bytes, extension, cx)
