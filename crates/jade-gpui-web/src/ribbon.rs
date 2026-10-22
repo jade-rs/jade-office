@@ -92,6 +92,8 @@ pub enum Tab {
     TableLayout,
     /// 数式: while an equation is being edited.
     Equation,
+    /// ヘッダーとフッター: while a header or footer is open in place.
+    HeaderFooter,
 }
 
 impl Tab {
@@ -119,6 +121,7 @@ impl Tab {
             Tab::TableDesign => "doc.tab.table_design",
             Tab::TableLayout => "doc.tab.table_layout",
             Tab::Equation => "equation.tab",
+            Tab::HeaderFooter => "story.tab",
         })
     }
 }
@@ -246,8 +249,10 @@ pub enum Action {
     Table(TableCommand),
     /// ページ設定 and ページ番号.
     Page(PageCommand),
-    /// ヘッダーの編集 / フッターの編集: the bar over the pages.
+    /// ヘッダー / フッター: the story opened in place over the caret's page.
     EditStory(Story),
+    /// The ヘッダーとフッター tab (`view::word_story`).
+    Story(crate::view::word_story::StoryAction),
     /// The 校閲 tab.
     Review(crate::word_review::ReviewAction),
     /// The 開発 tab (`view::word_controls`).
@@ -669,6 +674,10 @@ pub struct TabState {
     pub mailings: Option<Vec<jade_web::word::form_view::ToolGroup>>,
     /// What the 数式 tab shows, while an equation is being edited.
     pub equation: Option<crate::view::word_equation::EquationTabState>,
+    /// What the ヘッダーとフッター tab shows, while a story is open.
+    pub story: Option<crate::view::word_story::StoryTabState>,
+    /// ⌥F9: whether every field shows its code.
+    pub field_codes: bool,
 }
 
 pub fn ribbon(
@@ -686,6 +695,7 @@ pub fn ribbon(
     let shown_tab = match ribbon.tab {
         Tab::TableDesign | Tab::TableLayout if !in_table => Tab::Home,
         Tab::Equation if shown.equation.is_none() => Tab::Home,
+        Tab::HeaderFooter if shown.story.is_none() => Tab::Insert,
         tab => tab,
     };
     let mut strip = Tab::ALL.to_vec();
@@ -694,6 +704,9 @@ pub fn ribbon(
     }
     if shown.equation.is_some() {
         strip.push(Tab::Equation);
+    }
+    if shown.story.is_some() {
+        strip.push(Tab::HeaderFooter);
     }
     let tabs: Vec<_> = strip
         .into_iter()
@@ -775,6 +788,10 @@ pub fn ribbon(
         Tab::References => {
             crate::view::word_references::ribbon_groups(ribbon.popup, shown.references.as_ref(), cx)
         }
+        Tab::HeaderFooter => match &shown.story {
+            Some(state) => crate::view::word_story::story_groups(state, cx),
+            None => Vec::new(),
+        },
         Tab::Equation => match shown.equation.clone() {
             Some(state) => crate::view::word_equation::tab_groups(ribbon.popup, state, cx),
             None => Vec::new(),
