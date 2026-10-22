@@ -36,6 +36,7 @@ pub(crate) mod word_characters;
 mod word_dialogs;
 mod word_fields;
 mod word_find;
+pub(crate) mod word_preview;
 pub(crate) mod word_references;
 mod word_review;
 pub(crate) mod word_setup;
@@ -507,6 +508,10 @@ pub struct DocView {
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
     page_dialog: Option<Box<word_setup::PageDialogState>>,
+    /// The ribbon entry previewed on the selection (`word_preview`), and
+    /// whether its command is running now.
+    preview: Option<word_preview::Preview>,
+    previewing: bool,
 }
 
 impl DocView {
@@ -630,6 +635,8 @@ impl DocView {
             references: word_references::References::default(),
             host,
             page_dialog: None,
+            preview: None,
+            previewing: false,
         })
     }
 
@@ -1607,6 +1614,10 @@ impl DocView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A previewed entry: kept by its click, taken back by anything else.
+        if word_preview::settle(self, &action, cx) {
+            return;
+        }
         let Document::Pages {
             ribbon, document, ..
         } = &mut self.document

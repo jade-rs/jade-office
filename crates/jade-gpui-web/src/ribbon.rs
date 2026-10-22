@@ -527,6 +527,9 @@ pub(crate) fn menu_row(
         .whitespace_nowrap()
         .cursor_pointer()
         .hover(|row| row.bg(palette::hovered()))
+        .when(crate::view::word_preview::previewable(&action), |row| {
+            row.on_hover(crate::view::word_preview::hover(action.clone(), cx))
+        })
         .on_click(listener(action, cx))
         .child(div().size_4().flex_none().when(checked, |cell| {
             cell.child(
@@ -568,6 +571,9 @@ fn swatch(
         .cursor_pointer()
         .hover(|square| square.border_color(palette::accent()))
         .tooltip(Tooltip::text(tooltip))
+        .when(crate::view::word_preview::previewable(&action), |square| {
+            square.on_hover(crate::view::word_preview::hover(action.clone(), cx))
+        })
         .on_click(listener(action, cx))
         .into_any_element()
 }
