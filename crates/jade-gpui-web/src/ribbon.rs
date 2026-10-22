@@ -1304,6 +1304,7 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                     cx,
                 ),
                 painter_button(ribbon.painter.is_some(), cx),
+                crate::view::word_characters::paste_options(ribbon, cx),
             ])],
         ),
     ]

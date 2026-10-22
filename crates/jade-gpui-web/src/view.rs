@@ -464,7 +464,7 @@ struct ObjectGrab {
 thread_local! {
     /// The last copy's formatting, for a paste — in any tab — that finds the
     /// copy's text still on the clipboard.
-    static RICH_CLIP: RefCell<Option<jade_web::word::clipboard::RichClip>> =
+    pub(crate) static RICH_CLIP: RefCell<Option<jade_web::word::clipboard::RichClip>> =
         const { RefCell::new(None) };
 }
 
@@ -2452,6 +2452,23 @@ impl DocView {
         if self.field_key(event, cx) {
             cx.stop_propagation();
             return;
+        }
+        // ⌃⌘V 形式を選択して貼り付け, ⌥⇧⌘V 書式を結合して貼り付け.
+        if matches!(self.document, Document::Pages { .. }) && modifiers.platform && key == "v" {
+            if modifiers.control {
+                word_characters::open_paste_special(self, cx);
+                cx.stop_propagation();
+                return;
+            }
+            if modifiers.alt && modifiers.shift {
+                word_characters::paste_with(
+                    self,
+                    jade_web::word::clipboard::PasteMode::MergeFormatting,
+                    cx,
+                );
+                cx.stop_propagation();
+                return;
+            }
         }
         // A sheet takes its own keys first: Excel's shortcuts, ⌘-arrows,
         // and the keys of a cell being typed into.
