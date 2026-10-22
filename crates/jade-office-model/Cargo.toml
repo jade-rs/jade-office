@@ -20,12 +20,27 @@ path = "src/lib.rs"
 
 [features]
 default = []
-skia = ["dep:jade-skia-painter", "dep:jade-docx-native-render"]
-tiny-skia = ["dep:jade-tiny-skia-painter", "dep:flate2"]
+skia = ["dep:jade-skia-painter", "dep:jade-docx-native-render", "dep:lopdf", "jade-docx-convert/pdf"]
+tiny-skia = ["dep:jade-tiny-skia-painter"]
 
 [dependencies]
 jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
 jade-docx-headless-api = { path = "../../jade-core/crates/jade-docx-headless-api" }
+# Word's other formats: .doc, RTF, text, ODT, HTML (word::formats).
+jade-docx-convert = { path = "../../jade-core/crates/jade-docx-convert" }
+jade-doc-reader = { path = "../../jade-core/crates/jade-doc-reader" }
+jade-doc-writer = { path = "../../jade-core/crates/jade-doc-writer" }
+# Embedded fonts' obfuscation and licences (word::embedding).
+jade-docx-reader = { path = "../../jade-core/crates/jade-docx-reader" }
+# Placing the printed PDF's pages on sheets (word::printing, native only).
+lopdf = { version = "=0.39.0", optional = true, default-features = false }
+# 文書の比較 and 組み込み: the structural diff and the redline it merges into.
+jade-docx-diff = { path = "../../jade-core/crates/jade-docx-diff" }
+jade-docx-merge = { path = "../../jade-core/crates/jade-docx-merge" }
+hypher = { version = "0.1", default-features = false, features = ["english"] }
+# 署名欄: the signature line's picture.
+png = "0.17"
+zip = { version = "8", default-features = false, features = ["deflate"] }
 jade-docx-layout = { path = "../../jade-core/crates/jade-docx-layout" }
 jade-selection = { path = "../../jade-core/crates/jade-selection" }
 jade-opc = { path = "../../jade-core/crates/jade-opc" }
@@ -45,17 +60,23 @@ jade-tiny-skia-painter = { path = "../jade-tiny-skia-painter", optional = true }
 # Word's styles, lists and theme parts, rewritten in place (word/xml.rs), and
 # the edited package read back (word/package.rs).
 quick-xml = "0.39"
+# Loading a .docx outside a renderer (word/package.rs, word::printing's
+# selection).
 futures = "0.3"
 # An SVG picture's PNG fallback, drawn as Word stores one beside it.
 resvg = { version = "0.45.1", default-features = false }
 # Shift_JIS, for the CSV a Japanese Excel writes.
 encoding_rs = "0.8"
-# The browser build's PDF of page pictures.
-flate2 = { version = "1", optional = true }
+# The browser build's PDF of page pictures, and the entries a damaged
+# document's archive still has (word::repair).
+flate2 = "1"
+# Bringing pictures down to a resolution (word::compress).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [dev-dependencies]
 png = "0.17"
 zip = { version = "8.0", default-features = false, features = ["deflate"] }
+cfb = "0.7"
 
 # tiny-skia's anti-aliased rect fill debug-asserts when a thin rule's inner
 # span comes out zero pixels wide, then skips it — what release builds do

@@ -25,7 +25,11 @@ pub fn toggle(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
 
 /// Tells the renderer what the collapsed headings hide.
 fn apply_collapsed(view: &mut DocumentView) {
-    let blocks = view.document.hidden_by_collapse(&view.references.collapsed);
+    let mut blocks = view.document.hidden_by_collapse(&view.references.collapsed);
+    // アウトライン's レベルの表示 hides the levels below the one shown.
+    blocks.extend(crate::word_views::outline::extra_hidden(view));
+    blocks.sort_unstable();
+    blocks.dedup();
     if blocks.as_slice() != view.document.collapsed_blocks() {
         if let Err(error) = view.document.set_collapsed_blocks(blocks) {
             view.table_status = Some(SharedString::from(error));
@@ -36,7 +40,9 @@ fn apply_collapsed(view: &mut DocumentView) {
 
 /// After an edit: headings that are headings no more stay expanded.
 pub fn refresh_collapsed(view: &mut DocumentView) {
-    if view.references.collapsed.is_empty() {
+    if view.references.collapsed.is_empty()
+        && crate::word_views::outline::extra_hidden(view).is_empty()
+    {
         if !view.document.collapsed_blocks().is_empty() {
             apply_collapsed(view);
         }
@@ -713,31 +719,6 @@ pub fn go_to_body(view: &DocumentView, cx: &mut Context<DocumentView>) -> AnyEle
                 .child(t("goto.hint")),
         )
         .into_any_element()
-}
-
-// ---- comments -------------------------------------------------------------
-
-/// 次のコメント / 前のコメント: the comment's text selected, the pane open.
-pub fn step_comment(view: &mut DocumentView, forwards: bool, cx: &mut Context<DocumentView>) {
-    let from = match view.document.selection() {
-        Some((anchor, focus)) if forwards => anchor.max(focus),
-        Some((anchor, focus)) => anchor.min(focus),
-        None => view.insert_at,
-    };
-    match view
-        .document
-        .step_comment(from, forwards)
-        .and_then(|comment| comment.anchor)
-    {
-        Some((start, end)) => {
-            view.show_comments = true;
-            view.reveal(start, end, cx);
-        }
-        None => {
-            view.table_status = Some(SharedString::from(t("comments.none")));
-            cx.notify();
-        }
-    }
 }
 
 // ---- marks on the pages -----------------------------------------------------

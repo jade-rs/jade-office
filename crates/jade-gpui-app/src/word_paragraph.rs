@@ -19,16 +19,7 @@ use crate::word_tools::{ToolCommand, ToolMenu};
 use crate::{i18n, theme, DocumentView};
 
 /// The line styles the borders dialog offers, with their labels.
-const LINE_STYLES: [(&str, &str); 8] = [
-    ("single", "word.line.single"),
-    ("dotted", "word.line.dotted"),
-    ("dashed", "word.line.dashed"),
-    ("dashSmallGap", "word.line.dash_small"),
-    ("dotDash", "word.line.dot_dash"),
-    ("double", "word.line.double"),
-    ("thickThinSmallGap", "word.line.thick_thin"),
-    ("wave", "word.line.wave"),
-];
+const LINE_STYLES: [(&str, &str); 24] = jade_office_model::word::borders::LINE_STYLES;
 /// Word's line widths, points.
 const LINE_WIDTHS: [f32; 7] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.25, 3.0];
 const LINE_COLORS: [Option<&str>; 8] = [

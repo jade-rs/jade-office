@@ -44,15 +44,15 @@ gpui-pre 0.3.9 on wasm); both call the same command layer in
 | Layout platform | the machine's Word (Mac on macOS) | the visitor's OS, or `?word_platform=mac\|windows` | intentional: lay out like the Word the user has — see [compatibility-modes.md](compatibility-modes.md) |
 | Document fonts | installed fonts: Office's faces and system faces found by any name (游明朝, ＭＳ 明朝, Calibri…), indexed on a background thread; Apple Symbols for marks; Arial Unicode/DejaVu for Hebrew and Arabic. `JADE_FONTS=bundled` switches to bundled fonts | **bundled only**: Noto Sans JP Regular/Bold and Noto Sans Thai; 21 Office family names alias to Noto Sans JP | no font enumeration on the web (Local Font Access is Chromium-only and permissioned); Office fonts cannot be redistributed; download size. Result: different metrics, so line breaks can differ from native; Korean, Arabic, Hebrew, Devanagari show as boxes |
 | UI fonts and font menu | system fonts; menu lists installed families | Noto Sans JP; menu is the built-in Japanese/Latin list; picking a font writes the name but still draws Noto | same limit |
-| Typing, IME, selection | full | full; Ctrl works as ⌘; shift-click extends; triple-click selects a paragraph | — |
-| Ribbon tabs | Home, Insert, Design, Layout, References, Review, View; context: Table Design, Table Layout, Header & Footer | Home, Insert, Layout, References, Review; context: Table Design, Table Layout | Design and View not ported; Page Background sits under Layout |
+| Typing, IME, selection | full; double-click takes a run of one script (東京 of 東京へ), triple-click the paragraph; ⌘-drag adds ranges, ⌥-drag selects a block, a selection drags to move (⌥ copies); AutoCorrect and AutoFormat as you type, set in ツール → オートコレクト; 上書き入力 (Insert) | full; Ctrl works as ⌘; shift-click extends; the same double- and triple-click; AutoCorrect and AutoFormat with Word's default settings (no dialog) | shared model `word::selection`, `word::autocorrect`; the gestures and the dialog not ported |
+| Ribbon tabs | Home, Insert, Design, Layout, References, Review, View; context: Table Design, Table Layout, Header & Footer, Outlining; the Quick Access Toolbar and the tabs shown set in Word Options; right-click menus | Home, Insert, Design, Layout, References, Review, View (marks, panes, zoom); context: Table Design, Table Layout | the views, the toolbar and the context menus not ported |
 | Font, Paragraph, Asian Typography, Ruby, Enclose, Symbol, Date and Time dialogs | yes, with shortcuts | yes; Symbol and Date and Time have no shortcut | not ported |
 | Tables | both tabs, Table Properties and table dialogs; ⇧⌘↩ / ⇧⌘⌫ for rows | same tabs and dialogs; no row shortcuts (Tab past the last cell adds a row) | not ported |
 | Page setup | ribbon, dialogs, Design tab | same dialogs (文字数と行数, margins, paper, line numbers, columns, page numbers, breaks, cover pages, page colour and borders) | — |
 | Headers and footers | edited in place as a full story: several paragraphs, tables, pictures, fields; first-page, odd/even and linked variants; Header & Footer tab | **one-line bar**: left/centre/right zones of the first line only | not ported (needs a second story drawn over the page) |
 | Comments and tracked changes | full: new, reply, edit, resolve, delete, pane; ⌘M, ⇧⌘T | same features; no ⌘M or ⇧⌘T | ⇧⌘T reopens a browser tab |
 | Fields, TOC, notes, links | TOC insert/update, notes (⌥⌘F/⌥⌘D), ⌘K; DATE/TIME show the current time on open | same, but DATE/TIME show the saved result until changed | field clock not ported |
-| Find and replace | ⌘F, ⌘E, ⌘G, ⌃H, ⌥⇧⌘F; bar without buttons | ⌘F, ⇧⌘H; bar with buttons, previous (⇧⏎, ⌘⇧G) | ⌘G/⌘E collide with the browser's find |
+| Find and replace | ⌘F, ⌘E, ⌘G, ⌃H, ⌥⇧⌘F; bar without buttons; Advanced Find and Replace (⌥⇧⌘H): wildcards and \\1, ^ codes, format and style, direction, scope, prefix/suffix, width, kana, punctuation, spaces | ⌘F, ⇧⌘H; bar with buttons, previous (⇧⏎, ⌘⇧G); the ⋯ row: wildcards, ^ codes, prefix/suffix, width, kana, punctuation, spaces | ⌘G/⌘E collide with the browser's find; format, style and scope have no browser UI yet |
 | Format painter | ribbon (Clipboard group), ⇧⌘C / ⇧⌘V | ribbon (Editing group), ⇧⌘C / ⇧⌘V | — |
 | Pictures | system dialog, wrap, move, resize | picker or drop while a document is active (recognised by content), wrap, move, resize | one shared picker |
 | Save | ⌘S writes in place atomically; ⇧⌘S Save As | ⌘S / download button: **always a download**; no Save As; the dirty mark clears even if the download is cancelled | sandbox; File System Access API not used (Chromium-only, needs permission) |
@@ -63,7 +63,7 @@ gpui-pre 0.3.9 on wasm); both call the same command layer in
 | Undo / redo | ⌘Z, ⇧⌘Z, menu, ribbon | ⌘Z, ⇧⌘Z, ⌘Y, title-bar buttons | no menu bar |
 | Hyperlinks | ⌘-click opens the default browser | ⌘/Ctrl-click opens a tab (pop-up blockers may apply) | — |
 | Dark mode | System / Light / Dark, saved; separate dark-pages toggle | follows the OS; toggle not saved; pages always turn dark with the UI | not ported |
-| Zoom | ⌘= ⌘- ⌘0 ⌘9, View tab, status bar | status bar only; pixel ratio not re-read after browser zoom | browser owns ⌘= / ⌘- |
+| Zoom and views | ⌘= ⌘- ⌘0 ⌘9, View tab (Zoom dialog, One Page, Multiple Pages, Page Width that follow the window), status bar; Read Mode, Web Layout, Outline, Draft, Focus, side-to-side pages, gridlines, hidden white space, Split, New Window | status bar and View tab (−/100%/+/page width); Print Layout only; pixel ratio not re-read after browser zoom | browser owns ⌘= / ⌘-; the views not ported |
 | Windows | one workspace window with tabs; Explorer (⌥⌘E), Details panel (⌥⌘I) | one page-filling window; explorer of samples and recent files; no details panel | — |
 | Performance | Skia (C++), background font indexing | single-threaded wasm (`wasm-opt -Oz`); keystroke and paint cost tracked by `jade-office-perf` | wasm threads need COOP/COEP headers |
 | Spelling | none | none | not implemented |
@@ -86,7 +86,7 @@ gpui-pre 0.3.9 on wasm); both call the same command layer in
 | Symbol, Date and Time, Asian Typography | ⌥⇧⌘S, ⌃⇧D, ⌥⇧⌘K | ribbon | not ported |
 | Select Paragraph | ⌥⌘A | triple-click | not ported |
 | Next/previous page | PageDown/PageUp, View tab | — | not ported |
-| Formatting marks | View › Marks | — | not ported |
+| Formatting marks | View › Marks; by kind in Word Options (spaces, tabs, paragraph marks, hidden text, optional hyphens, anchors) | View › Marks (all kinds) | the options dialog not ported |
 | Blank Page, Page Break buttons | Insert, Layout | ⌘↩, Breaks menu | not ported |
 | Design tab | Page Color, Page Borders | under Layout | layout choice |
 | Header & Footer tab, in-place editing | yes | one-line bar | not ported |
@@ -113,6 +113,16 @@ and that are not on origin/main yet; the stream is in brackets.
 | 55, 56, 57, 58, 60, 61, 62, 63 | define new list / numbering / multilevel dialogs | (lists and styles) |
 | 69, 70, 71, 72, 73, 74, 75 | New / Modify Style dialogs and the Styles pane | (lists and styles) |
 | 81, 82, 83 | attach template, AutoText, Set as Default | (lists and styles) |
+
+| 4, 486 | ⌘-drag ranges, ⌥-drag block selection, drag-and-drop of text | `crates/jade-gpui-app/src/word_views/select.rs` (views) |
+| 482 | mini toolbar (live preview is ported) | `crates/jade-gpui-app/src/word_views/mini.rs` (views) |
+| 496 | right-click menus | `crates/jade-gpui-app/src/word_views/context.rs` over `word::context_menu` (views) |
+| 435–439, 441, 447, 450 | Read Mode, Web Layout, Outline, Draft, Focus, side to side, gridlines, hidden white space | `crates/jade-gpui-app/src/word_views/{layout,outline}.rs`, `word_views.rs` (views) |
+| 451–453 | New Window, Split, Editing/Reviewing/Viewing | `crates/jade-gpui-app/src/word_views/{split,modes}.rs` (views) |
+| 172 | Language dialog | `crates/jade-gpui-app/src/word_views/language.rs` (views) |
+| 342, 485, 487, 489 | Word Options: toolbar, tabs, custom group, overtype, paste defaults, marks by kind | `crates/jade-gpui-app/src/word_views/{prefs,customize,paste,marks}.rs` (views) |
+| 488 | AutoCorrect dialog (the corrections themselves run in the browser) | `crates/jade-gpui-app/src/word_views/options.rs` (views) |
+| 504, 505 | find formatting, style and scope | `crates/jade-gpui-app/src/word_views/find.rs` (views) |
 
 Add a row here when a native-only dialog lands; remove it when the browser
 shell gets it.

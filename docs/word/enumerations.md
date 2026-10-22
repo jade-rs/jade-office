@@ -39,49 +39,62 @@ no shell offers it.
 
 Read: `build_border_edge` (`jade-docx-reader/src/parser.rs`) keeps `w:val` as
 a raw string on `BorderEdge.val`; every value survives a save. Draw:
-`parse_border_kind` (`jade-docx-editor/src/canvas_renderer/table.rs:9216`)
-maps the string to one of ten drawn kinds for paragraph, page, table-cell
-and character borders. Character borders (`w:bdr`) are always drawn as a
-solid box.
+`parse_border_kind` (`jade-docx-editor/src/canvas_renderer/table.rs`) maps the
+string to a `BorderKind`, and `canvas_renderer/border_styles.rs` describes
+each kind once — its rules across the band from the outer edge, their
+shading, and the pattern along it — for paragraph borders (fill rectangles
+and `DrawCommand::StrokePolyline`, both cached), table cell borders and page
+borders (strokes about the edge, the outer side known per edge). Character
+borders (`w:bdr`) are always drawn as a solid box. Commands write `w:val` in
+the schema's spelling (`canonical_border_style`,
+`jade-docx-editor/src/word_document.rs`).
 
 | Value | Read | Draw | Edit | Note |
 |---|---|---|---|---|
 | nil, none | Y | (no line) | Y | |
 | single | Y | Y | Y | paragraph Borders button always writes black ¾ pt single |
 | thick | Y | Y | Y table pen | |
-| double | Y | Y | Y table pen, page borders | Mac and Windows rule spacing differ (`jade-docx-layout/src/border_geometry.rs`) |
-| triple | Y | Y | Y table pen, page borders | |
-| dotted | Y | Y | Y table pen, page borders | |
-| dashed | Y | Y | Y table pen, page borders | |
-| dashSmallGap | Y | Y | API only | |
-| dotDash | Y | Y | Y table pen, page borders | |
-| dotDotDash | Y | Y | API only | |
-| dashDotStroked | Y | →dotDash | – | |
-| wave | Y | ≈ evenly dashed, not a wave | Y table pen, page borders | |
-| doubleWave | Y | →wave | – | |
-| thinThickSmallGap | Y | →single | **Y page borders** | the dialog offers a style it cannot draw |
-| thickThinSmallGap, thinThickThinSmallGap, thinThickMediumGap, thickThinMediumGap, thinThickThinMediumGap, thinThickLargeGap, thickThinLargeGap, thinThickThinLargeGap | Y | →single | – | |
-| threeDEmboss, threeDEngrave, outset, inset | Y | →single | – | |
+| double | Y | Y | Y | Mac and Windows rule spacing differ (`jade-docx-layout/src/border_geometry.rs`) |
+| triple | Y | Y | Y | |
+| dotted, dashed, dashSmallGap, dotDash, dotDotDash | Y | Y | Y | |
+| dashDotStroked | Y | Y (dashes and leaning strokes) | Y | |
+| wave | Y | Y (one wavy line) | Y | |
+| doubleWave | Y | Y (two wavy lines) | Y | |
+| thinThickSmallGap, thickThinSmallGap, thinThickThinSmallGap | Y | Y | Y | thin rule outside the box; gap = thin rule |
+| thinThickMediumGap, thickThinMediumGap, thinThickThinMediumGap | Y | Y | Y | gap = half the thick rule |
+| thinThickLargeGap, thickThinLargeGap, thinThickThinLargeGap | Y | Y | Y | gap = the thick rule |
+| threeDEmboss, threeDEngrave | Y | Y (light/dark halves) | Y | emboss light outside, engrave dark outside |
+| outset, inset | Y | Y (shaded by side) | Y | outset lights top/left, inset bottom/right |
 
-Pickers: table pen `Pen::STYLES` (`crates/jade-office-model/src/word/table.rs:226`):
-single, dotted, dashed, dotDash, double, triple, thick, wave. Page borders
-`PAGE_BORDER_STYLES` (`crates/jade-office-model/src/word/page_setup.rs:929`):
-single, double, dotted, dashed, dotDash, triple, thinThickSmallGap, wave.
-Engine validation `TableBorderSpec::STYLES` (`jade-docx-editor/src/word_document.rs:772`)
-adds none, nil, dashSmallGap, dotDotDash.
+Pickers: Word's whole line list (`crates/jade-office-model/src/word/borders.rs`
+`LINE_STYLES`, 24 styles) in the paragraph borders dialog, the table pen
+(`Pen::STYLES`, plus thick) and the page border dialog
+(`PAGE_BORDER_STYLES`). Engine validation `TableBorderSpec::STYLES` is
+`BORDER_LINE_STYLES` (all 27 values).
 
 Print (`jade-docx-pdf-renderer`) draws no border styles.
 
 Pinned by: `jade-docx-editor/src/canvas_renderer/table.rs::parse_border_kind_recognizes_ooxml_styles`;
+`jade-docx-editor/src/canvas_renderer/border_styles.rs` (`tests::*`, and
+`rendering::a_thin_thick_paragraph_border_draws_a_thin_rule_above_a_thick_one`,
+`rendering::a_wave_paragraph_border_is_a_wavy_stroke`,
+`rendering::an_outset_page_border_lights_its_top_and_darkens_its_bottom`);
+`jade-docx-editor/src/commands/set_page_borders.rs::line_styles_keep_their_schema_spelling_and_art_takes_whole_points`;
 `jade-docx-reader/src/parser.rs::paragraph_border_edge_round_trips`,
 `parses_page_borders_all_sides`.
 
 ## ST_Border — art borders
 
 Word's page-border art (`w:pgBorders` with an art value) is read and kept
-verbatim, then **drawn as a plain single line** (the `_ => Single` arm); the
-art images and `w:frame`/`w:shadow` on them are not drawn, and no picker
-offers them. This applies to every art value:
+verbatim and drawn by `canvas_renderer/art_borders.rs`: every art value maps
+to a vector motif (dots, squares, dashes, hearts, stars, trees, apples,
+flowers, balloons, snowflakes, suns, moons, waves, zigzags, sawtooth,
+braids, checks, rules, …) in the art's colours — or the border colour for
+the `basic*` and `*Black` values — tiled at `w:sz` points (an art border's
+`w:sz` is in whole points) as Word tiles its bitmaps. The motifs are
+approximations of Word's imagery, not copies. `w:frame`/`w:shadow` on art
+are not drawn. The page border dialog offers 16 of them (絵柄,
+`ART_STYLES`); the engine accepts all.
 
 apples, archedScallops, babyPacifier, babyRattle, balloons3Colors,
 balloonsHotAir, basicBlackDashes, basicBlackDots, basicBlackSquares,
@@ -117,7 +130,12 @@ custom.
 
 | | Read | Draw | Edit |
 |---|---|---|---|
-| all art values | Y (kept) | →single | – |
+| all art values | Y (kept) | ≈ vector motif | 16 in the dialog, all through the API |
+
+Pinned by: `jade-docx-editor/src/canvas_renderer/art_borders.rs::every_art_value_has_a_motif`,
+`tiles_repeat_along_the_edge_in_the_art_colours`;
+`jade-docx-editor/src/canvas_renderer/border_styles.rs::rendering::an_art_page_border_draws_its_motif_in_its_colours`;
+`crates/jade-office-model/src/word/page_setup.rs::an_art_page_border_takes_art_widths_and_switching_back_restores_a_line`.
 
 ## ST_Underline (`w:u`)
 
@@ -155,10 +173,10 @@ Pinned by: `jade-skia-painter/tests/renders_draw_commands.rs::dashed_underline_p
 ## ST_HighlightColor (`w:highlight`)
 
 Read as a raw string; drawn by `word_highlight_to_css`
-(`jade-docx-editor/src/canvas_renderer.rs`, case-sensitive); Print has the
-same table, case-insensitive. Edit: `HIGHLIGHTS`
-(`crates/jade-gpui-app/src/ribbon.rs:41`, same in `crates/jade-gpui-web/src/ribbon.rs`)
-— 15 swatches plus "no colour".
+(`jade-docx-editor/src/canvas_renderer.rs`, case-insensitive); Print has the
+same table. Edit: `HIGHLIGHT_COLORS`
+(`crates/jade-office-model/src/word/font.rs`, used by both shells' ribbons)
+— all 16 colours plus "no colour" (Word's own palette leaves out white).
 
 | Value | Colour drawn | Read | Draw | Edit |
 |---|---|---|---|---|
@@ -169,7 +187,7 @@ same table, case-insensitive. Edit: `HIGHLIGHTS`
 | magenta | #FF00FF | Y | Y | Y |
 | red | #FF0000 | Y | Y | Y |
 | yellow | #FFFF00 | Y | Y | Y |
-| white | #FFFFFF | Y | Y | **–** (no swatch) |
+| white | #FFFFFF | Y | Y | Y |
 | darkBlue | #000080 | Y | Y | Y |
 | darkCyan | #008080 | Y | Y | Y |
 | darkGreen | #008000 | Y | Y | Y |
@@ -180,27 +198,34 @@ same table, case-insensitive. Edit: `HIGHLIGHTS`
 | lightGray | #C0C0C0 | Y | Y | Y |
 | none | — | Y | — | Y |
 
-Pinned by: `jade-docx-editor/src/commands/set_highlight_color.rs::highlight_command_updates_exported_document_xml`.
+Pinned by: `jade-docx-editor/src/commands/set_highlight_color.rs::highlight_command_updates_exported_document_xml`;
+`jade-docx-editor/src/canvas_renderer.rs::highlight_tests::every_highlight_colour_is_drawn_whatever_its_case`;
+`crates/jade-office-model/src/word/font.rs::the_highlight_palette_offers_every_st_highlight_color`.
 
 ## ST_ShapeType — preset geometry
 
 ECMA-376 defines 187 presets. jade carries **all 187** as guide formulas in
-`jade-pptx-layout/src/preset_shapes.txt` (evaluated by
-`jade-pptx-layout/src/preset_shapes.rs`), but **Word does not use that
-table** — no Word crate depends on `jade-pptx-layout`. Word shapes instead
-go through the `TextBoxShape` enum (`jade-docx-reader/src/document.rs:2975`,
-`from_preset_name`), and each is traced by hand in `trace_text_box_shape`
-(`jade-docx-editor/src/canvas_renderer.rs`) at its **default adjust values**:
-`a:avLst` adjustments and `a:custGeom` are not read for Word.
+`jade-pptx-layout/src/preset_shapes.txt`, evaluated by
+`jade-pptx-layout/src/preset_shapes.rs` (`outline`), and Word uses that
+table too. Word shapes go through the `TextBoxShape` enum
+(`jade-docx-reader/src/document.rs`): 112 presets have a hand-traced
+outline (`trace_text_box_shape`, `jade-docx-editor/src/canvas_renderer.rs`)
+used at their default adjust values; every other preset, and any preset
+whose `a:avLst` moves a handle, is `TextBoxShape::Preset` — the preset name
+and its `a:gd` values (`document/preset_geometry.rs`) — and is traced from
+the shape-guide definition: its filled paths for fills, shadows and glows,
+its stroked paths for the outline. The shaded faces some presets declare
+(`darken`, `lighten`) are filled flat. Connectors keep their hand-traced
+line kinds. `a:custGeom` is not read for Word.
 
 Word for Mac and Windows share one preset set; the shells offer **no Insert
 › Shapes command** (the wasm `insert_text_box` and headless `InsertShape`
-accept every mapped preset). VML shapes (`v:shape` without a DrawingML
+accept the hand-traced presets). VML shapes (`v:shape` without a DrawingML
 choice) are drawn as rectangles; `v:oval`, `v:roundrect`, `v:line` are not
 read.
 
-**Drawn in Word (112 presets)** — read Y, draw Y (default geometry), edit
-API only:
+**Hand-traced (112 presets)** at default geometry — read Y, draw Y, edit
+API only; drawn from the definition when a handle moved:
 
 arc, bentArrow, bentConnector2, bentConnector3, bentConnector4, bevel,
 blockArc, can, chevron, chord, cloud, cloudCallout, corner, cube,
@@ -225,12 +250,8 @@ star24, star32, straightConnector1, stripedRightArrow, sun, teardrop,
 trapezoid, triangle, upArrow, upDownArrow, uturnArrow, wave,
 wedgeEllipseCallout, wedgeRectCallout, wedgeRoundRectCallout.
 
-(bentConnector2/4 draw as the bent connector, curvedConnector2/4 as the
-curved one; straightConnector1 and line pick plain, one-arrow or two-arrow
-from the line ends.)
-
-**Drawn as a rectangle in Word (75 presets)** — read (kept on save), draw
-→rect, edit –:
+**From the shape-guide definition (75 presets)** — read Y (kept on save),
+draw Y with their adjust values, edit –:
 
 accentBorderCallout1–3, accentCallout1–3, actionButtonBackPrevious,
 actionButtonBeginning, actionButtonBlank, actionButtonDocument,
@@ -249,10 +270,10 @@ mathEqual, mathMinus, mathMultiply, mathNotEqual, nonIsoscelesTrapezoid,
 pieWedge, plaqueTabs, quadArrowCallout, rightArrowCallout, squareTabs,
 swooshArrow, upArrowCallout, upDownArrowCallout, verticalScroll.
 
-The cheapest fix for both lists is to route Word shapes through the shared
-formula table, which would also bring adjust handles and `custGeom`.
-
-Pinned by: `jade-docx-reader/src/parser.rs::recognizes_every_flowchart_preset_geometry`;
+Pinned by: `jade-docx-reader/src/parser.rs::recognizes_every_flowchart_preset_geometry`,
+`presets_beyond_the_traced_set_and_moved_handles_keep_their_geometry`;
+`jade-docx-editor/src/canvas_renderer/preset_shape_tests.rs`;
+`jade-pptx-layout/src/preset_shapes.rs::every_preset_evaluates_to_finite_paths`;
 `jade-docx-reader/tests/generated_fixtures.rs::shape_preset_fixture_keeps_common_textless_and_text_shapes`.
 
 ## ST_TextEffect (`w:effect`, animated text)
@@ -302,7 +323,8 @@ One formatter, `format_number_value` (`jade-docx-reader/src/numbering.rs`),
 serves list labels, page numbers (`w:pgNumType`) and note marks
 (`jade-docx-editor/src/number_format.rs`). Value names match
 case-insensitively. Custom formats (`w:numFmt w:val="custom" w:format=…`)
-are not read.
+are read from their sample (`numbering/more_formats.rs`), win over their
+`mc:Fallback` decimal and are written back as Word writes them.
 
 | Value | Read | Draw | Note |
 |---|---|---|---|
@@ -333,7 +355,14 @@ are not read.
 | hindiNumbers, thaiNumbers | Y | Y | native digits |
 | bullet | Y | Y | the level's own text is used for bullets |
 | none | Y | Y | empty |
-| koreanDigital2, vietnameseCounting, hindiVowels, hindiConsonants, hindiCounting, thaiLetters, thaiCounting, bahtText, dollarText, custom | Y | **→decimal** | |
+| koreanDigital2 | Y | Y | Hanja digit by digit (一零五) |
+| vietnameseCounting | Y | Y | một, mười lăm, hai mươi mốt, một trăm lẻ năm |
+| hindiVowels, hindiConsonants | Y | Y | Devanagari letters, doubled after the last |
+| hindiCounting | Y | Y | एक, इक्कीस, एक सौ पाँच (Indian grouping) |
+| thaiLetters | Y | Y | ก ข ค … (obsolete ฃ ฅ skipped) |
+| thaiCounting, bahtText | Y | Y | หนึ่ง, สิบเอ็ด, ยี่สิบ…; bahtText adds บาทถ้วน |
+| dollarText | Y | Y | "five and 00/100" |
+| custom | Y | Y | padded to the sample's digits (001, ０１, (01)) |
 
 Edit: page numbers — `PAGE_NUMBER_FORMATS`
 (`crates/jade-office-model/src/word/page_setup.rs:862`): decimal,
@@ -348,6 +377,8 @@ Pinned by (all `jade-docx-reader/src/numbering.rs` unless noted):
 `japanese_legal_uses_financial_digits_and_units`,
 `formats_decimal_full_width_numbers`, `letters_roll_over_by_repeating_like_word`,
 `chicago_doubles_its_four_symbols`, `hebrew_and_arabic_formats`,
+`the_formats_that_used_to_fall_back_to_decimal_are_formatted`,
+`a_custom_format_wins_over_its_decimal_fallback`,
 `english_ordinal_uses_language_aware_suffixes`,
 `stems_branches_and_the_sexagenary_cycle`;
 `jade-docx-editor/src/number_format.rs::page_numbers_and_note_marks_use_every_list_number_format`.
@@ -394,15 +425,11 @@ Edit: only solid fills, written as `w:val="clear"`.
 
 ## Gaps found
 
-- Double-line border families (thin-thick etc.), 3-D, inset/outset and all
-  art borders draw as a single line; the page-border dialog offers
-  thinThickSmallGap, which it then draws as single.
-- 75 of 187 preset shapes are rectangles in Word, and no Word shape honours
-  its adjust values; there is no shape gallery in either shell.
+- Art borders are vector approximations of Word's imagery; character
+  borders are always a solid box.
+- Preset shapes drawn from the definitions fill their shaded faces flat;
+  `a:custGeom` is not read; there is no shape gallery in either shell.
 - `comma` emphasis is drawn as a dot; Print draws no emphasis, no
   underline kinds and no border styles.
-- White highlight cannot be chosen.
-- Ten number formats fall back to decimal; custom number formats are not
-  read.
 - Shading patterns other than percentages are not drawn.
 - SmartArt has no layout engine.

@@ -24,6 +24,9 @@ use gpui::{
     FocusHandle, Focusable, KeyDownEvent, SharedString, Window,
 };
 
+#[path = "workspace_side_by_side.rs"]
+pub(crate) mod side_by_side;
+
 use crate::view::{zoom_step, DocView, EditorArea, Kind};
 use crate::{i18n, palette, Fonts, Host, UI_FONT};
 
@@ -49,6 +52,21 @@ pub struct Workspace {
     host: Host,
     /// How many new documents have been made, for their names.
     untitled: usize,
+    /// Whether the download-as menu is open.
+    download_menu: bool,
+    /// A document with a password to open, waiting for it: its name, its
+    /// bytes, the password typed, and whether the last one was wrong.
+    locked: Option<Box<Locked>>,
+    /// 並べて比較 (`side_by_side`).
+    side: side_by_side::SideBySide,
+}
+
+/// A file waiting for its password to open.
+struct Locked {
+    name: SharedString,
+    bytes: Rc<Vec<u8>>,
+    field: jade_web::text::TextEdit,
+    wrong: bool,
 }
 
 impl Workspace {
@@ -65,6 +83,9 @@ impl Workspace {
             fonts,
             host,
             untitled: 0,
+            download_menu: false,
+            locked: None,
+            side: Default::default(),
         }
     }
 
@@ -99,6 +120,32 @@ impl Workspace {
             if !taken {
                 self.error = Some(i18n::format("workspace.unsupported", &[("name", &name)]).into());
                 cx.notify();
+            }
+            return;
+        }
+        // 読み取りパスワード: asked for before the document opens.
+        if jade_web::word::protection::is_encrypted_package(&bytes) {
+            self.locked = Some(Box::new(Locked {
+                name,
+                bytes,
+                field: jade_web::text::TextEdit::new(String::new()),
+                wrong: false,
+            }));
+            window.focus(&self.focus, cx);
+            cx.notify();
+            return;
+        }
+        // The revised document a 比較 waits for: the comparison opens as a
+        // new document, as Word opens 比較結果.
+        let waiting = self
+            .active_tab()
+            .cloned()
+            .filter(|tab| tab.read(cx).compare_waiting());
+        if let Some(tab) = waiting {
+            let result = tab.update(cx, |view, cx| view.compare_with(&name, &bytes, cx));
+            if let Some(result) = result {
+                let name = self.untitled_name("docx");
+                self.open(name, Rc::new(result), window, cx);
             }
             return;
         }
@@ -244,7 +291,10 @@ impl Workspace {
     fn title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.active_tab().map(|tab| tab.read(cx));
         let title: SharedString = active
-            .map(|view| view.name.clone())
+            .map(|view| match view.title_badge() {
+                Some(badge) => SharedString::from(format!("{} {badge}", view.name)),
+                None => view.name.clone(),
+            })
             .unwrap_or_else(|| SharedString::from("jade office"));
         let kind = active.map(|view| view.kind);
         let editable = active.is_some_and(|view| view.is_editable());
@@ -322,6 +372,82 @@ impl Workspace {
                 )
                 .when(kind == Some(Kind::Document), |bar| {
                     bar.child(
+                        div()
+                            .relative()
+                            .child(
+                                div()
+                                    .id("download-as")
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded_md()
+                                    .text_xs()
+                                    .text_color(palette::dim())
+                                    .cursor_pointer()
+                                    .hover(|button| button.bg(palette::hovered()))
+                                    .child(i18n::text("web.download_as"))
+                                    .on_click(cx.listener(|workspace, _event, _window, cx| {
+                                        workspace.download_menu = !workspace.download_menu;
+                                        cx.notify();
+                                    })),
+                            )
+                            .when(self.download_menu, |anchor| {
+                                anchor.child(
+                                    div()
+                                        .absolute()
+                                        .top(px(26.0))
+                                        .right_0()
+                                        .w(px(300.0))
+                                        .py_1()
+                                        .rounded_md()
+                                        .border_1()
+                                        .border_color(palette::border())
+                                        .bg(palette::panel())
+                                        .shadow_lg()
+                                        .text_xs()
+                                        .text_color(palette::text())
+                                        .children(
+                                            crate::view::word_download::DOWNLOADS
+                                                .into_iter()
+                                                .enumerate()
+                                                .map(|(index, (format, encoding))| {
+                                                    div()
+                                                        .id(("download-format", index))
+                                                        .px_3()
+                                                        .py_1()
+                                                        .cursor_pointer()
+                                                        .hover(|row| row.bg(palette::hovered()))
+                                                        .child(crate::view::word_download::label(
+                                                            format, encoding,
+                                                        ))
+                                                        .on_click(cx.listener(
+                                                            move |workspace, _event, _window, cx| {
+                                                                workspace.download_menu = false;
+                                                                workspace.with_active(cx, |view, cx| {
+                                                                    view.download_as(format, encoding, cx)
+                                                                });
+                                                            },
+                                                        ))
+                                                }),
+                                        ),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .id("print")
+                            .px_2()
+                            .py_0p5()
+                            .rounded_md()
+                            .text_xs()
+                            .text_color(palette::dim())
+                            .cursor_pointer()
+                            .hover(|button| button.bg(palette::hovered()))
+                            .child(i18n::text("print.title"))
+                            .on_click(cx.listener(|workspace, _event, _window, cx| {
+                                workspace.with_active(cx, |view, cx| view.open_print_panel(cx))
+                            })),
+                    )
+                    .child(
                         div()
                             .id("export-pdf")
                             .px_2()
@@ -946,7 +1072,25 @@ impl Render for Workspace {
             .text_color(palette::text())
             .font_family(UI_FONT)
             .track_focus(&self.focus)
-            .on_key_down(cx.listener(|workspace, event: &KeyDownEvent, _window, cx| {
+            .on_action(
+                cx.listener(|workspace, _: &side_by_side::ViewSideBySide, _, cx| {
+                    workspace.toggle_side_by_side(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|workspace, _: &side_by_side::SynchronousScrolling, _, cx| {
+                    workspace.toggle_sync(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|workspace, _: &side_by_side::ResetWindowPosition, _, cx| {
+                    workspace.reset_side_by_side(cx)
+                }),
+            )
+            .on_key_down(cx.listener(|workspace, event: &KeyDownEvent, window, cx| {
+                if workspace.password_key(event, window, cx) {
+                    return cx.stop_propagation();
+                }
                 let modifiers = event.keystroke.modifiers;
                 if (modifiers.platform || modifiers.control) && event.keystroke.key == "o" {
                     workspace.host.pick();
@@ -969,15 +1113,107 @@ impl Render for Workspace {
                             .flex_col()
                             .overflow_hidden()
                             .when(has_tabs, |editor| editor.child(self.tab_bar(cx)))
-                            .child(div().flex_1().min_h_0().overflow_hidden().map(|content| {
-                                match active_view {
-                                    Some(view) => content.child(view),
-                                    None => content.child(self.welcome(cx)),
-                                }
-                            })),
+                            .child(div().flex_1().min_h_0().overflow_hidden().map(
+                                |content| match (self.editor_content(), active_view) {
+                                    (Some(pair), _) => content.child(pair),
+                                    (None, Some(view)) => content.child(view),
+                                    (None, None) => content.child(self.welcome(cx)),
+                                },
+                            )),
                     ),
             )
+            .children(self.password_bar())
             .child(self.status_bar(cx))
             .into_any_element()
+    }
+}
+
+impl Workspace {
+    /// Keys the password prompt takes; `true` when taken.
+    fn password_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(locked) = self.locked.as_mut() else {
+            return false;
+        };
+        match event.keystroke.key.as_str() {
+            "escape" => self.locked = None,
+            "enter" => {
+                let password = locked.field.text.clone();
+                match jade_web::word::protection::decrypt_package(&locked.bytes, &password) {
+                    Ok(plain) => {
+                        let name = locked.name.clone();
+                        self.locked = None;
+                        self.open(name.clone(), Rc::new(plain), window, cx);
+                        if let Some(tab) = self.tabs.iter().find(|tab| tab.read(cx).name == name) {
+                            tab.update(cx, |view, _| view.set_open_password(password));
+                        }
+                    }
+                    Err(jade_web::word::protection::DecryptError::WrongPassword) => {
+                        locked.wrong = true;
+                        locked.field = jade_web::text::TextEdit::new(String::new());
+                    }
+                    Err(error) => {
+                        self.locked = None;
+                        self.error = Some(error.to_string().into());
+                    }
+                }
+            }
+            key => {
+                if !locked.field.edit_key(key) {
+                    match event.keystroke.key_char.as_deref() {
+                        Some(text) if !event.keystroke.modifiers.platform => {
+                            locked.field.insert(text);
+                            locked.wrong = false;
+                        }
+                        _ => return false,
+                    }
+                }
+            }
+        }
+        cx.notify();
+        true
+    }
+
+    /// The password prompt, over the status bar while a file waits for it.
+    fn password_bar(&self) -> Option<gpui::AnyElement> {
+        let locked = self.locked.as_ref()?;
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .px_4()
+                .py_1p5()
+                .bg(palette::panel())
+                .border_t_1()
+                .border_color(palette::border())
+                .text_xs()
+                .child(i18n::format(
+                    "protect.password_prompt",
+                    &[("name", &locked.name)],
+                ))
+                .child(
+                    div()
+                        .min_w(px(160.0))
+                        .px_2()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(palette::accent())
+                        .bg(palette::canvas())
+                        .child(jade_web::word::protection::masked(&locked.field.text)),
+                )
+                .when(locked.wrong, |bar| {
+                    bar.child(
+                        div()
+                            .text_color(palette::accent())
+                            .child(i18n::text("protect.wrong")),
+                    )
+                })
+                .into_any_element(),
+        )
     }
 }

@@ -32,7 +32,9 @@ use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 
 use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, INITIAL_PAGE};
 
+mod autocorrect;
 mod formatting;
+mod print;
 mod story;
 pub use formatting::{
     style_gallery, CellStep, CharacterFormat, FindOptions, FormatState, Found, GalleryStyle,
@@ -384,6 +386,14 @@ impl EditableDocument {
         self.rendered_pages.get().min(self.pages.borrow().len())
     }
 
+    /// Each page's section (from 0) and the number its `PAGE` field shows:
+    /// what a print range such as `p1s2-p3s3` names.
+    pub fn page_labels(&self) -> Vec<(usize, usize)> {
+        let mut labels = self.renderer.page_labels();
+        labels.truncate(self.page_count());
+        labels
+    }
+
     /// Page `index`'s surface, as last painted.
     pub fn page(&self, index: usize) -> Option<TinySkiaPainter> {
         if index >= self.page_count() {
@@ -515,18 +525,9 @@ impl EditableDocument {
     /// selects in Word. Elsewhere, the caret goes to `position`.
     pub fn select_word(&mut self, (paragraph, offset): (usize, usize)) -> Result<(), String> {
         let text = self.paragraph_text(paragraph).unwrap_or_default();
-        let offset = offset.min(text.len());
-        let start = text[..offset]
-            .char_indices()
-            .rev()
-            .take_while(|(_, ch)| ch.is_alphanumeric())
-            .last()
-            .map_or(offset, |(at, _)| at);
-        let end = text[offset..]
-            .char_indices()
-            .take_while(|(_, ch)| ch.is_alphanumeric())
-            .last()
-            .map_or(offset, |(at, ch)| offset + at + ch.len_utf8());
+        // A run of one script in Japanese, a word and the spaces after it in
+        // English, as Word's double-click takes them (the native app's too).
+        let (start, end) = jade_office_model::word::selection::word_at(&text, offset);
         self.select((paragraph, start), (paragraph, end))
     }
 
@@ -1381,9 +1382,101 @@ impl EditableDocument {
         self.repaint_all()
     }
 
+    /// Shows or hides Word's formatting marks (表示 → 編集記号) and
+    /// repaints.
+    pub fn set_formatting_marks(&mut self, show: bool) -> Result<(), String> {
+        if self.options.show_formatting_marks == show {
+            return Ok(());
+        }
+        self.options.show_formatting_marks = show;
+        self.repaint_all()
+    }
+
+    /// Whether the formatting marks show.
+    pub fn formatting_marks(&self) -> bool {
+        self.options.show_formatting_marks
+    }
+
     /// The top-level body elements collapsed headings hide.
     pub fn collapsed_blocks(&self) -> &[usize] {
         self.options.collapsed_blocks()
+    }
+
+    /// 変更内容の表示 and 変更履歴とコメントの表示: tracked changes marked up
+    /// or not, the original shown in place of the final text, and the
+    /// view's change bars, reviewer colours and filters. Only the pages
+    /// change; repaints when anything did.
+    pub fn set_revision_display(
+        &mut self,
+        markup: bool,
+        original: bool,
+        view: jade_docx_editor::revision_view::RevisionView,
+    ) -> Result<bool, String> {
+        let original = original && !markup;
+        if self.options.render_changes == markup
+            && self.options.render_original == original
+            && *self.options.revision_view() == view
+        {
+            return Ok(false);
+        }
+        self.options.render_changes = markup;
+        self.options.render_original = original;
+        self.options.set_revision_view(view);
+        self.repaint_all()?;
+        Ok(true)
+    }
+
+    /// Spelling and grammar marks on the pages, on or off; each change
+    /// starts afresh.
+    pub fn set_proofing(&mut self, on: bool) -> Result<(), String> {
+        let (_, generation) = self.renderer.spelling_state();
+        self.renderer
+            .configure_spelling(on, generation.wrapping_add(1));
+        self.repaint_all()
+    }
+
+    pub fn proofing(&self) -> bool {
+        self.renderer.spelling_state().0
+    }
+
+    /// Asks `check` about the spans drawn since the last call and draws its
+    /// answers; returns whether the pages changed.
+    #[allow(clippy::type_complexity)]
+    pub fn proof_pending(
+        &mut self,
+        check: &mut dyn FnMut(
+            &str,
+            usize,
+            usize,
+            Option<&str>,
+        ) -> Vec<jade_docx_editor::plugins::spelling::ProofingIssue>,
+    ) -> Result<bool, String> {
+        let (on, generation) = self.renderer.spelling_state();
+        if !on {
+            return Ok(false);
+        }
+        let mut changed = false;
+        for request in self.renderer.take_pending_spelling() {
+            let issues = check(
+                &request.text,
+                request.start,
+                request.end,
+                request.language.as_deref(),
+            );
+            changed |= self
+                .renderer
+                .apply_proofing_issues(generation, &request.key, &issues);
+        }
+        if changed {
+            self.repaint_all()?;
+        }
+        Ok(changed)
+    }
+
+    /// Whether tracked changes are marked up, and whether the original is
+    /// shown in place of the final text.
+    pub fn revision_display(&self) -> (bool, bool) {
+        (self.options.render_changes, self.options.render_original)
     }
 
     /// Every page from scratch: undo can change content anywhere.
@@ -1518,6 +1611,14 @@ impl EditableDocument {
         self.set_dark_paper(dark)?;
         result?;
         crate::pdf::pdf_of_pages(&pages)
+    }
+
+    /// The document as `.docx` bytes, every edit in it, without marking it
+    /// saved: what a copy in another format is made from.
+    pub fn word_docx(&self) -> Result<Vec<u8>, String> {
+        self.word_document
+            .export_docx()
+            .map_err(|error| format!("cannot save: {error:?}"))
     }
 
     /// The document as `.docx` bytes, every edit in it; marks it saved.

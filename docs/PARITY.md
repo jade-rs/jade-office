@@ -113,3 +113,13 @@ Per-area detail behind the Word numbers above, in `docs/word/`:
   differently from the native app, why, and what is left to port.
 - [ribbon-map.md](word/ribbon-map.md) — Word's ribbon tabs, context tabs,
   dialogs and shortcuts (Mac and Windows) mapped to jade's two shells.
+
+## Batch 4: every Word item
+
+With files and printing, the Draw tab, the View tab and editing aids,
+review and protection, and the fidelity fixes, all 506 Word items of the
+reference list are drawn and editable in the native app. Still to do, and
+tracked: the browser shell's share of a few of them (views, Word Options,
+AutoRecover, the picture/shape format tab — `docs/word/web-vs-desktop.md`),
+and checks against files Word itself wrote for open passwords and digital
+signatures.

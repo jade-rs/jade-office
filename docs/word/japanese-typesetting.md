@@ -36,8 +36,8 @@ under `jade-core/crates/` unless they start with `crates/`. Shorthands:
 | 禁則処理を行う | `w:kinsoku` (pPr, settings) | Y | Y | — | Y (体裁 / 文字体裁) | Y |
 | 禁則文字 標準 / 高レベル / ユーザー設定 | `w:strictFirstAndLastChars`, `w:noLineBreaksBefore/After` | Y | Y (sets differ, below) | — | Y | Y |
 | 句読点のぶら下げを行う | `w:overflowPunct` | Y | Y | — | Y | Y |
-| 行頭の記号を 1/2 の幅にする | `w:topLinePunct` | Y | ≈ (target set suspect) | — | Y | Y |
-| 文字間隔の調整 (間隔を詰めない / 句読点のみ / 句読点とかな) | `w:characterSpacingControl` | Y | ≈ (kana not compressed) | — | Y | Y |
+| 行頭の記号を 1/2 の幅にする | `w:topLinePunct` | Y | Y (opening brackets) | — | Y | Y |
+| 文字間隔の調整 (間隔を詰めない / 句読点のみ / 句読点とかな) | `w:characterSpacingControl` | Y | ≈ (kana by a fixed tenth) | — | Y | Y |
 | 日本語と英字の間隔を自動調整 | `w:autoSpaceDE` | Y | Y | — | Y | Y |
 | 日本語と数字の間隔を自動調整 | `w:autoSpaceDN` | Y | Y | — | Y | Y |
 | 英単語の途中で改行する | `w:wordWrap` | Y | Y | — | Y | Y |
@@ -47,10 +47,10 @@ under `jade-core/crates/` unless they start with `crates/`. Shorthands:
 | 均等割り付け (文字列) | `w:fitText` | Y | Y | Y | **–** | Y |
 | ルビ | `w:ruby` | ≈ (`hpsBaseText`, `lid` ignored) | Y | Y | Y | Y |
 | 傍点 | `w:em` | Y | — (no line growth) | ≈ | Y | Y |
-| 縦書き | `w:textDirection` (section, cell) | ≈ (no `tbLrV`, pPr, text box) | Y | Y | Y | Y |
+| 縦書き | `w:textDirection` (section, cell) | ≈ (no pPr, text box) | Y | Y | Y | Y |
 | 縦中横 | `w:eastAsianLayout w:vert` | Y | Y | Y | Y | Y |
-| 組み文字 | `w:eastAsianLayout w:combine` | Y | **–** (headless layout) | Y | Y | Y |
-| 割注 | `w:combine` + `w:combineBrackets` | Y | **–** | Y (one line only) | Y | Y |
+| 組み文字 | `w:eastAsianLayout w:combine` | Y | Y | Y | Y | Y |
+| 割注 | `w:combine` + `w:combineBrackets` | Y | Y (one line only) | Y (one line only) | Y | Y |
 | 囲い文字 | `EQ \o\ac(○,字)` field | Y | — | Y (one style) | Y | Y |
 | 右インデント幅を自動調整 | `w:adjustRightInd` | Y | **–** | — | – | parse only |
 | 文字の配置 (上 / 中央 / ベースライン / 下 / 自動) | `w:textAlignment` | Y | ≈ (spare leading only) | — | – | Y |
@@ -77,24 +77,28 @@ under `jade-core/crates/` unless they start with `crates/`. Shorthands:
   (paragraph and document levels standard / strict / custom);
   dialog `crates/jade-gpui-app/src/word_characters/typography.rs` (same in
   `crates/jade-gpui-web`); model `crates/jade-office-model/src/word/typography.rs`.
-- **Default sets:**
+- **Default sets:** exactly Word's lists, in
+  `jade-docx-layout/src/word_kinsoku.rs`, which the 体裁 dialog
+  (`crates/jade-office-model/src/word/typography.rs`) shows too:
 
-  | Set | Characters (layout) |
+  | Set | Characters |
   |---|---|
-  | line-start (`NO_LINE_BREAK_BEFORE`, `jade-text-layout/src/kinsoku.rs`) | `、。，．・：；！？)）】』」〉》］｝〕〗〙〛ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶー々ゝゞヽヾ゛゜’”‰′″℃¢°％｡｣､･ﾞﾟ` |
-  | line-end (`NO_LINE_BREAK_AFTER`) | `(（【『「〈《［｛〔‘“£¥＄￡￥｢` |
-  | strict-only (`STRICT_ONLY_NO_LINE_BREAK_BEFORE`, `LW`) | `ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶー` — removed from the line-start set unless `strictFirstAndLastChars` is on |
+  | 行頭禁則文字 標準 | `!%),.:;?]}¢°’”‰′″℃、。々〉》」』】〕゛゜ゝゞ・ヽヾ！％），．：；？］｝｡｣､･ﾞﾟ￠` |
+  | 高レベル adds | `ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶーｧｨｩｪｫｬｭｮｯｰ` |
+  | 行末禁則文字 (both) | `$([\{£¥‘“〈《「『【〔＄（［｛｢￡￥` |
 
-  The ASCII `!%,.:;?]}` (line start) and `$[\{` (line end) are left out on
-  purpose (only `)` is kept); the 体裁 dialog's lists
-  (`crates/jade-office-model/src/word/typography.rs`) do include them, and
-  `￠`, `ゕゖ`, half-width `ｧ`–`ｯ`, `ｰ`, so **the dialog shows more than
-  layout applies**. A `ja` custom set replaces the default; custom sets for
-  other languages are merged into it regardless of the run's language.
-  There are no Chinese or Korean default sets. Excel and PowerPoint always
-  behave as strict.
-- **分割禁止:** not implemented — `——`, `……`, `‥` may split across lines.
-- **Pinned by:** `jade-text-layout/src/kinsoku.rs` ::
+  A `ja` custom set replaces the default; custom sets for other languages
+  are merged into it regardless of the run's language. There are no
+  Chinese or Korean default sets. Excel and PowerPoint use
+  `jade-text-layout/src/kinsoku.rs` and always behave as strict.
+- **分割禁止:** Word does not break between two inseparable characters
+  (`—`, `―`, `…`, `‥`, `〳`–`〵`), so `――` and `……` stay on one line
+  (`forbids_break_between`, `LW`).
+- **Pinned by:** `jade-docx-layout/src/word_kinsoku.rs` ::
+  `strict_is_standard_plus_the_small_kana`; `LW` ::
+  `kinsoku_uses_words_own_standard_and_strict_lists`,
+  `a_two_em_dash_or_leader_is_not_split_across_lines`;
+  `jade-text-layout/src/kinsoku.rs` ::
   `default_tables_cover_the_ecma_japanese_standard_sets`,
   `default_tables_keep_ascii_word_punctuation_breakable`;
   `jade-text-layout/tests/wraps_lines.rs` ::
@@ -133,11 +137,11 @@ under `jade-core/crates/` unless they start with `crates/`. Shorthands:
 - **JIS X 4051:** 行頭の始め括弧類 (cl-01) set solid / half-width at the
   line start.
 - **jade:** `LW` `top_line_punctuation_adjustment` (−50 % advance at line
-  start) on `is_top_line_half_width_target` — currently **closing** marks
-  `、。，．・：；！？)]}）］｝」』】`, which kinsoku already keeps off the line
-  start. Word applies it to opening brackets such as `「（`; this needs a
-  Word trace before changing.
-- **Pinned by:** `LW` ::
+  start) on `is_top_line_half_width_target`: the opening brackets
+  `「『（［｛〈《【〔〖〘‘“` — under kinsoku the only marks that can start a
+  line — and the closing marks, which reach a line start only with kinsoku
+  off. Not yet compared with a Word trace.
+- **Pinned by:** `LW` :: `top_line_punctuation_halves_an_opening_bracket_at_a_line_start`,
   `top_line_punctuation_half_width_allows_more_glyphs_on_line_start`; `CR` ::
   `top_line_punctuation_adjustment_applies_when_enabled`,
   `top_line_punctuation_adjustment_is_zero_when_disabled`.
@@ -153,14 +157,17 @@ under `jade-core/crates/` unless they start with `crates/`. Shorthands:
   punctuation by a fixed 18 % (`LW` `punctuation_compression_adjustment`,
   gated in `LM`); Word for Mac squeezes only justified lines
   (`LW` `compress_mac_punctuation_on_completed_line`).
-  `compressPunctuationAndJapaneseKana` is read and offered but **laid out as
-  `doNotCompress`** — kana are never compressed. There is no JIS-style
+  `compressPunctuationAndJapaneseKana` compresses punctuation the same way
+  and kana (hiragana, katakana) by a tenth of their cell on Windows, standing
+  in for the face's proportional kana widths; Word for Mac squeezes its
+  justified lines' punctuation as for `compressPunctuation`. There is no JIS-style
   追い込み/追い出し priority order; line end is squeeze plus single-mark
   hanging.
 - **Pinned by:** `S` :: `parses_east_asian_line_break_settings`,
   `parses_character_spacing_control_outside_compat`; `LW` ::
   `punctuation_compression_adjustment_applies_for_compress_punctuation_setting`,
   `mac_squeeze_admission_needs_justified_compress_punctuation`,
+  `compressing_kana_narrows_kana_and_punctuation_on_windows`,
   `do_not_compress_line_squeezes_auto_spacing_before_hanging_its_final_mark`.
 
 ### 和欧間・和数間の自動調整
@@ -294,7 +301,8 @@ under `jade-core/crates/` unless they start with `crates/`. Shorthands:
   `layout_cell_text_vertically`; drawn by `CR` and
   `canvas_renderer/table.rs` `render_vertical_paragraph`. Edit: Layout ›
   Text Direction (turns the page) and the cell text-direction cycle.
-  **Not supported:** `tbLrV`; paragraph-level `w:textDirection`; vertical
+  `tbLrV` stacks glyphs like `tbRlV` with its lines running left to right.
+  **Not supported:** paragraph-level `w:textDirection`; vertical
   text boxes (`bodyPr@vert`); kinsoku and hanging between columns; vertical
   glyph substitution (`vert`/`vrt2`).
 - **Pinned by:** `P` :: `parses_section_text_direction`; `LW` ::
@@ -302,6 +310,8 @@ under `jade-core/crates/` unless they start with `crates/`. Shorthands:
   `vertical_columns_fit_the_advances_used_by_painting`;
   `canvas_renderer/table.rs` ::
   `rotated_table_text_baseline_follows_text_direction_axis`;
+  `jade-docx-layout/src/text_extract.rs` ::
+  `a_tb_lr_v_cell_stacks_glyphs_down_and_columns_left_to_right`;
   `crates/jade-web/tests/section_setup_documents.rs` :: `vertical_text_turns_the_page`.
 
 ### 縦中横
@@ -321,14 +331,15 @@ under `jade-core/crates/` unless they start with `crates/`. Shorthands:
 - **Element:** `w:eastAsianLayout w:combine="1"` (組み文字) and with
   `w:combineBrackets` (割注: none, round, square, angle, curly).
 - **JIS X 4051:** 割注 (two-line inline note, which may run across lines).
-- **jade:** drawn only by the editor renderer: `CR`
-  `combined_character_chunks` (two half-size lines, scaled to fit, plus
-  brackets), `draw_combined_characters`. **The headless layout
-  (`jade-docx-layout`) ignores `w:combine`** and measures the run at full
-  width, so line widths differ between the two paths; 割注 cannot continue
-  onto the next line. The `EQ \o(\s\up…,\s\do…)` form Word may write for
+- **jade:** `jade-docx-layout/src/combined_characters.rs`
+  `combined_run_properties` (two half-size lines, scaled to the wider half
+  plus full-size brackets) gives the run its width in both the headless
+  layout and the renderer, which draws it with `draw_combined_characters`;
+  割注 cannot continue onto the next line. The `EQ \o(\s\up…,\s\do…)` form Word may write for
   組み文字 is not recognised. Set from Home › Asian Layout.
-- **Pinned by:** `CR` :: `combined_characters_stack_their_halves`.
+- **Pinned by:** `CR` :: `combined_characters_stack_their_halves`;
+  `jade-docx-layout/src/text_extract.rs` ::
+  `combined_characters_take_their_wider_half_and_brackets`.
 
 ### 囲い文字
 
@@ -365,15 +376,13 @@ under `jade-core/crates/` unless they start with `crates/`. Shorthands:
 
 ## Gaps found
 
-1. Kinsoku: the layout sets omit the ASCII and a few full-width and
-   half-width characters the 体裁 dialog lists; strict level adds only small
-   kana and ー; no zh/ko defaults; no 分割禁止.
-2. `compressPunctuationAndJapaneseKana` does not compress kana.
-3. `topLinePunct` targets closing marks; Word targets opening brackets
-   (unverified).
-4. Vertical text: no `tbLrV`, paragraph or text-box vertical text, no
+1. Kinsoku: no zh/ko default sets.
+2. `compressPunctuationAndJapaneseKana` compresses kana by a fixed tenth,
+   not by the face's proportional widths.
+3. `topLinePunct`'s target set has not been compared with a Word trace.
+4. Vertical text: no paragraph or text-box vertical text, no
    kinsoku/hanging between columns, no vertical glyph forms.
-5. 組み文字/割注 exist only in the editor renderer; 割注 cannot wrap.
+5. 割注 cannot wrap.
 6. Ruby ignores `hpsBaseText`/`lid` on read; no overhang; vertical ruby
    centred.
 7. `w:jc="distribute"` and `w:fitText` cannot be set from the UI.
