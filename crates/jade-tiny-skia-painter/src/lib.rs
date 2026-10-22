@@ -1267,6 +1267,40 @@ impl TinySkiaPainter {
         self.bgra_premultiplied_rows(0..self.height())
     }
 
+    /// A surface holding `data` — RGBA, premultiplied, `width` × `height`, as
+    /// [`Self::rgba_premultiplied`] reads one back — with every row counted
+    /// as drawn: what a reader composing several surfaces into one shows.
+    /// `None` when `data` is not that size.
+    pub fn from_rgba_premultiplied(
+        width: u32,
+        height: u32,
+        data: &[u8],
+        fonts: Rc<FontBook>,
+    ) -> Option<Self> {
+        let painter = Self::new(width, height, fonts)?;
+        {
+            let mut pixmap = painter.inner.pixmap.borrow_mut();
+            if pixmap.data().len() != data.len() {
+                return None;
+            }
+            pixmap.data_mut().copy_from_slice(data);
+        }
+        painter.inner.unpainted.set(false);
+        painter.mark_drawn();
+        Some(painter)
+    }
+
+    /// Counts every row as drawn, for the next
+    /// [`Self::take_damaged_rows`]: a reader that showed something else in
+    /// the surface's place reads all of it again.
+    pub fn mark_drawn(&self) {
+        let whole = {
+            let pixmap = self.inner.pixmap.borrow();
+            [0.0, 0.0, pixmap.width() as f32, pixmap.height() as f32]
+        };
+        self.note_damage(whole, None);
+    }
+
     pub fn encode_png(&self) -> Option<Vec<u8>> {
         self.pixels_to_read().encode_png().ok()
     }

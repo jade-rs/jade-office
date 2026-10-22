@@ -214,7 +214,7 @@ pub fn document_theme_colors(
 /// The open document's theme colours.
 pub fn theme_colors(view: &DocumentView) -> Vec<(String, String)> {
     view.word_ref()
-        .map(document_theme_colors)
+        .map(|document| document_theme_colors(document))
         .unwrap_or_default()
 }
 
@@ -716,14 +716,14 @@ pub(crate) fn points(value: f32) -> String {
 
 impl DocumentView {
     /// The Word document, when this view is one.
-    pub(crate) fn word_ref(&self) -> Option<&jade_web::editing::EditableDocument> {
+    pub(crate) fn word_ref(&self) -> Option<&jade_web::editing::WordDoc> {
         match &self.document {
             super::Document::Pages { document, .. } => Some(document),
             _ => None,
         }
     }
 
-    pub(crate) fn word_mut(&mut self) -> Option<&mut jade_web::editing::EditableDocument> {
+    pub(crate) fn word_mut(&mut self) -> Option<&mut jade_web::editing::WordDoc> {
         match &mut self.document {
             super::Document::Pages { document, .. } => Some(document),
             _ => None,
@@ -733,7 +733,7 @@ impl DocumentView {
     /// Runs `edit` on the Word document, or says there is none.
     pub(crate) fn word_edit_result(
         &mut self,
-        edit: impl FnOnce(&mut jade_web::editing::EditableDocument) -> Result<(), String>,
+        edit: impl FnOnce(&mut jade_web::editing::WordDoc) -> Result<(), String>,
     ) -> Result<(), String> {
         match self.word_mut() {
             Some(document) => edit(document),

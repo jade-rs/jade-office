@@ -43,7 +43,7 @@ pub(crate) mod word_mailings;
 pub(crate) mod word_references;
 mod word_review;
 pub(crate) mod word_setup;
-mod word_story;
+pub(crate) mod word_story;
 mod word_table;
 
 /// The deck's slide list, as in the native app.
@@ -366,7 +366,7 @@ enum Document {
     /// Word: the document open for editing, its pages as images, shown as
     /// a column of pages.
     Pages {
-        document: Box<jade_web::editing::EditableDocument>,
+        document: Box<jade_web::editing::WordDoc>,
         pages: Vec<PageImage>,
         page_size: (f32, f32),
         scroll: ScrollHandle,
@@ -390,8 +390,6 @@ enum Document {
         reveal_pending: bool,
         /// The find bar (⌘F), while it is open: typing goes into it.
         find: Option<Box<word_find::FindBar>>,
-        /// A header or footer being typed, in its bar over the pages.
-        story: Option<Box<crate::word_page::StoryBar>>,
         /// A comment being typed — new, a reply, an edit — in its bar.
         comment: Option<Box<word_review::CommentBar>>,
         /// A dialog — a link, a note, the paragraph's format — over the
@@ -568,7 +566,6 @@ impl DocView {
                     dragging: false,
                     reveal_pending: false,
                     find: None,
-                    story: None,
                     comment: None,
                     dialog: None,
                     show_comments: false,
@@ -1042,7 +1039,7 @@ impl DocView {
     fn word_edit(
         &mut self,
         cx: &mut Context<Self>,
-        edit: impl FnOnce(&mut jade_web::editing::EditableDocument) -> Result<(), String>,
+        edit: impl FnOnce(&mut jade_web::editing::WordDoc) -> Result<(), String>,
     ) {
         let Document::Pages { document, .. } = &mut self.document else {
             return;
@@ -1115,7 +1112,7 @@ impl DocView {
     fn word_move(
         &mut self,
         cx: &mut Context<Self>,
-        motion: impl FnOnce(&mut jade_web::editing::EditableDocument) -> Result<(), String>,
+        motion: impl FnOnce(&mut jade_web::editing::WordDoc) -> Result<(), String>,
     ) {
         let Document::Pages { document, .. } = &mut self.document else {
             return;
@@ -1194,6 +1191,16 @@ impl DocView {
         window.focus(&self.focus, cx);
         if let Some(bar) = self.find_bar_mut() {
             bar.active = false;
+        }
+        // A double-click in the top or bottom margin opens the header or the
+        // footer in place; one in the body closes it.
+        if let (Some((_, y)), Document::Pages { document, .. }) =
+            (self.page_point(index, event.position), &self.document)
+        {
+            let page_y = y - document.document_y(index, 0.0);
+            if self.story_click(index, page_y, event.click_count, cx) {
+                return;
+            }
         }
         let (Some((x, y)), Some(target)) = (
             self.page_point(index, event.position),
@@ -1436,10 +1443,7 @@ impl DocView {
         if rect == (start.x, start.y, start.width, start.height) {
             return;
         }
-        self.word_edit(cx, move |document| {
-            use jade_web::word::picture::WordPicture;
-            document.place_object(start, rect)
-        });
+        self.word_edit(cx, move |document| document.place_object(start, rect));
         // Where the picture is now, for the outline and the next drag.
         if let Document::Pages {
             document, object, ..
@@ -1689,6 +1693,9 @@ impl DocView {
         if let Action::EditStory(story) = action {
             return self.open_story(story, cx);
         }
+        if let Action::Story(action) = action {
+            return self.story_action(action, cx);
+        }
         if let Action::Review(review) = action {
             return self.review_action(review, cx);
         }
@@ -1824,6 +1831,7 @@ impl DocView {
                 jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
             }
             Action::EditStory(_)
+            | Action::Story(_)
             | Action::Setup(_)
             | Action::Characters(_)
             | Action::References(_)
@@ -1864,6 +1872,7 @@ impl DocView {
         .then(|| word_mailings::groups(self))
         .flatten();
         let equation = self.equation_tab_state();
+        let story = self.story_tab_state();
         let Document::Pages {
             document,
             ribbon,
@@ -1926,6 +1935,8 @@ impl DocView {
                 developer,
                 mailings,
                 equation,
+                story,
+                field_codes: document.field_code_view().all,
             }
         };
         ribbon::ribbon(
@@ -1994,7 +2005,6 @@ impl DocView {
         self.shown_zoom = zoom;
         self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
-        let story_bar = self.story_bar_element();
         let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
@@ -2023,6 +2033,13 @@ impl DocView {
         }
         .into_iter();
         let equation_overlay = self.equation_overlay(zoom);
+        let mut story_labels = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.story_label(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let editing_equation = self.equation.is_some();
         let Document::Pages {
             document,
@@ -2142,6 +2159,7 @@ impl DocView {
                 let entity = entity.clone();
                 let table_overlay = table_overlays.next().flatten();
                 let control_overlay = control_overlays.next().unwrap_or_default();
+                let story_label = story_labels.next().flatten();
                 div()
                     .relative()
                     .flex_none()
@@ -2197,6 +2215,7 @@ impl DocView {
                         },
                     ))
                     .children(table_overlay)
+                    .children(story_label)
                     .children(word_references::page_marks(&marks, index, zoom, cx))
                     .children(control_overlay)
                     .children(
@@ -2314,7 +2333,6 @@ impl DocView {
                     .child(word_ribbon)
                     .children(dialog_bar)
                     .children(comment_bar)
-                    .children(story_bar)
                     .children(find_bar)
                     .child(
                         div()
@@ -2411,7 +2429,7 @@ impl DocView {
             cx.stop_propagation();
             return;
         }
-        if self.story_editing() && self.story_key(event, cx) {
+        if self.story_key(event, cx) {
             cx.stop_propagation();
             return;
         }
@@ -2568,9 +2586,6 @@ impl DocView {
             Document::Pages {
                 comment: Some(bar), ..
             } => Some(&mut bar.text),
-            Document::Pages {
-                story: Some(bar), ..
-            } => Some(&mut bar.text),
             Document::Pages { find, .. } => find
                 .as_deref_mut()
                 .filter(|bar| bar.active)
@@ -2608,9 +2623,6 @@ impl DocView {
             } => dialog.field(),
             Document::Pages {
                 comment: Some(bar), ..
-            } => Some(&bar.text),
-            Document::Pages {
-                story: Some(bar), ..
             } => Some(&bar.text),
             Document::Pages { find, .. } => find
                 .as_deref()
@@ -2680,7 +2692,7 @@ impl DocView {
     /// handler.
     fn word_input(&self) -> Option<(String, usize, Option<Range<usize>>)> {
         // While a bar has the keyboard, typing is the bar's.
-        if self.finding() || self.story_editing() || self.commenting() {
+        if self.finding() || self.commenting() {
             return None;
         }
         let Document::Pages { document, .. } = &self.document else {
@@ -2802,9 +2814,6 @@ impl EntityInputHandler for DocView {
                 comment: Some(bar), ..
             } => bar.text.marked = None,
             Document::Pages {
-                story: Some(bar), ..
-            } => bar.text.marked = None,
-            Document::Pages {
                 find: Some(bar), ..
             } if bar.active => bar.field_mut().marked = None,
             _ => {}
@@ -2818,8 +2827,7 @@ impl EntityInputHandler for DocView {
         };
         match &mut self.document {
             // Into a bar, its first line.
-            Document::Pages { story: Some(_), .. }
-            | Document::Pages {
+            Document::Pages {
                 comment: Some(_), ..
             } => {
                 let line = text.lines().next().unwrap_or_default().to_string();
@@ -2915,10 +2923,7 @@ impl EntityInputHandler for DocView {
         if self.equation.is_some() {
             return self.equation_type(text, cx);
         }
-        if matches!(self.document, Document::Pages { .. })
-            && !self.finding()
-            && !self.story_editing()
-            && !self.commenting()
+        if matches!(self.document, Document::Pages { .. }) && !self.finding() && !self.commenting()
         {
             let text = text.to_string();
             let composing = self
@@ -2979,10 +2984,7 @@ impl EntityInputHandler for DocView {
             field.replace(range, new_text, true);
             return cx.notify();
         }
-        if matches!(self.document, Document::Pages { .. })
-            && !self.finding()
-            && !self.story_editing()
-            && !self.commenting()
+        if matches!(self.document, Document::Pages { .. }) && !self.finding() && !self.commenting()
         {
             let text = new_text.to_string();
             self.word_edit(cx, move |document| document.set_composition(&text));
