@@ -177,28 +177,33 @@ impl<T: WordSession + ?Sized> WordProtection for T {}
 
 /// Random bytes from the system, for salts and keys.
 pub fn random_bytes(buffer: &mut [u8]) {
+    // The OS's random source, or in a browser crypto.getRandomValues.
+    if getrandom::getrandom(buffer).is_ok() {
+        return;
+    }
+    fallback_bytes(buffer);
+}
+
+/// Bytes when the system has no random source: the time and an address,
+/// stirred. Not in a browser, which has no clock to read (`SystemTime::now`
+/// panics in wasm) — the bytes stay as they are there.
+fn fallback_bytes(buffer: &mut [u8]) {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        use std::io::Read;
-        if let Ok(mut source) = std::fs::File::open("/dev/urandom") {
-            if source.read_exact(buffer).is_ok() {
-                return;
-            }
+        let mut state = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos() as u64)
+            .unwrap_or(0)
+            ^ (buffer.as_ptr() as u64);
+        for byte in buffer {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            *byte = state as u8;
         }
     }
-    // A fallback: the time and an address, stirred. Never the only source
-    // on a desktop; the browser shell passes its own.
-    let mut state = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos() as u64)
-        .unwrap_or(0)
-        ^ (buffer.as_ptr() as u64);
-    for byte in buffer {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        *byte = state as u8;
-    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = buffer;
 }
 
 /// A salt.
