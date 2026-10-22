@@ -105,3 +105,55 @@ fn ink_to_shape_makes_a_shape() {
         .count();
     assert_eq!(shapes, 1);
 }
+
+/// A perfectly straight vertical or horizontal stroke has no extent across
+/// it: as ink it is drawn in a box as wide as the stroke, and with
+/// インクを図形に変換 it becomes a line shape a pixel across, drawn level or
+/// upright — not a slope across a box made a text line tall.
+#[test]
+fn straight_strokes_stay_lines_as_ink_and_as_shapes() {
+    let pens = default_pens();
+    for ink_to_shape in [false, true] {
+        for (from, to) in [
+            ((300.0, 200.0), (300.0, 400.0)),
+            ((200.0, 300.0), (400.0, 300.0)),
+        ] {
+            let mut document = common::open_bytes(&blank_document(Blank::English));
+            document.place_caret(0, 0);
+            let blank = pixels(&document);
+            let shape = document
+                .draw_stroke(0, line(from, to, 20), &pens[1], ink_to_shape)
+                .unwrap();
+            assert_eq!(shape.is_some(), ink_to_shape, "{from:?} {ink_to_shape}");
+            let drawn = pixels(&document);
+            let width = document.page(0).unwrap().width() as usize;
+            let scale = width as f64 / document.page_size().0;
+            let changed: Vec<(f64, f64)> = blank
+                .chunks(4)
+                .zip(drawn.chunks(4))
+                .enumerate()
+                .filter(|(_, (a, b))| a != b)
+                .map(|(index, _)| {
+                    (
+                        (index % width) as f64 / scale,
+                        (index / width) as f64 / scale,
+                    )
+                })
+                .collect();
+            assert!(changed.len() > 100, "the line is drawn");
+            // Nothing far from the line changes, but for the anchor mark at
+            // the paragraph's start.
+            let far = changed
+                .iter()
+                .filter(|&&(x, y)| {
+                    let near = x >= from.0.min(to.0) - 8.0
+                        && x <= from.0.max(to.0) + 8.0
+                        && y >= from.1.min(to.1) - 8.0
+                        && y <= from.1.max(to.1) + 8.0;
+                    !near && y > 150.0
+                })
+                .count();
+            assert_eq!(far, 0, "{from:?} {ink_to_shape}: {far} pixels off the line");
+        }
+    }
+}

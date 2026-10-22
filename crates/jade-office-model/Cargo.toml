@@ -38,6 +38,9 @@ lopdf = { version = "=0.39.0", optional = true, default-features = false }
 jade-docx-diff = { path = "../../jade-core/crates/jade-docx-diff" }
 jade-docx-merge = { path = "../../jade-core/crates/jade-docx-merge" }
 hypher = { version = "0.1", default-features = false, features = ["english"] }
+# Salts for passwords (word::protection): the OS's random source, the
+# browser's crypto.getRandomValues in wasm, where there is no clock.
+getrandom = { version = "0.2", features = ["js"] }
 # 署名欄: the signature line's picture.
 png = "0.17"
 zip = { version = "8", default-features = false, features = ["deflate"] }
