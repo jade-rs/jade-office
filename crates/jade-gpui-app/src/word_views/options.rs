@@ -351,7 +351,8 @@ mod tests {
         });
         cx.simulate_input(" jdo ");
         view.read_with(cx, |view, _| {
-            assert!(view.current_paragraph_text().ends_with("jade-office "));
+            let text = view.current_paragraph_text();
+            assert!(text.ends_with("jade-office "), "{text:?}");
         });
     }
 }
