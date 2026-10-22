@@ -272,10 +272,20 @@ pub fn corrections(text: &str, caret: usize, options: &AutoCorrectOptions) -> Ve
     }
 
     // The word the trigger ended.
+    // A Japanese character ends a word as a space does: 情報jdo's word is
+    // jdo.
+    let japanese = |ch: char| {
+        matches!(
+            super::selection::char_class(ch),
+            super::selection::CharClass::Kanji
+                | super::selection::CharClass::Hiragana
+                | super::selection::CharClass::Katakana
+        ) || ('\u{3000}'..='\u{303F}').contains(&ch)
+    };
     let word_start = text[..typed_at]
         .char_indices()
         .rev()
-        .take_while(|(_, ch)| !ch.is_whitespace())
+        .take_while(|(_, ch)| !ch.is_whitespace() && !japanese(*ch))
         .last()
         .map_or(typed_at, |(at, _)| at);
     let mut word = &text[word_start..typed_at];
@@ -1032,6 +1042,8 @@ mod tests {
         assert_eq!(after("日本 ", "W"), "日本W");
         assert_eq!(after("Word ", "の"), "Wordの");
         assert_eq!(after("日本 ", "語"), "日本 語");
+        // A word right after Japanese text is still a word.
+        assert_eq!(after("情報teh", " "), "情報the ");
     }
 
     #[test]
