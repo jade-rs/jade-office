@@ -3064,3 +3064,244 @@ views.read.edit	文書の編集
 views.read.position	{current} / {count} 画面
 views.read.keys	← → で移動、Esc で戻る
 autocorrect.cjk_spaces	日本語と英数字の間の不要なスペースを削除する
+review.group.changes	変更箇所
+review.delete_comment	コメントの削除
+review.no_comment_here	ここにコメントはありません
+review.previous_comment	前のコメント
+review.next_comment	次のコメント
+review.user	ユーザー情報
+review.user.title	ユーザー情報
+review.user.hint	コメントと変更履歴に記録される名前です
+review.user.name	姓名
+review.user.initials	イニシャル
+review.markup.title	変更内容の表示
+review.markup.simple	シンプルな変更履歴/コメント
+review.markup.all	すべての変更履歴/コメント
+review.markup.none	変更履歴/コメントなし
+review.markup.original	初版
+review.show	変更履歴とコメントの表示
+review.show.title	変更履歴とコメントの表示
+review.show.comments	コメント
+review.show.insertions	挿入と削除
+review.show.formatting	書式設定
+review.show.reviewers	校閲者
+review.show.everyone	すべての校閲者
+review.accept.this	この変更を反映
+review.accept.visible	表示されたすべての変更を反映
+review.accept.all	すべての変更を反映
+review.accept.all_stop	すべての変更を反映し、変更の記録を停止
+review.reject.this	この変更を元に戻す
+review.reject.visible	表示されたすべての変更を元に戻す
+review.reject.all	すべての変更を元に戻す
+review.reject.all_stop	すべての変更を元に戻し、変更の記録を停止
+menu.app.user_info	ユーザー情報…
+proof.group	文章校正
+proof.button	スペルチェックと文章校正
+proof.title	スペル チェックと文章校正
+proof.marks	入力時にチェック
+proof.marks_title	入力時にスペル チェックと文章校正を行う
+proof.spelling	スペル ミス
+proof.grammar	文法
+proof.suggestions	候補
+proof.no_suggestions	候補はありません
+proof.change	変更
+proof.change_all	すべて変更
+proof.ignore	無視
+proof.ignore_all	すべて無視
+proof.learn	辞書に追加
+proof.open_pane	スペル チェックと文章校正…
+proof.finished	文章校正が完了しました。
+menu.review.spelling	スペル チェックと文章校正…
+alt.button	代替テキスト
+alt.title	代替テキスト
+alt.hint	この図をどのように説明しますか? 視覚に障碍のある方のために、図の内容を説明してください。
+alt.description	説明
+alt.decorative	装飾用にする
+alt.decorative_hint	ページの見た目だけのもので、読み上げても意味のない図に付けます。
+alt.no_object	図や図形をクリックしてから選んでください
+a11y.group	アクセシビリティ
+a11y.button	アクセシビリティ チェック
+a11y.title	アクセシビリティ
+a11y.none	問題は見つかりませんでした。障碍のある方にとって読みやすい文書です。
+a11y.errors	エラー
+a11y.warnings	警告
+a11y.tips	ヒント
+a11y.missing_alt	代替テキストがありません
+a11y.no_header	表のヘッダーがありません
+a11y.skipped_heading	見出しのレベルが飛んでいます
+a11y.skipped_detail	見出し {from} の次が見出し {to} です
+a11y.unclear_link	不明瞭なハイパーリンク テキスト
+a11y.low_contrast	読みにくいテキストのコントラスト
+a11y.contrast_detail	コントラスト比 {ratio}:1 (4.5:1 以上が必要)
+a11y.not_inline	画像またはオブジェクトが行内にありません
+a11y.fix	修正
+a11y.fix.describe	説明を追加
+a11y.fix.decorative	装飾用にする
+a11y.fix.header	最初の行をヘッダーとして使用
+a11y.fix.inline	行内に配置
+alt.keys	⇥ 装飾用にする · ⏎ OK · esc キャンセル
+review.format.bold	太字
+review.format.not_bold	太字 (解除)
+review.format.italic	斜体
+review.format.not_italic	斜体 (解除)
+review.format.underline	下線
+review.format.strike	取り消し線
+review.format.size	フォント サイズ
+review.format.font	フォント
+review.format.color	フォントの色
+review.format.highlight	蛍光ペン/網かけ
+review.format.position	文字位置
+review.format.style	文字スタイル
+review.format.other	文字書式
+review.format.paragraph	段落の書式
+review.kind.inserted	挿入
+review.kind.deleted	削除
+review.kind.moved_from	移動元
+review.kind.moved_to	移動先
+review.kind.formatted	書式変更
+review.pane	変更履歴ウィンドウ
+review.pane_title	変更履歴ウィンドウ
+review.pane.count	変更 {n} 件
+compare.group	比較
+compare.button	比較
+compare.title	文書の比較
+compare.combine	組み込み
+compare.combine_title	文書の組み込み
+compare.original	元の文書
+compare.revised	変更された文書
+compare.none	(選択されていません)
+compare.browse	参照…
+compare.this	この文書
+compare.label	変更の表示名
+compare.settings	比較の設定
+compare.formatting	書式
+compare.case	大文字/小文字の変更
+compare.space	空白文字
+compare.comments	コメント
+compare.level	変更の表示単位
+compare.by_character	文字レベル
+compare.by_word	単語レベル
+compare.done	比較結果: 挿入 {insertions} 件、削除 {deletions} 件、書式変更 {formatting} 件
+compare.keys	⏎ 変更された文書を選ぶ · ⇥ 文字/単語 · esc キャンセル
+compare.waiting	変更された文書を選んでください…
+protect.group	保護
+protect.button	文書の保護
+protect.title	文書の保護
+protect.open_hint	このドキュメントを開くときのパスワードを設定します
+protect.open	読み取りパスワード
+protect.modify_hint	このドキュメントを変更するときのパスワードを設定します
+protect.modify	書き込みパスワード
+protect.recommended	読み取り専用を推奨する
+protect.final	最終版にする
+protect.final_title	文書を最終版にする
+protect.final_bar	最終版: 作成者がこの文書を最終版として設定し、編集を禁止しています。
+protect.recommended_bar	作成者はこの文書を読み取り専用で開くことを推奨しています。
+protect.edit_anyway	編集する
+protect.password_title	パスワード
+protect.password_prompt	「{name}」はパスワードで保護されています。パスワードを入力してください。
+protect.wrong	パスワードが正しくありません
+restrict.button	編集の制限
+restrict.title	編集の制限
+restrict.formatting_title	1. 書式の制限
+restrict.formatting	利用可能な書式を制限する
+restrict.editing_title	2. 編集の制限
+restrict.none	制限なし
+restrict.read_only	変更不可 (読み取り専用)
+restrict.tracked	変更履歴
+restrict.comments	コメント
+restrict.forms	フォームへの入力
+restrict.exceptions	例外処理 (オプション): 選択した部分の編集を許可
+restrict.everyone	すべてのユーザー
+restrict.start_title	3. 保護の開始
+restrict.stop_title	保護の中止
+restrict.password	パスワード (省略可)
+restrict.start	はい、保護を開始します
+restrict.stop	保護の中止
+restrict.enforced	この文書は保護されています。
+restrict.exception_count	例外 {n} 件
+restrict.keys	⏎ OK · esc キャンセル
+inspect.button	ドキュメント検査
+inspect.tooltip	ドキュメント検査: 文書に含まれる非表示のデータや個人情報を調べて削除します
+inspect.title	ドキュメント検査
+inspect.intro	文書を共有する前に、非表示のデータや個人情報を確認します。
+inspect.comments	コメント、変更履歴
+inspect.comments_found	コメント {comments} 件、変更履歴 {revisions} 件が見つかりました。
+inspect.personal	ドキュメントのプロパティと個人情報
+inspect.personal_found	次の個人情報が見つかりました: {names}
+inspect.custom_xml	カスタム XML データ
+inspect.custom_xml_found	カスタム XML データ {n} 件が見つかりました。
+inspect.headers	ヘッダー、フッター
+inspect.headers_found	ヘッダーまたはフッターに {n} 行の文字列が見つかりました。
+inspect.hidden	隠し文字
+inspect.hidden_found	隠し文字 {n} か所が見つかりました。
+inspect.none	見つかりませんでした。
+inspect.remove_all	すべて削除
+inspect.removed_on_save	保存時に削除されます。
+read.group	音声読み上げ
+read.button	読み上げ
+read.title	読み上げ: カーソルの位置から文書を読み上げ、読んでいる単語を強調表示します
+read.nothing	カーソルの後に読み上げる文字列がありません。
+read.previous	前へ
+read.next	次へ
+read.play	再生
+read.pause	一時停止
+read.slower	読み上げの速度を下げる
+read.faster	読み上げの速度を上げる
+read.stop	閉じる
+immersive.group	イマーシブ
+immersive.button	イマーシブ リーダー
+immersive.title	イマーシブ リーダー: 読みやすさを高める表示で文書を読みます
+immersive.column	列幅
+immersive.column.narrow	狭い
+immersive.column.moderate	普通
+immersive.column.wide	広い
+immersive.page	ページの色
+immersive.page.white	白
+immersive.page.sepia	セピア
+immersive.page.inverse	反転
+immersive.line_focus	行フォーカス
+immersive.line_focus.off	なし
+immersive.line_focus.lines	{n} 行
+immersive.spacing	テキストの間隔
+immersive.syllables	音節
+immersive.close	イマーシブ リーダーを閉じる
+review.kind.inserted_row	行の挿入
+review.kind.deleted_row	行の削除
+side.group	ウィンドウ
+side.button	並べて比較
+side.title	並べて比較: 2 つの文書を並べて表示し、比較しやすくします
+side.sync	同時にスクロール
+side.sync_title	同時にスクロール: 2 つの文書を一緒にスクロールします
+side.reset	ウィンドウの位置を元に戻す
+side.reset_title	ウィンドウの位置を元に戻す: 並べて比較している文書の表示位置をそろえます
+side.needs_two	並べて比較するには、Word 文書をもう 1 つ開いてください。
+sign.bar	署名済み: この文書には署名が含まれています。編集すると署名は無効になります。
+sign.button	署名
+sign.tooltip	署名: キーチェーンの証明書で文書にデジタル署名します
+sign.pane	署名の表示
+sign.pane_tooltip	署名の表示: 文書の署名と、署名が必要な署名欄を表示します
+sign.title	署名
+sign.hint	署名すると文書は保存されます。署名後に文書を編集すると署名は無効になります。
+sign.certificate	署名に使用する証明書
+sign.purpose	署名の目的
+sign.no_certificate	署名に使用できる証明書がキーチェーンにありません。
+sign.valid_heading	有効な署名
+sign.valid	有効な署名
+sign.invalid	無効な署名
+sign.none	この文書には署名がありません。
+sign.issuer	発行者: {issuer}
+sign.requested	必要な署名
+sign.line.group	署名欄
+sign.line.button	署名欄
+sign.line.tooltip	署名欄: 署名が必要な場所に署名欄を挿入します
+sign.line.title	署名欄の設定
+sign.line.signer	署名者
+sign.line.title_field	署名者の役職
+sign.line.email	電子メール
+sign.line.instructions	署名者への説明
+thesaurus.button	類義語辞典
+thesaurus.tooltip	類義語辞典: 選択した単語の類義語を表示します
+thesaurus.title	類義語辞典
+thesaurus.insert	挿入
+thesaurus.none	類義語は見つかりませんでした。
+thesaurus.no_word	単語を選択するか、単語の中にカーソルを置いてください。

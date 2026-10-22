@@ -3064,3 +3064,244 @@ views.read.edit	Edit Document
 views.read.position	Screen {current} of {count}
 views.read.keys	← → to turn, Esc to go back
 autocorrect.cjk_spaces	Delete spaces between Japanese and English
+review.group.changes	Changes
+review.delete_comment	Delete Comment
+review.no_comment_here	There is no comment here
+review.previous_comment	Previous Comment
+review.next_comment	Next Comment
+review.user	User Info
+review.user.title	User Information
+review.user.hint	The name comments and tracked changes are recorded under
+review.user.name	Name
+review.user.initials	Initials
+review.markup.title	Display for Review
+review.markup.simple	Simple Markup
+review.markup.all	All Markup
+review.markup.none	No Markup
+review.markup.original	Original
+review.show	Show Markup
+review.show.title	Show Markup
+review.show.comments	Comments
+review.show.insertions	Insertions and Deletions
+review.show.formatting	Formatting
+review.show.reviewers	Reviewers
+review.show.everyone	All Reviewers
+review.accept.this	Accept This Change
+review.accept.visible	Accept All Changes Shown
+review.accept.all	Accept All Changes
+review.accept.all_stop	Accept All Changes and Stop Tracking
+review.reject.this	Reject Change
+review.reject.visible	Reject All Changes Shown
+review.reject.all	Reject All Changes
+review.reject.all_stop	Reject All Changes and Stop Tracking
+menu.app.user_info	User Information…
+proof.group	Proofing
+proof.button	Spelling & Grammar
+proof.title	Spelling and Grammar
+proof.marks	Check as You Type
+proof.marks_title	Check spelling and grammar as you type
+proof.spelling	Spelling
+proof.grammar	Grammar
+proof.suggestions	Suggestions
+proof.no_suggestions	No suggestions
+proof.change	Change
+proof.change_all	Change All
+proof.ignore	Ignore
+proof.ignore_all	Ignore All
+proof.learn	Add to Dictionary
+proof.open_pane	Spelling and Grammar…
+proof.finished	The spelling and grammar check is complete.
+menu.review.spelling	Spelling and Grammar…
+alt.button	Alt Text
+alt.title	Alt Text
+alt.hint	How would you describe this object and its context to someone who is blind or has low vision?
+alt.description	Description
+alt.decorative	Mark as decorative
+alt.decorative_hint	For an object that only adds visual interest and means nothing read aloud.
+alt.no_object	Click a picture or shape first
+a11y.group	Accessibility
+a11y.button	Check Accessibility
+a11y.title	Accessibility
+a11y.none	No accessibility issues found. People with disabilities should not have difficulty reading this document.
+a11y.errors	Errors
+a11y.warnings	Warnings
+a11y.tips	Tips
+a11y.missing_alt	Missing alternative text
+a11y.no_header	Missing table header
+a11y.skipped_heading	Skipped heading level
+a11y.skipped_detail	Heading {to} follows heading {from}
+a11y.unclear_link	Unclear hyperlink text
+a11y.low_contrast	Hard-to-read text contrast
+a11y.contrast_detail	Contrast {ratio}:1 (4.5:1 or more is needed)
+a11y.not_inline	Image or object not inline
+a11y.fix	Fix
+a11y.fix.describe	Add a description
+a11y.fix.decorative	Mark as decorative
+a11y.fix.header	Use first row as header
+a11y.fix.inline	Place in line with text
+alt.keys	⇥ Mark as decorative · ⏎ OK · esc Cancel
+review.format.bold	Bold
+review.format.not_bold	Not Bold
+review.format.italic	Italic
+review.format.not_italic	Not Italic
+review.format.underline	Underline
+review.format.strike	Strikethrough
+review.format.size	Font size
+review.format.font	Font
+review.format.color	Font color
+review.format.highlight	Highlight or shading
+review.format.position	Position
+review.format.style	Character style
+review.format.other	Character formatting
+review.format.paragraph	Paragraph formatting
+review.kind.inserted	Inserted
+review.kind.deleted	Deleted
+review.kind.moved_from	Moved from
+review.kind.moved_to	Moved to
+review.kind.formatted	Formatted
+review.pane	Reviewing Pane
+review.pane_title	Reviewing Pane
+review.pane.count	{n} revisions
+compare.group	Compare
+compare.button	Compare
+compare.title	Compare Documents
+compare.combine	Combine
+compare.combine_title	Combine Documents
+compare.original	Original document
+compare.revised	Revised document
+compare.none	(none chosen)
+compare.browse	Browse…
+compare.this	This document
+compare.label	Label changes with
+compare.settings	Comparison settings
+compare.formatting	Formatting
+compare.case	Case changes
+compare.space	White space
+compare.comments	Comments
+compare.level	Show changes at
+compare.by_character	Character level
+compare.by_word	Word level
+compare.done	Compared: {insertions} insertions, {deletions} deletions, {formatting} formatting changes
+compare.keys	⏎ Choose the revised document · ⇥ Character/Word · esc Cancel
+compare.waiting	Choose the revised document…
+protect.group	Protect
+protect.button	Protect Document
+protect.title	Password Protection
+protect.open_hint	Set a password to open this document
+protect.open	Password to open
+protect.modify_hint	Set a password to modify this document
+protect.modify	Password to modify
+protect.recommended	Read-only recommended
+protect.final	Mark as Final
+protect.final_title	Mark the document as final
+protect.final_bar	Marked as Final: an author has marked this document as final to discourage editing.
+protect.recommended_bar	The author would like you to open this document as read-only.
+protect.edit_anyway	Edit Anyway
+protect.password_title	Password
+protect.password_prompt	"{name}" is protected. Enter the password to open it.
+protect.wrong	The password is incorrect
+restrict.button	Restrict Editing
+restrict.title	Restrict Editing
+restrict.formatting_title	1. Formatting restrictions
+restrict.formatting	Limit formatting to a selection of styles
+restrict.editing_title	2. Editing restrictions
+restrict.none	No restriction
+restrict.read_only	No changes (Read only)
+restrict.tracked	Tracked changes
+restrict.comments	Comments
+restrict.forms	Filling in forms
+restrict.exceptions	Exceptions (optional): let these edit the selection
+restrict.everyone	Everyone
+restrict.start_title	3. Start enforcement
+restrict.stop_title	Stop protection
+restrict.password	Password (optional)
+restrict.start	Yes, Start Enforcing Protection
+restrict.stop	Stop Protection
+restrict.enforced	This document is protected.
+restrict.exception_count	{n} exceptions
+restrict.keys	⏎ OK · esc Cancel
+inspect.button	Inspect Document
+inspect.tooltip	Inspect Document: check for hidden data and personal information and remove it
+inspect.title	Inspect Document
+inspect.intro	Check for hidden data and personal information before you share the document.
+inspect.comments	Comments and Revisions
+inspect.comments_found	Found {comments} comments and {revisions} revisions.
+inspect.personal	Document Properties and Personal Information
+inspect.personal_found	Found personal information: {names}
+inspect.custom_xml	Custom XML Data
+inspect.custom_xml_found	Found {n} custom XML parts.
+inspect.headers	Headers and Footers
+inspect.headers_found	Found {n} lines of text in headers or footers.
+inspect.hidden	Hidden Text
+inspect.hidden_found	Found hidden text in {n} places.
+inspect.none	Nothing was found.
+inspect.remove_all	Remove All
+inspect.removed_on_save	Removed when the document is saved.
+read.group	Speech
+read.button	Read Aloud
+read.title	Read Aloud: read the document from the cursor, highlighting each word as it is read
+read.nothing	There is no text after the cursor to read.
+read.previous	Previous
+read.next	Next
+read.play	Play
+read.pause	Pause
+read.slower	Slower
+read.faster	Faster
+read.stop	Close
+immersive.group	Immersive
+immersive.button	Immersive Reader
+immersive.title	Immersive Reader: read the document in a view that makes it easier to read
+immersive.column	Column Width
+immersive.column.narrow	Narrow
+immersive.column.moderate	Moderate
+immersive.column.wide	Wide
+immersive.page	Page Color
+immersive.page.white	White
+immersive.page.sepia	Sepia
+immersive.page.inverse	Inverse
+immersive.line_focus	Line Focus
+immersive.line_focus.off	None
+immersive.line_focus.lines	{n} lines
+immersive.spacing	Text Spacing
+immersive.syllables	Syllables
+immersive.close	Close Immersive Reader
+review.kind.inserted_row	Inserted Row
+review.kind.deleted_row	Deleted Row
+side.group	Window
+side.button	View Side by Side
+side.title	View Side by Side: view two documents next to each other to compare them
+side.sync	Synchronous Scrolling
+side.sync_title	Synchronous Scrolling: scroll both documents together
+side.reset	Reset Window Position
+side.reset_title	Reset Window Position: line up the documents being compared
+side.needs_two	Open another Word document to view side by side.
+sign.bar	Signed: this document contains signatures. Editing it makes them invalid.
+sign.button	Sign
+sign.tooltip	Sign: add a digital signature with a certificate from the keychain
+sign.pane	Signatures
+sign.pane_tooltip	Signatures: show the document's signatures and the signature lines waiting to be signed
+sign.title	Sign
+sign.hint	Signing saves the document. Editing it after signing makes the signature invalid.
+sign.certificate	Certificate to sign with
+sign.purpose	Purpose for signing
+sign.no_certificate	There is no certificate in the keychain to sign with.
+sign.valid_heading	Valid signatures
+sign.valid	Valid signature
+sign.invalid	Invalid signature
+sign.none	This document has no signatures.
+sign.issuer	Issued by: {issuer}
+sign.requested	Requested signatures
+sign.line.group	Signature Line
+sign.line.button	Signature Line
+sign.line.tooltip	Signature Line: insert a line where the document is to be signed
+sign.line.title	Signature Setup
+sign.line.signer	Suggested signer
+sign.line.title_field	Suggested signer's title
+sign.line.email	E-mail
+sign.line.instructions	Instructions to the signer
+thesaurus.button	Thesaurus
+thesaurus.tooltip	Thesaurus: show words with a similar meaning to the selected word
+thesaurus.title	Thesaurus
+thesaurus.insert	Insert
+thesaurus.none	No synonyms were found.
+thesaurus.no_word	Select a word, or put the cursor in one.

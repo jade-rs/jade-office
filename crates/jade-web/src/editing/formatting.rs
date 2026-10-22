@@ -210,3 +210,46 @@ impl EditableDocument {
         self.repaint_all()
     }
 }
+
+/// The browser build's pages show tracked changes as the markup views say.
+impl jade_office_model::word::markup::WordMarkupDisplay for EditableDocument {
+    fn set_revision_display(
+        &mut self,
+        markup: bool,
+        original: bool,
+        view: jade_docx_editor::revision_view::RevisionView,
+    ) -> Result<bool, String> {
+        EditableDocument::set_revision_display(self, markup, original, view)
+    }
+}
+
+/// The browser build's pages show proofing marks from any checker.
+impl jade_office_model::word::proofing::WordProofingDisplay for EditableDocument {
+    fn set_proofing(&mut self, on: bool) -> Result<(), String> {
+        EditableDocument::set_proofing(self, on)
+    }
+
+    fn proofing(&self) -> bool {
+        EditableDocument::proofing(self)
+    }
+
+    fn proof_with(
+        &mut self,
+        checker: &mut dyn jade_office_model::word::proofing::SpellChecker,
+    ) -> Result<bool, String> {
+        EditableDocument::proof_pending(self, &mut |text, start, end, language| {
+            checker.check(text, start, end, language)
+        })
+    }
+}
+
+/// The browser build's document can be opened read-only.
+impl jade_office_model::word::protection::WordReadOnly for EditableDocument {
+    fn set_opened_read_only(&mut self, read_only: bool) {
+        self.word_document.set_opened_read_only(read_only);
+    }
+
+    fn opened_read_only(&self) -> bool {
+        self.word_document.opened_read_only()
+    }
+}

@@ -25,6 +25,9 @@ use gpui::{
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+#[path = "workspace_side_by_side.rs"]
+pub mod side_by_side;
+
 use crate::editor::{self, Editor, EditorHandle};
 use crate::shell::{self, recent, Kind};
 use crate::tooltip::Tooltip;
@@ -162,6 +165,10 @@ pub struct Workspace {
     recovered: Vec<crate::autorecover::Recovered>,
     error: Option<SharedString>,
     focus: FocusHandle,
+    /// A document with a password to open, waiting for it.
+    pub password: Option<crate::word_protection::PasswordPrompt>,
+    /// 並べて比較 (`side_by_side`).
+    side: side_by_side::SideBySide,
 }
 
 impl Workspace {
@@ -177,6 +184,8 @@ impl Workspace {
             recovered: crate::autorecover::recovered(),
             error: None,
             focus: cx.focus_handle(),
+            side: Default::default(),
+            password: None,
         }
     }
 
@@ -190,6 +199,19 @@ impl Workspace {
         let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         if let Some(index) = self.tabs.iter().position(|tab| tab.path == path) {
             self.activate(index, window, cx);
+            return Ok(());
+        }
+        // 読み取りパスワード: asked for before the document opens.
+        if Kind::of(&path) == Some(Kind::Document)
+            && crate::word_protection::is_encrypted_file(&path)
+        {
+            self.password = Some(crate::word_protection::PasswordPrompt {
+                path,
+                field: jade_office_model::text::TextEdit::new(String::new()),
+                wrong: false,
+            });
+            window.focus(&self.focus);
+            cx.notify();
             return Ok(());
         }
         let result = self.open_new(&path, cx);
@@ -208,6 +230,35 @@ impl Workspace {
         self.error = None;
         self.activate(self.tabs.len() - 1, window, cx);
         Ok(())
+    }
+
+    /// A document view opened another way — through its password — as a
+    /// tab for `path`.
+    pub(crate) fn add_document(
+        &mut self,
+        path: PathBuf,
+        view: crate::DocumentView,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let view = cx.new(|_| view);
+        let editor: Box<dyn EditorHandle> = Box::new(self.observed(view, cx));
+        self.tabs.push(Tab {
+            path: path.clone(),
+            kind: Kind::Document,
+            view: editor.view(),
+            focus: editor.focus_handle(cx),
+            editor,
+        });
+        recent::remember(&path);
+        self.recent = recent::entries();
+        self.error = None;
+        self.activate(self.tabs.len() - 1, window, cx);
+    }
+
+    pub(crate) fn show_error(&mut self, error: String, cx: &mut Context<Self>) {
+        self.error = Some(SharedString::from(error));
+        cx.notify();
     }
 
     /// A new document — blank or from a template — as a tab of its own.
@@ -1289,9 +1340,29 @@ impl Render for Workspace {
             .font_family(UI_FONT_FAMILY)
             .track_focus(&self.focus)
             .key_context("Workspace")
+            .on_key_down(
+                cx.listener(|workspace, event: &gpui::KeyDownEvent, window, cx| {
+                    crate::word_protection::prompt_key(workspace, event, window, cx)
+                }),
+            )
             .on_action(cx.listener(|workspace, _: &CloseWindow, window, cx| {
                 workspace.close_active(window, cx)
             }))
+            .on_action(
+                cx.listener(|workspace, _: &side_by_side::ViewSideBySide, _, cx| {
+                    workspace.toggle_side_by_side(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|workspace, _: &side_by_side::SynchronousScrolling, _, cx| {
+                    workspace.toggle_sync(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|workspace, _: &side_by_side::ResetWindowPosition, _, cx| {
+                    workspace.reset_side_by_side(cx)
+                }),
+            )
             .on_action(cx.listener(|workspace, _: &ToggleExplorer, _window, cx| {
                 workspace.explorer_open = !workspace.explorer_open;
                 cx.notify();
@@ -1340,15 +1411,20 @@ impl Render for Workspace {
                             .flex_col()
                             .overflow_hidden()
                             .when(has_tabs, |editor| editor.child(self.tab_bar(cx)))
-                            .child(div().flex_1().min_h_0().overflow_hidden().map(|content| {
-                                match active_view {
-                                    Some(view) => content.child(view),
-                                    None => content.child(self.welcome(cx)),
-                                }
-                            })),
+                            .child(div().flex_1().min_h_0().overflow_hidden().map(
+                                |content| match (
+                                    self.editor_content(active_view.clone()),
+                                    active_view,
+                                ) {
+                                    (Some(pair), _) => content.child(pair),
+                                    (None, Some(view)) => content.child(view),
+                                    (None, None) => content.child(self.welcome(cx)),
+                                },
+                            )),
                     ),
             )
             .child(self.status_bar(cx))
+            .children(crate::word_protection::prompt(self, window))
     }
 }
 

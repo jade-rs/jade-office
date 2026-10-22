@@ -1095,14 +1095,20 @@ pub fn view_tab(view: &mut DocumentView, cx: &mut Context<DocumentView>) -> Vec<
             ),
         ])],
     );
+    // イマーシブ リーダー and 並べて比較 (`word_immersive`, the workspace's
+    // side by side), in the groups Word puts them in.
+    let reader = crate::word_immersive::view_group(view, cx);
+    let window_side = crate::workspace::side_by_side::view_group(view, cx);
     vec![
         views_group,
         immersive,
+        reader,
         movement,
         view.ruler_group(cx),
         show,
         zoom,
         window_group,
+        window_side,
         pages,
         // マスター文書 (`word_master`).
         view.master_group(cx),

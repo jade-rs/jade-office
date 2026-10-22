@@ -42,14 +42,20 @@ mod word_fields;
 mod word_find;
 mod word_form;
 pub(crate) mod word_hyphenation;
+mod word_immersive;
+mod word_inspect;
 pub(crate) mod word_mailings;
 pub(crate) mod word_preview;
 mod word_print;
+mod word_read_aloud;
 pub(crate) mod word_references;
 mod word_review;
+mod word_screen_reader;
 pub(crate) mod word_setup;
+mod word_signatures;
 mod word_story;
 mod word_table;
+mod word_thesaurus;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -409,6 +415,20 @@ enum Document {
         dialog: Option<Box<word_dialogs::Dialog>>,
         /// Whether the comments pane is open beside the pages.
         show_comments: bool,
+        /// 変更内容の表示 and 変更履歴とコメントの表示.
+        markup: Box<jade_web::word::markup::MarkupOptions>,
+        /// Whether the アクセシビリティ pane is open beside the pages.
+        accessibility: bool,
+        /// Whether the 変更履歴ウィンドウ is open beside the pages.
+        revisions_pane: bool,
+        /// 編集の制限, 文書の保護 and 最終版.
+        protection: Box<word_review::WebProtection>,
+        /// 読み上げ, while reading.
+        read_aloud: Option<Box<word_read_aloud::WebReading>>,
+        /// イマーシブ リーダー, while it is open.
+        immersive: Option<Box<word_immersive::WebImmersive>>,
+        /// 類義語辞典, while it is open.
+        thesaurus: Option<Box<word_thesaurus::WebThesaurus>>,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
@@ -629,7 +649,7 @@ impl DocView {
             Kind::Document => {
                 // The first pages only, as pixels: the view keeps the ones on
                 // screen as it scrolls (see `follow_scroll`).
-                let opened = jade_web::editing::EditableDocument::open_resident(
+                let mut opened = jade_web::editing::EditableDocument::open_resident(
                     bytes,
                     fonts.scale,
                     fonts.backend.fonts(),
@@ -658,6 +678,18 @@ impl DocView {
                     comment: None,
                     dialog: None,
                     show_comments: false,
+                    markup: Box::new(word_review::markup_as_opened(&opened)),
+                    accessibility: false,
+                    revisions_pane: false,
+                    protection: Box::new(word_signatures::with_signatures(
+                        word_review::WebProtection::opened(&mut opened),
+                        bytes,
+                        fonts,
+                        &mut opened,
+                    )),
+                    read_aloud: None,
+                    immersive: None,
+                    thesaurus: None,
                     object: None,
                     tables: Box::default(),
                     pages: (0..opened.page_count())
@@ -959,7 +991,11 @@ impl DocView {
         self.commit_slide_text(cx);
         let bytes = match &mut self.document {
             // Saved back in the format the file came in, as Word does.
-            Document::Pages { document, .. } => document.export_docx().and_then(|docx| {
+            Document::Pages {
+                document,
+                protection,
+                ..
+            } => document.export_docx().and_then(|docx| {
                 use jade_web::word::formats::{save_from_docx, SaveOptions, WordFormat};
                 match WordFormat::of_name(&self.name) {
                     Some(format) if !format.is_package() => save_from_docx(
@@ -979,9 +1015,11 @@ impl DocView {
                             load: &unreachable,
                             display: &as_named,
                         };
-                        jade_web::word::master::for_saving(&docx, &files).map(|(stored, _)| stored)
+                        jade_web::word::master::for_saving(&docx, &files)
+                            .and_then(|(stored, _)| word_review::finish_save(protection, stored))
                     }
-                    _ => Ok(docx),
+                    // 文書の保護, ドキュメント検査 and 署名 apply to a package.
+                    _ => word_review::finish_save(protection, docx),
                 }
             }),
             Document::Deck { deck, .. } => Ok(deck.save_bytes()),
@@ -2043,6 +2081,10 @@ impl DocView {
         .then(|| word_mailings::groups(self))
         .flatten();
         let equation = self.equation_tab_state();
+        let side = cx
+            .try_global::<crate::workspace::side_by_side::SideBySideShown>()
+            .copied()
+            .unwrap_or_default();
         let Document::Pages {
             document,
             ribbon,
@@ -2051,7 +2093,14 @@ impl DocView {
             current,
             dragging,
             show_comments,
+            markup,
+            accessibility,
+            revisions_pane,
+            protection,
             object,
+            read_aloud,
+            immersive,
+            thesaurus,
             ..
         } = &mut self.document
         else {
@@ -2083,6 +2132,7 @@ impl DocView {
             }
         });
         let tabs = {
+            use jade_web::word::markup::WordMarkup;
             use jade_web::word::review::WordReview;
             ribbon::TabState {
                 page,
@@ -2093,8 +2143,25 @@ impl DocView {
                         _ => None,
                     },
                 ),
-                tracking: document.is_tracking_changes(),
-                comments: *show_comments,
+                review: matches!(ribbon.tab, ribbon::Tab::Review | ribbon::Tab::View).then(|| {
+                    crate::word_review::ReviewShown {
+                        tracking: document.is_tracking_changes(),
+                        comments: *show_comments,
+                        accessibility: *accessibility,
+                        revisions_pane: *revisions_pane,
+                        restrict_pane: protection.pane,
+                        final_: protection.read_only == Some(word_review::ReadOnlyReason::Final),
+                        inspect: protection.inspect,
+                        signatures_pane: protection.signatures_pane,
+                        reading: read_aloud.is_some(),
+                        immersive: immersive.is_some(),
+                        thesaurus: thesaurus.is_some(),
+                        side_by_side: side.on,
+                        sync_scroll: side.sync,
+                        markup: (**markup).clone(),
+                        reviewers: document.reviewers(),
+                    }
+                }),
                 picture: object.is_some_and(|grab| grab.object.is_picture()),
                 table,
                 layout: (ribbon.tab == ribbon::Tab::Layout)
@@ -2181,7 +2248,15 @@ impl DocView {
         let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
+        let accessibility_pane = self.accessibility_pane(cx);
+        let revisions_pane = self.revisions_pane(cx);
+        let restrict_pane = self.restrict_pane(cx);
+        let signatures_pane = self.signatures_pane(cx);
+        let thesaurus_pane = self.thesaurus_pane(cx);
+        let inspect_pane = self.inspect_pane(cx);
+        let read_only_bar = self.read_only_bar(cx);
         let find_bar = self.find_bar_element(cx);
+        let read_aloud_bar = self.read_aloud_bar(cx);
         let table_cursor = self.table_cursor();
         let table_dialog = self.table_dialog_element(cx);
         let mut table_overlays = match &self.document {
@@ -2507,9 +2582,11 @@ impl DocView {
                     .flex_col()
                     .child(word_ribbon)
                     .children(dialog_bar)
+                    .children(read_only_bar)
                     .children(comment_bar)
                     .children(story_bar)
                     .children(find_bar)
+                    .children(read_aloud_bar)
                     .child(
                         div()
                             .id("pages")
@@ -2528,6 +2605,12 @@ impl DocView {
                     ),
             )
             .children(comments_pane)
+            .children(accessibility_pane)
+            .children(revisions_pane)
+            .children(restrict_pane)
+            .children(signatures_pane)
+            .children(thesaurus_pane)
+            .children(inspect_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
             .children(print_panel)
@@ -2537,6 +2620,12 @@ impl DocView {
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        // F6: the keyboard to the ribbon's controls (and Escape back).
+        if key == "f6" && matches!(&self.document, Document::Pages { .. }) {
+            window.focus_next(cx);
+            cx.stop_propagation();
+            return;
+        }
         // ⌘V is left to the browser, whose paste event brings the clipboard
         // here. A browser that kept the copy off the clipboard (an embedding
         // page without clipboard access) sends no paste event for an empty
@@ -2587,6 +2676,11 @@ impl DocView {
             if word_controls::handle_key(self, key, event.keystroke.modifiers.shift, cx) {
                 cx.stop_propagation();
             }
+            return;
+        }
+        // イマーシブ リーダー reads; it does not edit.
+        if self.immersive_key(key, cx) {
+            cx.stop_propagation();
             return;
         }
         // A dialog takes the keyboard while it is open: its own keys stop
@@ -3112,6 +3206,9 @@ impl EntityInputHandler for DocView {
         if self.page_dialog.is_some() {
             return self.page_dialog_input(text, cx);
         }
+        if self.immersive_open() {
+            return;
+        }
         // A 参考資料 dialog's field, or the navigation pane's search box.
         if let Some(field) = self.references.text_field_mut() {
             field.replace(range, text, false);
@@ -3292,6 +3389,8 @@ impl Render for DocView {
         let reference_dialog = word_references::overlay(self, window, cx);
         let controls_dialog = word_controls::dialog(self, window, cx);
         let mailings_dialog = word_mailings::dialog(self, window, cx);
+        let immersive = self.immersive_overlay(window, cx);
+        self.update_screen_reader();
         div()
             .size_full()
             .text_color(palette::text())
@@ -3303,6 +3402,7 @@ impl Render for DocView {
             .children(reference_dialog)
             .children(controls_dialog)
             .children(mailings_dialog)
+            .children(immersive)
     }
 }
 

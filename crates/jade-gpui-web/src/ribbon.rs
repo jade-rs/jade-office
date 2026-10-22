@@ -181,6 +181,8 @@ pub enum Popup {
     Hyphenation,
     /// 描画's lists (`view::word_draw`).
     Draw(crate::view::word_draw::DrawPopup),
+    /// The 校閲 tab's lists (`word_review`).
+    Review(crate::word_review::ReviewPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -330,6 +332,32 @@ pub(crate) fn listener(
     }
 }
 
+/// Enter or Space on a ribbon control that has the keyboard: what a click
+/// on it does (Tab and the arrows move between the controls, Escape goes
+/// back to the document).
+pub(crate) fn key_listener(
+    action: Action,
+    cx: &mut Context<DocView>,
+) -> impl Fn(&gpui::KeyDownEvent, &mut Window, &mut gpui::App) + 'static {
+    let view = cx.weak_entity();
+    move |event, window, cx| {
+        if matches!(event.keystroke.key.as_str(), "enter" | "space")
+            && !event.keystroke.modifiers.modified()
+        {
+            view.update(cx, |view, cx| {
+                view.ribbon_action(action.clone(), window, cx)
+            })
+            .ok();
+            cx.stop_propagation();
+        }
+    }
+}
+
+/// How a ribbon control with the keyboard shows it.
+pub(crate) fn focus_ring(style: gpui::StyleRefinement) -> gpui::StyleRefinement {
+    style.border_1().border_color(palette::accent())
+}
+
 /// A square icon button with a tooltip; `active` shows it pressed.
 fn icon_button(
     id: impl Into<ElementId>,
@@ -353,7 +381,10 @@ fn icon_button(
             button
                 .cursor_pointer()
                 .hover(|button| button.bg(palette::hovered()))
-                .on_click(listener(action, cx))
+                .on_click(listener(action.clone(), cx))
+                .tab_index(0)
+                .focus(focus_ring)
+                .on_key_down(key_listener(action, cx))
         })
         .tooltip(Tooltip::text(tooltip))
         .child(svg().path(icon).size_4().text_color(if !enabled {
@@ -396,7 +427,10 @@ fn labeled_button(
             button
                 .cursor_pointer()
                 .hover(|button| button.bg(palette::hovered()))
-                .on_click(listener(action, cx))
+                .on_click(listener(action.clone(), cx))
+                .tab_index(0)
+                .focus(focus_ring)
+                .on_key_down(key_listener(action, cx))
         })
         .when(!enabled, |button| {
             button.tooltip(Tooltip::text(i18n::text("ribbon.needs_table")))
@@ -433,7 +467,10 @@ fn menu_button(
         .when(open, |button| button.bg(palette::selected()))
         .hover(|button| button.bg(palette::hovered()))
         .tooltip(Tooltip::text(tooltip))
-        .on_click(listener(Action::Popup(popup), cx))
+        .on_click(listener(Action::Popup(popup).clone(), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(Action::Popup(popup), cx))
         .child(
             div()
                 .flex()
@@ -483,7 +520,10 @@ fn combo_box(
         .cursor_pointer()
         .hover(|button| button.bg(palette::hovered()))
         .tooltip(Tooltip::text(tooltip))
-        .on_click(listener(Action::Popup(popup), cx))
+        .on_click(listener(Action::Popup(popup).clone(), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(Action::Popup(popup), cx))
         .child(
             div()
                 .flex_1()
@@ -559,7 +599,10 @@ pub(crate) fn menu_row(
         .when(crate::view::word_preview::previewable(&action), |row| {
             row.on_hover(crate::view::word_preview::hover(action.clone(), cx))
         })
-        .on_click(listener(action, cx))
+        .on_click(listener(action.clone(), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(action, cx))
         .child(div().size_4().flex_none().when(checked, |cell| {
             cell.child(
                 svg()
@@ -603,7 +646,10 @@ fn swatch(
         .when(crate::view::word_preview::previewable(&action), |square| {
             square.on_hover(crate::view::word_preview::hover(action.clone(), cx))
         })
-        .on_click(listener(action, cx))
+        .on_click(listener(action.clone(), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(action, cx))
         .into_any_element()
 }
 
@@ -676,10 +722,8 @@ pub struct PageState {
 pub struct TabState {
     /// The page, read only while レイアウト shows it.
     pub page: Option<PageState>,
-    /// Whether changes are tracked.
-    pub tracking: bool,
-    /// Whether the comments pane is open.
-    pub comments: bool,
+    /// What the 校閲 tab shows, read only while it is up.
+    pub review: Option<crate::word_review::ReviewShown>,
     /// Whether a picture is selected, which 文字列の折り返し acts on.
     pub picture: bool,
     /// What the table tabs show, read while one of them is showing.
@@ -749,7 +793,10 @@ pub fn ribbon(
                 .when(!active, |element| element.text_color(palette::dim()))
                 .hover(|element| element.bg(palette::hovered()))
                 .child(tab.label())
-                .on_click(listener(Action::Tab(tab), cx))
+                .on_click(listener(Action::Tab(tab).clone(), cx))
+                .tab_index(0)
+                .focus(focus_ring)
+                .on_key_down(key_listener(Action::Tab(tab), cx))
         })
         .collect();
     let groups = match shown_tab {
@@ -821,7 +868,6 @@ pub fn ribbon(
             Some(state) => crate::view::word_equation::tab_groups(ribbon.popup, state, cx),
             None => Vec::new(),
         },
-        Tab::Review => crate::word_review::review(shown.tracking, shown.comments, cx),
         Tab::Mailings => {
             crate::view::word_mailings::tab(shown.mailings.as_deref().unwrap_or_default(), cx)
         }
@@ -834,6 +880,11 @@ pub fn ribbon(
             .map(|draw| crate::view::word_draw::ribbon_groups(draw, ribbon.popup, cx))
             .unwrap_or_default(),
         Tab::View => view_groups(shown, cx),
+        Tab::Review => shown
+            .review
+            .as_ref()
+            .map(|review| crate::word_review::review(review, ribbon.popup, cx))
+            .unwrap_or_default(),
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
             crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)
@@ -849,6 +900,19 @@ pub fn ribbon(
         }
     };
     div()
+        .id("ribbon")
+        // From control to control by the keyboard; Escape back to the page.
+        .on_key_down(cx.listener(|view, event: &gpui::KeyDownEvent, window, cx| {
+            let modifiers = event.keystroke.modifiers;
+            match event.keystroke.key.as_str() {
+                "tab" if modifiers.shift => window.focus_prev(cx),
+                "tab" | "right" | "down" => window.focus_next(cx),
+                "left" | "up" => window.focus_prev(cx),
+                "escape" => view.focus_document(window, cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+        }))
         .flex()
         .flex_col()
         .flex_none()
@@ -1769,7 +1833,10 @@ fn popup_button(
             button
                 .cursor_pointer()
                 .hover(|button| button.bg(palette::hovered()))
-                .on_click(listener(Action::Popup(popup), cx))
+                .on_click(listener(Action::Popup(popup).clone(), cx))
+                .tab_index(0)
+                .focus(focus_ring)
+                .on_key_down(key_listener(Action::Popup(popup), cx))
         })
         .when(!enabled, |button| {
             button.tooltip(Tooltip::text(i18n::text("ribbon.needs_table")))
@@ -1817,7 +1884,10 @@ fn cell_format_menu(state: &FormatState, cx: &mut Context<DocView>) -> Option<An
             .whitespace_nowrap()
             .cursor_pointer()
             .hover(|chip| chip.bg(palette::hovered()))
-            .on_click(listener(action, cx))
+            .on_click(listener(action.clone(), cx))
+            .tab_index(0)
+            .focus(focus_ring)
+            .on_key_down(key_listener(action, cx))
             .child(label)
             .into_any_element()
     };
@@ -2022,8 +2092,13 @@ fn view_groups(shown: &TabState, cx: &mut Context<DocView>) -> Vec<AnyElement> {
             cx,
         ),
     ];
-    vec![
+    let mut groups = vec![
         group(i18n::text("doc.group.show"), vec![row(show)]),
         group(i18n::text("doc.group.zoom"), vec![row(zoom)]),
-    ]
+    ];
+    // イマーシブ リーダー and 並べて比較 (`word_review`).
+    if let Some(review) = &shown.review {
+        groups.extend(crate::word_review::view_groups(review, cx));
+    }
+    groups
 }

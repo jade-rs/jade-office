@@ -33,6 +33,12 @@ pub fn open(
     event: &MouseDownEvent,
     cx: &mut Context<DocumentView>,
 ) {
+    // On a misspelling, its suggestions (`word_proofing`), as Word puts them
+    // first.
+    crate::word_proofing::right_click(view, page_index, event, cx);
+    if view.review.proofing.menu.is_some() {
+        return;
+    }
     let Some(Some(bounds)) = view.page_bounds.borrow().get(page_index).copied() else {
         return;
     };

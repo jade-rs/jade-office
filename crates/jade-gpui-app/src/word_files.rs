@@ -413,6 +413,16 @@ impl DocumentView {
                 save_from_docx(format, &docx, options).map_err(|error| describe(&error, &name))
             })
             .and_then(|bytes| {
+                if !format.is_package() {
+                    return Ok(bytes);
+                }
+                // ドキュメント検査's cleaning, the signatures, 最終版 and the
+                // password to open, written into the package.
+                let bytes = crate::word_inspect::finish_save(self, bytes)?;
+                let bytes = crate::word_signatures::finish_save(self, bytes)?;
+                crate::word_protection::finish_save(self, bytes)
+            })
+            .and_then(|bytes| {
                 crate::autorecover::back_up_before_writing(&target);
                 crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
             });
