@@ -39,6 +39,8 @@ pub(super) enum Dialog {
     /// 文書の保護: 読み取りパスワード, 書き込みパスワード (Tab between),
     /// 読み取り専用を推奨 (Tab past the second).
     Protect(Box<jade_web::word::protection::ProtectForm>),
+    /// 署名欄の設定: who is to sign (Tab between the fields).
+    SignatureLine(Box<jade_web::word::signatures::SignatureLineForm>),
 }
 
 impl Dialog {
@@ -52,6 +54,7 @@ impl Dialog {
             Dialog::Compare { author, .. } => Some(author),
             Dialog::Restrict { password, .. } => Some(password),
             Dialog::Protect(form) => Some(form.focused()),
+            Dialog::SignatureLine(form) => Some(form.focused()),
         }
     }
 
@@ -65,6 +68,7 @@ impl Dialog {
             Dialog::Compare { author, .. } => Some(author),
             Dialog::Restrict { password, .. } => Some(password),
             Dialog::Protect(form) => Some(form.focused_mut()),
+            Dialog::SignatureLine(form) => Some(form.focused_mut()),
         }
     }
 }
@@ -133,7 +137,7 @@ impl DocView {
         )
     }
 
-    fn open_dialog(&mut self, opened: Dialog, cx: &mut Context<Self>) {
+    pub(super) fn open_dialog(&mut self, opened: Dialog, cx: &mut Context<Self>) {
         let Document::Pages {
             dialog,
             find,
@@ -292,6 +296,7 @@ impl DocView {
                     }
                     form.next_field();
                 }
+                Dialog::SignatureLine(form) => form.next_field(),
             },
             _ => {
                 if !open.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -421,6 +426,12 @@ impl DocView {
             cx.notify();
             return true;
         }
+        if matches!(dialog.as_deref(), Some(Dialog::SignatureLine(_))) {
+            if let Some(Dialog::SignatureLine(form)) = dialog.take().map(|open| *open) {
+                self.insert_signature_line(form.line(), cx);
+            }
+            return true;
+        }
         if matches!(
             dialog.as_deref(),
             Some(Dialog::Restrict { .. } | Dialog::Protect(_))
@@ -447,7 +458,10 @@ impl DocView {
             Dialog::Note(form) => form.submit(document.as_mut()).map(Some),
             // The caret, or the selection, stays where it is.
             Dialog::Paragraph(form) => form.submit(document.as_mut()).map(|()| None),
-            Dialog::Compare { .. } | Dialog::Restrict { .. } | Dialog::Protect(_) => Ok(None),
+            Dialog::Compare { .. }
+            | Dialog::Restrict { .. }
+            | Dialog::Protect(_)
+            | Dialog::SignatureLine(_) => Ok(None),
             Dialog::AltText(form) => {
                 use jade_web::word::accessibility::WordAccessibility;
                 document
@@ -542,6 +556,22 @@ impl DocView {
                         jade_web::word::protection::masked(&password.text)
                     ))
                     .into_any_element()],
+            ),
+            Dialog::SignatureLine(form) => bar(
+                i18n::text("sign.line.title"),
+                i18n::text("link.keys"),
+                (0..4)
+                    .map(|index| {
+                        field_box(
+                            i18n::text(
+                                jade_web::word::signatures::SignatureLineForm::LABELS[index],
+                            ),
+                            &form.fields[index],
+                            form.focus == index,
+                            140.0,
+                        )
+                    })
+                    .collect(),
             ),
             Dialog::Protect(form) => {
                 let label = |focused: bool, key: &'static str, text: &str| {

@@ -150,6 +150,12 @@ pub enum ReviewAction {
     Protect,
     /// 最終版にする.
     MarkFinal,
+    /// 署名…: sign with a certificate.
+    Sign,
+    /// 署名: the pane.
+    SignaturesPane,
+    /// 挿入 › 署名欄.
+    SignatureLine,
     /// ドキュメント検査: the pane.
     Inspect,
     /// 読み上げ: start or stop.
@@ -167,6 +173,9 @@ pub enum ReviewDialog {
     Compare(Box<crate::word_compare::CompareDialog>),
     /// 文書の保護 (`word_protection`).
     Protect(Box<jade_office_model::word::protection::ProtectForm>),
+    /// 署名 and 署名欄の設定 (`word_signatures`).
+    Sign(Box<crate::word_signatures::SignForm>),
+    SignatureLine(Box<crate::word_signatures::LineForm>),
 }
 
 impl ReviewDialog {
@@ -176,6 +185,8 @@ impl ReviewDialog {
             ReviewDialog::AltText(form) => Some(&form.description),
             ReviewDialog::Compare(dialog) => Some(&dialog.author),
             ReviewDialog::Protect(form) => Some(form.focused()),
+            ReviewDialog::Sign(form) => Some(&form.purpose),
+            ReviewDialog::SignatureLine(form) => Some(form.focused()),
         }
     }
 
@@ -185,6 +196,8 @@ impl ReviewDialog {
             ReviewDialog::AltText(form) => Some(&mut form.description),
             ReviewDialog::Compare(dialog) => Some(&mut dialog.author),
             ReviewDialog::Protect(form) => Some(form.focused_mut()),
+            ReviewDialog::Sign(form) => Some(&mut form.purpose),
+            ReviewDialog::SignatureLine(form) => Some(form.focused_mut()),
         }
     }
 }
@@ -206,6 +219,10 @@ pub struct ReviewTools {
     pub inspect: Option<crate::word_inspect::InspectPane>,
     /// What ドキュメント検査 left out of every later save.
     pub cleaning: jade_office_model::word::inspect::PackageCleaning,
+    /// デジタル署名 (`word_signatures`).
+    pub signatures: crate::word_signatures::SignaturesUi,
+    /// The certificate 署名… chose, for the save that signs.
+    pub signatures_identity: Option<String>,
     /// 読み上げ, while reading (`word_read_aloud`).
     pub read_aloud: Option<crate::word_read_aloud::ReadAloudUi>,
     /// イマーシブ リーダー, while it is open (`word_immersive`).
@@ -320,6 +337,9 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
         ReviewAction::Protect => return crate::word_protection::open_protect_dialog(view, cx),
         ReviewAction::MarkFinal => return crate::word_protection::toggle_final(view, cx),
         ReviewAction::Inspect => return crate::word_inspect::toggle(view, cx),
+        ReviewAction::Sign => return crate::word_signatures::open_sign(view, cx),
+        ReviewAction::SignaturesPane => return crate::word_signatures::toggle_pane(view, cx),
+        ReviewAction::SignatureLine => return crate::word_signatures::open_line(view, cx),
         ReviewAction::ReadAloud => return crate::word_read_aloud::toggle(view, cx),
         ReviewAction::Immersive => return crate::word_immersive::toggle(view, cx),
         ReviewAction::ProofingMarks => {
@@ -719,6 +739,7 @@ pub fn handle_key(view: &mut DocumentView, key: &str, cx: &mut Context<DocumentV
         ("enter" | "return", _) => confirm(view, cx),
         ("tab", ReviewDialog::User(form)) => form.next_field(),
         ("tab", ReviewDialog::Protect(form)) => form.next_field(),
+        ("tab", ReviewDialog::SignatureLine(form)) => form.next_field(),
         ("tab", _) => {}
         (key, dialog) => {
             if !dialog.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -754,13 +775,17 @@ fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         Some(ReviewDialog::Protect(form)) => {
             crate::word_protection::confirm_protect(view, *form, cx);
         }
+        Some(ReviewDialog::Sign(form)) => crate::word_signatures::confirm_sign(view, *form, cx),
+        Some(ReviewDialog::SignatureLine(form)) => {
+            crate::word_signatures::confirm_line(view, *form, cx)
+        }
         None => {}
     }
     cx.notify();
 }
 
 /// A labelled one-line box; a click on it gives it the keyboard.
-fn field(
+pub(crate) fn field(
     id: &'static str,
     label: &'static str,
     edit: &TextEdit,
@@ -864,6 +889,11 @@ pub fn overlay(
         ReviewDialog::Protect(form) => (
             "protect.title",
             crate::word_protection::protect_body(form, cx),
+        ),
+        ReviewDialog::Sign(form) => ("sign.title", crate::word_signatures::sign_body(form, cx)),
+        ReviewDialog::SignatureLine(form) => (
+            "sign.line.title",
+            crate::word_signatures::line_body(form, cx),
         ),
         ReviewDialog::Compare(dialog) => (
             if dialog.form.combine {

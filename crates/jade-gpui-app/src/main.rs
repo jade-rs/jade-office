@@ -41,6 +41,7 @@ mod word_proofing;
 mod word_protection;
 mod word_review;
 mod word_review_tools;
+mod word_signatures;
 mod word_revisions;
 mod word_story;
 mod word_table;
@@ -1966,6 +1967,7 @@ impl DocumentView {
             RibbonTab::Insert => vec![
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
                 self.picture_group(cx),
+                word_signatures::insert_group(self, cx),
                 Self::ribbon_group(
                     t("link.group"),
                     vec![Self::ribbon_row(vec![self
@@ -3524,6 +3526,7 @@ impl DocumentView {
         // 最終版 and the password to open, written into the package.
         let exported = exported
             .and_then(|bytes| word_inspect::finish_save(self, bytes))
+            .and_then(|bytes| word_signatures::finish_save(self, bytes))
             .and_then(|bytes| word_protection::finish_save(self, bytes));
         match exported {
             Ok(bytes) => match crate::shell::write_in_place(&target, &bytes) {
@@ -4347,6 +4350,7 @@ impl Render for DocumentView {
         let proofing_pane = word_proofing::pane(self, cx);
         let accessibility_pane = word_accessibility::pane(self, cx);
         let inspect_pane = word_inspect::pane(self, cx);
+        let signatures_pane = word_signatures::pane(self, cx);
         let revisions_pane = word_revisions::pane(self, cx);
         let restrict_pane = word_protection::pane(self, cx);
         let read_only_bar = word_protection::banner(self, cx);
@@ -4649,6 +4653,7 @@ impl Render for DocumentView {
             .children(proofing_pane)
             .children(accessibility_pane)
             .children(inspect_pane)
+            .children(signatures_pane)
             .children(revisions_pane)
             .children(restrict_pane)
             .children(proofing_menu)
@@ -4862,6 +4867,7 @@ fn document_view(
     let mut ribbon = ribbon::Ribbon::default();
     ribbon.read_styles(&document);
     let review = word_review_tools::ReviewTools::opened(&mut document);
+    let review = word_signatures::opened(review, &path_text, &mut document);
 
     DocumentView {
         path: SharedString::from(path_text),
