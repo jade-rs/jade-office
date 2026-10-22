@@ -203,6 +203,7 @@ dependencies = [
  "image",
  "jade-painter",
  "resvg",
+ "rustybuzz",
  "tiny-skia",
  "ttf-parser",
 ]

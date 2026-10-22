@@ -2172,7 +2172,6 @@ objects.outline.arrows	Arrows
 objects.outline.dash	Dashes
 objects.outline.none	No Outline
 objects.outline.weight	Weight
-objects.pen	Pen
 objects.position	Position
 objects.position.bottom_center	Position in Bottom Center with Square Text Wrapping
 objects.position.bottom_left	Position in Bottom Left with Square Text Wrapping
@@ -2773,3 +2772,48 @@ master.none	This document has no subdocuments.
 master.not_in_subdocument	Put the insertion point in a subdocument.
 master.unreachable	These subdocuments could not be opened: {names}
 master.locked_edit	This modification is not allowed because the subdocument is locked.
+hyphenation.group	Hyphenation
+hyphenation.button	Hyphenation
+hyphenation.title	Hyphenation
+hyphenation.none	None
+hyphenation.automatic	Automatic
+hyphenation.options	Hyphenation Options...
+hyphenation.auto	Automatically hyphenate document
+hyphenation.caps	Hyphenate words in CAPS
+hyphenation.zone	Hyphenation zone
+hyphenation.limit	Limit consecutive hyphens to
+hyphenation.no_limit	Blank for no limit
+hyphenation.bad_zone	Enter a hyphenation zone of zero or more.
+hyphenation.bad_limit	Enter a whole number of zero or more for the hyphen limit.
+hyphenation.unlimited	No limit
+draw.tab	Draw
+draw.group.tools	Drawing Tools
+draw.group.mode	Mode
+draw.group.convert	Convert
+draw.group.selection	Selected Ink
+draw.select	Select
+draw.lasso	Lasso Select
+draw.eraser	Eraser
+draw.eraser.stroke	Stroke Eraser
+draw.eraser.point	Point Eraser
+draw.pen	Pen
+draw.pencil	Pencil
+draw.highlighter	Highlighter
+draw.effect	Effect Pen
+draw.add_pen	Add Pen
+draw.touch	Draw with Touch
+draw.ink_to_shape	Ink to Shape
+draw.ink_editor	Ink Editor
+draw.delete	Delete
+draw.to_shapes	Convert to Shapes
+draw.thickness	Thickness
+draw.color	Color
+draw.effects	Effects
+draw.effect.rainbow	Rainbow
+draw.effect.galaxy	Galaxy
+draw.effect.lava	Lava
+draw.effect.ocean	Ocean
+draw.effect.gold	Gold
+draw.effect.silver	Silver
+draw.effect.rosegold	Rose Gold
+draw.effect.bronze	Bronze

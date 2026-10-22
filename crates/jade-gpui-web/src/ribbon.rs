@@ -87,6 +87,8 @@ pub enum Tab {
     Review,
     /// 開発: content controls and forms (`view::word_controls`).
     Developer,
+    /// 描画 (`view::word_draw`).
+    Draw,
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
     TableDesign,
     TableLayout,
@@ -95,9 +97,10 @@ pub enum Tab {
 }
 
 impl Tab {
-    const ALL: [Tab; 8] = [
+    const ALL: [Tab; 9] = [
         Tab::Home,
         Tab::Insert,
+        Tab::Draw,
         Tab::Design,
         Tab::Layout,
         Tab::References,
@@ -110,6 +113,7 @@ impl Tab {
         i18n::text(match self {
             Tab::Home => "doc.tab.home",
             Tab::Insert => "doc.tab.insert",
+            Tab::Draw => "draw.tab",
             Tab::Design => "doc.tab.design",
             Tab::Layout => "doc.tab.layout",
             Tab::References => "doc.tab.references",
@@ -169,6 +173,10 @@ pub enum Popup {
     Object(crate::word_objects::ObjectPopup),
     /// 数式's lists (`view::word_equation`).
     Equation(crate::view::word_equation::EquationPopup),
+    /// レイアウト's ハイフネーション (`view::word_hyphenation`).
+    Hyphenation,
+    /// 描画's lists (`view::word_draw`).
+    Draw(crate::view::word_draw::DrawPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -657,6 +665,10 @@ pub struct TabState {
     /// What the text, line number and background groups show, read only
     /// while レイアウト is up.
     pub layout: Option<crate::view::word_setup::LayoutState>,
+    /// What the ハイフネーション list ticks, read while レイアウト is up.
+    pub hyphenation: Option<jade_web::word::hyphenation::HyphenationChoice>,
+    /// The 描画 tab's tools, while it is up.
+    pub draw: Option<jade_web::word::ink_tools::DrawController>,
     /// What the list, paragraph and design tools' open list shows.
     pub tools: crate::word_tools::ToolState,
     /// What 参考資料 shows, read only while it is up.
@@ -770,6 +782,11 @@ pub fn ribbon(
                     cx,
                 ));
             }
+            groups.push(crate::view::word_hyphenation::layout_group(
+                ribbon.popup,
+                shown.hyphenation,
+                cx,
+            ));
             groups
         }
         Tab::References => {
@@ -786,6 +803,11 @@ pub fn ribbon(
         Tab::Developer => {
             crate::view::word_controls::developer(&shown.developer.clone().unwrap_or_default(), cx)
         }
+        Tab::Draw => shown
+            .draw
+            .as_ref()
+            .map(|draw| crate::view::word_draw::ribbon_groups(draw, ribbon.popup, cx))
+            .unwrap_or_default(),
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
             crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)

@@ -20,6 +20,8 @@ path = "src/lib.rs"
 jade-painter = { path = "../../jade-core/crates/jade-painter" }
 tiny-skia = { version = "0.11.4", default-features = false, features = ["std", "simd", "png-format"] }
 ttf-parser = "0.25.1"
+# Shapes runs that ask for OpenType features (Word's ligatures, figure styles).
+rustybuzz = "0.20"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
 # SVG pictures — Word's own conversion of WMF/EMF (old equations among them) —
 # drawn as vectors onto the same tiny-skia surface. Pure Rust; no system fonts:

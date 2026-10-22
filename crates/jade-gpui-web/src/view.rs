@@ -36,10 +36,12 @@ pub(crate) mod word_characters;
 pub(crate) mod word_controls;
 mod word_dialogs;
 pub(crate) mod word_download;
+pub(crate) mod word_draw;
 pub(crate) mod word_equation;
 mod word_fields;
 mod word_find;
 mod word_form;
+pub(crate) mod word_hyphenation;
 pub(crate) mod word_mailings;
 mod word_print;
 pub(crate) mod word_references;
@@ -533,6 +535,14 @@ pub struct DocView {
     equation_symbols: usize,
     /// The 印刷 panel over a Word document, while it is open (`word_print`).
     print_panel: Option<Box<word_print::PrintPanel>>,
+    /// The ハイフネーション dialog and why OK did nothing, while it is open
+    /// (`word_hyphenation`).
+    hyphenation_dialog: Option<(
+        jade_web::word::hyphenation::HyphenationDialog,
+        Option<&'static str>,
+    )>,
+    /// The 描画 tab's tools and the drawing under way (`word_draw`).
+    draw: jade_web::word::ink_tools::DrawController,
 }
 
 impl DocView {
@@ -733,6 +743,8 @@ impl DocView {
             equation: None,
             equation_symbols: 0,
             print_panel: None,
+            hyphenation_dialog: None,
+            draw: Default::default(),
         })
     }
 
@@ -1315,6 +1327,15 @@ impl DocView {
         ) else {
             return;
         };
+        // With a pen, the eraser or the lasso in hand, the press draws
+        // (`word_draw`).
+        let page_top = match &self.document {
+            Document::Pages { document, .. } => document.document_y(index, 0.0),
+            _ => 0.0,
+        };
+        if self.ink_press(index, (x, y - page_top), cx) {
+            return;
+        }
         // A picture is over the text: a press on one takes hold of it rather
         // than putting the caret behind it. Its bottom-right corner resizes.
         if let Document::Pages {
@@ -1436,6 +1457,9 @@ impl DocView {
     /// through the whole window, not only over a page, and past the top or
     /// the bottom of the view the pages scroll to meet the pointer.
     fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if self.ink_drag(event.position, cx) {
+            return;
+        }
         if self.drag_object(event, cx) {
             return;
         }
@@ -1572,6 +1596,7 @@ impl DocView {
 
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
+        self.ink_release(cx);
         self.release_object(cx);
         // The brush paints what was just clicked or dragged over.
         let painting = matches!(
@@ -2034,6 +2059,9 @@ impl DocView {
                 table,
                 layout: (ribbon.tab == ribbon::Tab::Layout)
                     .then(|| word_setup::LayoutState::read(document)),
+                hyphenation: (ribbon.tab == ribbon::Tab::Layout)
+                    .then(|| word_hyphenation::current_choice(document)),
+                draw: (ribbon.tab == ribbon::Tab::Draw).then(|| self.draw.clone()),
                 references: (ribbon.tab == ribbon::Tab::References)
                     .then(|| word_references::ribbon_state(document, &self.references)),
                 object: object.map(|grab| grab.object),
@@ -2122,7 +2150,15 @@ impl DocView {
             _ => Vec::new(),
         }
         .into_iter();
+        let mut ink_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.ink_overlay(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let page_dialog = self.page_dialog_element(cx);
+        let hyphenation_dialog = self.hyphenation_dialog_element(cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
         let mut control_overlays = match &self.document {
@@ -2257,6 +2293,7 @@ impl DocView {
                 let entity = entity.clone();
                 let table_overlay = table_overlays.next().flatten();
                 let control_overlay = control_overlays.next().unwrap_or_default();
+                let ink_overlay = ink_overlays.next().flatten();
                 div()
                     .relative()
                     .flex_none()
@@ -2312,6 +2349,7 @@ impl DocView {
                         },
                     ))
                     .children(table_overlay)
+                    .children(ink_overlay)
                     .children(word_references::page_marks(&marks, index, zoom, cx))
                     .children(control_overlay)
                     .children(
@@ -2452,6 +2490,7 @@ impl DocView {
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
             .children(print_panel)
+            .children(hyphenation_dialog)
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -2487,6 +2526,10 @@ impl DocView {
             return;
         }
         // A dialog over a Word document is modal: it takes every key.
+        if self.hyphenation_dialog.is_some() && self.hyphenation_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
             cx.stop_propagation();
             return;

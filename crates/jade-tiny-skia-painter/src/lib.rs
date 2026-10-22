@@ -2082,6 +2082,84 @@ impl TinySkiaPainter {
         pen
     }
 
+    /// [`Painter::try_fill_shaped_text`]: shapes `text` with the OpenType
+    /// features its font descriptor carries and draws the glyphs the font
+    /// substitutes — a ligature for its letters — each at its cluster's x.
+    fn fill_shaped(&self, text: &str, clusters: &[(usize, f64)], y: f64) -> bool {
+        let (font, size, descriptor, baseline, transform, color) = {
+            let state = self.inner.state.borrow();
+            (
+                state.font,
+                state.font_size_px,
+                state.font_descriptor.clone(),
+                state.baseline,
+                state.transform,
+                state.fill,
+            )
+        };
+        let features = jade_painter::font_features::parse(&descriptor);
+        if features.is_empty() || text.is_empty() || clusters.is_empty() {
+            return false;
+        }
+        let fonts = &self.inner.fonts;
+        // One face draws the whole stretch, or the caller draws it a
+        // character at a time with fallback.
+        if text.chars().any(|ch| fonts.covering(font, ch) != font) {
+            return false;
+        }
+        let Some(face) = fonts.faces.get(font) else {
+            return false;
+        };
+        let Some(shaper) = rustybuzz::Face::from_slice(&face.data, 0) else {
+            return false;
+        };
+        let mut buffer = rustybuzz::UnicodeBuffer::new();
+        buffer.push_str(text);
+        buffer.guess_segment_properties();
+        let features: Vec<rustybuzz::Feature> = features
+            .iter()
+            .map(|feature| {
+                rustybuzz::Feature::new(
+                    rustybuzz::ttf_parser::Tag::from_bytes(&feature.tag),
+                    feature.value,
+                    ..,
+                )
+            })
+            .collect();
+        let shaped = rustybuzz::shape(&shaper, &features, buffer);
+        let scale = size / face.units_per_em;
+        let (ascent, descent) = self.font_extent(font, size);
+        let baseline_y = y as f32 + baseline.offset(ascent, descent);
+        let cluster_x = |byte: usize| -> f32 {
+            let at = clusters.partition_point(|(start, _)| *start <= byte);
+            clusters[at.saturating_sub(1)].1 as f32
+        };
+        let mut pen = 0.0_f32;
+        let mut cluster_pen = 0.0_f32;
+        let mut current_cluster = None;
+        for (info, position) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
+            if current_cluster != Some(info.cluster) {
+                current_cluster = Some(info.cluster);
+                cluster_pen = pen;
+            }
+            let x = cluster_x(info.cluster as usize)
+                + (pen - cluster_pen)
+                + position.x_offset as f32 * scale;
+            let glyph_y = baseline_y - position.y_offset as f32 * scale;
+            pen += position.x_advance as f32 * scale;
+            let glyph = ttf_parser::GlyphId(info.glyph_id as u16);
+            let glyph_transform =
+                transform.pre_concat(Transform::from_row(scale, 0.0, 0.0, -scale, x, glyph_y));
+            if self.blit_glyph(font, glyph, glyph_transform, None, color) {
+                continue;
+            }
+            if let Some(outline) = fonts.outline(font, glyph) {
+                self.fill_path_with(&outline, color, glyph_transform);
+            }
+        }
+        true
+    }
+
     /// Appends an elliptical arc as cubic Béziers, joining it to the current
     /// point with a line as canvas does.
     #[allow(clippy::too_many_arguments)]
@@ -2884,6 +2962,26 @@ impl Painter for TinySkiaPainter {
         Ok(())
     }
 
+    fn try_fill_shaped_text(
+        &self,
+        text: &str,
+        clusters: &[(usize, f64)],
+        y: f64,
+    ) -> Result<bool, Self::Error> {
+        // A shadow or blur goes under (or stands for) the shaped glyphs as
+        // it does for any text; a stretch that does not shape leaves the
+        // layer empty and the caller draws it, effects and all.
+        let mut shaped = false;
+        let done = self.with_effects(|layer| shaped = layer.fill_shaped(text, clusters, y));
+        if !shaped && done {
+            return Ok(false);
+        }
+        if done {
+            return Ok(true);
+        }
+        Ok(self.fill_shaped(text, clusters, y))
+    }
+
     fn stroke_text(&self, text: &str, x: f64, y: f64) -> Result<(), Self::Error> {
         if !self.with_effects(|layer| layer.draw_text(text, x, y, true)) {
             self.draw_text(text, x, y, true);
@@ -3196,6 +3294,41 @@ mod tests {
         let painter = TinySkiaPainter::new(1, 1, fonts).unwrap();
         painter.set_font(font);
         painter.measure_text_width(text).unwrap()
+    }
+
+    /// A run whose descriptor carries OpenType features is drawn shaped:
+    /// with `liga` the font's `ff` ligature glyph, without it the two
+    /// letters exactly as drawn one at a time.
+    #[test]
+    fn ligatures_draw_the_ligature_glyph() {
+        let fonts = fonts();
+        let font = "40px Noto Sans JP";
+        let f = width(Rc::clone(&fonts), font, "f");
+        let clusters = [(0, 10.0), (1, 10.0 + f)];
+        let draw = |paint: &dyn Fn(&TinySkiaPainter)| {
+            let painter = TinySkiaPainter::new(120, 60, Rc::clone(&fonts)).unwrap();
+            painter.set_fill_style_str("#000000");
+            paint(&painter);
+            painter.rgba_premultiplied()
+        };
+        let letters = draw(&|painter| {
+            painter.set_font(font);
+            painter.fill_text("f", 10.0, 45.0).unwrap();
+            painter.fill_text("f", 10.0 + f, 45.0).unwrap();
+        });
+        let unjoined = draw(&|painter| {
+            painter.set_font(&format!("ot:-liga {font}"));
+            assert!(painter.try_fill_shaped_text("ff", &clusters, 45.0).unwrap());
+        });
+        let joined = draw(&|painter| {
+            painter.set_font(&format!("ot:liga {font}"));
+            assert!(painter.try_fill_shaped_text("ff", &clusters, 45.0).unwrap());
+        });
+        assert!(letters == unjoined, "without liga the letters stay apart");
+        assert!(letters != joined, "with liga the ff ligature is drawn");
+        let plain = TinySkiaPainter::new(10, 10, Rc::clone(&fonts)).unwrap();
+        plain.set_font(font);
+        assert!(!plain.try_fill_shaped_text("ff", &clusters, 5.0).unwrap());
     }
 
     /// Each character falls back to a face that has it, as a browser's
