@@ -195,6 +195,7 @@ impl DocView {
             | ReviewAction::EditAnyway => return self.protection_action(action, cx),
             ReviewAction::ReadAloud => return self.toggle_read_aloud(cx),
             ReviewAction::SignaturesPane => return self.toggle_signatures_pane(cx),
+            ReviewAction::Thesaurus => return self.toggle_thesaurus(cx),
             ReviewAction::SignatureLine => return self.open_signature_line_dialog(cx),
             ReviewAction::SideBySide => {
                 return cx.dispatch_action(&crate::workspace::side_by_side::ViewSideBySide)

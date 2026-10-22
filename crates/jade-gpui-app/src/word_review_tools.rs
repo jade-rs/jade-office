@@ -156,6 +156,8 @@ pub enum ReviewAction {
     SignaturesPane,
     /// 挿入 › 署名欄.
     SignatureLine,
+    /// 類義語辞典: the pane.
+    Thesaurus,
     /// ドキュメント検査: the pane.
     Inspect,
     /// 読み上げ: start or stop.
@@ -223,6 +225,8 @@ pub struct ReviewTools {
     pub signatures: crate::word_signatures::SignaturesUi,
     /// The certificate 署名… chose, for the save that signs.
     pub signatures_identity: Option<String>,
+    /// The 類義語辞典 pane, while it is open (`word_thesaurus`).
+    pub thesaurus: Option<crate::word_thesaurus::ThesaurusPane>,
     /// 読み上げ, while reading (`word_read_aloud`).
     pub read_aloud: Option<crate::word_read_aloud::ReadAloudUi>,
     /// イマーシブ リーダー, while it is open (`word_immersive`).
@@ -340,6 +344,7 @@ pub fn run(view: &mut DocumentView, action: ReviewAction, cx: &mut Context<Docum
         ReviewAction::Sign => return crate::word_signatures::open_sign(view, cx),
         ReviewAction::SignaturesPane => return crate::word_signatures::toggle_pane(view, cx),
         ReviewAction::SignatureLine => return crate::word_signatures::open_line(view, cx),
+        ReviewAction::Thesaurus => return crate::word_thesaurus::toggle(view, cx),
         ReviewAction::ReadAloud => return crate::word_read_aloud::toggle(view, cx),
         ReviewAction::Immersive => return crate::word_immersive::toggle(view, cx),
         ReviewAction::ProofingMarks => {

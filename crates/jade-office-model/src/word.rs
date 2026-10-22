@@ -56,6 +56,7 @@ pub mod read_aloud;
 pub mod reviewer;
 pub mod signatures;
 pub mod table;
+pub mod thesaurus;
 pub mod table_ui;
 pub mod typography;
 

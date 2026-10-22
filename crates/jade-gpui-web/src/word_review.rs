@@ -94,6 +94,8 @@ pub enum ReviewAction {
     Immersive,
     /// 署名の表示: the pane.
     SignaturesPane,
+    /// 類義語辞典: the pane.
+    Thesaurus,
     /// 署名欄.
     SignatureLine,
     /// 並べて比較, 同時にスクロール, ウィンドウの位置を元に戻す.
@@ -116,6 +118,7 @@ pub struct ReviewShown {
     pub signatures_pane: bool,
     pub reading: bool,
     pub immersive: bool,
+    pub thesaurus: bool,
     pub side_by_side: bool,
     pub sync_scroll: bool,
     pub markup: MarkupOptions,
@@ -313,6 +316,17 @@ pub fn review(
             .into_any_element()
     });
     vec![
+        group(
+            i18n::text("proof.group"),
+            vec![row(vec![text_button(
+                "review-thesaurus",
+                i18n::text("thesaurus.button"),
+                i18n::text("thesaurus.tooltip"),
+                shown.thesaurus,
+                act(ReviewAction::Thesaurus),
+                cx,
+            )])],
+        ),
         group(
             i18n::text("read.group"),
             vec![row(vec![
