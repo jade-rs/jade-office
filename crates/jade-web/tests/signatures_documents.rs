@@ -62,7 +62,7 @@ impl Signer for TestSigner {
 
 #[test]
 fn a_signed_document_holds_until_it_is_edited_and_saved() {
-    let document = contract();
+    let mut document = contract();
     let unsigned = document.export_docx().unwrap();
     let signer = TestSigner::new("Ann Lee");
     // 署名: the next save signs.
