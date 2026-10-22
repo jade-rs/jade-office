@@ -24,11 +24,15 @@ mod autorecover;
 mod deck;
 mod editor;
 mod i18n;
+mod keyboard_access;
 mod native_print;
 mod ribbon;
+mod screen_reader;
 mod shell;
 mod tooltip;
+mod word_accessibility;
 mod word_characters;
+mod word_compare;
 mod word_compat;
 mod word_controls;
 mod word_design;
@@ -41,6 +45,8 @@ mod word_files;
 mod word_fonts;
 mod word_form;
 mod word_hyphenation;
+mod word_immersive;
+mod word_inspect;
 mod word_lists;
 mod word_mailings;
 mod word_master;
@@ -52,14 +58,21 @@ mod word_page;
 mod word_page_setup;
 mod word_paragraph;
 mod word_print;
+mod word_proofing;
+mod word_protection;
+mod word_read_aloud;
 mod word_references;
 mod word_review;
+mod word_review_tools;
+mod word_revisions;
 mod word_ruler;
 mod word_save_options;
+mod word_signatures;
 mod word_story;
 mod word_styles;
 mod word_table;
 mod word_templates;
+mod word_thesaurus;
 mod word_tools;
 mod word_views;
 mod workbook;
@@ -109,6 +122,8 @@ actions!(
     jade,
     [
         Quit,
+        UserInformation,
+        FocusRibbon,
         NewDocument,
         NewFromTemplate,
         Open,
@@ -152,6 +167,7 @@ actions!(
         DeleteTableRow,
         AddComment,
         ToggleChangeTracking,
+        SpellingAndGrammar,
         InsertHyperlink,
         InsertFootnote,
         InsertEndnote,
@@ -191,6 +207,11 @@ fn key_bindings() -> Vec<KeyBinding> {
         // 環境設定 → 保存. ⌘, itself is Word のオプション (`word_views`), as
         // Word for Mac's 環境設定 is.
         KeyBinding::new("cmd-alt-,", word_files::SavePreferences, CONTEXT),
+        // ユーザー情報: ⌘, is Word のオプション, which Word for Mac's 環境設定
+        // is; this goes straight to its user page.
+        KeyBinding::new("cmd-ctrl-,", UserInformation, CONTEXT),
+        // F6: to the ribbon and back, as Word moves between its areas.
+        KeyBinding::new("f6", FocusRibbon, CONTEXT),
         // Opening and closing belong to the app, not to one kind of window:
         // they work from the start window and from every view.
         KeyBinding::new("cmd-n", NewDocument, None),
@@ -255,6 +276,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
+        // Word for Mac's スペル チェックと文章校正.
+        KeyBinding::new("alt-cmd-l", SpellingAndGrammar, CONTEXT),
         // Word for Mac's 挿入 menu.
         KeyBinding::new("cmd-k", InsertHyperlink, CONTEXT),
         KeyBinding::new("cmd-alt-f", InsertFootnote, CONTEXT),
@@ -331,6 +354,7 @@ fn menus() -> Vec<Menu> {
             name: "jade".into(),
             items: vec![
                 MenuItem::action(t("menu.app.save_preferences"), word_files::SavePreferences),
+                MenuItem::action(t("menu.app.user_info"), UserInformation),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.app.quit"), Quit),
             ],
@@ -454,6 +478,7 @@ fn menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action(t("menu.review.add_comment"), AddComment),
                 MenuItem::action(t("menu.review.track_changes"), ToggleChangeTracking),
+                MenuItem::action(t("menu.review.spelling"), SpellingAndGrammar),
             ],
         },
         Menu {
@@ -1333,6 +1358,8 @@ struct DocumentView {
     mailings: jade_office_model::word::mailings::MailMerge,
     /// The equation being edited, if one is (`word_equation`).
     equation: word_equation::EquationUi,
+    /// The 校閲 tab's markup views, filters and dialogs.
+    review: word_review_tools::ReviewTools,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1606,6 +1633,12 @@ impl DocumentView {
         // here, and typing goes on to the input handler, into its field.
         if self.characters.is_open() {
             if word_characters::handle_key(self, event.keystroke.key.as_str(), cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.review.is_open() {
+            if word_review_tools::handle_key(self, event.keystroke.key.as_str(), cx) {
                 cx.stop_propagation();
             }
             return;
@@ -2040,7 +2073,7 @@ impl DocumentView {
             .when(title != glyph, |button| {
                 button.tooltip(Tooltip::text(title.to_string()))
             })
-            .on_click(cx.listener(move |view, _event, _window, cx| action(view, cx)))
+            .map(|button| keyboard_access::activatable(button, cx, action))
     }
 
     /// A group of buttons with Word's caption under it.
@@ -2123,6 +2156,8 @@ impl DocumentView {
         }
         let active = self.ribbon_tab;
         div()
+            .id("ribbon")
+            .on_key_down(cx.listener(keyboard_access::ribbon_key))
             .flex()
             .flex_col()
             .flex_none()
@@ -2154,11 +2189,13 @@ impl DocumentView {
                             })
                             .hover(|element| element.bg(theme::hovered()))
                             .child(label)
-                            .on_click(cx.listener(move |view, _event, _window, cx| {
-                                view.ribbon_tab = tab;
-                                view.ribbon.popup = None;
-                                cx.notify();
-                            }))
+                            .map(|element| {
+                                keyboard_access::activatable(element, cx, move |view, cx| {
+                                    view.ribbon_tab = tab;
+                                    view.ribbon.popup = None;
+                                    cx.notify();
+                                })
+                            })
                     }))
                     // Word 出力 sits at the right of the strip, as it does in
                     // the browser shell.
@@ -2227,6 +2264,7 @@ impl DocumentView {
                 ribbon::insert_table(&self.ribbon, cx).remove(0),
                 self.quick_parts_group(cx),
                 self.picture_group(cx),
+                word_signatures::insert_group(self, cx),
                 Self::ribbon_group(
                     t("link.group"),
                     vec![Self::ribbon_row(vec![self
@@ -2365,11 +2403,23 @@ impl DocumentView {
     /// 挿入's 図: 画像, 図形, テキスト ボックス, ワードアート, SmartArt, グラフ
     /// (`word_objects_ribbon`).
     fn picture_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        // 代替テキスト for the object selected (`word_review_tools`).
+        let alt_text = self.selected_object.is_some().then(|| {
+            word_review_tools::text_button(
+                "alt-text",
+                "alt.button",
+                "alt.title",
+                false,
+                word_review_tools::ReviewAction::AltText,
+                cx,
+            )
+        });
         div()
             .flex()
             .flex_none()
             .h_full()
             .children(self.insert_object_groups(cx))
+            .children(alt_text)
             .into_any_element()
     }
 
@@ -2591,6 +2641,9 @@ impl DocumentView {
         if let Some(field) = self.views.text_field() {
             return Some(field);
         }
+        if let Some(field) = self.review.text_field() {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2632,6 +2685,9 @@ impl DocumentView {
         }
         if self.views.is_open() {
             return self.views.text_field_mut();
+        }
+        if self.review.is_open() {
+            return self.review.text_field_mut();
         }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
@@ -3271,6 +3327,7 @@ impl DocumentView {
             Action::Object(action) => return self.run_object_action(action, cx),
             Action::Equation(action) => return word_equation::run(self, action, cx),
             Action::Views(action) => return word_views::run(self, action, cx),
+            Action::Review(action) => return word_review_tools::run(self, action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) | Action::Word(_) => Ok(()),
         };
         match done {
@@ -4243,6 +4300,7 @@ impl EntityInputHandler for DocumentView {
             field.replace(range, text, false);
             // The dialog's size fields keep the proportions.
             self.dialog_typed();
+            self.review.typed();
             return cx.notify();
         }
         if self.find_bar.is_some() {
@@ -4453,6 +4511,7 @@ impl editor::Editor for DocumentView {
 
 impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        screen_reader::update(self, window);
         // The one place with a window to hand. Textures replaced since the last
         // frame are released here rather than at the edit that replaced them.
         for image in self.retired_images.drain(..) {
@@ -4494,9 +4553,22 @@ impl Render for DocumentView {
         };
         let zoom = self.zoom;
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
+        word_proofing::start_once(self, cx);
+        let proofing_pane = word_proofing::pane(self, cx);
+        let accessibility_pane = word_accessibility::pane(self, cx);
+        let inspect_pane = word_inspect::pane(self, cx);
+        let signatures_pane = word_signatures::pane(self, cx);
+        let thesaurus_pane = word_thesaurus::pane(self, cx);
+        let revisions_pane = word_revisions::pane(self, cx);
+        let restrict_pane = word_protection::pane(self, cx);
+        let read_only_bar = word_protection::banner(self, cx);
+        let read_aloud_bar = word_read_aloud::bar(self, cx);
+        let immersive = word_immersive::overlay(self, window, cx);
+        let proofing_menu = word_proofing::menu(self, cx);
         let page_cursor = word_table::cursor_style(&self.tables);
         let table_dialog = self.table_dialog_element(cx);
-        let dialog = word_characters::overlay(self, window, cx);
+        let dialog = word_characters::overlay(self, window, cx)
+            .or_else(|| word_review_tools::overlay(self, window, cx));
         let fields_dialog = self.fields_dialog_element(cx);
         let styles_pane = self.styles_pane(cx);
         let ruler = self.horizontal_ruler(cx);
@@ -4612,6 +4684,15 @@ impl Render for DocumentView {
                 view.run_ribbon(Action::Table(TableCommand::DeleteRow), cx)
             }))
             .on_action(cx.listener(|view, _: &AddComment, _window, cx| view.add_comment(cx)))
+            .on_action(cx.listener(|view, _: &FocusRibbon, window, cx| {
+                keyboard_access::toggle_ribbon_focus(view, window, cx)
+            }))
+            .on_action(cx.listener(|view, _: &SpellingAndGrammar, _window, cx| {
+                word_proofing::open_pane(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &UserInformation, _window, cx| {
+                word_review_tools::run(view, word_review_tools::ReviewAction::UserInfo, cx)
+            }))
             .on_action(
                 cx.listener(|view, _: &InsertHyperlink, _window, cx| view.open_link_dialog(cx)),
             )
@@ -4751,12 +4832,14 @@ impl Render for DocumentView {
                     )
                     .children(word_views::layout::read_bar(self, cx))
                     .children(self.dialog_element(cx))
+                    .children(read_only_bar)
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
                     .children(ruler)
                     // 分割: a second pane of the same pages.
                     .children(word_views::split::pane(self, cx))
+                    .children(read_aloud_bar)
                     .child(
                         // Laid out as the view has them: one under another,
                         // several across, side by side (`word_views`).
@@ -4919,6 +5002,15 @@ impl Render for DocumentView {
             .children(comments_pane)
             // ---- the styles pane, beside the pages while it is open ----
             .children(styles_pane)
+            // ---- 文章校正, beside the pages while it is open ----
+            .children(proofing_pane)
+            .children(accessibility_pane)
+            .children(inspect_pane)
+            .children(signatures_pane)
+            .children(thesaurus_pane)
+            .children(revisions_pane)
+            .children(restrict_pane)
+            .children(proofing_menu)
             // ---- a table dialog, over everything while it is open ----
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             // ---- a ページ設定 dialog, over everything while it is open ----
@@ -4936,6 +5028,7 @@ impl Render for DocumentView {
             .children(views_dialog)
             .children(mini_toolbar)
             .children(context_menu)
+            .children(immersive)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -5153,6 +5246,8 @@ fn document_view(
     let mut ribbon = ribbon::Ribbon::default();
     ribbon.read_styles(&document);
     let mailings = word_mailings::open_merge(&document, &path_text);
+    let review = word_review_tools::ReviewTools::opened(&mut document);
+    let review = word_signatures::opened(review, &path_text, &mut document);
 
     DocumentView {
         path: SharedString::from(path_text),
@@ -5190,6 +5285,7 @@ fn document_view(
         controls: word_controls::ControlsUi::default(),
         mailings,
         equation: Default::default(),
+        review,
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,

@@ -86,10 +86,10 @@ pub fn refuses(view: &DocumentView, action: &Action) -> bool {
     !matches!(
         action,
         Action::Views(_)
+            | Action::Review(crate::word_review_tools::ReviewAction::StepComment(_))
             | Action::References(
                 RefAction::ToggleNavigation
                     | RefAction::OpenGoTo
-                    | RefAction::StepComment(_)
                     | RefAction::StepNote(..)
                     | RefAction::ShowNotes
                     | RefAction::ToggleShowBookmarks

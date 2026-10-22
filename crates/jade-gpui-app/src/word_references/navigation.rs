@@ -721,31 +721,6 @@ pub fn go_to_body(view: &DocumentView, cx: &mut Context<DocumentView>) -> AnyEle
         .into_any_element()
 }
 
-// ---- comments -------------------------------------------------------------
-
-/// 次のコメント / 前のコメント: the comment's text selected, the pane open.
-pub fn step_comment(view: &mut DocumentView, forwards: bool, cx: &mut Context<DocumentView>) {
-    let from = match view.document.selection() {
-        Some((anchor, focus)) if forwards => anchor.max(focus),
-        Some((anchor, focus)) => anchor.min(focus),
-        None => view.insert_at,
-    };
-    match view
-        .document
-        .step_comment(from, forwards)
-        .and_then(|comment| comment.anchor)
-    {
-        Some((start, end)) => {
-            view.show_comments = true;
-            view.reveal(start, end, cx);
-        }
-        None => {
-            view.table_status = Some(SharedString::from(t("comments.none")));
-            cx.notify();
-        }
-    }
-}
-
 // ---- marks on the pages -----------------------------------------------------
 
 /// Something drawn over a page in the page's coordinates: a bookmark's

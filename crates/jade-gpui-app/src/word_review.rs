@@ -9,10 +9,8 @@ use gpui::{div, prelude::*, px, AnyElement, Context, SharedString};
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::review::{Comment, Revision, WordReview};
 
+use crate::word_review_tools::{self as tools, reviewer, ReviewAction};
 use crate::{t, theme, DocumentView};
-
-/// Who the comments and the tracked changes are by.
-pub const AUTHOR: &str = "jade";
 
 /// What a comment bar's text becomes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,9 +76,11 @@ impl DocumentView {
                 let text = bar.text.text.trim().to_string();
                 if !text.is_empty() {
                     let result = match &bar.entry {
-                        CommentEntry::New => self.document.add_comment(&text, AUTHOR).map(|_| ()),
+                        CommentEntry::New => {
+                            self.document.add_comment(&text, &reviewer()).map(|_| ())
+                        }
                         CommentEntry::Reply(id) => {
-                            self.document.reply_to_comment(id, &text, AUTHOR)
+                            self.document.reply_to_comment(id, &text, &reviewer())
                         }
                         CommentEntry::Edit(id) => self.document.edit_comment(id, &text),
                     };
@@ -100,7 +100,7 @@ impl DocumentView {
     }
 
     /// The tail of a review command: every page re-read, the caret put back.
-    fn reviewed(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    pub(crate) fn reviewed(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
         match result {
             Ok(()) => {
                 self.dirty = true;
@@ -110,6 +110,8 @@ impl DocumentView {
                         .document
                         .place_caret(self.insert_at.0, self.insert_at.1);
                 }
+                // A new reviewer takes the next colour.
+                tools::refresh_markup(self);
                 self.rebuild_all_images();
             }
             Err(error) => self.table_status = Some(SharedString::from(error)),
@@ -128,14 +130,19 @@ impl DocumentView {
     }
 
     /// A comment clicked in the pane: its text selected in the document.
-    fn go_to_comment(&mut self, comment: &Comment, cx: &mut Context<Self>) {
+    pub(crate) fn go_to_comment(&mut self, comment: &Comment, cx: &mut Context<Self>) {
         if let Some((start, end)) = comment.anchor {
             self.select_range(start, end, cx);
         }
     }
 
     /// Selects `start..end` and brings it into view.
-    fn select_range(&mut self, start: (usize, usize), end: (usize, usize), cx: &mut Context<Self>) {
+    pub(crate) fn select_range(
+        &mut self,
+        start: (usize, usize),
+        end: (usize, usize),
+        cx: &mut Context<Self>,
+    ) {
         self.caret = self.document.place_caret(end.0, end.1);
         self.insert_at = end;
         self.selection_anchor = Some(start);
@@ -157,7 +164,7 @@ impl DocumentView {
     /// 変更履歴の記録.
     pub(crate) fn toggle_tracking(&mut self, cx: &mut Context<Self>) {
         let on = !self.document.is_tracking_changes();
-        let result = self.document.set_tracking_changes(on, AUTHOR);
+        let result = self.document.set_tracking_changes(on, &reviewer());
         self.reviewed(result, cx);
     }
 
@@ -200,13 +207,9 @@ impl DocumentView {
         }
     }
 
-    /// すべての変更を反映 / すべての変更を元に戻す.
-    pub(crate) fn resolve_revisions(&mut self, accept: bool, cx: &mut Context<Self>) {
-        let result = self.document.decide_all_revisions(accept);
-        self.reviewed(result, cx);
-    }
-
-    /// The 校閲 tab's groups.
+    /// The 校閲 tab's groups, as Word for Mac lays them out: コメント,
+    /// 変更履歴 (記録, the markup view and what it shows, ユーザー情報) and
+    /// 変更箇所 (承諾 and 元に戻す with their lists, 前へ and 次へ).
     pub(crate) fn review_groups(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let tracking = self.document.is_tracking_changes();
         let showing = self.show_comments;
@@ -220,11 +223,90 @@ impl DocumentView {
             view.ribbon_button(id, t(key), t(title), active, cx, action)
                 .into_any_element()
         };
+        let markup_row = tools::markup_row(self, cx);
+        let mut decisions = tools::decision_buttons(self, cx);
+        decisions.extend([
+            button(
+                self,
+                "revision-previous",
+                "review.previous",
+                "review.previous_title",
+                false,
+                cx,
+                |view, cx| view.step_revision(false, cx),
+            ),
+            button(
+                self,
+                "revision-next",
+                "review.next",
+                "review.next_title",
+                false,
+                cx,
+                |view, cx| view.step_revision(true, cx),
+            ),
+        ]);
+        let proofing =
+            jade_office_model::word::proofing::WordProofingDisplay::proofing(&*self.document);
+        let checking = self.review.accessibility.is_some();
         vec![
             Self::ribbon_group(
+                t("proof.group"),
+                vec![Self::ribbon_row(vec![
+                    tools::text_button(
+                        "review-proofing",
+                        "proof.button",
+                        "proof.title",
+                        self.review.proofing.pane.is_some(),
+                        ReviewAction::Proofing,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-proofing-marks",
+                        "proof.marks",
+                        "proof.marks_title",
+                        proofing,
+                        ReviewAction::ProofingMarks,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-thesaurus",
+                        "thesaurus.button",
+                        "thesaurus.tooltip",
+                        self.review.thesaurus.is_some(),
+                        ReviewAction::Thesaurus,
+                        cx,
+                    ),
+                ])],
+            )
+            .into_any_element(),
+            Self::ribbon_group(
+                t("read.group"),
+                vec![Self::ribbon_row(vec![tools::text_button(
+                    "review-read-aloud",
+                    "read.button",
+                    "read.title",
+                    self.review.read_aloud.is_some(),
+                    ReviewAction::ReadAloud,
+                    cx,
+                )])],
+            )
+            .into_any_element(),
+            Self::ribbon_group(
+                t("a11y.group"),
+                vec![Self::ribbon_row(vec![tools::text_button(
+                    "review-accessibility",
+                    "a11y.button",
+                    "a11y.title",
+                    checking,
+                    ReviewAction::Accessibility,
+                    cx,
+                )])],
+            )
+            .into_any_element(),
+            Self::ribbon_group(
                 t("doc.comment"),
-                vec![Self::ribbon_row(
-                    vec![
+                vec![
+                    Self::ribbon_row(vec![
                         button(
                             self,
                             "review-comment",
@@ -233,6 +315,14 @@ impl DocumentView {
                             false,
                             cx,
                             |view, cx| view.add_comment(cx),
+                        ),
+                        tools::text_button(
+                            "review-comment-delete",
+                            "review.delete",
+                            "review.delete_comment",
+                            false,
+                            ReviewAction::DeleteComment,
+                            cx,
                         ),
                         button(
                             self,
@@ -246,11 +336,26 @@ impl DocumentView {
                                 cx.notify();
                             },
                         ),
-                    ]
-                    .into_iter()
-                    .chain(crate::word_references::comment_steps(cx))
-                    .collect(),
-                )],
+                    ]),
+                    Self::ribbon_row(vec![
+                        tools::text_button(
+                            "review-comment-previous",
+                            "review.previous",
+                            "review.previous_comment",
+                            false,
+                            ReviewAction::StepComment(false),
+                            cx,
+                        ),
+                        tools::text_button(
+                            "review-comment-next",
+                            "review.next",
+                            "review.next_comment",
+                            false,
+                            ReviewAction::StepComment(true),
+                            cx,
+                        ),
+                    ]),
+                ],
             )
             .into_any_element(),
             Self::ribbon_group(
@@ -266,64 +371,104 @@ impl DocumentView {
                             cx,
                             |view, cx| view.toggle_tracking(cx),
                         ),
-                        button(
-                            self,
-                            "revision-previous",
-                            "review.previous",
-                            "review.previous_title",
+                        tools::text_button(
+                            "review-user",
+                            "review.user",
+                            "review.user.title",
                             false,
+                            ReviewAction::UserInfo,
                             cx,
-                            |view, cx| view.step_revision(false, cx),
                         ),
-                        button(
-                            self,
-                            "revision-next",
-                            "review.next",
-                            "review.next_title",
-                            false,
+                        tools::text_button(
+                            "review-pane",
+                            "review.pane",
+                            "review.pane_title",
+                            self.review.revisions_pane,
+                            ReviewAction::RevisionsPane,
                             cx,
-                            |view, cx| view.step_revision(true, cx),
                         ),
                     ]),
-                    Self::ribbon_row(vec![
-                        button(
-                            self,
-                            "accept",
-                            "review.accept",
-                            "review.accept_title",
-                            false,
-                            cx,
-                            |view, cx| view.decide_revision(true, cx),
-                        ),
-                        button(
-                            self,
-                            "reject",
-                            "review.reject",
-                            "review.reject_title",
-                            false,
-                            cx,
-                            |view, cx| view.decide_revision(false, cx),
-                        ),
-                        button(
-                            self,
-                            "accept-all",
-                            "doc.accept_all",
-                            "doc.accept_all",
-                            false,
-                            cx,
-                            |view, cx| view.resolve_revisions(true, cx),
-                        ),
-                        button(
-                            self,
-                            "reject-all",
-                            "doc.reject_all",
-                            "doc.reject_all_title",
-                            false,
-                            cx,
-                            |view, cx| view.resolve_revisions(false, cx),
-                        ),
-                    ]),
+                    Self::ribbon_row(markup_row),
                 ],
+            )
+            .into_any_element(),
+            Self::ribbon_group(t("review.group.changes"), vec![Self::ribbon_row(decisions)])
+                .into_any_element(),
+            Self::ribbon_group(
+                t("protect.group"),
+                vec![Self::ribbon_row(vec![
+                    tools::text_button(
+                        "review-restrict",
+                        "restrict.button",
+                        "restrict.title",
+                        self.review.protection.pane,
+                        ReviewAction::RestrictPane,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-protect",
+                        "protect.button",
+                        "protect.title",
+                        false,
+                        ReviewAction::Protect,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-final",
+                        "protect.final",
+                        "protect.final_title",
+                        self.review.protection.read_only
+                            == Some(crate::word_protection::ReadOnlyReason::Final),
+                        ReviewAction::MarkFinal,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-sign",
+                        "sign.button",
+                        "sign.tooltip",
+                        false,
+                        ReviewAction::Sign,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-signatures",
+                        "sign.pane",
+                        "sign.pane_tooltip",
+                        self.review.signatures.pane,
+                        ReviewAction::SignaturesPane,
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-inspect",
+                        "inspect.button",
+                        "inspect.tooltip",
+                        self.review.inspect.is_some(),
+                        ReviewAction::Inspect,
+                        cx,
+                    ),
+                ])],
+            )
+            .into_any_element(),
+            Self::ribbon_group(
+                t("compare.group"),
+                vec![Self::ribbon_row(vec![
+                    tools::text_button(
+                        "review-compare",
+                        "compare.button",
+                        "compare.title",
+                        false,
+                        ReviewAction::Compare(false),
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-combine",
+                        "compare.combine",
+                        "compare.combine_title",
+                        false,
+                        ReviewAction::Compare(true),
+                        cx,
+                    ),
+                ])],
             )
             .into_any_element(),
         ]
