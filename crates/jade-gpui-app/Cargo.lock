@@ -3193,11 +3193,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "jade-doc-reader"
+version = "0.1.0"
+dependencies = [
+ "cfb",
+ "flate2",
+ "jade-docx-convert",
+]
+
+[[package]]
+name = "jade-doc-writer"
+version = "0.1.0"
+dependencies = [
+ "cfb",
+ "jade-docx-convert",
+]
+
+[[package]]
 name = "jade-docx-annotations"
 version = "0.1.0"
 dependencies = [
  "jade-docx-reader",
  "jade-docx-writer",
+]
+
+[[package]]
+name = "jade-docx-convert"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "encoding_rs",
+ "flate2",
+ "jade-opc",
+ "lopdf",
+ "quick-xml 0.39.4",
+ "zip",
 ]
 
 [[package]]
@@ -3338,14 +3368,18 @@ dependencies = [
  "futures",
  "gpui",
  "image",
+ "jade-docx-convert",
  "jade-docx-editor",
  "jade-docx-native-render",
  "jade-docx-pdf-renderer",
+ "jade-docx-reader",
  "jade-office-model",
  "jade-opc",
  "jade-painter",
+ "jade-selection",
  "jade-skia-painter",
  "libc",
+ "lopdf",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
@@ -3357,11 +3391,17 @@ name = "jade-office-model"
 version = "0.1.0"
 dependencies = [
  "encoding_rs",
+ "flate2",
  "futures",
+ "image",
+ "jade-doc-reader",
+ "jade-doc-writer",
+ "jade-docx-convert",
  "jade-docx-editor",
  "jade-docx-headless-api",
  "jade-docx-layout",
  "jade-docx-native-render",
+ "jade-docx-reader",
  "jade-opc",
  "jade-painter",
  "jade-pptx-layout",
@@ -3375,6 +3415,7 @@ dependencies = [
  "jade-xlsx-layout",
  "jade-xlsx-reader",
  "jade-xlsx-render",
+ "lopdf",
  "quick-xml 0.39.4",
  "resvg",
 ]

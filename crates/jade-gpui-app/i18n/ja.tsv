@@ -2604,3 +2604,172 @@ equation.delete_column	列の削除
 equation.justify_left	左揃え
 equation.justify_center	中央揃え
 equation.justify_right	右揃え
+# Files: formats, copies, templates, recovery (word_files, autorecover)
+menu.file.save_copy	コピーを保存…
+menu.file.save_template	テンプレートとして保存…
+files.too_old	{name} は Word 97 より前の形式のため開けません。
+files.damaged	{name} は壊れているため開けません: {error}
+files.failed	{name} を変換できませんでした: {error}
+files.save_failed	保存できませんでした
+files.copy_name	{name} のコピー
+files.encoding_title	ファイルの変換
+files.encoding_title_named	ファイルの変換 - {name}
+files.encoding	エンコード
+files.preview	プレビュー
+files.line_ending	行の終わり
+files.crlf	CR/LF
+files.lf	LF のみ
+files.cr	CR のみ
+files.text_only	テキストのみが保存されます。書式、画像、表の罫線は失われます。
+files.lost_characters	次の文字は選択したエンコードで保存できません: {chars}
+files.backup_name	{name} のバックアップ
+recent.pin	一覧にピン留めする
+recent.unpin	ピン留めを外す
+recent.folders	最近使ったフォルダー
+recovered.title	回復されたファイル
+recovered.delete	削除
+recovered.name	{name} (回復済み)
+menu.app.save_preferences	環境設定 (保存)…
+prefs.save_title	保存
+prefs.save_options	保存オプション
+prefs.always_backup	バックアップ ファイルを常に作成する
+prefs.autorecover	自動回復用データを保存する:
+prefs.minutes	分ごと
+prefs.recovery_folder	自動回復ファイルの保存先
+prefs.save_folder	既定の保存先 (文書)
+prefs.default_folder	既定 (アプリケーション サポート内の AutoRecovery)
+prefs.documents	書類フォルダー
+prefs.change	変更…
+prefs.choose	選択
+prefs.this_document	このドキュメントの共有時に忠実度を保つ
+prefs.embed_fonts	TrueType フォントをファイルに埋め込む
+prefs.embed_subset	ドキュメントで使用されている文字だけを埋め込む (ファイル サイズを縮小する場合)
+# Print (word_print)
+print.title	印刷
+print.copies	部数
+print.collate	部単位で印刷
+print.pages	ページ
+print.all	すべて
+print.current	現在のページ
+print.selection	選択した部分
+print.custom	ユーザー指定
+print.range_hint	例: 1,3,5-12 または p1s2-p3s3 (ページ 1 セクション 2 からページ 3 セクション 3 まで)
+print.range_syntax	ページ範囲として読めません: {part}
+print.range_missing	そのページはありません: {part}
+print.duplex	両面印刷
+print.one_sided	片面印刷
+print.long_edge	両面印刷 (長辺綴じ)
+print.short_edge	両面印刷 (短辺綴じ)
+print.per_sheet	1 枚あたりのページ数
+print.scale_to	用紙サイズに合わせる
+print.no_scaling	拡大縮小なし
+print.options	印刷オプション
+print.markup	変更履歴/コメントを印刷する
+print.update_fields	印刷前にフィールドを更新する
+print.background	背景の色とイメージを印刷する
+print.hidden_text	隠し文字を印刷する
+print.pdf	PDF として保存…
+print.print	印刷
+print.fit	全体表示
+print.sheet_of	{n} / {count}
+pdf.title	PDF として保存
+pdf.accessible	電子配布とアクセシビリティに最適
+pdf.accessible_detail	見出し、段落、表、図 (代替テキスト付き) の構造タグと、見出しのブックマークを含めます。文字はベクターで書き出されます。
+pdf.appearance	画面の表示に合わせる
+pdf.appearance_detail	画面と同じ見た目で書き出します。文字は検索できますが、構造タグは含まれません。
+# Compatibility (word_compat)
+menu.file.check_compatibility	互換性チェック…
+menu.file.convert	文書の変換 (最新の形式にする)
+compat.badge	[互換モード]
+compat.title	Microsoft Word 互換性チェック
+compat.versions	表示するバージョン
+compat.summary	概要 (古いバージョンで開いたときに失われる、または変更される機能)
+compat.no_issues	互換性の問題は見つかりませんでした。
+compat.occurrences	{n} 件
+compat.check_on_save	文書を保存するときに互換性を確認する
+compat.continue	続行
+compat.convert_title	文書の変換
+compat.already_current	この文書は既に最新のファイル形式です。
+compat.issue.replies	コメントへの返信は、個別のコメントになります。
+compat.issue.repeating	繰り返しセクションのコンテンツ コントロールは、通常のコンテンツ コントロールになります。
+compat.issue.control_appearance	コンテンツ コントロールの色と外観は失われます。
+compat.issue.video	オンライン ビデオは、静止画像になります。
+compat.issue.collapsed	見出しの折りたたみは解除されます。
+compat.issue.text_effects	文字の効果 (光彩、影、反射、輪郭、グラデーション) は削除されます。
+compat.issue.opentype	OpenType の機能 (合字、数字の書式、スタイル セット) は削除されます。
+compat.issue.checkboxes	チェック ボックスのコンテンツ コントロールは、静的な内容になります。
+compat.issue.shapes	図形とテキスト ボックスは、旧形式の図形に変換されます。
+compat.issue.picture_effects	図の効果とアート効果は削除されます。
+compat.issue.table_alt	表の代替テキストは削除されます。
+compat.issue.relative	ページに対する相対的なサイズと位置は、絶対的な値になります。
+compat.issue.equations	数式は画像になり、編集できなくなります。
+compat.issue.controls	コンテンツ コントロールは、静的な文字列になります。
+compat.issue.smartart	SmartArt グラフィックは、1 つの画像になります。
+compat.issue.charts	グラフは画像になります。
+compat.issue.moves	移動の変更履歴は、挿入と削除になります。
+compat.issue.themes	テーマのフォントと色は、固定のフォントと色になります。
+# Templates (word_templates)
+menu.file.templates	テンプレートとアドイン…
+templates.title	テンプレートとアドイン
+templates.document_template	文書テンプレート
+templates.normal	Normal (既定のテンプレート)
+templates.attach	添付…
+templates.detach	切り離す
+templates.link_styles	文書のスタイルを自動的に更新する
+templates.normal_heading	Normal テンプレート
+templates.normal_default	新しい文書は、既定のスタイルとページで作成されます。
+templates.normal_custom	新しい文書は、保存した Normal テンプレートから作成されます。
+templates.save_normal	この文書のスタイルとページを既定に設定
+templates.reset_normal	既定に戻す
+templates.normal_saved	新しい文書は、この文書のスタイルとページで作成されます。
+# Repair (word::repair)
+repair.title	文書の修復
+repair.intro	この文書には読み取れない内容が含まれていたため、修復できた部分を開きました。保存すると、修復後の内容で保存されます。
+repair.archive	ファイルの目次 (ZIP の中央ディレクトリ) が壊れていたため、各部分を順に読み直しました。
+repair.entry_lost	{name} は読み取れなかったため、取り除きました。
+repair.part_mended	{name} の XML が壊れていました。読み取れた内容 (約 {percent}%) を残しました。
+repair.relationship	見つからない {name} への参照を取り除きました。
+repair.content_types	コンテンツの種類の一覧 ([Content_Types].xml) を作り直しました。
+repair.package_rels	パッケージのリレーションシップを作り直しました。
+# Save options (word_save_options)
+menu.file.compress	ファイル サイズの圧縮…
+compress.title	ファイル サイズの圧縮
+compress.quality	画質
+compress.hd	HD (330 ppi)
+compress.print	印刷用 (220 ppi)
+compress.web	Web (150 ppi)
+compress.email	電子メール用 (96 ppi)
+compress.delete_crops	図のトリミング部分を削除する
+compress.on_save	保存するたびにこの設定で圧縮する
+compress.note	図の表示サイズに対して解像度が高い図だけが縮小されます。
+compress.done	{n} 個の図を圧縮しました (約 {kb} KB 削減)。
+compress.nothing	圧縮できる図はありませんでした。
+compat.layout_options	レイアウトの互換性オプション (この文書)
+compat.layout.fe	東アジア言語の行グリッドに合わせてレイアウトする (useFELayout)
+compat.layout.balance	半角文字と全角文字の幅を調整する
+compat.layout.no_tab_hang	ぶら下げインデントにタブ位置を追加しない
+compat.layout.table_grid	表の行の高さを行グリッドに合わせる
+pdf_import.title	PDF の変換
+pdf_import.body	PDF を編集可能な Word 文書に変換しました。変換後の文書は、特に図が多い場合、元の PDF と見た目が異なることがあります。保存すると Word 文書 (.docx) として保存されます。
+web.download_as	形式を指定してダウンロード ▾
+master.title	マスター文書
+master.group	マスター文書
+master.show	文書を表示
+master.show_title	サブ文書を枠で囲んで表示します
+master.expand_collapse	展開/折りたたみ
+master.expand_collapse_title	サブ文書を展開して内容を表示するか、折りたたんでリンクだけを表示します
+master.create	作成
+master.create_title	カーソルのある見出しとその下の内容からサブ文書を作成します
+master.insert	挿入
+master.insert_title	ファイルをサブ文書として挿入します
+master.insert_prompt	サブ文書として挿入
+master.unlink	リンク解除
+master.unlink_title	サブ文書へのリンクを解除して、内容をマスター文書に取り込みます
+master.lock	文書のロック
+master.lock_title	サブ文書をロックして編集できないようにします
+master.open	サブ文書を開く
+master.open_title	カーソルのあるサブ文書を別のタブで開きます
+master.none	この文書にはサブ文書がありません。
+master.not_in_subdocument	カーソルをサブ文書の中に置いてください。
+master.unreachable	次のサブ文書を開けませんでした: {names}
+master.locked_edit	ロックされたサブ文書は変更できません。

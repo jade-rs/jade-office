@@ -2604,3 +2604,172 @@ equation.delete_column	Delete Column
 equation.justify_left	Align Left
 equation.justify_center	Center
 equation.justify_right	Align Right
+# Files: formats, copies, templates, recovery (word_files, autorecover)
+menu.file.save_copy	Save a Copy…
+menu.file.save_template	Save as Template…
+files.too_old	{name} is from a Word older than Word 97 and cannot be opened.
+files.damaged	{name} is damaged and cannot be opened: {error}
+files.failed	{name} could not be converted: {error}
+files.save_failed	The document could not be saved
+files.copy_name	Copy of {name}
+files.encoding_title	File Conversion
+files.encoding_title_named	File Conversion - {name}
+files.encoding	Text encoding
+files.preview	Preview
+files.line_ending	End lines with
+files.crlf	CR/LF
+files.lf	LF only
+files.cr	CR only
+files.text_only	Only the text is saved. Formatting, pictures and table borders are lost.
+files.lost_characters	These characters cannot be saved in the chosen encoding: {chars}
+files.backup_name	Backup of {name}
+recent.pin	Pin to list
+recent.unpin	Unpin from list
+recent.folders	Recent Folders
+recovered.title	Recovered Files
+recovered.delete	Delete
+recovered.name	{name} (Recovered)
+menu.app.save_preferences	Preferences (Save)…
+prefs.save_title	Save
+prefs.save_options	Save options
+prefs.always_backup	Always create backup copy
+prefs.autorecover	Save AutoRecover info every
+prefs.minutes	minutes
+prefs.recovery_folder	AutoRecover files location
+prefs.save_folder	Default file location (Documents)
+prefs.default_folder	Default (AutoRecovery in Application Support)
+prefs.documents	Documents folder
+prefs.change	Change…
+prefs.choose	Choose
+prefs.this_document	Preserve fidelity when sharing this document
+prefs.embed_fonts	Embed TrueType fonts in the file
+prefs.embed_subset	Embed only characters used in the document (best for reducing file size)
+# Print (word_print)
+print.title	Print
+print.copies	Copies
+print.collate	Collated
+print.pages	Pages
+print.all	All
+print.current	Current Page
+print.selection	Selection
+print.custom	Page Range
+print.range_hint	For example 1,3,5-12 or p1s2-p3s3 (page 1 of section 2 to page 3 of section 3)
+print.range_syntax	Not a page range: {part}
+print.range_missing	No such page: {part}
+print.duplex	Two-Sided
+print.one_sided	One-Sided
+print.long_edge	Two-Sided (Long-Edge Binding)
+print.short_edge	Two-Sided (Short-Edge Binding)
+print.per_sheet	Pages per Sheet
+print.scale_to	Scale to Paper Size
+print.no_scaling	No Scaling
+print.options	Print Options
+print.markup	Print Markup
+print.update_fields	Update fields before printing
+print.background	Print background colors and images
+print.hidden_text	Print hidden text
+print.pdf	Save as PDF…
+print.print	Print
+print.fit	Fit
+print.sheet_of	{n} of {count}
+pdf.title	Save as PDF
+pdf.accessible	Best for electronic distribution and accessibility
+pdf.accessible_detail	Includes structure tags for headings, paragraphs, tables and figures (with alt text), and bookmarks from the headings. Text is written as vectors.
+pdf.appearance	Match the screen
+pdf.appearance_detail	Writes the pages as the screen shows them. Text is searchable, but there are no structure tags.
+# Compatibility (word_compat)
+menu.file.check_compatibility	Check Compatibility…
+menu.file.convert	Convert Document (Upgrade to Current Format)
+compat.badge	[Compatibility Mode]
+compat.title	Microsoft Word Compatibility Checker
+compat.versions	Versions to show
+compat.summary	Summary (features lost or changed when opened in an earlier version)
+compat.no_issues	No compatibility issues were found.
+compat.occurrences	{n} occurrences
+compat.check_on_save	Check compatibility when saving documents
+compat.continue	Continue
+compat.convert_title	Convert Document
+compat.already_current	This document is already in the current file format.
+compat.issue.replies	Replies to comments become separate comments.
+compat.issue.repeating	Repeating section content controls become ordinary content controls.
+compat.issue.control_appearance	Content controls lose their color and appearance.
+compat.issue.video	Online videos become static pictures.
+compat.issue.collapsed	Collapsed headings are expanded.
+compat.issue.text_effects	Text effects (glow, shadow, reflection, outline, gradient) are removed.
+compat.issue.opentype	OpenType features (ligatures, number forms, stylistic sets) are removed.
+compat.issue.checkboxes	Check box content controls become static content.
+compat.issue.shapes	Shapes and text boxes are converted to the older kind.
+compat.issue.picture_effects	Picture effects and artistic effects are removed.
+compat.issue.table_alt	Alternative text on tables is removed.
+compat.issue.relative	Sizes and positions relative to the page become absolute.
+compat.issue.equations	Equations become pictures that cannot be edited.
+compat.issue.controls	Content controls become static text.
+compat.issue.smartart	SmartArt graphics become a single picture.
+compat.issue.charts	Charts become pictures.
+compat.issue.moves	Tracked moves become insertions and deletions.
+compat.issue.themes	Theme fonts and colors become fixed fonts and colors.
+# Templates (word_templates)
+menu.file.templates	Templates and Add-ins…
+templates.title	Templates and Add-ins
+templates.document_template	Document template
+templates.normal	Normal (the default template)
+templates.attach	Attach…
+templates.detach	Detach
+templates.link_styles	Automatically update document styles
+templates.normal_heading	Normal template
+templates.normal_default	New documents start with the default styles and page.
+templates.normal_custom	New documents start from the saved Normal template.
+templates.save_normal	Set this document's styles and page as the default
+templates.reset_normal	Reset to defaults
+templates.normal_saved	New documents will start with this document's styles and page.
+# Repair (word::repair)
+repair.title	Document Recovery
+repair.intro	This document had unreadable content, so the parts that could be recovered were opened. Saving it saves the recovered content.
+repair.archive	The file's table of contents (the ZIP central directory) was damaged, so each part was read again in turn.
+repair.entry_lost	{name} could not be read and was removed.
+repair.part_mended	The XML of {name} was damaged. What could be read (about {percent}%) was kept.
+repair.relationship	A reference to the missing {name} was removed.
+repair.content_types	The list of content types ([Content_Types].xml) was made again.
+repair.package_rels	The package relationships were made again.
+# Save options (word_save_options)
+menu.file.compress	Reduce File Size…
+compress.title	Reduce File Size
+compress.quality	Picture Quality
+compress.hd	HD (330 ppi)
+compress.print	Print (220 ppi)
+compress.web	Web (150 ppi)
+compress.email	Email (96 ppi)
+compress.delete_crops	Delete cropped areas of pictures
+compress.on_save	Compress this way every time the document is saved
+compress.note	Only pictures with more resolution than their size on the page needs are reduced.
+compress.done	{n} pictures compressed (about {kb} KB saved).
+compress.nothing	No pictures could be compressed.
+compat.layout_options	Layout compatibility options (this document)
+compat.layout.fe	Lay out East Asian text on the line grid (useFELayout)
+compat.layout.balance	Balance SBCS characters and DBCS characters
+compat.layout.no_tab_hang	Don't add an automatic tab stop for hanging indent
+compat.layout.table_grid	Adjust line height to grid height in the table
+pdf_import.title	PDF Conversion
+pdf_import.body	The PDF was converted to an editable Word document. The result may not look exactly like the original PDF, especially if it had many graphics. It is saved as a Word Document (.docx).
+web.download_as	Download As ▾
+master.title	Master Document
+master.group	Master Document
+master.show	Show Document
+master.show_title	Show each subdocument in its box
+master.expand_collapse	Expand/Collapse
+master.expand_collapse_title	Expand subdocuments to show their text, or collapse them to their links
+master.create	Create
+master.create_title	Make the heading at the insertion point and what is under it a subdocument
+master.insert	Insert
+master.insert_title	Insert a file as a subdocument
+master.insert_prompt	Insert as Subdocument
+master.unlink	Unlink
+master.unlink_title	Remove the link to the subdocument and keep its text in the master document
+master.lock	Lock Document
+master.lock_title	Lock the subdocument against changes
+master.open	Open Subdocument
+master.open_title	Open the subdocument at the insertion point in its own tab
+master.none	This document has no subdocuments.
+master.not_in_subdocument	Put the insertion point in a subdocument.
+master.unreachable	These subdocuments could not be opened: {names}
+master.locked_edit	This modification is not allowed because the subdocument is locked.
