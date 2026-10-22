@@ -2252,6 +2252,9 @@ impl DocumentView {
                 div()
                     .id("ribbon-groups")
                     .flex()
+                    // A scroll container may shrink to nothing in a column; keep every row
+                    // of the tallest group in view.
+                    .flex_none()
                     .items_start()
                     .gap_1()
                     .px_4()
