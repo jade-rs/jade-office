@@ -85,9 +85,13 @@ impl FastHasher {
 
 impl Hasher for FastHasher {
     fn write(&mut self, bytes: &[u8]) {
-        for chunk in bytes.chunks(8) {
+        let (words, rest) = bytes.as_chunks::<8>();
+        for word in words {
+            self.add(u64::from_le_bytes(*word));
+        }
+        if !rest.is_empty() {
             let mut word = [0; 8];
-            word[..chunk.len()].copy_from_slice(chunk);
+            word[..rest.len()].copy_from_slice(rest);
             self.add(u64::from_le_bytes(word));
         }
     }
@@ -962,6 +966,8 @@ struct Inner {
     /// zeroing megabytes than on drawing. Only what was drawn on it is
     /// cleared after each use.
     effect_layer: RefCell<Option<TinySkiaPainter>>,
+    /// The shadows and blurs drawn lately, to draw again unmade.
+    effect_cache: RefCell<EffectCache>,
 }
 
 /// Text measurement a host puts in place of the painter's own.
@@ -1025,6 +1031,9 @@ impl BlendTable {
     fn blend(&self, pixel: &mut [u8; 4], alpha: u8) {
         if *pixel == self.paper {
             *pixel = self.over_paper[usize::from(alpha)];
+        } else if *pixel == [0; 4] {
+            // Nothing under it, as on the layer a shadow is drawn on.
+            *pixel = self.scaled[usize::from(alpha)];
         } else {
             self.blend_with(pixel, alpha);
         }
@@ -1069,6 +1078,7 @@ impl TinySkiaPainter {
                 blends: RefCell::new(Vec::new()),
                 measure: RefCell::new(None),
                 effect_layer: RefCell::new(None),
+                effect_cache: RefCell::new(EffectCache::default()),
             }),
         })
     }
@@ -1590,7 +1600,17 @@ impl TinySkiaPainter {
             return;
         }
         let stroke = self.stroke_style();
-        // The stroke's outline, filled as any other path is.
+        let paint = self.paint(color);
+        let bounds = Self::stroke_bounds(path, stroke.width);
+        // The stroke's outline, filled as any other path is, by area only
+        // across a clip's edge (see `fill_area`): with no clip the outline
+        // would be made only to go unused.
+        if self.inner.state.borrow().clip.is_none() {
+            self.clipped(bounds, transform, |pixmap, transform, mask| {
+                pixmap.stroke_path(path, &paint, &stroke, transform, mask);
+            });
+            return;
+        }
         let resolution = tiny_skia::PathStroker::compute_resolution_scale(&transform);
         let dashed = match &stroke.dash {
             Some(dash) => path.dash(dash, resolution),
@@ -1607,8 +1627,6 @@ impl TinySkiaPainter {
         if outline.is_some_and(|outline| self.fill_area(&outline, color, transform)) {
             return;
         }
-        let paint = self.paint(color);
-        let bounds = Self::stroke_bounds(path, stroke.width);
         self.clipped(bounds, transform, |pixmap, transform, mask| {
             pixmap.stroke_path(path, &paint, &stroke, transform, mask);
         });
@@ -2563,38 +2581,65 @@ fn decode(bytes: &[u8]) -> Option<Pixmap> {
 
 /// Blurs an alpha channel `width` × `height` in place: three box blurs of
 /// `radius`, near enough a Gaussian, as browsers and Skia approximate one.
+/// Each pass runs a sliding window along every row, then down every column
+/// — the columns a row at a time, all of them together, so the pass reads
+/// memory in order.
 fn box_blur(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
     if radius == 0 || width == 0 || height == 0 {
         return;
     }
-    let mut scratch = vec![0u8; alpha.len().max(width).max(height)];
-    let pass = |line: &mut [u8], out: &mut [u8], length: usize, stride: usize| {
-        let window = (2 * radius + 1) as u32;
-        let at = |index: isize| -> u32 {
-            if index < 0 || index as usize >= length {
-                0
-            } else {
-                u32::from(line[index as usize * stride])
-            }
-        };
-        let mut sum: u32 = (-(radius as isize)..=radius as isize).map(at).sum();
-        for (index, value) in out.iter_mut().enumerate().take(length) {
-            *value = ((sum + window / 2) / window) as u8;
-            sum += at(index as isize + radius as isize + 1);
-            sum -= at(index as isize - radius as isize);
-        }
-    };
+    let window = (2 * radius + 1) as u32;
+    let mut scratch = vec![0u8; width * height];
+    let mut sums = vec![0u32; width];
     for _ in 0..3 {
-        for row in 0..height {
-            let line = &mut alpha[row * width..];
-            pass(line, &mut scratch[..width], width, 1);
-            line[..width].copy_from_slice(&scratch[..width]);
+        for (line, out) in alpha
+            .chunks_exact(width)
+            .zip(scratch.chunks_exact_mut(width))
+        {
+            box_blur_line(line, out, radius, window);
         }
-        for column in 0..width {
-            pass(&mut alpha[column..], &mut scratch[..height], height, width);
-            for row in 0..height {
-                alpha[row * width + column] = scratch[row];
+        sums.fill(0);
+        for line in scratch.chunks_exact(width).take(radius + 1) {
+            for (sum, &value) in sums.iter_mut().zip(line) {
+                *sum += u32::from(value);
             }
+        }
+        for row in 0..height {
+            let out = &mut alpha[row * width..(row + 1) * width];
+            for (value, &sum) in out.iter_mut().zip(&sums) {
+                *value = ((sum + window / 2) / window) as u8;
+            }
+            if row + radius + 1 < height {
+                let entering = &scratch[(row + radius + 1) * width..][..width];
+                for (sum, &value) in sums.iter_mut().zip(entering) {
+                    *sum += u32::from(value);
+                }
+            }
+            if row >= radius {
+                let leaving = &scratch[(row - radius) * width..][..width];
+                for (sum, &value) in sums.iter_mut().zip(leaving) {
+                    *sum -= u32::from(value);
+                }
+            }
+        }
+    }
+}
+
+/// One box blur of `line` into `out`: the rounded mean of the `window`
+/// values around each, the ones past the ends counted as zero.
+fn box_blur_line(line: &[u8], out: &mut [u8], radius: usize, window: u32) {
+    let length = line.len();
+    let mut sum: u32 = line[..length.min(radius + 1)]
+        .iter()
+        .map(|&value| u32::from(value))
+        .sum();
+    for (index, value) in out.iter_mut().enumerate() {
+        *value = ((sum + window / 2) / window) as u8;
+        if index + radius + 1 < length {
+            sum += u32::from(line[index + radius + 1]);
+        }
+        if index >= radius {
+            sum -= u32::from(line[index - radius]);
         }
     }
 }
@@ -2606,6 +2651,107 @@ fn box_radius(sigma: f32) -> usize {
     }
     let ideal = (12.0 * sigma * sigma / 3.0 + 1.0).sqrt();
     ((ideal - 1.0) / 2.0).round().max(1.0) as usize
+}
+
+/// What a shadow or a blur made of a region of the effect layer depends on:
+/// the region's pixels — the alpha for a shadow, every channel for a blur —
+/// its size, the box radius, and a shadow's colour.
+#[derive(PartialEq, Eq, Hash)]
+struct EffectKey {
+    width: usize,
+    height: usize,
+    radius: usize,
+    /// The shadow colour's channels' bits; `None` for the blur filter.
+    tint: Option<[u32; 4]>,
+    source: Box<[u8]>,
+}
+
+/// An effect's pixel `index` from the region's blurred channels — the alpha
+/// alone for a shadow, every channel for a blur.
+type EffectPixel<'a> = &'a dyn Fn(&[Vec<u8>], usize) -> [u8; 4];
+
+/// Shadows and blurs made lately, by what they were made of. A keystroke
+/// repaints a band of text whose glyphs mostly land where they were, and a
+/// shadowed glyph's blur and tint came to more than everything else that
+/// repainting it costs.
+#[derive(Default)]
+struct EffectCache {
+    made: FastMap<EffectKey, Rc<Pixmap>>,
+    /// The bytes the entries hold, keys and pixels.
+    bytes: usize,
+}
+
+/// The most bytes [`EffectCache`] holds before it starts over.
+const EFFECT_CACHE_BYTES: usize = 8 << 20;
+
+impl EffectCache {
+    /// The effect `key` stands for, made by `make` unless it is kept.
+    fn get_or_make(
+        &mut self,
+        key: EffectKey,
+        make: impl FnOnce(&EffectKey) -> Option<Pixmap>,
+    ) -> Option<Rc<Pixmap>> {
+        if let Some(made) = self.made.get(&key) {
+            return Some(Rc::clone(made));
+        }
+        let made = Rc::new(make(&key)?);
+        let bytes = key.source.len() + made.data().len();
+        if self.bytes + bytes > EFFECT_CACHE_BYTES {
+            self.made.clear();
+            self.bytes = 0;
+        }
+        self.bytes += bytes;
+        self.made.insert(key, Rc::clone(&made));
+        Some(made)
+    }
+}
+
+/// `channel` (or every channel, with `None`) of `pixmap` within `bounds`,
+/// row by row.
+fn region_bytes(
+    pixmap: &Pixmap,
+    bounds: (i32, i32, i32, i32),
+    channel: Option<usize>,
+) -> Box<[u8]> {
+    let (left, top, right, bottom) = bounds;
+    let (rw, rh) = ((right - left) as usize, (bottom - top) as usize);
+    let row_bytes = pixmap.width() as usize * 4;
+    let data = pixmap.data();
+    let rows = data[top as usize * row_bytes..].chunks_exact(row_bytes);
+    let rows = rows.take(bottom as usize - top as usize);
+    let rows = rows.map(|row| &row[left as usize * 4..][..rw * 4]);
+    match channel {
+        Some(channel) => {
+            let mut out = vec![0; rw * rh];
+            for (out, pixels) in out.chunks_exact_mut(rw.max(1)).zip(rows) {
+                for (value, pixel) in out.iter_mut().zip(pixels.as_chunks::<4>().0) {
+                    *value = pixel[channel];
+                }
+            }
+            out.into_boxed_slice()
+        }
+        None => rows.flatten().copied().collect(),
+    }
+}
+
+/// Source-over of premultiplied `source` onto premultiplied `destination`,
+/// as tiny-skia's high-precision pipeline blends a drawn pixmap: there each
+/// channel goes to [0, 1] by multiplying by 1/255, comes to `d·(1 − sa) + s`,
+/// and back by scaling by 255 and rounding half to even. The exact value is
+/// `s + d·(255 − sa)/255`, whose fraction is a multiple of 1/255 — never a
+/// half, nor within the f32 error of one — so rounding it is that sum
+/// rounded, which is integer arithmetic.
+///
+/// It leaves a pixel under a transparent one as it was. In u16, which the
+/// products fit, for the loop over a row to vectorise.
+#[inline(always)]
+fn source_over_like_pipeline(destination: &mut [u8; 4], source: [u8; 4]) {
+    let keep = 255 - u16::from(source[3]);
+    for (value, source) in destination.iter_mut().zip(source) {
+        let product = u16::from(*value) * keep + 128;
+        let kept = ((product + (product >> 8)) >> 8) as u8;
+        *value = source.saturating_add(kept);
+    }
 }
 
 impl TinySkiaPainter {
@@ -2666,74 +2812,82 @@ impl TinySkiaPainter {
             let bottom = ((drawn[3] + grow).ceil() as i32).clamp(0, h);
             (left, top, right, bottom)
         };
-        // `channel` of the layer within `bounds`, blurred by `sigma`.
-        let blurred = |bounds: (i32, i32, i32, i32), channel: usize, sigma: f32| {
-            let (left, top, right, bottom) = bounds;
-            let (rw, rh) = ((right - left) as usize, (bottom - top) as usize);
-            let data = layer_pixels.data();
-            let mut values = vec![0u8; rw * rh];
-            for row in 0..rh {
-                let from = ((top as usize + row) * width as usize + left as usize) * 4;
-                for column in 0..rw {
-                    values[row * rw + column] = data[from + column * 4 + channel];
-                }
+        let mut cache = self.inner.effect_cache.borrow_mut();
+        // The effect of the layer within `bounds`, made by `pixel` from the
+        // blurred channels, or as made before from the same pixels.
+        let mut effect = |bounds: (i32, i32, i32, i32),
+                          sigma: f32,
+                          tint: Option<[u32; 4]>,
+                          pixel: EffectPixel<'_>|
+         -> Option<Rc<Pixmap>> {
+            let (rw, rh) = (
+                (bounds.2 - bounds.0) as usize,
+                (bounds.3 - bounds.1) as usize,
+            );
+            if rw == 0 || rh == 0 {
+                return None;
             }
-            box_blur(&mut values, rw, rh, box_radius(sigma));
-            values
-        };
-        let composite =
-            |bounds: (i32, i32, i32, i32), at: (f32, f32), pixel: &dyn Fn(usize) -> [u8; 4]| {
-                let (left, top, right, bottom) = bounds;
-                let (rw, rh) = ((right - left) as u32, (bottom - top) as u32);
-                let Some(mut tinted) = Pixmap::new(rw.max(1), rh.max(1)) else {
-                    return;
-                };
-                for (index, out) in tinted.data_mut().chunks_exact_mut(4).enumerate() {
-                    out.copy_from_slice(&pixel(index));
-                }
-                let Some(rect) = Rect::from_xywh(at.0, at.1, rw as f32, rh as f32) else {
-                    return;
-                };
-                self.clipped(rect, Transform::identity(), |surface, _, mask| {
-                    surface.draw_pixmap(
-                        at.0.round() as i32,
-                        at.1.round() as i32,
-                        tinted.as_ref(),
-                        &PixmapPaint::default(),
-                        Transform::identity(),
-                        mask,
-                    );
-                });
+            let key = EffectKey {
+                width: rw,
+                height: rh,
+                radius: box_radius(sigma),
+                tint,
+                source: region_bytes(&layer_pixels, bounds, tint.map(|_| 3)),
             };
+            cache.get_or_make(key, |key| {
+                let channels: Vec<Vec<u8>> = match key.tint {
+                    Some(_) => vec![key.source.to_vec()],
+                    None => (0..4)
+                        .map(|channel| {
+                            key.source
+                                .iter()
+                                .skip(channel)
+                                .step_by(4)
+                                .copied()
+                                .collect()
+                        })
+                        .collect(),
+                };
+                let channels: Vec<Vec<u8>> = channels
+                    .into_iter()
+                    .map(|mut values| {
+                        box_blur(&mut values, rw, rh, key.radius);
+                        values
+                    })
+                    .collect();
+                let mut made = Pixmap::new(rw as u32, rh as u32)?;
+                for (index, out) in made.data_mut().chunks_exact_mut(4).enumerate() {
+                    out.copy_from_slice(&pixel(&channels, index));
+                }
+                Some(made)
+            })
+        };
+        let mut effects = Vec::with_capacity(2);
         if shadow {
             let sigma = state.shadow_blur / 2.0 * scale;
             let bounds = region(3.0 * sigma + 1.0);
-            let alpha = blurred(bounds, 3, sigma);
             let color = self.color(state.shadow_color);
+            let tint = [color.red(), color.green(), color.blue(), color.alpha()].map(f32::to_bits);
             let (dx, dy) = (
                 t.sx * offset.0 + t.kx * offset.1,
                 t.ky * offset.0 + t.sy * offset.1,
             );
-            composite(
-                bounds,
-                (bounds.0 as f32 + dx, bounds.1 as f32 + dy),
-                &|index| {
-                    let a = color.alpha() * f32::from(alpha[index]) / 255.0;
-                    let premultiplied = |channel: f32| (channel * a * 255.0 + 0.5) as u8;
-                    [
-                        premultiplied(color.red()),
-                        premultiplied(color.green()),
-                        premultiplied(color.blue()),
-                        (a * 255.0 + 0.5) as u8,
-                    ]
-                },
-            );
+            let made = effect(bounds, sigma, Some(tint), &|channels, index| {
+                let a = color.alpha() * f32::from(channels[0][index]) / 255.0;
+                let premultiplied = |channel: f32| (channel * a * 255.0 + 0.5) as u8;
+                [
+                    premultiplied(color.red()),
+                    premultiplied(color.green()),
+                    premultiplied(color.blue()),
+                    (a * 255.0 + 0.5) as u8,
+                ]
+            });
+            effects.push((made, (bounds.0 as f32 + dx, bounds.1 as f32 + dy)));
         }
         if blur {
             let sigma = state.blur_filter * scale;
             let bounds = region(3.0 * sigma + 1.0);
-            let channels = [0, 1, 2, 3].map(|channel| blurred(bounds, channel, sigma));
-            composite(bounds, (bounds.0 as f32, bounds.1 as f32), &|index| {
+            let made = effect(bounds, sigma, None, &|channels, index| {
                 let alpha = channels[3][index];
                 // Premultiplied channels blur apart; keep them within alpha.
                 [
@@ -2743,8 +2897,15 @@ impl TinySkiaPainter {
                     alpha,
                 ]
             });
+            effects.push((made, (bounds.0 as f32, bounds.1 as f32)));
         }
+        drop(cache);
         drop(layer_pixels);
+        for (made, at) in effects {
+            if let Some(made) = made {
+                self.composite(&made, at);
+            }
+        }
         // Back to transparent where it was drawn on, for the next use.
         let (left, top, right, bottom) = region(2.0);
         {
@@ -2760,6 +2921,65 @@ impl TinySkiaPainter {
         layer.inner.damage.set(None);
         *self.inner.effect_layer.borrow_mut() = Some(layer);
         blur
+    }
+
+    /// Draws `made` — a shadow or a blur — with its top left at `at`,
+    /// source-over through the clip, as `draw_pixmap` at `at` rounded draws
+    /// it. Where nothing clips it the pixels are blended here, as the
+    /// pipeline would blend them: the pipeline costs a multiple of the blend.
+    fn composite(&self, made: &Pixmap, at: (f32, f32)) {
+        let Some(rect) = Rect::from_xywh(at.0, at.1, made.width() as f32, made.height() as f32)
+        else {
+            return;
+        };
+        let (x, y) = (at.0.round() as i32, at.1.round() as i32);
+        let clip = self.inner.state.borrow().clip.clone();
+        let device = device_bounds(rect, Transform::identity());
+        // Past the surface's edge the pipeline's own clipping decides which
+        // pixels it draws; that is left to it.
+        let within = x >= 0
+            && y >= 0
+            && x as u32 + made.width() <= self.width()
+            && y as u32 + made.height() <= self.height();
+        let unclipped = within
+            && match clip.as_deref() {
+                None => true,
+                Some(clip) => match clip.coverage(device) {
+                    Coverage::Hidden => return,
+                    Coverage::Whole => true,
+                    Coverage::Partial => false,
+                },
+            };
+        if !unclipped {
+            self.clipped(rect, Transform::identity(), |surface, _, mask| {
+                surface.draw_pixmap(
+                    x,
+                    y,
+                    made.as_ref(),
+                    &PixmapPaint::default(),
+                    Transform::identity(),
+                    mask,
+                );
+            });
+            return;
+        }
+        {
+            let mut pixmap = self.pixels();
+            let surface_width = pixmap.width() as usize;
+            let made_width = made.width() as usize;
+            let source = made.data();
+            let data = pixmap.data_mut();
+            let length = made_width * 4;
+            for (row, sources) in source.chunks_exact(length).enumerate() {
+                let to = ((y as usize + row) * surface_width + x as usize) * 4;
+                let sources = sources.as_chunks::<4>().0;
+                let pixels = data[to..to + length].as_chunks_mut::<4>().0;
+                for (pixel, &source) in pixels.iter_mut().zip(sources) {
+                    source_over_like_pipeline(pixel, source);
+                }
+            }
+        }
+        self.note_damage(device, clip.as_deref());
     }
 }
 
@@ -3932,6 +4152,174 @@ mod tests {
         painter.fill_rect(40.0, 30.0, 20.0, 20.0);
         let edge = pixel(&painter, 40, 40);
         assert!(edge[0] > 40 && edge[0] < 215, "{edge:?}");
+    }
+
+    /// A xorshift for test pixels.
+    fn noise(seed: &mut u64) -> u8 {
+        *seed ^= *seed << 13;
+        *seed ^= *seed >> 7;
+        *seed ^= *seed << 17;
+        (*seed >> 24) as u8
+    }
+
+    /// The box blur as first written, a sample at a time: what the faster
+    /// one has to match.
+    fn box_blur_by_samples(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
+        let mut scratch = vec![0u8; alpha.len().max(width).max(height)];
+        let pass = |line: &mut [u8], out: &mut [u8], length: usize, stride: usize| {
+            let window = (2 * radius + 1) as u32;
+            let at = |index: isize| -> u32 {
+                if index < 0 || index as usize >= length {
+                    0
+                } else {
+                    u32::from(line[index as usize * stride])
+                }
+            };
+            let mut sum: u32 = (-(radius as isize)..=radius as isize).map(at).sum();
+            for (index, value) in out.iter_mut().enumerate().take(length) {
+                *value = ((sum + window / 2) / window) as u8;
+                sum += at(index as isize + radius as isize + 1);
+                sum -= at(index as isize - radius as isize);
+            }
+        };
+        for _ in 0..3 {
+            for row in 0..height {
+                let line = &mut alpha[row * width..];
+                pass(line, &mut scratch[..width], width, 1);
+                line[..width].copy_from_slice(&scratch[..width]);
+            }
+            for column in 0..width {
+                pass(&mut alpha[column..], &mut scratch[..height], height, width);
+                for row in 0..height {
+                    alpha[row * width + column] = scratch[row];
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_box_blur_matches_blurring_a_sample_at_a_time() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15;
+        for (width, height, radius) in [
+            (1, 1, 1),
+            (7, 3, 1),
+            (3, 9, 2),
+            (40, 31, 1),
+            (33, 47, 4),
+            (5, 5, 9),
+        ] {
+            let source: Vec<u8> = (0..width * height)
+                .map(|index| if index % 5 == 0 { 0 } else { noise(&mut seed) })
+                .collect();
+            let (mut fast, mut slow) = (source.clone(), source);
+            box_blur(&mut fast, width, height, radius);
+            box_blur_by_samples(&mut slow, width, height, radius);
+            assert_eq!(fast, slow, "{width}×{height}, radius {radius}");
+        }
+    }
+
+    #[test]
+    fn the_integer_blend_is_the_pipelines_float_blend() {
+        const FACTOR: f32 = 1.0 / 255.0;
+        for source_alpha in 0..=255u8 {
+            let keep = 1.0 - f32::from(source_alpha) * FACTOR;
+            for source in 0..=source_alpha {
+                for destination in 0..=255u8 {
+                    let float =
+                        (f32::from(destination) * FACTOR) * keep + f32::from(source) * FACTOR;
+                    let float = (float.clamp(0.0, 1.0) * 255.0).round_ties_even() as u8;
+                    let mut pixel = [destination; 4];
+                    source_over_like_pipeline(&mut pixel, [source, source, source, source_alpha]);
+                    assert_eq!(
+                        pixel[0], float,
+                        "{destination} under {source}/{source_alpha}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn effects_blend_as_the_pipeline_draws_a_pixmap() {
+        let mut seed = 0x2545_f491_4f6c_dd1d;
+        let mut made = Pixmap::new(23, 17).unwrap();
+        for pixel in made.data_mut().chunks_exact_mut(4) {
+            let alpha = match noise(&mut seed) % 4 {
+                0 => 0,
+                1 => 255,
+                _ => noise(&mut seed),
+            };
+            for channel in &mut pixel[..3] {
+                *channel = noise(&mut seed).min(alpha);
+            }
+            pixel[3] = alpha;
+        }
+        for at in [
+            (3.0, 4.0),
+            (-5.4, 2.6),
+            (30.0, -6.0),
+            (0.5, 0.5),
+            (16.6, 12.4),
+            (17.0, 13.0),
+        ] {
+            let painter = TinySkiaPainter::new(40, 30, fonts()).unwrap();
+            let mut expected = Pixmap::new(40, 30).unwrap();
+            for (pixel, chunk) in painter
+                .inner
+                .pixmap
+                .borrow_mut()
+                .data_mut()
+                .chunks_exact_mut(4)
+                .zip(expected.data_mut().chunks_exact_mut(4))
+            {
+                let alpha = noise(&mut seed);
+                let value = [
+                    noise(&mut seed).min(alpha),
+                    noise(&mut seed).min(alpha),
+                    0,
+                    alpha,
+                ];
+                pixel.copy_from_slice(&value);
+                chunk.copy_from_slice(&value);
+            }
+            painter.inner.unpainted.set(false);
+            painter.composite(&made, at);
+            expected.draw_pixmap(
+                at.0.round() as i32,
+                at.1.round() as i32,
+                made.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+            assert!(
+                painter.inner.pixmap.borrow().data() == expected.data(),
+                "at {at:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_shadow_drawn_again_from_the_cache_lands_as_the_first() {
+        let draw = |painter: &TinySkiaPainter, x: f64| {
+            painter.save();
+            painter.set_fill_style_str("#204080");
+            painter.set_shadow_color("rgba(200, 30, 30, 0.6)");
+            painter.set_shadow_blur(6.0);
+            painter.set_shadow_offset_x(3.0);
+            painter.set_shadow_offset_y(2.0);
+            painter.set_font("16px 'Noto Sans JP'");
+            painter.fill_text("Ag", x, 30.0).unwrap();
+            painter.restore();
+        };
+        let fresh = TinySkiaPainter::new(160, 50, fonts()).unwrap();
+        draw(&fresh, 90.0);
+        let warm = TinySkiaPainter::new(160, 50, fonts()).unwrap();
+        draw(&warm, 10.0);
+        warm.clear_rect(0.0, 0.0, 160.0, 50.0);
+        draw(&warm, 90.0);
+        assert_eq!(warm.inner.effect_cache.borrow().made.len(), 1);
+        assert!(fresh.rgba_premultiplied() == warm.rgba_premultiplied());
     }
 
     #[test]
