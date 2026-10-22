@@ -115,7 +115,7 @@ and that are not on origin/main yet; the stream is in brackets.
 | 81, 82, 83 | attach template, AutoText, Set as Default | (lists and styles) |
 
 | 4, 486 | ⌘-drag ranges, ⌥-drag block selection, drag-and-drop of text | `crates/jade-gpui-app/src/word_views/select.rs` (views) |
-| 482 | mini toolbar and live preview | `crates/jade-gpui-app/src/word_views/mini.rs` (views) |
+| 482 | mini toolbar (live preview is ported) | `crates/jade-gpui-app/src/word_views/mini.rs` (views) |
 | 496 | right-click menus | `crates/jade-gpui-app/src/word_views/context.rs` over `word::context_menu` (views) |
 | 435–439, 441, 447, 450 | Read Mode, Web Layout, Outline, Draft, Focus, side to side, gridlines, hidden white space | `crates/jade-gpui-app/src/word_views/{layout,outline}.rs`, `word_views.rs` (views) |
 | 451–453 | New Window, Split, Editing/Reviewing/Viewing | `crates/jade-gpui-app/src/word_views/{split,modes}.rs` (views) |
