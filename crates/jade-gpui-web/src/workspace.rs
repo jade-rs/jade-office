@@ -77,6 +77,13 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A list picked for a mail merge goes to the document that asked.
+        if let Some(tab) = self.active_tab().cloned() {
+            if tab.read(cx).wants_data_source() {
+                tab.update(cx, |view, cx| view.take_data_source(&name, &bytes, cx));
+                return;
+            }
+        }
         // A picture picked from Insert goes into the deck or the Word
         // document in front, as 挿入 → 画像.
         if jade_web::word::picture::picture_type(&bytes).is_some() {

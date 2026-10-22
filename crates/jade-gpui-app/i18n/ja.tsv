@@ -1997,3 +1997,610 @@ notes.separator	境界線を表示する
 notes.continuation_separator	継続境界線を表示する
 nav.collapse	折りたたむ
 nav.expand	展開
+# word-objects: pictures, shapes and drawing objects
+objects.align	配置
+objects.align.bottom	下揃え
+objects.align.center	左右中央揃え
+objects.align.distribute_h	左右に整列
+objects.align.distribute_v	上下に整列
+objects.align.left	左揃え
+objects.align.margin	余白に合わせて配置
+objects.align.middle	上下中央揃え
+objects.align.page	用紙に合わせて配置
+objects.align.relative	基準
+objects.align.right	右揃え
+objects.align.selection	選択したオブジェクトを揃える
+objects.align.top	上揃え
+objects.arrow.both	矢印: 両端
+objects.arrow.end	矢印: 終点
+objects.arrow.none	矢印なし
+objects.arrow.start	矢印: 始点
+objects.artistic	アート効果
+objects.artistic.blur	ぼかし
+objects.artistic.line_drawing	線画
+objects.artistic.none	なし
+objects.artistic.pencil_grayscale	鉛筆: モノクロ
+objects.background.remove	背景の削除
+objects.background.restore	背景を元に戻す
+objects.background.title	図の背景を自動で透明にします
+objects.backward	背面へ移動
+objects.behind_text	テキストの背面へ移動
+objects.bevel.angle	角度
+objects.bevel.circle	丸
+objects.bevel.cool_slant	クール スラント
+objects.bevel.cross	十字
+objects.bevel.relaxed_inset	緩やかな傾斜
+objects.bevel.soft_round	ソフト ラウンド
+objects.change.clipboard	クリップボードから
+objects.change.file	ファイルから
+objects.change_picture	図の変更
+objects.change_shape	図形の変更
+objects.chart	グラフ
+objects.chart.add_category	行を追加
+objects.chart.add_series	列を追加
+objects.chart.category	分類
+objects.chart.column	集合縦棒
+objects.chart.default_title	グラフ タイトル
+objects.chart.edit_data	データの編集
+objects.chart.edit_data_title	グラフのデータをシートで編集します
+objects.chart.elements	グラフ要素を追加
+objects.chart.line	折れ線
+objects.chart.pie	円
+objects.chart.remove_category	行を削除
+objects.chart.remove_series	列を削除
+objects.chart.series	系列
+objects.chart.title	グラフ タイトル
+objects.chart.title_off	グラフ タイトルなし
+objects.chart.title_on	グラフ タイトルを表示
+objects.chart.type	グラフの種類の変更
+objects.color	色
+objects.color.accent_dark	アクセント {n} (濃色)
+objects.color.accent_light	アクセント {n} (淡色)
+objects.color.black	黒
+objects.color.black_white	白黒: 50%
+objects.color.blue	青、アクセント 1
+objects.color.blue_gray	青灰色、テキスト 2
+objects.color.bright_green	緑
+objects.color.dark_red	濃い赤
+objects.color.gold	ゴールド、アクセント 4
+objects.color.gray	灰色、アクセント 3
+objects.color.grayscale	グレースケール
+objects.color.green	緑、アクセント 6
+objects.color.light_blue	青、アクセント 5
+objects.color.none	色の変更なし
+objects.color.orange	オレンジ、アクセント 2
+objects.color.purple	紫
+objects.color.recolor	色の変更
+objects.color.red	赤
+objects.color.saturation	色の彩度
+objects.color.sepia	セピア
+objects.color.tone	色のトーン
+objects.color.transparent_white	白を透明にする
+objects.color.white	白
+objects.color.yellow	黄
+objects.corrections	修整
+objects.corrections.caption	明るさ / コントラスト
+objects.corrections.cell	明るさ / コントラスト
+objects.crop	トリミング
+objects.crop.aspect	縦横比
+objects.crop.shape	図形に合わせてトリミング
+objects.dash.dash	破線
+objects.dash.dash_dot	一点鎖線
+objects.dash.long_dash	長破線
+objects.dash.long_dash_dot	長一点鎖線
+objects.dash.long_dash_dot_dot	長二点鎖線
+objects.dash.round_dot	丸点線
+objects.dash.solid	実線
+objects.dash.square_dot	角点線
+objects.dialog.allow_overlap	重なりを許可する
+objects.dialog.below	下方向の距離
+objects.dialog.both_sides	両側
+objects.dialog.bottom	下
+objects.dialog.distance	文字列との間隔
+objects.dialog.horizontal	水平方向
+objects.dialog.inline_note	行内に配置された図は位置を指定できません。OK で折り返しが四角形になります。
+objects.dialog.largest_only	大きい側
+objects.dialog.layout_in_cell	表のセル内に配置する
+objects.dialog.left	左
+objects.dialog.left_only	左側
+objects.dialog.lock_anchor	アンカーを段落に固定する
+objects.dialog.lock_ratio	縦横比を固定する
+objects.dialog.move_with_text	文字列と一緒に移動する
+objects.dialog.offset	右方向の距離 / 下方向の距離
+objects.dialog.options	オプション
+objects.dialog.position	位置
+objects.dialog.relative_to	基準
+objects.dialog.right	右
+objects.dialog.right_of	右方向の距離
+objects.dialog.right_only	右側
+objects.dialog.rotation	回転角度
+objects.dialog.size	サイズ
+objects.dialog.title	レイアウトの詳細設定
+objects.dialog.top	上
+objects.dialog.vertical	垂直方向
+objects.dialog.wrap_style	折り返しの種類と配置
+objects.dialog.wrap_text	文字列の折り返し
+objects.dialog.wrapping	文字列の折り返し
+objects.draw_hint	ページ上をドラッグして図形を描きます。esc で取り消します。
+objects.edit_points	頂点の編集
+objects.edit_points_title	フリーフォームの頂点をドラッグして形を変えます
+objects.effect.bevel	面取り
+objects.effect.glow	光彩
+objects.effect.no_bevel	面取りなし
+objects.effect.no_glow	光彩なし
+objects.effect.no_reflection	反射なし
+objects.effect.no_shadow	影なし
+objects.effect.no_soft_edges	ぼかしなし
+objects.effect.none	なし
+objects.effect.reflection	反射
+objects.effect.shadow	影
+objects.effect.soft_edges	ぼかし
+objects.effects	図の効果
+objects.fill	図形の塗りつぶし
+objects.fill.none	塗りつぶしなし
+objects.format_pane	書式設定ウィンドウ
+objects.format_pane_title	図形の書式設定ウィンドウを表示します
+objects.forward	前面へ移動
+objects.freeform	フリーフォーム: 図形
+objects.glow.size	光彩: {n} pt
+objects.group	グループ化
+objects.group.adjust	調整
+objects.group.arrange	配置
+objects.group.chart	グラフのデザイン
+objects.group.insert_shapes	図形の挿入
+objects.group.picture_styles	図のスタイル
+objects.group.shape_styles	図形のスタイル
+objects.group.size	サイズ
+objects.group.smartart	SmartArt のデザイン
+objects.group.wordart_styles	ワードアートのスタイル
+objects.hide_all	すべて非表示
+objects.in_front_of_text	テキストの前面へ移動
+objects.layout_more	その他のレイアウト オプション...
+objects.legend.bottom	凡例: 下
+objects.legend.left	凡例: 左
+objects.legend.none	凡例なし
+objects.legend.right	凡例: 右
+objects.legend.top	凡例: 上
+objects.link	リンクの作成
+objects.link_hint	リンク先の空のテキスト ボックスをクリックします
+objects.link_title	あふれた文字を次のテキスト ボックスに流し込みます
+objects.no_clipboard_picture	クリップボードに図がありません
+objects.no_objects	このページにはオブジェクトがありません
+objects.nothing_selected	図や図形が選択されていません
+objects.outline	図の枠線
+objects.outline.arrows	矢印
+objects.outline.dash	実線/点線
+objects.outline.none	枠線なし
+objects.outline.weight	太さ
+objects.pen	ペン
+objects.position	位置
+objects.position.bottom_center	下中央に配置し、四角の枠に沿って文字列を折り返す
+objects.position.bottom_left	左下に配置し、四角の枠に沿って文字列を折り返す
+objects.position.bottom_right	右下に配置し、四角の枠に沿って文字列を折り返す
+objects.position.middle_center	中段中央に配置し、四角の枠に沿って文字列を折り返す
+objects.position.middle_left	中段左に配置し、四角の枠に沿って文字列を折り返す
+objects.position.middle_right	中段右に配置し、四角の枠に沿って文字列を折り返す
+objects.position.top_center	上中央に配置し、四角の枠に沿って文字列を折り返す
+objects.position.top_left	左上に配置し、四角の枠に沿って文字列を折り返す
+objects.position.top_right	右上に配置し、四角の枠に沿って文字列を折り返す
+objects.position.with_wrapping	文字列の折り返し
+objects.reflection.full	反射 (強): 接触
+objects.reflection.half	反射 (中): 接触
+objects.reflection.tight	反射 (弱): 接触
+objects.relative.bottom_margin	下余白
+objects.relative.character	文字
+objects.relative.column	段
+objects.relative.inside	内側
+objects.relative.inside_margin	内側の余白
+objects.relative.left_margin	左余白
+objects.relative.line	行
+objects.relative.margin	余白
+objects.relative.outside	外側
+objects.relative.outside_margin	外側の余白
+objects.relative.page	ページ
+objects.relative.paragraph	段落
+objects.relative.right_margin	右余白
+objects.relative.top_margin	上余白
+objects.reset	図のリセット
+objects.reset_size	図とサイズのリセット
+objects.rotate	回転
+objects.rotate.flip_h	左右反転
+objects.rotate.flip_v	上下反転
+objects.rotate.left	左へ 90 度回転
+objects.rotate.more	その他の回転オプション...
+objects.rotate.right	右へ 90 度回転
+objects.selection_pane	オブジェクトの選択と表示
+objects.selection_pane_title	オブジェクトの一覧を表示し、選択・表示・順序を変更します
+objects.shadow.bottom	オフセット: 下
+objects.shadow.bottom_left	オフセット: 左下
+objects.shadow.bottom_right	オフセット: 右下
+objects.shadow.center	オフセット: 中央
+objects.shadow.inner_bottom_right	内側: 右下
+objects.shadow.inner_center	内側: 中央
+objects.shadow.inner_top_left	内側: 左上
+objects.shadow.left	オフセット: 左
+objects.shadow.right	オフセット: 右
+objects.shadow.top	オフセット: 上
+objects.shadow.top_left	オフセット: 左上
+objects.shadow.top_right	オフセット: 右上
+objects.shape_effects	図形の効果
+objects.shape_outline	図形の枠線
+objects.shape_styles	図形のスタイル
+objects.shapes	図形
+objects.show_all	すべて表示
+objects.size.height	高さ
+objects.size.larger	大きく
+objects.size.smaller	小さく
+objects.size.summary	幅 {w} mm × 高さ {h} mm、回転 {r}°
+objects.size.width	幅
+objects.smartart	SmartArt
+objects.smartart.apply	反映
+objects.smartart.layouts	レイアウトの変更
+objects.smartart.placeholder	[テキスト]
+objects.smartart.text_pane	テキスト ウィンドウ
+objects.smartart.text_pane_hint	Enter で追加、Tab でレベル下げ、⇧Tab でレベル上げ、空の行で ⌫ で削除
+objects.smartart.text_pane_title	SmartArt の文字と構造を編集します
+objects.tab.picture_format	図の形式
+objects.tab.shape_format	図形の書式
+objects.text.bottom	下揃え
+objects.text.middle	上下中央揃え
+objects.text.top	上揃え
+objects.text_align	文字の配置
+objects.text_box	テキスト ボックス
+objects.text_box_title	テキスト ボックスを描画します
+objects.text_effects	文字の効果
+objects.text_fill	文字の塗りつぶし
+objects.to_back	最背面へ移動
+objects.to_front	最前面へ移動
+objects.transparency	透明度
+objects.ungroup	グループ解除
+objects.warp	変形
+objects.warp.arch_down	アーチ: 下向き
+objects.warp.arch_up	アーチ: 上向き
+objects.warp.button	ボタン
+objects.warp.can_down	凹レンズ: 下
+objects.warp.can_up	凹レンズ: 上
+objects.warp.chevron	山形
+objects.warp.chevron_inverted	山形: 下向き
+objects.warp.circle	円
+objects.warp.deflate	縮小
+objects.warp.double_wave	小波: 両端
+objects.warp.fade_left	左すぼまり
+objects.warp.fade_right	右すぼまり
+objects.warp.inflate	膨張
+objects.warp.none	変形なし
+objects.warp.slant_down	傾斜: 下
+objects.warp.slant_up	傾斜: 上
+objects.warp.triangle	三角形: 上向き
+objects.warp.triangle_inverted	三角形: 下向き
+objects.warp.wave1	波: 上向き
+objects.warp.wave2	波: 下向き
+objects.wordart	ワードアート
+objects.wordart.accent_shadow	塗りつぶし: 青、アクセントカラー 1; 影
+objects.wordart.black_shadow	塗りつぶし: 黒、文字色 1; 影
+objects.wordart.gray_bevel	塗りつぶし: 灰色; 面取り (ソフト)
+objects.wordart.orange_outline	塗りつぶし: オレンジ; 輪郭: オレンジ
+objects.wordart.outline_only	塗りつぶしなし; 輪郭: 青、アクセントカラー 1
+objects.wordart.white_outline_glow	塗りつぶし: 白; 輪郭: 青; 光彩
+objects.wrap_points	折り返し点の編集
+# word-objects end
+# 開発: content controls and legacy form fields (word_controls)
+cc.tab	開発
+cc.group.controls	コントロール
+cc.rich_text	リッチ テキスト
+cc.plain_text	テキスト
+cc.picture	画像
+cc.building_block	構成要素ギャラリー
+cc.check_box	チェック ボックス
+cc.combo_box	コンボ ボックス
+cc.drop_down	ドロップダウン リスト
+cc.date	日付選択
+cc.repeating	繰り返しセクション
+cc.repeating_item	繰り返しセクション アイテム
+cc.group	グループ化
+cc.group_title	選択範囲をグループ化して、コンテンツ コントロール以外を編集できないようにします
+cc.ungroup	グループ解除
+cc.ungroup_title	カーソルのあるグループを解除します
+cc.design_mode	デザイン モード
+cc.design_mode_title	コンテンツ コントロールのタグを表示して編集します
+cc.properties	プロパティ
+cc.properties_title	カーソルのあるコンテンツ コントロールのプロパティ
+cc.no_group	カーソルはグループの中にありません。
+cc.nothing_at_caret	カーソルの位置にコンテンツ コントロールまたはフォーム フィールドがありません。
+cc.no_blocks	この文書にはこのギャラリーの構成要素がありません。
+cc.today	今日
+cc.props.dialog	コンテンツ コントロールのプロパティ
+cc.props.general	全般
+cc.props.title	タイトル
+cc.props.tag	タグ
+cc.props.show_as	表示方法
+cc.props.bounding_box	境界ボックス
+cc.props.tags	開始/終了タグ
+cc.props.none	なし
+cc.props.color	色
+cc.props.automatic	自動
+cc.props.style	スタイル
+cc.props.default_style	既定の段落フォント
+cc.props.temporary	内容が編集されたら削除する
+cc.props.multi_line	複数の段落を許可する
+cc.props.locking	ロック
+cc.props.no_delete	コンテンツ コントロールの削除不可
+cc.props.no_edit	コンテンツの編集不可
+cc.props.list	ドロップダウン リストのプロパティ
+cc.props.entries	表示名 — 値
+cc.props.display_name	表示名
+cc.props.value	値
+cc.props.add	追加
+cc.props.modify	変更
+cc.props.remove	削除
+cc.props.up	上へ
+cc.props.down	下へ
+cc.props.date	日付選択のプロパティ
+cc.props.date_format	日付の表示形式
+cc.props.check_box	チェック ボックスのプロパティ
+cc.props.checked_symbol	選択時の記号
+cc.props.unchecked_symbol	非選択時の記号
+cc.props.gallery_heading	ドキュメント パーツのプロパティ
+cc.props.gallery	ギャラリー
+cc.props.category	分類
+cc.props.repeating	繰り返しセクションのプロパティ
+cc.props.section_title	セクションのタイトル
+cc.props.allow_insert	挿入と削除のコントロールを許可する
+cc.props.remove_control	コントロールの削除
+form.group	従来のフォーム
+form.group.protect	保護
+form.text	テキスト ボックス
+form.text_title	テキスト フォーム フィールドを挿入します
+form.check	チェック ボックス
+form.check_title	チェック ボックス フォーム フィールドを挿入します
+form.dropdown	ドロップダウン
+form.dropdown_title	ドロップダウン フォーム フィールドを挿入します
+form.options	オプション
+form.options_title	カーソルのあるフォーム フィールドのオプション
+form.shading	フォーム フィールドの網かけ
+form.shading_title	フォーム フィールドに網かけを表示します
+form.protect	フォームの保護
+form.protect_title	フォーム フィールドとコンテンツ コントロールにだけ入力できるように文書を保護します
+form.text_options	テキスト フォーム フィールドのオプション
+form.check_options	チェック ボックス フォーム フィールドのオプション
+form.dropdown_options	ドロップダウン フォーム フィールドのオプション
+form.default_text	既定の文字列
+form.max_length	最大文字数
+form.default_checked	既定でオン
+form.entry	ドロップダウン アイテム
+form.entries	ドロップダウン リストのアイテム
+form.bookmark	ブックマーク
+form.help_text	ヘルプ テキスト
+form.enabled	入力を有効にする
+# 差し込み文書: mail merge (word_mailings)
+mail.tab	差し込み文書
+mail.group.create	作成
+mail.group.start	差し込み印刷の開始
+mail.group.fields	文章入力とフィールドの挿入
+mail.group.preview	結果のプレビュー
+mail.group.finish	完了
+mail.envelopes	封筒
+mail.envelopes_title	封筒を作成して印刷します
+mail.labels	ラベル
+mail.labels_title	ラベルを作成して印刷します
+mail.start	差し込み印刷の開始
+mail.start_title	レター、封筒、ラベル、名簿の差し込み印刷を始めます
+mail.start.letters	レター
+mail.start.envelopes	封筒...
+mail.start.labels	ラベル...
+mail.start.directory	名簿
+mail.start.email	電子メール メッセージ
+mail.start.normal	標準の Word 文書
+mail.recipients	宛先の選択
+mail.recipients_title	差し込み印刷の宛先のリストを選びます
+mail.recipients.new	新しいリストの入力...
+mail.recipients.existing	既存のリストを使用...
+mail.recipients.source	データ ソース: {name}
+mail.recipients.all	すべて選択
+mail.recipients.none	すべてクリア
+mail.recipients.count	{count} 件中 {n} 件の宛先を差し込みます
+mail.edit_recipients	宛先リストの編集
+mail.edit_recipients_title	差し込む宛先を選び、並べ替えて絞り込みます
+mail.highlight	差し込みフィールドの強調表示
+mail.highlight_title	文書の差し込みフィールドに網かけを表示します
+mail.address_block	住所ブロック
+mail.address_block_title	宛先の住所を挿入します
+mail.greeting	あいさつ文
+mail.greeting_title	あいさつ文を挿入します
+mail.insert_field	差し込みフィールドの挿入
+mail.insert_field_title	宛先リストの列を差し込みフィールドとして挿入します
+mail.rules	ルール
+mail.rules_title	差し込み印刷のルールを挿入します
+mail.match	フィールドの対応
+mail.match_title	住所のフィールドを宛先リストの列に対応させます
+mail.update_labels	複数ラベルに反映
+mail.update_labels_title	最初のラベルの内容をほかのすべてのラベルに反映します
+mail.preview	結果のプレビュー
+mail.preview_title	差し込みフィールドを宛先のデータで表示します
+mail.first	|◀
+mail.first_title	先頭のレコード
+mail.previous	◀
+mail.previous_title	前のレコード
+mail.next	▶
+mail.next_title	次のレコード
+mail.last	▶|
+mail.last_title	最後のレコード
+mail.record	レコード {n} / {count}
+mail.record_none	レコードなし
+mail.check	エラーのチェック
+mail.check_title	差し込み印刷のエラーを確認します
+mail.check.note	差し込み印刷をシミュレーションして、エラーを報告します。
+mail.check.none	エラーは見つかりませんでした。
+mail.check.empty	データ ソースに列がありません。
+mail.check.missing	差し込みフィールド「{name}」はデータ ソースにありません。
+mail.check.unmatched	住所ブロックやあいさつ文に使う列が対応していません。[フィールドの対応] で設定してください。
+mail.finish	完了と差し込み
+mail.finish_title	差し込み印刷を完了します
+mail.finish.document	個々のドキュメントの編集...
+mail.finish.print	文書の印刷...
+mail.finish.pdf	PDF に差し込み...
+mail.finish.records	差し込むレコード
+mail.finish.all	すべて
+mail.finish.current	現在のレコード
+mail.finish.range	指定
+mail.finish.from	最初のレコード
+mail.finish.to	最後のレコード
+mail.no_data	宛先リストがありません
+mail.no_recipients	差し込む宛先がありません。
+mail.preview_heading	プレビュー
+mail.preview_none	宛先リストを選ぶと、ここに表示されます。
+mail.print	印刷
+mail.new_document	新規文書
+mail.address.name	受信者名をこの形式で挿入する
+mail.address.name_format	名前の形式
+mail.address.honorific	敬称
+mail.address.company	会社名を挿入する
+mail.address.postal	住所を挿入する
+mail.address.country	国/地域
+mail.address.country_always	常に含める
+mail.address.country_never	含めない
+mail.address.country_except	日本以外の場合のみ含める
+mail.address.by_country	宛先の国/地域に従って住所の書式を設定する
+mail.greeting.before	あいさつ
+mail.greeting.after	後ろに付ける文字
+mail.greeting.invalid	無効な受信者名に使用するあいさつ文
+mail.match.none	(対応なし)
+mail.match.note	住所ブロックとあいさつ文は、ここで対応させた列を使います。
+mail.field.title	敬称
+mail.field.first	名
+mail.field.middle	ミドル ネーム
+mail.field.last	姓
+mail.field.suffix	サフィックス
+mail.field.nickname	ニックネーム
+mail.field.job	役職
+mail.field.company	会社名
+mail.field.department	部署
+mail.field.address1	住所 1
+mail.field.address2	住所 2
+mail.field.city	市区町村
+mail.field.state	都道府県
+mail.field.postal	郵便番号
+mail.field.country	国/地域
+mail.field.phone	勤務先電話番号
+mail.field.email	電子メール アドレス
+mail.filter	フィルター
+mail.filter.column	列
+mail.filter.compare	比較
+mail.filter.value	値
+mail.filter.add	フィルターの追加
+mail.filter.clear	フィルターのクリア
+mail.filter.equal	と等しい
+mail.filter.not_equal	と等しくない
+mail.filter.contains	を含む
+mail.filter.not_contains	を含まない
+mail.filter.empty	が空白
+mail.filter.not_empty	が空白ではない
+mail.filter.less	より小さい
+mail.filter.greater	より大きい
+mail.filter.less_equal	以下
+mail.filter.greater_equal	以上
+mail.list.title	新しいアドレス帳
+mail.list.note	宛先の情報を入力します。Tab で次の列へ、最後の列で Tab を押すと次のエントリが追加されます。
+mail.list.add_row	新しいエントリ
+mail.list.remove_row	エントリの削除
+mail.list.column_name	列名
+mail.list.add_column	列の追加
+mail.list.rename_column	列名の変更
+mail.list.remove_column	列の削除
+mail.list.name	ファイル名
+mail.rule.ask	Ask...
+mail.rule.fill_in	Fill-in...
+mail.rule.if	If...Then...Else...
+mail.rule.merge_record	Merge Record #
+mail.rule.merge_sequence	Merge Sequence #
+mail.rule.next	Next Record
+mail.rule.next_if	Next Record If...
+mail.rule.set	Set Bookmark...
+mail.rule.skip_if	Skip Record If...
+mail.rule.field	フィールド名
+mail.rule.operator	比較
+mail.rule.value	比較対象
+mail.rule.then	挿入する文字列 (条件に一致する場合)
+mail.rule.else	挿入する文字列 (条件に一致しない場合)
+mail.rule.bookmark	ブックマーク
+mail.rule.prompt	メッセージ
+mail.rule.default	既定の文字列
+mail.rule.once	最初に一度だけたずねる
+mail.envelope.options	封筒オプション
+mail.envelope.merge_note	宛先には、差し込みの住所ブロックが入ります。
+mail.envelope.delivery	宛先
+mail.envelope.return	差出人
+mail.envelope.omit_return	差出人を印刷しない
+mail.envelope.size	封筒のサイズ
+mail.envelope.left	宛先の左からの位置 (mm)
+mail.envelope.top	宛先の上からの位置 (mm)
+mail.envelope.auto	空欄のときは自動 (左から {left} mm、上から {top} mm)
+mail.labels.options	ラベル オプション
+mail.labels.address	住所
+mail.labels.product	ラベルの製品番号
+mail.labels.details	{columns} 列 × {rows} 行、ラベル {width} × {height} mm
+cc.save_block	ギャラリーに保存
+cc.save_block_title	選択した段落を構成要素として保存し、構成要素ギャラリーで使えるようにします
+cc.save_block.title	新しい構成要素の作成
+cc.save_block.name	名前
+equation.tab	数式
+equation.group	数式
+equation.insert	数式
+equation.insert_title	新しい数式を挿入します
+equation.placeholder	ここに数式を入力します。
+equation.builtin.caption	組み込み
+equation.builtin.quadratic	2 次方程式の解の公式
+equation.builtin.binomial	2 項定理
+equation.builtin.circle	円の面積
+equation.builtin.fourier	フーリエ級数
+equation.builtin.pythagorean	ピタゴラスの定理
+equation.builtin.sum	和の展開
+equation.builtin.taylor	テイラー展開
+equation.builtin.trig1	三角関数の公式 1
+equation.builtin.trig2	三角関数の公式 2
+equation.group.tools	ツール
+equation.group.convert	変換
+equation.group.symbols	記号と特殊文字
+equation.group.structures	構造
+equation.group.close	数式
+equation.unicode_title	UnicodeMath で入力と変換を行います
+equation.latex_title	LaTeX で入力と変換を行います
+equation.professional	2 次元形式
+equation.professional_title	数式を 2 次元形式に変換します
+equation.linear	行形式
+equation.linear_title	数式を行形式に変換します
+equation.normal_text	標準テキスト
+equation.normal_text_title	数式の中に数式でない標準テキストを入力します
+equation.close	数式を閉じる
+equation.symbols.more	その他の記号
+equation.symbols.basic	基本数式
+equation.symbols.greek	ギリシャ文字
+equation.symbols.letterlike	文字形の記号
+equation.symbols.operators	演算子
+equation.symbols.arrows	矢印
+equation.symbols.negated	否定の関係演算子
+equation.symbols.geometry	幾何学
+equation.structure.fraction	分数
+equation.structure.script	上付き/下付き文字
+equation.structure.radical	べき乗根
+equation.structure.integral	積分
+equation.structure.large_operator	大型演算子
+equation.structure.bracket	かっこ
+equation.structure.function	関数
+equation.structure.accent	アクセント
+equation.structure.limit_log	極限と対数
+equation.structure.operator	演算子
+equation.structure.matrix	行列
+equation.group.layout	配置
+equation.line_break	手動改行を挿入
+equation.align_point	この文字で揃える
+equation.group.matrix	行列
+equation.row_above	行を上に挿入
+equation.row_below	行を下に挿入
+equation.column_left	列を左に挿入
+equation.column_right	列を右に挿入
+equation.delete_row	行の削除
+equation.delete_column	列の削除
+equation.justify_left	左揃え
+equation.justify_center	中央揃え
+equation.justify_right	右揃え

@@ -139,6 +139,14 @@ impl WordSession for WordDoc {
         WordSession::hyperlink_regions(&**self)
     }
 
+    fn text_regions(
+        &self,
+        start: (usize, usize),
+        end: (usize, usize),
+    ) -> Vec<jade_docx_editor::canvas_renderer::TextRegion> {
+        WordSession::text_regions(&**self, start, end)
+    }
+
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
         WordSession::select_cells(&mut **self, anchor_cell, focus_cell)
     }
@@ -153,6 +161,10 @@ impl WordSession for WordDoc {
 
     fn position_metrics(&self, at: jade_office_model::word::Position) -> Option<(f64, f64, f64)> {
         WordSession::position_metrics(&**self, at)
+    }
+
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        WordSession::math_zones(&**self)
     }
 }
 
