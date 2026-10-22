@@ -33,26 +33,38 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 mod deck;
 mod sheet;
 pub(crate) mod word_characters;
+mod word_context_menu;
 pub(crate) mod word_controls;
 pub(crate) mod word_design;
 pub(crate) mod word_dialog;
 mod word_dialogs;
+pub(crate) mod word_download;
+pub(crate) mod word_draw;
 pub(crate) mod word_equation;
 pub(crate) mod word_fields;
 mod word_find;
 mod word_form;
+pub(crate) mod word_hyphenation;
+mod word_immersive;
+mod word_inspect;
 pub(crate) mod word_kit;
 pub(crate) mod word_lists;
 pub(crate) mod word_mailings;
 pub(crate) mod word_objects_ui;
 pub(crate) mod word_paragraph;
+pub(crate) mod word_preview;
+mod word_print;
+mod word_read_aloud;
 pub(crate) mod word_references;
 mod word_review;
 pub(crate) mod word_ruler;
+mod word_screen_reader;
 pub(crate) mod word_setup;
+mod word_signatures;
 pub(crate) mod word_story;
 pub(crate) mod word_styles;
 mod word_table;
+mod word_thesaurus;
 pub(crate) mod word_tools_ui;
 
 /// The deck's slide list, as in the native app.
@@ -140,6 +152,11 @@ impl Kind {
         let extension = name.rsplit_once('.')?.1.to_lowercase();
         match extension.as_str() {
             "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
+            // Word's other formats, converted as they open
+            // (`jade_office_model::word::formats`).
+            "doc" | "dot" | "wbk" | "rtf" | "txt" | "odt" | "fodt" | "htm" | "html" => {
+                Some(Kind::Document)
+            }
             // A CSV opens as a workbook of one sheet, as in Excel.
             "xlsx" | "xlsm" | "xltx" | "xltm" | "csv" => Some(Kind::Workbook),
             "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
@@ -406,6 +423,20 @@ enum Document {
         dialog: Option<Box<word_dialogs::Dialog>>,
         /// Whether the comments pane is open beside the pages.
         show_comments: bool,
+        /// 変更内容の表示 and 変更履歴とコメントの表示.
+        markup: Box<jade_web::word::markup::MarkupOptions>,
+        /// Whether the アクセシビリティ pane is open beside the pages.
+        accessibility: bool,
+        /// Whether the 変更履歴ウィンドウ is open beside the pages.
+        revisions_pane: bool,
+        /// 編集の制限, 文書の保護 and 最終版.
+        protection: Box<word_review::WebProtection>,
+        /// 読み上げ, while reading.
+        read_aloud: Option<Box<word_read_aloud::WebReading>>,
+        /// イマーシブ リーダー, while it is open.
+        immersive: Option<Box<word_immersive::WebImmersive>>,
+        /// 類義語辞典, while it is open.
+        thesaurus: Option<Box<word_thesaurus::WebThesaurus>>,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
@@ -488,6 +519,10 @@ struct CellSelection {
 
 pub struct DocView {
     pub name: SharedString,
+    /// A text file's encoding, as it was read and is saved.
+    pub text_encoding: Option<jade_web::word::formats::TextEncoding>,
+    /// The compatibility mode a Word document is laid out in (15 is current).
+    pub compat_mode: u32,
     pub kind: Kind,
     document: Document,
     retired: Vec<Arc<RenderImage>>,
@@ -536,6 +571,22 @@ pub struct DocView {
     equation: Option<Box<jade_web::word::equation::EquationEditor>>,
     /// The 記号と特殊文字 category the 数式 tab shows.
     equation_symbols: usize,
+    /// The 印刷 panel over a Word document, while it is open (`word_print`).
+    print_panel: Option<Box<word_print::PrintPanel>>,
+    /// The ハイフネーション dialog and why OK did nothing, while it is open
+    /// (`word_hyphenation`).
+    hyphenation_dialog: Option<(
+        jade_web::word::hyphenation::HyphenationDialog,
+        Option<&'static str>,
+    )>,
+    /// The 描画 tab's tools and the drawing under way (`word_draw`).
+    draw: jade_web::word::ink_tools::DrawController,
+    /// The ribbon entry previewed on the selection (`word_preview`), and
+    /// whether its command is running now.
+    preview: Option<word_preview::Preview>,
+    previewing: bool,
+    /// The right-click menu over a Word page, while it is open.
+    word_menu: Option<word_context_menu::WordMenu>,
 }
 
 impl DocView {
@@ -549,6 +600,64 @@ impl DocView {
     ) -> Result<Self, String> {
         let kind = Kind::of(&name)
             .ok_or_else(|| i18n::format("workspace.unsupported", &[("name", &name)]))?;
+        // A Word document in another format — .doc, RTF, text, ODT, HTML —
+        // is converted to a .docx to edit, and saved back as it came.
+        let mut text_encoding = None;
+        let mut compat_mode = jade_web::word::compat::CURRENT_MODE;
+        let converted;
+        let bytes = {
+            use jade_web::word::formats::{open_as_docx, OpenOptions, WordFormat};
+            let format = WordFormat::sniff(bytes).or_else(|| WordFormat::of_name(&name));
+            match format {
+                Some(format) if kind == Kind::Document && !format.is_package() => {
+                    let opened = open_as_docx(&name, bytes, OpenOptions::default(), &|_| None)
+                        .map_err(|error| match error {
+                            jade_web::word::formats::FormatError::Encrypted => {
+                                i18n::format("workspace.protected", &[("name", &name)])
+                            }
+                            other => other.to_string(),
+                        })?;
+                    text_encoding = opened.encoding;
+                    if opened.format.is_legacy() {
+                        compat_mode = 11;
+                    }
+                    converted = opened.docx;
+                    &converted[..]
+                }
+                // A damaged Word document is repaired as it opens.
+                _ if kind == Kind::Document && jade_web::word::repair::needs_repair(bytes) => {
+                    match jade_web::word::repair::repair(bytes) {
+                        Ok(repaired) => {
+                            converted = repaired.docx;
+                            &converted[..]
+                        }
+                        Err(_) => bytes,
+                    }
+                }
+                _ => bytes,
+            }
+        };
+        // A master document's subdocuments show as their links: the page
+        // cannot reach the files they are in.
+        let master_view;
+        let bytes = match kind == Kind::Document && jade_web::word::master::is_master(bytes) {
+            true => {
+                let unreachable = |_: &str| None;
+                let as_named = |target: &str| target.to_string();
+                let files = jade_web::word::master::Files {
+                    load: &unreachable,
+                    display: &as_named,
+                };
+                match jade_web::word::master::for_editing(bytes, &files) {
+                    Ok(editing) => {
+                        master_view = editing;
+                        &master_view[..]
+                    }
+                    Err(_) => bytes,
+                }
+            }
+            false => bytes,
+        };
         // An OLE compound file, not a package: password-protected, or one
         // of the old binary formats.
         if bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
@@ -559,7 +668,7 @@ impl DocView {
             Kind::Document => {
                 // The first pages only, as pixels: the view keeps the ones on
                 // screen as it scrolls (see `follow_scroll`).
-                let opened = jade_web::editing::EditableDocument::open_resident(
+                let mut opened = jade_web::editing::EditableDocument::open_resident(
                     bytes,
                     fonts.scale,
                     fonts.backend.fonts(),
@@ -587,6 +696,18 @@ impl DocView {
                     comment: None,
                     dialog: None,
                     show_comments: false,
+                    markup: Box::new(word_review::markup_as_opened(&opened)),
+                    accessibility: false,
+                    revisions_pane: false,
+                    protection: Box::new(word_signatures::with_signatures(
+                        word_review::WebProtection::opened(&mut opened),
+                        bytes,
+                        fonts,
+                        &mut opened,
+                    )),
+                    read_aloud: None,
+                    immersive: None,
+                    thesaurus: None,
                     object: None,
                     tables: Box::default(),
                     pages: (0..opened.page_count())
@@ -648,8 +769,13 @@ impl DocView {
                 Document::Workbook(Box::new(sheet::Sheet::open(book)))
             }
         };
+        if kind == Kind::Document && compat_mode == jade_web::word::compat::CURRENT_MODE {
+            compat_mode = jade_web::word::compat::compatibility_mode(bytes);
+        }
         Ok(Self {
             name,
+            text_encoding,
+            compat_mode,
             kind,
             document,
             retired: Vec::new(),
@@ -674,6 +800,12 @@ impl DocView {
             page_dialog: None,
             equation: None,
             equation_symbols: 0,
+            print_panel: None,
+            hyphenation_dialog: None,
+            draw: Default::default(),
+            preview: None,
+            previewing: false,
+            word_menu: None,
         })
     }
 
@@ -880,7 +1012,38 @@ impl DocView {
         }
         self.commit_slide_text(cx);
         let bytes = match &mut self.document {
-            Document::Pages { document, .. } => document.export_docx(),
+            // Saved back in the format the file came in, as Word does.
+            Document::Pages {
+                document,
+                protection,
+                ..
+            } => document.export_docx().and_then(|docx| {
+                use jade_web::word::formats::{save_from_docx, SaveOptions, WordFormat};
+                match WordFormat::of_name(&self.name) {
+                    Some(format) if !format.is_package() => save_from_docx(
+                        format,
+                        &docx,
+                        SaveOptions {
+                            encoding: self.text_encoding,
+                            ..SaveOptions::default()
+                        },
+                    )
+                    .map_err(|error| error.to_string()),
+                    // A master keeps its subdocuments as links.
+                    _ if jade_web::word::master::is_master(&docx) => {
+                        let unreachable = |_: &str| None;
+                        let as_named = |target: &str| target.to_string();
+                        let files = jade_web::word::master::Files {
+                            load: &unreachable,
+                            display: &as_named,
+                        };
+                        jade_web::word::master::for_saving(&docx, &files)
+                            .and_then(|(stored, _)| word_review::finish_save(protection, stored))
+                    }
+                    // 文書の保護, ドキュメント検査 and 署名 apply to a package.
+                    _ => word_review::finish_save(protection, docx),
+                }
+            }),
             Document::Deck { deck, .. } => Ok(deck.save_bytes()),
             // A .csv saves the active sheet as CSV, as Excel does.
             Document::Workbook(sheet) => sheet.book.save_bytes_as(&self.name),
@@ -1069,6 +1232,18 @@ impl DocView {
         let Document::Pages { document, .. } = &mut self.document else {
             return;
         };
+        // A locked subdocument, or a collapsed one's link, takes no edits.
+        let (first, last) = match (document.selection(), document.caret()) {
+            (Some((anchor, focus)), _) => (anchor.0.min(focus.0), anchor.0.max(focus.0)),
+            (None, Some(caret)) => (caret.0, caret.0),
+            (None, None) => (0, 0),
+        };
+        if jade_web::word::master::edit_is_locked(
+            jade_web::word::WordSession::word_document(&**document),
+            first..=last,
+        ) {
+            return self.word_result(Err(i18n::text("master.locked_edit").to_string()), cx);
+        }
         let result = edit(document);
         self.refresh_repainted();
         self.reveal_caret();
@@ -1233,6 +1408,15 @@ impl DocView {
         ) else {
             return;
         };
+        // With a pen, the eraser or the lasso in hand, the press draws
+        // (`word_draw`).
+        let page_top = match &self.document {
+            Document::Pages { document, .. } => document.document_y(index, 0.0),
+            _ => 0.0,
+        };
+        if self.ink_press(index, (x, y - page_top), cx) {
+            return;
+        }
         // The pen, a crop handle, a wrap point, a text box to link to.
         if let Document::Pages { document, .. } = &self.document {
             let page_y = y - document.document_y(index, 0.0);
@@ -1361,6 +1545,9 @@ impl DocView {
     /// through the whole window, not only over a page, and past the top or
     /// the bottom of the view the pages scroll to meet the pointer.
     fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if self.ink_drag(event.position, cx) {
+            return;
+        }
         if self.object_ui_drag(event, cx) {
             return;
         }
@@ -1497,6 +1684,7 @@ impl DocView {
 
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
+        self.ink_release(cx);
         if self.object_ui_release(cx) {
             return;
         }
@@ -1652,7 +1840,14 @@ impl DocView {
                 return true;
             }
             "enter" => {
-                self.word_edit(cx, |document| document.insert_paragraph_break());
+                self.word_edit(cx, |document| {
+                    let ended = document.caret().map(|(paragraph, _)| paragraph);
+                    document.insert_paragraph_break()?;
+                    match ended {
+                        Some(ended) => document.autocorrect_enter(ended, &autocorrect_options()),
+                        None => Ok(()),
+                    }
+                });
                 return true;
             }
             // In a table, to the next or the previous cell; elsewhere a tab
@@ -1673,7 +1868,8 @@ impl DocView {
                     if document.step_cell(!backwards)? || backwards {
                         Ok(())
                     } else {
-                        document.insert_text("\t")
+                        document.insert_text("\t")?;
+                        document.autocorrect_typed(&autocorrect_options())
                     }
                 });
                 return true;
@@ -1705,6 +1901,10 @@ impl DocView {
             if let Document::Pages { ribbon, .. } = &mut self.document {
                 ribbon.popup = None;
             }
+            return;
+        }
+        // A previewed entry: kept by its click, taken back by anything else.
+        if word_preview::settle(self, &action, cx) {
             return;
         }
         let Document::Pages {
@@ -1796,6 +1996,26 @@ impl DocView {
                 _ => document.redo().map(|_| ()),
             });
             return self.equation_after_history();
+        }
+        if let Action::View(action) = action {
+            use ribbon::ViewAction;
+            match action {
+                ViewAction::ToggleMarks => self.word_edit(cx, |document| {
+                    let show = !document.formatting_marks();
+                    document.set_formatting_marks(show)
+                }),
+                ViewAction::ZoomOut => {
+                    let zoom = zoom_step(self.zoom(), false);
+                    self.set_zoom(zoom, cx)
+                }
+                ViewAction::ZoomIn => {
+                    let zoom = zoom_step(self.zoom(), true);
+                    self.set_zoom(zoom, cx)
+                }
+                ViewAction::ZoomActual => self.set_zoom(1.0, cx),
+                ViewAction::PageWidth => self.zoom_to_fit(window, cx),
+            }
+            return;
         }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
@@ -1896,6 +2116,7 @@ impl DocView {
             | Action::References(_)
             | Action::Controls(_)
             | Action::Equation(_)
+            | Action::View(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -1931,6 +2152,10 @@ impl DocView {
         .then(|| word_mailings::groups(self))
         .flatten();
         let equation = self.equation_tab_state();
+        let side = cx
+            .try_global::<crate::workspace::side_by_side::SideBySideShown>()
+            .copied()
+            .unwrap_or_default();
         let story = self.story_tab_state();
         let object_modes = self.object_modes();
         let Document::Pages {
@@ -1941,7 +2166,14 @@ impl DocView {
             current,
             dragging,
             show_comments,
+            markup,
+            accessibility,
+            revisions_pane,
+            protection,
             object,
+            read_aloud,
+            immersive,
+            thesaurus,
             ..
         } = &mut self.document
         else {
@@ -1973,6 +2205,7 @@ impl DocView {
             }
         });
         let tabs = {
+            use jade_web::word::markup::WordMarkup;
             use jade_web::word::review::WordReview;
             ribbon::TabState {
                 page,
@@ -1983,18 +2216,39 @@ impl DocView {
                         _ => None,
                     },
                 ),
-                tracking: document.is_tracking_changes(),
-                comments: *show_comments,
+                review: matches!(ribbon.tab, ribbon::Tab::Review | ribbon::Tab::View).then(|| {
+                    crate::word_review::ReviewShown {
+                        tracking: document.is_tracking_changes(),
+                        comments: *show_comments,
+                        accessibility: *accessibility,
+                        revisions_pane: *revisions_pane,
+                        restrict_pane: protection.pane,
+                        final_: protection.read_only == Some(word_review::ReadOnlyReason::Final),
+                        inspect: protection.inspect,
+                        signatures_pane: protection.signatures_pane,
+                        reading: read_aloud.is_some(),
+                        immersive: immersive.is_some(),
+                        thesaurus: thesaurus.is_some(),
+                        side_by_side: side.on,
+                        sync_scroll: side.sync,
+                        markup: (**markup).clone(),
+                        reviewers: document.reviewers(),
+                    }
+                }),
                 picture: object.is_some_and(|grab| grab.object.is_picture()),
                 table,
                 layout: (ribbon.tab == ribbon::Tab::Layout)
                     .then(|| word_setup::LayoutState::read(document)),
-                references: (ribbon.tab == ribbon::Tab::References)
-                    .then(|| word_references::ribbon_state(document, &self.references)),
+                hyphenation: (ribbon.tab == ribbon::Tab::Layout)
+                    .then(|| word_hyphenation::current_choice(document)),
+                draw: (ribbon.tab == ribbon::Tab::Draw).then(|| self.draw.clone()),
                 object: object.map(|grab| grab.object),
                 developer,
                 mailings,
                 equation,
+                references: matches!(ribbon.tab, ribbon::Tab::References | ribbon::Tab::View)
+                    .then(|| word_references::ribbon_state(document, &self.references)),
+                marks: document.formatting_marks(),
                 story,
                 field_codes: document.field_code_view().all,
                 styles_pane: self.tools.styles_pane,
@@ -2071,6 +2325,13 @@ impl DocView {
         let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
+        let accessibility_pane = self.accessibility_pane(cx);
+        let revisions_pane = self.revisions_pane(cx);
+        let restrict_pane = self.restrict_pane(cx);
+        let signatures_pane = self.signatures_pane(cx);
+        let thesaurus_pane = self.thesaurus_pane(cx);
+        let inspect_pane = self.inspect_pane(cx);
+        let read_only_bar = self.read_only_bar(cx);
         let styles_pane = self.styles_pane(cx);
         let selection_pane = self.selection_pane(cx);
         let mut object_overlays = match &self.document {
@@ -2089,6 +2350,7 @@ impl DocView {
         }
         .into_iter();
         let find_bar = self.find_bar_element(cx);
+        let read_aloud_bar = self.read_aloud_bar(cx);
         let table_cursor = self.table_cursor();
         let table_dialog = self.table_dialog_element(cx);
         let mut table_overlays = match &self.document {
@@ -2098,7 +2360,16 @@ impl DocView {
             _ => Vec::new(),
         }
         .into_iter();
+        let mut ink_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.ink_overlay(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let page_dialog = self.page_dialog_element(cx);
+        let hyphenation_dialog = self.hyphenation_dialog_element(cx);
+        let word_menu = self.word_menu_element(cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
         let mut control_overlays = match &self.document {
@@ -2121,6 +2392,7 @@ impl DocView {
         }
         .into_iter();
         let editing_equation = self.equation.is_some();
+        let print_panel = self.print_panel_element(cx);
         let Document::Pages {
             document,
             pages,
@@ -2239,6 +2511,7 @@ impl DocView {
                 let entity = entity.clone();
                 let table_overlay = table_overlays.next().flatten();
                 let control_overlay = control_overlays.next().unwrap_or_default();
+                let ink_overlay = ink_overlays.next().flatten();
                 let story_label = story_labels.next().flatten();
                 let vertical_ruler = vertical_rulers.next().flatten();
                 let object_overlay = object_overlays.next().unwrap_or_default();
@@ -2254,6 +2527,12 @@ impl DocView {
                         MouseButton::Left,
                         cx.listener(move |view, event, window, cx| {
                             view.page_mouse_down(index, event, window, cx)
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |view, event, window, cx| {
+                            view.page_right_click(index, event, window, cx)
                         }),
                     )
                     .child(div().w(px(width)).h(px(height)).child(page.element()))
@@ -2297,6 +2576,7 @@ impl DocView {
                         },
                     ))
                     .children(table_overlay)
+                    .children(ink_overlay)
                     .children(story_label)
                     .children(vertical_ruler)
                     .children(object_overlay)
@@ -2375,6 +2655,7 @@ impl DocView {
             .size_full()
             .flex()
             .bg(palette::window())
+            .children(word_menu)
             .children(navigation)
             .child(
                 div()
@@ -2416,8 +2697,10 @@ impl DocView {
                     .flex_col()
                     .child(word_ribbon)
                     .children(dialog_bar)
+                    .children(read_only_bar)
                     .children(comment_bar)
                     .children(find_bar)
+                    .children(read_aloud_bar)
                     .children(horizontal_ruler)
                     .child(
                         div()
@@ -2437,15 +2720,29 @@ impl DocView {
                     ),
             )
             .children(comments_pane)
+            .children(accessibility_pane)
+            .children(revisions_pane)
+            .children(restrict_pane)
+            .children(signatures_pane)
+            .children(thesaurus_pane)
+            .children(inspect_pane)
             .children(styles_pane)
             .children(selection_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
+            .children(print_panel)
+            .children(hyphenation_dialog)
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let modifiers = event.keystroke.modifiers;
         let key = event.keystroke.key.as_str();
+        // F6: the keyboard to the ribbon's controls (and Escape back).
+        if key == "f6" && matches!(&self.document, Document::Pages { .. }) {
+            window.focus_next(cx);
+            cx.stop_propagation();
+            return;
+        }
         // ⌘V is left to the browser, whose paste event brings the clipboard
         // here. A browser that kept the copy off the clipboard (an embedding
         // page without clipboard access) sends no paste event for an empty
@@ -2465,12 +2762,21 @@ impl DocView {
                 .ok();
             });
         }
+        // The 印刷 panel takes every key while it is open.
+        if self.print_panel_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         // An open table dialog takes the keys it has.
         if self.table_dialog_key(event, cx) {
             cx.stop_propagation();
             return;
         }
         // A dialog over a Word document is modal: it takes every key.
+        if self.hyphenation_dialog.is_some() && self.hyphenation_dialog_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
             cx.stop_propagation();
             return;
@@ -2487,6 +2793,11 @@ impl DocView {
             if word_controls::handle_key(self, key, event.keystroke.modifiers.shift, cx) {
                 cx.stop_propagation();
             }
+            return;
+        }
+        // イマーシブ リーダー reads; it does not edit.
+        if self.immersive_key(key, cx) {
+            cx.stop_propagation();
             return;
         }
         if self.fields.is_open() {
@@ -3079,6 +3390,9 @@ impl EntityInputHandler for DocView {
         if self.page_dialog.is_some() {
             return self.page_dialog_input(text, cx);
         }
+        if self.immersive_open() {
+            return;
+        }
         // A 参考資料 dialog's field, or the navigation pane's search box.
         if let Some(field) = self.references.text_field_mut() {
             field.replace(range, text, false);
@@ -3095,10 +3409,13 @@ impl EntityInputHandler for DocView {
                 .is_some_and(|(_, _, marked)| marked.is_some());
             self.word_edit(cx, move |document| {
                 if composing {
-                    document.commit_composition(&text)
+                    document.commit_composition(&text)?;
                 } else {
-                    document.insert_text(&text)
+                    document.insert_text(&text)?;
                 }
+                // オートコレクト and 入力オートフォーマット, as the native app
+                // makes them.
+                document.autocorrect_typed(&autocorrect_options())
             });
             return;
         }
@@ -3255,6 +3572,8 @@ impl Render for DocView {
         let reference_dialog = word_references::overlay(self, window, cx);
         let controls_dialog = word_controls::dialog(self, window, cx);
         let mailings_dialog = word_mailings::dialog(self, window, cx);
+        let immersive = self.immersive_overlay(window, cx);
+        self.update_screen_reader();
         let fields_dialog = self.fields_dialog_element(window, cx);
         let tool_dialog = self.tool_dialog_element(window, cx);
         div()
@@ -3268,7 +3587,13 @@ impl Render for DocView {
             .children(reference_dialog)
             .children(controls_dialog)
             .children(mailings_dialog)
+            .children(immersive)
             .children(fields_dialog)
             .children(tool_dialog)
     }
+}
+
+/// The AutoCorrect settings the browser types with: Word's own.
+fn autocorrect_options() -> jade_web::word::autocorrect::AutoCorrectOptions {
+    jade_web::word::autocorrect::AutoCorrectOptions::default()
 }

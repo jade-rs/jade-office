@@ -45,9 +45,14 @@ Fixture corpus: mode 15 ×101, 14 ×61, 12 ×2, absent ×5.
 from `w:compat`:
 
 - `w:compatSetting w:name="compatibilityMode"` → `compatibility_mode:
-  Option<u32>` (`parse_compatibility_mode`). **No other `compatSetting` name
-  is read.**
-- five legacy children: `useFELayout`, `balanceSingleByteDoubleByteWidth`,
+  Option<u32>` (`parse_compatibility_mode`); a settings part that names
+  none is read as **12** (`UNDECLARED_COMPATIBILITY_MODE`), the mode Word
+  2007 wrote implicitly and the one Word opens such a file in.
+- every `w:compatSetting` as `(name, val)` and every other child of
+  `w:compat` as `(name, on)`, in `DocumentSettings.compat` /
+  `Document.compat` (`CompatOptions`), with typed accessors for the ones
+  layout reads.
+- typed fields for `useFELayout`, `balanceSingleByteDoubleByteWidth`,
   `noTabHangInd`, `adjustLineHeightInTable`, and
   `characterSpacingControl` (accepted inside or outside `w:compat`).
 
@@ -78,11 +83,9 @@ Not mode-dependent in jade: contextual spacing, space-before/after
 collapse, East Asian line height, autofit (beyond the Mac sizing width),
 hyphenation (not implemented).
 
-**Missing mode:** treated as modern for punctuation hanging, table inset
-and float look-ahead, but *not* for the mode-15 border-frame rules (which
-need an explicit `>= 15`). Word treats a missing mode as old, so jade's
-"modern" choice for the first three is a known divergence to check against
-a Word trace before changing.
+**Missing mode:** a document whose settings name no mode is mode 12 for
+every rule above. (A package with no settings part at all keeps
+`None`, which the rules treat as modern.)
 
 Pinned by: `jade-docx-layout/src/line_wrap.rs` ::
 `justified_paragraph_terminal_period_hangs_under_word_2013_layout` (modes
@@ -95,21 +98,25 @@ Pinned by: `jade-docx-layout/src/line_wrap.rs` ::
 `mac_legacy_right_alignment_uses_the_trailing_text_edge`,
 `repeated_nested_table_paints_at_the_editable_content_frame_origin`
 (modes 12/14/15/none); `jade-docx-editor/src/canvas_renderer.rs` ::
-`mode_14_wraps_the_paragraph_before_a_square_float_anchor`.
-**No test parses `compatibilityMode` itself.**
+`mode_14_wraps_the_paragraph_before_a_square_float_anchor`;
+`jade-docx-reader/src/settings.rs` ::
+`reads_every_compat_setting_and_option_and_the_mode_word_assumes`.
 
 ## Named compatibility settings (`w:compatSetting`)
 
 | Name | Word's meaning | jade |
 |---|---|---|
 | compatibilityMode | layout version (above) | read; used as above |
-| overrideTableStyleFontSizeAndJustification | table style's font size and alignment override the Normal style (mode 14+) | ignored; kept |
-| enableOpenTypeFeatures | apply OpenType ligatures/number forms set on runs | ignored; kept (ligature settings are not drawn) |
-| doNotFlipMirrorIndents | mirror indents don't swap in right-to-left paragraphs | ignored; kept |
-| differentiateMultirowTableHeaders | multi-row headers are separate header rows for accessibility | ignored; kept |
-| useWord2013TrackBottomHyphenation | hyphenate at the bottom of a page/column as Word 2013 did | ignored (no hyphenation); kept |
-| allowHyphenationAtTrackBottom | allow hyphenating the last line of a page/column | ignored; kept |
-| allowTextAfterFloatingTableBreak | text may continue beside a floating table that breaks across pages | ignored; kept |
+| overrideTableStyleFontSizeAndJustification | table style's font size and alignment override the Normal style (mode 14+) | read; not acted on; kept |
+| enableOpenTypeFeatures | apply OpenType ligatures/number forms set on runs | read; not acted on; kept |
+| doNotFlipMirrorIndents | mirror indents don't swap in right-to-left paragraphs | read; not acted on; kept |
+| differentiateMultirowTableHeaders | multi-row headers are separate header rows for accessibility | read; not acted on; kept |
+| useWord2013TrackBottomHyphenation | hyphenate at the bottom of a page/column as Word 2013 did | read (no hyphenation); kept |
+| allowHyphenationAtTrackBottom | allow hyphenating the last line of a page/column | read; kept |
+| allowTextAfterFloatingTableBreak | text may continue beside a floating table that breaks across pages | read; not acted on; kept |
+
+Every `compatSetting` is read into `CompatOptions.settings`, so a rule can
+ask for it by name (`setting`, `setting_on`).
 
 ## Legacy compatibility options (`w:compat` children)
 
@@ -123,11 +130,11 @@ Pinned by: `jade-docx-layout/src/line_wrap.rs` ::
 | noTabHangInd | no implicit tab stop at a hanging indent | **honoured** | `text_extract.rs`, `canvas_renderer.rs`; `settings.rs::parses_no_tab_hanging_indent_compatibility_switch` |
 | adjustLineHeightInTable | apply the document grid's line pitch inside table cells | **honoured** (pitch dropped in cells without it) | `line_metrics.rs::doc_grid_for_table_cells`; `text_extract.rs::table_cell_lines_take_the_line_grid_only_with_adjust_line_height_in_table`, `canvas_renderer.rs::table_cell_lines_ignore_the_line_grid_unless_adjust_line_height_in_table` |
 | characterSpacingControl | doNotCompress / compressPunctuation / compressPunctuationAndJapaneseKana | **honoured in part** — see [japanese-typesetting.md](japanese-typesetting.md) | `settings.rs::parses_character_spacing_control_outside_compat` |
-| doNotExpandShiftReturn | don't stretch a justified line that ends in a manual line break | ignored; kept (whether jade stretches such lines is not traced) | — |
-| spaceForUL | reserve space below the line for underlines | ignored; kept | — |
-| ulTrailSpace | underline trailing spaces | ignored; kept | — |
+| doNotExpandShiftReturn | don't stretch a justified line that ends in a manual line break | **honoured**: without it a justified line ending in a manual break is spread (`ParagraphStyle::expand_lines_ending_in_breaks`) | `canvas_renderer/compat_tests.rs::a_justified_line_ending_in_a_manual_break_is_spread_unless_the_document_says_not_to` |
+| spaceForUL | reserve space below the line for underlines | read (`space_for_underline`); not acted on — the extra room has not been traced | — |
+| ulTrailSpace | underline trailing spaces | **honoured**: without it the spaces at a line's end are not underlined | `canvas_renderer/compat_tests.rs::trailing_spaces_are_underlined_only_under_ul_trail_space` |
 | doNotLeaveBackslashAlone | show `\` as `¥` | ignored; kept | — |
-| doNotUseHTMLParagraphAutoSpacing | fixed spacing for HTML auto-spacing | ignored; kept | — |
+| doNotUseHTMLParagraphAutoSpacing | fixed spacing for HTML auto-spacing | read; not acted on (auto spacing is 14pt either way) | — |
 | doNotUseEastAsianBreakRules | no East Asian line-break rules | ignored; kept | — |
 | useAsianBreakRules | Asian first/last-character rules | ignored; kept | — |
 | doNotSnapToGridInCell | no grid snap in table cells | ignored; kept | — |
@@ -141,7 +148,7 @@ Pinned by: `jade-docx-layout/src/line_wrap.rs` ::
 | splitPgBreakAndParaMark | paragraph mark after a page break moves to the next page | ignored; kept | — |
 | selectFldWithFirstOrLastChar | selecting a field's edge selects the field | ignored; kept | — |
 | applyBreakingRules | legacy Ethiopic/Amharic breaking | ignored; kept | — |
-| any other child (noLeading, spacingInWholePoints, doNotUseIndentAsNumberingTabStop, forgetLastTabAlignment, noExtraLineSpacing, wpJustification, shapeLayoutLikeWW8, useWord97LineBreakRules, …) | older emulations | ignored; kept | — |
+| any other child (noLeading, spacingInWholePoints, doNotUseIndentAsNumberingTabStop, forgetLastTabAlignment, noExtraLineSpacing, wpJustification, shapeLayoutLikeWW8, useWord97LineBreakRules, …) | older emulations | read into `CompatOptions.options`; not acted on; kept | — |
 
 Most common in the corpus besides `useFELayout` (×105):
 doNotExpandShiftReturn ×43, spaceForUL/ulTrailSpace/doNotLeaveBackslashAlone/
@@ -209,13 +216,11 @@ the `mac_*` tests in `jade-docx-layout/src/line_wrap.rs` and
 
 ## Gaps found
 
-- Only `compatibilityMode` is read among `compatSetting`s; only five legacy
-  options affect layout. `spaceForUL` and `doNotExpandShiftReturn` (present
-  in a quarter of the corpus) are not modelled.
-- Modes 11/12/14 are not told apart, and a missing mode is treated as
-  modern in three of four rules.
-- No parse test for `compatibilityMode`; no test that new documents are
-  mode 15.
+- Every `compatSetting` and legacy option is read, but only
+  `compatibilityMode` and seven legacy options affect layout; `spaceForUL`
+  and `doNotUseHTMLParagraphAutoSpacing` wait on a Word trace.
+- Modes 11/12/14 behave alike; a document naming no mode is mode 12.
+- No test that new documents are mode 15.
 - No compatibility-mode indicator or Convert command (reference row 463).
 - No hyphenation, so the hyphenation compat settings have nothing to
   change.

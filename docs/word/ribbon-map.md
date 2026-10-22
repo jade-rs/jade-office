@@ -45,15 +45,16 @@ listed.
 | References | ✓ (TOC, notes) | ✓ | `doc.tab.references` | no citations, captions, index, TOA |
 | Mailings | – | – | — | |
 | Review | ✓ | ✓ | `doc.tab.review` | no proofing, compare, protect |
-| View | ✓ | – | `doc.tab.view` | |
+| View | ✓ | ✓ (marks, panes, zoom) | `doc.tab.view` | native: all of Word's groups but Macros; see "View" |
 | Developer | – | – | — | |
 | Table Design (context) | ✓ | ✓ | `doc.tab.table_design` | shown with the caret in a table |
 | Table Layout (context) | ✓ | ✓ | `doc.tab.table_layout` | |
 | Header & Footer (context) | ✓ | – (one-line bar) | `story.tab` | shown while a header/footer is open |
+| Outlining (context) | ✓ | – | `outline.tab` | shown in Outline view (`word_views/outline.rs`) |
 | Picture Format (context) | – (wrap buttons appear on Insert when a picture is selected) | – (same) | `picture.wrap.*` | |
 | Shape Format, Text Box, Equation, Chart, SmartArt (context) | – | – | — | |
 
-There is no right-click (context) menu for Word in either shell.
+Right-click (or ⌃-click) opens Word's context menu in the native shell — text, fields, links, tables, pictures and shapes, headers and footers (`word_views/context.rs` over `jade_office_model::word::context_menu`). The browser has none yet.
 
 ## Home
 
@@ -85,7 +86,7 @@ There is no right-click (context) menu for Word in either shell.
 | Paragraph › Decrease / Increase Indent | Ctrl+Shift+M / Ctrl+M | see note | ✓ ⌘[ / ⌘] | ✓ ribbon | `doc.indent_less_title`, `doc.indent_more_title` |
 | Paragraph › Asian Layout (縦中横, 組み文字, 割注, 文字の拡大/縮小) | ribbon | ribbon | ✓ | ✓ | `chars.asian.title` |
 | Paragraph › Sort | ribbon | ribbon | – (tables only) | – | — |
-| Paragraph › Show/Hide ¶ | Ctrl+Shift+8 | ⌘8 | View › Marks | – | `doc.marks` |
+| Paragraph › Show/Hide ¶ | Ctrl+Shift+8 | ⌘8 | View › Marks | View › Marks | `doc.marks` |
 | Paragraph › Align left / center / right / justify | Ctrl+L / E / R / J | ⌘L / E / R / J | ✓ ⇧⌘L / ⇧⌘E / ⇧⌘R, justify ribbon | ✓ ribbon | `doc.align_left_title` … |
 | Paragraph › Distributed (均等割り付け) | Ctrl+Shift+J | ⌘⇧J | – | – | — |
 | Paragraph › Line spacing | Ctrl+1 / 2 / 5 | ⌘1 / 2 / 5 | ✓ ribbon (1.0, 1.15, 1.5, 2.0) | ✓ | `doc.line_spacing_title` |
@@ -96,6 +97,7 @@ There is no right-click (context) menu for Word in either shell.
 | Styles › Styles pane, Create/Modify Style | Ctrl+Alt+Shift+S | ribbon | – | – | — |
 | Editing › Find | Ctrl+F | ⌘F | ✓ ⌘F (bar) | ✓ ⌘F (bar) | `doc.find.*` |
 | Editing › Replace | Ctrl+H | ⌃H | ✓ ⌃H | ✓ ⇧⌘H | `doc.find.*` |
+| Editing › Advanced Find and Replace (More ▼: wildcards, ^ codes, format, style, direction, scope, prefix/suffix, width, kana, punctuation, spaces) | ribbon | Edit menu | ✓ ⌥⇧⌘H, Edit menu | ≈ find bar's ⋯ row (no format/scope) | `find.*` |
 | Editing › Go To | Ctrl+G / F5 | ⌘⌥G | – (⌘G is Find Next in jade) | – | — |
 | Editing › Select All / Select Paragraph | Ctrl+A | ⌘A | ✓ ⌘A, ⌥⌘A | ✓ ⌘A, triple-click | — |
 | Undo / Redo (Quick Access) | Ctrl+Z / Ctrl+Y | ⌘Z / ⌘Y | ✓ ⌘Z / ⇧⌘Z, ribbon | ✓ ⌘Z / ⇧⌘Z / ⌘Y | `doc.undo_title`, `doc.redo` |
@@ -166,7 +168,7 @@ jade has no ink model; "Draw" in jade is only the table pencil and eraser
 | Arrange › Bring Forward, Send Backward, Selection Pane, Align, Group, Rotate | – | – | — |
 
 The native Layout tab's "Page Break" button (`doc.page_break`) inserts a
-blank page (`insert_blank_page`), not a page break.
+page break at the caret; 空白のページ stays under 挿入.
 
 ## References
 
@@ -220,15 +222,23 @@ Merge fields in a received document are drawn with Word's saved results.
 
 | Word group › command | Win | Mac | N | B | jade key |
 |---|---|---|---|---|---|
-| Views › Read Mode | ribbon | — (Windows only) | – | – | — |
-| Views › Print Layout | ribbon | ribbon | ✓ (the only view) | ✓ | — |
-| Views › Web Layout, Outline, Draft | ribbon | ribbon | – | – | — |
-| Immersive › Focus, Immersive Reader | ribbon | ribbon | – | – | — |
-| Page Movement › Vertical / Side to Side | ribbon | ribbon | vertical only | vertical only | — |
-| Show › Ruler, Gridlines, Navigation Pane | ribbon | ribbon | – | – | — |
-| Show › formatting marks | Ctrl+Shift+8 | ⌘8 | ✓ View › Marks | – | `doc.marks` |
-| Zoom › Zoom, 100%, One Page, Multiple Pages, Page Width | ribbon | ribbon | ✓ −/100%/+ (⌘- ⌘0 ⌘=), fit ⌘9 | ✓ status bar | `doc.group.zoom` |
-| Window › New Window, Arrange All, Split, Side by Side, Switch Windows | ribbon | ribbon | – | – | — |
+| Views › Read Mode | ribbon | — (Windows only) | ✓ screen-sized columns, ← → / Esc | – | `views.read` |
+| Views › Print Layout | ribbon | ribbon | ✓ | ✓ (the only view) | `views.print` |
+| Views › Web Layout | ribbon | ribbon | ✓ wrapped to the window | – | `views.web` |
+| Views › Outline (Outlining tab: level, promote/demote, move up/down, expand/collapse, Show Level) | ribbon | ribbon | ✓ | – | `views.outline`, `outline.*` |
+| Views › Draft | ribbon | ribbon | ✓ text bands, dotted page breaks | – | `views.draft` |
+| Immersive › Focus | ribbon | ribbon | ✓ full screen, Esc | – | `views.focus` |
+| Immersive › Immersive Reader | ribbon | ribbon | – (review stream) | – | — |
+| Page Movement › Vertical / Side to Side | ribbon | ribbon | ✓ | vertical only | `views.vertical`, `views.side_to_side` |
+| Show › Ruler | ribbon | ribbon | ✓ | – | `word.ruler.show` |
+| Show › Gridlines | ribbon | ribbon | ✓ (settings' drawing grid) | – | `views.gridlines` |
+| Show › Navigation Pane | ribbon | ⌃⌘N | ✓ | ✓ | `nav.title` |
+| Show › formatting marks | Ctrl+Shift+8 | ⌘8 | ✓ View › Marks | ✓ View › Marks | `doc.marks` |
+| Show › hide white space (double-click between pages) | double-click | double-click | ✓ | – | `views.white_space` |
+| Zoom › Zoom dialog, 100%, One Page, Multiple Pages, Page Width | ribbon | ribbon | ✓ (fits follow the window) | ≈ −/100%/+/page width | `views.zoom.*`, `views.one_page`, `views.multiple_pages`, `views.page_width` |
+| Window › New Window, Split | ribbon | ribbon | ✓ (`名前:2`; two panes) | – | `views.new_window`, `views.split` |
+| Window › Arrange All, View Side by Side, Switch Windows | ribbon | ribbon | – | – | — |
+| Editing / Reviewing / Viewing (top right) | ribbon | ribbon | ✓ strip's right | – | `modes.*` |
 | (jade) previous / next page | — | — | ✓ PageUp/PageDown, ribbon | – | `doc.previous`, `doc.next` |
 | Macros | Alt+F8 | ⌥F8 | – | – | — |
 
@@ -302,11 +312,12 @@ and Alt key tips instead. jade's native shell has a macOS menu bar
 |---|---|
 | jade | Quit |
 | File | New Document ⌘N, New from Template… ⇧⌘P, Open… ⌘O, Open Folder… ⇧⌘O, Close Tab ⌘W, Save ⌘S, Save As… ⇧⌘S, Print… ⌘P, Export as PDF… ⌥⌘P |
-| Edit | Undo, Redo, Cut, Copy, Paste, Paste Special… ⌃⌘V, Paste and Match Formatting ⌥⇧⌘V, Select All, Select Paragraph ⌥⌘A, Find and Replace… ⌘F, Find Selection ⌘E, Find Next ⌘G, Replace… ⌃H, Replace All ⌥⇧⌘F |
+| Edit | Undo, Redo, Cut, Copy, Paste, Paste Special… ⌃⌘V, Paste and Match Formatting ⌥⇧⌘V, Select All, Select Paragraph ⌥⌘A, Find and Replace… ⌘F, Find Selection ⌘E, Find Next ⌘G, Replace… ⌃H, Replace All ⌥⇧⌘F, Advanced Find and Replace… ⌥⇧⌘H, Go To ⌥⌘G |
 | Format | Bold, Italic, Underline, Font… ⌘D, Asian Typography… ⌥⇧⌘K, Align Left/Center/Right, Increase/Decrease Indent, Paragraph… ⌥⌘M, Copy/Paste Formatting |
-| Insert (two menus of the same name) | Link… ⌘K, Footnote ⌥⌘F, Endnote ⌥⌘D · Symbol… ⌥⇧⌘S, Date and Time… ⌃⇧D |
-| Table | Insert Row Below ⇧⌘↩, Delete Row ⇧⌘⌫ |
+| Insert (one menu) | Page Break ⌘↩, Column Break ⇧⌘↩, Link… ⌘K, Bookmark, Footnote ⌥⌘F, Endnote ⌥⌘D, index and citation marks, Symbol… ⌥⇧⌘S, Date and Time… ⌃⇧D, the field commands |
+| Table | Insert Row Below ⌥⌘↩, Delete Row ⇧⌘⌫ |
 | Review | Add Comment ⌘M, Track Changes ⇧⌘T |
+| Tools | AutoCorrect… ⌃⌥⌘A, Word Options… ⌘, (View: marks by kind; Edit: overtype, Insert key, paste defaults; Ribbon & Toolbar: tabs, Quick Access Toolbar, a custom group), Overtype (Insert) |
 | View | Explorer ⌥⌘E, Details Panel ⌥⌘I, Appearance (System, Light, Dark, Dark Pages, toggle), Next/Previous Page, Zoom In/Out/Actual Size/Fit |
 
 Word for Mac menus with no jade counterpart: Format › Tabs…, Borders and
@@ -346,15 +357,19 @@ the title bar.
 | Phonetic Guide, Enclose Characters | ribbon | ribbon | ✓ | ✓ |
 | Combine Characters, Two Lines in One, Fit Text | ribbon | ribbon | menu choices (no dialog); Fit Text – | same |
 | Paste Special | Ctrl+Alt+V | ⌃⌘V | ✓ | – |
-| Find and Replace (More options, Go To) | Ctrl+H / F5 | ⌃H | ≈ bar: match case, whole words | ≈ bar with buttons |
+| Find and Replace (More options, Go To) | Ctrl+H / F5 | ⌃H | ✓ dialog with More ▼ (⌥⇧⌘H), Go To ⌥⌘G | ≈ bar with buttons and the ⋯ options row |
 | Word Count | Ctrl+Shift+G | ⌘⇧G | – (status bar) | – (status bar) |
-| Spelling and Grammar, Thesaurus, Language | F7 | ⌥⌘L | – | – |
+| Spelling and Grammar, Thesaurus | F7 | ⌥⌘L | – (review stream) | – |
+| Language (set proofing language, detect automatically) | ribbon | Tools › Language | ✓ Review › Language | – |
 | Track Changes Options, Compare, Combine | ribbon | Tools menu | – | – |
 | Restrict Editing / Protect Document, Encrypt | ribbon / Backstage | Tools / Review | – | – |
 | Mail Merge Recipients, Match Fields, Address Block, Greeting Line, Envelopes, Labels | ribbon | Tools / Mailings | – | – |
 | Content Control Properties, legacy form field options | ribbon | ribbon | – | – |
 | Document Properties | Backstage | File › Properties | – | – |
-| Options (Windows) / Preferences (Mac), AutoCorrect, Customize Ribbon / Keyboard | Backstage | app menu | – | – |
+| Options (Windows) / Preferences (Mac), Customize Ribbon / Quick Access Toolbar | Backstage | ⌘, | ✓ Word Options ⌘, | – |
+| AutoCorrect (AutoCorrect, AutoFormat As You Type) | Backstage | Tools menu | ✓ ⌃⌥⌘A | – (Word's defaults apply as you type) |
+| Zoom | ribbon | View menu | ✓ | – |
+| Customize Keyboard | Backstage | Tools menu | – | – |
 | Templates and Add-ins, Macros | ribbon | Tools menu | – | – |
 | Print, Save As | Ctrl+P / F12 | ⌘P / ⌘⇧S | ✓ (system print panel, save panel) | – print; save downloads |
 
@@ -365,19 +380,19 @@ command:
 
 | Action | Word Win | Word Mac | jade N | jade B | Note |
 |---|---|---|---|---|---|
-| Align left / center / right | Ctrl+L / E / R | ⌘L / E / R | ⇧⌘L / ⇧⌘E / ⇧⌘R | – | jade keeps ⌘E for Find Selection (macOS convention) |
-| Justify | Ctrl+J | ⌘J | – | – | |
-| Bullets | Ctrl+Shift+L | ⌘⇧L | – (⇧⌘L = align left) | – | collision |
-| Track Changes | Ctrl+Shift+E | ⌘⇧E | ⇧⌘T (⇧⌘E = center) | – | collision |
+| Align left / center / right | Ctrl+L / E / R | ⌘L / E / R | ⌘L / ⌘E / ⌘R | – | Find Selection moved to ⌃⌘E |
+| Justify | Ctrl+J | ⌘J | ⌘J | – | |
+| Bullets | Ctrl+Shift+L | ⌘⇧L | ⇧⌘L | – | |
+| Track Changes | Ctrl+Shift+E | ⌘⇧E | ⇧⌘E, ⇧⌘T | – | |
 | New Comment | Ctrl+Alt+M | ⌘⌥A | ⌘M | – | |
 | Insert Endnote | Ctrl+Alt+D | ⌘⌥E | ⌥⌘D | ⌥⌘D | jade follows the Windows letter |
-| Subscript / Superscript | Ctrl+= / Ctrl+Shift+= | ⌘= / ⌘⇧= | – (⌘= zooms in) | – | collision |
-| Column break | Ctrl+Shift+Enter | ⌘⇧↩ | – (⇧⌘↩ inserts a table row) | – | collision |
+| Subscript / Superscript | Ctrl+= / Ctrl+Shift+= | ⌘= / ⌘⇧= | ⌘= / ⇧⌘= | – | zoom is ⌥⌘= / ⌥⌘- |
+| Column break | Ctrl+Shift+Enter | ⌘⇧↩ | ⇧⌘↩ | – | Insert Row Below is ⌥⌘↩ |
 | Redo | Ctrl+Y | ⌘Y | ⇧⌘Z | ⇧⌘Z, ⌘Y | |
 | Go To | Ctrl+G / F5 | ⌘⌥G | – (⌘G = Find Next) | ⌘G in find bar | |
 | Indent / outdent | Ctrl+M / Ctrl+Shift+M | not verified | ⌘] / ⌘[ | – | |
 | Date field | Alt+Shift+D | ⌃⇧D | ⌃⇧D opens the dialog | – | Word inserts the field directly |
-| Font size box | Ctrl+Shift+P | ⌘⇧P | – (⇧⌘P = New from Template) | – | |
+| Font size box | Ctrl+Shift+P | ⌘⇧P | ⇧⌘P opens the Font dialog | – | New from Template is ⌥⌘N |
 | Grow / shrink font | Ctrl+Shift+> / < | ⌘⇧> / < | – | – | |
 | Show ¶ | Ctrl+Shift+8 | ⌘8 | – | – | |
 | Line spacing 1 / 2 / 1.5 | Ctrl+1 / 2 / 5 | ⌘1 / 2 / 5 | – | – | |
@@ -392,7 +407,9 @@ Matching Word: ⌘B/I/U, ⌘D (Font), ⌘K (link), ⌥⌘M (Paragraph, Mac), ⌥
 format), ⌃⌘V (Paste Special, Mac), ⌥⇧⌘V (match formatting, Mac), ⌃H
 (Replace, Mac), ⌘F, ⌘A, ⌘Z, ⌘S, ⇧⌘S (Save As, Mac), ⌘P.
 
-jade-only: ⌥⌘A select paragraph, ⌥⇧⌘K Asian Typography, ⌥⇧⌘S Symbol,
+Word for Mac's own: ⌘, Preferences (Word Options), Insert (overtype).
+
+jade-only: ⌥⇧⌘H Advanced Find and Replace, ⌃⌥⌘A AutoCorrect, ⌥⌘A select paragraph, ⌥⇧⌘K Asian Typography, ⌥⇧⌘S Symbol,
 ⌥⌘P Export PDF, ⌘9 zoom to fit, PageUp/PageDown page steps, theme keys
 ⌃⌥⌘S/L/D/P, ⌥⌘E / ⌥⌘I panels.
 
@@ -415,16 +432,19 @@ same commands.
 
 ## Gaps found
 
-- Whole tabs missing: Draw, Mailings, Developer; View in the browser.
+- Whole tabs missing: Draw, Mailings, Developer (other streams add them).
 - Design has only Page Color and Page Borders (no themes, style sets,
   watermark).
 - No Shapes, SmartArt, Chart, Text Box, WordArt, Equation insertion; no
   Picture/Shape Format tabs.
 - No Bookmark, Cross-reference, Caption, Index, Citation buttons although
   the engine has commands for several.
-- No right-click menus for Word.
-- Shortcut collisions with Word: ⇧⌘L, ⇧⌘E, ⌘=, ⇧⌘↩, ⇧⌘P; Word's own
-  shortcuts for justify, headings, line spacing, ¶, grow/shrink font, clear
-  formatting and field keys are unbound.
-- The native menu bar has two menus named Insert; the native Layout tab's
-  "Page Break" inserts a blank page.
+- Right-click menus: text, table, picture, shape, header and footer, a link
+  and a field, from one list
+  (`crates/jade-office-model/src/word/context_menu.rs`) drawn by
+  `crates/jade-gpui-app/src/word_views/context.rs` and
+  `crates/jade-gpui-web/src/view/word_context_menu.rs` — the browser leaves
+  Paste to ⌘V and the field and link items to the native shell). No Bring
+  Forward / Send Backward items yet.
+- Word's own shortcuts for headings, line spacing, ¶, grow/shrink font and
+  clear formatting are unbound.

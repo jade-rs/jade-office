@@ -1111,3 +1111,63 @@ fn undoing_and_redoing_edits_repaints_the_pages_they_leave() {
         .collect();
     compare(&document, &fresh, "redone");
 }
+
+/// A double-click takes a run of one script — 東京 out of 東京へ — and an
+/// English word with the space after it, as Word (and the native app) do.
+#[test]
+fn a_double_click_takes_a_run_of_one_script() {
+    let mut document = open("contract.docx");
+    let (paragraph, _) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0);
+    document.insert_text("東京へ go now ").unwrap();
+    document.select_word((paragraph, 3)).unwrap();
+    assert_eq!(document.selected_text().unwrap(), "東京");
+    document
+        .select_word((paragraph, "東京へ ".len() + 1))
+        .unwrap();
+    assert_eq!(document.selected_text().unwrap(), "go ");
+}
+
+/// AutoCorrect as the browser types: teh corrects at the space, 1. starts a
+/// list, --- and Enter draws a border — each undone on its own.
+#[test]
+fn autocorrect_follows_typing() {
+    use jade_office_model::word::autocorrect::AutoCorrectOptions;
+    let options = AutoCorrectOptions::default();
+    let mut document = open("contract.docx");
+    let (paragraph, text) = first_text_paragraph(&document);
+    document.place_caret(paragraph, text.len());
+    document.insert_paragraph_break().unwrap();
+    let fresh = paragraph + 1;
+    document.insert_text("I saw teh ").unwrap();
+    document.autocorrect_typed(&options).unwrap();
+    assert_eq!(document.paragraph_text(fresh).unwrap(), "I saw the ");
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(fresh).unwrap(), "I saw teh ");
+
+    document.place_caret(fresh, "I saw teh ".len());
+    document.insert_paragraph_break().unwrap();
+    let list = fresh + 1;
+    document.insert_text("1. ").unwrap();
+    document.autocorrect_typed(&options).unwrap();
+    assert_eq!(document.paragraph_text(list).unwrap(), "");
+    assert_eq!(document.caret(), Some((list, 0)));
+
+    document.insert_text("---").unwrap();
+    document.insert_paragraph_break().unwrap();
+    document.autocorrect_enter(list, &options).unwrap();
+    assert_eq!(document.paragraph_text(list).unwrap(), "");
+}
+
+/// 表示 → 編集記号: the marks go and come back, the pages repainted.
+#[test]
+fn formatting_marks_toggle_from_the_view_tab() {
+    let mut document = open("contract.docx");
+    assert!(document.formatting_marks(), "on, as Word's editors open");
+    let with = page_rgba(&document, 0);
+    document.set_formatting_marks(false).unwrap();
+    assert!(!document.formatting_marks());
+    assert!(page_rgba(&document, 0) != with, "the marks are gone");
+    document.set_formatting_marks(true).unwrap();
+    assert!(page_rgba(&document, 0) == with, "and back");
+}

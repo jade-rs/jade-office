@@ -2172,7 +2172,6 @@ objects.outline.arrows	矢印
 objects.outline.dash	実線/点線
 objects.outline.none	枠線なし
 objects.outline.weight	太さ
-objects.pen	ペン
 objects.position	位置
 objects.position.bottom_center	下中央に配置し、四角の枠に沿って文字列を折り返す
 objects.position.bottom_left	左下に配置し、四角の枠に沿って文字列を折り返す
@@ -2604,5 +2603,748 @@ equation.delete_column	列の削除
 equation.justify_left	左揃え
 equation.justify_center	中央揃え
 equation.justify_right	右揃え
+# Files: formats, copies, templates, recovery (word_files, autorecover)
+menu.file.save_copy	コピーを保存…
+menu.file.save_template	テンプレートとして保存…
+files.too_old	{name} は Word 97 より前の形式のため開けません。
+files.damaged	{name} は壊れているため開けません: {error}
+files.failed	{name} を変換できませんでした: {error}
+files.save_failed	保存できませんでした
+files.copy_name	{name} のコピー
+files.encoding_title	ファイルの変換
+files.encoding_title_named	ファイルの変換 - {name}
+files.encoding	エンコード
+files.preview	プレビュー
+files.line_ending	行の終わり
+files.crlf	CR/LF
+files.lf	LF のみ
+files.cr	CR のみ
+files.text_only	テキストのみが保存されます。書式、画像、表の罫線は失われます。
+files.lost_characters	次の文字は選択したエンコードで保存できません: {chars}
+files.backup_name	{name} のバックアップ
+recent.pin	一覧にピン留めする
+recent.unpin	ピン留めを外す
+recent.folders	最近使ったフォルダー
+recovered.title	回復されたファイル
+recovered.delete	削除
+recovered.name	{name} (回復済み)
+menu.app.save_preferences	環境設定 (保存)…
+prefs.save_title	保存
+prefs.save_options	保存オプション
+prefs.always_backup	バックアップ ファイルを常に作成する
+prefs.autorecover	自動回復用データを保存する:
+prefs.minutes	分ごと
+prefs.recovery_folder	自動回復ファイルの保存先
+prefs.save_folder	既定の保存先 (文書)
+prefs.default_folder	既定 (アプリケーション サポート内の AutoRecovery)
+prefs.documents	書類フォルダー
+prefs.change	変更…
+prefs.choose	選択
+prefs.this_document	このドキュメントの共有時に忠実度を保つ
+prefs.embed_fonts	TrueType フォントをファイルに埋め込む
+prefs.embed_subset	ドキュメントで使用されている文字だけを埋め込む (ファイル サイズを縮小する場合)
+# Print (word_print)
+print.title	印刷
+print.copies	部数
+print.collate	部単位で印刷
+print.pages	ページ
+print.all	すべて
+print.current	現在のページ
+print.selection	選択した部分
+print.custom	ユーザー指定
+print.range_hint	例: 1,3,5-12 または p1s2-p3s3 (ページ 1 セクション 2 からページ 3 セクション 3 まで)
+print.range_syntax	ページ範囲として読めません: {part}
+print.range_missing	そのページはありません: {part}
+print.duplex	両面印刷
+print.one_sided	片面印刷
+print.long_edge	両面印刷 (長辺綴じ)
+print.short_edge	両面印刷 (短辺綴じ)
+print.per_sheet	1 枚あたりのページ数
+print.scale_to	用紙サイズに合わせる
+print.no_scaling	拡大縮小なし
+print.options	印刷オプション
+print.markup	変更履歴/コメントを印刷する
+print.update_fields	印刷前にフィールドを更新する
+print.background	背景の色とイメージを印刷する
+print.hidden_text	隠し文字を印刷する
+print.pdf	PDF として保存…
+print.print	印刷
+print.fit	全体表示
+print.sheet_of	{n} / {count}
+pdf.title	PDF として保存
+pdf.accessible	電子配布とアクセシビリティに最適
+pdf.accessible_detail	見出し、段落、表、図 (代替テキスト付き) の構造タグと、見出しのブックマークを含めます。文字はベクターで書き出されます。
+pdf.appearance	画面の表示に合わせる
+pdf.appearance_detail	画面と同じ見た目で書き出します。文字は検索できますが、構造タグは含まれません。
+# Compatibility (word_compat)
+menu.file.check_compatibility	互換性チェック…
+menu.file.convert	文書の変換 (最新の形式にする)
+compat.badge	[互換モード]
+compat.title	Microsoft Word 互換性チェック
+compat.versions	表示するバージョン
+compat.summary	概要 (古いバージョンで開いたときに失われる、または変更される機能)
+compat.no_issues	互換性の問題は見つかりませんでした。
+compat.occurrences	{n} 件
+compat.check_on_save	文書を保存するときに互換性を確認する
+compat.continue	続行
+compat.convert_title	文書の変換
+compat.already_current	この文書は既に最新のファイル形式です。
+compat.issue.replies	コメントへの返信は、個別のコメントになります。
+compat.issue.repeating	繰り返しセクションのコンテンツ コントロールは、通常のコンテンツ コントロールになります。
+compat.issue.control_appearance	コンテンツ コントロールの色と外観は失われます。
+compat.issue.video	オンライン ビデオは、静止画像になります。
+compat.issue.collapsed	見出しの折りたたみは解除されます。
+compat.issue.text_effects	文字の効果 (光彩、影、反射、輪郭、グラデーション) は削除されます。
+compat.issue.opentype	OpenType の機能 (合字、数字の書式、スタイル セット) は削除されます。
+compat.issue.checkboxes	チェック ボックスのコンテンツ コントロールは、静的な内容になります。
+compat.issue.shapes	図形とテキスト ボックスは、旧形式の図形に変換されます。
+compat.issue.picture_effects	図の効果とアート効果は削除されます。
+compat.issue.table_alt	表の代替テキストは削除されます。
+compat.issue.relative	ページに対する相対的なサイズと位置は、絶対的な値になります。
+compat.issue.equations	数式は画像になり、編集できなくなります。
+compat.issue.controls	コンテンツ コントロールは、静的な文字列になります。
+compat.issue.smartart	SmartArt グラフィックは、1 つの画像になります。
+compat.issue.charts	グラフは画像になります。
+compat.issue.moves	移動の変更履歴は、挿入と削除になります。
+compat.issue.themes	テーマのフォントと色は、固定のフォントと色になります。
+# Templates (word_templates)
+menu.file.templates	テンプレートとアドイン…
+templates.title	テンプレートとアドイン
+templates.document_template	文書テンプレート
+templates.normal	Normal (既定のテンプレート)
+templates.attach	添付…
+templates.detach	切り離す
+templates.link_styles	文書のスタイルを自動的に更新する
+templates.normal_heading	Normal テンプレート
+templates.normal_default	新しい文書は、既定のスタイルとページで作成されます。
+templates.normal_custom	新しい文書は、保存した Normal テンプレートから作成されます。
+templates.save_normal	この文書のスタイルとページを既定に設定
+templates.reset_normal	既定に戻す
+templates.normal_saved	新しい文書は、この文書のスタイルとページで作成されます。
+# Repair (word::repair)
+repair.title	文書の修復
+repair.intro	この文書には読み取れない内容が含まれていたため、修復できた部分を開きました。保存すると、修復後の内容で保存されます。
+repair.archive	ファイルの目次 (ZIP の中央ディレクトリ) が壊れていたため、各部分を順に読み直しました。
+repair.entry_lost	{name} は読み取れなかったため、取り除きました。
+repair.part_mended	{name} の XML が壊れていました。読み取れた内容 (約 {percent}%) を残しました。
+repair.relationship	見つからない {name} への参照を取り除きました。
+repair.content_types	コンテンツの種類の一覧 ([Content_Types].xml) を作り直しました。
+repair.package_rels	パッケージのリレーションシップを作り直しました。
+# Save options (word_save_options)
+menu.file.compress	ファイル サイズの圧縮…
+compress.title	ファイル サイズの圧縮
+compress.quality	画質
+compress.hd	HD (330 ppi)
+compress.print	印刷用 (220 ppi)
+compress.web	Web (150 ppi)
+compress.email	電子メール用 (96 ppi)
+compress.delete_crops	図のトリミング部分を削除する
+compress.on_save	保存するたびにこの設定で圧縮する
+compress.note	図の表示サイズに対して解像度が高い図だけが縮小されます。
+compress.done	{n} 個の図を圧縮しました (約 {kb} KB 削減)。
+compress.nothing	圧縮できる図はありませんでした。
+compat.layout_options	レイアウトの互換性オプション (この文書)
+compat.layout.fe	東アジア言語の行グリッドに合わせてレイアウトする (useFELayout)
+compat.layout.balance	半角文字と全角文字の幅を調整する
+compat.layout.no_tab_hang	ぶら下げインデントにタブ位置を追加しない
+compat.layout.table_grid	表の行の高さを行グリッドに合わせる
+pdf_import.title	PDF の変換
+pdf_import.body	PDF を編集可能な Word 文書に変換しました。変換後の文書は、特に図が多い場合、元の PDF と見た目が異なることがあります。保存すると Word 文書 (.docx) として保存されます。
+web.download_as	形式を指定してダウンロード ▾
+master.title	マスター文書
+master.group	マスター文書
+master.show	文書を表示
+master.show_title	サブ文書を枠で囲んで表示します
+master.expand_collapse	展開/折りたたみ
+master.expand_collapse_title	サブ文書を展開して内容を表示するか、折りたたんでリンクだけを表示します
+master.create	作成
+master.create_title	カーソルのある見出しとその下の内容からサブ文書を作成します
+master.insert	挿入
+master.insert_title	ファイルをサブ文書として挿入します
+master.insert_prompt	サブ文書として挿入
+master.unlink	リンク解除
+master.unlink_title	サブ文書へのリンクを解除して、内容をマスター文書に取り込みます
+master.lock	文書のロック
+master.lock_title	サブ文書をロックして編集できないようにします
+master.open	サブ文書を開く
+master.open_title	カーソルのあるサブ文書を別のタブで開きます
+master.none	この文書にはサブ文書がありません。
+master.not_in_subdocument	カーソルをサブ文書の中に置いてください。
+master.unreachable	次のサブ文書を開けませんでした: {names}
+master.locked_edit	ロックされたサブ文書は変更できません。
+hyphenation.group	ハイフネーション
+hyphenation.button	ハイフネーション
+hyphenation.title	ハイフネーション
+hyphenation.none	なし
+hyphenation.automatic	自動
+hyphenation.options	ハイフネーションのオプション...
+hyphenation.auto	文書を自動的にハイフネーションする
+hyphenation.caps	英大文字の単語をハイフネーションする
+hyphenation.zone	ハイフネーション ゾーン
+hyphenation.limit	連続するハイフンの制限
+hyphenation.no_limit	空欄で制限なし
+hyphenation.bad_zone	ハイフネーション ゾーンには 0 以上の長さを入力してください。
+hyphenation.bad_limit	連続するハイフンの制限には 0 以上の整数を入力してください。
+hyphenation.unlimited	制限なし
+draw.tab	描画
+draw.group.tools	描画ツール
+draw.group.mode	モード
+draw.group.convert	変換
+draw.group.selection	選択したインク
+draw.select	選択
+draw.lasso	なげなわ選択
+draw.eraser	消しゴム
+draw.eraser.stroke	ストローク消しゴム
+draw.eraser.point	ポイント消しゴム
+draw.pen	ペン
+draw.pencil	鉛筆
+draw.highlighter	蛍光ペン
+draw.effect	効果ペン
+draw.add_pen	ペンの追加
+draw.touch	タッチで描画
+draw.ink_to_shape	インクを図形に変換
+draw.ink_editor	インク エディター
+draw.delete	削除
+draw.to_shapes	図形に変換
+draw.thickness	太さ
+draw.color	色
+draw.effects	効果
+draw.effect.rainbow	虹
+draw.effect.galaxy	ギャラクシー
+draw.effect.lava	溶岩
+draw.effect.ocean	海
+draw.effect.gold	金
+draw.effect.silver	銀
+draw.effect.rosegold	ローズ ゴールド
+draw.effect.bronze	ブロンズ
+# ---- 表示, 検索と置換, 入力支援 (word_views) ----
+views.group.views	表示
+views.read	閲覧モード
+views.print	印刷レイアウト
+views.web	Web レイアウト
+views.outline	アウトライン
+views.draft	下書き
+views.group.movement	ページ移動
+views.vertical	縦
+views.side_to_side	横
+views.gridlines	グリッド線
+views.white_space	余白を表示しない
+views.white_space_title	ページ間の余白を表示しない (ページ間をダブルクリックでも切り替え)
+views.zoom.button	ズーム
+views.zoom.title	ズーム
+views.zoom.page_width	ページ幅を基準に表示
+views.zoom.text_width	文字列の幅を基準に表示
+views.zoom.whole_page	ページ全体を表示
+views.zoom.many_pages	複数ページ
+views.zoom.pages	ページ数
+views.zoom.percent	倍率
+views.one_page	1 ページ
+views.multiple_pages	複数ページ
+views.page_width	ページ幅
+menu.tools	ツール
+menu.tools.autocorrect	オートコレクト…
+autocorrect.title	オートコレクト
+autocorrect.tab.correct	オートコレクト
+autocorrect.tab.format	入力オートフォーマット
+autocorrect.two_initial_capitals	2 文字目を小文字にする [THe → The]
+autocorrect.capitalize_sentences	文の先頭文字を大文字にする [the → The]
+autocorrect.capitalize_days	曜日の先頭文字を大文字にする [monday → Monday]
+autocorrect.replace_text	入力中に自動修正する
+autocorrect.smart_quotes	左右の区別がない引用符を、区別がある引用符に変更する
+autocorrect.ordinals	序数 (1st, 2nd) を上付き文字に変更する
+autocorrect.fractions	分数 (1/2, 1/4, 3/4) を分数文字に変更する
+autocorrect.hyphens	ハイフンをダッシュに変更する
+autocorrect.bulleted_lists	箇条書き (行頭文字)
+autocorrect.numbered_lists	段落番号
+autocorrect.borders	罫線
+autocorrect.headings	組み込みの見出しスタイル
+autocorrect.long_vowels	長音とダッシュを正しく使い分ける
+autocorrect.brackets	かっこを正しく組み合わせる
+autocorrect.closing_phrases	頭語に対応する結語を挿入する
+autocorrect.kiki	記書きに対応する"以上"を挿入する
+autocorrect.replace	修正文字列
+autocorrect.with	修正後の文字列
+autocorrect.add	追加
+autocorrect.delete	削除
+context.cut	切り取り
+context.copy	コピー
+context.paste	貼り付け
+context.paste_options	貼り付けのオプション
+context.paste_keep	元の書式を保持
+context.paste_merge	書式を結合
+context.paste_text	テキストのみ保持
+context.font	フォント…
+context.paragraph	段落…
+context.bullets	箇条書き
+context.numbering	段落番号
+context.smart_lookup	スマート検索
+context.new_comment	新しいコメント
+context.link	リンク…
+context.edit_link	リンクの編集…
+context.open_link	リンクを開く
+context.remove_link	リンクの削除
+context.update_field	フィールド更新
+context.edit_field	フィールドの編集…
+context.toggle_field_codes	フィールド コードの表示/非表示
+context.insert	挿入
+context.row_above	上に行を挿入
+context.row_below	下に行を挿入
+context.column_left	左に列を挿入
+context.column_right	右に列を挿入
+context.insert_cells	セルの挿入…
+context.delete	削除
+context.delete_cells	セルの削除…
+context.delete_row	行の削除
+context.delete_column	列の削除
+context.delete_table	表の削除
+context.merge_cells	セルの結合
+context.split_cells	セルの分割…
+context.distribute_rows	行の高さを揃える
+context.distribute_columns	列の幅を揃える
+context.table_borders	線種とページ罫線と網かけの設定…
+context.text_direction	縦書きと横書き…
+context.autofit	自動調整
+context.autofit_contents	文字列の幅に合わせる
+context.autofit_window	ウィンドウ幅に合わせる
+context.table_properties	表のプロパティ…
+context.wrap	文字列の折り返し
+context.edit_header	ヘッダーの編集
+context.edit_footer	フッターの編集
+context.close_header_footer	ヘッダーとフッターを閉じる
+find.menu	高度な検索と置換…
+find.title	検索と置換
+find.title_replace	検索と置換
+find.tab.find	検索
+find.tab.replace	置換
+find.query	検索する文字列
+find.replacement	置換後の文字列
+find.more	オプション ▼
+find.less	オプション ▲
+find.next	次を検索
+find.replace	置換
+find.replace_all	すべて置換
+find.direction	検索方向
+find.down	下へ
+find.up	上へ
+find.all	すべて
+find.scope	検索する場所
+find.scope.main	メイン文書
+find.scope.notes	脚注と文末脚注
+find.scope.selection	選択範囲
+find.scope.headers	ヘッダーとフッター
+find.match_prefix	接頭辞に一致する
+find.match_suffix	接尾辞に一致する
+find.wildcards	ワイルドカードを使用する
+find.match_width	半角と全角を区別する
+find.match_kana	ひらがなとカタカナを区別する
+find.ignore_punctuation	句読点を無視する
+find.ignore_whitespace	空白文字を無視する
+find.format	書式
+find.special	特殊文字
+find.no_format	書式の削除
+find.format.bold	太字
+find.format.not_bold	太字なし
+find.format.italic	斜体
+find.format.not_italic	斜体なし
+find.format.underline	下線
+find.format.no_underline	下線なし
+find.format.highlight	蛍光ペン
+find.format.no_highlight	蛍光ペンなし
+find.format.style	スタイル:
+find.special.paragraph	段落記号
+find.special.tab	タブ文字
+find.special.any_char	任意の 1 文字
+find.special.any_digit	任意の数字
+find.special.any_letter	任意の英字
+find.special.caret	キャレット記号
+find.special.column_break	段区切り
+find.special.em_dash	全角ダッシュ
+find.special.en_dash	半角ダッシュ
+find.special.line_break	任意指定の行区切り
+find.special.page_break	任意指定の改ページ
+find.special.nonbreaking_hyphen	改行をしないハイフン
+find.special.nonbreaking_space	改行をしないスペース
+find.special.optional_hyphen	任意指定のハイフン
+find.special.white_space	空白文字
+find.special.found_text	検索する文字列
+find.end_reached	文書の最後まで検索しました。
+find.start_reached	文書の先頭まで検索しました。
+find.not_found	検索項目は見つかりませんでした。
+find.bad_pattern	検索する文字列が正しくありません: {why}
+find.replaced_count	{n} 個の項目を置換しました。
+options.menu	Word のオプション…
+options.title	Word のオプション
+options.page.view	表示
+options.page.edit	編集
+options.page.ribbon	リボンとツール バー
+options.marks	常に画面に表示する編集記号
+options.marks.tabs	タブ
+options.marks.spaces	スペース
+options.marks.paragraph_marks	段落記号
+options.marks.hidden_text	隠し文字
+options.marks.optional_hyphens	任意指定のハイフン
+options.marks.anchors	アンカー記号
+options.overtype	上書き入力モードを使用する
+options.insert_key	Insert キーで上書き入力を切り替える
+options.paste	切り取り、コピー、貼り付け
+options.paste_same	同じ文書内での貼り付け
+options.paste_between	文書間での貼り付け
+options.paste_other	他のプログラムからの貼り付け
+options.tabs	表示するタブ
+options.qat	クイック アクセス ツール バーのコマンド
+options.custom_group	ホームの「ユーザー設定」グループのコマンド
+customize.group	ユーザー設定
+views.status.overtype	上書き
+qat.save	上書き保存
+qat.undo	元に戻す
+qat.redo	やり直し
+qat.print	印刷
+qat.export_pdf	PDF として書き出す
+qat.find	検索
+qat.bold	太字
+qat.italic	斜体
+qat.underline	下線
+qat.align_left	左揃え
+qat.align_center	中央揃え
+qat.align_right	右揃え
+qat.insert_table	表の挿入
+qat.picture	画像
+qat.track_changes	変更履歴の記録
+modes.title	編集モード
+modes.editing	編集
+modes.reviewing	校閲
+modes.viewing	閲覧
+modes.editing_hint	文書を直接編集します
+modes.reviewing_hint	変更をすべて変更履歴として記録します
+modes.viewing_hint	誤って変更しないように閲覧だけにします
+views.group.immersive	イマーシブ
+views.focus	フォーカス
+views.focus_title	フォーカス モード (Esc で終了)
+views.group.window	ウィンドウ
+views.new_window	新しいウィンドウを開く
+views.split	分割
+views.window_hint	この文書の別のウィンドウです。ここでの編集は元のウィンドウにもすぐに反映されます。
+language.group	言語
+language.button	校正言語の設定…
+language.title	言語
+language.mark_as	選択した文字列の言語
+language.no_proof	スペル チェックと文章校正を行わない
+language.detect	言語を自動的に検出する
+language.ja_jp	日本語
+language.en_us	英語 (米国)
+language.en_gb	英語 (英国)
+language.zh_cn	中国語 (簡体字)
+language.zh_tw	中国語 (繁体字)
+language.ko_kr	韓国語
+language.fr_fr	フランス語
+language.de_de	ドイツ語
+language.es_es	スペイン語
+language.it_it	イタリア語
+language.pt_br	ポルトガル語 (ブラジル)
+language.ru_ru	ロシア語
+language.th_th	タイ語
+language.ar_sa	アラビア語
+outline.tab	アウトライン
+outline.group.tools	アウトライン ツール
+outline.group.close	閉じる
+outline.level	レベル {n}
+outline.body	本文
+outline.all	すべて
+outline.show_level	レベルの表示
+outline.to_top	見出し 1 にレベル上げ
+outline.promote	レベル上げ
+outline.demote	レベル下げ
+outline.to_body	本文にレベル下げ
+outline.move_up	上へ移動
+outline.move_down	下へ移動
+outline.expand	展開
+outline.collapse	折りたたみ
+outline.close	アウトライン表示を閉じる
+views.read.edit	文書の編集
+views.read.position	{current} / {count} 画面
+views.read.keys	← → で移動、Esc で戻る
+autocorrect.cjk_spaces	日本語と英数字の間の不要なスペースを削除する
+review.group.changes	変更箇所
+review.delete_comment	コメントの削除
+review.no_comment_here	ここにコメントはありません
+review.previous_comment	前のコメント
+review.next_comment	次のコメント
+review.user	ユーザー情報
+review.user.title	ユーザー情報
+review.user.hint	コメントと変更履歴に記録される名前です
+review.user.name	姓名
+review.user.initials	イニシャル
+review.markup.title	変更内容の表示
+review.markup.simple	シンプルな変更履歴/コメント
+review.markup.all	すべての変更履歴/コメント
+review.markup.none	変更履歴/コメントなし
+review.markup.original	初版
+review.show	変更履歴とコメントの表示
+review.show.title	変更履歴とコメントの表示
+review.show.comments	コメント
+review.show.insertions	挿入と削除
+review.show.formatting	書式設定
+review.show.reviewers	校閲者
+review.show.everyone	すべての校閲者
+review.accept.this	この変更を反映
+review.accept.visible	表示されたすべての変更を反映
+review.accept.all	すべての変更を反映
+review.accept.all_stop	すべての変更を反映し、変更の記録を停止
+review.reject.this	この変更を元に戻す
+review.reject.visible	表示されたすべての変更を元に戻す
+review.reject.all	すべての変更を元に戻す
+review.reject.all_stop	すべての変更を元に戻し、変更の記録を停止
+menu.app.user_info	ユーザー情報…
+proof.group	文章校正
+proof.button	スペルチェックと文章校正
+proof.title	スペル チェックと文章校正
+proof.marks	入力時にチェック
+proof.marks_title	入力時にスペル チェックと文章校正を行う
+proof.spelling	スペル ミス
+proof.grammar	文法
+proof.suggestions	候補
+proof.no_suggestions	候補はありません
+proof.change	変更
+proof.change_all	すべて変更
+proof.ignore	無視
+proof.ignore_all	すべて無視
+proof.learn	辞書に追加
+proof.open_pane	スペル チェックと文章校正…
+proof.finished	文章校正が完了しました。
+menu.review.spelling	スペル チェックと文章校正…
+alt.button	代替テキスト
+alt.title	代替テキスト
+alt.hint	この図をどのように説明しますか? 視覚に障碍のある方のために、図の内容を説明してください。
+alt.description	説明
+alt.decorative	装飾用にする
+alt.decorative_hint	ページの見た目だけのもので、読み上げても意味のない図に付けます。
+alt.no_object	図や図形をクリックしてから選んでください
+a11y.group	アクセシビリティ
+a11y.button	アクセシビリティ チェック
+a11y.title	アクセシビリティ
+a11y.none	問題は見つかりませんでした。障碍のある方にとって読みやすい文書です。
+a11y.errors	エラー
+a11y.warnings	警告
+a11y.tips	ヒント
+a11y.missing_alt	代替テキストがありません
+a11y.no_header	表のヘッダーがありません
+a11y.skipped_heading	見出しのレベルが飛んでいます
+a11y.skipped_detail	見出し {from} の次が見出し {to} です
+a11y.unclear_link	不明瞭なハイパーリンク テキスト
+a11y.low_contrast	読みにくいテキストのコントラスト
+a11y.contrast_detail	コントラスト比 {ratio}:1 (4.5:1 以上が必要)
+a11y.not_inline	画像またはオブジェクトが行内にありません
+a11y.fix	修正
+a11y.fix.describe	説明を追加
+a11y.fix.decorative	装飾用にする
+a11y.fix.header	最初の行をヘッダーとして使用
+a11y.fix.inline	行内に配置
+alt.keys	⇥ 装飾用にする · ⏎ OK · esc キャンセル
+review.format.bold	太字
+review.format.not_bold	太字 (解除)
+review.format.italic	斜体
+review.format.not_italic	斜体 (解除)
+review.format.underline	下線
+review.format.strike	取り消し線
+review.format.size	フォント サイズ
+review.format.font	フォント
+review.format.color	フォントの色
+review.format.highlight	蛍光ペン/網かけ
+review.format.position	文字位置
+review.format.style	文字スタイル
+review.format.other	文字書式
+review.format.paragraph	段落の書式
+review.kind.inserted	挿入
+review.kind.deleted	削除
+review.kind.moved_from	移動元
+review.kind.moved_to	移動先
+review.kind.formatted	書式変更
+review.pane	変更履歴ウィンドウ
+review.pane_title	変更履歴ウィンドウ
+review.pane.count	変更 {n} 件
+compare.group	比較
+compare.button	比較
+compare.title	文書の比較
+compare.combine	組み込み
+compare.combine_title	文書の組み込み
+compare.original	元の文書
+compare.revised	変更された文書
+compare.none	(選択されていません)
+compare.browse	参照…
+compare.this	この文書
+compare.label	変更の表示名
+compare.settings	比較の設定
+compare.formatting	書式
+compare.case	大文字/小文字の変更
+compare.space	空白文字
+compare.comments	コメント
+compare.level	変更の表示単位
+compare.by_character	文字レベル
+compare.by_word	単語レベル
+compare.done	比較結果: 挿入 {insertions} 件、削除 {deletions} 件、書式変更 {formatting} 件
+compare.keys	⏎ 変更された文書を選ぶ · ⇥ 文字/単語 · esc キャンセル
+compare.waiting	変更された文書を選んでください…
+protect.group	保護
+protect.button	文書の保護
+protect.title	文書の保護
+protect.open_hint	このドキュメントを開くときのパスワードを設定します
+protect.open	読み取りパスワード
+protect.modify_hint	このドキュメントを変更するときのパスワードを設定します
+protect.modify	書き込みパスワード
+protect.recommended	読み取り専用を推奨する
+protect.final	最終版にする
+protect.final_title	文書を最終版にする
+protect.final_bar	最終版: 作成者がこの文書を最終版として設定し、編集を禁止しています。
+protect.recommended_bar	作成者はこの文書を読み取り専用で開くことを推奨しています。
+protect.edit_anyway	編集する
+protect.password_title	パスワード
+protect.password_prompt	「{name}」はパスワードで保護されています。パスワードを入力してください。
+protect.wrong	パスワードが正しくありません
+restrict.button	編集の制限
+restrict.title	編集の制限
+restrict.formatting_title	1. 書式の制限
+restrict.formatting	利用可能な書式を制限する
+restrict.editing_title	2. 編集の制限
+restrict.none	制限なし
+restrict.read_only	変更不可 (読み取り専用)
+restrict.tracked	変更履歴
+restrict.comments	コメント
+restrict.forms	フォームへの入力
+restrict.exceptions	例外処理 (オプション): 選択した部分の編集を許可
+restrict.everyone	すべてのユーザー
+restrict.start_title	3. 保護の開始
+restrict.stop_title	保護の中止
+restrict.password	パスワード (省略可)
+restrict.start	はい、保護を開始します
+restrict.stop	保護の中止
+restrict.enforced	この文書は保護されています。
+restrict.exception_count	例外 {n} 件
+restrict.keys	⏎ OK · esc キャンセル
+inspect.button	ドキュメント検査
+inspect.tooltip	ドキュメント検査: 文書に含まれる非表示のデータや個人情報を調べて削除します
+inspect.title	ドキュメント検査
+inspect.intro	文書を共有する前に、非表示のデータや個人情報を確認します。
+inspect.comments	コメント、変更履歴
+inspect.comments_found	コメント {comments} 件、変更履歴 {revisions} 件が見つかりました。
+inspect.personal	ドキュメントのプロパティと個人情報
+inspect.personal_found	次の個人情報が見つかりました: {names}
+inspect.custom_xml	カスタム XML データ
+inspect.custom_xml_found	カスタム XML データ {n} 件が見つかりました。
+inspect.headers	ヘッダー、フッター
+inspect.headers_found	ヘッダーまたはフッターに {n} 行の文字列が見つかりました。
+inspect.hidden	隠し文字
+inspect.hidden_found	隠し文字 {n} か所が見つかりました。
+inspect.none	見つかりませんでした。
+inspect.remove_all	すべて削除
+inspect.removed_on_save	保存時に削除されます。
+read.group	音声読み上げ
+read.button	読み上げ
+read.title	読み上げ: カーソルの位置から文書を読み上げ、読んでいる単語を強調表示します
+read.nothing	カーソルの後に読み上げる文字列がありません。
+read.previous	前へ
+read.next	次へ
+read.play	再生
+read.pause	一時停止
+read.slower	読み上げの速度を下げる
+read.faster	読み上げの速度を上げる
+read.stop	閉じる
+immersive.group	イマーシブ
+immersive.button	イマーシブ リーダー
+immersive.title	イマーシブ リーダー: 読みやすさを高める表示で文書を読みます
+immersive.column	列幅
+immersive.column.narrow	狭い
+immersive.column.moderate	普通
+immersive.column.wide	広い
+immersive.page	ページの色
+immersive.page.white	白
+immersive.page.sepia	セピア
+immersive.page.inverse	反転
+immersive.line_focus	行フォーカス
+immersive.line_focus.off	なし
+immersive.line_focus.lines	{n} 行
+immersive.spacing	テキストの間隔
+immersive.syllables	音節
+immersive.close	イマーシブ リーダーを閉じる
+review.kind.inserted_row	行の挿入
+review.kind.deleted_row	行の削除
+side.group	ウィンドウ
+side.button	並べて比較
+side.title	並べて比較: 2 つの文書を並べて表示し、比較しやすくします
+side.sync	同時にスクロール
+side.sync_title	同時にスクロール: 2 つの文書を一緒にスクロールします
+side.reset	ウィンドウの位置を元に戻す
+side.reset_title	ウィンドウの位置を元に戻す: 並べて比較している文書の表示位置をそろえます
+side.needs_two	並べて比較するには、Word 文書をもう 1 つ開いてください。
+sign.bar	署名済み: この文書には署名が含まれています。編集すると署名は無効になります。
+sign.button	署名
+sign.tooltip	署名: キーチェーンの証明書で文書にデジタル署名します
+sign.pane	署名の表示
+sign.pane_tooltip	署名の表示: 文書の署名と、署名が必要な署名欄を表示します
+sign.title	署名
+sign.hint	署名すると文書は保存されます。署名後に文書を編集すると署名は無効になります。
+sign.certificate	署名に使用する証明書
+sign.purpose	署名の目的
+sign.no_certificate	署名に使用できる証明書がキーチェーンにありません。
+sign.valid_heading	有効な署名
+sign.valid	有効な署名
+sign.invalid	無効な署名
+sign.none	この文書には署名がありません。
+sign.issuer	発行者: {issuer}
+sign.requested	必要な署名
+sign.line.group	署名欄
+sign.line.button	署名欄
+sign.line.tooltip	署名欄: 署名が必要な場所に署名欄を挿入します
+sign.line.title	署名欄の設定
+sign.line.signer	署名者
+sign.line.title_field	署名者の役職
+sign.line.email	電子メール
+sign.line.instructions	署名者への説明
+thesaurus.button	類義語辞典
+thesaurus.tooltip	類義語辞典: 選択した単語の類義語を表示します
+thesaurus.title	類義語辞典
+thesaurus.insert	挿入
+thesaurus.none	類義語は見つかりませんでした。
+thesaurus.no_word	単語を選択するか、単語の中にカーソルを置いてください。
+word.line.dot_dot_dash	二点鎖線
+word.line.triple	三重線
+word.line.thick	太線
+word.line.thin_thick_small	細線 - 太線 (小間隔)
+word.line.thin_thick_thin_small	細線 - 太線 - 細線 (小間隔)
+word.line.thin_thick_medium	細線 - 太線 (中間隔)
+word.line.thick_thin_medium	太線 - 細線 (中間隔)
+word.line.thin_thick_thin_medium	細線 - 太線 - 細線 (中間隔)
+word.line.thin_thick_large	細線 - 太線 (大間隔)
+word.line.thick_thin_large	太線 - 細線 (大間隔)
+word.line.thin_thick_thin_large	細線 - 太線 - 細線 (大間隔)
+word.line.double_wave	二重波線
+word.line.dash_dot_stroked	斜線入り一点鎖線
+word.line.emboss	立体 (浮き出し)
+word.line.engrave	立体 (彫り込み)
+word.line.outset	浮き出し
+word.line.inset	くぼみ
+setup.borders.art	絵柄
+word.art.apples	りんご
+word.art.hearts	ハート
+word.art.stars	星
+word.art.stars_black	星 (黒)
+word.art.dots	点
+word.art.squares	四角
+word.art.dashes	ダッシュ
+word.art.thin_lines	細線
+word.art.checkered	市松模様
+word.art.christmas_tree	クリスマスツリー
+word.art.flowers	小花
+word.art.balloons	風船
+word.art.sun	太陽
+word.art.snowflakes	雪の結晶
+word.art.zigzag	ジグザグ
+word.art.triangles	三角形
+menu.format.justify	両端揃え
+menu.format.bullets	箇条書き
+menu.format.subscript	下付き
+menu.format.superscript	上付き
+menu.insert.page_break	改ページ
+menu.insert.column_break	段区切り
+context.paste_special	形式を選択して貼り付け...
 # Browser shell: Word ports (header/footer, fields, paste, tools, objects)
 objects.draw	描画

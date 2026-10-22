@@ -168,6 +168,25 @@ impl WordSession for EditableDocument {
     fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
         self.renderer.math_zones().to_vec()
     }
+
+    fn object_region(&self, paragraph: usize, run: usize) -> Option<(usize, f64, f64, f64, f64)> {
+        use jade_docx_editor::word_document::{FloatingObjectKind, FloatingObjectTarget};
+        self.renderer
+            .object_region(FloatingObjectTarget {
+                paragraph_index: paragraph,
+                run_index: run,
+                kind: FloatingObjectKind::Image,
+            })
+            .map(|region| {
+                (
+                    region.page.saturating_sub(1),
+                    region.x,
+                    region.y,
+                    region.width,
+                    region.height,
+                )
+            })
+    }
 }
 
 impl EditableDocument {
@@ -189,5 +208,48 @@ impl EditableDocument {
         };
         self.renderer.set_selection_range(self.selection);
         self.repaint_all()
+    }
+}
+
+/// The browser build's pages show tracked changes as the markup views say.
+impl jade_office_model::word::markup::WordMarkupDisplay for EditableDocument {
+    fn set_revision_display(
+        &mut self,
+        markup: bool,
+        original: bool,
+        view: jade_docx_editor::revision_view::RevisionView,
+    ) -> Result<bool, String> {
+        EditableDocument::set_revision_display(self, markup, original, view)
+    }
+}
+
+/// The browser build's pages show proofing marks from any checker.
+impl jade_office_model::word::proofing::WordProofingDisplay for EditableDocument {
+    fn set_proofing(&mut self, on: bool) -> Result<(), String> {
+        EditableDocument::set_proofing(self, on)
+    }
+
+    fn proofing(&self) -> bool {
+        EditableDocument::proofing(self)
+    }
+
+    fn proof_with(
+        &mut self,
+        checker: &mut dyn jade_office_model::word::proofing::SpellChecker,
+    ) -> Result<bool, String> {
+        EditableDocument::proof_pending(self, &mut |text, start, end, language| {
+            checker.check(text, start, end, language)
+        })
+    }
+}
+
+/// The browser build's document can be opened read-only.
+impl jade_office_model::word::protection::WordReadOnly for EditableDocument {
+    fn set_opened_read_only(&mut self, read_only: bool) {
+        self.word_document.set_opened_read_only(read_only);
+    }
+
+    fn opened_read_only(&self) -> bool {
+        self.word_document.opened_read_only()
     }
 }

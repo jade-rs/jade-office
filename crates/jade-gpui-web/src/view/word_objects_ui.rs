@@ -3,8 +3,6 @@
 //!
 //! - トリミング: the selected picture's crop handles, a drag cutting into
 //!   it (or back out) while the picture stays where it is;
-//! - 描画's pens: a drag on a page draws a stroke, put in as Word ink when
-//!   the mouse comes up, the pen staying in hand until Escape;
 //! - テキスト ボックスのリンクの作成: with a text box selected, the next
 //!   empty one clicked takes its overflow;
 //! - 折り返し点の編集: the wrap polygon's points shown and dragged;
@@ -22,7 +20,7 @@ use jade_web::word::WordSession;
 
 use super::word_kit::on;
 use super::{DocView, Document};
-use crate::i18n::{self, text as t};
+use crate::i18n::text as t;
 use crate::palette as theme;
 
 /// The modes and panes the object tools turn on.
@@ -30,8 +28,6 @@ use crate::palette as theme;
 pub enum ObjectUi {
     /// トリミング on and off.
     ToggleCrop,
-    /// A pen of `ink::PENS` taken up, or the one in hand put down.
-    Pen(usize),
     /// リンクの作成 from the selected text box.
     LinkTextBox,
     /// 折り返し点の編集 on and off.
@@ -44,7 +40,6 @@ pub enum ObjectUi {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ObjectModes {
     pub cropping: bool,
-    pub pen: Option<usize>,
     pub linking: bool,
     pub wrap_points: bool,
     pub selection_pane: bool,
@@ -69,9 +64,6 @@ struct CropDrag {
 pub struct ObjectsUi {
     cropping: bool,
     crop_drag: Option<CropDrag>,
-    pen: Option<usize>,
-    /// A stroke being drawn, on its page (page px).
-    stroke: Option<(usize, Vec<(f64, f64)>)>,
     linking: Option<ObjectTarget>,
     wrap_points: bool,
     /// A wrap point being dragged: its index and the polygon so far.
@@ -85,7 +77,6 @@ impl ObjectsUi {
     pub fn modes(&self) -> ObjectModes {
         ObjectModes {
             cropping: self.cropping,
-            pen: self.pen,
             linking: self.linking.is_some(),
             wrap_points: self.wrap_points,
             selection_pane: self.selection_pane,
@@ -189,11 +180,6 @@ impl DocView {
         match action {
             ObjectUi::ToggleCrop => {
                 ui.cropping = !ui.cropping;
-                ui.pen = None;
-            }
-            ObjectUi::Pen(index) => {
-                ui.pen = (ui.pen != Some(index)).then_some(index);
-                ui.cropping = false;
             }
             ObjectUi::EditWrapPoints => ui.wrap_points = !ui.wrap_points,
             ObjectUi::SelectionPane => ui.selection_pane = !ui.selection_pane,
@@ -215,7 +201,7 @@ impl DocView {
     }
 
     /// A press on page `index` at `point` (page px) for the object tools:
-    /// a pen stroke starts, a crop handle or a wrap point is taken, or the
+    /// a crop handle or a wrap point is taken, or the
     /// text box clicked is linked. Returns whether it was taken.
     pub(super) fn object_ui_press(
         &mut self,
@@ -224,14 +210,6 @@ impl DocView {
         document_y: f64,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.objects_ui.pen.is_some() {
-            self.objects_ui.stroke = Some((index, vec![point]));
-            if let Document::Pages { object, .. } = &mut self.document {
-                *object = None;
-            }
-            cx.notify();
-            return true;
-        }
         let selected = self.selected_placed().filter(|object| object.page == index);
         if let (true, Some(object)) = (self.objects_ui.wrap_points, selected) {
             let points = self.wrap_points_on_page(&object);
@@ -296,14 +274,9 @@ impl DocView {
         event: &MouseMoveEvent,
         cx: &mut Context<Self>,
     ) -> bool {
-        let page = match (
-            &self.objects_ui.stroke,
-            &self.objects_ui.crop_drag,
-            &self.objects_ui.wrap_drag,
-        ) {
-            (Some((page, _)), _, _) => *page,
-            (_, Some(drag), _) => drag.object.page,
-            (_, _, Some(_)) => match self.selected_placed() {
+        let page = match (&self.objects_ui.crop_drag, &self.objects_ui.wrap_drag) {
+            (Some(drag), _) => drag.object.page,
+            (_, Some(_)) => match self.selected_placed() {
                 Some(object) => object.page,
                 None => return false,
             },
@@ -313,14 +286,7 @@ impl DocView {
             return true;
         };
         let y = document_y - self.doc().document_y(page, 0.0);
-        if let Some((_, points)) = self.objects_ui.stroke.as_mut() {
-            if points
-                .last()
-                .is_none_or(|last| (last.0 - x).abs() + (last.1 - y).abs() >= 1.5)
-            {
-                points.push((x, y));
-            }
-        } else if let Some(drag) = self.objects_ui.crop_drag.as_mut() {
+        if let Some(drag) = self.objects_ui.crop_drag.as_mut() {
             drag.delta = (x - drag.from.0, y - drag.from.1);
         } else if let Some(object) = self.selected_placed() {
             if let Some((index, points)) = self.objects_ui.wrap_drag.as_mut() {
@@ -333,35 +299,8 @@ impl DocView {
         true
     }
 
-    /// The mouse coming up: the stroke goes in as ink, the crop or the
-    /// wrap polygon is written. Returns whether it was the tools'.
+    /// The mouse coming up: the crop or the wrap polygon is written. Returns whether it was the tools'.
     pub(super) fn object_ui_release(&mut self, cx: &mut Context<Self>) -> bool {
-        if let Some((page, points)) = self.objects_ui.stroke.take() {
-            let Some(index) = self.objects_ui.pen else {
-                return true;
-            };
-            let (color, width, highlighter, _, _) = jade_web::word::ink::PENS[index];
-            let stroke = jade_web::word::ink::InkStroke {
-                points: points.clone(),
-                color: color.to_string(),
-                width,
-                highlighter,
-            };
-            // Anchored at the paragraph the stroke starts over.
-            if let Document::Pages { document, .. } = &mut self.document {
-                let document_y = document.document_y(page, points[0].1);
-                if let Some((paragraph, offset)) =
-                    document.body_position_at(points[0].0, document_y)
-                {
-                    document.place_caret(paragraph, offset);
-                }
-            }
-            self.word_edit(cx, move |document| {
-                use jade_web::word::ink::WordInk;
-                document.insert_ink(vec![stroke])
-            });
-            return true;
-        }
         if let Some(drag) = self.objects_ui.crop_drag.take() {
             let start = (
                 drag.object.x,
@@ -394,7 +333,7 @@ impl DocView {
         false
     }
 
-    /// Escape puts the pen down, leaves トリミング, a link or a rename.
+    /// Escape leaves トリミング, a link or a rename.
     pub(super) fn object_ui_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         if let Some((target, edit)) = self.objects_ui.renaming.as_mut() {
             if edit.marked.is_some() {
@@ -422,8 +361,7 @@ impl DocView {
             return false;
         }
         let ui = &mut self.objects_ui;
-        if ui.pen.take().is_some() || ui.linking.take().is_some() {
-            ui.stroke = None;
+        if ui.linking.take().is_some() {
         } else if ui.cropping {
             ui.cropping = false;
         } else if ui.wrap_points {
@@ -462,7 +400,7 @@ impl DocView {
     }
 
     /// What the tools draw over page `index`: crop handles and the box a
-    /// crop drag gives, the stroke being drawn, the wrap points.
+    /// crop drag gives, the wrap points.
     pub(super) fn object_ui_overlay(&self, index: usize, zoom: f32) -> Vec<AnyElement> {
         let zoom = f64::from(zoom);
         let mut elements = Vec::new();
@@ -502,15 +440,6 @@ impl DocView {
                     10.0,
                     gpui::black(),
                 ));
-            }
-        }
-        if let Some((page, points)) = self.objects_ui.stroke.as_ref() {
-            if *page == index {
-                elements.extend(
-                    points
-                        .iter()
-                        .map(|point| dot(*point, 3.0, theme::accent().into())),
-                );
             }
         }
         if let (true, Some(object)) = (self.objects_ui.wrap_points, selected) {
@@ -726,59 +655,4 @@ fn selection_row(
             }),
         )
         .into_any_element()
-}
-
-/// 描画's pens, as a ribbon group.
-pub fn pen_group(modes: ObjectModes, cx: &mut Context<DocView>) -> AnyElement {
-    let english = i18n::is_english();
-    let pens = jade_web::word::ink::PENS
-        .iter()
-        .enumerate()
-        .map(|(index, (color, _, _, ja, en))| {
-            let value = u32::from_str_radix(color.trim_start_matches('#'), 16).unwrap_or(0);
-            let active = modes.pen == Some(index);
-            div()
-                .id(("pen", index))
-                .flex()
-                .items_center()
-                .gap_1()
-                .h(px(26.0))
-                .px_2()
-                .rounded_md()
-                .text_xs()
-                .cursor_pointer()
-                .when(active, |button| button.bg(theme::selected()))
-                .hover(|button| button.bg(theme::hovered()))
-                .tooltip(crate::tooltip::Tooltip::text(if english {
-                    *en
-                } else {
-                    *ja
-                }))
-                .child(
-                    div()
-                        .size(px(10.0))
-                        .rounded_full()
-                        .bg(gpui::rgb(value))
-                        .border_1()
-                        .border_color(theme::border()),
-                )
-                .child(t("objects.pen"))
-                .on_click(crate::ribbon::listener(
-                    crate::ribbon::Action::Object(crate::word_objects::ObjectAction::Ui(
-                        ObjectUi::Pen(index),
-                    )),
-                    cx,
-                ))
-                .into_any_element()
-        })
-        .collect::<Vec<_>>();
-    let mut pens = pens.into_iter();
-    let first: Vec<_> = pens.by_ref().take(2).collect();
-    crate::ribbon::group(
-        t("objects.draw"),
-        vec![
-            crate::ribbon::row(first),
-            crate::ribbon::row(pens.collect()),
-        ],
-    )
 }

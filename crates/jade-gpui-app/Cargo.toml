@@ -13,6 +13,8 @@ license = "PolyForm-Noncommercial-1.0.0"
 
 [dependencies]
 jade-docx-native-render = { path = "../../jade-core/crates/jade-docx-native-render" }
+# The fonts a document embeds, to lay it out in (word_fonts).
+jade-docx-reader = { path = "../../jade-core/crates/jade-docx-reader" }
 jade-docx-editor = { path = "../../jade-core/crates/jade-docx-editor" }
 jade-docx-pdf-renderer = { path = "../../jade-core/crates/jade-docx-pdf-renderer" }
 jade-skia-painter = { path = "../../jade-core/crates/jade-skia-painter" }
@@ -34,12 +36,21 @@ image = "0.25"
 
 [dev-dependencies]
 jade-opc = { path = "../../jade-core/crates/jade-opc" }
+jade-selection = { path = "../../jade-core/crates/jade-selection" }
+# Reading saved subdocuments back in the master document tests.
+jade-docx-convert = { path = "../../jade-core/crates/jade-docx-convert" }
+# Reading the printed PDFs' sheets back in the print tests.
+lopdf = { version = "=0.39.0", default-features = false }
 # Headless windows for scenario tests: keystrokes, input and actions driven
 # through the real views.
 gpui = { version = "0.2", default-features = false, features = ["macos-blade", "font-kit", "test-support"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# 署名: the keychain's certificates and signing with their keys.
+security-framework = "3"
+# The document for screen readers: an accessibility element on gpui's view.
+raw-window-handle = "0.6"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSPrintInfo", "NSPrintOperation"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSData", "NSLocale", "NSString"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSAccessibility", "NSAccessibilityConstants", "NSAccessibilityElement", "NSAccessibilityProtocols", "NSPrintInfo", "NSPrintOperation", "NSResponder", "NSSpeechSynthesizer", "NSSpellChecker", "NSView"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSData", "NSDictionary", "NSLocale", "NSObject", "NSRange", "NSString", "NSValue"] }
 objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "objc2-app-kit"] }

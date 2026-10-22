@@ -49,6 +49,29 @@ pub const UNDERLINE_STYLES: [&str; 18] = [
     "wavyDouble",
 ];
 
+/// 蛍光ペンの色: every `ST_HighlightColor` value (ECMA-376 Part 1
+/// §17.18.40) but `none`, as `w:highlight` names it, with the colour Word
+/// draws for it. Word's own palette leaves out white; it is offered so a
+/// highlight that hides text on a coloured page can be set too.
+pub const HIGHLIGHT_COLORS: [(&str, u32); 16] = [
+    ("yellow", 0xffff00),
+    ("green", 0x00ff00),
+    ("cyan", 0x00ffff),
+    ("magenta", 0xff00ff),
+    ("blue", 0x0000ff),
+    ("red", 0xff0000),
+    ("darkBlue", 0x000080),
+    ("darkCyan", 0x008080),
+    ("darkGreen", 0x008000),
+    ("darkMagenta", 0x800080),
+    ("darkRed", 0x800000),
+    ("darkYellow", 0x808000),
+    ("darkGray", 0x808080),
+    ("lightGray", 0xc0c0c0),
+    ("black", 0x000000),
+    ("white", 0xffffff),
+];
+
 /// 傍点: Word's emphasis marks (ST_Em).
 pub const EMPHASIS_MARKS: [&str; 5] = ["none", "dot", "comma", "circle", "underDot"];
 
@@ -885,6 +908,34 @@ impl<T: WordSession + ?Sized> WordCharacters for T {}
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_highlight_palette_offers_every_st_highlight_color() {
+        let names: Vec<_> = super::HIGHLIGHT_COLORS
+            .iter()
+            .map(|(name, _)| *name)
+            .collect();
+        for value in [
+            "black",
+            "blue",
+            "cyan",
+            "green",
+            "magenta",
+            "red",
+            "yellow",
+            "white",
+            "darkBlue",
+            "darkCyan",
+            "darkGreen",
+            "darkMagenta",
+            "darkRed",
+            "darkYellow",
+            "darkGray",
+            "lightGray",
+        ] {
+            assert!(names.contains(&value), "{value} cannot be chosen");
+        }
+    }
+
     use super::*;
 
     #[test]

@@ -166,6 +166,10 @@ impl WordSession for WordDoc {
     fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
         WordSession::math_zones(&**self)
     }
+
+    fn object_region(&self, paragraph: usize, run: usize) -> Option<(usize, f64, f64, f64, f64)> {
+        WordSession::object_region(&**self, paragraph, run)
+    }
 }
 
 fn role_name(role: Story) -> &'static str {
@@ -393,8 +397,12 @@ impl WordDoc {
             .map_err(|err| format!("export failed: {err:?}"))
     }
 
-    pub fn export_pdf(&self) -> Result<Vec<u8>, String> {
-        self.main.export_pdf()
+    /// The body's pages as a PDF, whatever story is open.
+    pub fn export_pdf_with_options(
+        &self,
+        options: jade_docx_native_render::PdfExportOptions,
+    ) -> Result<Vec<u8>, String> {
+        self.main.export_pdf_with_options(options)
     }
 
     /// A page as the view shows it: the story's page over its band, the rest
@@ -672,7 +680,7 @@ impl DocumentView {
     }
 
     /// Which story's margin a point on `page` is in.
-    fn margin_story(&self, page: usize, y_on_page: f64) -> Option<Story> {
+    pub(crate) fn margin_story(&self, page: usize, y_on_page: f64) -> Option<Story> {
         let main = self.document.main();
         let section = main.renderer().section_index_for_zero_based_page(page);
         let layout = main.word_document().section_layout(Some(section));

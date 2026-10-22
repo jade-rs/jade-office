@@ -2172,7 +2172,6 @@ objects.outline.arrows	Arrows
 objects.outline.dash	Dashes
 objects.outline.none	No Outline
 objects.outline.weight	Weight
-objects.pen	Pen
 objects.position	Position
 objects.position.bottom_center	Position in Bottom Center with Square Text Wrapping
 objects.position.bottom_left	Position in Bottom Left with Square Text Wrapping
@@ -2604,5 +2603,748 @@ equation.delete_column	Delete Column
 equation.justify_left	Align Left
 equation.justify_center	Center
 equation.justify_right	Align Right
+# Files: formats, copies, templates, recovery (word_files, autorecover)
+menu.file.save_copy	Save a Copy…
+menu.file.save_template	Save as Template…
+files.too_old	{name} is from a Word older than Word 97 and cannot be opened.
+files.damaged	{name} is damaged and cannot be opened: {error}
+files.failed	{name} could not be converted: {error}
+files.save_failed	The document could not be saved
+files.copy_name	Copy of {name}
+files.encoding_title	File Conversion
+files.encoding_title_named	File Conversion - {name}
+files.encoding	Text encoding
+files.preview	Preview
+files.line_ending	End lines with
+files.crlf	CR/LF
+files.lf	LF only
+files.cr	CR only
+files.text_only	Only the text is saved. Formatting, pictures and table borders are lost.
+files.lost_characters	These characters cannot be saved in the chosen encoding: {chars}
+files.backup_name	Backup of {name}
+recent.pin	Pin to list
+recent.unpin	Unpin from list
+recent.folders	Recent Folders
+recovered.title	Recovered Files
+recovered.delete	Delete
+recovered.name	{name} (Recovered)
+menu.app.save_preferences	Preferences (Save)…
+prefs.save_title	Save
+prefs.save_options	Save options
+prefs.always_backup	Always create backup copy
+prefs.autorecover	Save AutoRecover info every
+prefs.minutes	minutes
+prefs.recovery_folder	AutoRecover files location
+prefs.save_folder	Default file location (Documents)
+prefs.default_folder	Default (AutoRecovery in Application Support)
+prefs.documents	Documents folder
+prefs.change	Change…
+prefs.choose	Choose
+prefs.this_document	Preserve fidelity when sharing this document
+prefs.embed_fonts	Embed TrueType fonts in the file
+prefs.embed_subset	Embed only characters used in the document (best for reducing file size)
+# Print (word_print)
+print.title	Print
+print.copies	Copies
+print.collate	Collated
+print.pages	Pages
+print.all	All
+print.current	Current Page
+print.selection	Selection
+print.custom	Page Range
+print.range_hint	For example 1,3,5-12 or p1s2-p3s3 (page 1 of section 2 to page 3 of section 3)
+print.range_syntax	Not a page range: {part}
+print.range_missing	No such page: {part}
+print.duplex	Two-Sided
+print.one_sided	One-Sided
+print.long_edge	Two-Sided (Long-Edge Binding)
+print.short_edge	Two-Sided (Short-Edge Binding)
+print.per_sheet	Pages per Sheet
+print.scale_to	Scale to Paper Size
+print.no_scaling	No Scaling
+print.options	Print Options
+print.markup	Print Markup
+print.update_fields	Update fields before printing
+print.background	Print background colors and images
+print.hidden_text	Print hidden text
+print.pdf	Save as PDF…
+print.print	Print
+print.fit	Fit
+print.sheet_of	{n} of {count}
+pdf.title	Save as PDF
+pdf.accessible	Best for electronic distribution and accessibility
+pdf.accessible_detail	Includes structure tags for headings, paragraphs, tables and figures (with alt text), and bookmarks from the headings. Text is written as vectors.
+pdf.appearance	Match the screen
+pdf.appearance_detail	Writes the pages as the screen shows them. Text is searchable, but there are no structure tags.
+# Compatibility (word_compat)
+menu.file.check_compatibility	Check Compatibility…
+menu.file.convert	Convert Document (Upgrade to Current Format)
+compat.badge	[Compatibility Mode]
+compat.title	Microsoft Word Compatibility Checker
+compat.versions	Versions to show
+compat.summary	Summary (features lost or changed when opened in an earlier version)
+compat.no_issues	No compatibility issues were found.
+compat.occurrences	{n} occurrences
+compat.check_on_save	Check compatibility when saving documents
+compat.continue	Continue
+compat.convert_title	Convert Document
+compat.already_current	This document is already in the current file format.
+compat.issue.replies	Replies to comments become separate comments.
+compat.issue.repeating	Repeating section content controls become ordinary content controls.
+compat.issue.control_appearance	Content controls lose their color and appearance.
+compat.issue.video	Online videos become static pictures.
+compat.issue.collapsed	Collapsed headings are expanded.
+compat.issue.text_effects	Text effects (glow, shadow, reflection, outline, gradient) are removed.
+compat.issue.opentype	OpenType features (ligatures, number forms, stylistic sets) are removed.
+compat.issue.checkboxes	Check box content controls become static content.
+compat.issue.shapes	Shapes and text boxes are converted to the older kind.
+compat.issue.picture_effects	Picture effects and artistic effects are removed.
+compat.issue.table_alt	Alternative text on tables is removed.
+compat.issue.relative	Sizes and positions relative to the page become absolute.
+compat.issue.equations	Equations become pictures that cannot be edited.
+compat.issue.controls	Content controls become static text.
+compat.issue.smartart	SmartArt graphics become a single picture.
+compat.issue.charts	Charts become pictures.
+compat.issue.moves	Tracked moves become insertions and deletions.
+compat.issue.themes	Theme fonts and colors become fixed fonts and colors.
+# Templates (word_templates)
+menu.file.templates	Templates and Add-ins…
+templates.title	Templates and Add-ins
+templates.document_template	Document template
+templates.normal	Normal (the default template)
+templates.attach	Attach…
+templates.detach	Detach
+templates.link_styles	Automatically update document styles
+templates.normal_heading	Normal template
+templates.normal_default	New documents start with the default styles and page.
+templates.normal_custom	New documents start from the saved Normal template.
+templates.save_normal	Set this document's styles and page as the default
+templates.reset_normal	Reset to defaults
+templates.normal_saved	New documents will start with this document's styles and page.
+# Repair (word::repair)
+repair.title	Document Recovery
+repair.intro	This document had unreadable content, so the parts that could be recovered were opened. Saving it saves the recovered content.
+repair.archive	The file's table of contents (the ZIP central directory) was damaged, so each part was read again in turn.
+repair.entry_lost	{name} could not be read and was removed.
+repair.part_mended	The XML of {name} was damaged. What could be read (about {percent}%) was kept.
+repair.relationship	A reference to the missing {name} was removed.
+repair.content_types	The list of content types ([Content_Types].xml) was made again.
+repair.package_rels	The package relationships were made again.
+# Save options (word_save_options)
+menu.file.compress	Reduce File Size…
+compress.title	Reduce File Size
+compress.quality	Picture Quality
+compress.hd	HD (330 ppi)
+compress.print	Print (220 ppi)
+compress.web	Web (150 ppi)
+compress.email	Email (96 ppi)
+compress.delete_crops	Delete cropped areas of pictures
+compress.on_save	Compress this way every time the document is saved
+compress.note	Only pictures with more resolution than their size on the page needs are reduced.
+compress.done	{n} pictures compressed (about {kb} KB saved).
+compress.nothing	No pictures could be compressed.
+compat.layout_options	Layout compatibility options (this document)
+compat.layout.fe	Lay out East Asian text on the line grid (useFELayout)
+compat.layout.balance	Balance SBCS characters and DBCS characters
+compat.layout.no_tab_hang	Don't add an automatic tab stop for hanging indent
+compat.layout.table_grid	Adjust line height to grid height in the table
+pdf_import.title	PDF Conversion
+pdf_import.body	The PDF was converted to an editable Word document. The result may not look exactly like the original PDF, especially if it had many graphics. It is saved as a Word Document (.docx).
+web.download_as	Download As ▾
+master.title	Master Document
+master.group	Master Document
+master.show	Show Document
+master.show_title	Show each subdocument in its box
+master.expand_collapse	Expand/Collapse
+master.expand_collapse_title	Expand subdocuments to show their text, or collapse them to their links
+master.create	Create
+master.create_title	Make the heading at the insertion point and what is under it a subdocument
+master.insert	Insert
+master.insert_title	Insert a file as a subdocument
+master.insert_prompt	Insert as Subdocument
+master.unlink	Unlink
+master.unlink_title	Remove the link to the subdocument and keep its text in the master document
+master.lock	Lock Document
+master.lock_title	Lock the subdocument against changes
+master.open	Open Subdocument
+master.open_title	Open the subdocument at the insertion point in its own tab
+master.none	This document has no subdocuments.
+master.not_in_subdocument	Put the insertion point in a subdocument.
+master.unreachable	These subdocuments could not be opened: {names}
+master.locked_edit	This modification is not allowed because the subdocument is locked.
+hyphenation.group	Hyphenation
+hyphenation.button	Hyphenation
+hyphenation.title	Hyphenation
+hyphenation.none	None
+hyphenation.automatic	Automatic
+hyphenation.options	Hyphenation Options...
+hyphenation.auto	Automatically hyphenate document
+hyphenation.caps	Hyphenate words in CAPS
+hyphenation.zone	Hyphenation zone
+hyphenation.limit	Limit consecutive hyphens to
+hyphenation.no_limit	Blank for no limit
+hyphenation.bad_zone	Enter a hyphenation zone of zero or more.
+hyphenation.bad_limit	Enter a whole number of zero or more for the hyphen limit.
+hyphenation.unlimited	No limit
+draw.tab	Draw
+draw.group.tools	Drawing Tools
+draw.group.mode	Mode
+draw.group.convert	Convert
+draw.group.selection	Selected Ink
+draw.select	Select
+draw.lasso	Lasso Select
+draw.eraser	Eraser
+draw.eraser.stroke	Stroke Eraser
+draw.eraser.point	Point Eraser
+draw.pen	Pen
+draw.pencil	Pencil
+draw.highlighter	Highlighter
+draw.effect	Effect Pen
+draw.add_pen	Add Pen
+draw.touch	Draw with Touch
+draw.ink_to_shape	Ink to Shape
+draw.ink_editor	Ink Editor
+draw.delete	Delete
+draw.to_shapes	Convert to Shapes
+draw.thickness	Thickness
+draw.color	Color
+draw.effects	Effects
+draw.effect.rainbow	Rainbow
+draw.effect.galaxy	Galaxy
+draw.effect.lava	Lava
+draw.effect.ocean	Ocean
+draw.effect.gold	Gold
+draw.effect.silver	Silver
+draw.effect.rosegold	Rose Gold
+draw.effect.bronze	Bronze
+# ---- View, Find and Replace, input aids (word_views) ----
+views.group.views	Views
+views.read	Read Mode
+views.print	Print Layout
+views.web	Web Layout
+views.outline	Outline
+views.draft	Draft
+views.group.movement	Page Movement
+views.vertical	Vertical
+views.side_to_side	Side to Side
+views.gridlines	Gridlines
+views.white_space	Hide White Space
+views.white_space_title	Hide the white space between pages (or double-click between pages)
+views.zoom.button	Zoom
+views.zoom.title	Zoom
+views.zoom.page_width	Page width
+views.zoom.text_width	Text width
+views.zoom.whole_page	Whole page
+views.zoom.many_pages	Many pages
+views.zoom.pages	Pages
+views.zoom.percent	Percent
+views.one_page	One Page
+views.multiple_pages	Multiple Pages
+views.page_width	Page Width
+menu.tools	Tools
+menu.tools.autocorrect	AutoCorrect…
+autocorrect.title	AutoCorrect
+autocorrect.tab.correct	AutoCorrect
+autocorrect.tab.format	AutoFormat As You Type
+autocorrect.two_initial_capitals	Correct TWo INitial CApitals
+autocorrect.capitalize_sentences	Capitalize first letter of sentences
+autocorrect.capitalize_days	Capitalize names of days
+autocorrect.replace_text	Replace text as you type
+autocorrect.smart_quotes	"Straight quotes" with “smart quotes”
+autocorrect.ordinals	Ordinals (1st) with superscript
+autocorrect.fractions	Fractions (1/2) with fraction character (½)
+autocorrect.hyphens	Hyphens (--) with dash (—)
+autocorrect.bulleted_lists	Automatic bulleted lists
+autocorrect.numbered_lists	Automatic numbered lists
+autocorrect.borders	Border lines
+autocorrect.headings	Built-in Heading styles
+autocorrect.long_vowels	Use long vowels and dashes correctly
+autocorrect.brackets	Match parentheses correctly
+autocorrect.closing_phrases	Insert closing phrase to match salutation
+autocorrect.kiki	Insert "以上" to match "記"
+autocorrect.replace	Replace
+autocorrect.with	With
+autocorrect.add	Add
+autocorrect.delete	Delete
+context.cut	Cut
+context.copy	Copy
+context.paste	Paste
+context.paste_options	Paste Options
+context.paste_keep	Keep Source Formatting
+context.paste_merge	Merge Formatting
+context.paste_text	Keep Text Only
+context.font	Font…
+context.paragraph	Paragraph…
+context.bullets	Bullets
+context.numbering	Numbering
+context.smart_lookup	Smart Lookup
+context.new_comment	New Comment
+context.link	Link…
+context.edit_link	Edit Link…
+context.open_link	Open Link
+context.remove_link	Remove Link
+context.update_field	Update Field
+context.edit_field	Edit Field…
+context.toggle_field_codes	Toggle Field Codes
+context.insert	Insert
+context.row_above	Insert Rows Above
+context.row_below	Insert Rows Below
+context.column_left	Insert Columns to the Left
+context.column_right	Insert Columns to the Right
+context.insert_cells	Insert Cells…
+context.delete	Delete
+context.delete_cells	Delete Cells…
+context.delete_row	Delete Rows
+context.delete_column	Delete Columns
+context.delete_table	Delete Table
+context.merge_cells	Merge Cells
+context.split_cells	Split Cells…
+context.distribute_rows	Distribute Rows Evenly
+context.distribute_columns	Distribute Columns Evenly
+context.table_borders	Borders and Shading…
+context.text_direction	Text Direction…
+context.autofit	AutoFit
+context.autofit_contents	AutoFit to Contents
+context.autofit_window	AutoFit to Window
+context.table_properties	Table Properties…
+context.wrap	Wrap Text
+context.edit_header	Edit Header
+context.edit_footer	Edit Footer
+context.close_header_footer	Close Header and Footer
+find.menu	Advanced Find and Replace…
+find.title	Find and Replace
+find.title_replace	Find and Replace
+find.tab.find	Find
+find.tab.replace	Replace
+find.query	Find what
+find.replacement	Replace with
+find.more	More ▼
+find.less	Less ▲
+find.next	Find Next
+find.replace	Replace
+find.replace_all	Replace All
+find.direction	Search
+find.down	Down
+find.up	Up
+find.all	All
+find.scope	Find in
+find.scope.main	Main Document
+find.scope.notes	Footnotes and Endnotes
+find.scope.selection	Current Selection
+find.scope.headers	Headers and Footers
+find.match_prefix	Match prefix
+find.match_suffix	Match suffix
+find.wildcards	Use wildcards
+find.match_width	Match half/full width forms
+find.match_kana	Match hiragana and katakana
+find.ignore_punctuation	Ignore punctuation characters
+find.ignore_whitespace	Ignore white-space characters
+find.format	Format
+find.special	Special
+find.no_format	No Formatting
+find.format.bold	Bold
+find.format.not_bold	Not Bold
+find.format.italic	Italic
+find.format.not_italic	Not Italic
+find.format.underline	Underline
+find.format.no_underline	No underline
+find.format.highlight	Highlight
+find.format.no_highlight	Not Highlight
+find.format.style	Style:
+find.special.paragraph	Paragraph Mark
+find.special.tab	Tab Character
+find.special.any_char	Any Character
+find.special.any_digit	Any Digit
+find.special.any_letter	Any Letter
+find.special.caret	Caret Character
+find.special.column_break	Column Break
+find.special.em_dash	Em Dash
+find.special.en_dash	En Dash
+find.special.line_break	Manual Line Break
+find.special.page_break	Manual Page Break
+find.special.nonbreaking_hyphen	Nonbreaking Hyphen
+find.special.nonbreaking_space	Nonbreaking Space
+find.special.optional_hyphen	Optional Hyphen
+find.special.white_space	White Space
+find.special.found_text	Find What Text
+find.end_reached	Word has reached the end of the document.
+find.start_reached	Word has reached the beginning of the document.
+find.not_found	The search item was not found.
+find.bad_pattern	The text to find is not valid: {why}
+find.replaced_count	{n} replacements made.
+options.menu	Word Options…
+options.title	Word Options
+options.page.view	View
+options.page.edit	Edit
+options.page.ribbon	Ribbon & Toolbar
+options.marks	Always show these formatting marks on the screen
+options.marks.tabs	Tab characters
+options.marks.spaces	Spaces
+options.marks.paragraph_marks	Paragraph marks
+options.marks.hidden_text	Hidden text
+options.marks.optional_hyphens	Optional hyphens
+options.marks.anchors	Object anchors
+options.overtype	Use overtype mode
+options.insert_key	Use the Insert key to control overtype mode
+options.paste	Cut, copy, and paste
+options.paste_same	Pasting within the same document
+options.paste_between	Pasting between documents
+options.paste_other	Pasting from other programs
+options.tabs	Main tabs
+options.qat	Quick Access Toolbar commands
+options.custom_group	Commands in Home's custom group
+customize.group	Custom
+views.status.overtype	Overtype
+qat.save	Save
+qat.undo	Undo
+qat.redo	Redo
+qat.print	Print
+qat.export_pdf	Export as PDF
+qat.find	Find
+qat.bold	Bold
+qat.italic	Italic
+qat.underline	Underline
+qat.align_left	Align Left
+qat.align_center	Center
+qat.align_right	Align Right
+qat.insert_table	Insert Table
+qat.picture	Picture
+qat.track_changes	Track Changes
+modes.title	Editing mode
+modes.editing	Editing
+modes.reviewing	Reviewing
+modes.viewing	Viewing
+modes.editing_hint	Edit the document directly
+modes.reviewing_hint	Every change is tracked
+modes.viewing_hint	Read the document without making accidental changes
+views.group.immersive	Immersive
+views.focus	Focus
+views.focus_title	Focus mode (Esc to leave)
+views.group.window	Window
+views.new_window	New Window
+views.split	Split
+views.window_hint	Another window on this document: edits here show in the first window at once.
+language.group	Language
+language.button	Set Proofing Language…
+language.title	Language
+language.mark_as	Mark selected text as
+language.no_proof	Do not check spelling or grammar
+language.detect	Detect language automatically
+language.ja_jp	Japanese
+language.en_us	English (United States)
+language.en_gb	English (United Kingdom)
+language.zh_cn	Chinese (Simplified)
+language.zh_tw	Chinese (Traditional)
+language.ko_kr	Korean
+language.fr_fr	French
+language.de_de	German
+language.es_es	Spanish
+language.it_it	Italian
+language.pt_br	Portuguese (Brazil)
+language.ru_ru	Russian
+language.th_th	Thai
+language.ar_sa	Arabic
+outline.tab	Outlining
+outline.group.tools	Outline Tools
+outline.group.close	Close
+outline.level	Level {n}
+outline.body	Body Text
+outline.all	All Levels
+outline.show_level	Show Level
+outline.to_top	Promote to Heading 1
+outline.promote	Promote
+outline.demote	Demote
+outline.to_body	Demote to Body Text
+outline.move_up	Move Up
+outline.move_down	Move Down
+outline.expand	Expand
+outline.collapse	Collapse
+outline.close	Close Outline View
+views.read.edit	Edit Document
+views.read.position	Screen {current} of {count}
+views.read.keys	← → to turn, Esc to go back
+autocorrect.cjk_spaces	Delete spaces between Japanese and English
+review.group.changes	Changes
+review.delete_comment	Delete Comment
+review.no_comment_here	There is no comment here
+review.previous_comment	Previous Comment
+review.next_comment	Next Comment
+review.user	User Info
+review.user.title	User Information
+review.user.hint	The name comments and tracked changes are recorded under
+review.user.name	Name
+review.user.initials	Initials
+review.markup.title	Display for Review
+review.markup.simple	Simple Markup
+review.markup.all	All Markup
+review.markup.none	No Markup
+review.markup.original	Original
+review.show	Show Markup
+review.show.title	Show Markup
+review.show.comments	Comments
+review.show.insertions	Insertions and Deletions
+review.show.formatting	Formatting
+review.show.reviewers	Reviewers
+review.show.everyone	All Reviewers
+review.accept.this	Accept This Change
+review.accept.visible	Accept All Changes Shown
+review.accept.all	Accept All Changes
+review.accept.all_stop	Accept All Changes and Stop Tracking
+review.reject.this	Reject Change
+review.reject.visible	Reject All Changes Shown
+review.reject.all	Reject All Changes
+review.reject.all_stop	Reject All Changes and Stop Tracking
+menu.app.user_info	User Information…
+proof.group	Proofing
+proof.button	Spelling & Grammar
+proof.title	Spelling and Grammar
+proof.marks	Check as You Type
+proof.marks_title	Check spelling and grammar as you type
+proof.spelling	Spelling
+proof.grammar	Grammar
+proof.suggestions	Suggestions
+proof.no_suggestions	No suggestions
+proof.change	Change
+proof.change_all	Change All
+proof.ignore	Ignore
+proof.ignore_all	Ignore All
+proof.learn	Add to Dictionary
+proof.open_pane	Spelling and Grammar…
+proof.finished	The spelling and grammar check is complete.
+menu.review.spelling	Spelling and Grammar…
+alt.button	Alt Text
+alt.title	Alt Text
+alt.hint	How would you describe this object and its context to someone who is blind or has low vision?
+alt.description	Description
+alt.decorative	Mark as decorative
+alt.decorative_hint	For an object that only adds visual interest and means nothing read aloud.
+alt.no_object	Click a picture or shape first
+a11y.group	Accessibility
+a11y.button	Check Accessibility
+a11y.title	Accessibility
+a11y.none	No accessibility issues found. People with disabilities should not have difficulty reading this document.
+a11y.errors	Errors
+a11y.warnings	Warnings
+a11y.tips	Tips
+a11y.missing_alt	Missing alternative text
+a11y.no_header	Missing table header
+a11y.skipped_heading	Skipped heading level
+a11y.skipped_detail	Heading {to} follows heading {from}
+a11y.unclear_link	Unclear hyperlink text
+a11y.low_contrast	Hard-to-read text contrast
+a11y.contrast_detail	Contrast {ratio}:1 (4.5:1 or more is needed)
+a11y.not_inline	Image or object not inline
+a11y.fix	Fix
+a11y.fix.describe	Add a description
+a11y.fix.decorative	Mark as decorative
+a11y.fix.header	Use first row as header
+a11y.fix.inline	Place in line with text
+alt.keys	⇥ Mark as decorative · ⏎ OK · esc Cancel
+review.format.bold	Bold
+review.format.not_bold	Not Bold
+review.format.italic	Italic
+review.format.not_italic	Not Italic
+review.format.underline	Underline
+review.format.strike	Strikethrough
+review.format.size	Font size
+review.format.font	Font
+review.format.color	Font color
+review.format.highlight	Highlight or shading
+review.format.position	Position
+review.format.style	Character style
+review.format.other	Character formatting
+review.format.paragraph	Paragraph formatting
+review.kind.inserted	Inserted
+review.kind.deleted	Deleted
+review.kind.moved_from	Moved from
+review.kind.moved_to	Moved to
+review.kind.formatted	Formatted
+review.pane	Reviewing Pane
+review.pane_title	Reviewing Pane
+review.pane.count	{n} revisions
+compare.group	Compare
+compare.button	Compare
+compare.title	Compare Documents
+compare.combine	Combine
+compare.combine_title	Combine Documents
+compare.original	Original document
+compare.revised	Revised document
+compare.none	(none chosen)
+compare.browse	Browse…
+compare.this	This document
+compare.label	Label changes with
+compare.settings	Comparison settings
+compare.formatting	Formatting
+compare.case	Case changes
+compare.space	White space
+compare.comments	Comments
+compare.level	Show changes at
+compare.by_character	Character level
+compare.by_word	Word level
+compare.done	Compared: {insertions} insertions, {deletions} deletions, {formatting} formatting changes
+compare.keys	⏎ Choose the revised document · ⇥ Character/Word · esc Cancel
+compare.waiting	Choose the revised document…
+protect.group	Protect
+protect.button	Protect Document
+protect.title	Password Protection
+protect.open_hint	Set a password to open this document
+protect.open	Password to open
+protect.modify_hint	Set a password to modify this document
+protect.modify	Password to modify
+protect.recommended	Read-only recommended
+protect.final	Mark as Final
+protect.final_title	Mark the document as final
+protect.final_bar	Marked as Final: an author has marked this document as final to discourage editing.
+protect.recommended_bar	The author would like you to open this document as read-only.
+protect.edit_anyway	Edit Anyway
+protect.password_title	Password
+protect.password_prompt	"{name}" is protected. Enter the password to open it.
+protect.wrong	The password is incorrect
+restrict.button	Restrict Editing
+restrict.title	Restrict Editing
+restrict.formatting_title	1. Formatting restrictions
+restrict.formatting	Limit formatting to a selection of styles
+restrict.editing_title	2. Editing restrictions
+restrict.none	No restriction
+restrict.read_only	No changes (Read only)
+restrict.tracked	Tracked changes
+restrict.comments	Comments
+restrict.forms	Filling in forms
+restrict.exceptions	Exceptions (optional): let these edit the selection
+restrict.everyone	Everyone
+restrict.start_title	3. Start enforcement
+restrict.stop_title	Stop protection
+restrict.password	Password (optional)
+restrict.start	Yes, Start Enforcing Protection
+restrict.stop	Stop Protection
+restrict.enforced	This document is protected.
+restrict.exception_count	{n} exceptions
+restrict.keys	⏎ OK · esc Cancel
+inspect.button	Inspect Document
+inspect.tooltip	Inspect Document: check for hidden data and personal information and remove it
+inspect.title	Inspect Document
+inspect.intro	Check for hidden data and personal information before you share the document.
+inspect.comments	Comments and Revisions
+inspect.comments_found	Found {comments} comments and {revisions} revisions.
+inspect.personal	Document Properties and Personal Information
+inspect.personal_found	Found personal information: {names}
+inspect.custom_xml	Custom XML Data
+inspect.custom_xml_found	Found {n} custom XML parts.
+inspect.headers	Headers and Footers
+inspect.headers_found	Found {n} lines of text in headers or footers.
+inspect.hidden	Hidden Text
+inspect.hidden_found	Found hidden text in {n} places.
+inspect.none	Nothing was found.
+inspect.remove_all	Remove All
+inspect.removed_on_save	Removed when the document is saved.
+read.group	Speech
+read.button	Read Aloud
+read.title	Read Aloud: read the document from the cursor, highlighting each word as it is read
+read.nothing	There is no text after the cursor to read.
+read.previous	Previous
+read.next	Next
+read.play	Play
+read.pause	Pause
+read.slower	Slower
+read.faster	Faster
+read.stop	Close
+immersive.group	Immersive
+immersive.button	Immersive Reader
+immersive.title	Immersive Reader: read the document in a view that makes it easier to read
+immersive.column	Column Width
+immersive.column.narrow	Narrow
+immersive.column.moderate	Moderate
+immersive.column.wide	Wide
+immersive.page	Page Color
+immersive.page.white	White
+immersive.page.sepia	Sepia
+immersive.page.inverse	Inverse
+immersive.line_focus	Line Focus
+immersive.line_focus.off	None
+immersive.line_focus.lines	{n} lines
+immersive.spacing	Text Spacing
+immersive.syllables	Syllables
+immersive.close	Close Immersive Reader
+review.kind.inserted_row	Inserted Row
+review.kind.deleted_row	Deleted Row
+side.group	Window
+side.button	View Side by Side
+side.title	View Side by Side: view two documents next to each other to compare them
+side.sync	Synchronous Scrolling
+side.sync_title	Synchronous Scrolling: scroll both documents together
+side.reset	Reset Window Position
+side.reset_title	Reset Window Position: line up the documents being compared
+side.needs_two	Open another Word document to view side by side.
+sign.bar	Signed: this document contains signatures. Editing it makes them invalid.
+sign.button	Sign
+sign.tooltip	Sign: add a digital signature with a certificate from the keychain
+sign.pane	Signatures
+sign.pane_tooltip	Signatures: show the document's signatures and the signature lines waiting to be signed
+sign.title	Sign
+sign.hint	Signing saves the document. Editing it after signing makes the signature invalid.
+sign.certificate	Certificate to sign with
+sign.purpose	Purpose for signing
+sign.no_certificate	There is no certificate in the keychain to sign with.
+sign.valid_heading	Valid signatures
+sign.valid	Valid signature
+sign.invalid	Invalid signature
+sign.none	This document has no signatures.
+sign.issuer	Issued by: {issuer}
+sign.requested	Requested signatures
+sign.line.group	Signature Line
+sign.line.button	Signature Line
+sign.line.tooltip	Signature Line: insert a line where the document is to be signed
+sign.line.title	Signature Setup
+sign.line.signer	Suggested signer
+sign.line.title_field	Suggested signer's title
+sign.line.email	E-mail
+sign.line.instructions	Instructions to the signer
+thesaurus.button	Thesaurus
+thesaurus.tooltip	Thesaurus: show words with a similar meaning to the selected word
+thesaurus.title	Thesaurus
+thesaurus.insert	Insert
+thesaurus.none	No synonyms were found.
+thesaurus.no_word	Select a word, or put the cursor in one.
+word.line.dot_dot_dash	Dot dot dash
+word.line.triple	Triple
+word.line.thick	Thick
+word.line.thin_thick_small	Thin-thick, small gap
+word.line.thin_thick_thin_small	Thin-thick-thin, small gap
+word.line.thin_thick_medium	Thin-thick, medium gap
+word.line.thick_thin_medium	Thick-thin, medium gap
+word.line.thin_thick_thin_medium	Thin-thick-thin, medium gap
+word.line.thin_thick_large	Thin-thick, large gap
+word.line.thick_thin_large	Thick-thin, large gap
+word.line.thin_thick_thin_large	Thin-thick-thin, large gap
+word.line.double_wave	Double wave
+word.line.dash_dot_stroked	Dash dot stroked
+word.line.emboss	3-D emboss
+word.line.engrave	3-D engrave
+word.line.outset	Outset
+word.line.inset	Inset
+setup.borders.art	Art
+word.art.apples	Apples
+word.art.hearts	Hearts
+word.art.stars	Stars
+word.art.stars_black	Black stars
+word.art.dots	Dots
+word.art.squares	Squares
+word.art.dashes	Dashes
+word.art.thin_lines	Thin lines
+word.art.checkered	Checkered
+word.art.christmas_tree	Christmas trees
+word.art.flowers	Tiny flowers
+word.art.balloons	Balloons
+word.art.sun	Suns
+word.art.snowflakes	Snowflakes
+word.art.zigzag	Zigzag
+word.art.triangles	Triangles
+menu.format.justify	Justify
+menu.format.bullets	Bullets
+menu.format.subscript	Subscript
+menu.format.superscript	Superscript
+menu.insert.page_break	Page Break
+menu.insert.column_break	Column Break
+context.paste_special	Paste Special...
 # Browser shell: Word ports (header/footer, fields, paste, tools, objects)
 objects.draw	Draw

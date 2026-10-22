@@ -38,23 +38,7 @@ const FONT_SIZES: [f32; 17] = [
 const DEFAULT_FAMILY: &str = "游明朝";
 const DEFAULT_SIZE: f32 = 12.0;
 /// Word's highlight names and what they look like.
-const HIGHLIGHTS: [(&str, u32); 15] = [
-    ("yellow", 0xffff00),
-    ("green", 0x00ff00),
-    ("cyan", 0x00ffff),
-    ("magenta", 0xff00ff),
-    ("blue", 0x0000ff),
-    ("red", 0xff0000),
-    ("darkBlue", 0x000080),
-    ("darkCyan", 0x008080),
-    ("darkGreen", 0x008000),
-    ("darkMagenta", 0x800080),
-    ("darkRed", 0x800000),
-    ("darkYellow", 0x808000),
-    ("darkGray", 0x808080),
-    ("lightGray", 0xc0c0c0),
-    ("black", 0x000000),
-];
+const HIGHLIGHTS: [(&str, u32); 16] = jade_office_model::word::font::HIGHLIGHT_COLORS;
 const LINE_SPACINGS: [(&str, f32); 4] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)];
 /// The paragraph dialog's shading swatches.
 const SHADINGS: [u32; 4] = [0xfff2cc, 0xe2f0d9, 0xddebf7, 0xededed];
@@ -121,6 +105,12 @@ pub enum Popup {
     Object(crate::word_objects_ribbon::ObjectPopup),
     /// 数式's lists (`word_equation`).
     Equation(crate::word_equation::EquationPopup),
+    /// レイアウト's ハイフネーション (`word_hyphenation`).
+    Hyphenation,
+    /// 描画's lists (`word_draw`).
+    Draw(crate::word_draw::DrawPopup),
+    /// The 校閲 tab's lists (`word_review_tools`).
+    Review(crate::word_review_tools::ReviewPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -228,6 +218,10 @@ pub enum Action {
     Object(crate::word_objects_ribbon::ObjectAction),
     /// 挿入 > 数式 and the 数式 tab (`word_equation`).
     Equation(crate::word_equation::EquationAction),
+    /// 表示: views, page movement, zoom and the grid (`word_views`).
+    Views(crate::word_views::ViewAction),
+    /// The 校閲 tab (`word_review_tools`).
+    Review(crate::word_review_tools::ReviewAction),
 }
 
 impl Action {
@@ -250,12 +244,44 @@ pub(crate) fn listener(
 ) -> impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static {
     // `cx.listener`, without its borrow of `cx` in the returned type.
     let view = cx.weak_entity();
-    move |_event, window, cx| {
+    move |event, window, cx| {
         view.update(cx, |view, cx| {
-            view.ribbon_action(action.clone(), window, cx)
+            view.ribbon_action(action.clone(), window, cx);
+            // A click leaves the keyboard with the text, as Word's ribbon
+            // does; the controls are tab stops only for the keyboard.
+            if !event.is_keyboard() && !view.focus.is_focused(window) && view.wants_text_focus() {
+                window.focus(&view.focus);
+            }
         })
         .ok();
     }
+}
+
+/// Enter or Space on a ribbon control that has the keyboard: what a click
+/// on it does. The ribbon's controls are tab stops, so it can be worked
+/// from the keyboard alone (F6 to reach it, Tab and the arrows to move,
+/// Escape back to the document).
+pub(crate) fn key_listener(
+    action: Action,
+    cx: &mut Context<DocumentView>,
+) -> impl Fn(&gpui::KeyDownEvent, &mut Window, &mut gpui::App) + 'static {
+    let view = cx.weak_entity();
+    move |event, window, cx| {
+        if matches!(event.keystroke.key.as_str(), "enter" | "space")
+            && !event.keystroke.modifiers.modified()
+        {
+            view.update(cx, |view, cx| {
+                view.ribbon_action(action.clone(), window, cx)
+            })
+            .ok();
+            cx.stop_propagation();
+        }
+    }
+}
+
+/// How a ribbon control with the keyboard shows it.
+pub(crate) fn focus_ring(style: gpui::StyleRefinement) -> gpui::StyleRefinement {
+    style.border_1().border_color(theme::accent())
 }
 
 /// A square icon button with a tooltip; `active` shows it pressed.
@@ -281,7 +307,10 @@ pub(crate) fn icon_button(
             button
                 .cursor_pointer()
                 .hover(|button| button.bg(theme::hovered()))
-                .on_click(listener(action, cx))
+                .on_click(listener(action.clone(), cx))
+                .tab_index(0)
+                .focus(focus_ring)
+                .on_key_down(key_listener(action, cx))
         })
         .tooltip(Tooltip::text(tooltip))
         .child(svg().path(icon).size_4().text_color(if !enabled {
@@ -324,7 +353,10 @@ fn labeled_button(
             button
                 .cursor_pointer()
                 .hover(|button| button.bg(theme::hovered()))
-                .on_click(listener(action, cx))
+                .on_click(listener(action.clone(), cx))
+                .tab_index(0)
+                .focus(focus_ring)
+                .on_key_down(key_listener(action, cx))
         })
         .when(!enabled, |button| {
             button.tooltip(Tooltip::text(i18n::text("ribbon.needs_table")))
@@ -361,7 +393,10 @@ pub(crate) fn menu_button(
         .when(open, |button| button.bg(theme::selected()))
         .hover(|button| button.bg(theme::hovered()))
         .tooltip(Tooltip::text(tooltip))
-        .on_click(listener(Action::Popup(popup), cx))
+        .on_click(listener(Action::Popup(popup).clone(), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(Action::Popup(popup), cx))
         .child(
             div()
                 .flex()
@@ -411,7 +446,10 @@ fn combo_box(
         .cursor_pointer()
         .hover(|button| button.bg(theme::hovered()))
         .tooltip(Tooltip::text(tooltip))
-        .on_click(listener(Action::Popup(popup), cx))
+        .on_click(listener(Action::Popup(popup).clone(), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(Action::Popup(popup), cx))
         .child(
             div()
                 .flex_1()
@@ -484,7 +522,15 @@ pub(crate) fn menu_row(
         .whitespace_nowrap()
         .cursor_pointer()
         .hover(|row| row.bg(theme::hovered()))
-        .on_click(listener(action, cx))
+        // リアルタイムのプレビュー: a font, size, colour or style shows on
+        // the selection while the pointer rests on it.
+        .when(crate::word_views::mini::previewable(&action), |row| {
+            row.on_hover(crate::word_views::mini::hover(action.clone(), cx))
+        })
+        .on_click(listener(action.clone(), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(action, cx))
         .child(div().size_4().flex_none().when(checked, |cell| {
             cell.child(
                 svg()
@@ -525,7 +571,13 @@ fn swatch(
         .cursor_pointer()
         .hover(|square| square.border_color(theme::accent()))
         .tooltip(Tooltip::text(tooltip))
-        .on_click(listener(action, cx))
+        .when(crate::word_views::mini::previewable(&action), |square| {
+            square.on_hover(crate::word_views::mini::hover(action.clone(), cx))
+        })
+        .on_click(listener(action.clone(), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(action, cx))
         .into_any_element()
 }
 
@@ -1072,6 +1124,10 @@ fn styles_group(
             .text_color(theme::text())
             .tooltip(Tooltip::text(style_label(entry)))
             .child(style_label(entry))
+            .on_hover(crate::word_views::mini::hover(
+                Action::Style(entry.id.clone()),
+                cx,
+            ))
             .on_click(listener(Action::Style(entry.id.clone()), cx))
             .into_any_element()
     };
@@ -1444,7 +1500,10 @@ fn popup_button(
             button
                 .cursor_pointer()
                 .hover(|button| button.bg(theme::hovered()))
-                .on_click(listener(Action::Popup(popup), cx))
+                .on_click(listener(Action::Popup(popup).clone(), cx))
+                .tab_index(0)
+                .focus(focus_ring)
+                .on_key_down(key_listener(Action::Popup(popup), cx))
         })
         .when(!enabled, |button| {
             button.tooltip(Tooltip::text(i18n::text("ribbon.needs_table")))
@@ -1492,7 +1551,10 @@ fn cell_format_menu(state: &FormatState, cx: &mut Context<DocumentView>) -> Opti
             .whitespace_nowrap()
             .cursor_pointer()
             .hover(|chip| chip.bg(theme::hovered()))
-            .on_click(listener(action, cx))
+            .on_click(listener(action.clone(), cx))
+            .tab_index(0)
+            .focus(focus_ring)
+            .on_key_down(key_listener(action, cx))
             .child(label)
             .into_any_element()
     };

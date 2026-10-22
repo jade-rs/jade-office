@@ -63,8 +63,6 @@ pub struct ObjectTools {
     pub sketch: Option<(usize, f64, f64, f64, f64)>,
     /// A freeform's points so far, on its page.
     pub freeform: Option<(usize, Vec<(f64, f64)>)>,
-    /// A pen stroke being drawn, on its page.
-    pub stroke: Option<(usize, Vec<(f64, f64)>)>,
     /// リンクの作成: the text box whose overflow the next one clicked takes.
     pub linking: Option<FloatingObjectTarget>,
     /// 頂点の編集: the selected freeform's points are shown and dragged;
@@ -208,15 +206,6 @@ impl DocumentView {
             if closes || click_count >= 2 {
                 self.finish_freeform(closes, cx);
             }
-            cx.notify();
-            return true;
-        }
-        if matches!(
-            self.objects.drawing,
-            Some(crate::word_objects_ribbon::DrawTool::Pen(_))
-        ) {
-            self.objects.stroke = Some((page_index, vec![(x, y)]));
-            self.selected_object = None;
             cx.notify();
             return true;
         }
@@ -382,16 +371,6 @@ impl DocumentView {
             cx.notify();
             return true;
         }
-        if let Some((_, points)) = self.objects.stroke.as_mut() {
-            if points
-                .last()
-                .is_none_or(|last| (last.0 - x).abs() + (last.1 - y).abs() >= 1.5)
-            {
-                points.push((x, y));
-            }
-            cx.notify();
-            return true;
-        }
         if let Some(drag) = self.objects.point_drag.as_mut() {
             drag.1 = (x, y);
             cx.notify();
@@ -474,9 +453,6 @@ impl DocumentView {
     pub(crate) fn release_object(&mut self, cx: &mut Context<Self>) {
         if let Some((index, point)) = self.objects.point_drag.take() {
             return self.move_point(index, point, cx);
-        }
-        if self.objects.stroke.is_some() {
-            return self.finish_stroke(cx);
         }
         if let Some((page, x0, y0, x1, y1)) = self.objects.sketch.take() {
             let tool = self.objects.drawing.take();
@@ -835,15 +811,6 @@ impl DocumentView {
         if let Some((page, points)) = self.objects.freeform.as_ref() {
             if *page == page_index {
                 elements.extend(points.iter().map(|point| dot(*point, gpui::black())));
-            }
-        }
-        if let Some((page, points)) = self.objects.stroke.as_ref() {
-            if *page == page_index {
-                elements.extend(
-                    points
-                        .iter()
-                        .map(|point| dot(*point, theme::accent().into())),
-                );
             }
         }
         if self.objects.editing_points {
@@ -1494,57 +1461,6 @@ mod more_scenarios {
         );
     }
 
-    /// 描画 → ペン: a drag on the page goes in as Word ink, drawn there.
-    #[gpui::test]
-    fn a_pen_stroke_goes_in_as_ink(cx: &mut gpui::TestAppContext) {
-        let (view, cx) = open_contract(cx);
-        view.update(cx, |view, cx| {
-            view.run_object_action(ObjectAction::Draw(DrawTool::Pen(1)), cx)
-        });
-        drag(&view, cx, (150.0, 420.0), (300.0, 460.0));
-        let ink = view.read_with(cx, |view, _| {
-            assert!(view.objects.status.is_none(), "{:?}", view.objects.status);
-            view.document
-                .body_objects()
-                .into_iter()
-                .find_map(|object| {
-                    jade_office_model::word::objects::object_run(
-                        view.document.word_document(),
-                        object.target,
-                    )
-                    .and_then(|run| run.image.as_ref())
-                    .and_then(|image| image.format().ink.clone())
-                    .map(|ink| {
-                        (
-                            ink,
-                            region_hit(&view.document, object.target).expect("drawn"),
-                        )
-                    })
-                })
-                .expect("the ink object")
-        });
-        let (ink, object) = ink;
-        assert_eq!(ink.strokes.len(), 1);
-        assert_eq!(ink.strokes[0].color, "#E71224");
-        assert!(
-            ink.strokes[0].points.len() >= 3,
-            "{:?}",
-            ink.strokes[0].points
-        );
-        assert!(
-            (object.x - 150.0).abs() < 4.0 && (object.width - 150.0).abs() < 6.0,
-            "{} {}",
-            object.x,
-            object.width
-        );
-        // The pen stays in hand for the next stroke.
-        view.read_with(cx, |view, _| {
-            assert_eq!(view.objects.drawing, Some(DrawTool::Pen(1)))
-        });
-    }
-
-    /// テキスト ボックス → リンクの作成: the box clicked next continues the
-    /// selected one.
     #[gpui::test]
     fn text_boxes_are_linked_by_clicking(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_contract(cx);

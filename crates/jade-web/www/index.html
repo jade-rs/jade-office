@@ -38,8 +38,18 @@
     const openFile = (file) =>
       file.arrayBuffer().then((buffer) => open_file(file.name, new Uint8Array(buffer)));
 
-    // Save hands the bytes back; the page offers them as a download.
-    const save = (fileName, data) => {
+    // Save hands the bytes back; the page offers them as a download. A PDF
+    // to print opens in a hidden frame, which prints it.
+    const save = (fileName, data, print) => {
+      if (print) {
+        const url = URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
+        const frame = Object.assign(document.createElement("iframe"), { src: url });
+        frame.style.display = "none";
+        frame.addEventListener("load", () => frame.contentWindow?.print());
+        document.body.append(frame);
+        setTimeout(() => { frame.remove(); URL.revokeObjectURL(url); }, 60000);
+        return;
+      }
       const url = URL.createObjectURL(new Blob([data]));
       const link = Object.assign(document.createElement("a"), { href: url, download: fileName });
       link.click();
@@ -49,7 +59,7 @@
       bytes(`samples/${name}`).then((data) => open_file(name, data)).catch(console.error);
     const picker = Object.assign(document.createElement("input"), {
       type: "file",
-      accept: ".docx,.docm,.dotx,.dotm,.xlsx,.xlsm,.xltx,.xltm,.csv,.pptx,.pptm,.potx,.potm,.ppsx,.ppsm,.png,.jpg,.jpeg,.gif",
+      accept: ".docx,.docm,.dotx,.dotm,.doc,.dot,.rtf,.txt,.odt,.htm,.html,.xlsx,.xlsm,.xltx,.xltm,.csv,.pptx,.pptm,.potx,.potm,.ppsx,.ppsm,.png,.jpg,.jpeg,.gif",
       multiple: true,
     });
     picker.addEventListener("change", () => {

@@ -6,6 +6,11 @@
 mod common;
 use common::{contract, typed};
 use jade_web::word::review::WordReview;
+use jade_web::word::reviewer::Reviewer;
+
+fn jade() -> Reviewer {
+    Reviewer::named("jade")
+}
 
 #[test]
 fn a_comment_is_written_answered_resolved_and_deleted() {
@@ -16,7 +21,7 @@ fn a_comment_is_written_answered_resolved_and_deleted() {
         .select((paragraph, 0), (paragraph, "Clause".len()))
         .unwrap();
     let id = document
-        .add_comment("Check this.", "jade")
+        .add_comment("Check this.", &jade())
         .unwrap()
         .expect("a new comment");
     let comment = document
@@ -28,7 +33,7 @@ fn a_comment_is_written_answered_resolved_and_deleted() {
     assert_eq!(comment.author.as_deref(), Some("jade"));
     assert_eq!(comment.anchor.map(|(start, _)| start), Some((paragraph, 0)));
 
-    document.reply_to_comment(&id, "Done.", "jade").unwrap();
+    document.reply_to_comment(&id, "Done.", &jade()).unwrap();
     document.edit_comment(&id, "Check this, please.").unwrap();
     document.resolve_comment(&id, true).unwrap();
     let comment = document
@@ -52,7 +57,7 @@ fn tracked_changes_are_walked_and_decided_one_at_a_time() {
     let mut document = contract();
     let paragraph = typed(&mut document, "");
     assert!(!document.is_tracking_changes());
-    document.set_tracking_changes(true, "jade").unwrap();
+    document.set_tracking_changes(true, &jade()).unwrap();
     assert!(document.is_tracking_changes());
 
     document.place_caret(paragraph, 0);
@@ -94,7 +99,7 @@ fn tracked_changes_are_walked_and_decided_one_at_a_time() {
         .iter()
         .all(|revision| revision.paragraph != paragraph || !revision.is_insertion()));
 
-    document.set_tracking_changes(false, "jade").unwrap();
+    document.set_tracking_changes(false, &jade()).unwrap();
     assert!(!document.is_tracking_changes());
     document.decide_all_revisions(true).unwrap();
     assert!(document.revisions().is_empty());
@@ -107,7 +112,7 @@ fn a_word_typed_a_key_at_a_time_is_rejected_whole() {
     let mut document = contract();
     let paragraph = typed(&mut document, "");
     let before = document.paragraph_text(paragraph).unwrap();
-    document.set_tracking_changes(true, "jade").unwrap();
+    document.set_tracking_changes(true, &jade()).unwrap();
     document.place_caret(paragraph, 0);
     for key in ["n", "e", "w", " "] {
         document.insert_text(key).unwrap();
@@ -166,7 +171,7 @@ fn tracked_changes_are_drawn_as_markup() {
     assert_eq!(painted_in(&document, INSERTED).0, 0);
     assert_eq!(painted_in(&document, DELETED).0, 0);
     let before = document.paragraph_text(paragraph).unwrap();
-    document.set_tracking_changes(true, "jade").unwrap();
+    document.set_tracking_changes(true, &jade()).unwrap();
 
     document.place_caret(paragraph, 0);
     document.insert_text("Inserted words ").unwrap();

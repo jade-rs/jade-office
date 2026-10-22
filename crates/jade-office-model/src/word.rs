@@ -29,27 +29,42 @@ use jade_docx_headless_api::{
 pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
+pub mod accessibility;
 pub mod asian;
+pub mod autocorrect;
+pub mod borders;
 pub mod building_blocks;
 pub mod clipboard;
+pub mod compare;
+pub mod compat;
+pub mod compress;
 pub mod connectors;
+pub mod context_menu;
 pub mod controls;
 pub mod count;
 pub mod design;
 pub mod diagrams;
+pub mod embedding;
 pub mod equation;
 pub mod fields;
 pub mod find;
 pub mod font;
 pub mod form_view;
+pub mod formats;
 pub mod group;
 pub mod handles;
 pub mod html_clip;
-pub mod ink;
+pub mod hyphenation;
+pub mod immersive;
+pub mod ink_tools;
 pub mod insert;
+pub mod inspect;
+pub mod language;
 pub mod links;
 pub mod lists;
 pub mod mailings;
+pub mod markup;
+pub mod master;
 pub mod new;
 pub mod objects;
 pub mod package;
@@ -61,15 +76,28 @@ pub mod paragraph_options;
 pub mod picture;
 pub mod picture_format;
 pub mod platform;
+pub mod printing;
+pub mod proofing;
+pub mod protection;
+pub mod read_aloud;
 pub mod references;
+pub mod repair;
 pub mod review;
+pub mod reviewer;
 pub mod ruler;
+pub mod screen_reader;
+pub mod search;
+pub mod selection;
 pub mod shape_gallery;
 pub mod shapes;
+pub mod signatures;
 pub mod styles;
 pub mod table;
 pub mod table_ui;
+pub mod templates;
+pub mod thesaurus;
 pub mod typography;
+pub mod view;
 pub mod xml;
 
 pub use count::{WordCount, WordCounting};
@@ -171,6 +199,12 @@ pub trait WordSession {
     /// places its caret and answers clicks with.
     fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
         Vec::new()
+    }
+
+    /// Where the last layout put the floating object in run `run` of
+    /// paragraph `paragraph`: its page (0-based) and its box there, in px.
+    fn object_region(&self, _paragraph: usize, _run: usize) -> Option<(usize, f64, f64, f64, f64)> {
+        None
     }
 }
 

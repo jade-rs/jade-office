@@ -152,8 +152,6 @@ pub enum RefAction {
     ToggleShowBookmarks,
     /// ジャンプ….
     OpenGoTo,
-    /// 次のコメント / 前のコメント.
-    StepComment(bool),
 }
 
 /// The open dialog.
@@ -401,7 +399,6 @@ pub fn run(view: &mut DocumentView, action: RefAction, cx: &mut Context<Document
             cx.notify();
         }
         RefAction::OpenGoTo => navigation::open_go_to(view, cx),
-        RefAction::StepComment(forwards) => navigation::step_comment(view, forwards, cx),
     }
 }
 
@@ -1510,28 +1507,6 @@ pub fn view_buttons(view: &DocumentView, cx: &mut Context<DocumentView>) -> Vec<
             t("goto.title"),
             false,
             RefAction::OpenGoTo,
-            cx,
-        ),
-    ]
-}
-
-/// 校閲's 前のコメント / 次のコメント.
-pub fn comment_steps(cx: &mut Context<DocumentView>) -> Vec<AnyElement> {
-    vec![
-        text_button(
-            "comment-previous",
-            t("comments.previous"),
-            t("comments.previous"),
-            false,
-            RefAction::StepComment(false),
-            cx,
-        ),
-        text_button(
-            "comment-next",
-            t("comments.next"),
-            t("comments.next"),
-            false,
-            RefAction::StepComment(true),
             cx,
         ),
     ]
