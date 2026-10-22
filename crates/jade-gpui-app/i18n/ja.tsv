@@ -2243,3 +2243,4 @@ outline.close	アウトライン表示を閉じる
 views.read.edit	文書の編集
 views.read.position	{current} / {count} 画面
 views.read.keys	← → で移動、Esc で戻る
+autocorrect.cjk_spaces	日本語と英数字の間の不要なスペースを削除する

@@ -2243,3 +2243,4 @@ outline.close	Close Outline View
 views.read.edit	Edit Document
 views.read.position	Screen {current} of {count}
 views.read.keys	← → to turn, Esc to go back
+autocorrect.cjk_spaces	Delete spaces between Japanese and English

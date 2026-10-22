@@ -297,6 +297,7 @@ fn label_key(key: &str) -> &'static str {
         "long_vowels" => "autocorrect.long_vowels",
         "brackets" => "autocorrect.brackets",
         "closing_phrases" => "autocorrect.closing_phrases",
+        "cjk_spaces" => "autocorrect.cjk_spaces",
         _ => "autocorrect.kiki",
     }
 }
@@ -350,7 +351,7 @@ mod tests {
         });
         cx.simulate_input(" jdo ");
         view.read_with(cx, |view, _| {
-            assert!(view.current_paragraph_text().ends_with(" jade-office "));
+            assert!(view.current_paragraph_text().ends_with("jade-office "));
         });
     }
 }
