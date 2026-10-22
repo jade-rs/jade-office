@@ -121,6 +121,10 @@ pub enum Popup {
     Object(crate::word_objects_ribbon::ObjectPopup),
     /// 数式's lists (`word_equation`).
     Equation(crate::word_equation::EquationPopup),
+    /// レイアウト's ハイフネーション (`word_hyphenation`).
+    Hyphenation,
+    /// 描画's lists (`word_draw`).
+    Draw(crate::word_draw::DrawPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.

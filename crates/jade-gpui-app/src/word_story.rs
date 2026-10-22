@@ -166,6 +166,10 @@ impl WordSession for WordDoc {
     fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
         WordSession::math_zones(&**self)
     }
+
+    fn object_region(&self, paragraph: usize, run: usize) -> Option<(usize, f64, f64, f64, f64)> {
+        WordSession::object_region(&**self, paragraph, run)
+    }
 }
 
 fn role_name(role: Story) -> &'static str {

@@ -34,11 +34,13 @@ mod word_controls;
 mod word_design;
 mod word_dialog;
 mod word_dialogs;
+mod word_draw;
 mod word_equation;
 mod word_fields;
 mod word_files;
 mod word_fonts;
 mod word_form;
+mod word_hyphenation;
 mod word_lists;
 mod word_mailings;
 mod word_master;
@@ -1130,6 +1132,8 @@ impl gpui::AssetSource for Assets {
 pub(crate) enum RibbonTab {
     Home,
     Insert,
+    /// 描画 (`word_draw`).
+    Draw,
     Design,
     Layout,
     References,
@@ -1151,9 +1155,10 @@ pub(crate) enum RibbonTab {
 }
 
 impl RibbonTab {
-    const ALL: [RibbonTab; 9] = [
+    const ALL: [RibbonTab; 10] = [
         RibbonTab::Home,
         RibbonTab::Insert,
+        RibbonTab::Draw,
         RibbonTab::Design,
         RibbonTab::Layout,
         RibbonTab::References,
@@ -1167,6 +1172,7 @@ impl RibbonTab {
         match self {
             RibbonTab::Home => t("doc.tab.home"),
             RibbonTab::Insert => t("doc.tab.insert"),
+            RibbonTab::Draw => t("draw.tab"),
             RibbonTab::Design => t("doc.tab.design"),
             RibbonTab::Layout => t("doc.tab.layout"),
             RibbonTab::References => t("doc.tab.references"),
@@ -1231,6 +1237,8 @@ type FormatKey = (
 );
 
 struct DocumentView {
+    /// The 描画 tab's tools and the drawing under way (`word_draw`).
+    draw: word_draw::DrawSession,
     path: SharedString,
     file_size: u64,
     /// The document, or the header or footer open over it (`word_story`).
@@ -2222,6 +2230,7 @@ impl DocumentView {
             }]
             .into_iter()
             .chain(self.page_setup_groups(cx))
+            .chain([word_hyphenation::layout_group(self, cx)])
             .chain([
                 Self::ribbon_group(
                     t("doc.group.paragraph"),
@@ -2278,6 +2287,7 @@ impl DocumentView {
                     .collect()
             }
             RibbonTab::References => word_references::ribbon_groups(self, cx),
+            RibbonTab::Draw => word_draw::ribbon_groups(self, cx),
             RibbonTab::Review => self.review_groups(cx),
             RibbonTab::HeaderFooter => self.story_groups(cx),
             RibbonTab::Developer => self.developer_groups(cx),
@@ -3811,6 +3821,9 @@ impl DocumentView {
 
     /// Extends the selection from the drag anchor to the pointer.
     fn drag_to(&mut self, page_index: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if self.ink_drag(page_index, event, cx) {
+            return;
+        }
         if self.table_mouse_drag(page_index, event, cx) {
             return;
         }
@@ -3862,6 +3875,12 @@ impl DocumentView {
         let zoom = f64::from(self.zoom);
         let local_x = f64::from(event.position.x - bounds.origin.x) / zoom;
         let local_y = f64::from(event.position.y - bounds.origin.y) / zoom;
+        // With a pen, the eraser or the lasso in hand, the press draws
+        // (`word_draw`).
+        if self.ink_press(page_index, (local_x, local_y), cx) {
+            self.drag_anchor = None;
+            return;
+        }
         // A double-click in the top or bottom margin opens the header or
         // footer there; an open one takes clicks only inside it.
         if self.story_click(page_index, local_y, event.click_count, cx) {
@@ -4748,6 +4767,7 @@ impl Render for DocumentView {
                                         cx.listener(
                                             move |view, _event: &MouseUpEvent, _window, cx| {
                                                 view.drag_anchor = None;
+                                                view.ink_release(cx);
                                                 // The brush paints what was
                                                 // just clicked or dragged over.
                                                 if view.painter.is_some() {
@@ -4775,6 +4795,7 @@ impl Render for DocumentView {
                                     .children(self.controls_overlay(index, cx))
                                     .children(self.mailings_overlay(index))
                                     .children(self.master_boxes(index))
+                                    .children(self.ink_overlay(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
                                     // before the renderer can hit-test it.
@@ -5067,6 +5088,7 @@ fn document_view(
         drag_anchor: None,
         objects: Default::default(),
         selected_object: None,
+        draw: Default::default(),
         selection_anchor: None,
         zoom: 1.0,
         raster_scale: 1.0,

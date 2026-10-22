@@ -47,7 +47,8 @@ pub mod font;
 pub mod form_view;
 pub mod formats;
 pub mod group;
-pub mod ink;
+pub mod hyphenation;
+pub mod ink_tools;
 pub mod insert;
 pub mod links;
 pub mod lists;
@@ -177,6 +178,12 @@ pub trait WordSession {
     /// places its caret and answers clicks with.
     fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
         Vec::new()
+    }
+
+    /// Where the last layout put the floating object in run `run` of
+    /// paragraph `paragraph`: its page (0-based) and its box there, in px.
+    fn object_region(&self, _paragraph: usize, _run: usize) -> Option<(usize, f64, f64, f64, f64)> {
+        None
     }
 }
 

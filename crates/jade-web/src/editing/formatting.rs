@@ -168,6 +168,25 @@ impl WordSession for EditableDocument {
     fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
         self.renderer.math_zones().to_vec()
     }
+
+    fn object_region(&self, paragraph: usize, run: usize) -> Option<(usize, f64, f64, f64, f64)> {
+        use jade_docx_editor::word_document::{FloatingObjectKind, FloatingObjectTarget};
+        self.renderer
+            .object_region(FloatingObjectTarget {
+                paragraph_index: paragraph,
+                run_index: run,
+                kind: FloatingObjectKind::Image,
+            })
+            .map(|region| {
+                (
+                    region.page.saturating_sub(1),
+                    region.x,
+                    region.y,
+                    region.width,
+                    region.height,
+                )
+            })
+    }
 }
 
 impl EditableDocument {
