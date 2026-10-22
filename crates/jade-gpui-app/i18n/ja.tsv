@@ -3352,3 +3352,6 @@ objects.draw	描画
 modes.read_only	閲覧モードでは文書を変更できません
 outline.group.level	レベル
 views.group.options	オプション
+files.group.compatibility	互換性
+objects.compress	図の圧縮
+recovered.browser_note	自動回復用のデータはこのブラウザーに保存され、保存せずに閉じた文書は次に開いたときエクスプローラーの「回復されたファイル」から開けます。バックアップは保存 (ダウンロード) のたびに .wbk としてダウンロードされます。

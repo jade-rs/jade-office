@@ -97,6 +97,8 @@ pub enum FormatAction {
     TextAlign(&'static str),
     /// トリミング, リンクの作成, 折り返し点の編集, the Selection Pane.
     Ui(ObjectUi),
+    /// 図の圧縮 (`word_files`).
+    Compress,
 }
 
 /// Colours the outline, fill and text lists offer: the Office theme's
@@ -892,6 +894,14 @@ impl DocView {
                     ),
                 ]),
                 row(vec![
+                    text_button(
+                        "compress-pictures",
+                        t("objects.compress"),
+                        t("compress.title"),
+                        false,
+                        FormatAction::Compress,
+                        cx,
+                    ),
                     dropdown(
                         list(
                             "transparency",
@@ -1397,6 +1407,7 @@ impl DocView {
                 self.tools.picking = Some(Pick::ChangePicture);
                 return self.host.pick();
             }
+            FormatAction::Compress => return self.open_compress_dialog(cx),
             FormatAction::Wrap(wrap) => {
                 use jade_web::word::picture::WordPicture;
                 self.word_edit(cx, move |document| {
@@ -1454,6 +1465,7 @@ impl DocView {
             FormatAction::Ui(_)
             | FormatAction::AlignTo(_)
             | FormatAction::ChangePicture
+            | FormatAction::Compress
             | FormatAction::Wrap(_) => Ok(()),
         });
         self.refresh_selected_object();

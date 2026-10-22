@@ -307,6 +307,9 @@ pub enum Action {
     Views(crate::view::word_views::ViewsAction),
     /// 図の形式 and 図形の書式 (`view::word_object_tab`).
     ObjectFormat(crate::view::word_object_tab::FormatAction),
+    /// 互換性チェック, 変換, テンプレートとアドイン, ファイル サイズの圧縮
+    /// (`view::word_files`).
+    Files(crate::view::word_files::FilesAction),
 }
 
 /// What the 表示 tab's own buttons do.
@@ -780,6 +783,8 @@ pub struct TabState {
     /// The selected object's tab: whether it is a picture's, and its
     /// groups.
     pub object_tab: Option<(bool, Vec<AnyElement>)>,
+    /// Whether the document is in 互換モード.
+    pub compatibility_mode: bool,
 }
 
 pub fn ribbon(
@@ -969,11 +974,18 @@ pub fn ribbon(
             .map(|draw| crate::view::word_draw::ribbon_groups(draw, ribbon.popup, cx))
             .unwrap_or_default(),
         Tab::View => view_groups(ribbon, shown, cx),
-        Tab::Review => shown
-            .review
-            .as_ref()
-            .map(|review| crate::word_review::review(review, ribbon.popup, cx))
-            .unwrap_or_default(),
+        Tab::Review => {
+            let mut groups = shown
+                .review
+                .as_ref()
+                .map(|review| crate::word_review::review(review, ribbon.popup, cx))
+                .unwrap_or_default();
+            groups.push(crate::view::word_files::review_group(
+                shown.compatibility_mode,
+                cx,
+            ));
+            groups
+        }
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
             crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)

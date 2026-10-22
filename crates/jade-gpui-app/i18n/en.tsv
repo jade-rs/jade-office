@@ -3352,3 +3352,6 @@ objects.draw	Draw
 modes.read_only	The document cannot be changed while viewing
 outline.group.level	Level
 views.group.options	Options
+files.group.compatibility	Compatibility
+objects.compress	Compress Pictures
+recovered.browser_note	AutoRecover data is kept in this browser: a document closed without saving can be opened from Recovered Files in the explorer next time. A backup is downloaded as .wbk with each save (download).

@@ -42,6 +42,7 @@ pub(crate) mod word_download;
 pub(crate) mod word_draw;
 pub(crate) mod word_equation;
 pub(crate) mod word_fields;
+pub(crate) mod word_files;
 mod word_find;
 mod word_form;
 pub(crate) mod word_hyphenation;
@@ -56,6 +57,7 @@ pub(crate) mod word_paragraph;
 pub(crate) mod word_preview;
 mod word_print;
 mod word_read_aloud;
+pub(crate) mod word_recover;
 pub(crate) mod word_references;
 mod word_review;
 pub(crate) mod word_ruler;
@@ -592,6 +594,11 @@ pub struct DocView {
     /// The 表示 tab's views, windows and modes, the ミニ ツールバー,
     /// オートコレクト and Word のオプション (`word_views`).
     views: word_views::Views,
+    /// 互換性チェック, テンプレートとアドイン, ファイル サイズの圧縮
+    /// (`word_files`).
+    files: word_files::FilesUi,
+    /// 自動回復 and the backups (`word_recover`).
+    recovery: word_recover::Recovery,
 }
 
 impl DocView {
@@ -603,6 +610,7 @@ impl DocView {
         host: Host,
         focus: FocusHandle,
     ) -> Result<Self, String> {
+        let original = bytes;
         let kind = Kind::of(&name)
             .ok_or_else(|| i18n::format("workspace.unsupported", &[("name", &name)]))?;
         // A Word document in another format — .doc, RTF, text, ODT, HTML —
@@ -812,6 +820,11 @@ impl DocView {
             previewing: false,
             word_menu: None,
             views: word_views::Views::default(),
+            files: word_files::FilesUi::default(),
+            recovery: word_recover::Recovery {
+                saved: (kind == Kind::Document).then(|| Rc::new(original.to_vec())),
+                ..Default::default()
+            },
         })
     }
 
@@ -1023,6 +1036,11 @@ impl DocView {
         if !self.commit_cell(cx) {
             return;
         }
+        // A document in 互換モード (or saved as Word 97-2004) is checked
+        // first, as Word does (`word_files`).
+        if self.check_before_saving(word_files::Then::Save, cx) {
+            return;
+        }
         self.commit_slide_text(cx);
         let bytes = match &mut self.document {
             // Saved back in the format the file came in, as Word does.
@@ -1032,6 +1050,17 @@ impl DocView {
                 ..
             } => document.export_docx().and_then(|docx| {
                 use jade_web::word::formats::{save_from_docx, SaveOptions, WordFormat};
+                // ファイル サイズの圧縮 on every save.
+                let docx = match self.files.compress_on_save {
+                    Some(compression) => jade_web::word::compress::compress_pictures(
+                        &docx,
+                        compression.resolution,
+                        compression.delete_crops,
+                    )
+                    .map(|(compressed, _)| compressed)
+                    .unwrap_or(docx),
+                    None => docx,
+                };
                 match WordFormat::of_name(&self.name) {
                     Some(format) if !format.is_package() => save_from_docx(
                         format,
@@ -1064,6 +1093,10 @@ impl DocView {
         self.status = match bytes {
             Ok(bytes) => {
                 self.host.save(&self.name, &bytes);
+                // The 自動回復 copy goes; a backup of what this replaces.
+                if matches!(self.document, Document::Pages { .. }) {
+                    self.recovery_saved(&bytes);
+                }
                 i18n::format("web.downloaded", &[("name", &self.name)]).into()
             }
             Err(error) => i18n::format("sheet.save_failed", &[("error", &error)]).into(),
@@ -2122,6 +2155,9 @@ impl DocView {
         if let Action::ObjectFormat(action) = action {
             return self.object_format_action(action, cx);
         }
+        if let Action::Files(action) = action {
+            return self.files_action(action, cx);
+        }
         if let Action::Word(command) = action {
             return self.run_tool(command, cx);
         }
@@ -2201,6 +2237,7 @@ impl DocView {
             | Action::View(_)
             | Action::Views(_)
             | Action::ObjectFormat(_)
+            | Action::Files(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -2345,6 +2382,7 @@ impl DocView {
                 views,
                 outline,
                 object_tab,
+                compatibility_mode: jade_web::word::compat::is_compatibility_mode(self.compat_mode),
             }
         };
         let mut tabs = tabs;
@@ -2444,6 +2482,7 @@ impl DocView {
         }
         let zoom = self.zoom.unwrap_or(1.0);
         self.shown_zoom = zoom;
+        self.start_recovery(cx);
         self.follow_scroll(viewport);
         let arrangement = match &self.document {
             Document::Pages { page_size, .. } => self.arrangement(*page_size, zoom),
@@ -2934,6 +2973,12 @@ impl DocView {
                 })
                 .ok();
             });
+        }
+        // 互換性チェック, テンプレートとアドイン and ファイル サイズの圧縮
+        // are modal (`word_files`).
+        if self.files_key(key, cx) {
+            cx.stop_propagation();
+            return;
         }
         // A 表示 dialog — ズーム, オートコレクト, Word のオプション — is
         // modal; 閲覧モード and フォーカス take their keys.
@@ -3826,6 +3871,7 @@ impl Render for DocView {
         let fields_dialog = self.fields_dialog_element(window, cx);
         let tool_dialog = self.tool_dialog_element(window, cx);
         let views_dialog = self.views_dialog(window, cx);
+        let files_dialog = self.files_dialog(window, cx);
         let window_pane = match &self.document {
             Document::Pages { page_size, .. } if self.views.window.is_some() && !self.slideshow => {
                 let zoom = self.zoom.unwrap_or(1.0);
@@ -3850,6 +3896,7 @@ impl Render for DocView {
             .children(tool_dialog)
             .children(window_pane)
             .children(views_dialog)
+            .children(files_dialog)
     }
 }
 
