@@ -32,15 +32,24 @@ use jade_selection::{SelectionRange, TextPosition};
 pub mod asian;
 pub mod building_blocks;
 pub mod clipboard;
+pub mod connectors;
+pub mod controls;
 pub mod count;
 pub mod design;
+pub mod diagrams;
+pub mod equation;
 pub mod fields;
 pub mod find;
 pub mod font;
+pub mod form_view;
+pub mod group;
+pub mod ink;
 pub mod insert;
 pub mod links;
 pub mod lists;
+pub mod mailings;
 pub mod new;
+pub mod objects;
 pub mod package;
 pub mod page;
 pub mod page_setup;
@@ -48,10 +57,13 @@ pub mod painter;
 pub mod paragraph;
 pub mod paragraph_options;
 pub mod picture;
+pub mod picture_format;
 pub mod platform;
 pub mod references;
 pub mod review;
 pub mod ruler;
+pub mod shape_gallery;
+pub mod shapes;
 pub mod styles;
 pub mod table;
 pub mod table_ui;
@@ -141,6 +153,22 @@ pub trait WordSession {
     /// moving the selection.
     fn position_metrics(&self, _at: Position) -> Option<(f64, f64, f64)> {
         None
+    }
+
+    /// Where the last layout drew the text from `start` to `end` (rendered
+    /// positions): a rectangle a line, in the document's coordinates.
+    fn text_regions(
+        &self,
+        _start: Position,
+        _end: Position,
+    ) -> Vec<jade_docx_editor::canvas_renderer::TextRegion> {
+        Vec::new()
+    }
+
+    /// Where the last paint drew every equation: what the equation editor
+    /// places its caret and answers clicks with.
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        Vec::new()
     }
 }
 

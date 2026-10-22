@@ -164,6 +164,7 @@ fn host() -> FieldHost {
         user_address: "東京都".into(),
         file: None,
         japanese: true,
+        merge: None,
     }
 }
 

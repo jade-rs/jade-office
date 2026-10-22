@@ -122,6 +122,17 @@ impl WordSession for EditableDocument {
             .derive_hyperlink_regions_from_document(&self.word_document)
     }
 
+    fn text_regions(
+        &self,
+        start: (usize, usize),
+        end: (usize, usize),
+    ) -> Vec<jade_docx_editor::canvas_renderer::TextRegion> {
+        self.renderer.text_range_regions(
+            jade_selection::TextPosition::new(start.0, start.1),
+            jade_selection::TextPosition::new(end.0, end.1),
+        )
+    }
+
     fn select_cells(&mut self, anchor_cell: usize, focus_cell: usize) -> Result<(), String> {
         let range = self
             .renderer
@@ -152,6 +163,10 @@ impl WordSession for EditableDocument {
             .caret_metrics_at(jade_selection::TextPosition::new(paragraph, 0))
             .map(|metrics| self.page_and_offset(metrics.absolute_top).0 + 1)
             .or_else(|| self.renderer.cached_paragraph_start_page(paragraph))
+    }
+
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        self.renderer.math_zones().to_vec()
     }
 }
 

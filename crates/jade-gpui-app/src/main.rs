@@ -28,11 +28,19 @@ mod ribbon;
 mod shell;
 mod tooltip;
 mod word_characters;
+mod word_controls;
 mod word_design;
 mod word_dialog;
 mod word_dialogs;
+mod word_equation;
 mod word_fields;
+mod word_form;
 mod word_lists;
+mod word_mailings;
+mod word_objects;
+mod word_objects_diagrams;
+mod word_objects_panels;
+mod word_objects_ribbon;
 mod word_page;
 mod word_page_setup;
 mod word_paragraph;
@@ -697,17 +705,7 @@ fn placed_object(object: &ObjectHit) -> PlacedObject {
     }
 }
 
-const WRAP_IDS: [&str; 7] = [
-    "wrap-inline",
-    "wrap-square",
-    "wrap-tight",
-    "wrap-through",
-    "wrap-top-bottom",
-    "wrap-behind",
-    "wrap-front",
-];
-
-fn wrap_label(wrap: Wrap) -> &'static str {
+pub(crate) fn wrap_label(wrap: Wrap) -> &'static str {
     t(match wrap {
         Wrap::Inline => "picture.wrap.inline",
         Wrap::Square => "picture.wrap.square",
@@ -1094,12 +1092,14 @@ impl gpui::AssetSource for Assets {
 /// The browser shell shows these seven, and a tab that is present but empty is
 /// worse than one that is not: each of these has something under it.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum RibbonTab {
+pub(crate) enum RibbonTab {
     Home,
     Insert,
     Design,
     Layout,
     References,
+    /// 差し込み文書: mail merge (`word_mailings`).
+    Mailings,
     Review,
     View,
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
@@ -1107,17 +1107,25 @@ enum RibbonTab {
     TableLayout,
     /// ヘッダーとフッター, shown while a header or footer is open.
     HeaderFooter,
+    /// 図の形式 / 図形の書式: shown while a picture or shape is selected.
+    ObjectFormat,
+    /// 開発: content controls and forms (`word_controls`).
+    Developer,
+    /// 数式, while an equation is being edited.
+    Equation,
 }
 
 impl RibbonTab {
-    const ALL: [RibbonTab; 7] = [
+    const ALL: [RibbonTab; 9] = [
         RibbonTab::Home,
         RibbonTab::Insert,
         RibbonTab::Design,
         RibbonTab::Layout,
         RibbonTab::References,
+        RibbonTab::Mailings,
         RibbonTab::Review,
         RibbonTab::View,
+        RibbonTab::Developer,
     ];
 
     fn label(self) -> &'static str {
@@ -1127,11 +1135,15 @@ impl RibbonTab {
             RibbonTab::Design => t("doc.tab.design"),
             RibbonTab::Layout => t("doc.tab.layout"),
             RibbonTab::References => t("doc.tab.references"),
+            RibbonTab::Mailings => t("mail.tab"),
             RibbonTab::Review => t("doc.tab.review"),
             RibbonTab::View => t("doc.tab.view"),
             RibbonTab::TableDesign => t("doc.tab.table_design"),
             RibbonTab::TableLayout => t("doc.tab.table_layout"),
             RibbonTab::HeaderFooter => t("story.tab"),
+            RibbonTab::ObjectFormat => t("objects.tab.shape_format"),
+            RibbonTab::Developer => t("cc.tab"),
+            RibbonTab::Equation => t("equation.tab"),
         }
     }
 }
@@ -1173,23 +1185,6 @@ impl FindBar {
             &mut self.query
         }
     }
-}
-
-/// A picture or shape being dragged, and what the drag is doing to it.
-struct ObjectDrag {
-    object: ObjectHit,
-    /// The rectangle the object had when the drag started. Deltas are measured
-    /// from here rather than accumulated, so a drag that crosses a repaint does
-    /// not drift.
-    start: (f64, f64, f64, f64),
-    /// Where the pointer went down, in page coordinates.
-    from: (f64, f64),
-    /// A grab near the bottom-right corner resizes; anywhere else moves.
-    resizing: bool,
-    /// Whether a transform from this drag is already on the undo stack. The
-    /// next move replaces it rather than stacking on it, so the whole drag is
-    /// one undo.
-    applied: bool,
 }
 
 /// The caret, the selection and the edit count the ribbon's formatting was
@@ -1278,6 +1273,14 @@ struct DocumentView {
     tools: word_tools::WordTools,
     /// 参考資料's dialogs, the navigation pane and ブックマーク表示.
     references: word_references::References,
+    /// The 開発 tab's content controls and form fields: their dialogs, the
+    /// list or calendar dropped under one.
+    controls: word_controls::ControlsUi,
+    /// The 差し込み文書 tab's merge: its recipients, the record previewed,
+    /// its dialogs.
+    mailings: jade_office_model::word::mailings::MailMerge,
+    /// The equation being edited, if one is (`word_equation`).
+    equation: word_equation::EquationUi,
     /// Display scale. The pages are rasterised at their own size and drawn
     /// scaled, so zooming costs a layout pass in gpui rather than a re-render —
     /// at the price of resampling rather than re-rasterising crisply.
@@ -1298,10 +1301,9 @@ struct DocumentView {
     /// The picture or shape last clicked, which 文字列の折り返し acts on and
     /// an outline shows.
     selected_object: Option<ObjectHit>,
-    /// The picture or shape being dragged, if the mouse went down on one.
-    /// Pictures are not in the text flow, so dragging one is a move, not a
-    /// selection.
-    object_drag: Option<ObjectDrag>,
+    /// The object tools' state: other selected objects, a drag on a handle,
+    /// cropping, the panels and the shape being drawn (`word_objects`).
+    objects: word_objects::ObjectTools,
     /// The byte range of the composition in the current paragraph, while one is
     /// in progress. The IME replaces it in place as the reading changes.
     marked: Option<Range<usize>>,
@@ -1479,6 +1481,28 @@ impl DocumentView {
         if self.marked.is_some() {
             return;
         }
+        // A control or mail-merge dialog takes the keyboard: its own keys
+        // stop here, and typing goes on to the input handler, into its field.
+        if self.mailings.is_open() {
+            if self.mailings_key(
+                event.keystroke.key.as_str(),
+                event.keystroke.modifiers.shift,
+                cx,
+            ) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.controls.is_open() {
+            if self.controls_key(
+                event.keystroke.key.as_str(),
+                event.keystroke.modifiers.shift,
+                cx,
+            ) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // A dialog is modal: it takes every key while it is open.
         if self.page_dialog.is_some() && self.page_dialog_key(event, cx) {
             cx.stop_propagation();
@@ -1534,6 +1558,25 @@ impl DocumentView {
         if self.find_bar.is_some() && self.handle_find_bar_key(event, cx) {
             // Taken: the platform must not also type it (Tab, Enter) into
             // the field through the input handler.
+            cx.stop_propagation();
+            return;
+        }
+        // The layout dialog and a Selection Pane rename own the keyboard
+        // like the bars; then the selected object takes Delete, the arrows
+        // and Escape (`word_objects`).
+        let key = event.keystroke.key.as_str();
+        if self.object_tools_key(
+            key,
+            event.keystroke.modifiers.shift,
+            event.keystroke.modifiers.alt,
+            cx,
+        ) {
+            cx.stop_propagation();
+            return;
+        }
+        // An equation being edited takes its keys: arrows walk its
+        // structure, Backspace edits it, Escape leaves it.
+        if word_equation::handle_key(self, event, cx) {
             cx.stop_propagation();
             return;
         }
@@ -1721,6 +1764,10 @@ impl DocumentView {
         use jade_office_model::word::CellStep;
         let (paragraph, offset) = self.insert_at;
         self.document.place_caret(paragraph, offset);
+        // A document protected for forms goes from field to field.
+        if self.tab_to_form_field(backwards, cx) {
+            return;
+        }
         let step = WordFormatting::step_cell(&mut self.document, !backwards);
         match step {
             Ok(CellStep::Select(from, to)) => {
@@ -1912,23 +1959,43 @@ impl DocumentView {
             .into_any_element()
     }
 
-    /// The tabs to show: Word's seven, ヘッダーとフッター while a header or
-    /// footer is open, and the two table tabs while the caret is in a table.
-    fn ribbon_tabs(&mut self) -> Vec<RibbonTab> {
-        let mut tabs = RibbonTab::ALL.to_vec();
+    /// The tabs to show, with their labels: Word's seven, ヘッダーとフッター
+    /// while a header or footer is open, the two table tabs while the caret
+    /// is in a table, and 図の形式 / 図形の書式 while a picture or shape is
+    /// selected.
+    fn ribbon_tabs(&mut self) -> Vec<(RibbonTab, &'static str)> {
+        let mut tabs: Vec<_> = RibbonTab::ALL.map(|tab| (tab, tab.label())).to_vec();
+        let mut contextual = Vec::new();
         if self.editing_story() {
-            tabs.push(RibbonTab::HeaderFooter);
+            contextual.push(RibbonTab::HeaderFooter);
         }
         if self.format_state().table.is_some() {
-            tabs.extend([RibbonTab::TableDesign, RibbonTab::TableLayout]);
+            contextual.extend([RibbonTab::TableDesign, RibbonTab::TableLayout]);
+        }
+        tabs.extend(contextual.into_iter().map(|tab| (tab, tab.label())));
+        if let Some(format) = self.selected_format() {
+            tabs.push((
+                RibbonTab::ObjectFormat,
+                t(
+                    if format.sort == jade_office_model::word::objects::ObjectSort::Picture {
+                        "objects.tab.picture_format"
+                    } else {
+                        "objects.tab.shape_format"
+                    },
+                ),
+            ));
+        }
+        if self.equation.editor.is_some() {
+            tabs.push((RibbonTab::Equation, RibbonTab::Equation.label()));
         }
         tabs
     }
 
     fn ribbon(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tabs = self.ribbon_tabs();
-        // A table tab goes when the caret leaves the table.
-        if !tabs.contains(&self.ribbon_tab) {
+        // A contextual tab goes when the caret leaves the table, the story
+        // closes or the object is no longer selected.
+        if !tabs.iter().any(|(tab, _)| *tab == self.ribbon_tab) {
             self.ribbon_tab = RibbonTab::Home;
         }
         let active = self.ribbon_tab;
@@ -1946,9 +2013,9 @@ impl DocumentView {
                     .gap_1()
                     .px_4()
                     .pt(px(8.0))
-                    .children(tabs.into_iter().map(|tab| {
+                    .children(tabs.into_iter().map(|(tab, label)| {
                         div()
-                            .id(tab.label())
+                            .id(label)
                             .px_3()
                             .py_1()
                             .rounded_md()
@@ -1961,7 +2028,7 @@ impl DocumentView {
                                 element.text_color(theme::text_dim())
                             })
                             .hover(|element| element.bg(theme::hovered()))
-                            .child(tab.label())
+                            .child(label)
                             .on_click(cx.listener(move |view, _event, _window, cx| {
                                 view.ribbon_tab = tab;
                                 view.ribbon.popup = None;
@@ -2015,6 +2082,7 @@ impl DocumentView {
     fn ribbon_groups(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let state = self.format_state();
         match self.ribbon_tab {
+            RibbonTab::ObjectFormat => self.object_format_groups(cx),
             RibbonTab::Home => {
                 let mut groups = vec![self.clipboard_group(cx)];
                 groups.extend(ribbon::home(&self.ribbon, &state, cx));
@@ -2049,6 +2117,7 @@ impl DocumentView {
                 self.cover_group(cx),
                 word_characters::insert_group(cx),
                 self.fields_group(cx),
+                word_equation::insert_group(self, cx),
                 Self::ribbon_group(
                     t("doc.group.pages"),
                     vec![Self::ribbon_row(vec![self
@@ -2149,6 +2218,9 @@ impl DocumentView {
             RibbonTab::References => word_references::ribbon_groups(self, cx),
             RibbonTab::Review => self.review_groups(cx),
             RibbonTab::HeaderFooter => self.story_groups(cx),
+            RibbonTab::Developer => self.developer_groups(cx),
+            RibbonTab::Mailings => self.mailings_groups(cx),
+            RibbonTab::Equation => word_equation::tab_groups(self, cx),
             RibbonTab::View => {
                 let marks = self.document.formatting_marks();
                 vec![
@@ -2240,41 +2312,15 @@ impl DocumentView {
         }
     }
 
-    /// 挿入's 図: a picture from a file, and the wrap of the one last
-    /// clicked.
+    /// 挿入's 図: 画像, 図形, テキスト ボックス, ワードアート, SmartArt, グラフ
+    /// (`word_objects_ribbon`).
     fn picture_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let selected = self
-            .selected_object
-            .is_some_and(|object| placed_object(&object).is_picture());
-        let mut wraps = vec![self
-            .ribbon_button(
-                "insert-picture",
-                t("picture.insert"),
-                t("picture.insert_title"),
-                false,
-                cx,
-                |view, cx| view.prompt_for_picture(cx),
-            )
-            .into_any_element()];
-        if selected {
-            for (index, wrap) in jade_office_model::word::picture::WRAPS
-                .into_iter()
-                .enumerate()
-            {
-                wraps.push(
-                    self.ribbon_button(
-                        WRAP_IDS[index],
-                        wrap_label(wrap),
-                        t("picture.wrap"),
-                        false,
-                        cx,
-                        move |view, cx| view.wrap_picture(wrap, cx),
-                    )
-                    .into_any_element(),
-                );
-            }
-        }
-        Self::ribbon_group(t("picture.group"), vec![Self::ribbon_row(wraps)]).into_any_element()
+        div()
+            .flex()
+            .flex_none()
+            .h_full()
+            .children(self.insert_object_groups(cx))
+            .into_any_element()
     }
 
     /// The ホーム tab's clipboard, which only the native app can paste into
@@ -2465,6 +2511,12 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = self.mailings.field() {
+            return Some(field);
+        }
+        if let Some(field) = self.controls.field() {
+            return Some(field);
+        }
         if let Some(field) = self.dialog.as_ref().and_then(|dialog| dialog.field()) {
             return Some(field);
         }
@@ -2480,6 +2532,9 @@ impl DocumentView {
         if let Some(field) = self.references.text_field() {
             return Some(field);
         }
+        if let Some(field) = self.object_field() {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2488,6 +2543,12 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self.mailings.is_open() {
+            return self.mailings.field_mut();
+        }
+        if self.controls.is_open() {
+            return self.controls.field_mut();
+        }
         if self.dialog.is_some() {
             return self.dialog.as_mut().and_then(|dialog| dialog.field_mut());
         }
@@ -2506,6 +2567,9 @@ impl DocumentView {
         }
         if self.references.is_open() || self.references.searching {
             return self.references.text_field_mut();
+        }
+        if self.object_field().is_some() {
+            return self.object_field_mut();
         }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
@@ -3053,6 +3117,12 @@ impl DocumentView {
                 self.table_status = Some(SharedString::from(error));
             }
         }
+        // ホーム's size, colour and bold format the equation being edited.
+        if self.equation.editor.is_some() {
+            if let Some(format) = word_equation::home_format(&action) {
+                return word_equation::format(self, format, cx);
+            }
+        }
         // Direct formatting a self-updating style takes in (自動的に更新する).
         let formats = matches!(
             action,
@@ -3123,6 +3193,8 @@ impl DocumentView {
             Action::FontFamilyName(name) => WordFormatting::set_font_family(document, &name),
             Action::Characters(action) => return word_characters::run(self, action, cx),
             Action::References(action) => return word_references::run(self, action, cx),
+            Action::Object(action) => return self.run_object_action(action, cx),
+            Action::Equation(action) => return word_equation::run(self, action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) | Action::Word(_) => Ok(()),
         };
         match done {
@@ -3313,6 +3385,10 @@ impl DocumentView {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
+        // A picture on the clipboard goes in as a picture (`word_objects`).
+        if self.paste_picture(cx) {
+            return;
+        }
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
@@ -3430,49 +3506,6 @@ impl DocumentView {
         cx.notify();
     }
 
-    /// 文字列の折り返し for the picture last clicked.
-    fn wrap_picture(&mut self, wrap: Wrap, cx: &mut Context<Self>) {
-        let Some(object) = self.selected_object else {
-            return;
-        };
-        let placed = placed_object(&object);
-        match WordPicture::set_picture_wrap(&mut self.document, placed, wrap) {
-            Ok(()) => {
-                self.table_status = None;
-                self.rebuild_after_edit();
-            }
-            Err(error) => self.table_status = Some(SharedString::from(error)),
-        }
-        cx.notify();
-    }
-
-    /// The outline of the picture last clicked, on its page.
-    fn object_outline(&self, page_index: usize) -> Option<impl IntoElement> {
-        let object = self.selected_object?;
-        if object.page.saturating_sub(1) != page_index {
-            return None;
-        }
-        let zoom = self.zoom;
-        Some(
-            div()
-                .absolute()
-                .left(px(object.x as f32 * zoom))
-                .top(px(object.y as f32 * zoom))
-                .w(px(object.width as f32 * zoom))
-                .h(px(object.height as f32 * zoom))
-                .border_1()
-                .border_color(theme::accent())
-                .child(
-                    div()
-                        .absolute()
-                        .right(px(-4.0))
-                        .bottom(px(-4.0))
-                        .size(px(8.0))
-                        .bg(theme::accent()),
-                ),
-        )
-    }
-
     /// Undo or redo, then repaint everything: history can move content onto
     /// pages this window is not looking at.
     fn step_history(&mut self, backwards: bool, cx: &mut Context<Self>) {
@@ -3486,6 +3519,7 @@ impl DocumentView {
                 self.insert_at = caret;
                 self.caret = self.document.place_caret(caret.0, caret.1);
                 self.rebuild_after_edit();
+                word_equation::after_history(self);
                 cx.notify();
             }
             // Nothing on the stack: not an error, just nothing to do.
@@ -3751,8 +3785,21 @@ impl DocumentView {
         if self.table_mouse_drag(page_index, event, cx) {
             return;
         }
-        if self.object_drag.is_some() {
-            return self.drag_object_to(page_index, event, cx);
+        if self.objects.panels.wrap_drag.is_some() {
+            let bounds = self.page_bounds.borrow().get(page_index).copied();
+            if let Some(Some(bounds)) = bounds {
+                let zoom = f64::from(self.zoom);
+                let point = (
+                    f64::from(event.position.x - bounds.origin.x) / zoom,
+                    f64::from(event.position.y - bounds.origin.y) / zoom,
+                );
+                self.drag_wrap_point(point);
+                cx.notify();
+            }
+            return;
+        }
+        if self.drag_object(page_index, event, cx) {
+            return;
         }
         let Some(anchor) = self.drag_anchor else {
             return;
@@ -3772,63 +3819,6 @@ impl DocumentView {
             self.refresh_caret_page_image();
             cx.notify();
         }
-    }
-
-    /// Moves or resizes the object the pointer grabbed.
-    ///
-    /// Measured from where the drag started rather than from the last position,
-    /// so the object tracks the pointer exactly however many moves arrive.
-    fn drag_object_to(
-        &mut self,
-        page_index: usize,
-        event: &MouseMoveEvent,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(drag) = self.object_drag.as_ref() else {
-            return;
-        };
-        let Some(Some(bounds)) = self.page_bounds.borrow().get(page_index).copied() else {
-            return;
-        };
-        let zoom = f64::from(self.zoom);
-        let local_x = f64::from(event.position.x - bounds.origin.x) / zoom;
-        let local_y = f64::from(event.position.y - bounds.origin.y) / zoom;
-        let (dx, dy) = (local_x - drag.from.0, local_y - drag.from.1);
-        let (start_x, start_y, start_width, start_height) = drag.start;
-
-        let rect = if drag.resizing {
-            // A minimum, or a drag past the top-left corner would invert the
-            // picture and then be impossible to grab again.
-            (
-                start_x,
-                start_y,
-                (start_width + dx).max(8.0),
-                (start_height + dy).max(8.0),
-            )
-        } else {
-            (start_x + dx, start_y + dy, start_width, start_height)
-        };
-        let object = drag.object;
-        // The first move of a drag records; the rest replace what it recorded,
-        // so releasing the mouse leaves one undo step rather than thirty.
-        let moved = if drag.applied {
-            self.document
-                .retransform_object(object, rect.0, rect.1, rect.2, rect.3)
-        } else {
-            self.document
-                .transform_object(object, rect.0, rect.1, rect.2, rect.3)
-        };
-        if let Err(error) = moved {
-            eprintln!("transform failed: {error}");
-            return;
-        }
-        if let Some(drag) = self.object_drag.as_mut() {
-            drag.applied = true;
-        }
-        // The object is not bound to one page's bitmap: moving it can uncover
-        // text on the page it came from, so every page is rebuilt.
-        self.rebuild_after_edit();
-        cx.notify();
     }
 
     /// Turns a click into an insertion point.
@@ -3855,30 +3845,29 @@ impl DocumentView {
         let document_y = self.document.document_y(page_index, local_y);
 
         // A picture is on top of the text, so a click inside one is a grab on
-        // the picture. Falling through would put the caret behind it and let a
-        // drag select the text underneath instead.
-        if let Some(object) = self.document.object_at(local_x, document_y) {
-            // The bottom-right corner resizes, the rest moves — the handle Word
-            // and the browser shell both put there.
-            const HANDLE: f64 = 12.0;
-            let resizing = local_x >= object.x + object.width - HANDLE
-                && local_y >= object.y + object.height - HANDLE;
-            self.selected_object = Some(object);
-            self.object_drag = Some(ObjectDrag {
-                object,
-                start: (object.x, object.y, object.width, object.height),
-                from: (local_x, local_y),
-                resizing,
-                applied: false,
-            });
+        // the picture, as is a click on the selected one's handles or wrap
+        // points; with a shape tool picked, a press starts drawing
+        // (`word_objects`). Falling through would put the caret behind it and
+        // let a drag select the text underneath instead.
+        if self.press_wrap_point(page_index, (local_x, local_y))
+            || self.press_object(
+                page_index,
+                (local_x, local_y),
+                document_y,
+                event.modifiers.shift,
+                event.click_count,
+                cx,
+            )
+        {
             self.drag_anchor = None;
-            cx.notify();
             return;
         }
 
-        self.selected_object = None;
         // ⌘-click follows a link, as Word does.
         if event.modifiers.platform && self.follow_link_at(local_x, document_y, cx) {
+            return;
+        }
+        if word_equation::click(self, page_index, local_x, local_y, cx) {
             return;
         }
         if self.table_mouse_down(page_index, local_x, document_y, event, cx) {
@@ -3893,6 +3882,9 @@ impl DocumentView {
             self.selection_anchor = None;
             self.caret = self.place_caret_near(position, document_y);
             self.refresh_caret_page_image();
+            if event.click_count == 1 && !event.modifiers.shift {
+                self.click_control(position, page_index, cx);
+            }
             cx.notify();
         }
     }
@@ -3957,6 +3949,10 @@ impl DocumentView {
     /// Drawn here rather than painted into the page so moving it costs nothing:
     /// the document bitmap is untouched, which is also what will let it blink.
     fn caret_overlay(&self, page_index: usize) -> Option<impl IntoElement> {
+        // Inside an equation its own caret is drawn (`word_equation`).
+        if self.equation.editor.is_some() {
+            return None;
+        }
         let caret = self.caret?;
         let zoom = self.zoom;
         let (page_of_caret, local_y) = self.document.page_and_offset(caret.document_y);
@@ -4046,6 +4042,10 @@ impl DocumentView {
         // Not while a composition is running: there the marked range is what
         // the IME is replacing, and the selection it started from is already
         // gone.
+        // Over a content control's placeholder, or a form field's.
+        if self.marked.is_none() && self.type_over_control(text, cx) {
+            return;
+        }
         if self.marked.is_none() && self.document.selection().is_some() {
             let page = self.caret_page_1idx();
             match self.document.replace_selection(text, page) {
@@ -4177,10 +4177,17 @@ impl EntityInputHandler for DocumentView {
         }
         if let Some(field) = self.text_bar_mut() {
             field.replace(range, text, false);
+            // The dialog's size fields keep the proportions.
+            self.dialog_typed();
             return cx.notify();
         }
         if self.find_bar.is_some() {
             self.replace_in_find_bar(range, text, false, cx);
+            return;
+        }
+        if self.equation.editor.is_some() {
+            self.marked = None;
+            word_equation::type_text(self, text, cx);
             return;
         }
         let paragraph_text = self.current_paragraph_text();
@@ -4230,6 +4237,12 @@ impl EntityInputHandler for DocumentView {
                 .clone()
                 .unwrap_or(self.insert_at.1..self.insert_at.1),
         };
+        // A composition started over a placeholder replaces it.
+        if self.marked.is_none() && self.type_over_control(new_text, cx) {
+            let end = self.insert_at.1;
+            self.marked = Some(end.saturating_sub(new_text.len())..end);
+            return;
+        }
         let start = bytes.start;
         self.replace_bytes(bytes, new_text, cx);
         // The preedit is now in the document, and this is the range the next
@@ -4414,6 +4427,12 @@ impl Render for DocumentView {
         let reference_dialog = word_references::overlay(self, window, cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
+        // The object tools' panes and dialogs (`word_objects_panels`).
+        let object_panes = self.object_panes(cx);
+        let object_dialogs = self.object_dialogs(cx);
+        // The 開発 and 差し込み文書 tabs' dialogs.
+        let controls_dialog = self.controls_dialog(window, cx);
+        let mailings_dialog = self.mailings_dialog(window, cx);
         word_references::on_actions(div().id("root"), cx)
             .relative()
             .track_focus(&self.focus)
@@ -4632,7 +4651,12 @@ impl Render for DocumentView {
                                         cx.listener(
                                             move |view, event: &MouseDownEvent, _window, cx| {
                                                 view.click_page(index, event, cx);
-                                                if event.click_count >= 2 {
+                                                // A double click on an object is
+                                                // the object's, not a word's.
+                                                if event.click_count >= 2
+                                                    && view.objects.drag.is_none()
+                                                    && view.objects.sketch.is_none()
+                                                {
                                                     view.select_word_at_caret(cx);
                                                 }
                                             },
@@ -4658,6 +4682,8 @@ impl Render for DocumentView {
                                                     view.paint_format(false, cx);
                                                 }
                                                 view.table_mouse_up(cx);
+                                                view.release_wrap_point(cx);
+                                                view.release_object(cx);
                                             },
                                         ),
                                     )
@@ -4668,10 +4694,14 @@ impl Render for DocumentView {
                                     )
                                     .children(self.caret_overlay(index))
                                     .children(word_references::page_marks(&marks, index, zoom, cx))
+                                    .children(word_equation::overlay(self, index))
                                     .children(self.table_overlay(index))
                                     .children(self.story_label(index))
                                     .children(vertical_rulers.next().flatten())
-                                    .children(self.object_outline(index))
+                                    .children(self.object_overlay(index))
+                                    .children(self.wrap_point_overlay(index))
+                                    .children(self.controls_overlay(index, cx))
+                                    .children(self.mailings_overlay(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
                                     // before the renderer can hit-test it.
@@ -4727,6 +4757,10 @@ impl Render for DocumentView {
             .children(dialog)
             .children(tool_dialog)
             .children(reference_dialog)
+            .children(object_panes)
+            .children(object_dialogs)
+            .children(controls_dialog)
+            .children(mailings_dialog)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4933,6 +4967,7 @@ fn document_view(
         .collect();
     let mut ribbon = ribbon::Ribbon::default();
     ribbon.read_styles(&document);
+    let mailings = word_mailings::open_merge(&document, &path_text);
 
     DocumentView {
         path: SharedString::from(path_text),
@@ -4945,7 +4980,7 @@ fn document_view(
         insert_at: (INSERT_PARAGRAPH, 0),
         caret,
         drag_anchor: None,
-        object_drag: None,
+        objects: Default::default(),
         selected_object: None,
         selection_anchor: None,
         zoom: 1.0,
@@ -4966,6 +5001,9 @@ fn document_view(
         characters: word_characters::Characters::default(),
         tools: word_tools::WordTools::default(),
         references: word_references::References::default(),
+        controls: word_controls::ControlsUi::default(),
+        mailings,
+        equation: Default::default(),
         ribbon_tab: RibbonTab::Home,
         ribbon,
         edits: 0,

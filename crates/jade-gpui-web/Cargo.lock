@@ -1854,6 +1854,7 @@ dependencies = [
  "cfb",
  "console_error_panic_hook",
  "emf-core",
+ "image",
  "indexmap",
  "jade-canvas-painter",
  "jade-docx-annotations",
@@ -1863,6 +1864,8 @@ dependencies = [
  "jade-docx-writer",
  "jade-painter",
  "jade-preview-plugin-api",
+ "jade-xlsx-layout",
+ "jade-xlsx-reader",
  "js-sys",
  "png 0.17.16",
  "rustc-hash 2.1.3",
@@ -1966,6 +1969,7 @@ dependencies = [
  "jade-xlsx-reader",
  "jade-xlsx-render",
  "quick-xml",
+ "resvg 0.45.1",
 ]
 
 [[package]]

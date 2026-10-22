@@ -33,9 +33,13 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 mod deck;
 mod sheet;
 pub(crate) mod word_characters;
+pub(crate) mod word_controls;
 mod word_dialogs;
+pub(crate) mod word_equation;
 mod word_fields;
 mod word_find;
+mod word_form;
+pub(crate) mod word_mailings;
 pub(crate) mod word_references;
 mod word_review;
 pub(crate) mod word_setup;
@@ -503,10 +507,19 @@ pub struct DocView {
     /// 参考資料's dialogs, the navigation pane and ブックマーク表示
     /// (`word_references`).
     references: word_references::References,
+    /// The 開発 tab's dialogs and the list or calendar dropped under a
+    /// content control.
+    controls: word_controls::ControlsUi,
+    /// The 差し込み文書 tab's merge, for a Word document.
+    mailings: Option<word_mailings::Mailings>,
     host: Host,
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
     page_dialog: Option<Box<word_setup::PageDialogState>>,
+    /// The equation being edited, if one is (`word_equation`).
+    equation: Option<Box<jade_web::word::equation::EquationEditor>>,
+    /// The 記号と特殊文字 category the 数式 tab shows.
+    equation_symbols: usize,
 }
 
 impl DocView {
@@ -525,6 +538,7 @@ impl DocView {
         if bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
             return Err(i18n::format("workspace.protected", &[("name", &name)]));
         }
+        let mut mailings = None;
         let document = match kind {
             Kind::Document => {
                 // The first pages only, as pixels: the view keeps the ones on
@@ -537,6 +551,14 @@ impl DocView {
                     0..RESIDENT_PAGES,
                 )?;
                 let (width, height) = opened.page_size();
+                mailings = Some(word_mailings::Mailings::new(
+                    &opened,
+                    Some(word_mailings::MergeFonts {
+                        scale: fonts.scale,
+                        fonts: fonts.backend.fonts(),
+                        measurer: Rc::clone(&fonts.measurer),
+                    }),
+                ));
                 let mut ribbon = Box::<ribbon::Ribbon>::default();
                 ribbon.read_styles(&opened);
                 Document::Pages {
@@ -628,8 +650,12 @@ impl DocView {
             word_count: RefCell::new(None),
             characters: word_characters::Characters::default(),
             references: word_references::References::default(),
+            controls: word_controls::ControlsUi::default(),
+            mailings,
             host,
             page_dialog: None,
+            equation: None,
+            equation_symbols: 0,
         })
     }
 
@@ -851,11 +877,25 @@ impl DocView {
         cx.notify();
     }
 
+    /// Whether the page's picker was opened for a mail merge's list.
+    pub fn wants_data_source(&self) -> bool {
+        word_mailings::wants_source(self)
+    }
+
+    /// The list the page's picker brought for the mail merge.
+    pub fn take_data_source(&mut self, name: &str, bytes: &[u8], cx: &mut Context<Self>) {
+        word_mailings::take_source(self, name, bytes, cx);
+    }
+
     /// A picture the page's picker brought, put in at the Word document's
     /// caret. Whether there was a document to take it.
     pub fn insert_word_picture(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) -> bool {
         if !matches!(self.document, Document::Pages { .. }) {
             return false;
+        }
+        // One a picture content control asked for goes into it.
+        if word_controls::take_picture(self, &bytes, cx) {
+            return true;
         }
         self.word_edit(cx, move |document| {
             use jade_web::word::picture::WordPicture;
@@ -902,6 +942,7 @@ impl DocView {
                 // it undid.
                 self.reveal_caret();
                 self.word_result(result.map(|_| ()), cx);
+                self.equation_after_history();
                 return;
             }
             Document::Deck {
@@ -1187,6 +1228,13 @@ impl DocView {
         if (event.modifiers.platform || event.modifiers.control) && self.follow_link_at(x, y, cx) {
             return;
         }
+        let page_y = match &self.document {
+            Document::Pages { document, .. } => y - document.document_y(index, 0.0),
+            _ => y,
+        };
+        if self.equation_click(index, x, page_y, cx) {
+            return;
+        }
         if self.table_mouse_down(index, (x, y), event.click_count, cx) {
             return;
         }
@@ -1215,6 +1263,11 @@ impl DocView {
                 }
             }
         });
+        // A press on a content control or a form field: a box ticked, a
+        // list or a calendar dropped, a placeholder selected.
+        if !extend && clicks == 1 {
+            word_controls::click(self, index, cx);
+        }
     }
 
     /// The text position nearest a window point while dragging from
@@ -1565,6 +1618,12 @@ impl DocView {
             "tab" => {
                 let backwards = extend;
                 self.word_edit(cx, |document| {
+                    // A document protected for forms goes from field to field.
+                    if jade_web::word::controls::WordControls::tab_to_form_field(
+                        document, backwards,
+                    ) {
+                        return Ok(());
+                    }
                     // At a list item's start, a level down (or up).
                     if let Some(result) = crate::word_tools::tab_in_list(document, backwards) {
                         return result;
@@ -1599,6 +1658,13 @@ impl DocView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // ホーム's size, colour and bold format the equation being edited.
+        if self.equation_home_format(&action, cx) {
+            if let Document::Pages { ribbon, .. } = &mut self.document {
+                ribbon.popup = None;
+            }
+            return;
+        }
         let Document::Pages {
             ribbon, document, ..
         } = &mut self.document
@@ -1647,6 +1713,20 @@ impl DocView {
         if let Action::References(action) = action {
             return word_references::run(self, action, cx);
         }
+        if let Action::Controls(action) = action {
+            return word_controls::run(self, action, cx);
+        }
+        if let Action::Equation(action) = action {
+            return self.equation_action(action, cx);
+        }
+
+        if matches!(action, Action::Undo | Action::Redo) && self.equation.is_some() {
+            self.word_edit(cx, move |document| match action {
+                Action::Undo => document.undo().map(|_| ()),
+                _ => document.redo().map(|_| ()),
+            });
+            return self.equation_after_history();
+        }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
             // picture to the Word document in front.
@@ -1677,6 +1757,30 @@ impl DocView {
             } = &mut self.document
             {
                 ribbon.read_styles(document);
+            }
+            return;
+        }
+        if let Action::Object(object_action) = action {
+            let selected = match &self.document {
+                Document::Pages { object, .. } => object.map(|grab| grab.object),
+                _ => None,
+            };
+            self.word_edit(cx, move |document| {
+                crate::word_objects::run(document, selected, object_action)
+            });
+            // The object where it is now: moved, rotated or restyled.
+            if let Document::Pages {
+                document, object, ..
+            } = &mut self.document
+            {
+                *object = object.and_then(|grab| {
+                    let moved = document.object_region(grab.object.target)?;
+                    Some(ObjectGrab {
+                        object: moved,
+                        rect: (moved.x, moved.y, moved.width, moved.height),
+                        ..grab
+                    })
+                });
             }
             return;
         }
@@ -1723,6 +1827,8 @@ impl DocView {
             | Action::Setup(_)
             | Action::Characters(_)
             | Action::References(_)
+            | Action::Controls(_)
+            | Action::Equation(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -1730,6 +1836,7 @@ impl DocView {
             | Action::ParagraphDialog
             | Action::FormatPainter(_)
             | Action::Wrap(_)
+            | Action::Object(_)
             | Action::Style(_)
             | Action::Tables(_)
             | Action::Word(_)
@@ -1749,6 +1856,14 @@ impl DocView {
     ) -> gpui::AnyElement {
         let generation = self.generation;
         let table = self.table_tab_state();
+        let developer = matches!(&self.document,
+            Document::Pages { ribbon, .. } if ribbon.tab == ribbon::Tab::Developer)
+        .then(|| word_controls::state(self));
+        let mailings = matches!(&self.document,
+            Document::Pages { ribbon, .. } if ribbon.tab == ribbon::Tab::Mailings)
+        .then(|| word_mailings::groups(self))
+        .flatten();
+        let equation = self.equation_tab_state();
         let Document::Pages {
             document,
             ribbon,
@@ -1807,6 +1922,10 @@ impl DocView {
                     .then(|| word_setup::LayoutState::read(document)),
                 references: (ribbon.tab == ribbon::Tab::References)
                     .then(|| word_references::ribbon_state(document, &self.references)),
+                object: object.map(|grab| grab.object),
+                developer,
+                mailings,
+                equation,
             }
         };
         ribbon::ribbon(
@@ -1892,6 +2011,19 @@ impl DocView {
         let page_dialog = self.page_dialog_element(cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
+        let mut control_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| {
+                    let mut overlay = word_controls::overlay(self, index, zoom, cx);
+                    overlay.extend(word_mailings::overlay(self, index, zoom));
+                    overlay
+                })
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
+        let equation_overlay = self.equation_overlay(zoom);
+        let editing_equation = self.equation.is_some();
         let Document::Pages {
             document,
             pages,
@@ -1930,15 +2062,19 @@ impl DocView {
             )
         });
         // The caret, as a page and a rectangle on it.
-        let caret = document.caret_rect().map(|caret| {
-            let (page, y) = document.page_and_offset(caret.document_y);
-            (
-                page,
-                caret.x as f32 * zoom,
-                y as f32 * zoom,
-                caret.height as f32 * zoom,
-            )
-        });
+        // Inside an equation its own caret is drawn (`word_equation`).
+        let caret = document
+            .caret_rect()
+            .filter(|_| !editing_equation)
+            .map(|caret| {
+                let (page, y) = document.page_and_offset(caret.document_y);
+                (
+                    page,
+                    caret.x as f32 * zoom,
+                    y as f32 * zoom,
+                    caret.height as f32 * zoom,
+                )
+            });
         page_bounds.borrow_mut().resize(pages.len(), None);
         let bounds_store = Rc::clone(page_bounds);
         let current_index = *current;
@@ -2005,6 +2141,7 @@ impl DocView {
                 let store = Rc::clone(&bounds_store);
                 let entity = entity.clone();
                 let table_overlay = table_overlays.next().flatten();
+                let control_overlay = control_overlays.next().unwrap_or_default();
                 div()
                     .relative()
                     .flex_none()
@@ -2061,6 +2198,14 @@ impl DocView {
                     ))
                     .children(table_overlay)
                     .children(word_references::page_marks(&marks, index, zoom, cx))
+                    .children(control_overlay)
+                    .children(
+                        equation_overlay
+                            .as_ref()
+                            .filter(|overlay| overlay.page == index)
+                            .map(|overlay| word_equation::overlay_elements(overlay, zoom))
+                            .unwrap_or_default(),
+                    )
                     .children(caret.filter(|(page, ..)| *page == index).map(
                         |(_, x, y, caret_height)| {
                             div()
@@ -2225,6 +2370,20 @@ impl DocView {
             cx.stop_propagation();
             return;
         }
+        // A mail-merge or content control dialog takes the keyboard the
+        // same way.
+        if word_mailings::is_open(self) {
+            if word_mailings::handle_key(self, key, event.keystroke.modifiers.shift, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.controls.is_open() {
+            if word_controls::handle_key(self, key, event.keystroke.modifiers.shift, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // A dialog takes the keyboard while it is open: its own keys stop
         // here, and typing goes on to the input handler, into its field.
         if self.characters.is_open() {
@@ -2245,6 +2404,10 @@ impl DocView {
             return;
         }
         if self.commenting() && self.comment_key(event, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        if self.equation_key(event, cx) {
             cx.stop_propagation();
             return;
         }
@@ -2359,6 +2522,15 @@ impl DocView {
         if self.slideshow {
             return None;
         }
+        if word_mailings::is_open(self) {
+            return self
+                .mailings
+                .as_mut()
+                .and_then(|mailings| mailings.merge.field_mut());
+        }
+        if self.controls.is_open() {
+            return self.controls.field_mut();
+        }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
         }
@@ -2407,6 +2579,16 @@ impl DocView {
     }
 
     fn current_text(&self) -> Option<&TextEdit> {
+        if let Some(field) = self
+            .mailings
+            .as_ref()
+            .and_then(|mailings| mailings.merge.field())
+        {
+            return Some(field);
+        }
+        if let Some(field) = self.controls.field() {
+            return Some(field);
+        }
         if let Some(field) = self.characters.text_field() {
             return Some(field);
         }
@@ -2703,6 +2885,22 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if word_mailings::is_open(self) {
+            if let Some(field) = self
+                .mailings
+                .as_mut()
+                .and_then(|mailings| mailings.merge.field_mut())
+            {
+                field.replace(range, text, false);
+            }
+            return cx.notify();
+        }
+        if self.controls.is_open() {
+            if let Some(field) = self.controls.field_mut() {
+                field.replace(range, text, false);
+            }
+            return cx.notify();
+        }
         if self.table_dialog_typed(text, cx) {
             return;
         }
@@ -2713,6 +2911,9 @@ impl EntityInputHandler for DocView {
         if let Some(field) = self.references.text_field_mut() {
             field.replace(range, text, false);
             return cx.notify();
+        }
+        if self.equation.is_some() {
+            return self.equation_type(text, cx);
         }
         if matches!(self.document, Document::Pages { .. })
             && !self.finding()
@@ -2755,6 +2956,22 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if word_mailings::is_open(self) {
+            if let Some(field) = self
+                .mailings
+                .as_mut()
+                .and_then(|mailings| mailings.merge.field_mut())
+            {
+                field.replace(range, new_text, true);
+            }
+            return cx.notify();
+        }
+        if self.controls.is_open() {
+            if let Some(field) = self.controls.field_mut() {
+                field.replace(range, new_text, true);
+            }
+            return cx.notify();
+        }
         if self.table_dialog_open() || self.page_dialog.is_some() {
             return;
         }
@@ -2865,6 +3082,8 @@ impl Render for DocView {
         };
         let dialog = word_characters::overlay(self, window, cx);
         let reference_dialog = word_references::overlay(self, window, cx);
+        let controls_dialog = word_controls::dialog(self, window, cx);
+        let mailings_dialog = word_mailings::dialog(self, window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -2874,5 +3093,7 @@ impl Render for DocView {
             .child(body)
             .children(dialog)
             .children(reference_dialog)
+            .children(controls_dialog)
+            .children(mailings_dialog)
     }
 }

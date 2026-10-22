@@ -2451,7 +2451,10 @@ mod tests {
     fn the_table_tabs_drive_the_caret_table(cx: &mut gpui::TestAppContext) {
         let (view, cx) = with_table(cx);
         view.update(cx, |view, cx| {
-            assert!(view.ribbon_tabs().contains(&RibbonTab::TableDesign));
+            assert!(view
+                .ribbon_tabs()
+                .iter()
+                .any(|(tab, _)| *tab == RibbonTab::TableDesign));
             view.ribbon_tab = RibbonTab::TableDesign;
             view.run_ribbon(
                 Action::Tables(TableAction::Style(Some("GridTable4-Accent1".to_string()))),
@@ -2509,7 +2512,10 @@ mod tests {
             view.document.place_caret(outside, 0);
             view.insert_at = (outside, 0);
             view.format = None;
-            assert!(!view.ribbon_tabs().contains(&RibbonTab::TableDesign));
+            assert!(!view
+                .ribbon_tabs()
+                .iter()
+                .any(|(tab, _)| *tab == RibbonTab::TableDesign));
             cx.notify();
         });
         cx.run_until_parked();

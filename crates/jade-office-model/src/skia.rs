@@ -214,4 +214,20 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
             .map(|metrics| self.page_and_offset(metrics.absolute_top).0 + 1)
             .or_else(|| self.renderer().cached_paragraph_start_page(paragraph))
     }
+
+    fn text_regions(
+        &self,
+        start: crate::word::Position,
+        end: crate::word::Position,
+    ) -> Vec<jade_docx_editor::canvas_renderer::TextRegion> {
+        use jade_selection::TextPosition;
+        self.renderer().text_range_regions(
+            TextPosition::new(start.0, start.1),
+            TextPosition::new(end.0, end.1),
+        )
+    }
+
+    fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
+        self.renderer().math_zones().to_vec()
+    }
 }
