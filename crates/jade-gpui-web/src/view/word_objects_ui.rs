@@ -71,6 +71,8 @@ pub struct ObjectsUi {
     selection_pane: bool,
     /// An object being renamed in the Selection Pane.
     renaming: Option<(ObjectTarget, TextEdit)>,
+    /// 配置's 揃える対象 (`word_object_tab`); the page until chosen.
+    pub align_to: Option<jade_web::word::objects::AlignTo>,
 }
 
 impl ObjectsUi {

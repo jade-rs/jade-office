@@ -1660,29 +1660,7 @@ fn run_on(
         ObjectAction::ShapeFill(fill) => document.set_shape_fill(target, fill),
         ObjectAction::TextFill(paint) => document.set_shape_text_color(target, paint),
         ObjectAction::TextWarp(preset) => document.set_text_warp(target, preset),
-        ObjectAction::TextAlign(align) => {
-            use jade_docx_editor::commands::format_text_box::{
-                FormatTextBoxCommand, TextBoxFormatSpec,
-            };
-            use jade_docx_editor::document::TextBoxVerticalAlignment;
-            use jade_office_model::word::WordSession;
-            let alignment = match align {
-                "top" => TextBoxVerticalAlignment::Top,
-                "bottom" => TextBoxVerticalAlignment::Bottom,
-                _ => TextBoxVerticalAlignment::Center,
-            };
-            WordSession::execute_command(
-                document,
-                Box::new(FormatTextBoxCommand::new(
-                    target,
-                    TextBoxFormatSpec {
-                        text_vertical_align: Some(alignment),
-                        ..Default::default()
-                    },
-                )),
-                true,
-            )
-        }
+        ObjectAction::TextAlign(align) => document.set_text_anchor(target, align),
         _ => Ok(()),
     }
 }

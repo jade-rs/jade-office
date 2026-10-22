@@ -50,6 +50,7 @@ mod word_inspect;
 pub(crate) mod word_kit;
 pub(crate) mod word_lists;
 pub(crate) mod word_mailings;
+pub(crate) mod word_object_tab;
 pub(crate) mod word_objects_ui;
 pub(crate) mod word_paragraph;
 pub(crate) mod word_preview;
@@ -2118,6 +2119,9 @@ impl DocView {
         if let Action::Tables(action) = action {
             return self.table_action(action, cx);
         }
+        if let Action::ObjectFormat(action) = action {
+            return self.object_format_action(action, cx);
+        }
         if let Action::Word(command) = action {
             return self.run_tool(command, cx);
         }
@@ -2196,6 +2200,7 @@ impl DocView {
             | Action::Equation(_)
             | Action::View(_)
             | Action::Views(_)
+            | Action::ObjectFormat(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -2240,6 +2245,7 @@ impl DocView {
         let views = self.views_shown();
         let outline = (self.views.kind == jade_web::word::view::ViewKind::Outline)
             .then(|| word_views::outline::groups(self, cx));
+        let object_tab = self.object_tab(cx);
         let Document::Pages {
             document,
             ribbon,
@@ -2338,6 +2344,7 @@ impl DocView {
                 object_modes,
                 views,
                 outline,
+                object_tab,
             }
         };
         let mut tabs = tabs;

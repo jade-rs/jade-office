@@ -24,6 +24,8 @@ pub enum Pick {
     Template,
     /// 箇条書き → 図: it becomes the bullet.
     PictureBullet,
+    /// 図の形式 → 図の変更: it replaces the selected picture.
+    ChangePicture,
 }
 
 /// The tools' state, kept with the document view.
@@ -187,6 +189,7 @@ impl DocView {
     pub(crate) fn take_picked(&mut self, name: &str, bytes: &[u8], cx: &mut Context<Self>) {
         match self.tools.picking.take() {
             Some(Pick::Template) => self.attach_template_bytes(bytes, name, cx),
+            Some(Pick::ChangePicture) => self.change_selected_picture(bytes.to_vec(), cx),
             Some(Pick::PictureBullet) => {
                 let extension = name.rsplit_once('.').map_or("", |(_, extension)| extension);
                 self.set_picture_bullet(bytes, extension, cx)
