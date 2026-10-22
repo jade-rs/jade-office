@@ -9,81 +9,28 @@
 //! the levels not shown are hidden as the navigation pane's collapse hides
 //! them.
 
-use std::collections::HashMap;
-
 use gpui::{div, prelude::*, px, AnyElement, Context, MouseButton, SharedString};
 use jade_docx_editor::canvas_renderer::ViewGeometry;
-use jade_docx_editor::word_document::WordDocument;
 use jade_office_model::word::references::navigation::WordNavigation;
 use jade_office_model::word::selection::caret_rect;
-use jade_office_model::word::view::{points_to_px, ViewKind};
+use jade_office_model::word::view::ViewKind;
 
 use crate::ribbon::{group, row};
 use crate::tooltip::Tooltip;
 use crate::word_dialog::{chip, on};
 use crate::{i18n, theme, DocumentView};
 
-/// How far each outline level is set in, in CSS pixels.
-pub const LEVEL_STEP: f64 = 24.0;
-/// The room left of the text for the symbols.
-pub const SYMBOL_ROOM: f64 = 40.0;
-/// What 本文 counts as when levels are compared.
-pub const BODY_LEVEL: u8 = 10;
+pub use jade_office_model::word::outline::{indents, level_of, levels, BODY_LEVEL};
 
 fn t(key: &'static str) -> &'static str {
     i18n::text(key)
-}
-
-/// A body paragraph's outline level: 1–9 for a heading, 10 for 本文.
-fn level_of(document: &WordDocument, paragraph: usize) -> Option<u8> {
-    if !document.is_body_paragraph_surface(paragraph) {
-        return None;
-    }
-    let paragraph = document.paragraph(paragraph)?;
-    Some(WordDocument::paragraph_heading_level(paragraph).unwrap_or(BODY_LEVEL))
-}
-
-/// Every body paragraph with its level, in order.
-pub fn levels(document: &WordDocument) -> Vec<(usize, u8)> {
-    (0..document.paragraph_count())
-        .filter_map(|index| Some((index, level_of(document, index)?)))
-        .collect()
-}
-
-/// How far each paragraph is set in: a heading by its level, body text
-/// one step past the heading it is under.
-pub fn indents(document: &WordDocument) -> HashMap<usize, f64> {
-    let mut parent = 0u8;
-    levels(document)
-        .into_iter()
-        .map(|(paragraph, level)| {
-            let steps = if level == BODY_LEVEL {
-                parent
-            } else {
-                parent = level;
-                level - 1
-            };
-            (paragraph, SYMBOL_ROOM + f64::from(steps) * LEVEL_STEP)
-        })
-        .collect()
 }
 
 /// The page box: the first section's width, the text from just past the
 /// symbols, in strips with nothing round them.
 pub fn geometry(view: &DocumentView) -> Option<ViewGeometry> {
     let layout = view.document.main().word_document().section_layout(Some(0));
-    if layout.width <= 0.0 {
-        return None;
-    }
-    Some(ViewGeometry {
-        page_width: f64::from(points_to_px(layout.width)),
-        page_height: super::layout::WEB_STRIP_HEIGHT,
-        margin_top: 0.0,
-        margin_right: f64::from(points_to_px(layout.margin_right)),
-        margin_bottom: 0.0,
-        margin_left: 8.0,
-        hide_page_chrome: true,
-    })
+    jade_office_model::word::view::outline_geometry(&layout)
 }
 
 /// Keeps the engine's indents in step with the outline (after an edit, a
@@ -110,12 +57,7 @@ pub fn extra_hidden(view: &DocumentView) -> Vec<usize> {
     if view.views.kind != ViewKind::Outline || shown == 0 || shown >= BODY_LEVEL {
         return Vec::new();
     }
-    let document = view.document.main().word_document();
-    levels(document)
-        .into_iter()
-        .filter(|(_, level)| *level > shown)
-        .filter_map(|(paragraph, _)| document.body_element_of(paragraph))
-        .collect()
+    jade_office_model::word::outline::hidden_by_level(view.document.main().word_document(), shown)
 }
 
 /// The paragraphs the commands act on: the selection's, or the caret's.
@@ -155,12 +97,10 @@ pub fn run(view: &mut DocumentView, command: OutlineCommand, cx: &mut Context<Do
         OutlineCommand::Level(wanted) => set_levels(view, first, last, wanted).map(|_| None),
         OutlineCommand::Promote if level == BODY_LEVEL => {
             // 本文 becomes a heading at the level of the one it is under.
-            let parent = levels(view.document.main().word_document())
-                .into_iter()
-                .take_while(|(paragraph, _)| *paragraph < first)
-                .filter(|(_, level)| *level < BODY_LEVEL)
-                .last()
-                .map_or(1, |(_, level)| level);
+            let parent = jade_office_model::word::outline::promoted_body_level(
+                &levels(view.document.main().word_document()),
+                first,
+            );
             set_levels(view, first, last, parent).map(|_| None)
         }
         OutlineCommand::Promote => view.document.shift_heading_level(first, true).map(|_| None),
@@ -498,6 +438,7 @@ pub fn groups(view: &DocumentView, cx: &mut Context<DocumentView>) -> Vec<AnyEle
 mod tests {
     use super::*;
     use crate::word_views::{run as run_view, ViewAction};
+    use jade_office_model::word::outline::{LEVEL_STEP, SYMBOL_ROOM};
 
     /// アウトライン: headings set in by level, a paragraph made 見出し 2 and
     /// moved up, レベルの表示 hiding the body text, and the pages back after.

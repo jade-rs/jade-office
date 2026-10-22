@@ -3348,3 +3348,7 @@ menu.insert.column_break	段区切り
 context.paste_special	形式を選択して貼り付け...
 # Browser shell: Word ports (header/footer, fields, paste, tools, objects)
 objects.draw	描画
+# Browser shell: Word views, options and files (word-web-port-2)
+modes.read_only	閲覧モードでは文書を変更できません
+outline.group.level	レベル
+views.group.options	オプション

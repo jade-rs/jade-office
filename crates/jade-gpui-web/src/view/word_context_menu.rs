@@ -1,19 +1,20 @@
 //! Right-click menus over a Word page in the browser: the entries
 //! `jade_web::word::context_menu::menu` lists — the one list both shells
-//! draw — for text, a table, a picture, a shape or the header or footer
-//! band, run through the ribbon's actions. What the browser cannot do from
-//! a menu is left out: pasting (the clipboard comes only with ⌘V), and the
-//! field and link items the native shell runs itself.
+//! draw — for text, a link, a field, a table, a picture, a shape or the
+//! header or footer, run through the ribbon's actions and the dialogs the
+//! native app opens from them. The paste items read the clipboard on the
+//! click (a user gesture, which the browser's clipboard asks for).
 
 use gpui::{
     anchored, deferred, div, prelude::*, px, AnyElement, Context, MouseButton, MouseDownEvent,
     Pixels, Point, Window,
 };
+use jade_web::word::clipboard::PasteMode;
 use jade_web::word::context_menu::{menu, ContextCommand, ContextEntry, ContextTarget};
 use jade_web::word::page::{Story, WordPage};
 use jade_web::word::picture::Wrap;
 use jade_web::word::table_ui::TableAction;
-use jade_web::word::{TableCommand, WordFormatting};
+use jade_web::word::{TableCommand, WordFormatting, WordLinks};
 
 use super::{DocView, Document, ObjectGrab};
 use crate::ribbon::Action;
@@ -24,27 +25,8 @@ use crate::{i18n, palette};
 pub(crate) struct WordMenu {
     pub target: ContextTarget,
     pub at: Point<Pixels>,
-}
-
-/// Whether the browser's menu can run `command`.
-fn offered(command: ContextCommand) -> bool {
-    use ContextCommand as C;
-    !matches!(
-        command,
-        C::Paste
-            | C::PasteKeepSource
-            | C::PasteMerge
-            | C::PasteTextOnly
-            | C::PasteSpecial
-            | C::SmartLookup
-            | C::EditLink
-            | C::OpenLink
-            | C::RemoveLink
-            | C::UpdateField
-            | C::EditField
-            | C::ToggleFieldCodes
-            | C::CloseHeaderFooter
-    )
+    /// The point clicked, in the document's coordinates.
+    pub point: (f64, f64),
 }
 
 impl DocView {
@@ -61,10 +43,12 @@ impl DocView {
         let Some((x, y)) = self.page_point(index, event.position) else {
             return;
         };
+        self.views.mini = false;
         let target = self.menu_target_at(index, x, y);
         self.word_menu = Some(WordMenu {
             target,
             at: event.position,
+            point: (x, y),
         });
         cx.notify();
     }
@@ -82,11 +66,32 @@ impl DocView {
             header_footer: true,
             ..ContextTarget::default()
         };
+        // In the header or footer open in place: its own menu, and a way
+        // out.
+        if document.story().is_some() {
+            if !document
+                .selection()
+                .is_some_and(|(anchor, focus)| anchor != focus)
+            {
+                let _ = document.place_caret_at(x, y);
+            }
+            return ContextTarget {
+                header_footer: true,
+                selection: document
+                    .selection()
+                    .is_some_and(|(anchor, focus)| anchor != focus),
+                ..ContextTarget::default()
+            };
+        }
         let page_y = y - document.document_y(index, 0.0);
         let setup = document.page_setup();
         let to_px = |points: f32| f64::from(points) * 4.0 / 3.0;
         let (_, page_height) = document.page_size();
-        if page_y < to_px(setup.margins.top) || page_y > page_height - to_px(setup.margins.bottom) {
+        let print_layout = self.views.kind == jade_web::word::view::ViewKind::Print;
+        if print_layout
+            && (page_y < to_px(setup.margins.top)
+                || page_y > page_height - to_px(setup.margins.bottom))
+        {
             return band;
         }
         if let Some(found) = document.object_at(x, y).filter(|found| found.page == index) {
@@ -113,6 +118,11 @@ impl DocView {
         ContextTarget {
             selection: selected,
             table: document.format_state().table.is_some(),
+            link: document.hyperlink_at_point(x, y).is_some(),
+            field: {
+                use jade_web::word::fields::WordFields;
+                !document.selected_fields().is_empty()
+            },
             ..ContextTarget::default()
         }
     }
@@ -125,7 +135,9 @@ impl DocView {
         cx: &mut Context<Self>,
     ) {
         use ContextCommand as C;
-        self.word_menu = None;
+        let Some(opened) = self.word_menu.take() else {
+            return;
+        };
         let table = |command: TableCommand| Action::Table(command);
         let tables = |action: TableAction| Action::Tables(action);
         let action = match command {
@@ -133,6 +145,39 @@ impl DocView {
                 self.word_copy(command == C::Cut, cx);
                 return cx.notify();
             }
+            // The clipboard, read on this click.
+            C::Paste | C::PasteKeepSource => {
+                return super::word_characters::paste_with(self, PasteMode::KeepSource, cx)
+            }
+            C::PasteMerge => {
+                return super::word_characters::paste_with(self, PasteMode::MergeFormatting, cx)
+            }
+            C::PasteTextOnly => {
+                return super::word_characters::paste_with(self, PasteMode::TextOnly, cx)
+            }
+            C::PasteSpecial => {
+                super::word_characters::open_paste_special(self, cx);
+                return cx.notify();
+            }
+            // スマート検索: the find bar, on the word or the selection.
+            C::SmartLookup => return self.open_find(false, cx),
+            C::EditLink => Action::InsertLink,
+            C::OpenLink => {
+                let (x, y) = opened.point;
+                self.follow_link_at(x, y, cx);
+                return cx.notify();
+            }
+            C::RemoveLink => {
+                return self.word_edit(cx, |document| {
+                    let draft = document.link_draft();
+                    let display = draft.display.clone();
+                    document.apply_link(&draft, &display, "").map(|_| ())
+                });
+            }
+            C::UpdateField => return self.update_fields(cx),
+            C::EditField => return self.open_edit_field_dialog(cx),
+            C::ToggleFieldCodes => return self.toggle_selected_field_codes(cx),
+            C::CloseHeaderFooter => Action::Story(super::word_story::StoryAction::Close),
             C::Font => {
                 super::word_characters::open_font_dialog(self, cx);
                 return cx.notify();
@@ -175,8 +220,6 @@ impl DocView {
             C::WrapInFront => Action::Wrap(Wrap::InFrontOfText),
             C::EditHeader => Action::EditStory(Story::Header),
             C::EditFooter => Action::EditStory(Story::Footer),
-            // Not offered in the browser (`offered`).
-            _ => return cx.notify(),
         };
         self.ribbon_action(action, window, cx);
     }
@@ -184,26 +227,7 @@ impl DocView {
     /// The open menu, drawn over everything at the pointer.
     pub(super) fn word_menu_element(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let open = self.word_menu?;
-        // Captions and separators stay only where an offered item follows.
-        let mut entries: Vec<ContextEntry> = Vec::new();
-        for entry in menu(open.target) {
-            match entry {
-                ContextEntry::Item(_, command) if !offered(command) => {}
-                ContextEntry::Separator
-                    if entries.is_empty()
-                        || matches!(
-                            entries.last(),
-                            Some(ContextEntry::Separator | ContextEntry::Caption(_))
-                        ) => {}
-                entry => entries.push(entry),
-            }
-        }
-        while matches!(
-            entries.last(),
-            Some(ContextEntry::Separator | ContextEntry::Caption(_))
-        ) {
-            entries.pop();
-        }
+        let entries = menu(open.target);
         let items = entries
             .into_iter()
             .enumerate()

@@ -6,78 +6,14 @@
 //! way out.
 
 use gpui::{div, prelude::*, px, AnyElement, Context};
-use jade_docx_editor::canvas_renderer::ViewGeometry;
-use jade_office_model::word::view::{PageMovement, ViewKind, ZoomFit, PAGE_PADDING};
+use jade_office_model::word::view::{PageMovement, ViewKind, ZoomFit};
 
 use crate::word_dialog::on;
 use crate::{i18n, theme, DocumentView};
 
-/// Web レイアウト's strips: each this tall, closing up one under another.
-pub const WEB_STRIP_HEIGHT: f64 = 1600.0;
-/// Its text's distance from the window's sides.
-pub const WEB_MARGIN: f64 = 24.0;
-/// 閲覧モード's room round a column and between two.
-pub const READ_MARGIN: f64 = 48.0;
-pub const READ_GAP: f32 = 32.0;
-/// The widest a column of 閲覧モード reads comfortably at.
-pub const READ_MAX_COLUMN: f64 = 760.0;
-
-/// The page box `kind` lays the document out in, for a window `area` wide
-/// and high at `zoom`; `None` for the views that keep the sections' pages.
-pub fn geometry(kind: ViewKind, area: (f32, f32), zoom: f32) -> Option<ViewGeometry> {
-    let zoom = f64::from(zoom.max(0.1));
-    let width = f64::from(area.0) / zoom;
-    let height = f64::from(area.1) / zoom;
-    match kind {
-        ViewKind::Web => Some(ViewGeometry {
-            page_width: (width - 2.0 * f64::from(PAGE_PADDING) / zoom)
-                .max(240.0)
-                .floor(),
-            page_height: WEB_STRIP_HEIGHT,
-            margin_top: 0.0,
-            margin_right: WEB_MARGIN,
-            margin_bottom: 0.0,
-            margin_left: WEB_MARGIN,
-            hide_page_chrome: true,
-        }),
-        ViewKind::Read => {
-            let room = width - 2.0 * f64::from(PAGE_PADDING) / zoom;
-            let two = room >= 2.0 * 520.0;
-            let column = if two {
-                ((room - f64::from(READ_GAP) / zoom) / 2.0).min(READ_MAX_COLUMN)
-            } else {
-                room.min(READ_MAX_COLUMN)
-            };
-            Some(ViewGeometry {
-                page_width: column.max(240.0).floor(),
-                page_height: (height - 2.0 * f64::from(PAGE_PADDING) / zoom)
-                    .max(240.0)
-                    .floor(),
-                margin_top: READ_MARGIN,
-                margin_right: READ_MARGIN,
-                margin_bottom: READ_MARGIN,
-                margin_left: READ_MARGIN,
-                hide_page_chrome: true,
-            })
-        }
-        _ => None,
-    }
-}
-
-/// Whether two boxes are close enough not to lay the document out again
-/// for: a window dragged a pixel wider is not worth a re-flow.
-fn close(a: Option<ViewGeometry>, b: Option<ViewGeometry>) -> bool {
-    match (a, b) {
-        (None, None) => true,
-        (Some(a), Some(b)) => {
-            (a.page_width - b.page_width).abs() < 6.0
-                && (a.page_height - b.page_height).abs() < 6.0
-                && a.margin_left == b.margin_left
-                && a.margin_top == b.margin_top
-        }
-        _ => false,
-    }
-}
+pub use jade_office_model::word::view::{
+    geometry_close as close, view_geometry as geometry, READ_GAP,
+};
 
 /// Gives the document the page box its view wants, as the window is now.
 pub fn follow(view: &mut DocumentView) {
@@ -256,6 +192,7 @@ pub fn arrange(pages: gpui::Stateful<gpui::Div>, kind: ViewKind) -> gpui::Statef
 mod tests {
     use super::*;
     use crate::word_views::{run, ViewAction};
+    use jade_office_model::word::view::{PAGE_PADDING, READ_MAX_COLUMN, WEB_STRIP_HEIGHT};
 
     #[test]
     fn the_boxes_follow_the_window() {

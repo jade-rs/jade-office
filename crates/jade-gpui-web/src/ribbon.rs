@@ -29,13 +29,13 @@ use crate::view::DocView;
 use crate::{i18n, palette};
 
 /// Word's ribbon sizes (`WORD_FONT_SIZES`).
-const FONT_SIZES: [f32; 17] = [
+pub(crate) const FONT_SIZES: [f32; 17] = [
     8.0, 9.0, 10.0, 10.5, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0,
     72.0,
 ];
 /// What an empty size or family box falls back to, as in jade-ide.
-const DEFAULT_FAMILY: &str = "游明朝";
-const DEFAULT_SIZE: f32 = 12.0;
+pub(crate) const DEFAULT_FAMILY: &str = "游明朝";
+pub(crate) const DEFAULT_SIZE: f32 = 12.0;
 /// Word's highlight names and what they look like.
 const HIGHLIGHTS: [(&str, u32); 16] = jade_web::word::font::HIGHLIGHT_COLORS;
 const LINE_SPACINGS: [(&str, f32); 4] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)];
@@ -82,10 +82,13 @@ pub enum Tab {
     Equation,
     /// ヘッダーとフッター: while a header or footer is open in place.
     HeaderFooter,
+    /// アウトライン: while the アウトライン view shows
+    /// (`view::word_views::outline`).
+    Outlining,
 }
 
 impl Tab {
-    const ALL: [Tab; 10] = [
+    pub(crate) const ALL: [Tab; 10] = [
         Tab::Home,
         Tab::Insert,
         Tab::Draw,
@@ -98,7 +101,7 @@ impl Tab {
         Tab::Developer,
     ];
 
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         i18n::text(match self {
             Tab::Home => "doc.tab.home",
             Tab::Insert => "doc.tab.insert",
@@ -114,6 +117,7 @@ impl Tab {
             Tab::TableLayout => "doc.tab.table_layout",
             Tab::Equation => "equation.tab",
             Tab::HeaderFooter => "story.tab",
+            Tab::Outlining => "outline.tab",
         })
     }
 }
@@ -189,9 +193,19 @@ pub struct Ribbon {
     pub copied_format: Option<jade_web::word::CopiedFormat>,
     /// The theme's colours, for the font colour's テーマの色.
     pub theme_colors: Vec<(String, String)>,
+    /// Whether the アウトライン tab is in the strip.
+    pub outline: bool,
 }
 
 impl Ribbon {
+    /// The style gallery's entries: the id each applies and its label.
+    pub(crate) fn styles(&self) -> Vec<(Option<String>, SharedString)> {
+        self.gallery
+            .iter()
+            .map(|entry| (entry.id.clone(), style_label(entry)))
+            .collect()
+    }
+
     /// Reads the document's paragraph styles into the gallery. Again after a
     /// style is applied: a missing built-in is added on first use.
     pub fn read_styles(&mut self, document: &EditableDocument) {
@@ -281,6 +295,10 @@ pub enum Action {
     Equation(crate::view::word_equation::EquationAction),
     /// 表示: 編集記号 and the zoom.
     View(ViewAction),
+    /// The rest of 表示 — the views, the windows, the modes — with
+    /// オートコレクト, Word のオプション and the quick access toolbar
+    /// (`view::word_views`).
+    Views(crate::view::word_views::ViewsAction),
 }
 
 /// What the 表示 tab's own buttons do.
@@ -288,9 +306,7 @@ pub enum Action {
 pub enum ViewAction {
     ToggleMarks,
     ZoomOut,
-    ZoomActual,
     ZoomIn,
-    PageWidth,
 }
 
 impl Action {
@@ -749,12 +765,16 @@ pub struct TabState {
     pub ruler: (bool, jade_web::word::ruler::RulerUnit),
     /// トリミング, text box links, wrap points and the Selection Pane.
     pub object_modes: crate::view::word_objects_ui::ObjectModes,
+    /// What the 表示 tab shows as on (`view::word_views`).
+    pub views: crate::view::word_views::ViewsShown,
+    /// The アウトライン tab's groups, while it shows.
+    pub outline: Option<Vec<AnyElement>>,
 }
 
 pub fn ribbon(
     ribbon: &Ribbon,
     state: &FormatState,
-    shown: &TabState,
+    shown: &mut TabState,
     position: String,
     dirty: bool,
     viewport: Size<Pixels>,
@@ -767,9 +787,17 @@ pub fn ribbon(
         Tab::TableDesign | Tab::TableLayout if !in_table => Tab::Home,
         Tab::Equation if shown.equation.is_none() => Tab::Home,
         Tab::HeaderFooter if shown.story.is_none() => Tab::Insert,
+        Tab::Outlining if shown.outline.is_none() => Tab::View,
+        tab if !crate::view::word_views::customize::tab_shown(tab) => Tab::Home,
         tab => tab,
     };
-    let mut strip = Tab::ALL.to_vec();
+    let mut strip: Vec<Tab> = Tab::ALL
+        .into_iter()
+        .filter(|tab| crate::view::word_views::customize::tab_shown(*tab))
+        .collect();
+    if shown.outline.is_some() {
+        strip.insert(0, Tab::Outlining);
+    }
     if in_table {
         strip.extend([Tab::TableDesign, Tab::TableLayout]);
     }
@@ -803,8 +831,10 @@ pub fn ribbon(
         })
         .collect();
     let groups = match shown_tab {
+        Tab::Outlining => shown.outline.take().unwrap_or_default(),
         Tab::Home => {
             let mut groups = home(ribbon, state, cx);
+            groups.extend(crate::view::word_views::customize::custom_group(cx));
             let lists =
                 crate::word_tools::list_group(ribbon, &shown.tools, state.alignment.as_deref(), cx);
             groups.insert(2.min(groups.len()), lists);
@@ -957,8 +987,14 @@ pub fn ribbon(
                 .gap_1()
                 .px_3()
                 .pt_1p5()
+                .child(crate::view::word_views::customize::toolbar(cx))
                 .children(tabs)
                 .child(div().flex_1())
+                .child(crate::view::word_views::modes::switch(
+                    shown.views.mode,
+                    shown.views.mode_menu,
+                    cx,
+                ))
                 .child(
                     div()
                         .px_1()
@@ -2074,65 +2110,32 @@ fn cell_format_menu(state: &FormatState, cx: &mut Context<DocView>) -> Option<An
 /// The 表示 tab: 編集記号 and the panes (ナビゲーション, ブックマーク, ジャンプ),
 /// and the zoom.
 fn view_groups(ribbon: &Ribbon, shown: &TabState, cx: &mut Context<DocView>) -> Vec<AnyElement> {
-    fn button(
-        id: &'static str,
-        label: &'static str,
-        active: bool,
-        action: ViewAction,
-        cx: &mut Context<DocView>,
-    ) -> AnyElement {
-        crate::word_page::text_button(
-            id,
-            i18n::text(label),
-            i18n::text(label),
-            active,
-            Action::View(action),
-            cx,
-        )
-    }
-    let mut show = vec![button(
+    let mut show = vec![crate::word_page::text_button(
         "view-marks",
-        "doc.marks",
+        i18n::text("doc.marks"),
+        i18n::text("doc.marks"),
         shown.marks,
-        ViewAction::ToggleMarks,
+        Action::View(ViewAction::ToggleMarks),
         cx,
     )];
     if let Some(references) = &shown.references {
         show.extend(crate::view::word_references::view_buttons(references, cx));
     }
-    let zoom = vec![
-        button(
-            "view-zoom-out",
-            "doc.zoom_out",
-            false,
-            ViewAction::ZoomOut,
-            cx,
-        ),
-        button(
-            "view-zoom-actual",
-            "doc.zoom_actual",
-            false,
-            ViewAction::ZoomActual,
-            cx,
-        ),
-        button("view-zoom-in", "doc.zoom_in", false, ViewAction::ZoomIn, cx),
-        button(
-            "view-page-width",
-            "views.page_width",
-            false,
-            ViewAction::PageWidth,
-            cx,
-        ),
-    ];
-    let mut groups = vec![
-        // 表示 › ルーラー, as on the native View tab (`view::word_ruler`).
-        crate::view::word_ruler::ruler_group(ribbon, shown.ruler.0, shown.ruler.1, cx),
-        group(i18n::text("doc.group.show"), vec![row(show)]),
-        group(i18n::text("doc.group.zoom"), vec![row(zoom)]),
-    ];
-    // イマーシブ リーダー and 並べて比較 (`word_review`).
-    if let Some(review) = &shown.review {
-        groups.extend(crate::word_review::view_groups(review, cx));
-    }
-    groups
+    // イマーシブ リーダー and 並べて比較 (`word_review`), in the groups Word
+    // puts them in; the ruler (`view::word_ruler`).
+    let (reader, window_side) = match &shown.review {
+        Some(review) => {
+            let mut groups = crate::word_review::view_groups(review, cx).into_iter();
+            (groups.next(), groups.collect::<Vec<_>>())
+        }
+        None => (None, Vec::new()),
+    };
+    let mut before: Vec<AnyElement> = reader.into_iter().collect();
+    before.push(crate::view::word_ruler::ruler_group(
+        ribbon,
+        shown.ruler.0,
+        shown.ruler.1,
+        cx,
+    ));
+    crate::view::word_views::view_tab(&shown.views, before, show, window_side, cx)
 }
