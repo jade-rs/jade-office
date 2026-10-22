@@ -2817,3 +2817,250 @@ draw.effect.gold	Gold
 draw.effect.silver	Silver
 draw.effect.rosegold	Rose Gold
 draw.effect.bronze	Bronze
+# ---- View, Find and Replace, input aids (word_views) ----
+views.group.views	Views
+views.read	Read Mode
+views.print	Print Layout
+views.web	Web Layout
+views.outline	Outline
+views.draft	Draft
+views.group.movement	Page Movement
+views.vertical	Vertical
+views.side_to_side	Side to Side
+views.gridlines	Gridlines
+views.white_space	Hide White Space
+views.white_space_title	Hide the white space between pages (or double-click between pages)
+views.zoom.button	Zoom
+views.zoom.title	Zoom
+views.zoom.page_width	Page width
+views.zoom.text_width	Text width
+views.zoom.whole_page	Whole page
+views.zoom.many_pages	Many pages
+views.zoom.pages	Pages
+views.zoom.percent	Percent
+views.one_page	One Page
+views.multiple_pages	Multiple Pages
+views.page_width	Page Width
+menu.tools	Tools
+menu.tools.autocorrect	AutoCorrect…
+autocorrect.title	AutoCorrect
+autocorrect.tab.correct	AutoCorrect
+autocorrect.tab.format	AutoFormat As You Type
+autocorrect.two_initial_capitals	Correct TWo INitial CApitals
+autocorrect.capitalize_sentences	Capitalize first letter of sentences
+autocorrect.capitalize_days	Capitalize names of days
+autocorrect.replace_text	Replace text as you type
+autocorrect.smart_quotes	"Straight quotes" with “smart quotes”
+autocorrect.ordinals	Ordinals (1st) with superscript
+autocorrect.fractions	Fractions (1/2) with fraction character (½)
+autocorrect.hyphens	Hyphens (--) with dash (—)
+autocorrect.bulleted_lists	Automatic bulleted lists
+autocorrect.numbered_lists	Automatic numbered lists
+autocorrect.borders	Border lines
+autocorrect.headings	Built-in Heading styles
+autocorrect.long_vowels	Use long vowels and dashes correctly
+autocorrect.brackets	Match parentheses correctly
+autocorrect.closing_phrases	Insert closing phrase to match salutation
+autocorrect.kiki	Insert "以上" to match "記"
+autocorrect.replace	Replace
+autocorrect.with	With
+autocorrect.add	Add
+autocorrect.delete	Delete
+context.cut	Cut
+context.copy	Copy
+context.paste	Paste
+context.paste_options	Paste Options
+context.paste_keep	Keep Source Formatting
+context.paste_merge	Merge Formatting
+context.paste_text	Keep Text Only
+context.font	Font…
+context.paragraph	Paragraph…
+context.bullets	Bullets
+context.numbering	Numbering
+context.smart_lookup	Smart Lookup
+context.new_comment	New Comment
+context.link	Link…
+context.edit_link	Edit Link…
+context.open_link	Open Link
+context.remove_link	Remove Link
+context.update_field	Update Field
+context.edit_field	Edit Field…
+context.toggle_field_codes	Toggle Field Codes
+context.insert	Insert
+context.row_above	Insert Rows Above
+context.row_below	Insert Rows Below
+context.column_left	Insert Columns to the Left
+context.column_right	Insert Columns to the Right
+context.insert_cells	Insert Cells…
+context.delete	Delete
+context.delete_cells	Delete Cells…
+context.delete_row	Delete Rows
+context.delete_column	Delete Columns
+context.delete_table	Delete Table
+context.merge_cells	Merge Cells
+context.split_cells	Split Cells…
+context.distribute_rows	Distribute Rows Evenly
+context.distribute_columns	Distribute Columns Evenly
+context.table_borders	Borders and Shading…
+context.text_direction	Text Direction…
+context.autofit	AutoFit
+context.autofit_contents	AutoFit to Contents
+context.autofit_window	AutoFit to Window
+context.table_properties	Table Properties…
+context.wrap	Wrap Text
+context.edit_header	Edit Header
+context.edit_footer	Edit Footer
+context.close_header_footer	Close Header and Footer
+find.menu	Advanced Find and Replace…
+find.title	Find and Replace
+find.title_replace	Find and Replace
+find.tab.find	Find
+find.tab.replace	Replace
+find.query	Find what
+find.replacement	Replace with
+find.more	More ▼
+find.less	Less ▲
+find.next	Find Next
+find.replace	Replace
+find.replace_all	Replace All
+find.direction	Search
+find.down	Down
+find.up	Up
+find.all	All
+find.scope	Find in
+find.scope.main	Main Document
+find.scope.notes	Footnotes and Endnotes
+find.scope.selection	Current Selection
+find.scope.headers	Headers and Footers
+find.match_prefix	Match prefix
+find.match_suffix	Match suffix
+find.wildcards	Use wildcards
+find.match_width	Match half/full width forms
+find.match_kana	Match hiragana and katakana
+find.ignore_punctuation	Ignore punctuation characters
+find.ignore_whitespace	Ignore white-space characters
+find.format	Format
+find.special	Special
+find.no_format	No Formatting
+find.format.bold	Bold
+find.format.not_bold	Not Bold
+find.format.italic	Italic
+find.format.not_italic	Not Italic
+find.format.underline	Underline
+find.format.no_underline	No underline
+find.format.highlight	Highlight
+find.format.no_highlight	Not Highlight
+find.format.style	Style:
+find.special.paragraph	Paragraph Mark
+find.special.tab	Tab Character
+find.special.any_char	Any Character
+find.special.any_digit	Any Digit
+find.special.any_letter	Any Letter
+find.special.caret	Caret Character
+find.special.column_break	Column Break
+find.special.em_dash	Em Dash
+find.special.en_dash	En Dash
+find.special.line_break	Manual Line Break
+find.special.page_break	Manual Page Break
+find.special.nonbreaking_hyphen	Nonbreaking Hyphen
+find.special.nonbreaking_space	Nonbreaking Space
+find.special.optional_hyphen	Optional Hyphen
+find.special.white_space	White Space
+find.special.found_text	Find What Text
+find.end_reached	Word has reached the end of the document.
+find.start_reached	Word has reached the beginning of the document.
+find.not_found	The search item was not found.
+find.bad_pattern	The text to find is not valid: {why}
+find.replaced_count	{n} replacements made.
+options.menu	Word Options…
+options.title	Word Options
+options.page.view	View
+options.page.edit	Edit
+options.page.ribbon	Ribbon & Toolbar
+options.marks	Always show these formatting marks on the screen
+options.marks.tabs	Tab characters
+options.marks.spaces	Spaces
+options.marks.paragraph_marks	Paragraph marks
+options.marks.hidden_text	Hidden text
+options.marks.optional_hyphens	Optional hyphens
+options.marks.anchors	Object anchors
+options.overtype	Use overtype mode
+options.insert_key	Use the Insert key to control overtype mode
+options.paste	Cut, copy, and paste
+options.paste_same	Pasting within the same document
+options.paste_between	Pasting between documents
+options.paste_other	Pasting from other programs
+options.tabs	Main tabs
+options.qat	Quick Access Toolbar commands
+options.custom_group	Commands in Home's custom group
+customize.group	Custom
+views.status.overtype	Overtype
+qat.save	Save
+qat.undo	Undo
+qat.redo	Redo
+qat.print	Print
+qat.export_pdf	Export as PDF
+qat.find	Find
+qat.bold	Bold
+qat.italic	Italic
+qat.underline	Underline
+qat.align_left	Align Left
+qat.align_center	Center
+qat.align_right	Align Right
+qat.insert_table	Insert Table
+qat.picture	Picture
+qat.track_changes	Track Changes
+modes.title	Editing mode
+modes.editing	Editing
+modes.reviewing	Reviewing
+modes.viewing	Viewing
+modes.editing_hint	Edit the document directly
+modes.reviewing_hint	Every change is tracked
+modes.viewing_hint	Read the document without making accidental changes
+views.group.immersive	Immersive
+views.focus	Focus
+views.focus_title	Focus mode (Esc to leave)
+views.group.window	Window
+views.new_window	New Window
+views.split	Split
+views.window_hint	Another window on this document: edits here show in the first window at once.
+language.group	Language
+language.button	Set Proofing Language…
+language.title	Language
+language.mark_as	Mark selected text as
+language.no_proof	Do not check spelling or grammar
+language.detect	Detect language automatically
+language.ja_jp	Japanese
+language.en_us	English (United States)
+language.en_gb	English (United Kingdom)
+language.zh_cn	Chinese (Simplified)
+language.zh_tw	Chinese (Traditional)
+language.ko_kr	Korean
+language.fr_fr	French
+language.de_de	German
+language.es_es	Spanish
+language.it_it	Italian
+language.pt_br	Portuguese (Brazil)
+language.ru_ru	Russian
+language.th_th	Thai
+language.ar_sa	Arabic
+outline.tab	Outlining
+outline.group.tools	Outline Tools
+outline.group.close	Close
+outline.level	Level {n}
+outline.body	Body Text
+outline.all	All Levels
+outline.show_level	Show Level
+outline.to_top	Promote to Heading 1
+outline.promote	Promote
+outline.demote	Demote
+outline.to_body	Demote to Body Text
+outline.move_up	Move Up
+outline.move_down	Move Down
+outline.expand	Expand
+outline.collapse	Collapse
+outline.close	Close Outline View
+views.read.edit	Edit Document
+views.read.position	Screen {current} of {count}
+views.read.keys	← → to turn, Esc to go back
+autocorrect.cjk_spaces	Delete spaces between Japanese and English

@@ -32,6 +32,7 @@ use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 
 use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, INITIAL_PAGE};
 
+mod autocorrect;
 mod formatting;
 mod print;
 pub use formatting::{
@@ -516,18 +517,9 @@ impl EditableDocument {
     /// selects in Word. Elsewhere, the caret goes to `position`.
     pub fn select_word(&mut self, (paragraph, offset): (usize, usize)) -> Result<(), String> {
         let text = self.paragraph_text(paragraph).unwrap_or_default();
-        let offset = offset.min(text.len());
-        let start = text[..offset]
-            .char_indices()
-            .rev()
-            .take_while(|(_, ch)| ch.is_alphanumeric())
-            .last()
-            .map_or(offset, |(at, _)| at);
-        let end = text[offset..]
-            .char_indices()
-            .take_while(|(_, ch)| ch.is_alphanumeric())
-            .last()
-            .map_or(offset, |(at, ch)| offset + at + ch.len_utf8());
+        // A run of one script in Japanese, a word and the spaces after it in
+        // English, as Word's double-click takes them (the native app's too).
+        let (start, end) = jade_office_model::word::selection::word_at(&text, offset);
         self.select((paragraph, start), (paragraph, end))
     }
 
@@ -1331,6 +1323,21 @@ impl EditableDocument {
     pub fn set_collapsed_blocks(&mut self, blocks: Vec<usize>) -> Result<(), String> {
         self.options.set_collapsed_blocks(blocks);
         self.repaint_all()
+    }
+
+    /// Shows or hides Word's formatting marks (表示 → 編集記号) and
+    /// repaints.
+    pub fn set_formatting_marks(&mut self, show: bool) -> Result<(), String> {
+        if self.options.show_formatting_marks == show {
+            return Ok(());
+        }
+        self.options.show_formatting_marks = show;
+        self.repaint_all()
+    }
+
+    /// Whether the formatting marks show.
+    pub fn formatting_marks(&self) -> bool {
+        self.options.show_formatting_marks
     }
 
     /// The top-level body elements collapsed headings hide.

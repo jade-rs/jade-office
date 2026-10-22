@@ -43,6 +43,7 @@ mod word_find;
 mod word_form;
 pub(crate) mod word_hyphenation;
 pub(crate) mod word_mailings;
+pub(crate) mod word_preview;
 mod word_print;
 pub(crate) mod word_references;
 mod word_review;
@@ -543,6 +544,10 @@ pub struct DocView {
     )>,
     /// The 描画 tab's tools and the drawing under way (`word_draw`).
     draw: jade_web::word::ink_tools::DrawController,
+    /// The ribbon entry previewed on the selection (`word_preview`), and
+    /// whether its command is running now.
+    preview: Option<word_preview::Preview>,
+    previewing: bool,
 }
 
 impl DocView {
@@ -745,6 +750,8 @@ impl DocView {
             print_panel: None,
             hyphenation_dialog: None,
             draw: Default::default(),
+            preview: None,
+            previewing: false,
         })
     }
 
@@ -1749,7 +1756,14 @@ impl DocView {
                 return true;
             }
             "enter" => {
-                self.word_edit(cx, |document| document.insert_paragraph_break());
+                self.word_edit(cx, |document| {
+                    let ended = document.caret().map(|(paragraph, _)| paragraph);
+                    document.insert_paragraph_break()?;
+                    match ended {
+                        Some(ended) => document.autocorrect_enter(ended, &autocorrect_options()),
+                        None => Ok(()),
+                    }
+                });
                 return true;
             }
             // In a table, to the next or the previous cell; elsewhere a tab
@@ -1770,7 +1784,8 @@ impl DocView {
                     if document.step_cell(!backwards)? || backwards {
                         Ok(())
                     } else {
-                        document.insert_text("\t")
+                        document.insert_text("\t")?;
+                        document.autocorrect_typed(&autocorrect_options())
                     }
                 });
                 return true;
@@ -1802,6 +1817,10 @@ impl DocView {
             if let Document::Pages { ribbon, .. } = &mut self.document {
                 ribbon.popup = None;
             }
+            return;
+        }
+        // A previewed entry: kept by its click, taken back by anything else.
+        if word_preview::settle(self, &action, cx) {
             return;
         }
         let Document::Pages {
@@ -1865,6 +1884,26 @@ impl DocView {
                 _ => document.redo().map(|_| ()),
             });
             return self.equation_after_history();
+        }
+        if let Action::View(action) = action {
+            use ribbon::ViewAction;
+            match action {
+                ViewAction::ToggleMarks => self.word_edit(cx, |document| {
+                    let show = !document.formatting_marks();
+                    document.set_formatting_marks(show)
+                }),
+                ViewAction::ZoomOut => {
+                    let zoom = zoom_step(self.zoom(), false);
+                    self.set_zoom(zoom, cx)
+                }
+                ViewAction::ZoomIn => {
+                    let zoom = zoom_step(self.zoom(), true);
+                    self.set_zoom(zoom, cx)
+                }
+                ViewAction::ZoomActual => self.set_zoom(1.0, cx),
+                ViewAction::PageWidth => self.zoom_to_fit(window, cx),
+            }
+            return;
         }
         if action == Action::InsertPicture {
             // The page's picker answers through `open_file`, which hands a
@@ -1968,6 +2007,7 @@ impl DocView {
             | Action::References(_)
             | Action::Controls(_)
             | Action::Equation(_)
+            | Action::View(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -2062,12 +2102,13 @@ impl DocView {
                 hyphenation: (ribbon.tab == ribbon::Tab::Layout)
                     .then(|| word_hyphenation::current_choice(document)),
                 draw: (ribbon.tab == ribbon::Tab::Draw).then(|| self.draw.clone()),
-                references: (ribbon.tab == ribbon::Tab::References)
-                    .then(|| word_references::ribbon_state(document, &self.references)),
                 object: object.map(|grab| grab.object),
                 developer,
                 mailings,
                 equation,
+                references: matches!(ribbon.tab, ribbon::Tab::References | ribbon::Tab::View)
+                    .then(|| word_references::ribbon_state(document, &self.references)),
+                marks: document.formatting_marks(),
             }
         };
         ribbon::ribbon(
@@ -3090,10 +3131,13 @@ impl EntityInputHandler for DocView {
                 .is_some_and(|(_, _, marked)| marked.is_some());
             self.word_edit(cx, move |document| {
                 if composing {
-                    document.commit_composition(&text)
+                    document.commit_composition(&text)?;
                 } else {
-                    document.insert_text(&text)
+                    document.insert_text(&text)?;
                 }
+                // オートコレクト and 入力オートフォーマット, as the native app
+                // makes them.
+                document.autocorrect_typed(&autocorrect_options())
             });
             return;
         }
@@ -3260,4 +3304,9 @@ impl Render for DocView {
             .children(controls_dialog)
             .children(mailings_dialog)
     }
+}
+
+/// The AutoCorrect settings the browser types with: Word's own.
+fn autocorrect_options() -> jade_web::word::autocorrect::AutoCorrectOptions {
+    jade_web::word::autocorrect::AutoCorrectOptions::default()
 }

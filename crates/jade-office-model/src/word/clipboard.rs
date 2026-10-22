@@ -420,57 +420,124 @@ pub trait WordClipboard: WordSession {
         let inherited = self
             .run_style_at((start.paragraph, start.offset.saturating_sub(1)))
             .unwrap_or_default();
-        let mut at = (start.paragraph, start.offset);
-        let mut formats = Vec::new();
-        let count = clip.paragraphs.len();
-        for (index, paragraph) in clip.paragraphs.iter().enumerate() {
-            if index > 0 {
-                commands.push(HeadlessCommand::InsertParagraphBreak {
-                    paragraph: at.0,
-                    offset: at.1,
-                    count: 1,
-                });
-                at = (at.0 + 1, 0);
-            }
-            // Every copied paragraph but the last came with its mark, and the
-            // mark carries the paragraph's style to the paragraph it ends
-            // here; the last ends in the destination's own mark.
-            if index + 1 < count {
-                if let Some(style_id) = &paragraph.style_id {
-                    formats.push(HeadlessCommand::SetParagraphStyle {
-                        start_paragraph: at.0,
-                        end_paragraph: at.0,
-                        style_id: Some(style_id.clone()),
-                    });
-                }
-                if let Some(alignment) = &paragraph.alignment {
-                    formats.push(HeadlessCommand::SetParagraphAlignment {
-                        start_paragraph: at.0,
-                        end_paragraph: at.0,
-                        alignment: alignment.clone(),
-                    });
-                }
-            }
-            for run in &paragraph.runs {
-                commands.push(HeadlessCommand::InsertText {
-                    paragraph: at.0,
-                    offset: at.1,
-                    text: run.text.clone(),
-                });
-                let end = at.1 + run.text.len();
-                formats.extend(format_commands(at.0, (at.1, end), &run.style, &inherited));
-                at.1 = end;
-            }
-        }
-        // Formats after all the text: a split carries a paragraph's direct
-        // formatting into the next, so formatting first would be undone.
-        commands.extend(formats);
+        let at = push_paste_commands(
+            clip,
+            (start.paragraph, start.offset),
+            &inherited,
+            &mut commands,
+        );
         if commands.is_empty() {
             return Ok(at);
         }
         self.apply_commands(commands, false)?;
         Ok(at)
     }
+
+    /// Drag and drop: `clip` dropped at `target`, and — for a move — the
+    /// range it was dragged from taken out, as one undo step. `target` is
+    /// where the pointer let go in the document as it was; returns where
+    /// the dropped text ends.
+    fn drop_rich(
+        &mut self,
+        clip: &RichClip,
+        moved_from: Option<(Position, Position)>,
+        target: Position,
+    ) -> Result<Position, String> {
+        let inherited = self
+            .run_style_at((target.0, target.1.saturating_sub(1)))
+            .unwrap_or_default();
+        let mut commands = Vec::new();
+        let mut at = target;
+        if let Some((start, end)) = moved_from {
+            let (start, end) = if start <= end {
+                (start, end)
+            } else {
+                (end, start)
+            };
+            if target > start && target < end {
+                return Err("dropped inside what was dragged".to_string());
+            }
+            commands.push(HeadlessCommand::ReplaceRange {
+                start_paragraph: start.0,
+                start_offset: start.1,
+                end_paragraph: end.0,
+                end_offset: end.1,
+                text: String::new(),
+            });
+            at = position_after_removal(target, start, end);
+        }
+        let end = push_paste_commands(clip, at, &inherited, &mut commands);
+        self.apply_commands(commands, false)?;
+        Ok(end)
+    }
+}
+
+/// Where `target` is once `start..end` has been taken out before it.
+pub fn position_after_removal(target: Position, start: Position, end: Position) -> Position {
+    if target <= start {
+        target
+    } else if target.0 == end.0 {
+        (start.0, start.1 + target.1.saturating_sub(end.1))
+    } else {
+        (target.0 - (end.0 - start.0), target.1)
+    }
+}
+
+/// The commands that put `clip` in at `start`, appended to `commands`;
+/// answers where the pasted text ends.
+fn push_paste_commands(
+    clip: &RichClip,
+    start: Position,
+    inherited: &HeadlessRunStyle,
+    commands: &mut Vec<HeadlessCommand>,
+) -> Position {
+    let inherited = inherited.clone();
+    let mut at = start;
+    let mut formats = Vec::new();
+    let count = clip.paragraphs.len();
+    for (index, paragraph) in clip.paragraphs.iter().enumerate() {
+        if index > 0 {
+            commands.push(HeadlessCommand::InsertParagraphBreak {
+                paragraph: at.0,
+                offset: at.1,
+                count: 1,
+            });
+            at = (at.0 + 1, 0);
+        }
+        // Every copied paragraph but the last came with its mark, and the
+        // mark carries the paragraph's style to the paragraph it ends
+        // here; the last ends in the destination's own mark.
+        if index + 1 < count {
+            if let Some(style_id) = &paragraph.style_id {
+                formats.push(HeadlessCommand::SetParagraphStyle {
+                    start_paragraph: at.0,
+                    end_paragraph: at.0,
+                    style_id: Some(style_id.clone()),
+                });
+            }
+            if let Some(alignment) = &paragraph.alignment {
+                formats.push(HeadlessCommand::SetParagraphAlignment {
+                    start_paragraph: at.0,
+                    end_paragraph: at.0,
+                    alignment: alignment.clone(),
+                });
+            }
+        }
+        for run in &paragraph.runs {
+            commands.push(HeadlessCommand::InsertText {
+                paragraph: at.0,
+                offset: at.1,
+                text: run.text.clone(),
+            });
+            let end = at.1 + run.text.len();
+            formats.extend(format_commands(at.0, (at.1, end), &run.style, &inherited));
+            at.1 = end;
+        }
+    }
+    // Formats after all the text: a split carries a paragraph's direct
+    // formatting into the next, so formatting first would be undone.
+    commands.extend(formats);
+    at
 }
 
 impl<T: WordSession + ?Sized> WordClipboard for T {}

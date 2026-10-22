@@ -324,6 +324,9 @@ fn color_square(
         .cursor_pointer()
         .hover(|square| square.border_color(theme::accent()))
         .tooltip(Tooltip::text(format!("#{color}")))
+        .when(crate::word_views::mini::previewable(&on_click), |square| {
+            square.on_hover(crate::word_views::mini::hover(on_click.clone(), cx))
+        })
         .on_click(listener(on_click, cx))
         .into_any_element()
 }
