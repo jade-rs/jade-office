@@ -36,3 +36,26 @@ impl Render for Tooltip {
             .child(self.text.clone())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Tooltip;
+
+    /// A ribbon button's ScreenTip: the builder `.tooltip(...)` takes opens
+    /// a view that shows the tip's text, in the UI font.
+    #[gpui::test]
+    fn a_screen_tip_shows_its_text(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_empty_window();
+        let tip = crate::i18n::text("doc.indent_more_title");
+        assert_ne!(tip, "doc.indent_more_title", "the tip is translated");
+        let view = window.update(|window, cx| Tooltip::text(tip)(window, cx));
+        let shown = window.update(|_, cx| {
+            view.downcast::<Tooltip>()
+                .expect("a Tooltip view")
+                .read(cx)
+                .text
+                .clone()
+        });
+        assert_eq!(shown.as_ref(), tip);
+    }
+}
