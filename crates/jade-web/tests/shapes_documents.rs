@@ -762,3 +762,29 @@ fn a_linked_text_box_takes_the_text_that_does_not_fit() {
     document.undo().unwrap();
     assert!(!package_part(&mut document, "word/document.xml").contains("wps:linkedTxbx"));
 }
+
+/// 図形の書式 → 文字の配置: the text box's text goes to its bottom, saved as
+/// Word's `anchor`, one undo step.
+#[test]
+fn a_text_box_takes_its_text_anchor() {
+    let mut document = contract();
+    let paragraph = typed(&mut document, "anchored ");
+    document.place_caret(paragraph, 0);
+    document
+        .insert_shape(
+            TextBoxShape::Rectangle,
+            drawn(100.0, 200.0, 160.0, 120.0),
+            true,
+        )
+        .unwrap();
+    let box_ = objects(&document, paragraph)[0];
+    document.set_text_anchor(box_, "bottom").unwrap();
+    let xml = package_part(&mut document, "word/document.xml");
+    assert!(xml.contains(r#"anchor="b""#), "{xml}");
+    document.set_text_anchor(box_, "top").unwrap();
+    let xml = package_part(&mut document, "word/document.xml");
+    assert!(xml.contains(r#"anchor="t""#), "{xml}");
+    document.undo().unwrap();
+    let xml = package_part(&mut document, "word/document.xml");
+    assert!(xml.contains(r#"anchor="b""#), "one step back: {xml}");
+}

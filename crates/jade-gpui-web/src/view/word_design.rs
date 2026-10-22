@@ -1,17 +1,14 @@
-//! デザイン → テンプレート (a template's styles copied in, as Word's
-//! テンプレートとアドイン attaches one) and 挿入 → クイック パーツ: the
-//! selection saved into the クイック パーツ or 定型句 gallery under a name,
-//! and an entry put back in at the caret — the browser's copy of the native
-//! app's `word_design`, over `jade-office-model`'s `WordDesign`,
-//! `WordStyles` and `WordBuildingBlocks`. The browser has no paths: the
-//! template is a file the page's picker brings.
+//! 挿入 → クイック パーツ: the selection saved into the クイック パーツ or
+//! 定型句 gallery under a name, and an entry put back in at the caret — the
+//! browser's copy of the native app's `word_design`, over
+//! `jade-office-model`'s `WordBuildingBlocks`. (デザイン → テンプレートと
+//! アドイン opens `word_files`' dialog.)
 
 use gpui::{div, prelude::*, px, AnyElement, Context};
 use jade_web::word::building_blocks::{Gallery, WordBuildingBlocks};
 use jade_web::word::styles::WordStyles;
 
 use super::word_dialog::{chip, labeled, on, DialogError, Inputs, WordDialog};
-use super::word_tools_ui::Pick;
 use super::DocView as DocumentView;
 use crate::i18n;
 use crate::palette as theme;
@@ -46,26 +43,6 @@ pub fn quick_parts(document: &jade_web::editing::WordDoc) -> QuickParts {
 }
 
 impl DocumentView {
-    /// テンプレートとアドイン: asks the page for a template, whose styles
-    /// come in when it arrives (`take_picked`).
-    pub(crate) fn prompt_for_template(&mut self, _cx: &mut Context<Self>) {
-        self.tools.picking = Some(Pick::Template);
-        self.host.pick();
-    }
-
-    pub(crate) fn attach_template_bytes(
-        &mut self,
-        bytes: &[u8],
-        name: &str,
-        cx: &mut Context<Self>,
-    ) {
-        let result = self
-            .doc_mut()
-            .attach_template(bytes, name, true)
-            .map(|_| ());
-        self.tool_done(result, cx);
-    }
-
     pub(crate) fn insert_quick_part(&mut self, index: usize, cx: &mut Context<Self>) {
         let result = self.doc_mut().insert_building_block(index).map(|_| ());
         self.tool_done(result, cx);

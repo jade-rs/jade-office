@@ -726,6 +726,30 @@ pub trait WordShapes: WordSession + WordObjects {
         })
     }
 
+    /// 文字の配置: the text's place in the box — `top`, `center` or
+    /// `bottom` (`a:bodyPr@anchor`).
+    fn set_text_anchor(&mut self, target: FloatingObjectTarget, align: &str) -> Result<(), String> {
+        use jade_docx_editor::commands::format_text_box::{
+            FormatTextBoxCommand, TextBoxFormatSpec,
+        };
+        use jade_docx_editor::document::TextBoxVerticalAlignment;
+        let alignment = match align {
+            "top" => TextBoxVerticalAlignment::Top,
+            "bottom" => TextBoxVerticalAlignment::Bottom,
+            _ => TextBoxVerticalAlignment::Center,
+        };
+        self.execute_command(
+            Box::new(FormatTextBoxCommand::new(
+                target,
+                TextBoxFormatSpec {
+                    text_vertical_align: Some(alignment),
+                    ..Default::default()
+                },
+            )),
+            true,
+        )
+    }
+
     /// 挿入 → ワードアート: `text` in a box with no fill or line, in
     /// `style`, at the caret's paragraph.
     fn insert_wordart(

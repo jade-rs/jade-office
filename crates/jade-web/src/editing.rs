@@ -16,7 +16,7 @@ use std::cell::{Cell, RefCell};
 use std::ops::{Range, RangeInclusive};
 use std::rc::Rc;
 
-use jade_docx_editor::canvas_renderer::{CanvasRenderer, CaretAffinity};
+use jade_docx_editor::canvas_renderer::{CanvasRenderer, CaretAffinity, ViewGeometry};
 use jade_docx_editor::commands::{CommandContext, CommandExecutor};
 use jade_docx_editor::headless_api::{
     apply_headless_commands_to_document, apply_headless_commands_with_executor_to_document,
@@ -41,6 +41,7 @@ pub use formatting::{
     Hyperlink, LinkDraft, LinkTarget, ListKind, ParagraphBorders, ParagraphStyle, TableBorders,
     TableCell, TableCommand, WordFind, WordFormatting, WordLinks, WordSession,
 };
+pub use jade_docx_editor::FormattingMarkKinds;
 pub use story::{StoryChange, StoryEdit, WordDoc};
 
 /// Where the caret is drawn: in the document's coordinate space, which
@@ -129,6 +130,16 @@ pub struct EditableDocument {
     field_codes: jade_docx_editor::fields::FieldCodeView,
     /// The clock DATE and TIME show; without one, the result Word saved.
     field_datetime: Option<jade_office_model::word::fields::FieldDateTime>,
+    /// A view's page box and アウトライン's indents: see
+    /// [`Self::set_view_geometry`].
+    view: ViewLayout,
+}
+
+/// What a view other than 印刷レイアウト lays the document out with.
+#[derive(Clone, Default)]
+struct ViewLayout {
+    geometry: Option<ViewGeometry>,
+    indents: Option<Rc<std::collections::HashMap<usize, f64>>>,
 }
 
 impl EditableDocument {
@@ -177,10 +188,10 @@ impl EditableDocument {
         let mut opened = Self::render(
             &word_document,
             &options,
+            &ViewLayout::default(),
             INITIAL_PAGE,
             scale,
-            &fonts,
-            &measurer,
+            (&fonts, &measurer),
             0..0,
         )?;
         let size = opened.renderer.layout_page_size();
@@ -190,10 +201,10 @@ impl EditableDocument {
             opened = Self::render(
                 &word_document,
                 &options,
+                &ViewLayout::default(),
                 size,
                 scale,
-                &fonts,
-                &measurer,
+                (&fonts, &measurer),
                 resident,
             )?;
         } else {
@@ -233,6 +244,7 @@ impl EditableDocument {
             repainted_pages: std::collections::BTreeSet::new(),
             field_codes: Default::default(),
             field_datetime: None,
+            view: ViewLayout::default(),
         })
     }
 
@@ -241,10 +253,10 @@ impl EditableDocument {
     fn render(
         word_document: &WordDocument,
         options: &Options,
+        view: &ViewLayout,
         (width, height): (f64, f64),
         scale: f64,
-        fonts: &Rc<FontBook>,
-        measurer: &Rc<ShapingMeasurer>,
+        (fonts, measurer): (&Rc<FontBook>, &Rc<ShapingMeasurer>),
         resident: Range<usize>,
     ) -> Result<Opened, String> {
         let host = TinySkiaRenderHost::with_resident(
@@ -268,6 +280,8 @@ impl EditableDocument {
         let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
             .map_err(|_| "renderer setup failed".to_string())?;
         renderer.sync_word_document(word_document);
+        renderer.set_view_geometry(view.geometry);
+        renderer.set_outline_indents(view.indents.clone());
         // The shell draws the selection over the pages.
         renderer.set_use_selection_overlay(true);
         Self::paint_every_page(
@@ -1397,6 +1411,116 @@ impl EditableDocument {
         self.options.show_formatting_marks
     }
 
+    /// Shows the formatting marks of some kinds whatever the ¶ toggle says
+    /// (Word のオプション → 表示 → 常に画面に表示する編集記号). Whether
+    /// anything changed.
+    pub fn set_formatting_mark_kinds(
+        &mut self,
+        kinds: jade_docx_editor::FormattingMarkKinds,
+    ) -> Result<bool, String> {
+        if self.options.formatting_mark_kinds() == kinds {
+            return Ok(false);
+        }
+        self.options.set_formatting_mark_kinds(kinds);
+        self.repaint_all()?;
+        Ok(true)
+    }
+
+    /// The kinds shown beside the ¶ toggle.
+    pub fn formatting_mark_kinds(&self) -> jade_docx_editor::FormattingMarkKinds {
+        self.options.formatting_mark_kinds()
+    }
+
+    /// Lays the document out in a view's page box — Web レイアウト's strips
+    /// the width of the window, 閲覧モード's columns, アウトライン's sheet —
+    /// or, with `None`, in its sections' pages again: everything laid out
+    /// anew, the pages' surfaces sized to the box. Whether it changed.
+    pub fn set_view_geometry(&mut self, geometry: Option<ViewGeometry>) -> Result<bool, String> {
+        if self.view.geometry == geometry {
+            return Ok(false);
+        }
+        self.view.geometry = geometry;
+        self.renderer.set_view_geometry(geometry);
+        self.repaint_all()?;
+        Ok(true)
+    }
+
+    /// The view's page box, while one is set.
+    pub fn view_geometry(&self) -> Option<ViewGeometry> {
+        self.view.geometry
+    }
+
+    /// Lays the document out again from `docx` — a change made to the
+    /// package as a whole (互換モードの変換, a template attached or detached,
+    /// pictures compressed, a layout option) — keeping the view's page box,
+    /// the marks and the paper, the pages it keeps as pixels and the caret
+    /// where it can. The undo history starts afresh; the document is
+    /// unsaved.
+    pub fn reload(&mut self, docx: &[u8]) -> Result<(), String> {
+        let resident = self.resident.borrow().clone();
+        let caret = self.caret();
+        let mut fresh = Self::open_resident(
+            docx,
+            self.scale,
+            Rc::clone(&self.fonts),
+            Rc::clone(&self.measurer),
+            resident,
+        )?;
+        fresh.dirty = true;
+        fresh.field_codes = self.field_codes.clone();
+        fresh.field_datetime = self.field_datetime;
+        fresh.options.show_formatting_marks = self.options.show_formatting_marks;
+        fresh
+            .options
+            .set_formatting_mark_kinds(self.options.formatting_mark_kinds());
+        let dark = self.dark_paper.get();
+        let view = self.view.clone();
+        *self = fresh;
+        if view.geometry.is_some() {
+            self.set_view_geometry(view.geometry)?;
+        }
+        if view.indents.is_some() {
+            self.set_outline_indents(view.indents.map(|indents| (*indents).clone()))?;
+        }
+        if dark {
+            self.set_dark_paper(true)?;
+        } else {
+            self.repaint_all()?;
+        }
+        if let Some((paragraph, offset)) = caret {
+            let paragraph = paragraph.min(self.paragraph_count().saturating_sub(1));
+            let length = self.paragraph_text(paragraph).map_or(0, |text| text.len());
+            self.place_caret(paragraph, offset.min(length));
+        }
+        Ok(())
+    }
+
+    /// The page setup of the section page `page` (0-based) is in: what
+    /// 下書き and 余白を表示しない cut each page to.
+    pub fn page_section_layout(
+        &self,
+        page: usize,
+    ) -> jade_docx_headless_api::HeadlessSectionLayout {
+        let section = self.renderer.section_index_for_zero_based_page(page);
+        self.word_document.section_layout(Some(section))
+    }
+
+    /// アウトライン: each paragraph set in by its outline level (CSS px
+    /// from the margin), or `None` for its own indents. Whether it changed.
+    pub fn set_outline_indents(
+        &mut self,
+        indents: Option<std::collections::HashMap<usize, f64>>,
+    ) -> Result<bool, String> {
+        let indents = indents.map(Rc::new);
+        if self.view.indents == indents {
+            return Ok(false);
+        }
+        self.view.indents = indents.clone();
+        self.renderer.set_outline_indents(indents);
+        self.repaint_all()?;
+        Ok(true)
+    }
+
     /// The top-level body elements collapsed headings hide.
     pub fn collapsed_blocks(&self) -> &[usize] {
         self.options.collapsed_blocks()
@@ -1526,10 +1650,10 @@ impl EditableDocument {
         let Opened { renderer, host } = Self::render(
             &self.word_document,
             &self.options,
+            &self.view,
             size,
             self.scale,
-            &self.fonts,
-            &self.measurer,
+            (&self.fonts, &self.measurer),
             resident,
         )?;
         let dark = self.dark_paper.get();
