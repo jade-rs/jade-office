@@ -268,6 +268,14 @@ impl DocumentView {
                         ReviewAction::ProofingMarks,
                         cx,
                     ),
+                    tools::text_button(
+                        "review-thesaurus",
+                        "thesaurus.button",
+                        "thesaurus.tooltip",
+                        self.review.thesaurus.is_some(),
+                        ReviewAction::Thesaurus,
+                        cx,
+                    ),
                 ])],
             )
             .into_any_element(),

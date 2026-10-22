@@ -39,6 +39,7 @@ mod word_immersive;
 mod word_inspect;
 mod word_read_aloud;
 mod word_signatures;
+mod word_thesaurus;
 mod word_review;
 pub(crate) mod word_setup;
 mod word_story;
@@ -409,6 +410,8 @@ enum Document {
         read_aloud: Option<Box<word_read_aloud::WebReading>>,
         /// イマーシブ リーダー, while it is open.
         immersive: Option<Box<word_immersive::WebImmersive>>,
+        /// 類義語辞典, while it is open.
+        thesaurus: Option<Box<word_thesaurus::WebThesaurus>>,
         /// The picture or shape last pressed on, and the drag moving or
         /// resizing it while the button is down.
         object: Option<ObjectGrab>,
@@ -572,6 +575,7 @@ impl DocView {
                     )),
                     read_aloud: None,
                     immersive: None,
+                    thesaurus: None,
                     object: None,
                     tables: Box::default(),
                     pages: (0..opened.page_count())
@@ -1772,6 +1776,7 @@ impl DocView {
             object,
             read_aloud,
             immersive,
+            thesaurus,
             ..
         } = &mut self.document
         else {
@@ -1819,6 +1824,7 @@ impl DocView {
                         signatures_pane: protection.signatures_pane,
                         reading: read_aloud.is_some(),
                         immersive: immersive.is_some(),
+                        thesaurus: thesaurus.is_some(),
                         side_by_side: side.on,
                         sync_scroll: side.sync,
                         markup: (**markup).clone(),
@@ -1905,6 +1911,7 @@ impl DocView {
         let revisions_pane = self.revisions_pane(cx);
         let restrict_pane = self.restrict_pane(cx);
         let signatures_pane = self.signatures_pane(cx);
+        let thesaurus_pane = self.thesaurus_pane(cx);
         let inspect_pane = self.inspect_pane(cx);
         let read_only_bar = self.read_only_bar(cx);
         let find_bar = self.find_bar_element(cx);
@@ -2220,6 +2227,7 @@ impl DocView {
             .children(revisions_pane)
             .children(restrict_pane)
             .children(signatures_pane)
+            .children(thesaurus_pane)
             .children(inspect_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)

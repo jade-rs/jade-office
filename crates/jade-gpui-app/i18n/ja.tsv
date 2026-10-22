@@ -1592,3 +1592,9 @@ sign.line.signer	署名者
 sign.line.title_field	署名者の役職
 sign.line.email	電子メール
 sign.line.instructions	署名者への説明
+thesaurus.button	類義語辞典
+thesaurus.tooltip	類義語辞典: 選択した単語の類義語を表示します
+thesaurus.title	類義語辞典
+thesaurus.insert	挿入
+thesaurus.none	類義語は見つかりませんでした。
+thesaurus.no_word	単語を選択するか、単語の中にカーソルを置いてください。

@@ -1592,3 +1592,9 @@ sign.line.signer	Suggested signer
 sign.line.title_field	Suggested signer's title
 sign.line.email	E-mail
 sign.line.instructions	Instructions to the signer
+thesaurus.button	Thesaurus
+thesaurus.tooltip	Thesaurus: show words with a similar meaning to the selected word
+thesaurus.title	Thesaurus
+thesaurus.insert	Insert
+thesaurus.none	No synonyms were found.
+thesaurus.no_word	Select a word, or put the cursor in one.

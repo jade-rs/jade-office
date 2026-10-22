@@ -45,6 +45,7 @@ mod word_signatures;
 mod word_revisions;
 mod word_story;
 mod word_table;
+mod word_thesaurus;
 mod workbook;
 mod workspace;
 
@@ -4351,6 +4352,7 @@ impl Render for DocumentView {
         let accessibility_pane = word_accessibility::pane(self, cx);
         let inspect_pane = word_inspect::pane(self, cx);
         let signatures_pane = word_signatures::pane(self, cx);
+        let thesaurus_pane = word_thesaurus::pane(self, cx);
         let revisions_pane = word_revisions::pane(self, cx);
         let restrict_pane = word_protection::pane(self, cx);
         let read_only_bar = word_protection::banner(self, cx);
@@ -4654,6 +4656,7 @@ impl Render for DocumentView {
             .children(accessibility_pane)
             .children(inspect_pane)
             .children(signatures_pane)
+            .children(thesaurus_pane)
             .children(revisions_pane)
             .children(restrict_pane)
             .children(proofing_menu)
