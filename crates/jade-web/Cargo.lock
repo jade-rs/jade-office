@@ -931,8 +931,8 @@ dependencies = [
 name = "jade-doc-writer"
 version = "0.1.0"
 dependencies = [
- "cfb",
  "jade-docx-convert",
+ "jade-opc",
 ]
 
 [[package]]
