@@ -32,6 +32,7 @@ use jade_selection::{SelectionRange, TextPosition};
 pub mod accessibility;
 pub mod asian;
 pub mod autocorrect;
+pub mod borders;
 pub mod building_blocks;
 pub mod clipboard;
 pub mod compare;

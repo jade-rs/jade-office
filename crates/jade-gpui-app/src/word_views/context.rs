@@ -105,6 +105,7 @@ pub fn run(view: &mut DocumentView, command: ContextCommand, cx: &mut Context<Do
         C::PasteTextOnly => {
             return crate::word_characters::paste_with(view, PasteMode::TextOnly, cx)
         }
+        C::PasteSpecial => Action::Characters(crate::word_characters::CharAction::OpenPasteSpecial),
         C::Font => return crate::word_characters::open_font_dialog(view, cx),
         C::Paragraph => return view.open_paragraph_dialog(cx),
         C::Bullets => Action::List(true),

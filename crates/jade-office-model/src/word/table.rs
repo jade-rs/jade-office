@@ -224,8 +224,33 @@ impl Default for Pen {
 }
 
 impl Pen {
-    pub const STYLES: [&'static str; 8] = [
-        "single", "dotted", "dashed", "dotDash", "double", "triple", "thick", "wave",
+    /// Word's line list (every `ST_Border` line style) and `thick`.
+    pub const STYLES: [&'static str; 25] = [
+        "single",
+        "dotted",
+        "dashSmallGap",
+        "dashed",
+        "dotDash",
+        "dotDotDash",
+        "double",
+        "triple",
+        "thick",
+        "thinThickSmallGap",
+        "thickThinSmallGap",
+        "thinThickThinSmallGap",
+        "thinThickMediumGap",
+        "thickThinMediumGap",
+        "thinThickThinMediumGap",
+        "thinThickLargeGap",
+        "thickThinLargeGap",
+        "thinThickThinLargeGap",
+        "wave",
+        "doubleWave",
+        "dashDotStroked",
+        "threeDEmboss",
+        "threeDEngrave",
+        "outset",
+        "inset",
     ];
     pub const WIDTHS: [f32; 9] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.25, 3.0, 4.5, 6.0];
 

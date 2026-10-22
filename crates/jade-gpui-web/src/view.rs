@@ -33,6 +33,7 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 mod deck;
 mod sheet;
 pub(crate) mod word_characters;
+mod word_context_menu;
 pub(crate) mod word_controls;
 mod word_dialogs;
 pub(crate) mod word_download;
@@ -568,6 +569,8 @@ pub struct DocView {
     /// whether its command is running now.
     preview: Option<word_preview::Preview>,
     previewing: bool,
+    /// The right-click menu over a Word page, while it is open.
+    word_menu: Option<word_context_menu::WordMenu>,
 }
 
 impl DocView {
@@ -784,6 +787,7 @@ impl DocView {
             draw: Default::default(),
             preview: None,
             previewing: false,
+            word_menu: None,
         })
     }
 
@@ -2275,6 +2279,7 @@ impl DocView {
         .into_iter();
         let page_dialog = self.page_dialog_element(cx);
         let hyphenation_dialog = self.hyphenation_dialog_element(cx);
+        let word_menu = self.word_menu_element(cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
         let mut control_overlays = match &self.document {
@@ -2424,6 +2429,12 @@ impl DocView {
                             view.page_mouse_down(index, event, window, cx)
                         }),
                     )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |view, event, window, cx| {
+                            view.page_right_click(index, event, window, cx)
+                        }),
+                    )
                     .child(div().w(px(width)).h(px(height)).child(page.element()))
                     // The selection, over the picture, in the renderer's own
                     // fill and edges.
@@ -2541,6 +2552,7 @@ impl DocView {
             .size_full()
             .flex()
             .bg(palette::window())
+            .children(word_menu)
             .children(navigation)
             .child(
                 div()

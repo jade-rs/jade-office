@@ -27,6 +27,8 @@ pub enum ContextCommand {
     PasteKeepSource,
     PasteMerge,
     PasteTextOnly,
+    /// 形式を選択して貼り付け….
+    PasteSpecial,
     Font,
     Paragraph,
     /// 箇条書きと段落番号.
@@ -140,6 +142,7 @@ pub fn menu(target: ContextTarget) -> Vec<ContextEntry> {
         Item("context.paste_keep", C::PasteKeepSource),
         Item("context.paste_merge", C::PasteMerge),
         Item("context.paste_text", C::PasteTextOnly),
+        Item("context.paste_special", C::PasteSpecial),
         Separator,
     ]);
     if target.field {

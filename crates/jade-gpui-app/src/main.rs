@@ -67,6 +67,8 @@ mod word_review_tools;
 mod word_revisions;
 mod word_ruler;
 mod word_save_options;
+#[cfg(test)]
+mod word_shortcut_tests;
 mod word_signatures;
 mod word_story;
 mod word_styles;
@@ -161,6 +163,13 @@ actions!(
         AlignLeft,
         AlignCenter,
         AlignRight,
+        AlignJustify,
+        Bullets,
+        Subscript,
+        Superscript,
+        InsertPageBreak,
+        InsertColumnBreak,
+        FontSizeDialog,
         IndentMore,
         IndentLess,
         InsertTableRow,
@@ -216,7 +225,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         // they work from the start window and from every view.
         KeyBinding::new("cmd-n", NewDocument, None),
         // Word for Mac's 新規テンプレートから.
-        KeyBinding::new("cmd-shift-p", NewFromTemplate, None),
+        // ⇧⌘P is the font size in a Word document (Word for Mac).
+        KeyBinding::new("cmd-alt-n", NewFromTemplate, None),
         KeyBinding::new("cmd-o", Open, None),
         KeyBinding::new("cmd-w", CloseWindow, None),
         KeyBinding::new("cmd-shift-o", OpenFolder, None),
@@ -259,7 +269,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("pagedown", NextPage, CONTEXT),
         KeyBinding::new("pageup", PreviousPage, CONTEXT),
         KeyBinding::new("cmd-f", FindAndReplace, CONTEXT),
-        KeyBinding::new("cmd-e", FindSelection, CONTEXT),
+        // ⌘E is Word for Mac's 中央揃え; Find Selection moves aside.
+        KeyBinding::new("ctrl-cmd-e", FindSelection, CONTEXT),
         KeyBinding::new("cmd-g", FindNext, CONTEXT),
         // Word for Mac's ⌃H: ⌥⌘F is 脚注の挿入 there.
         KeyBinding::new("ctrl-h", Replace, CONTEXT),
@@ -267,12 +278,26 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-b", Bold, CONTEXT),
         KeyBinding::new("cmd-i", Italic, CONTEXT),
         KeyBinding::new("cmd-u", Underline, CONTEXT),
-        KeyBinding::new("cmd-shift-l", AlignLeft, CONTEXT),
-        KeyBinding::new("cmd-shift-e", AlignCenter, CONTEXT),
-        KeyBinding::new("cmd-shift-r", AlignRight, CONTEXT),
+        // Word for Mac's paragraph keys: ⌘L / ⌘E / ⌘R / ⌘J align, ⇧⌘L
+        // bullets (箇条書き), ⇧⌘E track changes, ⌘= / ⇧⌘= sub- and
+        // superscript, ⇧⌘↩ column break, ⇧⌘P font size.
+        KeyBinding::new("cmd-l", AlignLeft, CONTEXT),
+        KeyBinding::new("cmd-e", AlignCenter, CONTEXT),
+        KeyBinding::new("cmd-r", AlignRight, CONTEXT),
+        KeyBinding::new("cmd-j", AlignJustify, CONTEXT),
+        KeyBinding::new("cmd-shift-l", Bullets, CONTEXT),
+        KeyBinding::new("cmd-shift-e", ToggleChangeTracking, CONTEXT),
+        KeyBinding::new("cmd-=", Subscript, CONTEXT),
+        KeyBinding::new("cmd-shift-=", Superscript, CONTEXT),
+        KeyBinding::new("cmd-+", Superscript, CONTEXT),
+        KeyBinding::new("cmd-shift-enter", InsertColumnBreak, CONTEXT),
+        // ⌘↩ (改ページ) is bound so the 挿入 menu shows it; the key handler
+        // does the same for a view without the bindings.
+        KeyBinding::new("cmd-enter", InsertPageBreak, CONTEXT),
+        KeyBinding::new("cmd-shift-p", FontSizeDialog, CONTEXT),
         KeyBinding::new("cmd-]", IndentMore, CONTEXT),
         KeyBinding::new("cmd-[", IndentLess, CONTEXT),
-        KeyBinding::new("cmd-shift-enter", InsertTableRow, CONTEXT),
+        KeyBinding::new("cmd-alt-enter", InsertTableRow, CONTEXT),
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
         KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
@@ -299,8 +324,9 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-shift-d", InsertDateTime, CONTEXT),
         // Zoom belongs to the workspace, which steps whichever editor is in
         // front, so these work in every kind of tab.
-        KeyBinding::new("cmd-=", ZoomIn, None),
-        KeyBinding::new("cmd--", ZoomOut, None),
+        // ⌘= is Word's subscript, so zoom is on ⌥⌘= / ⌥⌘-.
+        KeyBinding::new("cmd-alt-=", ZoomIn, None),
+        KeyBinding::new("cmd-alt--", ZoomOut, None),
         KeyBinding::new("cmd-0", ZoomActual, None),
         KeyBinding::new("cmd-9", ZoomFit, None),
         // Word's field keys: ⌘F9 a new field, F9 update, ⌥F9 every code,
@@ -423,6 +449,11 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.format.align_left"), AlignLeft),
                 MenuItem::action(t("menu.format.center"), AlignCenter),
                 MenuItem::action(t("menu.format.align_right"), AlignRight),
+                MenuItem::action(t("menu.format.justify"), AlignJustify),
+                MenuItem::action(t("menu.format.bullets"), Bullets),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.format.subscript"), Subscript),
+                MenuItem::action(t("menu.format.superscript"), Superscript),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.indent_more"), IndentMore),
                 MenuItem::action(t("menu.format.indent_less"), IndentLess),
@@ -433,28 +464,24 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.format.paste_format"), PasteFormat),
             ],
         },
+        // One 挿入 menu, as Word for Mac has.
         Menu {
             name: t("menu.insert").into(),
             items: vec![
+                MenuItem::action(t("menu.insert.page_break"), InsertPageBreak),
+                MenuItem::action(t("menu.insert.column_break"), InsertColumnBreak),
+                MenuItem::separator(),
                 MenuItem::action(t("menu.insert.hyperlink"), InsertHyperlink),
+                MenuItem::action(t("bookmark.menu"), word_references::InsertBookmark),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.insert.footnote"), InsertFootnote),
                 MenuItem::action(t("menu.insert.endnote"), InsertEndnote),
-                MenuItem::action(t("bookmark.menu"), word_references::InsertBookmark),
                 MenuItem::action(t("index.mark.menu"), word_references::MarkIndexEntry),
                 MenuItem::action(t("toa.mark.menu"), word_references::MarkCitation),
-            ],
-        },
-        Menu {
-            name: t("menu.insert").into(),
-            items: vec![
+                MenuItem::separator(),
                 MenuItem::action(t("menu.insert.symbol"), InsertSymbol),
                 MenuItem::action(t("menu.insert.date_time"), InsertDateTime),
-            ],
-        },
-        Menu {
-            name: t("menu.insert").into(),
-            items: vec![
+                MenuItem::separator(),
                 MenuItem::action(t("menu.insert.field"), InsertField),
                 MenuItem::action(t("menu.insert.edit_field"), EditField),
                 MenuItem::separator(),
@@ -2362,7 +2389,16 @@ impl DocumentView {
                             t("doc.page_break"),
                             false,
                             cx,
-                            |view, cx| view.insert_blank_page(cx),
+                            // 改ページ: a page break at the caret. 空白のページ
+                            // stays under 挿入.
+                            |view, cx| {
+                                view.run_ribbon(
+                                    Action::Setup(word_page_setup::SetupAction::Break(
+                                        jade_office_model::word::page_setup::PageBreak::Page,
+                                    )),
+                                    cx,
+                                )
+                            },
                         )
                         .into_any_element()])],
                 )
@@ -4671,6 +4707,39 @@ impl Render for DocumentView {
             .on_action(cx.listener(|view, _: &AlignRight, _window, cx| {
                 view.run_ribbon(Action::Align("right"), cx)
             }))
+            .on_action(cx.listener(|view, _: &AlignJustify, _window, cx| {
+                view.run_ribbon(Action::Align("both"), cx)
+            }))
+            .on_action(
+                cx.listener(|view, _: &Bullets, _window, cx| {
+                    view.run_ribbon(Action::List(true), cx)
+                }),
+            )
+            .on_action(cx.listener(|view, _: &Subscript, _window, cx| {
+                view.run_ribbon(Action::Toggle(CharacterFormat::Subscript), cx)
+            }))
+            .on_action(cx.listener(|view, _: &Superscript, _window, cx| {
+                view.run_ribbon(Action::Toggle(CharacterFormat::Superscript), cx)
+            }))
+            .on_action(cx.listener(|view, _: &InsertPageBreak, _window, cx| {
+                view.run_ribbon(
+                    Action::Setup(word_page_setup::SetupAction::Break(
+                        jade_office_model::word::page_setup::PageBreak::Page,
+                    )),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|view, _: &InsertColumnBreak, _window, cx| {
+                view.run_ribbon(
+                    Action::Setup(word_page_setup::SetupAction::Break(
+                        jade_office_model::word::page_setup::PageBreak::Column,
+                    )),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|view, _: &FontSizeDialog, _window, cx| {
+                word_characters::open_font_dialog(view, cx)
+            }))
             .on_action(cx.listener(|view, _: &IndentMore, _window, cx| {
                 view.run_ribbon(Action::Indent(true), cx)
             }))
@@ -6550,14 +6619,7 @@ mod tests {
             })
             .collect();
 
-        for reserved in [
-            "escape",
-            "tab",
-            "enter",
-            "shift-enter",
-            "cmd-enter",
-            "backspace",
-        ] {
+        for reserved in ["escape", "tab", "enter", "shift-enter", "backspace"] {
             let keystrokes = gpui::KeyBinding::new(reserved, super::Save, None)
                 .keystrokes()
                 .iter()

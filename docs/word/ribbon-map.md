@@ -168,7 +168,7 @@ jade has no ink model; "Draw" in jade is only the table pencil and eraser
 | Arrange › Bring Forward, Send Backward, Selection Pane, Align, Group, Rotate | – | – | — |
 
 The native Layout tab's "Page Break" button (`doc.page_break`) inserts a
-blank page (`insert_blank_page`), not a page break.
+page break at the caret; 空白のページ stays under 挿入.
 
 ## References
 
@@ -314,8 +314,8 @@ and Alt key tips instead. jade's native shell has a macOS menu bar
 | File | New Document ⌘N, New from Template… ⇧⌘P, Open… ⌘O, Open Folder… ⇧⌘O, Close Tab ⌘W, Save ⌘S, Save As… ⇧⌘S, Print… ⌘P, Export as PDF… ⌥⌘P |
 | Edit | Undo, Redo, Cut, Copy, Paste, Paste Special… ⌃⌘V, Paste and Match Formatting ⌥⇧⌘V, Select All, Select Paragraph ⌥⌘A, Find and Replace… ⌘F, Find Selection ⌘E, Find Next ⌘G, Replace… ⌃H, Replace All ⌥⇧⌘F, Advanced Find and Replace… ⌥⇧⌘H, Go To ⌥⌘G |
 | Format | Bold, Italic, Underline, Font… ⌘D, Asian Typography… ⌥⇧⌘K, Align Left/Center/Right, Increase/Decrease Indent, Paragraph… ⌥⌘M, Copy/Paste Formatting |
-| Insert (two menus of the same name) | Link… ⌘K, Footnote ⌥⌘F, Endnote ⌥⌘D · Symbol… ⌥⇧⌘S, Date and Time… ⌃⇧D |
-| Table | Insert Row Below ⇧⌘↩, Delete Row ⇧⌘⌫ |
+| Insert (one menu) | Page Break ⌘↩, Column Break ⇧⌘↩, Link… ⌘K, Bookmark, Footnote ⌥⌘F, Endnote ⌥⌘D, index and citation marks, Symbol… ⌥⇧⌘S, Date and Time… ⌃⇧D, the field commands |
+| Table | Insert Row Below ⌥⌘↩, Delete Row ⇧⌘⌫ |
 | Review | Add Comment ⌘M, Track Changes ⇧⌘T |
 | Tools | AutoCorrect… ⌃⌥⌘A, Word Options… ⌘, (View: marks by kind; Edit: overtype, Insert key, paste defaults; Ribbon & Toolbar: tabs, Quick Access Toolbar, a custom group), Overtype (Insert) |
 | View | Explorer ⌥⌘E, Details Panel ⌥⌘I, Appearance (System, Light, Dark, Dark Pages, toggle), Next/Previous Page, Zoom In/Out/Actual Size/Fit |
@@ -380,19 +380,19 @@ command:
 
 | Action | Word Win | Word Mac | jade N | jade B | Note |
 |---|---|---|---|---|---|
-| Align left / center / right | Ctrl+L / E / R | ⌘L / E / R | ⇧⌘L / ⇧⌘E / ⇧⌘R | – | jade keeps ⌘E for Find Selection (macOS convention) |
-| Justify | Ctrl+J | ⌘J | – | – | |
-| Bullets | Ctrl+Shift+L | ⌘⇧L | – (⇧⌘L = align left) | – | collision |
-| Track Changes | Ctrl+Shift+E | ⌘⇧E | ⇧⌘T (⇧⌘E = center) | – | collision |
+| Align left / center / right | Ctrl+L / E / R | ⌘L / E / R | ⌘L / ⌘E / ⌘R | – | Find Selection moved to ⌃⌘E |
+| Justify | Ctrl+J | ⌘J | ⌘J | – | |
+| Bullets | Ctrl+Shift+L | ⌘⇧L | ⇧⌘L | – | |
+| Track Changes | Ctrl+Shift+E | ⌘⇧E | ⇧⌘E, ⇧⌘T | – | |
 | New Comment | Ctrl+Alt+M | ⌘⌥A | ⌘M | – | |
 | Insert Endnote | Ctrl+Alt+D | ⌘⌥E | ⌥⌘D | ⌥⌘D | jade follows the Windows letter |
-| Subscript / Superscript | Ctrl+= / Ctrl+Shift+= | ⌘= / ⌘⇧= | – (⌘= zooms in) | – | collision |
-| Column break | Ctrl+Shift+Enter | ⌘⇧↩ | – (⇧⌘↩ inserts a table row) | – | collision |
+| Subscript / Superscript | Ctrl+= / Ctrl+Shift+= | ⌘= / ⌘⇧= | ⌘= / ⇧⌘= | – | zoom is ⌥⌘= / ⌥⌘- |
+| Column break | Ctrl+Shift+Enter | ⌘⇧↩ | ⇧⌘↩ | – | Insert Row Below is ⌥⌘↩ |
 | Redo | Ctrl+Y | ⌘Y | ⇧⌘Z | ⇧⌘Z, ⌘Y | |
 | Go To | Ctrl+G / F5 | ⌘⌥G | – (⌘G = Find Next) | ⌘G in find bar | |
 | Indent / outdent | Ctrl+M / Ctrl+Shift+M | not verified | ⌘] / ⌘[ | – | |
 | Date field | Alt+Shift+D | ⌃⇧D | ⌃⇧D opens the dialog | – | Word inserts the field directly |
-| Font size box | Ctrl+Shift+P | ⌘⇧P | – (⇧⌘P = New from Template) | – | |
+| Font size box | Ctrl+Shift+P | ⌘⇧P | ⇧⌘P opens the Font dialog | – | New from Template is ⌥⌘N |
 | Grow / shrink font | Ctrl+Shift+> / < | ⌘⇧> / < | – | – | |
 | Show ¶ | Ctrl+Shift+8 | ⌘8 | – | – | |
 | Line spacing 1 / 2 / 1.5 | Ctrl+1 / 2 / 5 | ⌘1 / 2 / 5 | – | – | |
@@ -439,9 +439,12 @@ same commands.
   Picture/Shape Format tabs.
 - No Bookmark, Cross-reference, Caption, Index, Citation buttons although
   the engine has commands for several.
-- No right-click menus in the browser (the native shell has them).
-- Shortcut collisions with Word: ⇧⌘L, ⇧⌘E, ⌘=, ⇧⌘↩, ⇧⌘P; Word's own
-  shortcuts for justify, headings, line spacing, ¶, grow/shrink font, clear
-  formatting and field keys are unbound.
-- The native menu bar has two menus named Insert; the native Layout tab's
-  "Page Break" inserts a blank page.
+- Right-click menus: text, table, picture, shape, header and footer, a link
+  and a field, from one list
+  (`crates/jade-office-model/src/word/context_menu.rs`) drawn by
+  `crates/jade-gpui-app/src/word_views/context.rs` and
+  `crates/jade-gpui-web/src/view/word_context_menu.rs` — the browser leaves
+  Paste to ⌘V and the field and link items to the native shell). No Bring
+  Forward / Send Backward items yet.
+- Word's own shortcuts for headings, line spacing, ¶, grow/shrink font and
+  clear formatting are unbound.

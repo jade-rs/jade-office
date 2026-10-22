@@ -156,3 +156,61 @@ fn macro_decks_and_templates_open_edit_and_save_whole() {
         assert!(Deck::open(&saved, backend()).is_ok());
     }
 }
+
+const DOCUMENT_MAIN: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    let mut future = std::pin::pin!(future);
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    loop {
+        if let std::task::Poll::Ready(value) = future.as_mut().poll(&mut context) {
+            return value;
+        }
+    }
+}
+
+/// `.docm` / `.dotm` / `.dotx`: Word opens, edits and saves them with the
+/// VBA project untouched and never run.
+#[test]
+fn macro_documents_and_templates_open_edit_and_save_whole() {
+    use jade_docx_editor::word_document::WordDocument;
+    use jade_docx_editor::Options;
+    use jade_docx_headless_api::{HeadlessCommand, HeadlessEditRequest};
+    for (to, vba) in [
+        (
+            "application/vnd.ms-word.document.macroEnabled.main+xml",
+            Some("word/vbaProject.bin"),
+        ),
+        (
+            "application/vnd.ms-word.template.macroEnabledTemplate.main+xml",
+            Some("word/vbaProject.bin"),
+        ),
+        (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml",
+            None,
+        ),
+    ] {
+        let bytes = variant("hello.docx", DOCUMENT_MAIN, to, vba, "word/document.xml");
+        let mut document = block_on(WordDocument::load(&bytes, &Options::default()))
+            .unwrap_or_else(|error| panic!("{to}: {error:?}"));
+        jade_docx_editor::headless_api::apply_headless_commands_to_document(
+            &mut document,
+            &HeadlessEditRequest {
+                commands: vec![HeadlessCommand::InsertText {
+                    paragraph: 0,
+                    offset: 0,
+                    text: "マクロ".to_string(),
+                }],
+            },
+        )
+        .unwrap();
+        let saved = document.export_docx().unwrap();
+        assert_kept(&saved, to, vba);
+        let reopened = block_on(WordDocument::load(&saved, &Options::default())).unwrap();
+        let body = reopened.export_docx().unwrap();
+        let package = OpcPackage::open(&body).unwrap();
+        let xml = package.part_str("word/document.xml").unwrap().unwrap();
+        assert!(xml.contains("マクロ"), "{to}: the edit is lost");
+    }
+}
