@@ -16,6 +16,7 @@ mod color;
 mod enclose;
 mod font;
 mod insert;
+mod paste;
 mod ribbon;
 mod ruby;
 mod typography;
@@ -33,7 +34,8 @@ use jade_web::word::typography::WordTypography;
 use crate::view::DocView as DocumentView;
 use crate::{i18n, palette as theme};
 
-pub use ribbon::{font_color_menu, font_family_menu, font_row, insert_group};
+pub use paste::{open as open_paste_special, paste_with};
+pub use ribbon::{font_color_menu, font_family_menu, font_row, insert_group, paste_options};
 
 /// The lists the font group's third row drops.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +43,8 @@ pub enum CharPopup {
     ChangeCase,
     Underline,
     AsianLayout,
+    /// The ▾ beside 貼り付け.
+    PasteOptions,
 }
 
 /// What the third row, the colour menus and the dialogs' launchers do.
@@ -76,6 +80,10 @@ pub enum CharAction {
     OpenRuby,
     /// 囲い文字….
     OpenEnclose,
+    /// 貼り付けのオプション: the clipboard pasted in one of its modes.
+    Paste(jade_web::word::clipboard::PasteMode),
+    /// 形式を選択して貼り付け….
+    OpenPasteSpecial,
 }
 
 /// The open dialog.
@@ -93,6 +101,8 @@ pub enum Dialog {
     Ruby(ruby::RubyState),
     /// 囲い文字.
     Enclose(enclose::EncloseDialog),
+    /// 形式を選択して貼り付け.
+    PasteSpecial(paste::PasteSpecial),
 }
 
 /// The lists a dialog drops over itself.
@@ -227,6 +237,8 @@ pub fn run(view: &mut DocumentView, action: CharAction, cx: &mut Context<Documen
         CharAction::OpenDateTime => return insert::open_date_time(view, cx),
         CharAction::OpenRuby => return ruby::open(view, cx),
         CharAction::OpenEnclose => return enclose::open(view, cx),
+        CharAction::Paste(mode) => return paste::paste_with(view, mode, cx),
+        CharAction::OpenPasteSpecial => return paste::open(view, cx),
         CharAction::MoreFontColors => {
             let current = view
                 .word_ref()
@@ -307,6 +319,7 @@ pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         Dialog::DateTime(dialog) => return insert::confirm_date_time(view, dialog, cx),
         Dialog::Ruby(state) => return ruby::confirm(view, state, cx),
         Dialog::Enclose(dialog) => return enclose::confirm(view, dialog, typed.text, cx),
+        Dialog::PasteSpecial(dialog) => return paste::confirm(view, dialog, cx),
         Dialog::Color(dialog) => match dialog.back {
             // From the フォント dialog: back to it, with the colour chosen.
             Some(mut font) => {
@@ -398,6 +411,7 @@ pub fn overlay(
         Dialog::DateTime(_) => insert::date_time_body(view, cx),
         Dialog::Ruby(_) => ruby::body(view, cx),
         Dialog::Enclose(_) => enclose::body(view, cx),
+        Dialog::PasteSpecial(_) => paste::body(view, cx),
     };
     let title = match view.characters.dialog.as_ref()? {
         Dialog::Font(_) => i18n::text("chars.font.title"),
@@ -407,6 +421,7 @@ pub fn overlay(
         Dialog::DateTime(_) => i18n::text("chars.date.title"),
         Dialog::Ruby(_) => i18n::text("chars.ruby.title"),
         Dialog::Enclose(_) => i18n::text("chars.enclose.title"),
+        Dialog::PasteSpecial(_) => i18n::text("chars.paste.title"),
     };
     let viewport = window.viewport_size();
     Some(
