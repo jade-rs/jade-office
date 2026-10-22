@@ -3348,3 +3348,7 @@ menu.insert.column_break	Column Break
 context.paste_special	Paste Special...
 # Browser shell: Word ports (header/footer, fields, paste, tools, objects)
 objects.draw	Draw
+# Browser shell: Word views, options and files (word-web-port-2)
+modes.read_only	The document cannot be changed while viewing
+outline.group.level	Level
+views.group.options	Options

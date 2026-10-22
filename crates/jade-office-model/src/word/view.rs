@@ -5,6 +5,7 @@
 //! Lengths come in points (as the section's page setup has them) and go out
 //! in CSS pixels, the unit the pages are laid out and drawn in.
 
+use jade_docx_editor::canvas_renderer::ViewGeometry;
 use jade_docx_headless_api::HeadlessSectionLayout;
 
 use super::xml::Document;
@@ -141,6 +142,169 @@ pub fn page_at_scroll(
         row * per_row.max(1)
     };
     page.min(page_count - 1)
+}
+
+/// Web レイアウト's strips: each this tall, closing up one under another.
+pub const WEB_STRIP_HEIGHT: f64 = 1600.0;
+/// Web レイアウト's text's distance from the window's sides.
+pub const WEB_MARGIN: f64 = 24.0;
+/// 閲覧モード's room round a column, and between two.
+pub const READ_MARGIN: f64 = 48.0;
+pub const READ_GAP: f32 = 32.0;
+/// The widest a column of 閲覧モード reads comfortably at.
+pub const READ_MAX_COLUMN: f64 = 760.0;
+
+/// The page box view `kind` lays the document out in, for a window `area`
+/// wide and high at `zoom`: Web レイアウト's strips as wide as the window,
+/// 閲覧モード's screen-sized columns (two side by side when they fit).
+/// `None` for the views that keep the sections' pages.
+pub fn view_geometry(kind: ViewKind, area: (f32, f32), zoom: f32) -> Option<ViewGeometry> {
+    let zoom = f64::from(zoom.max(0.1));
+    let width = f64::from(area.0) / zoom;
+    let height = f64::from(area.1) / zoom;
+    match kind {
+        ViewKind::Web => Some(ViewGeometry {
+            page_width: (width - 2.0 * f64::from(PAGE_PADDING) / zoom)
+                .max(240.0)
+                .floor(),
+            page_height: WEB_STRIP_HEIGHT,
+            margin_top: 0.0,
+            margin_right: WEB_MARGIN,
+            margin_bottom: 0.0,
+            margin_left: WEB_MARGIN,
+            hide_page_chrome: true,
+        }),
+        ViewKind::Read => {
+            let room = width - 2.0 * f64::from(PAGE_PADDING) / zoom;
+            let two = room >= 2.0 * 520.0;
+            let column = if two {
+                ((room - f64::from(READ_GAP) / zoom) / 2.0).min(READ_MAX_COLUMN)
+            } else {
+                room.min(READ_MAX_COLUMN)
+            };
+            Some(ViewGeometry {
+                page_width: column.max(240.0).floor(),
+                page_height: (height - 2.0 * f64::from(PAGE_PADDING) / zoom)
+                    .max(240.0)
+                    .floor(),
+                margin_top: READ_MARGIN,
+                margin_right: READ_MARGIN,
+                margin_bottom: READ_MARGIN,
+                margin_left: READ_MARGIN,
+                hide_page_chrome: true,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// アウトライン's page box: the first section's width, the text from just
+/// past the outline's symbols, in strips with nothing round them.
+pub fn outline_geometry(layout: &HeadlessSectionLayout) -> Option<ViewGeometry> {
+    if layout.width <= 0.0 {
+        return None;
+    }
+    Some(ViewGeometry {
+        page_width: f64::from(points_to_px(layout.width)),
+        page_height: WEB_STRIP_HEIGHT,
+        margin_top: 0.0,
+        margin_right: f64::from(points_to_px(layout.margin_right)),
+        margin_bottom: 0.0,
+        margin_left: 8.0,
+        hide_page_chrome: true,
+    })
+}
+
+/// Whether two page boxes are close enough not to lay the document out
+/// again for: a window dragged a pixel wider is not worth a re-flow.
+pub fn geometry_close(a: Option<ViewGeometry>, b: Option<ViewGeometry>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            (a.page_width - b.page_width).abs() < 6.0
+                && (a.page_height - b.page_height).abs() < 6.0
+                && a.margin_left == b.margin_left
+                && a.margin_top == b.margin_top
+        }
+        _ => false,
+    }
+}
+
+/// Where a shell sets its pages out, in window pixels from the top-left of
+/// the scrolled content: `per_row` across (one under another with 1), or
+/// all in one row scrolled sideways (`horizontal`, 横 and 閲覧モード).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PageGrid {
+    /// One page as shown: zoomed, and cut to its band when the view cuts.
+    pub page: (f32, f32),
+    pub gap: f32,
+    pub padding: f32,
+    pub per_row: usize,
+    pub horizontal: bool,
+}
+
+impl PageGrid {
+    /// The top-left of page `index` (a row's pages from the row's left).
+    pub fn origin(&self, index: usize) -> (f32, f32) {
+        let (width, height) = self.page;
+        if self.horizontal {
+            return (
+                self.padding + index as f32 * (width + self.gap),
+                self.padding,
+            );
+        }
+        let per_row = self.per_row.max(1);
+        let (row, column) = (index / per_row, index % per_row);
+        (
+            self.padding + column as f32 * (width + self.gap),
+            self.padding + row as f32 * (height + self.gap),
+        )
+    }
+
+    /// The pages a viewport `size` scrolled to `scroll` (both positive)
+    /// shows, any part of them.
+    pub fn visible(
+        &self,
+        scroll: (f32, f32),
+        size: (f32, f32),
+        page_count: usize,
+    ) -> std::ops::Range<usize> {
+        if page_count == 0 {
+            return 0..0;
+        }
+        let (width, height) = (self.page.0.max(1.0), self.page.1.max(1.0));
+        let (from, to, pitch) = if self.horizontal {
+            (scroll.0, scroll.0 + size.0, width + self.gap)
+        } else {
+            (scroll.1, scroll.1 + size.1, height + self.gap)
+        };
+        let first = ((from - self.padding) / pitch).floor().max(0.0) as usize;
+        let last = ((to - self.padding) / pitch).floor().max(0.0) as usize;
+        let per = if self.horizontal {
+            1
+        } else {
+            self.per_row.max(1)
+        };
+        let start = (first * per).min(page_count - 1);
+        let end = ((last + 1) * per).min(page_count);
+        start..end.max(start + 1)
+    }
+
+    /// The page counted current: the one a third of the way into the
+    /// viewport, across for a row, down for a column.
+    pub fn current(&self, scroll: (f32, f32), size: (f32, f32), page_count: usize) -> usize {
+        if page_count == 0 {
+            return 0;
+        }
+        let (width, height) = (self.page.0.max(1.0), self.page.1.max(1.0));
+        if self.horizontal {
+            let probe = scroll.0 + size.0 / 3.0 - self.padding;
+            return ((probe / (width + self.gap)).floor().max(0.0) as usize).min(page_count - 1);
+        }
+        let probe = scroll.1 + size.1 / 3.0 - self.padding;
+        let row = (probe / (height + self.gap)).floor().max(0.0) as usize;
+        (row * self.per_row.max(1)).min(page_count - 1)
+    }
 }
 
 /// The part of a page between its margins, in CSS pixels from the page's

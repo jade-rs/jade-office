@@ -1034,10 +1034,13 @@ impl Render for Workspace {
         let viewport = window.viewport_size();
         let (width, height) = (f32::from(viewport.width), f32::from(viewport.height));
 
-        // A slideshow has the whole window.
+        // A slideshow has the whole window, and so does Word's フォーカス.
         let slideshow = self
             .active_tab()
-            .filter(|tab| tab.read(cx).in_slideshow())
+            .filter(|tab| {
+                let view = tab.read(cx);
+                view.in_slideshow() || view.in_focus_mode()
+            })
             .cloned();
         if let Some(tab) = slideshow {
             cx.set_global(EditorArea(width.max(1.0), height.max(1.0)));

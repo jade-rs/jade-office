@@ -28,7 +28,11 @@ pub fn toggle(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
 
 /// Tells the renderer what the collapsed headings hide.
 fn apply_collapsed(view: &mut DocumentView) {
-    let blocks = view.doc().hidden_by_collapse(&view.references.collapsed);
+    let mut blocks = view.doc().hidden_by_collapse(&view.references.collapsed);
+    // アウトライン's レベルの表示 hides the levels below the one shown.
+    blocks.extend(crate::view::word_views::outline::extra_hidden(view));
+    blocks.sort_unstable();
+    blocks.dedup();
     if blocks.as_slice() != view.doc().collapsed_blocks() {
         if let Err(error) = view.doc_mut().set_collapsed_blocks(blocks) {
             view.set_status(SharedString::from(error));
@@ -42,7 +46,9 @@ pub fn refresh_collapsed(view: &mut DocumentView) {
     if view.word_ref().is_none() {
         return;
     }
-    if view.references.collapsed.is_empty() {
+    if view.references.collapsed.is_empty()
+        && crate::view::word_views::outline::extra_hidden(view).is_empty()
+    {
         if !view.doc().collapsed_blocks().is_empty() {
             apply_collapsed(view);
         }

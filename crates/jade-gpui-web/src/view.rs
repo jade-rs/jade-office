@@ -66,6 +66,7 @@ pub(crate) mod word_styles;
 mod word_table;
 mod word_thesaurus;
 pub(crate) mod word_tools_ui;
+pub(crate) mod word_views;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -587,6 +588,9 @@ pub struct DocView {
     previewing: bool,
     /// The right-click menu over a Word page, while it is open.
     word_menu: Option<word_context_menu::WordMenu>,
+    /// The 表示 tab's views, windows and modes, the ミニ ツールバー,
+    /// オートコレクト and Word のオプション (`word_views`).
+    views: word_views::Views,
 }
 
 impl DocView {
@@ -806,6 +810,7 @@ impl DocView {
             preview: None,
             previewing: false,
             word_menu: None,
+            views: word_views::Views::default(),
         })
     }
 
@@ -833,6 +838,7 @@ impl DocView {
                 if ribbon.painter.is_some() {
                     items.push(i18n::text("painter.armed").into());
                 }
+                items.extend(self.views_status());
             }
             Document::Deck {
                 deck,
@@ -912,6 +918,7 @@ impl DocView {
             scroll.set_offset(point(offset.x * ratio, offset.y * ratio));
         }
         self.zoom = Some(zoom);
+        self.views.fit = jade_web::word::view::ZoomFit::Custom;
         cx.notify();
     }
 
@@ -950,6 +957,11 @@ impl DocView {
 
     pub fn in_slideshow(&self) -> bool {
         self.slideshow
+    }
+
+    /// Word's フォーカス: the page alone, the workspace round it gone.
+    pub fn in_focus_mode(&self) -> bool {
+        self.views.focus
     }
 
     // ---- editing ----------------------------------------------------------
@@ -1229,6 +1241,10 @@ impl DocView {
         cx: &mut Context<Self>,
         edit: impl FnOnce(&mut jade_web::editing::WordDoc) -> Result<(), String>,
     ) {
+        // 閲覧 and 閲覧モード: nothing changes.
+        if word_views::modes::read_only(self) {
+            return self.word_result(Err(i18n::text("modes.read_only").to_string()), cx);
+        }
         let Document::Pages { document, .. } = &mut self.document else {
             return;
         };
@@ -1258,9 +1274,13 @@ impl DocView {
     fn reveal_caret(&mut self) {
         const MARGIN: f32 = 24.0;
         let zoom = self.zoom.unwrap_or(1.0);
+        let Document::Pages { page_size, .. } = &self.document else {
+            return;
+        };
+        let arrangement = self.arrangement(*page_size, zoom);
+        let grid = arrangement.grid;
         let Document::Pages {
             document,
-            page_size,
             scroll,
             reveal_pending,
             ..
@@ -1268,7 +1288,6 @@ impl DocView {
         else {
             return;
         };
-        let pitch = page_size.1 * zoom + PAGE_GAP;
         let Some(caret) = document.focus_rect() else {
             // A caret on a page not kept as pixels, before the ones that
             // are, has no lines to place it by: to the top of its page,
@@ -1277,31 +1296,62 @@ impl DocView {
                 .caret()
                 .and_then(|(paragraph, _)| document.paragraph_start_page(paragraph));
             if let Some(page) = page {
-                let target = (PAGES_PADDING + page as f32 * pitch - MARGIN)
-                    .clamp(0.0, f32::from(scroll.max_offset().y).max(0.0));
-                scroll.set_offset(point(scroll.offset().x, px(-target)));
+                let (x, y) = grid.origin(page);
+                let max = scroll.max_offset();
+                let target = if grid.horizontal {
+                    point(
+                        px(-(x - MARGIN).clamp(0.0, f32::from(max.x).max(0.0))),
+                        scroll.offset().y,
+                    )
+                } else {
+                    point(
+                        scroll.offset().x,
+                        px(-(y - MARGIN).clamp(0.0, f32::from(max.y).max(0.0))),
+                    )
+                };
+                scroll.set_offset(target);
                 *reveal_pending = true;
             }
             return;
         };
         let (page, y) = document.page_and_offset(caret.document_y);
-        let top = PAGES_PADDING + page as f32 * pitch + y as f32 * zoom;
+        let crop = arrangement.crops.get(page).copied().flatten();
+        let (crop_left, crop_top) = crop.map_or((0.0, 0.0), |crop| (crop.left, crop.top));
+        let (origin_x, origin_y) = grid.origin(page);
+        let top = origin_y + (y as f32 - crop_top) * zoom;
         let bottom = top + caret.height as f32 * zoom;
-        let view = f32::from(scroll.bounds().size.height);
-        if view <= MARGIN * 2.0 {
+        let left = origin_x + (caret.x as f32 - crop_left) * zoom;
+        let view = scroll.bounds().size;
+        let (view_width, view_height) = (f32::from(view.width), f32::from(view.height));
+        if view_height <= MARGIN * 2.0 {
             return;
         }
         let offset = scroll.offset();
-        let shown = -f32::from(offset.y);
-        let target = if top < shown + MARGIN {
+        let max = scroll.max_offset();
+        let (shown_x, shown_y) = (-f32::from(offset.x), -f32::from(offset.y));
+        let target_y = if top < shown_y + MARGIN {
             top - MARGIN
-        } else if bottom > shown + view - MARGIN {
-            bottom + MARGIN - view
+        } else if bottom > shown_y + view_height - MARGIN {
+            bottom + MARGIN - view_height
         } else {
-            return;
+            shown_y
         };
-        let target = target.clamp(0.0, f32::from(scroll.max_offset().y).max(0.0));
-        scroll.set_offset(point(offset.x, px(-target)));
+        // Pages side by side scroll sideways to the caret too.
+        let target_x = if !grid.horizontal || view_width <= MARGIN * 2.0 {
+            shown_x
+        } else if left < shown_x + MARGIN {
+            left - MARGIN
+        } else if left > shown_x + view_width - MARGIN {
+            left + MARGIN - view_width
+        } else {
+            shown_x
+        };
+        if (target_x - shown_x).abs() < 0.5 && (target_y - shown_y).abs() < 0.5 {
+            return;
+        }
+        let target_y = target_y.clamp(0.0, f32::from(max.y).max(0.0));
+        let target_x = target_x.clamp(0.0, f32::from(max.x).max(0.0));
+        scroll.set_offset(point(px(-target_x), px(-target_y)));
         // The current page, for the status bar, which is drawn before the
         // pages are; and the pages now on screen, painted.
         self.follow_scroll(gpui::Size::default());
@@ -1335,6 +1385,7 @@ impl DocView {
         };
         let clip = jade_web::word::clipboard::WordClipboard::copy_rich(document.as_ref());
         RICH_CLIP.with(|kept| *kept.borrow_mut() = clip);
+        word_views::prefs::note_copy(&self.name);
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
         if cut {
             self.word_edit(cx, |document| document.delete(true));
@@ -1392,11 +1443,18 @@ impl DocView {
         if let Some(bar) = self.find_bar_mut() {
             bar.active = false;
         }
+        self.views.mini = false;
+        self.views.mode_menu = false;
+        self.views.pressed = true;
         // A double-click in the top or bottom margin opens the header or the
-        // footer in place; one in the body closes it.
-        if let (Some((_, y)), Document::Pages { document, .. }) =
-            (self.page_point(index, event.position), &self.document)
-        {
+        // footer in place; one in the body closes it — in 印刷レイアウト,
+        // the one view with the margins.
+        let print_layout = self.views.kind == jade_web::word::view::ViewKind::Print;
+        if let (true, Some((_, y)), Document::Pages { document, .. }) = (
+            print_layout,
+            self.page_point(index, event.position),
+            &self.document,
+        ) {
             let page_y = y - document.document_y(index, 0.0);
             if self.story_click(index, page_y, event.click_count, cx) {
                 return;
@@ -1703,6 +1761,12 @@ impl DocView {
                 cx.notify();
             }
         }
+        // The ミニ ツールバー, over a selection the mouse made on the pages.
+        if std::mem::take(&mut self.views.pressed) {
+            self.mini_after_mouse_up();
+            cx.notify();
+        }
+        self.views.drag_pane = None;
     }
 
     /// 書式のコピー: takes up the format at the caret or the selection, to
@@ -1896,6 +1960,22 @@ impl DocView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // 表示's views, windows and modes, the quick access toolbar.
+        if let Action::Views(action) = action {
+            return self.views_action(action, window, cx);
+        }
+        if !action.is_chrome() && !self.previewing {
+            self.views.mini_popup = None;
+            self.views.mode_menu = false;
+        }
+        // 閲覧 and 閲覧モード refuse what would change the document.
+        if word_views::modes::refuses(self, &action) {
+            if let Document::Pages { ribbon, .. } = &mut self.document {
+                ribbon.popup = None;
+            }
+            self.status = i18n::text("modes.read_only").into();
+            return cx.notify();
+        }
         // ホーム's size, colour and bold format the equation being edited.
         if self.equation_home_format(&action, cx) {
             if let Document::Pages { ribbon, .. } = &mut self.document {
@@ -2012,8 +2092,6 @@ impl DocView {
                     let zoom = zoom_step(self.zoom(), true);
                     self.set_zoom(zoom, cx)
                 }
-                ViewAction::ZoomActual => self.set_zoom(1.0, cx),
-                ViewAction::PageWidth => self.zoom_to_fit(window, cx),
             }
             return;
         }
@@ -2117,6 +2195,7 @@ impl DocView {
             | Action::Controls(_)
             | Action::Equation(_)
             | Action::View(_)
+            | Action::Views(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -2158,6 +2237,9 @@ impl DocView {
             .unwrap_or_default();
         let story = self.story_tab_state();
         let object_modes = self.object_modes();
+        let views = self.views_shown();
+        let outline = (self.views.kind == jade_web::word::view::ViewKind::Outline)
+            .then(|| word_views::outline::groups(self, cx));
         let Document::Pages {
             document,
             ribbon,
@@ -2254,12 +2336,15 @@ impl DocView {
                 styles_pane: self.tools.styles_pane,
                 ruler: (self.tools.ruler, self.tools.unit),
                 object_modes,
+                views,
+                outline,
             }
         };
+        let mut tabs = tabs;
         ribbon::ribbon(
             ribbon,
             &state,
-            &tabs,
+            &mut tabs,
             position,
             document.is_dirty(),
             viewport,
@@ -2273,9 +2358,19 @@ impl DocView {
     /// them were kept.
     fn follow_scroll(&mut self, viewport: gpui::Size<Pixels>) {
         let zoom = self.zoom.unwrap_or(1.0);
+        let Document::Pages { page_size, .. } = &self.document else {
+            return;
+        };
+        let arrangement = self.arrangement(*page_size, zoom);
+        let grid = arrangement.grid;
+        // 分割's and 新しいウィンドウ's panes keep their pages too.
+        let panes: Vec<_> = [self.views.split.as_ref(), self.views.window.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|pane| self.pane_range(pane, &arrangement))
+            .collect();
         let Document::Pages {
             document,
-            page_size,
             scroll,
             current,
             ..
@@ -2283,26 +2378,40 @@ impl DocView {
         else {
             return;
         };
-        let pitch = (page_size.1 * zoom + PAGE_GAP).max(1.0);
-        let top = (-f32::from(scroll.offset().y) - PAGES_PADDING).max(0.0);
-        // The page at the top third of the view is the current one: worked
-        // out here, before the ribbon shows it, so a jump shows its page on
-        // the frame it lands.
-        *current =
-            (((top + pitch / 3.0) / pitch) as usize).min(document.page_count().saturating_sub(1));
-        let height = match f32::from(scroll.bounds().size.height) {
-            shown if shown > 0.0 => shown,
-            _ => f32::from(viewport.height),
-        };
+        let offset = scroll.offset();
+        let shown = (-f32::from(offset.x), -f32::from(offset.y));
+        let bounds = scroll.bounds().size;
+        let size = (
+            match f32::from(bounds.width) {
+                width if width > 0.0 => width,
+                _ => f32::from(viewport.width),
+            },
+            match f32::from(bounds.height) {
+                height if height > 0.0 => height,
+                _ => f32::from(viewport.height),
+            },
+        );
         let count = document.page_count();
-        let first = ((top / pitch) as usize).saturating_sub(1);
-        let last = ((top + height) / pitch) as usize + 2;
+        // The page a third of the way into the view is the current one:
+        // worked out here, before the ribbon shows it, so a jump shows its
+        // page on the frame it lands.
+        *current = grid.current(shown, size, count);
+        let visible = grid.visible(shown, size, count);
+        let (first, last) = (visible.start.saturating_sub(1), visible.end + 1);
         // Widened evenly to the budget, within the document.
         let spare = RESIDENT_PAGES.saturating_sub(last - first);
         let start = first.saturating_sub(spare / 2);
         let end = (last + spare - (first - start)).min(count.max(last));
         let start = start.min(end.saturating_sub(RESIDENT_PAGES.max(last - first)));
-        let resident = start..end;
+        // With other panes, the pages they show as well, when that is not
+        // far beyond the budget.
+        let mut resident = start..end;
+        for pane in panes {
+            let wider = resident.start.min(pane.start)..resident.end.max(pane.end);
+            if wider.len() <= RESIDENT_PAGES * 2 {
+                resident = wider;
+            }
+        }
         match document.set_resident_pages(resident) {
             Ok(true) => {
                 self.refresh_repainted();
@@ -2318,9 +2427,50 @@ impl DocView {
     }
 
     fn pages_body(&mut self, viewport: gpui::Size<Pixels>, cx: &mut Context<Self>) -> gpui::Div {
+        // A fit follows the window, a view that lays the document out anew
+        // follows it too (`word_views`).
+        if self.views_before_render((
+            f32::from(viewport.width) - PAGES_SIDEBAR_WIDTH,
+            f32::from(viewport.height) - 160.0,
+        )) {
+            cx.notify();
+        }
         let zoom = self.zoom.unwrap_or(1.0);
         self.shown_zoom = zoom;
         self.follow_scroll(viewport);
+        let arrangement = match &self.document {
+            Document::Pages { page_size, .. } => self.arrangement(*page_size, zoom),
+            _ => unreachable!(),
+        };
+        let chrome = !self.views.hides_chrome();
+        // The rulers measure pages: not Web レイアウト's or アウトライン's
+        // sheet, nor 閲覧モード's columns.
+        let rulers = chrome && self.views.kind.keeps_pages();
+        let split_pane = self.split_pane(zoom, &arrangement, cx);
+        let mini_toolbar = self.mini_toolbar(zoom, cx);
+        let read_bar = match &self.document {
+            Document::Pages { current, pages, .. }
+                if self.views.kind == jade_web::word::view::ViewKind::Read =>
+            {
+                Some(word_views::modes::read_bar(*current, pages.len(), cx))
+            }
+            _ => None,
+        };
+        let focus_bar = self.views.focus.then(|| word_views::modes::focus_bar(cx));
+        let mut grid_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.grid_overlay(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
+        let mut outline_marks = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| word_views::outline::symbols(self, index, zoom, cx))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let word_ribbon = self.word_ribbon(viewport, cx);
         let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
@@ -2503,29 +2653,159 @@ impl DocView {
             })
             .collect();
         let entity = cx.entity();
-        let surfaces: Vec<_> = pages
-            .iter()
-            .enumerate()
-            .map(|(index, page)| {
-                let store = Rc::clone(&bounds_store);
-                let entity = entity.clone();
-                let table_overlay = table_overlays.next().flatten();
-                let control_overlay = control_overlays.next().unwrap_or_default();
-                let ink_overlay = ink_overlays.next().flatten();
-                let story_label = story_labels.next().flatten();
-                let vertical_ruler = vertical_rulers.next().flatten();
-                let object_overlay = object_overlays.next().unwrap_or_default();
-                div()
-                    .relative()
-                    .flex_none()
-                    .w(px(width))
-                    .h(px(height))
-                    .bg(palette::paper())
-                    .shadow_lg()
-                    .cursor(table_cursor)
+        let surfaces: Vec<_> =
+            pages
+                .iter()
+                .enumerate()
+                .map(|(index, page)| {
+                    let store = Rc::clone(&bounds_store);
+                    let entity = entity.clone();
+                    let table_overlay = table_overlays.next().flatten();
+                    let control_overlay = control_overlays.next().unwrap_or_default();
+                    let ink_overlay = ink_overlays.next().flatten();
+                    let story_label = story_labels.next().flatten();
+                    let vertical_ruler = vertical_rulers.next().flatten().filter(|_| rulers);
+                    let object_overlay = object_overlays.next().unwrap_or_default();
+                    let crop = arrangement.crops.get(index).copied().flatten();
+                    let grid_overlay = grid_overlays.next().flatten();
+                    let outline_mark = outline_marks.next().flatten();
+                    let inner =
+                        div()
+                            .relative()
+                            .flex_none()
+                            .w(px(width))
+                            .h(px(height))
+                            .cursor(table_cursor)
+                            .child(div().w(px(width)).h(px(height)).child(page.element()))
+                            .children(grid_overlay)
+                            .children(outline_mark)
+                            // The selection, over the picture, in the renderer's own
+                            // fill and edges.
+                            .children(highlight.iter().filter(|rect| rect.page == index).map(
+                                |rect| {
+                                    div()
+                                        .absolute()
+                                        .left(px(rect.x as f32 * zoom))
+                                        .top(px(rect.y as f32 * zoom))
+                                        .w(px(rect.width as f32 * zoom))
+                                        .h(px(rect.height as f32 * zoom))
+                                        .bg(rgba(0x584f_e833))
+                                        .border_l_1()
+                                        .border_r_1()
+                                        .border_color(rgba(0x584f_e8c7))
+                                },
+                            ))
+                            .children(object_outline.filter(|(page, ..)| *page == index).map(
+                                |(_, x, y, width, height)| {
+                                    div()
+                                        .absolute()
+                                        .left(px(x))
+                                        .top(px(y))
+                                        .w(px(width))
+                                        .h(px(height))
+                                        .border_1()
+                                        .border_color(palette::accent())
+                                        .child(
+                                            div()
+                                                .absolute()
+                                                .right(px(-4.0))
+                                                .bottom(px(-4.0))
+                                                .size(px(8.0))
+                                                .bg(palette::accent()),
+                                        )
+                                },
+                            ))
+                            .children(table_overlay)
+                            .children(ink_overlay)
+                            .children(story_label)
+                            .children(vertical_ruler)
+                            .children(object_overlay)
+                            .children(word_references::page_marks(&marks, index, zoom, cx))
+                            .children(control_overlay)
+                            .children(
+                                equation_overlay
+                                    .as_ref()
+                                    .filter(|overlay| overlay.page == index)
+                                    .map(|overlay| word_equation::overlay_elements(overlay, zoom))
+                                    .unwrap_or_default(),
+                            )
+                            .children(caret.filter(|(page, ..)| *page == index).map(
+                                |(_, x, y, caret_height)| {
+                                    div()
+                                        .absolute()
+                                        .left(px(x))
+                                        .top(px(y))
+                                        .w(px(1.5))
+                                        .h(px(caret_height.max(8.0)))
+                                        .bg(palette::ink())
+                                },
+                            ))
+                            // Records where the page is; registers the input handler
+                            // so typing — an IME's included — reaches the document.
+                            .child(
+                                canvas(
+                                    move |bounds, _window, _cx| {
+                                        if let Some(slot) = store.borrow_mut().get_mut(index) {
+                                            *slot = Some(bounds);
+                                        }
+                                        bounds
+                                    },
+                                    move |_bounds, page, window, cx| {
+                                        if index == 0 {
+                                            let focus = entity.read(cx).focus.clone();
+                                            window.handle_input(
+                                                &focus,
+                                                ElementInputHandler::new(page, entity.clone()),
+                                                cx,
+                                            );
+                                            // A drag is followed wherever the pointer
+                                            // goes, not only over a page.
+                                            let dragged = entity.clone();
+                                            window.on_mouse_event(
+                                        move |event: &MouseMoveEvent, phase, _window, cx| {
+                                            if phase == DispatchPhase::Bubble {
+                                                dragged.update(cx, |view, cx| {
+                                                    view.through_drag_pane(|view| {
+                                                        view.page_drag(event, cx)
+                                                    })
+                                                });
+                                            }
+                                        },
+                                    );
+                                            let released = entity.clone();
+                                            window.on_mouse_event(
+                                                move |event: &MouseUpEvent, phase, _window, cx| {
+                                                    if phase == DispatchPhase::Bubble
+                                                        && event.button == MouseButton::Left
+                                                    {
+                                                        released.update(cx, |view, cx| {
+                                                            view.through_drag_pane(|view| {
+                                                                view.page_release(cx)
+                                                            })
+                                                        });
+                                                    }
+                                                },
+                                            );
+                                        }
+                                    },
+                                )
+                                .absolute()
+                                .top_0()
+                                .left_0()
+                                .size_full(),
+                            );
+                    word_views::frame_page(
+                        div().id(("page-surface", index)),
+                        inner,
+                        crop,
+                        (width, height),
+                        zoom,
+                        arrangement.sheet,
+                    )
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |view, event, window, cx| {
+                            view.views.drag_pane = None;
                             view.page_mouse_down(index, event, window, cx)
                         }),
                     )
@@ -2535,199 +2815,85 @@ impl DocView {
                             view.page_right_click(index, event, window, cx)
                         }),
                     )
-                    .child(div().w(px(width)).h(px(height)).child(page.element()))
-                    // The selection, over the picture, in the renderer's own
-                    // fill and edges.
-                    .children(
-                        highlight
-                            .iter()
-                            .filter(|rect| rect.page == index)
-                            .map(|rect| {
-                                div()
-                                    .absolute()
-                                    .left(px(rect.x as f32 * zoom))
-                                    .top(px(rect.y as f32 * zoom))
-                                    .w(px(rect.width as f32 * zoom))
-                                    .h(px(rect.height as f32 * zoom))
-                                    .bg(rgba(0x584f_e833))
-                                    .border_l_1()
-                                    .border_r_1()
-                                    .border_color(rgba(0x584f_e8c7))
-                            }),
-                    )
-                    .children(object_outline.filter(|(page, ..)| *page == index).map(
-                        |(_, x, y, width, height)| {
-                            div()
-                                .absolute()
-                                .left(px(x))
-                                .top(px(y))
-                                .w(px(width))
-                                .h(px(height))
-                                .border_1()
-                                .border_color(palette::accent())
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .right(px(-4.0))
-                                        .bottom(px(-4.0))
-                                        .size(px(8.0))
-                                        .bg(palette::accent()),
-                                )
-                        },
-                    ))
-                    .children(table_overlay)
-                    .children(ink_overlay)
-                    .children(story_label)
-                    .children(vertical_ruler)
-                    .children(object_overlay)
-                    .children(word_references::page_marks(&marks, index, zoom, cx))
-                    .children(control_overlay)
-                    .children(
-                        equation_overlay
-                            .as_ref()
-                            .filter(|overlay| overlay.page == index)
-                            .map(|overlay| word_equation::overlay_elements(overlay, zoom))
-                            .unwrap_or_default(),
-                    )
-                    .children(caret.filter(|(page, ..)| *page == index).map(
-                        |(_, x, y, caret_height)| {
-                            div()
-                                .absolute()
-                                .left(px(x))
-                                .top(px(y))
-                                .w(px(1.5))
-                                .h(px(caret_height.max(8.0)))
-                                .bg(palette::ink())
-                        },
-                    ))
-                    // Records where the page is; registers the input handler
-                    // so typing — an IME's included — reaches the document.
-                    .child(
-                        canvas(
-                            move |bounds, _window, _cx| {
-                                if let Some(slot) = store.borrow_mut().get_mut(index) {
-                                    *slot = Some(bounds);
-                                }
-                                bounds
-                            },
-                            move |_bounds, page, window, cx| {
-                                if index == 0 {
-                                    let focus = entity.read(cx).focus.clone();
-                                    window.handle_input(
-                                        &focus,
-                                        ElementInputHandler::new(page, entity.clone()),
-                                        cx,
-                                    );
-                                    // A drag is followed wherever the pointer
-                                    // goes, not only over a page.
-                                    let dragged = entity.clone();
-                                    window.on_mouse_event(
-                                        move |event: &MouseMoveEvent, phase, _window, cx| {
-                                            if phase == DispatchPhase::Bubble {
-                                                dragged.update(cx, |view, cx| {
-                                                    view.page_drag(event, cx)
-                                                });
-                                            }
-                                        },
-                                    );
-                                    let released = entity.clone();
-                                    window.on_mouse_event(
-                                        move |event: &MouseUpEvent, phase, _window, cx| {
-                                            if phase == DispatchPhase::Bubble
-                                                && event.button == MouseButton::Left
-                                            {
-                                                released
-                                                    .update(cx, |view, cx| view.page_release(cx));
-                                            }
-                                        },
-                                    );
-                                }
-                            },
-                        )
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .size_full(),
-                    )
-            })
-            .collect();
+                })
+                .collect();
         div()
             .size_full()
             .flex()
             .bg(palette::window())
             .children(word_menu)
-            .children(navigation)
+            .children(mini_toolbar)
+            .children(navigation.filter(|_| chrome))
+            .when(chrome, |body| {
+                body.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_none()
+                        .w(px(PAGES_SIDEBAR_WIDTH))
+                        .h_full()
+                        .bg(palette::sidebar())
+                        .border_r_1()
+                        .border_color(palette::border())
+                        .child(
+                            div()
+                                .px_3()
+                                .pt_3()
+                                .pb_2()
+                                .text_xs()
+                                .text_color(palette::faint())
+                                .child(i18n::format("doc.pages", &[("n", &count)])),
+                        )
+                        .child(
+                            div()
+                                .id("page-list")
+                                .flex()
+                                .flex_col()
+                                .gap_0p5()
+                                .px_2()
+                                .flex_1()
+                                .overflow_y_scroll()
+                                .children(rows),
+                        ),
+                )
+            })
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .flex_none()
-                    .w(px(PAGES_SIDEBAR_WIDTH))
-                    .h_full()
-                    .bg(palette::sidebar())
-                    .border_r_1()
-                    .border_color(palette::border())
-                    .child(
-                        div()
-                            .px_3()
-                            .pt_3()
-                            .pb_2()
-                            .text_xs()
-                            .text_color(palette::faint())
-                            .child(i18n::format("doc.pages", &[("n", &count)])),
-                    )
-                    .child(
-                        div()
-                            .id("page-list")
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .px_2()
-                            .flex_1()
-                            .overflow_y_scroll()
-                            .children(rows),
-                    ),
-            )
-            .child(
-                div()
+                    .relative()
                     .flex_1()
                     .min_w_0()
                     .h_full()
                     .flex()
                     .flex_col()
-                    .child(word_ribbon)
+                    .when(chrome, |column| column.child(word_ribbon))
+                    .children(read_bar)
                     .children(dialog_bar)
                     .children(read_only_bar)
                     .children(comment_bar)
                     .children(find_bar)
                     .children(read_aloud_bar)
-                    .children(horizontal_ruler)
+                    .children(horizontal_ruler.filter(|_| rulers))
+                    .children(split_pane)
                     .child(
-                        div()
-                            .id("pages")
+                        word_views::lay_out_pages(div().id("pages"), &arrangement, surfaces)
                             .flex_1()
                             .min_h_0()
-                            .overflow_scroll()
                             .track_scroll(scroll)
-                            .bg(palette::canvas())
-                            .on_scroll_wheel(cx.listener(|_view, _event, _window, cx| cx.notify()))
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap(px(PAGE_GAP))
-                            .p(px(PAGES_PADDING))
-                            .children(surfaces),
-                    ),
+                            .on_scroll_wheel(cx.listener(|_view, _event, _window, cx| cx.notify())),
+                    )
+                    .children(focus_bar),
             )
-            .children(comments_pane)
-            .children(accessibility_pane)
-            .children(revisions_pane)
-            .children(restrict_pane)
-            .children(signatures_pane)
-            .children(thesaurus_pane)
-            .children(inspect_pane)
-            .children(styles_pane)
-            .children(selection_pane)
+            .when(chrome, |body| {
+                body.children(comments_pane)
+                    .children(accessibility_pane)
+                    .children(revisions_pane)
+                    .children(restrict_pane)
+                    .children(signatures_pane)
+                    .children(thesaurus_pane)
+                    .children(inspect_pane)
+                    .children(styles_pane)
+                    .children(selection_pane)
+            })
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
             .children(print_panel)
@@ -2761,6 +2927,47 @@ impl DocView {
                 })
                 .ok();
             });
+        }
+        // A 表示 dialog — ズーム, オートコレクト, Word のオプション — is
+        // modal; 閲覧モード and フォーカス take their keys.
+        if self.views.is_open() {
+            if self.views_key(key, window, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if matches!(self.document, Document::Pages { .. }) {
+            // A key sends the ミニ ツールバー away.
+            if self.views.mini {
+                self.views.mini = false;
+                self.views.mini_popup = None;
+                cx.notify();
+            }
+            if self.read_key(key, window, cx) {
+                cx.stop_propagation();
+                return;
+            }
+            // Word for Mac's 環境設定 (⌘,), ツール → オートコレクト (⌃⌥⌘A),
+            // and the Insert key's 上書き入力.
+            let views_action = match key {
+                "," | "comma" if modifiers.platform => Some(word_views::ViewsAction::OpenOptions(
+                    word_views::prefs::OptionsPage::View,
+                )),
+                "a" | "å" if modifiers.platform && modifiers.control && modifiers.alt => {
+                    Some(word_views::ViewsAction::OpenAutoCorrect)
+                }
+                "insert" if word_views::prefs::insert_key_toggles() => {
+                    Some(word_views::ViewsAction::Quick(
+                        jade_web::word::customize::QuickCommand::Overtype,
+                    ))
+                }
+                _ => None,
+            };
+            if let Some(action) = views_action {
+                self.views_action(action, window, cx);
+                cx.stop_propagation();
+                return;
+            }
         }
         // The 印刷 panel takes every key while it is open.
         if self.print_panel_key(event, cx) {
@@ -3035,6 +3242,9 @@ impl DocView {
 
     /// The field of an open Word dialog that typing goes into.
     fn word_dialog_field_mut(&mut self) -> Option<&mut TextEdit> {
+        if self.views.is_open() {
+            return self.views.text_field_mut();
+        }
         if self.fields.is_open() {
             return self.fields.text_field_mut();
         }
@@ -3051,6 +3261,9 @@ impl DocView {
     }
 
     fn current_text(&self) -> Option<&TextEdit> {
+        if let Some(field) = self.views.text_field() {
+            return Some(field);
+        }
         if let Some(field) = self
             .mailings
             .as_ref()
@@ -3157,8 +3370,8 @@ impl DocView {
     /// where in it the caret and the composition are, for the input
     /// handler.
     fn word_input(&self) -> Option<(String, usize, Option<Range<usize>>)> {
-        // While a bar has the keyboard, typing is the bar's.
-        if self.finding() || self.commenting() {
+        // While a bar or a 表示 dialog has the keyboard, typing is theirs.
+        if self.finding() || self.commenting() || self.views.is_open() {
             return None;
         }
         let Document::Pages { document, .. } = &self.document else {
@@ -3315,11 +3528,17 @@ impl EntityInputHandler for DocView {
                 }) =>
             {
                 let clip = RICH_CLIP.with(|kept| kept.borrow().clone());
+                // Word のオプション's 貼り付けの既定 for a copy from this
+                // document or another.
+                let mode = word_views::prefs::default_paste(&self.name);
                 self.word_edit(cx, move |document| {
-                    use jade_web::word::clipboard::WordClipboard;
+                    use jade_web::word::clipboard::{PasteMode, WordClipboard};
                     let Some(clip) = clip else {
                         return Ok(());
                     };
+                    if mode != PasteMode::KeepSource {
+                        return document.paste_as(&clip, mode).map(|_| ());
+                    }
                     let caret = document.paste_rich(&clip)?;
                     document.place_caret(caret.0, caret.1);
                     Ok(())
@@ -3407,10 +3626,33 @@ impl EntityInputHandler for DocView {
             let composing = self
                 .word_input()
                 .is_some_and(|(_, _, marked)| marked.is_some());
+            let overtype = word_views::prefs::overtype();
             self.word_edit(cx, move |document| {
                 if composing {
                     document.commit_composition(&text)?;
                 } else {
+                    // 上書き入力: as many characters after the caret as are
+                    // typed, not past the paragraph's end, are replaced.
+                    let selected = document
+                        .selection()
+                        .is_some_and(|(anchor, focus)| anchor != focus);
+                    if let (true, false, Some((paragraph, offset))) =
+                        (overtype, selected, document.caret())
+                    {
+                        let after = document
+                            .paragraph_text(paragraph)
+                            .unwrap_or_default()
+                            .get(offset..)
+                            .map(|rest| {
+                                rest.char_indices()
+                                    .nth(text.chars().count())
+                                    .map_or(rest.len(), |(at, _)| at)
+                            })
+                            .unwrap_or(0);
+                        if after > 0 {
+                            document.select((paragraph, offset), (paragraph, offset + after))?;
+                        }
+                    }
                     document.insert_text(&text)?;
                 }
                 // オートコレクト and 入力オートフォーマット, as the native app
@@ -3576,6 +3818,15 @@ impl Render for DocView {
         self.update_screen_reader();
         let fields_dialog = self.fields_dialog_element(window, cx);
         let tool_dialog = self.tool_dialog_element(window, cx);
+        let views_dialog = self.views_dialog(window, cx);
+        let window_pane = match &self.document {
+            Document::Pages { page_size, .. } if self.views.window.is_some() && !self.slideshow => {
+                let zoom = self.zoom.unwrap_or(1.0);
+                let arrangement = self.arrangement(*page_size, zoom);
+                self.window_pane(zoom, &arrangement, window, cx)
+            }
+            _ => None,
+        };
         div()
             .size_full()
             .text_color(palette::text())
@@ -3590,10 +3841,13 @@ impl Render for DocView {
             .children(immersive)
             .children(fields_dialog)
             .children(tool_dialog)
+            .children(window_pane)
+            .children(views_dialog)
     }
 }
 
-/// The AutoCorrect settings the browser types with: Word's own.
+/// The AutoCorrect settings the browser types with: Word's own, as
+/// ツール → オートコレクト changed them (`word_views::options`).
 fn autocorrect_options() -> jade_web::word::autocorrect::AutoCorrectOptions {
-    jade_web::word::autocorrect::AutoCorrectOptions::default()
+    word_views::settings::autocorrect()
 }
