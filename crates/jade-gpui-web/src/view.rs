@@ -44,6 +44,7 @@ mod word_form;
 pub(crate) mod word_kit;
 pub(crate) mod word_lists;
 pub(crate) mod word_mailings;
+pub(crate) mod word_objects_ui;
 pub(crate) mod word_paragraph;
 pub(crate) mod word_references;
 mod word_review;
@@ -522,6 +523,9 @@ pub struct DocView {
     /// The paragraph, list, style and template tools' dialogs, the rulers
     /// and the スタイル pane (`word_tools_ui`).
     tools: word_tools_ui::WordTools,
+    /// トリミング, the pens, text box links, wrap points and the Selection
+    /// Pane (`word_objects_ui`).
+    objects_ui: word_objects_ui::ObjectsUi,
     /// The 差し込み文書 tab's merge, for a Word document.
     mailings: Option<word_mailings::Mailings>,
     host: Host,
@@ -664,6 +668,7 @@ impl DocView {
             controls: word_controls::ControlsUi::default(),
             fields: word_fields::FieldsUi::default(),
             tools: word_tools_ui::WordTools::default(),
+            objects_ui: word_objects_ui::ObjectsUi::default(),
             mailings,
             host,
             page_dialog: None,
@@ -1228,6 +1233,13 @@ impl DocView {
         ) else {
             return;
         };
+        // The pen, a crop handle, a wrap point, a text box to link to.
+        if let Document::Pages { document, .. } = &self.document {
+            let page_y = y - document.document_y(index, 0.0);
+            if self.object_ui_press(index, (x, page_y), y, cx) {
+                return;
+            }
+        }
         // A picture is over the text: a press on one takes hold of it rather
         // than putting the caret behind it. Its bottom-right corner resizes.
         if let Document::Pages {
@@ -1349,6 +1361,9 @@ impl DocView {
     /// through the whole window, not only over a page, and past the top or
     /// the bottom of the view the pages scroll to meet the pointer.
     fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if self.object_ui_drag(event, cx) {
+            return;
+        }
         if self.drag_object(event, cx) {
             return;
         }
@@ -1482,6 +1497,9 @@ impl DocView {
 
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
+        if self.object_ui_release(cx) {
+            return;
+        }
         self.release_object(cx);
         // The brush paints what was just clicked or dragged over.
         let painting = matches!(
@@ -1794,6 +1812,8 @@ impl DocView {
                     use jade_web::word::picture::WordPicture;
                     document.set_picture_wrap(selected, wrap)
                 });
+                // Where the picture now is: floating moves it.
+                self.refresh_selected_object();
             }
             return;
         }
@@ -1802,6 +1822,9 @@ impl DocView {
         }
         if let Action::Word(command) = action {
             return self.run_tool(command, cx);
+        }
+        if let Action::Object(crate::word_objects::ObjectAction::Ui(ui)) = action {
+            return self.object_ui_action(ui, cx);
         }
         if let Action::Object(object_action) = action {
             let selected = match &self.document {
@@ -1909,6 +1932,7 @@ impl DocView {
         .flatten();
         let equation = self.equation_tab_state();
         let story = self.story_tab_state();
+        let object_modes = self.object_modes();
         let Document::Pages {
             document,
             ribbon,
@@ -1975,6 +1999,7 @@ impl DocView {
                 field_codes: document.field_code_view().all,
                 styles_pane: self.tools.styles_pane,
                 ruler: (self.tools.ruler, self.tools.unit),
+                object_modes,
             }
         };
         ribbon::ribbon(
@@ -2047,6 +2072,14 @@ impl DocView {
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
         let styles_pane = self.styles_pane(cx);
+        let selection_pane = self.selection_pane(cx);
+        let mut object_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.object_ui_overlay(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let horizontal_ruler = self.horizontal_ruler(cx);
         let mut vertical_rulers = match &self.document {
             Document::Pages { pages, .. } => (0..pages.len())
@@ -2208,6 +2241,7 @@ impl DocView {
                 let control_overlay = control_overlays.next().unwrap_or_default();
                 let story_label = story_labels.next().flatten();
                 let vertical_ruler = vertical_rulers.next().flatten();
+                let object_overlay = object_overlays.next().unwrap_or_default();
                 div()
                     .relative()
                     .flex_none()
@@ -2265,6 +2299,7 @@ impl DocView {
                     .children(table_overlay)
                     .children(story_label)
                     .children(vertical_ruler)
+                    .children(object_overlay)
                     .children(word_references::page_marks(&marks, index, zoom, cx))
                     .children(control_overlay)
                     .children(
@@ -2403,6 +2438,7 @@ impl DocView {
             )
             .children(comments_pane)
             .children(styles_pane)
+            .children(selection_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
     }
@@ -2463,6 +2499,10 @@ impl DocView {
             if self.handle_tool_dialog_key(event, cx) {
                 cx.stop_propagation();
             }
+            return;
+        }
+        if self.object_ui_key(key, cx) {
+            cx.stop_propagation();
             return;
         }
         // A dialog takes the keyboard while it is open: its own keys stop
@@ -2635,6 +2675,9 @@ impl DocView {
         if self.tools.is_open() {
             return self.dialog_field_mut();
         }
+        if self.objects_ui.text_field().is_some() {
+            return self.objects_ui.text_field_mut();
+        }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
         }
@@ -2687,6 +2730,9 @@ impl DocView {
         if self.tools.is_open() {
             return self.dialog_field_mut();
         }
+        if self.objects_ui.text_field().is_some() {
+            return self.objects_ui.text_field_mut();
+        }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
         }
@@ -2708,6 +2754,9 @@ impl DocView {
             return Some(field);
         }
         if let Some(field) = self.dialog_field() {
+            return Some(field);
+        }
+        if let Some(field) = self.objects_ui.text_field() {
             return Some(field);
         }
         if let Some(field) = self.characters.text_field() {
