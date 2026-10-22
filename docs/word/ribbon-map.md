@@ -422,9 +422,10 @@ same commands.
   Picture/Shape Format tabs.
 - No Bookmark, Cross-reference, Caption, Index, Citation buttons although
   the engine has commands for several.
-- Right-click menus (native): text, table, picture, shape, header and
-  footer (`crates/jade-office-model/src/word/context_menu.rs`,
-  `crates/jade-gpui-app/src/word_context_menu.rs`); the browser shell has
-  none yet.
+- Right-click menus: text, table, picture, shape, header and footer
+  (`crates/jade-office-model/src/word/context_menu.rs`;
+  `crates/jade-gpui-app/src/word_context_menu.rs`,
+  `crates/jade-gpui-web/src/view/word_context_menu.rs` — the browser leaves
+  Paste to ⌘V). No Bring Forward / Send Backward items yet.
 - Word's own shortcuts for headings, line spacing, ¶, grow/shrink font and
   clear formatting are unbound.

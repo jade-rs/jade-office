@@ -164,6 +164,23 @@ mod tests {
         assert!(!out.contains('{'));
     }
 
+    /// Every ScreenTip (`*_title`) the ribbons show reads as words in both
+    /// languages, not as its key or nothing.
+    #[test]
+    fn every_screen_tip_has_text_in_both_languages() {
+        for language in [Language::Japanese, Language::English] {
+            let table = table(language);
+            let tips: Vec<_> = table
+                .iter()
+                .filter(|(key, _)| key.ends_with("_title"))
+                .collect();
+            assert!(tips.len() > 50, "{language:?}: {} tips", tips.len());
+            for (key, text) in tips {
+                assert!(!text.trim().is_empty() && text != key, "{language:?} {key}");
+            }
+        }
+    }
+
     #[test]
     fn a_missing_key_shows_itself() {
         assert_eq!(text("no.such.key"), "no.such.key");
