@@ -34,17 +34,26 @@ mod deck;
 mod sheet;
 pub(crate) mod word_characters;
 pub(crate) mod word_controls;
+pub(crate) mod word_design;
+pub(crate) mod word_dialog;
 mod word_dialogs;
 pub(crate) mod word_equation;
-mod word_fields;
+pub(crate) mod word_fields;
 mod word_find;
 mod word_form;
+pub(crate) mod word_kit;
+pub(crate) mod word_lists;
 pub(crate) mod word_mailings;
+pub(crate) mod word_objects_ui;
+pub(crate) mod word_paragraph;
 pub(crate) mod word_references;
 mod word_review;
+pub(crate) mod word_ruler;
 pub(crate) mod word_setup;
-mod word_story;
+pub(crate) mod word_story;
+pub(crate) mod word_styles;
 mod word_table;
+pub(crate) mod word_tools_ui;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -366,7 +375,7 @@ enum Document {
     /// Word: the document open for editing, its pages as images, shown as
     /// a column of pages.
     Pages {
-        document: Box<jade_web::editing::EditableDocument>,
+        document: Box<jade_web::editing::WordDoc>,
         pages: Vec<PageImage>,
         page_size: (f32, f32),
         scroll: ScrollHandle,
@@ -390,8 +399,6 @@ enum Document {
         reveal_pending: bool,
         /// The find bar (⌘F), while it is open: typing goes into it.
         find: Option<Box<word_find::FindBar>>,
-        /// A header or footer being typed, in its bar over the pages.
-        story: Option<Box<crate::word_page::StoryBar>>,
         /// A comment being typed — new, a reply, an edit — in its bar.
         comment: Option<Box<word_review::CommentBar>>,
         /// A dialog — a link, a note, the paragraph's format — over the
@@ -465,7 +472,7 @@ struct ObjectGrab {
 thread_local! {
     /// The last copy's formatting, for a paste — in any tab — that finds the
     /// copy's text still on the clipboard.
-    static RICH_CLIP: RefCell<Option<jade_web::word::clipboard::RichClip>> =
+    pub(crate) static RICH_CLIP: RefCell<Option<jade_web::word::clipboard::RichClip>> =
         const { RefCell::new(None) };
 }
 
@@ -510,6 +517,15 @@ pub struct DocView {
     /// The 開発 tab's dialogs and the list or calendar dropped under a
     /// content control.
     controls: word_controls::ControlsUi,
+    /// The field dialogs: フィールド, ASK and FILLIN's prompts, 文書の
+    /// プロパティ (`word_fields`).
+    fields: word_fields::FieldsUi,
+    /// The paragraph, list, style and template tools' dialogs, the rulers
+    /// and the スタイル pane (`word_tools_ui`).
+    tools: word_tools_ui::WordTools,
+    /// トリミング, the pens, text box links, wrap points and the Selection
+    /// Pane (`word_objects_ui`).
+    objects_ui: word_objects_ui::ObjectsUi,
     /// The 差し込み文書 tab's merge, for a Word document.
     mailings: Option<word_mailings::Mailings>,
     host: Host,
@@ -568,7 +584,6 @@ impl DocView {
                     dragging: false,
                     reveal_pending: false,
                     find: None,
-                    story: None,
                     comment: None,
                     dialog: None,
                     show_comments: false,
@@ -583,7 +598,7 @@ impl DocView {
                                 .unwrap_or_else(PageImage::blank)
                         })
                         .collect(),
-                    document: Box::new(opened),
+                    document: Box::new(opened.into()),
                     page_size: (width as f32, height as f32),
                     scroll: ScrollHandle::new(),
                     current: 0,
@@ -651,6 +666,9 @@ impl DocView {
             characters: word_characters::Characters::default(),
             references: word_references::References::default(),
             controls: word_controls::ControlsUi::default(),
+            fields: word_fields::FieldsUi::default(),
+            tools: word_tools_ui::WordTools::default(),
+            objects_ui: word_objects_ui::ObjectsUi::default(),
             mailings,
             host,
             page_dialog: None,
@@ -879,11 +897,15 @@ impl DocView {
 
     /// Whether the page's picker was opened for a mail merge's list.
     pub fn wants_data_source(&self) -> bool {
-        word_mailings::wants_source(self)
+        word_mailings::wants_source(self) || self.picking_for_tools()
     }
 
-    /// The list the page's picker brought for the mail merge.
+    /// The list the page's picker brought for the mail merge, or the
+    /// template or picture a tool asked for.
     pub fn take_data_source(&mut self, name: &str, bytes: &[u8], cx: &mut Context<Self>) {
+        if self.picking_for_tools() {
+            return self.take_picked(name, bytes, cx);
+        }
         word_mailings::take_source(self, name, bytes, cx);
     }
 
@@ -1042,7 +1064,7 @@ impl DocView {
     fn word_edit(
         &mut self,
         cx: &mut Context<Self>,
-        edit: impl FnOnce(&mut jade_web::editing::EditableDocument) -> Result<(), String>,
+        edit: impl FnOnce(&mut jade_web::editing::WordDoc) -> Result<(), String>,
     ) {
         let Document::Pages { document, .. } = &mut self.document else {
             return;
@@ -1115,7 +1137,7 @@ impl DocView {
     fn word_move(
         &mut self,
         cx: &mut Context<Self>,
-        motion: impl FnOnce(&mut jade_web::editing::EditableDocument) -> Result<(), String>,
+        motion: impl FnOnce(&mut jade_web::editing::WordDoc) -> Result<(), String>,
     ) {
         let Document::Pages { document, .. } = &mut self.document else {
             return;
@@ -1195,12 +1217,29 @@ impl DocView {
         if let Some(bar) = self.find_bar_mut() {
             bar.active = false;
         }
+        // A double-click in the top or bottom margin opens the header or the
+        // footer in place; one in the body closes it.
+        if let (Some((_, y)), Document::Pages { document, .. }) =
+            (self.page_point(index, event.position), &self.document)
+        {
+            let page_y = y - document.document_y(index, 0.0);
+            if self.story_click(index, page_y, event.click_count, cx) {
+                return;
+            }
+        }
         let (Some((x, y)), Some(target)) = (
             self.page_point(index, event.position),
             self.page_position(index, event.position),
         ) else {
             return;
         };
+        // The pen, a crop handle, a wrap point, a text box to link to.
+        if let Document::Pages { document, .. } = &self.document {
+            let page_y = y - document.document_y(index, 0.0);
+            if self.object_ui_press(index, (x, page_y), y, cx) {
+                return;
+            }
+        }
         // A picture is over the text: a press on one takes hold of it rather
         // than putting the caret behind it. Its bottom-right corner resizes.
         if let Document::Pages {
@@ -1322,6 +1361,9 @@ impl DocView {
     /// through the whole window, not only over a page, and past the top or
     /// the bottom of the view the pages scroll to meet the pointer.
     fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if self.object_ui_drag(event, cx) {
+            return;
+        }
         if self.drag_object(event, cx) {
             return;
         }
@@ -1436,10 +1478,7 @@ impl DocView {
         if rect == (start.x, start.y, start.width, start.height) {
             return;
         }
-        self.word_edit(cx, move |document| {
-            use jade_web::word::picture::WordPicture;
-            document.place_object(start, rect)
-        });
+        self.word_edit(cx, move |document| document.place_object(start, rect));
         // Where the picture is now, for the outline and the next drag.
         if let Document::Pages {
             document, object, ..
@@ -1458,6 +1497,9 @@ impl DocView {
 
     /// A release ends a drag; the ribbon, left alone through it, catches up.
     fn page_release(&mut self, cx: &mut Context<Self>) {
+        if self.object_ui_release(cx) {
+            return;
+        }
         self.release_object(cx);
         // The brush paints what was just clicked or dragged over.
         let painting = matches!(
@@ -1689,6 +1731,9 @@ impl DocView {
         if let Action::EditStory(story) = action {
             return self.open_story(story, cx);
         }
+        if let Action::Story(action) = action {
+            return self.story_action(action, cx);
+        }
         if let Action::Review(review) = action {
             return self.review_action(review, cx);
         }
@@ -1721,6 +1766,31 @@ impl DocView {
         }
 
         if matches!(action, Action::Undo | Action::Redo) && self.equation.is_some() {
+            // A paragraph whose style updates itself takes the format into the
+            // style (自動的に更新する).
+            let formats = matches!(
+                action,
+                Action::Toggle(_)
+                    | Action::FontFamilyName(_)
+                    | Action::FontSize(_)
+                    | Action::StepFontSize(_)
+                    | Action::FontColor(_)
+                    | Action::Align(_)
+                    | Action::LineSpacing(_)
+                    | Action::Indent(_)
+                    | Action::Shading(_)
+                    | Action::ParagraphBorders(_)
+            );
+            if formats {
+                let view = cx.weak_entity();
+                cx.defer(move |cx| {
+                    view.update(cx, |view, cx| {
+                        view.auto_update_style();
+                        cx.notify();
+                    })
+                    .ok();
+                });
+            }
             self.word_edit(cx, move |document| match action {
                 Action::Undo => document.undo().map(|_| ()),
                 _ => document.redo().map(|_| ()),
@@ -1742,6 +1812,8 @@ impl DocView {
                     use jade_web::word::picture::WordPicture;
                     document.set_picture_wrap(selected, wrap)
                 });
+                // Where the picture now is: floating moves it.
+                self.refresh_selected_object();
             }
             return;
         }
@@ -1749,16 +1821,10 @@ impl DocView {
             return self.table_action(action, cx);
         }
         if let Action::Word(command) = action {
-            self.word_edit(cx, move |document| {
-                crate::word_tools::run(document, command)
-            });
-            if let Document::Pages {
-                ribbon, document, ..
-            } = &mut self.document
-            {
-                ribbon.read_styles(document);
-            }
-            return;
+            return self.run_tool(command, cx);
+        }
+        if let Action::Object(crate::word_objects::ObjectAction::Ui(ui)) = action {
+            return self.object_ui_action(ui, cx);
         }
         if let Action::Object(object_action) = action {
             let selected = match &self.document {
@@ -1824,6 +1890,7 @@ impl DocView {
                 jade_web::word::page::WordPage::page_command(document, command, !i18n::is_english())
             }
             Action::EditStory(_)
+            | Action::Story(_)
             | Action::Setup(_)
             | Action::Characters(_)
             | Action::References(_)
@@ -1864,6 +1931,8 @@ impl DocView {
         .then(|| word_mailings::groups(self))
         .flatten();
         let equation = self.equation_tab_state();
+        let story = self.story_tab_state();
+        let object_modes = self.object_modes();
         let Document::Pages {
             document,
             ribbon,
@@ -1926,6 +1995,11 @@ impl DocView {
                 developer,
                 mailings,
                 equation,
+                story,
+                field_codes: document.field_code_view().all,
+                styles_pane: self.tools.styles_pane,
+                ruler: (self.tools.ruler, self.tools.unit),
+                object_modes,
             }
         };
         ribbon::ribbon(
@@ -1994,10 +2068,26 @@ impl DocView {
         self.shown_zoom = zoom;
         self.follow_scroll(viewport);
         let word_ribbon = self.word_ribbon(viewport, cx);
-        let story_bar = self.story_bar_element();
         let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
+        let styles_pane = self.styles_pane(cx);
+        let selection_pane = self.selection_pane(cx);
+        let mut object_overlays = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.object_ui_overlay(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
+        let horizontal_ruler = self.horizontal_ruler(cx);
+        let mut vertical_rulers = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.vertical_ruler(index))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let find_bar = self.find_bar_element(cx);
         let table_cursor = self.table_cursor();
         let table_dialog = self.table_dialog_element(cx);
@@ -2023,6 +2113,13 @@ impl DocView {
         }
         .into_iter();
         let equation_overlay = self.equation_overlay(zoom);
+        let mut story_labels = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.story_label(index, zoom))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let editing_equation = self.equation.is_some();
         let Document::Pages {
             document,
@@ -2142,6 +2239,9 @@ impl DocView {
                 let entity = entity.clone();
                 let table_overlay = table_overlays.next().flatten();
                 let control_overlay = control_overlays.next().unwrap_or_default();
+                let story_label = story_labels.next().flatten();
+                let vertical_ruler = vertical_rulers.next().flatten();
+                let object_overlay = object_overlays.next().unwrap_or_default();
                 div()
                     .relative()
                     .flex_none()
@@ -2197,6 +2297,9 @@ impl DocView {
                         },
                     ))
                     .children(table_overlay)
+                    .children(story_label)
+                    .children(vertical_ruler)
+                    .children(object_overlay)
                     .children(word_references::page_marks(&marks, index, zoom, cx))
                     .children(control_overlay)
                     .children(
@@ -2314,8 +2417,8 @@ impl DocView {
                     .child(word_ribbon)
                     .children(dialog_bar)
                     .children(comment_bar)
-                    .children(story_bar)
                     .children(find_bar)
+                    .children(horizontal_ruler)
                     .child(
                         div()
                             .id("pages")
@@ -2334,6 +2437,8 @@ impl DocView {
                     ),
             )
             .children(comments_pane)
+            .children(styles_pane)
+            .children(selection_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
     }
@@ -2384,6 +2489,22 @@ impl DocView {
             }
             return;
         }
+        if self.fields.is_open() {
+            if self.handle_fields_key(event, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.tools.is_open() {
+            if self.handle_tool_dialog_key(event, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.object_ui_key(key, cx) {
+            cx.stop_propagation();
+            return;
+        }
         // A dialog takes the keyboard while it is open: its own keys stop
         // here, and typing goes on to the input handler, into its field.
         if self.characters.is_open() {
@@ -2411,7 +2532,7 @@ impl DocView {
             cx.stop_propagation();
             return;
         }
-        if self.story_editing() && self.story_key(event, cx) {
+        if self.story_key(event, cx) {
             cx.stop_propagation();
             return;
         }
@@ -2423,6 +2544,23 @@ impl DocView {
         if self.field_key(event, cx) {
             cx.stop_propagation();
             return;
+        }
+        // ⌃⌘V 形式を選択して貼り付け, ⌥⇧⌘V 書式を結合して貼り付け.
+        if matches!(self.document, Document::Pages { .. }) && modifiers.platform && key == "v" {
+            if modifiers.control {
+                word_characters::open_paste_special(self, cx);
+                cx.stop_propagation();
+                return;
+            }
+            if modifiers.alt && modifiers.shift {
+                word_characters::paste_with(
+                    self,
+                    jade_web::word::clipboard::PasteMode::MergeFormatting,
+                    cx,
+                );
+                cx.stop_propagation();
+                return;
+            }
         }
         // A sheet takes its own keys first: Excel's shortcuts, ⌘-arrows,
         // and the keys of a cell being typed into.
@@ -2531,6 +2669,15 @@ impl DocView {
         if self.controls.is_open() {
             return self.controls.field_mut();
         }
+        if self.fields.is_open() {
+            return self.fields.text_field_mut();
+        }
+        if self.tools.is_open() {
+            return self.dialog_field_mut();
+        }
+        if self.objects_ui.text_field().is_some() {
+            return self.objects_ui.text_field_mut();
+        }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
         }
@@ -2568,14 +2715,28 @@ impl DocView {
             Document::Pages {
                 comment: Some(bar), ..
             } => Some(&mut bar.text),
-            Document::Pages {
-                story: Some(bar), ..
-            } => Some(&mut bar.text),
             Document::Pages { find, .. } => find
                 .as_deref_mut()
                 .filter(|bar| bar.active)
                 .map(|bar| bar.field_mut()),
         }
+    }
+
+    /// The field of an open Word dialog that typing goes into.
+    fn word_dialog_field_mut(&mut self) -> Option<&mut TextEdit> {
+        if self.fields.is_open() {
+            return self.fields.text_field_mut();
+        }
+        if self.tools.is_open() {
+            return self.dialog_field_mut();
+        }
+        if self.objects_ui.text_field().is_some() {
+            return self.objects_ui.text_field_mut();
+        }
+        if self.characters.is_open() {
+            return self.characters.text_field_mut();
+        }
+        None
     }
 
     fn current_text(&self) -> Option<&TextEdit> {
@@ -2587,6 +2748,15 @@ impl DocView {
             return Some(field);
         }
         if let Some(field) = self.controls.field() {
+            return Some(field);
+        }
+        if let Some(field) = self.fields.text_field() {
+            return Some(field);
+        }
+        if let Some(field) = self.dialog_field() {
+            return Some(field);
+        }
+        if let Some(field) = self.objects_ui.text_field() {
             return Some(field);
         }
         if let Some(field) = self.characters.text_field() {
@@ -2608,9 +2778,6 @@ impl DocView {
             } => dialog.field(),
             Document::Pages {
                 comment: Some(bar), ..
-            } => Some(&bar.text),
-            Document::Pages {
-                story: Some(bar), ..
             } => Some(&bar.text),
             Document::Pages { find, .. } => find
                 .as_deref()
@@ -2680,7 +2847,7 @@ impl DocView {
     /// handler.
     fn word_input(&self) -> Option<(String, usize, Option<Range<usize>>)> {
         // While a bar has the keyboard, typing is the bar's.
-        if self.finding() || self.story_editing() || self.commenting() {
+        if self.finding() || self.commenting() {
             return None;
         }
         let Document::Pages { document, .. } = &self.document else {
@@ -2802,9 +2969,6 @@ impl EntityInputHandler for DocView {
                 comment: Some(bar), ..
             } => bar.text.marked = None,
             Document::Pages {
-                story: Some(bar), ..
-            } => bar.text.marked = None,
-            Document::Pages {
                 find: Some(bar), ..
             } if bar.active => bar.field_mut().marked = None,
             _ => {}
@@ -2818,8 +2982,7 @@ impl EntityInputHandler for DocView {
         };
         match &mut self.document {
             // Into a bar, its first line.
-            Document::Pages { story: Some(_), .. }
-            | Document::Pages {
+            Document::Pages {
                 comment: Some(_), ..
             } => {
                 let line = text.lines().next().unwrap_or_default().to_string();
@@ -2901,6 +3064,15 @@ impl EntityInputHandler for DocView {
             }
             return cx.notify();
         }
+        // A Word dialog's field (`word_fields`, `word_characters`, the
+        // paragraph, list and style dialogs).
+        if let Some(field) = self.word_dialog_field_mut() {
+            // A field shown wholly selected is replaced by what is typed,
+            // wherever the browser's mirror thinks the caret is.
+            let range = range.filter(|range| !(field.whole && range.is_empty()));
+            field.replace(range, text, false);
+            return cx.notify();
+        }
         if self.table_dialog_typed(text, cx) {
             return;
         }
@@ -2915,10 +3087,7 @@ impl EntityInputHandler for DocView {
         if self.equation.is_some() {
             return self.equation_type(text, cx);
         }
-        if matches!(self.document, Document::Pages { .. })
-            && !self.finding()
-            && !self.story_editing()
-            && !self.commenting()
+        if matches!(self.document, Document::Pages { .. }) && !self.finding() && !self.commenting()
         {
             let text = text.to_string();
             let composing = self
@@ -2972,6 +3141,11 @@ impl EntityInputHandler for DocView {
             }
             return cx.notify();
         }
+        if let Some(field) = self.word_dialog_field_mut() {
+            let range = range.filter(|range| !(field.whole && range.is_empty()));
+            field.replace(range, new_text, true);
+            return cx.notify();
+        }
         if self.table_dialog_open() || self.page_dialog.is_some() {
             return;
         }
@@ -2979,10 +3153,7 @@ impl EntityInputHandler for DocView {
             field.replace(range, new_text, true);
             return cx.notify();
         }
-        if matches!(self.document, Document::Pages { .. })
-            && !self.finding()
-            && !self.story_editing()
-            && !self.commenting()
+        if matches!(self.document, Document::Pages { .. }) && !self.finding() && !self.commenting()
         {
             let text = new_text.to_string();
             self.word_edit(cx, move |document| document.set_composition(&text));
@@ -3084,6 +3255,8 @@ impl Render for DocView {
         let reference_dialog = word_references::overlay(self, window, cx);
         let controls_dialog = word_controls::dialog(self, window, cx);
         let mailings_dialog = word_mailings::dialog(self, window, cx);
+        let fields_dialog = self.fields_dialog_element(window, cx);
+        let tool_dialog = self.tool_dialog_element(window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -3095,5 +3268,7 @@ impl Render for DocView {
             .children(reference_dialog)
             .children(controls_dialog)
             .children(mailings_dialog)
+            .children(fields_dialog)
+            .children(tool_dialog)
     }
 }

@@ -11,8 +11,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub use jade_docx_editor::field_datetime::FieldDateTime;
-use jade_docx_editor::fields::{self, FieldCommand, FieldEnvironment, FieldScope};
+pub use jade_docx_editor::field_datetime::{
+    datetime_from_unix, format_word_date, parse_core_property_datetime, unix_seconds, FieldDateTime,
+};
+pub use jade_docx_editor::fields::FieldScope;
+use jade_docx_editor::fields::{self, FieldCommand, FieldEnvironment};
 pub use jade_docx_editor::fields::{
     CustomProperty, CustomValue, DocumentProperties, FieldCodeView, FieldInfo, FieldPrompt,
 };

@@ -386,11 +386,11 @@ pub(crate) fn sync_selection(_view: &mut DocumentView) {}
 impl DocumentView {
     /// The Word document. The 参考資料 tab and its dialogs exist only over
     /// one, so there always is one here.
-    pub(crate) fn doc(&self) -> &jade_web::editing::EditableDocument {
+    pub(crate) fn doc(&self) -> &jade_web::editing::WordDoc {
         self.word_ref().expect("a Word document")
     }
 
-    pub(crate) fn doc_mut(&mut self) -> &mut jade_web::editing::EditableDocument {
+    pub(crate) fn doc_mut(&mut self) -> &mut jade_web::editing::WordDoc {
         self.word_mut().expect("a Word document")
     }
 

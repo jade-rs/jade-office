@@ -92,6 +92,8 @@ pub enum Tab {
     TableLayout,
     /// 数式: while an equation is being edited.
     Equation,
+    /// ヘッダーとフッター: while a header or footer is open in place.
+    HeaderFooter,
 }
 
 impl Tab {
@@ -119,6 +121,7 @@ impl Tab {
             Tab::TableDesign => "doc.tab.table_design",
             Tab::TableLayout => "doc.tab.table_layout",
             Tab::Equation => "equation.tab",
+            Tab::HeaderFooter => "story.tab",
         })
     }
 }
@@ -246,8 +249,10 @@ pub enum Action {
     Table(TableCommand),
     /// ページ設定 and ページ番号.
     Page(PageCommand),
-    /// ヘッダーの編集 / フッターの編集: the bar over the pages.
+    /// ヘッダー / フッター: the story opened in place over the caret's page.
     EditStory(Story),
+    /// The ヘッダーとフッター tab (`view::word_story`).
+    Story(crate::view::word_story::StoryAction),
     /// The 校閲 tab.
     Review(crate::word_review::ReviewAction),
     /// The 開発 tab (`view::word_controls`).
@@ -669,6 +674,16 @@ pub struct TabState {
     pub mailings: Option<Vec<jade_web::word::form_view::ToolGroup>>,
     /// What the 数式 tab shows, while an equation is being edited.
     pub equation: Option<crate::view::word_equation::EquationTabState>,
+    /// What the ヘッダーとフッター tab shows, while a story is open.
+    pub story: Option<crate::view::word_story::StoryTabState>,
+    /// ⌥F9: whether every field shows its code.
+    pub field_codes: bool,
+    /// Whether the スタイル pane is open.
+    pub styles_pane: bool,
+    /// Whether the rulers show, and their unit.
+    pub ruler: (bool, jade_web::word::ruler::RulerUnit),
+    /// トリミング, the pen in hand and the object panes.
+    pub object_modes: crate::view::word_objects_ui::ObjectModes,
 }
 
 pub fn ribbon(
@@ -686,6 +701,7 @@ pub fn ribbon(
     let shown_tab = match ribbon.tab {
         Tab::TableDesign | Tab::TableLayout if !in_table => Tab::Home,
         Tab::Equation if shown.equation.is_none() => Tab::Home,
+        Tab::HeaderFooter if shown.story.is_none() => Tab::Insert,
         tab => tab,
     };
     let mut strip = Tab::ALL.to_vec();
@@ -694,6 +710,9 @@ pub fn ribbon(
     }
     if shown.equation.is_some() {
         strip.push(Tab::Equation);
+    }
+    if shown.story.is_some() {
+        strip.push(Tab::HeaderFooter);
     }
     let tabs: Vec<_> = strip
         .into_iter()
@@ -721,14 +740,38 @@ pub fn ribbon(
             let lists =
                 crate::word_tools::list_group(ribbon, &shown.tools, state.alignment.as_deref(), cx);
             groups.insert(2.min(groups.len()), lists);
+            let styles_at = groups.len().saturating_sub(1);
+            groups.insert(
+                styles_at,
+                crate::view::word_styles::style_tools_group(
+                    ribbon,
+                    state.style_id.clone(),
+                    shown.styles_pane,
+                    cx,
+                ),
+            );
             groups
         }
         Tab::Design => crate::word_tools::design(ribbon, &shown.tools, cx),
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
             groups.push(crate::word_tools::drop_cap_group(ribbon, &shown.tools, cx));
+            groups.push(crate::view::word_design::quick_parts_group(
+                ribbon,
+                &shown.tools.quick_parts,
+                cx,
+            ));
             groups.push(crate::word_page::pictures(shown.picture, cx));
-            groups.push(crate::word_objects::objects(ribbon.popup, shown.object, cx));
+            groups.push(crate::word_objects::objects(
+                ribbon.popup,
+                shown.object,
+                shown.object_modes,
+                cx,
+            ));
+            groups.push(crate::view::word_objects_ui::pen_group(
+                shown.object_modes,
+                cx,
+            ));
             groups.push(group(
                 i18n::text("link.group"),
                 vec![row(vec![crate::word_page::text_button(
@@ -744,6 +787,10 @@ pub fn ribbon(
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
             groups.push(crate::view::word_characters::insert_group(cx));
+            groups.push(crate::view::word_fields::fields_group(
+                shown.field_codes,
+                cx,
+            ));
             groups.push(crate::view::word_equation::insert_group(ribbon.popup, cx));
             groups
         }
@@ -770,11 +817,21 @@ pub fn ribbon(
                     cx,
                 ));
             }
+            groups.push(crate::view::word_ruler::ruler_group(
+                ribbon,
+                shown.ruler.0,
+                shown.ruler.1,
+                cx,
+            ));
             groups
         }
         Tab::References => {
             crate::view::word_references::ribbon_groups(ribbon.popup, shown.references.as_ref(), cx)
         }
+        Tab::HeaderFooter => match &shown.story {
+            Some(state) => crate::view::word_story::story_groups(state, cx),
+            None => Vec::new(),
+        },
         Tab::Equation => match shown.equation.clone() {
             Some(state) => crate::view::word_equation::tab_groups(ribbon.popup, state, cx),
             None => Vec::new(),
@@ -1283,6 +1340,7 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                     cx,
                 ),
                 painter_button(ribbon.painter.is_some(), cx),
+                crate::view::word_characters::paste_options(ribbon, cx),
             ])],
         ),
     ]

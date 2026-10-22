@@ -43,6 +43,8 @@ pub mod find;
 pub mod font;
 pub mod form_view;
 pub mod group;
+pub mod handles;
+pub mod html_clip;
 pub mod ink;
 pub mod insert;
 pub mod links;

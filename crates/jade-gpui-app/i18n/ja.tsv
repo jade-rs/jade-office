@@ -2604,3 +2604,5 @@ equation.delete_column	列の削除
 equation.justify_left	左揃え
 equation.justify_center	中央揃え
 equation.justify_right	右揃え
+# Browser shell: Word ports (header/footer, fields, paste, tools, objects)
+objects.draw	描画
