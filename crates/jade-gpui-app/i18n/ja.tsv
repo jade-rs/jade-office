@@ -2817,3 +2817,250 @@ draw.effect.gold	金
 draw.effect.silver	銀
 draw.effect.rosegold	ローズ ゴールド
 draw.effect.bronze	ブロンズ
+# ---- 表示, 検索と置換, 入力支援 (word_views) ----
+views.group.views	表示
+views.read	閲覧モード
+views.print	印刷レイアウト
+views.web	Web レイアウト
+views.outline	アウトライン
+views.draft	下書き
+views.group.movement	ページ移動
+views.vertical	縦
+views.side_to_side	横
+views.gridlines	グリッド線
+views.white_space	余白を表示しない
+views.white_space_title	ページ間の余白を表示しない (ページ間をダブルクリックでも切り替え)
+views.zoom.button	ズーム
+views.zoom.title	ズーム
+views.zoom.page_width	ページ幅を基準に表示
+views.zoom.text_width	文字列の幅を基準に表示
+views.zoom.whole_page	ページ全体を表示
+views.zoom.many_pages	複数ページ
+views.zoom.pages	ページ数
+views.zoom.percent	倍率
+views.one_page	1 ページ
+views.multiple_pages	複数ページ
+views.page_width	ページ幅
+menu.tools	ツール
+menu.tools.autocorrect	オートコレクト…
+autocorrect.title	オートコレクト
+autocorrect.tab.correct	オートコレクト
+autocorrect.tab.format	入力オートフォーマット
+autocorrect.two_initial_capitals	2 文字目を小文字にする [THe → The]
+autocorrect.capitalize_sentences	文の先頭文字を大文字にする [the → The]
+autocorrect.capitalize_days	曜日の先頭文字を大文字にする [monday → Monday]
+autocorrect.replace_text	入力中に自動修正する
+autocorrect.smart_quotes	左右の区別がない引用符を、区別がある引用符に変更する
+autocorrect.ordinals	序数 (1st, 2nd) を上付き文字に変更する
+autocorrect.fractions	分数 (1/2, 1/4, 3/4) を分数文字に変更する
+autocorrect.hyphens	ハイフンをダッシュに変更する
+autocorrect.bulleted_lists	箇条書き (行頭文字)
+autocorrect.numbered_lists	段落番号
+autocorrect.borders	罫線
+autocorrect.headings	組み込みの見出しスタイル
+autocorrect.long_vowels	長音とダッシュを正しく使い分ける
+autocorrect.brackets	かっこを正しく組み合わせる
+autocorrect.closing_phrases	頭語に対応する結語を挿入する
+autocorrect.kiki	記書きに対応する"以上"を挿入する
+autocorrect.replace	修正文字列
+autocorrect.with	修正後の文字列
+autocorrect.add	追加
+autocorrect.delete	削除
+context.cut	切り取り
+context.copy	コピー
+context.paste	貼り付け
+context.paste_options	貼り付けのオプション
+context.paste_keep	元の書式を保持
+context.paste_merge	書式を結合
+context.paste_text	テキストのみ保持
+context.font	フォント…
+context.paragraph	段落…
+context.bullets	箇条書き
+context.numbering	段落番号
+context.smart_lookup	スマート検索
+context.new_comment	新しいコメント
+context.link	リンク…
+context.edit_link	リンクの編集…
+context.open_link	リンクを開く
+context.remove_link	リンクの削除
+context.update_field	フィールド更新
+context.edit_field	フィールドの編集…
+context.toggle_field_codes	フィールド コードの表示/非表示
+context.insert	挿入
+context.row_above	上に行を挿入
+context.row_below	下に行を挿入
+context.column_left	左に列を挿入
+context.column_right	右に列を挿入
+context.insert_cells	セルの挿入…
+context.delete	削除
+context.delete_cells	セルの削除…
+context.delete_row	行の削除
+context.delete_column	列の削除
+context.delete_table	表の削除
+context.merge_cells	セルの結合
+context.split_cells	セルの分割…
+context.distribute_rows	行の高さを揃える
+context.distribute_columns	列の幅を揃える
+context.table_borders	線種とページ罫線と網かけの設定…
+context.text_direction	縦書きと横書き…
+context.autofit	自動調整
+context.autofit_contents	文字列の幅に合わせる
+context.autofit_window	ウィンドウ幅に合わせる
+context.table_properties	表のプロパティ…
+context.wrap	文字列の折り返し
+context.edit_header	ヘッダーの編集
+context.edit_footer	フッターの編集
+context.close_header_footer	ヘッダーとフッターを閉じる
+find.menu	高度な検索と置換…
+find.title	検索と置換
+find.title_replace	検索と置換
+find.tab.find	検索
+find.tab.replace	置換
+find.query	検索する文字列
+find.replacement	置換後の文字列
+find.more	オプション ▼
+find.less	オプション ▲
+find.next	次を検索
+find.replace	置換
+find.replace_all	すべて置換
+find.direction	検索方向
+find.down	下へ
+find.up	上へ
+find.all	すべて
+find.scope	検索する場所
+find.scope.main	メイン文書
+find.scope.notes	脚注と文末脚注
+find.scope.selection	選択範囲
+find.scope.headers	ヘッダーとフッター
+find.match_prefix	接頭辞に一致する
+find.match_suffix	接尾辞に一致する
+find.wildcards	ワイルドカードを使用する
+find.match_width	半角と全角を区別する
+find.match_kana	ひらがなとカタカナを区別する
+find.ignore_punctuation	句読点を無視する
+find.ignore_whitespace	空白文字を無視する
+find.format	書式
+find.special	特殊文字
+find.no_format	書式の削除
+find.format.bold	太字
+find.format.not_bold	太字なし
+find.format.italic	斜体
+find.format.not_italic	斜体なし
+find.format.underline	下線
+find.format.no_underline	下線なし
+find.format.highlight	蛍光ペン
+find.format.no_highlight	蛍光ペンなし
+find.format.style	スタイル:
+find.special.paragraph	段落記号
+find.special.tab	タブ文字
+find.special.any_char	任意の 1 文字
+find.special.any_digit	任意の数字
+find.special.any_letter	任意の英字
+find.special.caret	キャレット記号
+find.special.column_break	段区切り
+find.special.em_dash	全角ダッシュ
+find.special.en_dash	半角ダッシュ
+find.special.line_break	任意指定の行区切り
+find.special.page_break	任意指定の改ページ
+find.special.nonbreaking_hyphen	改行をしないハイフン
+find.special.nonbreaking_space	改行をしないスペース
+find.special.optional_hyphen	任意指定のハイフン
+find.special.white_space	空白文字
+find.special.found_text	検索する文字列
+find.end_reached	文書の最後まで検索しました。
+find.start_reached	文書の先頭まで検索しました。
+find.not_found	検索項目は見つかりませんでした。
+find.bad_pattern	検索する文字列が正しくありません: {why}
+find.replaced_count	{n} 個の項目を置換しました。
+options.menu	Word のオプション…
+options.title	Word のオプション
+options.page.view	表示
+options.page.edit	編集
+options.page.ribbon	リボンとツール バー
+options.marks	常に画面に表示する編集記号
+options.marks.tabs	タブ
+options.marks.spaces	スペース
+options.marks.paragraph_marks	段落記号
+options.marks.hidden_text	隠し文字
+options.marks.optional_hyphens	任意指定のハイフン
+options.marks.anchors	アンカー記号
+options.overtype	上書き入力モードを使用する
+options.insert_key	Insert キーで上書き入力を切り替える
+options.paste	切り取り、コピー、貼り付け
+options.paste_same	同じ文書内での貼り付け
+options.paste_between	文書間での貼り付け
+options.paste_other	他のプログラムからの貼り付け
+options.tabs	表示するタブ
+options.qat	クイック アクセス ツール バーのコマンド
+options.custom_group	ホームの「ユーザー設定」グループのコマンド
+customize.group	ユーザー設定
+views.status.overtype	上書き
+qat.save	上書き保存
+qat.undo	元に戻す
+qat.redo	やり直し
+qat.print	印刷
+qat.export_pdf	PDF として書き出す
+qat.find	検索
+qat.bold	太字
+qat.italic	斜体
+qat.underline	下線
+qat.align_left	左揃え
+qat.align_center	中央揃え
+qat.align_right	右揃え
+qat.insert_table	表の挿入
+qat.picture	画像
+qat.track_changes	変更履歴の記録
+modes.title	編集モード
+modes.editing	編集
+modes.reviewing	校閲
+modes.viewing	閲覧
+modes.editing_hint	文書を直接編集します
+modes.reviewing_hint	変更をすべて変更履歴として記録します
+modes.viewing_hint	誤って変更しないように閲覧だけにします
+views.group.immersive	イマーシブ
+views.focus	フォーカス
+views.focus_title	フォーカス モード (Esc で終了)
+views.group.window	ウィンドウ
+views.new_window	新しいウィンドウを開く
+views.split	分割
+views.window_hint	この文書の別のウィンドウです。ここでの編集は元のウィンドウにもすぐに反映されます。
+language.group	言語
+language.button	校正言語の設定…
+language.title	言語
+language.mark_as	選択した文字列の言語
+language.no_proof	スペル チェックと文章校正を行わない
+language.detect	言語を自動的に検出する
+language.ja_jp	日本語
+language.en_us	英語 (米国)
+language.en_gb	英語 (英国)
+language.zh_cn	中国語 (簡体字)
+language.zh_tw	中国語 (繁体字)
+language.ko_kr	韓国語
+language.fr_fr	フランス語
+language.de_de	ドイツ語
+language.es_es	スペイン語
+language.it_it	イタリア語
+language.pt_br	ポルトガル語 (ブラジル)
+language.ru_ru	ロシア語
+language.th_th	タイ語
+language.ar_sa	アラビア語
+outline.tab	アウトライン
+outline.group.tools	アウトライン ツール
+outline.group.close	閉じる
+outline.level	レベル {n}
+outline.body	本文
+outline.all	すべて
+outline.show_level	レベルの表示
+outline.to_top	見出し 1 にレベル上げ
+outline.promote	レベル上げ
+outline.demote	レベル下げ
+outline.to_body	本文にレベル下げ
+outline.move_up	上へ移動
+outline.move_down	下へ移動
+outline.expand	展開
+outline.collapse	折りたたみ
+outline.close	アウトライン表示を閉じる
+views.read.edit	文書の編集
+views.read.position	{current} / {count} 画面
+views.read.keys	← → で移動、Esc で戻る
+autocorrect.cjk_spaces	日本語と英数字の間の不要なスペースを削除する

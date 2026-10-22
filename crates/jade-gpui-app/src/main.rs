@@ -61,6 +61,7 @@ mod word_styles;
 mod word_table;
 mod word_templates;
 mod word_tools;
+mod word_views;
 mod workbook;
 mod workspace;
 mod workspace_files;
@@ -187,8 +188,9 @@ fn key_bindings() -> Vec<KeyBinding> {
     const CONTEXT: Option<&str> = Some("Document");
     let mut bindings = vec![
         KeyBinding::new("cmd-q", Quit, None),
-        // 環境設定 → 保存.
-        KeyBinding::new("cmd-,", word_files::SavePreferences, CONTEXT),
+        // 環境設定 → 保存. ⌘, itself is Word のオプション (`word_views`), as
+        // Word for Mac's 環境設定 is.
+        KeyBinding::new("cmd-alt-,", word_files::SavePreferences, CONTEXT),
         // Opening and closing belong to the app, not to one kind of window:
         // they work from the start window and from every view.
         KeyBinding::new("cmd-n", NewDocument, None),
@@ -294,6 +296,8 @@ fn key_bindings() -> Vec<KeyBinding> {
     ];
     // 参考資料's and ジャンプ's keys (`word_references`).
     bindings.extend(word_references::key_bindings());
+    // 表示, ツール and the input aids' keys (`word_views`).
+    bindings.extend(word_views::key_bindings());
     bindings
 }
 
@@ -379,6 +383,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.edit.find_next"), FindNext),
                 MenuItem::action(t("menu.edit.replace"), Replace),
                 MenuItem::action(t("menu.edit.replace_all"), ReplaceAll),
+                MenuItem::action(t("find.menu"), word_views::AdvancedFind),
                 MenuItem::action(t("goto.menu"), word_references::GoTo),
             ],
         },
@@ -499,6 +504,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.view.zoom_fit"), ZoomFit),
             ],
         },
+        word_views::tools_menu(),
         Menu {
             name: t("menu.slideshow").into(),
             items: vec![MenuItem::action(
@@ -1128,7 +1134,7 @@ impl gpui::AssetSource for Assets {
 ///
 /// The browser shell shows these seven, and a tab that is present but empty is
 /// worse than one that is not: each of these has something under it.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RibbonTab {
     Home,
     Insert,
@@ -1152,6 +1158,8 @@ pub(crate) enum RibbonTab {
     Developer,
     /// 数式, while an equation is being edited.
     Equation,
+    /// アウトライン, shown in the アウトライン view (`word_views`).
+    Outlining,
 }
 
 impl RibbonTab {
@@ -1185,6 +1193,7 @@ impl RibbonTab {
             RibbonTab::ObjectFormat => t("objects.tab.shape_format"),
             RibbonTab::Developer => t("cc.tab"),
             RibbonTab::Equation => t("equation.tab"),
+            RibbonTab::Outlining => t("outline.tab"),
         }
     }
 }
@@ -1376,6 +1385,8 @@ struct DocumentView {
     recovery: autorecover::Recovery,
     /// The 印刷 panel, while it is open.
     printing: Option<word_print::PrintPanel>,
+    /// 表示: the view, page movement, zoom fit, grid and white space.
+    views: word_views::Views,
     scroll: ScrollHandle,
     focus: FocusHandle,
 }
@@ -1386,6 +1397,11 @@ impl DocumentView {
     /// The sidebar highlight followed clicks only, so scrolling left it
     /// pointing at wherever you last clicked.
     fn page_from_scroll(&self) -> usize {
+        // Wherever the view laid the pages out — several across, side by
+        // side, cropped — the page under the viewport.
+        if let Some(page) = word_views::page_in_view(&self.scroll, self.images.len()) {
+            return page;
+        }
         // Scroll is in screen pixels and the pitch is in document pixels.
         let offset = -f64::from(self.scroll.offset().y) / f64::from(self.zoom);
         let pitch = self.document.page_pitch();
@@ -1527,6 +1543,23 @@ impl DocumentView {
     /// lets a composition exist — so this only handles the keys an IME never
     /// sees.
     fn handle_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // The mini toolbar goes at the first key, as Word's does, and with
+        // it any ranges selected beside the selection.
+        self.views.mini = false;
+        self.views.extra_ranges.clear();
+        // 閲覧モード's keys turn its columns.
+        if !self.views.is_open()
+            && word_views::layout::read_key(self, event.keystroke.key.as_str(), cx)
+        {
+            return;
+        }
+        // 閲覧: nothing the keyboard does changes the document.
+        if word_views::modes::read_only(self)
+            && word_views::modes::is_edit_key(event.keystroke.key.as_str())
+            && !self.views.is_open()
+        {
+            return;
+        }
         // A composition owns the keyboard while it is running; letting these
         // through would edit around the preedit.
         if self.marked.is_some() {
@@ -1583,6 +1616,12 @@ impl DocumentView {
                 cx.stop_propagation();
             }
             // Nothing reaches the document while a dialog is open.
+            return;
+        }
+        if self.views.is_open() {
+            if word_views::handle_key(self, event.keystroke.key.as_str(), cx) {
+                cx.stop_propagation();
+            }
             return;
         }
         if self.references.is_open() || self.references.searching {
@@ -1774,7 +1813,11 @@ impl DocumentView {
                 // repainted rather than the visible page.
                 let result = self.document.insert_paragraph_break(paragraph, offset);
                 self.rebuild_after_edit();
+                let split = result.is_ok();
                 self.after_edit(result, (paragraph + 1, 0), cx);
+                if split {
+                    word_views::input::after_enter(self, paragraph, cx);
+                }
             }
             // In a table, to the next or the previous cell; elsewhere a tab
             // typed, as in Word. Taken here, so the platform does not type
@@ -1862,6 +1905,7 @@ impl DocumentView {
                 let page = self.caret_page_1idx();
                 let result = self.document.insert_text(paragraph, offset, "\t", page);
                 self.after_edit(result, (paragraph, offset + 1), cx);
+                word_views::input::after_typing(self, "\t", cx);
             }
             Ok(CellStep::NotInTable) => {}
             Err(error) => eprintln!("tab failed: {error}"),
@@ -2029,15 +2073,24 @@ impl DocumentView {
             .into_any_element()
     }
 
-    /// The tabs to show, with their labels: Word's seven, ヘッダーとフッター
-    /// while a header or footer is open, the two table tabs while the caret
-    /// is in a table, and 図の形式 / 図形の書式 while a picture or shape is
-    /// selected.
+    /// The tabs to show, with their labels: Word's ten (Home, Insert, Draw,
+    /// Design, Layout, References, Mailings, Review, View, Developer) less
+    /// those リボンのユーザー設定 hides; アウトライン first in the Outline view;
+    /// ヘッダーとフッター while a header or footer is open, the two table tabs
+    /// while the caret is in a table, 図の形式 / 図形の書式 while a picture or
+    /// shape is selected and 数式 while an equation is being edited.
     fn ribbon_tabs(&mut self) -> Vec<(RibbonTab, &'static str)> {
-        let mut tabs: Vec<_> = RibbonTab::ALL.map(|tab| (tab, tab.label())).to_vec();
+        let mut tabs: Vec<_> = RibbonTab::ALL
+            .into_iter()
+            .filter(|tab| word_views::customize::tab_shown(*tab))
+            .map(|tab| (tab, tab.label()))
+            .collect();
         let mut contextual = Vec::new();
         if self.editing_story() {
             contextual.push(RibbonTab::HeaderFooter);
+        }
+        if self.views.kind == jade_office_model::word::view::ViewKind::Outline {
+            tabs.insert(0, (RibbonTab::Outlining, RibbonTab::Outlining.label()));
         }
         if self.format_state().table.is_some() {
             contextual.extend([RibbonTab::TableDesign, RibbonTab::TableLayout]);
@@ -2064,9 +2117,9 @@ impl DocumentView {
     fn ribbon(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tabs = self.ribbon_tabs();
         // A contextual tab goes when the caret leaves the table, the story
-        // closes or the object is no longer selected.
+        // closes or the object is no longer selected; a hidden one goes too.
         if !tabs.iter().any(|(tab, _)| *tab == self.ribbon_tab) {
-            self.ribbon_tab = RibbonTab::Home;
+            self.ribbon_tab = tabs.first().map(|(tab, _)| *tab).unwrap_or(RibbonTab::Home);
         }
         let active = self.ribbon_tab;
         div()
@@ -2083,6 +2136,8 @@ impl DocumentView {
                     .gap_1()
                     .px_4()
                     .pt(px(8.0))
+                    // クイック アクセス ツール バー.
+                    .child(word_views::customize::toolbar(cx))
                     .children(tabs.into_iter().map(|(tab, label)| {
                         div()
                             .id(label)
@@ -2125,7 +2180,9 @@ impl DocumentView {
                                 .child(t("doc.export_word"))
                                 .on_click(cx.listener(|view, _event, _window, cx| view.save(cx))),
                         ),
-                    ),
+                    )
+                    // 編集 / 校閲 / 閲覧, at the strip's far right.
+                    .child(word_views::modes::switch(self, cx)),
             )
             .child(
                 div()
@@ -2162,6 +2219,8 @@ impl DocumentView {
                 groups.insert(3.min(groups.len()), lists);
                 let styles = self.style_tools_group(cx);
                 groups.insert(5.min(groups.len()), styles);
+                // リボンのユーザー設定: the user's own group.
+                groups.extend(word_views::customize::custom_group(cx));
                 groups
             }
             RibbonTab::Insert => vec![
@@ -2288,100 +2347,18 @@ impl DocumentView {
             }
             RibbonTab::References => word_references::ribbon_groups(self, cx),
             RibbonTab::Draw => word_draw::ribbon_groups(self, cx),
-            RibbonTab::Review => self.review_groups(cx),
-            RibbonTab::HeaderFooter => self.story_groups(cx),
             RibbonTab::Developer => self.developer_groups(cx),
             RibbonTab::Mailings => self.mailings_groups(cx),
             RibbonTab::Equation => word_equation::tab_groups(self, cx),
-            RibbonTab::View => {
-                let marks = self.document.formatting_marks();
-                vec![
-                    self.ruler_group(cx),
-                    Self::ribbon_group(
-                        t("doc.group.show"),
-                        vec![Self::ribbon_row(vec![
-                            self.ribbon_button(
-                                "marks",
-                                t("doc.marks"),
-                                t("doc.marks_title"),
-                                marks,
-                                cx,
-                                |view, cx| view.toggle_formatting_marks(cx),
-                            )
-                            .into_any_element(),
-                            self.field_codes_button(cx),
-                        ])]
-                        .into_iter()
-                        .chain([Self::ribbon_row(word_references::view_buttons(self, cx))])
-                        .collect(),
-                    )
-                    .into_any_element(),
-                    Self::ribbon_group(
-                        t("doc.group.zoom"),
-                        vec![Self::ribbon_row(vec![
-                            self.ribbon_button(
-                                "zoom-out",
-                                t("doc.zoom_out"),
-                                t("doc.zoom_out"),
-                                false,
-                                cx,
-                                |view, cx| {
-                                    let zoom = view.zoom / 1.1;
-                                    view.set_zoom(zoom, cx)
-                                },
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "zoom-reset",
-                                t("doc.zoom_actual"),
-                                t("doc.zoom_actual"),
-                                false,
-                                cx,
-                                |view, cx| view.set_zoom(1.0, cx),
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "zoom-in",
-                                t("doc.zoom_in"),
-                                t("doc.zoom_in"),
-                                false,
-                                cx,
-                                |view, cx| {
-                                    let zoom = view.zoom * 1.1;
-                                    view.set_zoom(zoom, cx)
-                                },
-                            )
-                            .into_any_element(),
-                        ])],
-                    )
-                    .into_any_element(),
-                    Self::ribbon_group(
-                        t("doc.group.pages"),
-                        vec![Self::ribbon_row(vec![
-                            self.ribbon_button(
-                                "prev-page",
-                                t("doc.previous"),
-                                t("doc.previous_page"),
-                                false,
-                                cx,
-                                |view, cx| view.go_to_page(-1, cx),
-                            )
-                            .into_any_element(),
-                            self.ribbon_button(
-                                "next-page",
-                                t("doc.next"),
-                                t("doc.next_page"),
-                                false,
-                                cx,
-                                |view, cx| view.go_to_page(1, cx),
-                            )
-                            .into_any_element(),
-                        ])],
-                    )
-                    .into_any_element(),
-                    self.master_group(cx),
-                ]
+            RibbonTab::Review => {
+                let mut groups = self.review_groups(cx);
+                // 言語: 校正言語の設定 (`word_views`).
+                groups.push(word_views::language::review_group(cx));
+                groups
             }
+            RibbonTab::HeaderFooter => self.story_groups(cx),
+            RibbonTab::Outlining => word_views::outline::groups(self, cx),
+            RibbonTab::View => word_views::view_tab(self, cx),
         }
     }
 
@@ -2611,6 +2588,9 @@ impl DocumentView {
         if let Some(field) = self.object_field() {
             return Some(field);
         }
+        if let Some(field) = self.views.text_field() {
+            return Some(field);
+        }
         match (&self.comment_bar, &self.story_bar) {
             (Some(bar), _) => Some(&bar.text),
             (None, Some(bar)) => Some(&bar.text),
@@ -2649,6 +2629,9 @@ impl DocumentView {
         }
         if self.object_field().is_some() {
             return self.object_field_mut();
+        }
+        if self.views.is_open() {
+            return self.views.text_field_mut();
         }
         match (&mut self.comment_bar, &mut self.story_bar) {
             (Some(bar), _) => Some(&mut bar.text),
@@ -3179,6 +3162,19 @@ impl DocumentView {
     /// so the next command acts on the same text; a table command that adds
     /// or removes cells moves the caret to where the command left it.
     fn run_ribbon(&mut self, action: Action, cx: &mut Context<Self>) {
+        // A gallery entry previewed on the selection: kept by its click,
+        // taken back by anything else.
+        if word_views::mini::settle(self, &action, cx) {
+            return;
+        }
+        // 閲覧: commands that would change the document do nothing.
+        if word_views::modes::refuses(self, &action) {
+            return;
+        }
+        // Several ranges selected: formatting goes on each.
+        if word_views::select::run_on_ranges(self, &action, cx) {
+            return;
+        }
         if action.is_chrome() {
             match action {
                 Action::Popup(popup) => self.ribbon.toggle(popup),
@@ -3274,6 +3270,7 @@ impl DocumentView {
             Action::References(action) => return word_references::run(self, action, cx),
             Action::Object(action) => return self.run_object_action(action, cx),
             Action::Equation(action) => return word_equation::run(self, action, cx),
+            Action::Views(action) => return word_views::run(self, action, cx),
             Action::Popup(_) | Action::ClosePopup | Action::Grid(..) | Action::Word(_) => Ok(()),
         };
         match done {
@@ -3388,54 +3385,38 @@ impl DocumentView {
             return;
         };
         let page = self.caret_page_1idx();
+        self.caret = self.document.place_caret(paragraph, text.len());
         if self
             .document
             .select((paragraph, 0), (paragraph, text.len()), page)
             .is_ok()
         {
             self.insert_at = (paragraph, text.len());
-            self.caret = self.document.place_caret(paragraph, text.len());
             self.refresh_caret_page_image();
             cx.notify();
         }
     }
 
-    /// Selects the run of word characters around the caret.
-    ///
-    /// Word boundaries here are "letters and digits versus everything else",
-    /// which is right for Latin and wrong for Japanese, where a run has no
-    /// spaces to break on. Selecting the whole run is still more useful than
-    /// selecting nothing, and it is honest about what it does.
+    /// Selects the word around the caret, as a double-click does: a run of
+    /// one script in Japanese (漢字, ひらがな, カタカナ), a word and the
+    /// spaces after it in English (`word::selection::word_at`).
     fn select_word_at_caret(&mut self, cx: &mut Context<Self>) {
         let (paragraph, offset) = self.insert_at;
         let Some(text) = self.document.paragraph_text(paragraph) else {
             return;
         };
-        let is_word = |ch: char| ch.is_alphanumeric();
-        let start = text[..offset.min(text.len())]
-            .char_indices()
-            .rev()
-            .take_while(|(_, ch)| is_word(*ch))
-            .last()
-            .map(|(index, _)| index)
-            .unwrap_or(offset);
-        let end = text[offset.min(text.len())..]
-            .char_indices()
-            .take_while(|(_, ch)| is_word(*ch))
-            .last()
-            .map(|(index, ch)| offset + index + ch.len_utf8())
-            .unwrap_or(offset);
+        let (start, end) = jade_office_model::word::selection::word_at(&text, offset);
         if start == end {
             return;
         }
         let page = self.caret_page_1idx();
+        self.caret = self.document.place_caret(paragraph, end);
         if self
             .document
             .select((paragraph, start), (paragraph, end), page)
             .is_ok()
         {
             self.insert_at = (paragraph, end);
-            self.caret = self.document.place_caret(paragraph, end);
             self.refresh_caret_page_image();
             cx.notify();
         }
@@ -3444,6 +3425,10 @@ impl DocumentView {
     /// The selection's text onto the clipboard, and its formatting beside it
     /// for a paste in this app that finds that text still there.
     fn copy(&mut self, cx: &mut Context<Self>) {
+        word_views::paste::note_copy(self);
+        if word_views::select::copy(self, cx) {
+            return;
+        }
         let Some(text) = self.document.selected_text() else {
             return;
         };
@@ -3454,6 +3439,9 @@ impl DocumentView {
 
     fn cut(&mut self, cx: &mut Context<Self>) {
         self.copy(cx);
+        if word_views::modes::read_only(self) {
+            return;
+        }
         if self.refuse_locked_edit(cx) {
             return;
         }
@@ -3467,6 +3455,9 @@ impl DocumentView {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
+        if word_views::modes::read_only(self) {
+            return;
+        }
         if self.refuse_locked_edit(cx) {
             return;
         }
@@ -3479,6 +3470,11 @@ impl DocumentView {
         };
         // Copied here, and still what the clipboard holds: with its formatting.
         let clip = RICH_CLIP.with(|kept| kept.borrow().clone());
+        // 貼り付けの既定 (Word のオプション → 編集).
+        let rich = clip.as_ref().is_some_and(|clip| clip.matches(&text));
+        if word_views::paste::default_paste(self, rich, cx) {
+            return;
+        }
         if let Some(clip) = clip.filter(|clip| clip.matches(&text)) {
             return self.paste_rich(&clip, cx);
         }
@@ -3843,6 +3839,9 @@ impl DocumentView {
         if self.drag_object(page_index, event, cx) {
             return;
         }
+        if word_views::select::drag(self, page_index, event, cx) {
+            return;
+        }
         let Some(anchor) = self.drag_anchor else {
             return;
         };
@@ -3855,9 +3854,11 @@ impl DocumentView {
             return;
         }
         let page = self.caret_page_1idx();
+        // The caret first: placing it collapses the selection, so the
+        // selection goes on after it.
+        self.caret = self.document.place_caret(focus.0, focus.1);
         if self.document.select(anchor, focus, page).is_ok() {
             self.insert_at = focus;
-            self.caret = self.document.place_caret(focus.0, focus.1);
             self.refresh_caret_page_image();
             cx.notify();
         }
@@ -3866,6 +3867,7 @@ impl DocumentView {
     /// Turns a click into an insertion point.
     fn click_page(&mut self, page_index: usize, event: &MouseDownEvent, cx: &mut Context<Self>) {
         self.log_call(format!("click page {page_index}"));
+        self.views.mini = false;
         // A click in the pages takes the keyboard back from the pane's
         // search box.
         self.references.searching = false;
@@ -3916,6 +3918,10 @@ impl DocumentView {
             return;
         }
         if word_equation::click(self, page_index, local_x, local_y, cx) {
+            return;
+        }
+        // A selection dragged elsewhere, ⌥ for a block, ⌘ for another range.
+        if word_views::select::mouse_down(self, local_x, document_y, event, cx) {
             return;
         }
         if self.table_mouse_down(page_index, local_x, document_y, event, cx) {
@@ -4226,6 +4232,13 @@ impl EntityInputHandler for DocumentView {
         if self.page_dialog.is_some() {
             return;
         }
+        // 閲覧: typing changes nothing.
+        if word_views::modes::read_only(self)
+            && self.text_bar().is_none()
+            && self.find_bar.is_none()
+        {
+            return;
+        }
         if let Some(field) = self.text_bar_mut() {
             field.replace(range, text, false);
             // The dialog's size fields keep the proportions.
@@ -4254,8 +4267,12 @@ impl EntityInputHandler for DocumentView {
                 .clone()
                 .unwrap_or(self.insert_at.1..self.insert_at.1),
         };
+        // 上書き入力: what follows the caret goes as the text comes.
+        let bytes = word_views::input::overtype_range(self, bytes, text);
         self.marked = None;
         self.replace_bytes(bytes, text, cx);
+        // オートコレクト and 入力オートフォーマット.
+        word_views::input::after_typing(self, text, cx);
     }
 
     fn replace_and_mark_text_in_range(
@@ -4267,6 +4284,12 @@ impl EntityInputHandler for DocumentView {
         cx: &mut Context<Self>,
     ) {
         if self.page_dialog.is_some() {
+            return;
+        }
+        if word_views::modes::read_only(self)
+            && self.text_bar().is_none()
+            && self.find_bar.is_none()
+        {
             return;
         }
         if let Some(field) = self.text_bar_mut() {
@@ -4391,6 +4414,7 @@ impl editor::Editor for DocumentView {
         if self.document.is_tracking_changes() {
             items.push(i18n::text("doc.tracking").into());
         }
+        items.extend(word_views::status_items(self));
         items
     }
 
@@ -4456,6 +4480,8 @@ impl Render for DocumentView {
             }
         }
 
+        // A zoom fit (1 ページ, ページ幅…) follows the window.
+        word_views::before_render(self, window, cx);
         let page_count = self.images.len();
         // Recomputed each frame: gpui does not notify on scroll, and this is
         // cheap next to laying the frame out.
@@ -4480,6 +4506,9 @@ impl Render for DocumentView {
             .collect();
         let mut vertical_rulers = vertical_rulers.into_iter();
         let reference_dialog = word_references::overlay(self, window, cx);
+        let views_dialog = word_views::overlay(self, cx);
+        let mini_toolbar = word_views::mini::toolbar(self, cx);
+        let context_menu = word_views::context::overlay(self, cx);
         let navigation = word_references::navigation_pane(self, cx);
         let marks = word_references::bookmark_marks(self);
         // The object tools' panes and dialogs (`word_objects_panels`).
@@ -4491,7 +4520,7 @@ impl Render for DocumentView {
         // A file dialog and the 印刷 panel (`word_files`, `word_print`).
         let file_dialog = word_files::overlay(self, window, cx);
         let print_panel = word_print::overlay(self, window, cx);
-        word_references::on_actions(div().id("root"), cx)
+        word_views::on_actions(word_references::on_actions(div().id("root"), cx), cx)
             .relative()
             .track_focus(&self.focus)
             // What the shortcuts in `key_bindings` are scoped to, so they fire
@@ -4653,7 +4682,11 @@ impl Render for DocumentView {
                 view.show_inspector = !view.show_inspector;
                 cx.notify();
             }))
-            .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
+            .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
+                // Escape leaves フォーカス.
+                if view.views.focus && event.keystroke.key == "escape" {
+                    return word_views::modes::toggle_focus(view, window, cx);
+                }
                 view.handle_key(event, cx);
             }))
             .flex()
@@ -4670,6 +4703,9 @@ impl Render for DocumentView {
             // ---- sidebar: the document's pages ----------------------------
             .child(
                 div()
+                    .when(word_views::layout::hides_chrome(self), |sidebar| {
+                        sidebar.hidden()
+                    })
                     .flex()
                     .flex_col()
                     .flex_none()
@@ -4709,133 +4745,173 @@ impl Render for DocumentView {
                     // they scroll, rather than pushing the panes beside the
                     // pages out of the window.
                     .min_w_0()
-                    .child(self.ribbon(window, cx))
+                    // フォーカス and 閲覧モード: no ribbon.
+                    .children(
+                        (!word_views::layout::hides_chrome(self)).then(|| self.ribbon(window, cx)),
+                    )
+                    .children(word_views::layout::read_bar(self, cx))
                     .children(self.dialog_element(cx))
                     .children(self.comment_bar_element())
                     .children(self.story_bar_element())
                     .children(self.find_bar_element(cx))
                     .children(ruler)
+                    // 分割: a second pane of the same pages.
+                    .children(word_views::split::pane(self, cx))
                     .child(
-                        div()
-                            .id("pages")
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_6()
-                            .p_8()
-                            .size_full()
-                            .bg(theme::canvas())
-                            .overflow_scroll()
+                        // Laid out as the view has them: one under another,
+                        // several across, side by side (`word_views`).
+                        word_views::arrange_pages(div().id("pages"), &self.views)
+                            // A double-click between pages hides the white
+                            // space, or shows it again.
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|view, event: &MouseDownEvent, _window, cx| {
+                                    word_views::white_space_click(
+                                        view,
+                                        event.position,
+                                        event.click_count,
+                                        cx,
+                                    );
+                                }),
+                            )
                             // Tracked so the sidebar can jump to a page.
                             .track_scroll(&self.scroll)
                             .children(self.images.iter().enumerate().map(|(index, page)| {
                                 let bounds_store = Rc::clone(&self.page_bounds);
                                 let entity = cx.entity();
-                                div()
-                                    .id(("page-surface", index))
-                                    .relative()
-                                    .flex_none()
-                                    .shadow_lg()
-                                    .cursor(page_cursor)
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(
-                                            move |view, event: &MouseDownEvent, _window, cx| {
-                                                view.click_page(index, event, cx);
-                                                // A double click on an object is
-                                                // the object's, not a word's.
-                                                if event.click_count >= 2
-                                                    && view.objects.drag.is_none()
-                                                    && view.objects.sketch.is_none()
-                                                {
-                                                    view.select_word_at_caret(cx);
-                                                }
-                                            },
-                                        ),
-                                    )
-                                    .on_mouse_move(cx.listener(
-                                        move |view, event: &MouseMoveEvent, _window, cx| {
-                                            if event.dragging() {
-                                                view.drag_to(index, event, cx);
-                                            } else {
-                                                view.table_hover(index, event, cx);
+                                let crop = word_views::page_crop(self, index);
+                                word_views::frame_page(
+                                    div().id(("page-surface", index)).relative().flex_none(),
+                                    &self.views,
+                                    crop,
+                                    zoom,
+                                )
+                                .cursor(page_cursor)
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(
+                                        move |view, event: &MouseDownEvent, _window, cx| {
+                                            // ⌃-click is a right-click on a Mac.
+                                            if event.modifiers.control {
+                                                word_views::context::open(view, index, event, cx);
+                                                return;
+                                            }
+                                            view.click_page(index, event, cx);
+                                            // A double-click takes the word,
+                                            // a triple-click the paragraph; on
+                                            // an object it is the object's.
+                                            let on_object = view.objects.drag.is_some()
+                                                || view.objects.sketch.is_some();
+                                            if on_object {
+                                            } else if event.click_count == 2 {
+                                                view.select_word_at_caret(cx);
+                                            } else if event.click_count >= 3 {
+                                                view.select_paragraph(cx);
                                             }
                                         },
-                                    ))
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(
-                                            move |view, _event: &MouseUpEvent, _window, cx| {
-                                                view.drag_anchor = None;
-                                                view.ink_release(cx);
-                                                // The brush paints what was
-                                                // just clicked or dragged over.
-                                                if view.painter.is_some() {
-                                                    view.paint_format(false, cx);
-                                                }
-                                                view.table_mouse_up(cx);
-                                                view.release_wrap_point(cx);
-                                                view.release_object(cx);
-                                            },
-                                        ),
-                                    )
-                                    .child(
-                                        img(page.clone())
-                                            .w(px(page_width * zoom))
-                                            .h(px(page_height * zoom)),
-                                    )
-                                    .children(self.caret_overlay(index))
-                                    .children(word_references::page_marks(&marks, index, zoom, cx))
-                                    .children(word_equation::overlay(self, index))
-                                    .children(self.table_overlay(index))
-                                    .children(self.story_label(index))
-                                    .children(vertical_rulers.next().flatten())
-                                    .children(self.object_overlay(index))
-                                    .children(self.wrap_point_overlay(index))
-                                    .children(self.controls_overlay(index, cx))
-                                    .children(self.mailings_overlay(index))
-                                    .children(self.master_boxes(index))
-                                    .children(self.ink_overlay(index))
-                                    // Records where this page ended up. A click arrives
-                                    // in window coordinates and has to be made local
-                                    // before the renderer can hit-test it.
-                                    .child(
-                                        canvas(
-                                            move |bounds, _window, _cx| {
-                                                let mut store = bounds_store.borrow_mut();
-                                                if store.len() <= index {
-                                                    store.resize(index + 1, None);
-                                                }
-                                                store[index] = Some(bounds);
-                                                bounds
-                                            },
-                                            move |_bounds, page_bounds, window, cx| {
-                                                // Registered during paint, which is what
-                                                // `handle_input` requires, and only for the
-                                                // page the caret is on — the handler is
-                                                // per-focus, not per-element, so registering
-                                                // it three times would just be the last one.
-                                                if index == 0 {
-                                                    window.handle_input(
-                                                        &entity.focus_handle(cx),
-                                                        ElementInputHandler::new(
-                                                            page_bounds,
-                                                            entity.clone(),
-                                                        ),
-                                                        cx,
-                                                    );
-                                                }
-                                            },
+                                    ),
+                                )
+                                .on_mouse_down(
+                                    MouseButton::Right,
+                                    cx.listener(
+                                        move |view, event: &MouseDownEvent, _window, cx| {
+                                            word_views::context::open(view, index, event, cx);
+                                        },
+                                    ),
+                                )
+                                .on_mouse_move(cx.listener(
+                                    move |view, event: &MouseMoveEvent, _window, cx| {
+                                        if event.dragging() {
+                                            view.drag_to(index, event, cx);
+                                        } else {
+                                            view.table_hover(index, event, cx);
+                                        }
+                                    },
+                                ))
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _event: &MouseUpEvent, _window, cx| {
+                                        view.drag_anchor = None;
+                                        view.ink_release(cx);
+                                        word_views::select::mouse_up(view, cx);
+                                        word_views::mini::after_mouse_up(view);
+                                        // The brush paints what was
+                                        // just clicked or dragged over.
+                                        if view.painter.is_some() {
+                                            view.paint_format(false, cx);
+                                        }
+                                        view.table_mouse_up(cx);
+                                        view.release_wrap_point(cx);
+                                        view.release_object(cx);
+                                    }),
+                                )
+                                // What the view shows of the page, moved
+                                // so its band is in the frame.
+                                .child(
+                                    word_views::page_contents(crop, zoom)
+                                        .child(
+                                            img(page.clone())
+                                                .w(px(page_width * zoom))
+                                                .h(px(page_height * zoom)),
                                         )
-                                        // `absolute` without an offset keeps the element's
-                                        // static position, which here is the slot after the
-                                        // image — a whole page too low. `top_0().left_0()`
-                                        // is what actually pins it over the page.
-                                        .absolute()
-                                        .top_0()
-                                        .left_0()
-                                        .size_full(),
-                                    )
+                                        .children(word_views::grid_overlay(self, index))
+                                        .children(word_views::select::overlay(self, index))
+                                        .children(word_views::outline::symbols(self, index, cx))
+                                        .children(self.caret_overlay(index))
+                                        .children(word_references::page_marks(
+                                            &marks, index, zoom, cx,
+                                        ))
+                                        .children(word_equation::overlay(self, index))
+                                        .children(self.table_overlay(index))
+                                        .children(self.story_label(index))
+                                        .children(vertical_rulers.next().flatten())
+                                        .children(self.object_overlay(index))
+                                        .children(self.wrap_point_overlay(index))
+                                        .children(self.controls_overlay(index, cx))
+                                        .children(self.mailings_overlay(index))
+                                        .children(self.master_boxes(index))
+                                        .children(self.ink_overlay(index))
+                                        // Records where this page ended up. A click arrives
+                                        // in window coordinates and has to be made local
+                                        // before the renderer can hit-test it.
+                                        .child(
+                                            canvas(
+                                                move |bounds, _window, _cx| {
+                                                    let mut store = bounds_store.borrow_mut();
+                                                    if store.len() <= index {
+                                                        store.resize(index + 1, None);
+                                                    }
+                                                    store[index] = Some(bounds);
+                                                    bounds
+                                                },
+                                                move |_bounds, page_bounds, window, cx| {
+                                                    // Registered during paint, which is what
+                                                    // `handle_input` requires, and only for the
+                                                    // page the caret is on — the handler is
+                                                    // per-focus, not per-element, so registering
+                                                    // it three times would just be the last one.
+                                                    if index == 0 {
+                                                        window.handle_input(
+                                                            &entity.focus_handle(cx),
+                                                            ElementInputHandler::new(
+                                                                page_bounds,
+                                                                entity.clone(),
+                                                            ),
+                                                            cx,
+                                                        );
+                                                    }
+                                                },
+                                            )
+                                            // `absolute` without an offset keeps the element's
+                                            // static position, which here is the slot after the
+                                            // image — a whole page too low. `top_0().left_0()`
+                                            // is what actually pins it over the page.
+                                            .absolute()
+                                            .top_0()
+                                            .left_0()
+                                            .size_full(),
+                                        ),
+                                )
                             })),
                     ),
             )
@@ -4857,6 +4933,9 @@ impl Render for DocumentView {
             .children(mailings_dialog)
             .children(file_dialog)
             .children(print_panel)
+            .children(views_dialog)
+            .children(mini_toolbar)
+            .children(context_menu)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -5130,6 +5209,7 @@ fn document_view(
         master: word_master::Master::default(),
         recovery: autorecover::Recovery::default(),
         printing: None,
+        views: word_views::Views::default(),
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
     }

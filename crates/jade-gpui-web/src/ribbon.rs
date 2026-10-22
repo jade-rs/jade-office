@@ -89,6 +89,8 @@ pub enum Tab {
     Developer,
     /// 描画 (`view::word_draw`).
     Draw,
+    /// 表示: the marks, the panes and the zoom.
+    View,
     /// テーブル デザイン and テーブル レイアウト: while the caret is in a table.
     TableDesign,
     TableLayout,
@@ -97,7 +99,7 @@ pub enum Tab {
 }
 
 impl Tab {
-    const ALL: [Tab; 9] = [
+    const ALL: [Tab; 10] = [
         Tab::Home,
         Tab::Insert,
         Tab::Draw,
@@ -106,6 +108,7 @@ impl Tab {
         Tab::References,
         Tab::Mailings,
         Tab::Review,
+        Tab::View,
         Tab::Developer,
     ];
 
@@ -120,6 +123,7 @@ impl Tab {
             Tab::Review => "doc.tab.review",
             Tab::Developer => "cc.tab",
             Tab::Mailings => "mail.tab",
+            Tab::View => "doc.tab.view",
             Tab::TableDesign => "doc.tab.table_design",
             Tab::TableLayout => "doc.tab.table_layout",
             Tab::Equation => "equation.tab",
@@ -284,6 +288,18 @@ pub enum Action {
     Object(crate::word_objects::ObjectAction),
     /// 挿入 > 数式 and the 数式 tab (`view::word_equation`).
     Equation(crate::view::word_equation::EquationAction),
+    /// 表示: 編集記号 and the zoom.
+    View(ViewAction),
+}
+
+/// What the 表示 tab's own buttons do.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ViewAction {
+    ToggleMarks,
+    ZoomOut,
+    ZoomActual,
+    ZoomIn,
+    PageWidth,
 }
 
 impl Action {
@@ -540,6 +556,9 @@ pub(crate) fn menu_row(
         .whitespace_nowrap()
         .cursor_pointer()
         .hover(|row| row.bg(palette::hovered()))
+        .when(crate::view::word_preview::previewable(&action), |row| {
+            row.on_hover(crate::view::word_preview::hover(action.clone(), cx))
+        })
         .on_click(listener(action, cx))
         .child(div().size_4().flex_none().when(checked, |cell| {
             cell.child(
@@ -581,6 +600,9 @@ fn swatch(
         .cursor_pointer()
         .hover(|square| square.border_color(palette::accent()))
         .tooltip(Tooltip::text(tooltip))
+        .when(crate::view::word_preview::previewable(&action), |square| {
+            square.on_hover(crate::view::word_preview::hover(action.clone(), cx))
+        })
         .on_click(listener(action, cx))
         .into_any_element()
 }
@@ -671,7 +693,8 @@ pub struct TabState {
     pub draw: Option<jade_web::word::ink_tools::DrawController>,
     /// What the list, paragraph and design tools' open list shows.
     pub tools: crate::word_tools::ToolState,
-    /// What 参考資料 shows, read only while it is up.
+    /// What 参考資料 shows, read only while it is up (and 表示, whose
+    /// pane buttons are 参考資料's).
     pub references: Option<crate::view::word_references::RibbonState>,
     /// The picture or shape selected, which the object tools act on.
     pub object: Option<jade_web::word::picture::PlacedObject>,
@@ -681,6 +704,8 @@ pub struct TabState {
     pub mailings: Option<Vec<jade_web::word::form_view::ToolGroup>>,
     /// What the 数式 tab shows, while an equation is being edited.
     pub equation: Option<crate::view::word_equation::EquationTabState>,
+    /// Whether the formatting marks show.
+    pub marks: bool,
 }
 
 pub fn ribbon(
@@ -808,6 +833,7 @@ pub fn ribbon(
             .as_ref()
             .map(|draw| crate::view::word_draw::ribbon_groups(draw, ribbon.popup, cx))
             .unwrap_or_default(),
+        Tab::View => view_groups(shown, cx),
         Tab::TableDesign => {
             let tabs = shown.table.clone().unwrap_or_default();
             crate::word_table::design_groups(ribbon.popup, &tabs, state, cx)
@@ -1941,4 +1967,63 @@ fn cell_format_menu(state: &FormatState, cx: &mut Context<DocView>) -> Option<An
             ))
             .into_any_element(),
     )
+}
+
+/// The 表示 tab: 編集記号 and the panes (ナビゲーション, ブックマーク, ジャンプ),
+/// and the zoom.
+fn view_groups(shown: &TabState, cx: &mut Context<DocView>) -> Vec<AnyElement> {
+    fn button(
+        id: &'static str,
+        label: &'static str,
+        active: bool,
+        action: ViewAction,
+        cx: &mut Context<DocView>,
+    ) -> AnyElement {
+        crate::word_page::text_button(
+            id,
+            i18n::text(label),
+            i18n::text(label),
+            active,
+            Action::View(action),
+            cx,
+        )
+    }
+    let mut show = vec![button(
+        "view-marks",
+        "doc.marks",
+        shown.marks,
+        ViewAction::ToggleMarks,
+        cx,
+    )];
+    if let Some(references) = &shown.references {
+        show.extend(crate::view::word_references::view_buttons(references, cx));
+    }
+    let zoom = vec![
+        button(
+            "view-zoom-out",
+            "doc.zoom_out",
+            false,
+            ViewAction::ZoomOut,
+            cx,
+        ),
+        button(
+            "view-zoom-actual",
+            "doc.zoom_actual",
+            false,
+            ViewAction::ZoomActual,
+            cx,
+        ),
+        button("view-zoom-in", "doc.zoom_in", false, ViewAction::ZoomIn, cx),
+        button(
+            "view-page-width",
+            "views.page_width",
+            false,
+            ViewAction::PageWidth,
+            cx,
+        ),
+    ];
+    vec![
+        group(i18n::text("doc.group.show"), vec![row(show)]),
+        group(i18n::text("doc.group.zoom"), vec![row(zoom)]),
+    ]
 }
