@@ -109,7 +109,6 @@ impl DocView {
         let Document::Pages {
             dialog,
             find,
-            story,
             comment,
             ribbon,
             ..
@@ -118,7 +117,6 @@ impl DocView {
             return;
         };
         *find = None;
-        *story = None;
         *comment = None;
         ribbon.popup = None;
         *dialog = Some(Box::new(opened));

@@ -4,8 +4,8 @@
 //! libraries — Japanese number formats included — with 新しいリストを開始,
 //! 前のリストから継続 and the list level; 均等割り付け and the 段落 switches;
 //! ドロップキャップ; and the デザイン tab — テーマ, 配色, フォント, 効果, the
-//! style sets, 段落の間隔 and 既定に設定. The dialogs and the rulers are the
-//! native app's for now.
+//! style sets, 段落の間隔 and 既定に設定. The menus' dialogs, the rulers and
+//! the スタイル pane are in `view` (`word_tools_ui` runs these commands).
 
 use gpui::{div, prelude::*, px, rgb, AnyElement, Context};
 use jade_web::editing::{EditableDocument, WordSession};
@@ -41,6 +41,12 @@ pub enum ToolMenu {
     Effects,
     StyleSets,
     Spacing,
+    RulerUnits,
+    QuickParts,
+    /// The スタイル tools' menu (変更, 選択個所と一致するように更新).
+    StyleCard(usize),
+    /// A row of the スタイル pane's menu.
+    PaneStyle(usize),
 }
 
 /// What a tool's entry does.
@@ -61,26 +67,66 @@ pub enum ToolCommand {
     StyleSet(usize),
     Spacing(usize),
     SetAsDefault,
+    OpenTabs,
+    OpenBorders,
+    OpenDropCap,
+    /// 箇条書き → 図: a picture file as the bullet.
+    PictureBullet,
+    OpenListStart,
+    OpenListIndent,
+    OpenDefineList,
+    OpenListStyle,
+    /// A list style, by its list's `w:numId`.
+    ApplyListStyle(String),
+    ApplyStyle(String),
+    OpenNewStyle,
+    OpenModifyStyle(String),
+    UpdateStyle(String),
+    ToggleStylesPane,
+    AttachTemplate,
+    ToggleRuler,
+    RulerUnit(jade_web::word::ruler::RulerUnit),
+    /// The ruler's tab selector: the next alignment.
+    NextTabKind,
+    InsertQuickPart(usize),
+    OpenSaveQuickPart,
+    DeleteQuickPart(usize),
 }
 
 /// What the tools' open list shows as current, read only while one is.
 #[derive(Default)]
 pub struct ToolState {
     pub list: Option<ListState>,
+    /// The document's list styles: style id, name and `w:numId`.
+    pub list_styles: Vec<(String, String, String)>,
+    /// The クイック パーツ menu's entries.
+    pub quick_parts: crate::view::word_design::QuickParts,
     pub paragraph: ParagraphOptionsState,
     pub design: DesignState,
 }
 
 impl ToolState {
-    pub fn read(document: &EditableDocument, open: Option<ToolMenu>) -> Self {
+    pub fn read(document: &jade_web::editing::WordDoc, open: Option<ToolMenu>) -> Self {
         let Some(open) = open else {
             return ToolState::default();
         };
         match open {
             ToolMenu::Bullets | ToolMenu::Numbering | ToolMenu::Multilevel => ToolState {
                 list: document.list_state(),
+                list_styles: document
+                    .word_document()
+                    .related_part_xml("styles")
+                    .map(|xml| jade_web::word::lists::list_styles(&xml))
+                    .unwrap_or_default(),
                 ..ToolState::default()
             },
+            ToolMenu::QuickParts => ToolState {
+                quick_parts: crate::view::word_design::quick_parts(document),
+                ..ToolState::default()
+            },
+            ToolMenu::RulerUnits | ToolMenu::StyleCard(_) | ToolMenu::PaneStyle(_) => {
+                ToolState::default()
+            }
             ToolMenu::ParagraphSettings | ToolMenu::DropCap => ToolState {
                 paragraph: document.paragraph_options(),
                 ..ToolState::default()
@@ -120,6 +166,12 @@ pub fn run(document: &mut EditableDocument, command: ToolCommand) -> Result<(), 
             document.apply_paragraph_spacing(before, after, line)
         }
         ToolCommand::SetAsDefault => document.set_as_default(),
+        ToolCommand::ApplyListStyle(num_id) => document.apply_list_style(&num_id),
+        ToolCommand::ApplyStyle(id) => document.apply_style(&id),
+        ToolCommand::UpdateStyle(id) => document.update_style_to_match(&id),
+        // The dialogs, the pane, the ruler and the pickers are the view's
+        // (`view::word_tools_ui`).
+        _ => Ok(()),
     }
 }
 
@@ -130,6 +182,17 @@ pub fn apply_style(document: &mut EditableDocument, id: &str) -> Result<(), Stri
 }
 
 fn text_button(
+    id: &'static str,
+    label: &'static str,
+    open: bool,
+    menu: ToolMenu,
+    cx: &mut Context<DocView>,
+) -> AnyElement {
+    menu_trigger(id, i18n::text(label), open, menu, cx)
+}
+
+/// A text button with a chevron that opens one of the tools' lists.
+pub fn menu_trigger(
     id: &'static str,
     label: &'static str,
     open: bool,
@@ -155,7 +218,7 @@ fn text_button(
             Action::Popup(Popup::Word(menu)),
             cx,
         ))
-        .child(i18n::text(label))
+        .child(label)
         .child(
             gpui::svg()
                 .path("icons/chevron-down.svg")
@@ -196,6 +259,13 @@ pub fn list_group(
                     cx,
                 )
             }))
+            .child(command_row(
+                "bullet-picture",
+                i18n::text("word.list.picture_bullet"),
+                false,
+                ToolCommand::PictureBullet,
+                cx,
+            ))
             .into_any_element()
     });
     let numbering = open(ToolMenu::Numbering).then(|| {
@@ -234,6 +304,20 @@ pub fn list_group(
                     i18n::text("word.list.continue"),
                     false,
                     ToolCommand::ContinueList,
+                    cx,
+                ))
+                .child(command_row(
+                    "list-start",
+                    i18n::text("word.list.set_value"),
+                    false,
+                    ToolCommand::OpenListStart,
+                    cx,
+                ))
+                .child(command_row(
+                    "list-indent",
+                    i18n::text("word.list.adjust_indent"),
+                    false,
+                    ToolCommand::OpenListIndent,
                     cx,
                 ));
         }
@@ -286,7 +370,34 @@ pub fn list_group(
                 ));
             }
         }
-        panel.into_any_element()
+        if !tools.list_styles.is_empty() {
+            panel = panel.child(menu_caption(i18n::text("word.list.list_styles")));
+            for (index, (_, name, num_id)) in tools.list_styles.iter().enumerate() {
+                panel = panel.child(command_row(
+                    ("list-style", index),
+                    name.clone(),
+                    false,
+                    ToolCommand::ApplyListStyle(num_id.clone()),
+                    cx,
+                ));
+            }
+        }
+        panel
+            .child(command_row(
+                "define-list",
+                i18n::text("word.define_list.menu"),
+                false,
+                ToolCommand::OpenDefineList,
+                cx,
+            ))
+            .child(command_row(
+                "define-list-style",
+                i18n::text("word.list_style.menu"),
+                false,
+                ToolCommand::OpenListStyle,
+                cx,
+            ))
+            .into_any_element()
     });
     let settings = open(ToolMenu::ParagraphSettings).then(|| {
         let state = &tools.paragraph;
@@ -317,6 +428,21 @@ pub fn list_group(
                 i18n::text("word.switch.hyphenation"),
                 state.dont_hyphenate,
                 ToolCommand::Switch(ParagraphSwitch::DontHyphenate, !state.dont_hyphenate),
+                cx,
+            ))
+            .child(menu_caption(i18n::text("word.paragraph.dialogs")))
+            .child(command_row(
+                "word-open-tabs",
+                i18n::text("word.tabs.menu"),
+                false,
+                ToolCommand::OpenTabs,
+                cx,
+            ))
+            .child(command_row(
+                "word-open-borders",
+                i18n::text("word.borders.menu"),
+                false,
+                ToolCommand::OpenBorders,
                 cx,
             ))
             .into_any_element()
@@ -413,6 +539,13 @@ pub fn drop_cap_group(ribbon: &Ribbon, tools: &ToolState, cx: &mut Context<DocVi
                 i18n::text("word.drop_cap.margin"),
                 matches!(current, Some((DropCapPosition::InMargin, _))),
                 ToolCommand::DropCap(Some((DropCapPosition::InMargin, 3))),
+                cx,
+            ))
+            .child(command_row(
+                "drop-cap-options",
+                i18n::text("word.drop_cap.options"),
+                false,
+                ToolCommand::OpenDropCap,
                 cx,
             ))
             .into_any_element()
@@ -590,22 +723,32 @@ pub fn design(ribbon: &Ribbon, tools: &ToolState, cx: &mut Context<DocView>) -> 
         ),
         group(
             i18n::text("word.group.defaults"),
-            vec![row(vec![div()
-                .id("set-as-default")
-                .flex()
-                .items_center()
-                .h(px(24.0))
-                .px_2()
-                .rounded_md()
-                .text_xs()
-                .cursor_pointer()
-                .hover(|button| button.bg(palette::hovered()))
-                .on_click(crate::ribbon::listener(
-                    Action::Word(ToolCommand::SetAsDefault),
+            vec![
+                row(vec![div()
+                    .id("set-as-default")
+                    .flex()
+                    .items_center()
+                    .h(px(24.0))
+                    .px_2()
+                    .rounded_md()
+                    .text_xs()
+                    .cursor_pointer()
+                    .hover(|button| button.bg(palette::hovered()))
+                    .on_click(crate::ribbon::listener(
+                        Action::Word(ToolCommand::SetAsDefault),
+                        cx,
+                    ))
+                    .child(i18n::text("word.design.set_default"))
+                    .into_any_element()]),
+                row(vec![crate::word_page::text_button(
+                    "attach-template",
+                    i18n::text("word.design.template"),
+                    i18n::text("word.design.template"),
+                    false,
+                    Action::Word(ToolCommand::AttachTemplate),
                     cx,
-                ))
-                .child(i18n::text("word.design.set_default"))
-                .into_any_element()])],
+                )]),
+            ],
         ),
     ]
 }
