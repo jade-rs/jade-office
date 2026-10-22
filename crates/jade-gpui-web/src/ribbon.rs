@@ -85,6 +85,9 @@ pub enum Tab {
     /// アウトライン: while the アウトライン view shows
     /// (`view::word_views::outline`).
     Outlining,
+    /// 図の形式 / 図形の書式: while a drawing object is selected
+    /// (`view::word_object_tab`).
+    ObjectFormat,
 }
 
 impl Tab {
@@ -118,6 +121,7 @@ impl Tab {
             Tab::Equation => "equation.tab",
             Tab::HeaderFooter => "story.tab",
             Tab::Outlining => "outline.tab",
+            Tab::ObjectFormat => "objects.tab.shape_format",
         })
     }
 }
@@ -174,6 +178,8 @@ pub enum Popup {
     Draw(crate::view::word_draw::DrawPopup),
     /// The 校閲 tab's lists (`word_review`).
     Review(crate::word_review::ReviewPopup),
+    /// 図の形式's and 図形の書式's lists (`view::word_object_tab`).
+    ObjectFormat(crate::view::word_object_tab::FormatPopup),
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -299,6 +305,8 @@ pub enum Action {
     /// オートコレクト, Word のオプション and the quick access toolbar
     /// (`view::word_views`).
     Views(crate::view::word_views::ViewsAction),
+    /// 図の形式 and 図形の書式 (`view::word_object_tab`).
+    ObjectFormat(crate::view::word_object_tab::FormatAction),
 }
 
 /// What the 表示 tab's own buttons do.
@@ -769,6 +777,9 @@ pub struct TabState {
     pub views: crate::view::word_views::ViewsShown,
     /// The アウトライン tab's groups, while it shows.
     pub outline: Option<Vec<AnyElement>>,
+    /// The selected object's tab: whether it is a picture's, and its
+    /// groups.
+    pub object_tab: Option<(bool, Vec<AnyElement>)>,
 }
 
 pub fn ribbon(
@@ -788,6 +799,7 @@ pub fn ribbon(
         Tab::Equation if shown.equation.is_none() => Tab::Home,
         Tab::HeaderFooter if shown.story.is_none() => Tab::Insert,
         Tab::Outlining if shown.outline.is_none() => Tab::View,
+        Tab::ObjectFormat if shown.object_tab.is_none() => Tab::Insert,
         tab if !crate::view::word_views::customize::tab_shown(tab) => Tab::Home,
         tab => tab,
     };
@@ -797,6 +809,13 @@ pub fn ribbon(
         .collect();
     if shown.outline.is_some() {
         strip.insert(0, Tab::Outlining);
+    }
+    let picture_tab = shown
+        .object_tab
+        .as_ref()
+        .is_some_and(|(picture, _)| *picture);
+    if shown.object_tab.is_some() {
+        strip.push(Tab::ObjectFormat);
     }
     if in_table {
         strip.extend([Tab::TableDesign, Tab::TableLayout]);
@@ -823,7 +842,11 @@ pub fn ribbon(
                 })
                 .when(!active, |element| element.text_color(palette::dim()))
                 .hover(|element| element.bg(palette::hovered()))
-                .child(tab.label())
+                .child(if tab == Tab::ObjectFormat && picture_tab {
+                    i18n::text("objects.tab.picture_format")
+                } else {
+                    tab.label()
+                })
                 .on_click(listener(Action::Tab(tab).clone(), cx))
                 .tab_index(0)
                 .focus(focus_ring)
@@ -832,6 +855,11 @@ pub fn ribbon(
         .collect();
     let groups = match shown_tab {
         Tab::Outlining => shown.outline.take().unwrap_or_default(),
+        Tab::ObjectFormat => shown
+            .object_tab
+            .take()
+            .map(|(_, groups)| groups)
+            .unwrap_or_default(),
         Tab::Home => {
             let mut groups = home(ribbon, state, cx);
             groups.extend(crate::view::word_views::customize::custom_group(cx));
