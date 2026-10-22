@@ -682,6 +682,8 @@ pub struct TabState {
     pub styles_pane: bool,
     /// Whether the rulers show, and their unit.
     pub ruler: (bool, jade_web::word::ruler::RulerUnit),
+    /// トリミング, the pen in hand and the object panes.
+    pub object_modes: crate::view::word_objects_ui::ObjectModes,
 }
 
 pub fn ribbon(
@@ -760,7 +762,16 @@ pub fn ribbon(
                 cx,
             ));
             groups.push(crate::word_page::pictures(shown.picture, cx));
-            groups.push(crate::word_objects::objects(ribbon.popup, shown.object, cx));
+            groups.push(crate::word_objects::objects(
+                ribbon.popup,
+                shown.object,
+                shown.object_modes,
+                cx,
+            ));
+            groups.push(crate::view::word_objects_ui::pen_group(
+                shown.object_modes,
+                cx,
+            ));
             groups.push(group(
                 i18n::text("link.group"),
                 vec![row(vec![crate::word_page::text_button(

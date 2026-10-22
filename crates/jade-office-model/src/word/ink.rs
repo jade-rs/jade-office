@@ -7,7 +7,8 @@
 use jade_docx_editor::commands::edit_drawing::replace_drawing_command;
 use jade_docx_editor::commands::insert_shape::InsertShapeCommand;
 use jade_docx_editor::commands::Command;
-use jade_docx_editor::document::{InkStroke, TextBoxShape};
+pub use jade_docx_editor::document::InkStroke;
+use jade_docx_editor::document::TextBoxShape;
 use jade_docx_editor::word_document::objects::parse_element;
 use jade_docx_editor::word_document::ShapeInsertSpec;
 
