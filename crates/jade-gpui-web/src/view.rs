@@ -38,13 +38,13 @@ mod word_find;
 mod word_immersive;
 mod word_inspect;
 mod word_read_aloud;
-mod word_screen_reader;
-mod word_signatures;
-mod word_thesaurus;
 mod word_review;
+mod word_screen_reader;
 pub(crate) mod word_setup;
+mod word_signatures;
 mod word_story;
 mod word_table;
+mod word_thesaurus;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
