@@ -35,11 +35,13 @@ mod sheet;
 pub(crate) mod word_characters;
 pub(crate) mod word_controls;
 mod word_dialogs;
+pub(crate) mod word_download;
 pub(crate) mod word_equation;
 mod word_fields;
 mod word_find;
 mod word_form;
 pub(crate) mod word_mailings;
+mod word_print;
 pub(crate) mod word_references;
 mod word_review;
 pub(crate) mod word_setup;
@@ -131,6 +133,11 @@ impl Kind {
         let extension = name.rsplit_once('.')?.1.to_lowercase();
         match extension.as_str() {
             "docx" | "docm" | "dotx" | "dotm" => Some(Kind::Document),
+            // Word's other formats, converted as they open
+            // (`jade_office_model::word::formats`).
+            "doc" | "dot" | "wbk" | "rtf" | "txt" | "odt" | "fodt" | "htm" | "html" => {
+                Some(Kind::Document)
+            }
             // A CSV opens as a workbook of one sheet, as in Excel.
             "xlsx" | "xlsm" | "xltx" | "xltm" | "csv" => Some(Kind::Workbook),
             "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
@@ -481,6 +488,10 @@ struct CellSelection {
 
 pub struct DocView {
     pub name: SharedString,
+    /// A text file's encoding, as it was read and is saved.
+    pub text_encoding: Option<jade_web::word::formats::TextEncoding>,
+    /// The compatibility mode a Word document is laid out in (15 is current).
+    pub compat_mode: u32,
     pub kind: Kind,
     document: Document,
     retired: Vec<Arc<RenderImage>>,
@@ -520,6 +531,8 @@ pub struct DocView {
     equation: Option<Box<jade_web::word::equation::EquationEditor>>,
     /// The 記号と特殊文字 category the 数式 tab shows.
     equation_symbols: usize,
+    /// The 印刷 panel over a Word document, while it is open (`word_print`).
+    print_panel: Option<Box<word_print::PrintPanel>>,
 }
 
 impl DocView {
@@ -533,6 +546,64 @@ impl DocView {
     ) -> Result<Self, String> {
         let kind = Kind::of(&name)
             .ok_or_else(|| i18n::format("workspace.unsupported", &[("name", &name)]))?;
+        // A Word document in another format — .doc, RTF, text, ODT, HTML —
+        // is converted to a .docx to edit, and saved back as it came.
+        let mut text_encoding = None;
+        let mut compat_mode = jade_web::word::compat::CURRENT_MODE;
+        let converted;
+        let bytes = {
+            use jade_web::word::formats::{open_as_docx, OpenOptions, WordFormat};
+            let format = WordFormat::sniff(bytes).or_else(|| WordFormat::of_name(&name));
+            match format {
+                Some(format) if kind == Kind::Document && !format.is_package() => {
+                    let opened = open_as_docx(&name, bytes, OpenOptions::default(), &|_| None)
+                        .map_err(|error| match error {
+                            jade_web::word::formats::FormatError::Encrypted => {
+                                i18n::format("workspace.protected", &[("name", &name)])
+                            }
+                            other => other.to_string(),
+                        })?;
+                    text_encoding = opened.encoding;
+                    if opened.format.is_legacy() {
+                        compat_mode = 11;
+                    }
+                    converted = opened.docx;
+                    &converted[..]
+                }
+                // A damaged Word document is repaired as it opens.
+                _ if kind == Kind::Document && jade_web::word::repair::needs_repair(bytes) => {
+                    match jade_web::word::repair::repair(bytes) {
+                        Ok(repaired) => {
+                            converted = repaired.docx;
+                            &converted[..]
+                        }
+                        Err(_) => bytes,
+                    }
+                }
+                _ => bytes,
+            }
+        };
+        // A master document's subdocuments show as their links: the page
+        // cannot reach the files they are in.
+        let master_view;
+        let bytes = match kind == Kind::Document && jade_web::word::master::is_master(bytes) {
+            true => {
+                let unreachable = |_: &str| None;
+                let as_named = |target: &str| target.to_string();
+                let files = jade_web::word::master::Files {
+                    load: &unreachable,
+                    display: &as_named,
+                };
+                match jade_web::word::master::for_editing(bytes, &files) {
+                    Ok(editing) => {
+                        master_view = editing;
+                        &master_view[..]
+                    }
+                    Err(_) => bytes,
+                }
+            }
+            false => bytes,
+        };
         // An OLE compound file, not a package: password-protected, or one
         // of the old binary formats.
         if bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
@@ -633,8 +704,13 @@ impl DocView {
                 Document::Workbook(Box::new(sheet::Sheet::open(book)))
             }
         };
+        if kind == Kind::Document && compat_mode == jade_web::word::compat::CURRENT_MODE {
+            compat_mode = jade_web::word::compat::compatibility_mode(bytes);
+        }
         Ok(Self {
             name,
+            text_encoding,
+            compat_mode,
             kind,
             document,
             retired: Vec::new(),
@@ -656,6 +732,7 @@ impl DocView {
             page_dialog: None,
             equation: None,
             equation_symbols: 0,
+            print_panel: None,
         })
     }
 
@@ -862,7 +939,32 @@ impl DocView {
         }
         self.commit_slide_text(cx);
         let bytes = match &mut self.document {
-            Document::Pages { document, .. } => document.export_docx(),
+            // Saved back in the format the file came in, as Word does.
+            Document::Pages { document, .. } => document.export_docx().and_then(|docx| {
+                use jade_web::word::formats::{save_from_docx, SaveOptions, WordFormat};
+                match WordFormat::of_name(&self.name) {
+                    Some(format) if !format.is_package() => save_from_docx(
+                        format,
+                        &docx,
+                        SaveOptions {
+                            encoding: self.text_encoding,
+                            ..SaveOptions::default()
+                        },
+                    )
+                    .map_err(|error| error.to_string()),
+                    // A master keeps its subdocuments as links.
+                    _ if jade_web::word::master::is_master(&docx) => {
+                        let unreachable = |_: &str| None;
+                        let as_named = |target: &str| target.to_string();
+                        let files = jade_web::word::master::Files {
+                            load: &unreachable,
+                            display: &as_named,
+                        };
+                        jade_web::word::master::for_saving(&docx, &files).map(|(stored, _)| stored)
+                    }
+                    _ => Ok(docx),
+                }
+            }),
             Document::Deck { deck, .. } => Ok(deck.save_bytes()),
             // A .csv saves the active sheet as CSV, as Excel does.
             Document::Workbook(sheet) => sheet.book.save_bytes_as(&self.name),
@@ -1047,6 +1149,18 @@ impl DocView {
         let Document::Pages { document, .. } = &mut self.document else {
             return;
         };
+        // A locked subdocument, or a collapsed one's link, takes no edits.
+        let (first, last) = match (document.selection(), document.caret()) {
+            (Some((anchor, focus)), _) => (anchor.0.min(focus.0), anchor.0.max(focus.0)),
+            (None, Some(caret)) => (caret.0, caret.0),
+            (None, None) => (0, 0),
+        };
+        if jade_web::word::master::edit_is_locked(
+            jade_web::word::WordSession::word_document(&**document),
+            first..=last,
+        ) {
+            return self.word_result(Err(i18n::text("master.locked_edit").to_string()), cx);
+        }
         let result = edit(document);
         self.refresh_repainted();
         self.reveal_caret();
@@ -2024,6 +2138,7 @@ impl DocView {
         .into_iter();
         let equation_overlay = self.equation_overlay(zoom);
         let editing_equation = self.equation.is_some();
+        let print_panel = self.print_panel_element(cx);
         let Document::Pages {
             document,
             pages,
@@ -2336,6 +2451,7 @@ impl DocView {
             .children(comments_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
+            .children(print_panel)
     }
 
     fn handle_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -2359,6 +2475,11 @@ impl DocView {
                 })
                 .ok();
             });
+        }
+        // The 印刷 panel takes every key while it is open.
+        if self.print_panel_key(event, cx) {
+            cx.stop_propagation();
+            return;
         }
         // An open table dialog takes the keys it has.
         if self.table_dialog_key(event, cx) {

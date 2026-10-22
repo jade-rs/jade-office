@@ -20,6 +20,7 @@
 //! and with it editing and IME — needs the renderer driven from gpui's own
 //! paint cycle, which is the next step, not this one.
 
+mod autorecover;
 mod deck;
 mod editor;
 mod i18n;
@@ -28,15 +29,19 @@ mod ribbon;
 mod shell;
 mod tooltip;
 mod word_characters;
+mod word_compat;
 mod word_controls;
 mod word_design;
 mod word_dialog;
 mod word_dialogs;
 mod word_equation;
 mod word_fields;
+mod word_files;
+mod word_fonts;
 mod word_form;
 mod word_lists;
 mod word_mailings;
+mod word_master;
 mod word_objects;
 mod word_objects_diagrams;
 mod word_objects_panels;
@@ -44,15 +49,19 @@ mod word_objects_ribbon;
 mod word_page;
 mod word_page_setup;
 mod word_paragraph;
+mod word_print;
 mod word_references;
 mod word_review;
 mod word_ruler;
+mod word_save_options;
 mod word_story;
 mod word_styles;
 mod word_table;
+mod word_templates;
 mod word_tools;
 mod workbook;
 mod workspace;
+mod workspace_files;
 
 use editor::Editor;
 use i18n::text as t;
@@ -176,6 +185,8 @@ fn key_bindings() -> Vec<KeyBinding> {
     const CONTEXT: Option<&str> = Some("Document");
     let mut bindings = vec![
         KeyBinding::new("cmd-q", Quit, None),
+        // 環境設定 → 保存.
+        KeyBinding::new("cmd-,", word_files::SavePreferences, CONTEXT),
         // Opening and closing belong to the app, not to one kind of window:
         // they work from the start window and from every view.
         KeyBinding::new("cmd-n", NewDocument, None),
@@ -195,6 +206,16 @@ fn key_bindings() -> Vec<KeyBinding> {
         // kind of tab; each view that has them answers with its own handler.
         KeyBinding::new("cmd-s", Save, None),
         KeyBinding::new("cmd-shift-s", SaveAs, None),
+        // コピーを保存 and テンプレートとして保存.
+        KeyBinding::new("ctrl-cmd-s", word_files::SaveCopy, CONTEXT),
+        KeyBinding::new("ctrl-cmd-t", word_files::SaveAsTemplate, CONTEXT),
+        // 互換性チェック and 変換 (互換モードの文書を現在の形式に).
+        KeyBinding::new("ctrl-cmd-k", word_compat::CheckCompatibility, CONTEXT),
+        KeyBinding::new("ctrl-cmd-u", word_compat::ConvertDocument, CONTEXT),
+        // テンプレートとアドイン.
+        KeyBinding::new("ctrl-cmd-a", word_templates::TemplatesAndAddIns, CONTEXT),
+        // ファイル サイズの圧縮.
+        KeyBinding::new("ctrl-cmd-z", word_save_options::CompressPictures, CONTEXT),
         // Unscoped so each view that can print answers it with its own
         // handler; a view without one leaves it alone.
         KeyBinding::new("cmd-p", Print, None),
@@ -302,7 +323,11 @@ fn menus() -> Vec<Menu> {
     vec![
         Menu {
             name: "jade".into(),
-            items: vec![MenuItem::action(t("menu.app.quit"), Quit)],
+            items: vec![
+                MenuItem::action(t("menu.app.save_preferences"), word_files::SavePreferences),
+                MenuItem::separator(),
+                MenuItem::action(t("menu.app.quit"), Quit),
+            ],
         },
         Menu {
             name: t("menu.file").into(),
@@ -316,6 +341,16 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.save"), Save),
                 MenuItem::action(t("menu.file.save_as"), SaveAs),
+                MenuItem::action(t("menu.file.save_copy"), word_files::SaveCopy),
+                MenuItem::action(t("menu.file.save_template"), word_files::SaveAsTemplate),
+                MenuItem::separator(),
+                MenuItem::action(
+                    t("menu.file.check_compatibility"),
+                    word_compat::CheckCompatibility,
+                ),
+                MenuItem::action(t("menu.file.convert"), word_compat::ConvertDocument),
+                MenuItem::action(t("menu.file.templates"), word_templates::TemplatesAndAddIns),
+                MenuItem::action(t("menu.file.compress"), word_save_options::CompressPictures),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.file.print"), Print),
                 MenuItem::action(t("menu.file.export_pdf"), ExportPdf),
@@ -556,12 +591,6 @@ pub(crate) fn skia_backend() -> Result<jade_office_model::skia::SkiaBackend, Str
     })
 }
 
-/// Opens `path` and paints it, ready to be edited.
-fn open_document(path: &str) -> Result<NativeDocument, String> {
-    let bytes = std::fs::read(path).map_err(|err| format!("{path}: {err}"))?;
-    open_document_bytes(&bytes)
-}
-
 /// Whether documents are drawn in their own fonts where those are
 /// installed — Office's own faces first, then the system's — as Office draws
 /// them. `JADE_FONTS=bundled` draws everything in the bundled faces instead,
@@ -610,6 +639,9 @@ fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
     if let Some(path) = word_characters::complex_script_fallback() {
         faces.push(face("Complex Script Fallback", 400, &path));
     }
+    // The fonts the document carries with it (TrueType フォントを埋め込む),
+    // for the families nothing installed answers to.
+    faces.extend(word_fonts::embedded_faces(bytes));
     if installed {
         faces = jade_docx_native_render::system_fonts::word_document_faces(bytes, &faces);
     }
@@ -1041,14 +1073,17 @@ impl gpui::AssetSource for Assets {
             "indent-decrease",
             "indent-increase",
             "italic",
+            "life-buoy",
             "list",
             "list-ordered",
+            "lock",
             "merge",
             "moon",
             "paint-bucket",
             "paintbrush",
             "panels-top-left",
             "panel-right",
+            "pin",
             "play",
             "presentation",
             "printer",
@@ -1325,6 +1360,14 @@ struct DocumentView {
     dirty: bool,
     /// The Field, prompt and Properties dialogs, and the user information.
     fields: word_fields::FieldsUi,
+    /// The file's format and encoding, and the dialogs about them.
+    files: word_files::Files,
+    /// マスター文書: the subdocuments' boxes (`word_master`).
+    master: word_master::Master,
+    /// The 自動回復 copy of the unsaved edits.
+    recovery: autorecover::Recovery,
+    /// The 印刷 panel, while it is open.
+    printing: Option<word_print::PrintPanel>,
     scroll: ScrollHandle,
     focus: FocusHandle,
 }
@@ -1481,6 +1524,16 @@ impl DocumentView {
         if self.marked.is_some() {
             return;
         }
+        // The 印刷 panel takes every key while it is open.
+        if word_print::handle_key(self, event.keystroke.key.as_str(), cx) {
+            cx.stop_propagation();
+            return;
+        }
+        // A file dialog is modal: it takes every key while it is open.
+        if word_files::handle_key(self, event.keystroke.key.as_str(), cx) {
+            cx.stop_propagation();
+            return;
+        }
         // A control or mail-merge dialog takes the keyboard: its own keys
         // stop here, and typing goes on to the input handler, into its field.
         if self.mailings.is_open() {
@@ -1588,6 +1641,15 @@ impl DocumentView {
         // A selection is what backspace and delete act on when there is one:
         // removing a character next to it instead would leave the selection
         // behind and surprise anyone who just dragged over a phrase.
+        // A locked subdocument takes no edits (`word_master`).
+        if matches!(
+            event.keystroke.key.as_str(),
+            "backspace" | "delete" | "enter" | "tab"
+        ) && self.refuse_locked_edit(cx)
+        {
+            cx.stop_propagation();
+            return;
+        }
         if self.document.selection().is_some()
             && matches!(event.keystroke.key.as_str(), "backspace" | "delete")
         {
@@ -2307,6 +2369,7 @@ impl DocumentView {
                         ])],
                     )
                     .into_any_element(),
+                    self.master_group(cx),
                 ]
             }
         }
@@ -2511,6 +2574,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = self.printing.as_ref().and_then(|panel| panel.field()) {
+            return Some(field);
+        }
         if let Some(field) = self.mailings.field() {
             return Some(field);
         }
@@ -2543,6 +2609,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self.printing.as_ref().is_some_and(|panel| panel.typing) {
+            return self.printing.as_mut().and_then(|panel| panel.field_mut());
+        }
         if self.mailings.is_open() {
             return self.mailings.field_mut();
         }
@@ -3375,6 +3444,9 @@ impl DocumentView {
 
     fn cut(&mut self, cx: &mut Context<Self>) {
         self.copy(cx);
+        if self.refuse_locked_edit(cx) {
+            return;
+        }
         let page = self.caret_page_1idx();
         if let Ok(caret) = self.document.replace_selection("", page) {
             self.insert_at = caret;
@@ -3385,6 +3457,9 @@ impl DocumentView {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
+        if self.refuse_locked_edit(cx) {
+            return;
+        }
         // A picture on the clipboard goes in as a picture (`word_objects`).
         if self.paste_picture(cx) {
             return;
@@ -3528,34 +3603,15 @@ impl DocumentView {
         }
     }
 
-    /// Saves over the document that was opened, as Word does; a new one
-    /// asks where to go first.
+    /// Saves over the document that was opened, in its format, as Word
+    /// does; a new one asks where to go first (`word_files`).
     fn save(&mut self, cx: &mut Context<Self>) {
-        if self.untitled {
-            return self.save_as(cx);
-        }
-        let target = PathBuf::from(self.path.to_string());
-        self.write_to(target, cx);
+        self.save_file(cx);
     }
 
-    /// Asks where to save, then saves there.
+    /// Asks where to save, then saves there in the format its name says.
     fn save_as(&mut self, cx: &mut Context<Self>) {
-        let source = PathBuf::from(self.path.to_string());
-        let directory = self.save_directory();
-        // The name it has, extension and all: a .docm stays macro-enabled.
-        let suggested = source
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "document.docx".to_string());
-        let prompt = cx.prompt_for_new_path(&directory, Some(&suggested));
-        cx.spawn(async move |view, cx| {
-            let Ok(Ok(Some(path))) = prompt.await else {
-                // Cancelled, or the platform had nothing to say.
-                return;
-            };
-            view.update(cx, |view, cx| view.write_to(path, cx)).ok();
-        })
-        .detach();
+        self.save_file_as(cx);
     }
 
     /// Where a save prompt starts: the document's folder, or for a new
@@ -3564,8 +3620,12 @@ impl DocumentView {
         let source = PathBuf::from(self.path.to_string());
         match source.parent() {
             Some(parent) if !self.untitled && !parent.as_os_str().is_empty() => parent.into(),
-            _ => std::env::var_os("HOME")
-                .map(|home| PathBuf::from(home).join("Documents"))
+            _ => autorecover::settings()
+                .save_folder
+                .filter(|folder| folder.is_dir())
+                .or_else(|| {
+                    std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Documents"))
+                })
                 .filter(|documents| documents.is_dir())
                 .unwrap_or_else(|| PathBuf::from(".")),
         }
@@ -3597,10 +3657,21 @@ impl DocumentView {
         .detach();
     }
 
+    /// Asks how the PDF is made (tagged for accessibility, or as the
+    /// screen shows it), then writes it (`word_files`).
     fn write_pdf_to(&mut self, target: &std::path::Path, cx: &mut Context<Self>) {
+        self.ask_pdf_options(target.to_path_buf(), cx);
+    }
+
+    pub(crate) fn write_pdf_with(
+        &mut self,
+        target: &std::path::Path,
+        options: jade_docx_native_render::PdfExportOptions,
+        cx: &mut Context<Self>,
+    ) {
         let written = self
             .document
-            .export_pdf()
+            .export_pdf_with_options(options)
             .and_then(|pdf| std::fs::write(target, pdf).map_err(|error| error.to_string()));
         match written {
             Ok(()) => {
@@ -3608,49 +3679,6 @@ impl DocumentView {
                 cx.notify();
             }
             Err(error) => eprintln!("PDF export failed: {error}"),
-        }
-    }
-
-    fn write_to(&mut self, target: PathBuf, cx: &mut Context<Self>) {
-        match self.document.export_docx() {
-            Ok(bytes) => match crate::shell::write_in_place(&target, &bytes) {
-                Ok(()) => {
-                    self.dirty = false;
-                    // Saved as, the document is that file from now on.
-                    if self.untitled {
-                        self.untitled = false;
-                        self.path = SharedString::from(target.to_string_lossy().into_owned());
-                    }
-                    self.saved_to = Some(SharedString::from(
-                        target
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_default(),
-                    ));
-                    cx.notify();
-                }
-                Err(error) => eprintln!("save failed: {error}"),
-            },
-            Err(error) => eprintln!("export failed: {error}"),
-        }
-    }
-
-    /// Prints the same vector PDF bytes produced by the export renderer.
-    fn print(&mut self) {
-        let result = self
-            .document
-            .export_docx()
-            .map_err(|error| format!("export failed: {error}"))
-            .and_then(|docx| {
-                jade_docx_pdf_renderer::render_docx_to_pdf(
-                    &docx,
-                    &jade_docx_pdf_renderer::RenderOptions::default(),
-                )
-                .map_err(|error| format!("PDF render failed: {error:?}"))
-            })
-            .and_then(|pdf| native_print::show_pdf_print_dialog(&pdf));
-        if let Err(error) = result {
-            eprintln!("print failed: {error}");
         }
     }
 
@@ -3758,6 +3786,7 @@ impl DocumentView {
             let dropped: Vec<_> = self.images.drain(pages..).collect();
             self.retired_images.extend(dropped);
         }
+        self.refresh_master_boxes();
     }
 
     /// The text position under a window-coordinate point on `page_index`.
@@ -4027,6 +4056,9 @@ impl DocumentView {
     /// Replaces `range` (bytes, in the current paragraph) with `text`, leaving
     /// the caret after it.
     fn replace_bytes(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        if self.refuse_locked_edit(cx) {
+            return;
+        }
         self.log_call(format!(
             "replace_bytes paragraph {} range {:?} text {text:?} bound {} marked {:?} selection {:?}",
             self.insert_at.0,
@@ -4352,6 +4384,10 @@ impl editor::Editor for DocumentView {
         cx.notify();
     }
 
+    fn title_badge(&self) -> Option<SharedString> {
+        self.compatibility_badge()
+    }
+
     fn is_dirty(&self) -> bool {
         self.dirty
     }
@@ -4433,6 +4469,9 @@ impl Render for DocumentView {
         // The 開発 and 差し込み文書 tabs' dialogs.
         let controls_dialog = self.controls_dialog(window, cx);
         let mailings_dialog = self.mailings_dialog(window, cx);
+        // A file dialog and the 印刷 panel (`word_files`, `word_print`).
+        let file_dialog = word_files::overlay(self, window, cx);
+        let print_panel = word_print::overlay(self, window, cx);
         word_references::on_actions(div().id("root"), cx)
             .relative()
             .track_focus(&self.focus)
@@ -4441,7 +4480,40 @@ impl Render for DocumentView {
             .key_context("Document")
             .on_action(cx.listener(|view, _: &Save, _window, cx| view.save(cx)))
             .on_action(cx.listener(|view, _: &SaveAs, _window, cx| view.save_as(cx)))
-            .on_action(cx.listener(|view, _: &Print, _window, _cx| view.print()))
+            .on_action(
+                cx.listener(|view, _: &word_files::SavePreferences, _window, cx| {
+                    view.open_save_preferences(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_files::SaveCopy, _window, cx| view.save_copy(cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_compat::CheckCompatibility, _window, cx| {
+                    view.open_compatibility_checker(None, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_compat::ConvertDocument, _window, cx| {
+                    view.convert_document(cx)
+                }),
+            )
+            .on_action(cx.listener(
+                |view, _: &word_templates::TemplatesAndAddIns, _window, cx| {
+                    view.open_templates_dialog(cx)
+                },
+            ))
+            .on_action(cx.listener(
+                |view, _: &word_save_options::CompressPictures, _window, cx| {
+                    view.open_compress_dialog(cx)
+                },
+            ))
+            .on_action(
+                cx.listener(|view, _: &word_files::SaveAsTemplate, _window, cx| {
+                    view.save_as_template(cx)
+                }),
+            )
+            .on_action(cx.listener(|view, _: &Print, _window, cx| view.open_print_panel(cx)))
             .on_action(cx.listener(|view, _: &ExportPdf, _window, cx| view.export_pdf(cx)))
             .on_action(cx.listener(|view, _: &Undo, _window, cx| view.step_history(true, cx)))
             .on_action(cx.listener(|view, _: &Redo, _window, cx| view.step_history(false, cx)))
@@ -4702,6 +4774,7 @@ impl Render for DocumentView {
                                     .children(self.wrap_point_overlay(index))
                                     .children(self.controls_overlay(index, cx))
                                     .children(self.mailings_overlay(index))
+                                    .children(self.master_boxes(index))
                                     // Records where this page ended up. A click arrives
                                     // in window coordinates and has to be made local
                                     // before the renderer can hit-test it.
@@ -4761,6 +4834,8 @@ impl Render for DocumentView {
             .children(object_dialogs)
             .children(controls_dialog)
             .children(mailings_dialog)
+            .children(file_dialog)
+            .children(print_panel)
             // ---- right panel: what is actually known about the document ----
             // Hidden until asked for (the activity bar's panel button, ⌥⌘I),
             // as the IDE's right panel is.
@@ -4920,7 +4995,10 @@ pub(crate) fn new_document_view(
     cx: &mut App,
 ) -> Result<gpui::Entity<DocumentView>, String> {
     let view = open_document_view(path, cx)?;
-    Ok(cx.new(|_| view))
+    Ok(cx.new(|cx| {
+        autorecover::start(cx);
+        view
+    }))
 }
 
 /// A new document — blank, or made from a template — in a view of its own,
@@ -4931,7 +5009,10 @@ pub(crate) fn untitled_document_view(
     cx: &mut App,
 ) -> Result<gpui::Entity<DocumentView>, String> {
     let view = untitled_view(bytes, name, cx)?;
-    Ok(cx.new(|_| view))
+    Ok(cx.new(|cx| {
+        autorecover::start(cx);
+        view
+    }))
 }
 
 fn untitled_view(bytes: &[u8], name: &str, cx: &mut App) -> Result<DocumentView, String> {
@@ -4944,9 +5025,13 @@ fn untitled_view(bytes: &[u8], name: &str, cx: &mut App) -> Result<DocumentView,
 /// Reads `path` and paints its pages, ready to be shown.
 fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentView, String> {
     let path_text = path.to_string_lossy().into_owned();
-    let document = open_document(&path_text)?;
+    // Any format Word opens: converted to a .docx for the editor.
+    let (opened, source) = word_files::read(path)?;
+    let document = open_document_bytes(&opened.docx)?;
     let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
-    Ok(document_view(document, path_text, file_size, cx))
+    let mut view = document_view(document, path_text, file_size, cx);
+    view.opened_as(&opened, source);
+    Ok(view)
 }
 
 /// The view over a document just opened.
@@ -5019,6 +5104,10 @@ fn document_view(
         show_inspector: false,
         dirty: false,
         fields: word_fields::FieldsUi::default(),
+        files: word_files::Files::default(),
+        master: word_master::Master::default(),
+        recovery: autorecover::Recovery::default(),
+        printing: None,
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
     }
@@ -5916,8 +6005,12 @@ mod tests {
             assert!(view.dirty);
             view.write_pdf_to(&pdf, cx);
         });
+        // PDF として保存 asks how: tagged for accessibility, the default.
+        cx.simulate_keystrokes("enter");
         let bytes = std::fs::read(&pdf).unwrap();
         assert!(bytes.starts_with(b"%PDF"));
+        let document = lopdf::Document::load_mem(&bytes).unwrap();
+        assert!(document.catalog().unwrap().get(b"StructTreeRoot").is_ok());
         std::fs::remove_file(&pdf).ok();
     }
 

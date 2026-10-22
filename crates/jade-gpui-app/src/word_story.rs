@@ -393,8 +393,12 @@ impl WordDoc {
             .map_err(|err| format!("export failed: {err:?}"))
     }
 
-    pub fn export_pdf(&self) -> Result<Vec<u8>, String> {
-        self.main.export_pdf()
+    /// The body's pages as a PDF, whatever story is open.
+    pub fn export_pdf_with_options(
+        &self,
+        options: jade_docx_native_render::PdfExportOptions,
+    ) -> Result<Vec<u8>, String> {
+        self.main.export_pdf_with_options(options)
     }
 
     /// A page as the view shows it: the story's page over its band, the rest

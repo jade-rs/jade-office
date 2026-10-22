@@ -49,6 +49,8 @@ pub struct Workspace {
     host: Host,
     /// How many new documents have been made, for their names.
     untitled: usize,
+    /// Whether the download-as menu is open.
+    download_menu: bool,
 }
 
 impl Workspace {
@@ -65,6 +67,7 @@ impl Workspace {
             fonts,
             host,
             untitled: 0,
+            download_menu: false,
         }
     }
 
@@ -244,7 +247,10 @@ impl Workspace {
     fn title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.active_tab().map(|tab| tab.read(cx));
         let title: SharedString = active
-            .map(|view| view.name.clone())
+            .map(|view| match view.title_badge() {
+                Some(badge) => SharedString::from(format!("{} {badge}", view.name)),
+                None => view.name.clone(),
+            })
             .unwrap_or_else(|| SharedString::from("jade office"));
         let kind = active.map(|view| view.kind);
         let editable = active.is_some_and(|view| view.is_editable());
@@ -322,6 +328,82 @@ impl Workspace {
                 )
                 .when(kind == Some(Kind::Document), |bar| {
                     bar.child(
+                        div()
+                            .relative()
+                            .child(
+                                div()
+                                    .id("download-as")
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded_md()
+                                    .text_xs()
+                                    .text_color(palette::dim())
+                                    .cursor_pointer()
+                                    .hover(|button| button.bg(palette::hovered()))
+                                    .child(i18n::text("web.download_as"))
+                                    .on_click(cx.listener(|workspace, _event, _window, cx| {
+                                        workspace.download_menu = !workspace.download_menu;
+                                        cx.notify();
+                                    })),
+                            )
+                            .when(self.download_menu, |anchor| {
+                                anchor.child(
+                                    div()
+                                        .absolute()
+                                        .top(px(26.0))
+                                        .right_0()
+                                        .w(px(300.0))
+                                        .py_1()
+                                        .rounded_md()
+                                        .border_1()
+                                        .border_color(palette::border())
+                                        .bg(palette::panel())
+                                        .shadow_lg()
+                                        .text_xs()
+                                        .text_color(palette::text())
+                                        .children(
+                                            crate::view::word_download::DOWNLOADS
+                                                .into_iter()
+                                                .enumerate()
+                                                .map(|(index, (format, encoding))| {
+                                                    div()
+                                                        .id(("download-format", index))
+                                                        .px_3()
+                                                        .py_1()
+                                                        .cursor_pointer()
+                                                        .hover(|row| row.bg(palette::hovered()))
+                                                        .child(crate::view::word_download::label(
+                                                            format, encoding,
+                                                        ))
+                                                        .on_click(cx.listener(
+                                                            move |workspace, _event, _window, cx| {
+                                                                workspace.download_menu = false;
+                                                                workspace.with_active(cx, |view, cx| {
+                                                                    view.download_as(format, encoding, cx)
+                                                                });
+                                                            },
+                                                        ))
+                                                }),
+                                        ),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .id("print")
+                            .px_2()
+                            .py_0p5()
+                            .rounded_md()
+                            .text_xs()
+                            .text_color(palette::dim())
+                            .cursor_pointer()
+                            .hover(|button| button.bg(palette::hovered()))
+                            .child(i18n::text("print.title"))
+                            .on_click(cx.listener(|workspace, _event, _window, cx| {
+                                workspace.with_active(cx, |view, cx| view.open_print_panel(cx))
+                            })),
+                    )
+                    .child(
                         div()
                             .id("export-pdf")
                             .px_2()
