@@ -38,6 +38,7 @@ mod word_find;
 mod word_immersive;
 mod word_inspect;
 mod word_read_aloud;
+mod word_screen_reader;
 mod word_signatures;
 mod word_thesaurus;
 mod word_review;
@@ -2879,6 +2880,7 @@ impl Render for DocView {
         };
         let dialog = word_characters::overlay(self, window, cx);
         let immersive = self.immersive_overlay(window, cx);
+        self.update_screen_reader();
         div()
             .size_full()
             .text_color(palette::text())
