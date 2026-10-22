@@ -52,6 +52,8 @@ pub mod font;
 pub mod form_view;
 pub mod formats;
 pub mod group;
+pub mod handles;
+pub mod html_clip;
 pub mod hyphenation;
 pub mod immersive;
 pub mod ink_tools;

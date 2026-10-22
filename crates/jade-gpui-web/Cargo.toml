@@ -31,6 +31,8 @@ wasm-bindgen = "=0.2.128"
 console_error_panic_hook = "0.1"
 futures = "0.3"
 js-sys = "0.3"
+# The asynchronous Clipboard API's promises (形式を選択して貼り付け).
+wasm-bindgen-futures = "=0.4.78"
 
 # tiny-skia's anti-aliased rect fill debug-asserts when a thin rule's inner
 # span comes out zero pixels wide, then skips it — what release builds do

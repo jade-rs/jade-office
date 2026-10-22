@@ -4,7 +4,7 @@
 //! the same (`jade-gpui-app/src/word_page.rs`), over the same commands
 //! (`jade-office-model`'s `WordPage`).
 
-use gpui::{div, prelude::*, px, AnyElement, Context, SharedString};
+use gpui::{div, prelude::*, px, AnyElement, Context};
 use jade_web::word::page::{
     MarginPreset, NumberAlignment, PageCommand, PageSetup, Paper, SectionBreak, Story,
 };
@@ -423,20 +423,4 @@ pub fn header_footer(ribbon: &Ribbon, cx: &mut Context<DocView>) -> AnyElement {
             ),
         ])],
     )
-}
-
-/// The text of a header or footer being edited, in a bar over the pages.
-pub struct StoryBar {
-    pub story: Story,
-    pub text: jade_web::text::TextEdit,
-}
-
-impl StoryBar {
-    pub fn label(&self) -> SharedString {
-        i18n::text(match self.story {
-            Story::Header => "page.header_editing",
-            Story::Footer => "page.footer_editing",
-        })
-        .into()
-    }
 }

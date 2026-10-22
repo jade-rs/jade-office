@@ -107,3 +107,13 @@ pub fn accent_alt() -> Rgba {
 pub fn ready() -> Rgba {
     pick(0x34d399, 0x10b981)
 }
+
+/// The native app's names for [`dim`] and [`faint`], which the code ported
+/// from it uses.
+pub fn text_dim() -> Rgba {
+    dim()
+}
+
+pub fn text_faint() -> Rgba {
+    faint()
+}

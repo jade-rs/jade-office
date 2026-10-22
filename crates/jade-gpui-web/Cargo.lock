@@ -2088,6 +2088,7 @@ dependencies = [
  "jade-web",
  "js-sys",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
