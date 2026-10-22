@@ -34,18 +34,25 @@ mod deck;
 mod sheet;
 pub(crate) mod word_characters;
 pub(crate) mod word_controls;
+pub(crate) mod word_design;
+pub(crate) mod word_dialog;
 mod word_dialogs;
 pub(crate) mod word_equation;
 pub(crate) mod word_fields;
 mod word_find;
 mod word_form;
 pub(crate) mod word_kit;
+pub(crate) mod word_lists;
 pub(crate) mod word_mailings;
+pub(crate) mod word_paragraph;
 pub(crate) mod word_references;
 mod word_review;
+pub(crate) mod word_ruler;
 pub(crate) mod word_setup;
 pub(crate) mod word_story;
+pub(crate) mod word_styles;
 mod word_table;
+pub(crate) mod word_tools_ui;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;
@@ -512,6 +519,9 @@ pub struct DocView {
     /// The field dialogs: フィールド, ASK and FILLIN's prompts, 文書の
     /// プロパティ (`word_fields`).
     fields: word_fields::FieldsUi,
+    /// The paragraph, list, style and template tools' dialogs, the rulers
+    /// and the スタイル pane (`word_tools_ui`).
+    tools: word_tools_ui::WordTools,
     /// The 差し込み文書 tab's merge, for a Word document.
     mailings: Option<word_mailings::Mailings>,
     host: Host,
@@ -653,6 +663,7 @@ impl DocView {
             references: word_references::References::default(),
             controls: word_controls::ControlsUi::default(),
             fields: word_fields::FieldsUi::default(),
+            tools: word_tools_ui::WordTools::default(),
             mailings,
             host,
             page_dialog: None,
@@ -881,11 +892,15 @@ impl DocView {
 
     /// Whether the page's picker was opened for a mail merge's list.
     pub fn wants_data_source(&self) -> bool {
-        word_mailings::wants_source(self)
+        word_mailings::wants_source(self) || self.picking_for_tools()
     }
 
-    /// The list the page's picker brought for the mail merge.
+    /// The list the page's picker brought for the mail merge, or the
+    /// template or picture a tool asked for.
     pub fn take_data_source(&mut self, name: &str, bytes: &[u8], cx: &mut Context<Self>) {
+        if self.picking_for_tools() {
+            return self.take_picked(name, bytes, cx);
+        }
         word_mailings::take_source(self, name, bytes, cx);
     }
 
@@ -1733,6 +1748,31 @@ impl DocView {
         }
 
         if matches!(action, Action::Undo | Action::Redo) && self.equation.is_some() {
+            // A paragraph whose style updates itself takes the format into the
+            // style (自動的に更新する).
+            let formats = matches!(
+                action,
+                Action::Toggle(_)
+                    | Action::FontFamilyName(_)
+                    | Action::FontSize(_)
+                    | Action::StepFontSize(_)
+                    | Action::FontColor(_)
+                    | Action::Align(_)
+                    | Action::LineSpacing(_)
+                    | Action::Indent(_)
+                    | Action::Shading(_)
+                    | Action::ParagraphBorders(_)
+            );
+            if formats {
+                let view = cx.weak_entity();
+                cx.defer(move |cx| {
+                    view.update(cx, |view, cx| {
+                        view.auto_update_style();
+                        cx.notify();
+                    })
+                    .ok();
+                });
+            }
             self.word_edit(cx, move |document| match action {
                 Action::Undo => document.undo().map(|_| ()),
                 _ => document.redo().map(|_| ()),
@@ -1761,16 +1801,7 @@ impl DocView {
             return self.table_action(action, cx);
         }
         if let Action::Word(command) = action {
-            self.word_edit(cx, move |document| {
-                crate::word_tools::run(document, command)
-            });
-            if let Document::Pages {
-                ribbon, document, ..
-            } = &mut self.document
-            {
-                ribbon.read_styles(document);
-            }
-            return;
+            return self.run_tool(command, cx);
         }
         if let Action::Object(object_action) = action {
             let selected = match &self.document {
@@ -1942,6 +1973,8 @@ impl DocView {
                 equation,
                 story,
                 field_codes: document.field_code_view().all,
+                styles_pane: self.tools.styles_pane,
+                ruler: (self.tools.ruler, self.tools.unit),
             }
         };
         ribbon::ribbon(
@@ -2013,6 +2046,15 @@ impl DocView {
         let dialog_bar = self.dialog_element(cx);
         let comment_bar = self.comment_bar_element();
         let comments_pane = self.comments_pane(cx);
+        let styles_pane = self.styles_pane(cx);
+        let horizontal_ruler = self.horizontal_ruler(cx);
+        let mut vertical_rulers = match &self.document {
+            Document::Pages { pages, .. } => (0..pages.len())
+                .map(|index| self.vertical_ruler(index))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        }
+        .into_iter();
         let find_bar = self.find_bar_element(cx);
         let table_cursor = self.table_cursor();
         let table_dialog = self.table_dialog_element(cx);
@@ -2165,6 +2207,7 @@ impl DocView {
                 let table_overlay = table_overlays.next().flatten();
                 let control_overlay = control_overlays.next().unwrap_or_default();
                 let story_label = story_labels.next().flatten();
+                let vertical_ruler = vertical_rulers.next().flatten();
                 div()
                     .relative()
                     .flex_none()
@@ -2221,6 +2264,7 @@ impl DocView {
                     ))
                     .children(table_overlay)
                     .children(story_label)
+                    .children(vertical_ruler)
                     .children(word_references::page_marks(&marks, index, zoom, cx))
                     .children(control_overlay)
                     .children(
@@ -2339,6 +2383,7 @@ impl DocView {
                     .children(dialog_bar)
                     .children(comment_bar)
                     .children(find_bar)
+                    .children(horizontal_ruler)
                     .child(
                         div()
                             .id("pages")
@@ -2357,6 +2402,7 @@ impl DocView {
                     ),
             )
             .children(comments_pane)
+            .children(styles_pane)
             .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
             .children(page_dialog)
     }
@@ -2409,6 +2455,12 @@ impl DocView {
         }
         if self.fields.is_open() {
             if self.handle_fields_key(event, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        if self.tools.is_open() {
+            if self.handle_tool_dialog_key(event, cx) {
                 cx.stop_propagation();
             }
             return;
@@ -2580,6 +2632,9 @@ impl DocView {
         if self.fields.is_open() {
             return self.fields.text_field_mut();
         }
+        if self.tools.is_open() {
+            return self.dialog_field_mut();
+        }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
         }
@@ -2629,6 +2684,9 @@ impl DocView {
         if self.fields.is_open() {
             return self.fields.text_field_mut();
         }
+        if self.tools.is_open() {
+            return self.dialog_field_mut();
+        }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
         }
@@ -2647,6 +2705,9 @@ impl DocView {
             return Some(field);
         }
         if let Some(field) = self.fields.text_field() {
+            return Some(field);
+        }
+        if let Some(field) = self.dialog_field() {
             return Some(field);
         }
         if let Some(field) = self.characters.text_field() {
@@ -3146,6 +3207,7 @@ impl Render for DocView {
         let controls_dialog = word_controls::dialog(self, window, cx);
         let mailings_dialog = word_mailings::dialog(self, window, cx);
         let fields_dialog = self.fields_dialog_element(window, cx);
+        let tool_dialog = self.tool_dialog_element(window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -3158,5 +3220,6 @@ impl Render for DocView {
             .children(controls_dialog)
             .children(mailings_dialog)
             .children(fields_dialog)
+            .children(tool_dialog)
     }
 }
