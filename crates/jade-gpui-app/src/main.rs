@@ -26,6 +26,7 @@ mod i18n;
 mod keyboard_access;
 mod native_print;
 mod ribbon;
+mod screen_reader;
 mod shell;
 mod tooltip;
 mod word_accessibility;
@@ -4308,6 +4309,7 @@ impl editor::Editor for DocumentView {
 
 impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        screen_reader::update(self, window);
         // The one place with a window to hand. Textures replaced since the last
         // frame are released here rather than at the edit that replaced them.
         for image in self.retired_images.drain(..) {

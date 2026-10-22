@@ -225,6 +225,8 @@ pub struct ReviewTools {
     pub signatures: crate::word_signatures::SignaturesUi,
     /// The certificate 署名… chose, for the save that signs.
     pub signatures_identity: Option<String>,
+    /// What a screen reader was last given (`screen_reader`).
+    pub screen_reader: crate::screen_reader::ScreenReaderUi,
     /// The 類義語辞典 pane, while it is open (`word_thesaurus`).
     pub thesaurus: Option<crate::word_thesaurus::ThesaurusPane>,
     /// 読み上げ, while reading (`word_read_aloud`).

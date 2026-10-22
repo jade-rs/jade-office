@@ -3421,6 +3421,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "objc2-pdf-kit",
+ "raw-window-handle",
  "security-framework",
 ]
 
