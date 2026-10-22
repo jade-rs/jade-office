@@ -503,7 +503,7 @@ impl WordDoc {
     /// (`WordFormatting::step_cell`), which the open document would
     /// otherwise answer for.
     pub fn step_cell(&mut self, forwards: bool) -> Result<bool, String> {
-        EditableDocument::step_cell(&mut **self, forwards)
+        EditableDocument::step_cell(self, forwards)
     }
 
     pub fn selection_rects(&self) -> Vec<HighlightRect> {
