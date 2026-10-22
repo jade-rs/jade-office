@@ -123,6 +123,10 @@ pub struct EditableDocument {
     /// While edits are batched (see [`Self::paste`]): the first paragraph
     /// any of them touched, repainted from once they are all in.
     deferred_repaint: Option<usize>,
+    /// Which fields show their codes (⌥F9, ⇧F9).
+    field_codes: jade_docx_editor::fields::FieldCodeView,
+    /// The clock DATE and TIME show; without one, the result Word saved.
+    field_datetime: Option<jade_office_model::word::fields::FieldDateTime>,
 }
 
 impl EditableDocument {
@@ -225,6 +229,8 @@ impl EditableDocument {
             repainted_from: None,
             deferred_repaint: None,
             repainted_pages: std::collections::BTreeSet::new(),
+            field_codes: Default::default(),
+            field_datetime: None,
         })
     }
 
@@ -1271,6 +1277,7 @@ impl EditableDocument {
             .ok_or_else(|| "document went missing".to_string())?
             .clone();
         let first_page = self.paragraph_page(paragraph);
+        self.refresh_field_display();
         self.repainted_from = Some(
             self.repainted_from
                 .map_or(first_page, |page| page.min(first_page)),
@@ -1319,6 +1326,54 @@ impl EditableDocument {
         Ok(true)
     }
 
+    /// Sets the clock DATE and TIME fields show from the next repaint on.
+    /// Without one they show the result Word saved.
+    pub fn set_field_datetime(
+        &mut self,
+        datetime: Option<jade_office_model::word::fields::FieldDateTime>,
+    ) {
+        self.field_datetime = datetime;
+    }
+
+    /// Which fields show their codes.
+    pub fn field_code_view(&self) -> &jade_docx_editor::fields::FieldCodeView {
+        &self.field_codes
+    }
+
+    /// Shows the codes of the fields `view` names (⌥F9 every field, ⇧F9
+    /// the selected ones) and repaints.
+    pub fn set_field_code_view(
+        &mut self,
+        view: jade_docx_editor::fields::FieldCodeView,
+    ) -> Result<(), String> {
+        self.field_codes = view;
+        self.renderer.set_field_code_display(None);
+        self.repaint_all()
+    }
+
+    /// Gives the renderer the clock and, while codes are shown, what each
+    /// field's runs show. Edits move runs, so the codes are found afresh.
+    fn refresh_field_display(&mut self) {
+        self.renderer
+            .set_current_datetime(self.field_datetime.map(|datetime| {
+                jade_docx_editor::canvas_renderer::FieldDateTime {
+                    year: datetime.year,
+                    month: datetime.month,
+                    day: datetime.day,
+                    hour: datetime.hour,
+                    minute: datetime.minute,
+                    second: datetime.second,
+                    weekday: datetime.weekday,
+                }
+            }));
+        if self.field_codes == jade_docx_editor::fields::FieldCodeView::default() {
+            return;
+        }
+        let display =
+            jade_docx_editor::fields::field_code_display(&self.word_document, &self.field_codes);
+        self.renderer.set_field_code_display(Some(display));
+    }
+
     /// Hides the top-level body elements under collapsed headings (Word's
     /// 見出しの折りたたみ) and repaints; empty shows them all again.
     pub fn set_collapsed_blocks(&mut self, blocks: Vec<usize>) -> Result<(), String> {
@@ -1341,6 +1396,7 @@ impl EditableDocument {
             .ok_or_else(|| "document went missing".to_string())?
             .clone();
         self.renderer.sync_word_document(&self.word_document);
+        self.refresh_field_display();
         self.renderer.invalidate_paragraph_content_hash_cache();
         self.renderer.mark_full_repaint();
         self.pass_covers_whole_document.set(true);

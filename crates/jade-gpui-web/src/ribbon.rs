@@ -757,6 +757,10 @@ pub fn ribbon(
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
             groups.push(crate::view::word_characters::insert_group(cx));
+            groups.push(crate::view::word_fields::fields_group(
+                shown.field_codes,
+                cx,
+            ));
             groups.push(crate::view::word_equation::insert_group(ribbon.popup, cx));
             groups
         }

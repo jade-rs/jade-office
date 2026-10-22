@@ -36,9 +36,10 @@ pub(crate) mod word_characters;
 pub(crate) mod word_controls;
 mod word_dialogs;
 pub(crate) mod word_equation;
-mod word_fields;
+pub(crate) mod word_fields;
 mod word_find;
 mod word_form;
+pub(crate) mod word_kit;
 pub(crate) mod word_mailings;
 pub(crate) mod word_references;
 mod word_review;
@@ -508,6 +509,9 @@ pub struct DocView {
     /// The 開発 tab's dialogs and the list or calendar dropped under a
     /// content control.
     controls: word_controls::ControlsUi,
+    /// The field dialogs: フィールド, ASK and FILLIN's prompts, 文書の
+    /// プロパティ (`word_fields`).
+    fields: word_fields::FieldsUi,
     /// The 差し込み文書 tab's merge, for a Word document.
     mailings: Option<word_mailings::Mailings>,
     host: Host,
@@ -580,7 +584,7 @@ impl DocView {
                                 .unwrap_or_else(PageImage::blank)
                         })
                         .collect(),
-                    document: Box::new(opened),
+                    document: Box::new(opened.into()),
                     page_size: (width as f32, height as f32),
                     scroll: ScrollHandle::new(),
                     current: 0,
@@ -648,6 +652,7 @@ impl DocView {
             characters: word_characters::Characters::default(),
             references: word_references::References::default(),
             controls: word_controls::ControlsUi::default(),
+            fields: word_fields::FieldsUi::default(),
             mailings,
             host,
             page_dialog: None,
@@ -2402,6 +2407,12 @@ impl DocView {
             }
             return;
         }
+        if self.fields.is_open() {
+            if self.handle_fields_key(event, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
         // A dialog takes the keyboard while it is open: its own keys stop
         // here, and typing goes on to the input handler, into its field.
         if self.characters.is_open() {
@@ -2549,6 +2560,9 @@ impl DocView {
         if self.controls.is_open() {
             return self.controls.field_mut();
         }
+        if self.fields.is_open() {
+            return self.fields.text_field_mut();
+        }
         if self.characters.is_open() {
             return self.characters.text_field_mut();
         }
@@ -2593,6 +2607,17 @@ impl DocView {
         }
     }
 
+    /// The field of an open Word dialog that typing goes into.
+    fn word_dialog_field_mut(&mut self) -> Option<&mut TextEdit> {
+        if self.fields.is_open() {
+            return self.fields.text_field_mut();
+        }
+        if self.characters.is_open() {
+            return self.characters.text_field_mut();
+        }
+        None
+    }
+
     fn current_text(&self) -> Option<&TextEdit> {
         if let Some(field) = self
             .mailings
@@ -2602,6 +2627,9 @@ impl DocView {
             return Some(field);
         }
         if let Some(field) = self.controls.field() {
+            return Some(field);
+        }
+        if let Some(field) = self.fields.text_field() {
             return Some(field);
         }
         if let Some(field) = self.characters.text_field() {
@@ -2909,6 +2937,15 @@ impl EntityInputHandler for DocView {
             }
             return cx.notify();
         }
+        // A Word dialog's field (`word_fields`, `word_characters`, the
+        // paragraph, list and style dialogs).
+        if let Some(field) = self.word_dialog_field_mut() {
+            // A field shown wholly selected is replaced by what is typed,
+            // wherever the browser's mirror thinks the caret is.
+            let range = range.filter(|range| !(field.whole && range.is_empty()));
+            field.replace(range, text, false);
+            return cx.notify();
+        }
         if self.table_dialog_typed(text, cx) {
             return;
         }
@@ -2975,6 +3012,11 @@ impl EntityInputHandler for DocView {
             if let Some(field) = self.controls.field_mut() {
                 field.replace(range, new_text, true);
             }
+            return cx.notify();
+        }
+        if let Some(field) = self.word_dialog_field_mut() {
+            let range = range.filter(|range| !(field.whole && range.is_empty()));
+            field.replace(range, new_text, true);
             return cx.notify();
         }
         if self.table_dialog_open() || self.page_dialog.is_some() {
@@ -3086,6 +3128,7 @@ impl Render for DocView {
         let reference_dialog = word_references::overlay(self, window, cx);
         let controls_dialog = word_controls::dialog(self, window, cx);
         let mailings_dialog = word_mailings::dialog(self, window, cx);
+        let fields_dialog = self.fields_dialog_element(window, cx);
         div()
             .size_full()
             .text_color(palette::text())
@@ -3097,5 +3140,6 @@ impl Render for DocView {
             .children(reference_dialog)
             .children(controls_dialog)
             .children(mailings_dialog)
+            .children(fields_dialog)
     }
 }
