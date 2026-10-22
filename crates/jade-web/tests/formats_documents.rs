@@ -249,3 +249,39 @@ fn table_tools_edit_the_caret_table() {
     assert_eq!(document.paragraph_count(), paragraphs);
     assert!(!document.export_docx().unwrap().is_empty());
 }
+
+/// 網かけ on the caret's cell is saved as the cell's `w:tcPr/w:shd` fill,
+/// and 色なし takes it off again.
+#[test]
+fn cell_shading_is_saved_on_the_cell() {
+    let mut document = contract();
+    let paragraph = body_paragraph(&document);
+    document.place_caret(paragraph, 0);
+    let caret = WordFormatting::insert_table(&mut document, 2, 2).unwrap();
+    document.place_caret(caret.0, caret.1);
+    document
+        .table_command(TableCommand::CellShading(Some("D9EAF7".to_string())))
+        .unwrap();
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    let cell_props = xml
+        .split("<w:tcPr>")
+        .skip(1)
+        .map(|rest| rest.split("</w:tcPr>").next().unwrap_or(""))
+        .collect::<Vec<_>>();
+    let shaded = cell_props
+        .iter()
+        .filter(|props| props.contains("w:shd") && props.contains("D9EAF7"))
+        .count();
+    assert_eq!(shaded, 1, "only the caret's cell is shaded: {cell_props:?}");
+
+    document.place_caret(caret.0, caret.1);
+    document
+        .table_command(TableCommand::CellShading(None))
+        .unwrap();
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    assert!(!xml.contains("D9EAF7"), "the shading is taken off");
+}

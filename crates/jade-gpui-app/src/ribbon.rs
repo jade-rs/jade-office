@@ -38,23 +38,7 @@ const FONT_SIZES: [f32; 17] = [
 const DEFAULT_FAMILY: &str = "游明朝";
 const DEFAULT_SIZE: f32 = 12.0;
 /// Word's highlight names and what they look like.
-const HIGHLIGHTS: [(&str, u32); 15] = [
-    ("yellow", 0xffff00),
-    ("green", 0x00ff00),
-    ("cyan", 0x00ffff),
-    ("magenta", 0xff00ff),
-    ("blue", 0x0000ff),
-    ("red", 0xff0000),
-    ("darkBlue", 0x000080),
-    ("darkCyan", 0x008080),
-    ("darkGreen", 0x008000),
-    ("darkMagenta", 0x800080),
-    ("darkRed", 0x800000),
-    ("darkYellow", 0x808000),
-    ("darkGray", 0x808080),
-    ("lightGray", 0xc0c0c0),
-    ("black", 0x000000),
-];
+const HIGHLIGHTS: [(&str, u32); 16] = jade_office_model::word::font::HIGHLIGHT_COLORS;
 const LINE_SPACINGS: [(&str, f32); 4] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)];
 /// The paragraph dialog's shading swatches.
 const SHADINGS: [u32; 4] = [0xfff2cc, 0xe2f0d9, 0xddebf7, 0xededed];

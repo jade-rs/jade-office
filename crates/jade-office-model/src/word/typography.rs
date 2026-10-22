@@ -9,13 +9,12 @@ pub use jade_docx_headless_api::{HeadlessJapaneseTypography, HeadlessParagraphTy
 
 use super::{Helpers, WordSession};
 
-/// The 行頭禁則文字 Word lists for 標準.
-pub const STANDARD_NO_LINE_START: &str =
-    "!%),.:;?]}¢°’”‰′″℃、。々〉》」』】〕゛゜ゝゞ・ヽヾ！％），．：；？］｝｡｣､･ﾞﾟ￠";
+/// The 行頭禁則文字 Word lists for 標準 — the set layout applies.
+pub const STANDARD_NO_LINE_START: &str = jade_docx_layout::word_kinsoku::STANDARD_NO_LINE_START;
 /// The 行頭禁則文字 Word lists for 高レベル: 標準's and the small kana and ー.
-pub const STRICT_NO_LINE_START: &str = "!%),.:;?]}¢°’”‰′″℃、。々〉》」』】〕ぁぃぅぇぉっゃゅょゎゕゖ゛゜ゝゞァィゥェォッャュョヮヵヶ・ーヽヾ！％），．：；？］｝｡｣､･ｧｨｩｪｫｬｭｮｯｰﾞﾟ￠";
+pub const STRICT_NO_LINE_START: &str = jade_docx_layout::word_kinsoku::STRICT_NO_LINE_START;
 /// The 行末禁則文字 Word lists for both levels.
-pub const NO_LINE_END: &str = "$([\\{£¥‘“〈《「『【〔＄（［｛｢￡￥";
+pub const NO_LINE_END: &str = jade_docx_layout::word_kinsoku::NO_LINE_END;
 
 /// 文字間隔の調整 (`w:characterSpacingControl`), in Word's order.
 pub const SPACING_CONTROLS: [&str; 3] = [

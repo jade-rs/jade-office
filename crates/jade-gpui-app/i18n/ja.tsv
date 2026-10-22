@@ -3305,3 +3305,44 @@ thesaurus.title	類義語辞典
 thesaurus.insert	挿入
 thesaurus.none	類義語は見つかりませんでした。
 thesaurus.no_word	単語を選択するか、単語の中にカーソルを置いてください。
+word.line.dot_dot_dash	二点鎖線
+word.line.triple	三重線
+word.line.thick	太線
+word.line.thin_thick_small	細線 - 太線 (小間隔)
+word.line.thin_thick_thin_small	細線 - 太線 - 細線 (小間隔)
+word.line.thin_thick_medium	細線 - 太線 (中間隔)
+word.line.thick_thin_medium	太線 - 細線 (中間隔)
+word.line.thin_thick_thin_medium	細線 - 太線 - 細線 (中間隔)
+word.line.thin_thick_large	細線 - 太線 (大間隔)
+word.line.thick_thin_large	太線 - 細線 (大間隔)
+word.line.thin_thick_thin_large	細線 - 太線 - 細線 (大間隔)
+word.line.double_wave	二重波線
+word.line.dash_dot_stroked	斜線入り一点鎖線
+word.line.emboss	立体 (浮き出し)
+word.line.engrave	立体 (彫り込み)
+word.line.outset	浮き出し
+word.line.inset	くぼみ
+setup.borders.art	絵柄
+word.art.apples	りんご
+word.art.hearts	ハート
+word.art.stars	星
+word.art.stars_black	星 (黒)
+word.art.dots	点
+word.art.squares	四角
+word.art.dashes	ダッシュ
+word.art.thin_lines	細線
+word.art.checkered	市松模様
+word.art.christmas_tree	クリスマスツリー
+word.art.flowers	小花
+word.art.balloons	風船
+word.art.sun	太陽
+word.art.snowflakes	雪の結晶
+word.art.zigzag	ジグザグ
+word.art.triangles	三角形
+menu.format.justify	両端揃え
+menu.format.bullets	箇条書き
+menu.format.subscript	下付き
+menu.format.superscript	上付き
+menu.insert.page_break	改ページ
+menu.insert.column_break	段区切り
+context.paste_special	形式を選択して貼り付け...

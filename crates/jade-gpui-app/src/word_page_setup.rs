@@ -9,9 +9,8 @@ use jade_office_model::word::page::Paper;
 use jade_office_model::word::page_setup::{
     points_to_mm, ApplyTo, BorderSetting, ColumnPreset, ColumnsDialog, CoverPage, Field, GridMode,
     LineNumbersPreset, MultiplePages, PageBorderDialog, PageBreak, PageNumberDialog,
-    PageSetupDialog, SetupTab, WordPageSetup, CHAPTER_SEPARATORS, LINE_RESTARTS,
-    PAGE_BORDER_STYLES, PAGE_BORDER_WIDTHS, PAGE_COLORS, PAGE_NUMBER_FORMATS, SECTION_STARTS,
-    VERTICAL_ALIGNMENTS,
+    PageSetupDialog, SetupTab, WordPageSetup, CHAPTER_SEPARATORS, LINE_RESTARTS, PAGE_BORDER_ARTS,
+    PAGE_BORDER_STYLES, PAGE_COLORS, PAGE_NUMBER_FORMATS, SECTION_STARTS, VERTICAL_ALIGNMENTS,
 };
 
 use crate::ribbon::{dropdown, group, listener, menu_panel, menu_row, row, Action, Popup};
@@ -1487,8 +1486,20 @@ impl DocumentView {
                     true,
                 )
                 .on_click(cx.listener(move |view, _, _, cx| {
-                    view.edit_borders(cx, |dialog| dialog.style = value.to_string())
+                    view.edit_borders(cx, |dialog| dialog.set_style(value))
                 }))
+            })
+            .collect();
+        // 絵柄: art borders.
+        let arts: Vec<_> = PAGE_BORDER_ARTS
+            .into_iter()
+            .enumerate()
+            .map(|(index, (value, label))| {
+                chip(("border-art", index), t(label), dialog.style == value, true).on_click(
+                    cx.listener(move |view, _, _, cx| {
+                        view.edit_borders(cx, |dialog| dialog.set_style(value))
+                    }),
+                )
             })
             .collect();
         let colors: Vec<_> = std::iter::once(("auto", "setup.borders.auto"))
@@ -1517,8 +1528,10 @@ impl DocumentView {
                     }))
             })
             .collect();
-        let widths: Vec<_> = PAGE_BORDER_WIDTHS
-            .into_iter()
+        let widths: Vec<_> = dialog
+            .widths()
+            .iter()
+            .copied()
             .enumerate()
             .map(|(index, entry)| {
                 chip(
@@ -1571,6 +1584,7 @@ impl DocumentView {
                     .flex_1()
                     .child(line("setup.borders.setting").children(settings))
                     .child(line("setup.borders.style").children(styles))
+                    .child(line("setup.borders.art").children(arts))
                     .child(line("setup.borders.color").children(colors))
                     .child(line("setup.borders.width").children(widths))
                     .child(line("setup.borders.offset").children(offsets)),

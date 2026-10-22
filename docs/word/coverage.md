@@ -33,19 +33,15 @@ Paths: `jade-web/…`, `jade-office-model/…`, `jade-gpui-app/…` are under
 
 | | rows |
 |---|---|
-| with at least one test | 316 |
-| without a test | 190 |
-| — of which jade marks *full* | 45 |
-| — of which *partial* / *render* / *roundtrip* | 62 |
+| with at least one test | 362 |
+| without a test | 144 |
+| — of which jade marks *full* | 0 |
+| — of which *partial* / *render* / *roundtrip* | 61 |
 | — of which *missing* (nothing to test yet) | 83 |
 
-Rows jade counts as full but that no test pins — the first ones to add tests
-for: 11, 54, 59, 61, 63, 67, 70, 73, 74, 79, 80, 82, 83, 103, 110, 113, 140,
-210, 211, 213, 225, 345, 347, 349, 350, 353, 360, 366, 367, 370, 371, 372,
-379, 382, 389, 391, 396, 398, 399, 400, 444, 445, 470, 473, 483. Most are
-dialogs (style, list, template) and document-property fields whose
-evaluation shares one code path with fields that are tested
-(DOCPROPERTY, INFO).
+Every row jade counts as full now names a test (rows 11–483 in the list
+that once had none were mapped to existing tests or given one by the
+quality stream).
 
 ## Keeping it current
 
@@ -79,7 +75,7 @@ evaluation shares one code path with fields that are tested
 | 8 | paste, source formatting | `jade-web/tests/clipboard_documents.rs::a_paste_keeps_the_runs_formatting` |
 | 9 | paste, merge formatting | `jade-office-model/src/word/clipboard.rs::merging_keeps_emphasis_and_text_only_keeps_nothing` |
 | 10 | paste as text | `jade-office-model/src/word/clipboard.rs::merging_keeps_emphasis_and_text_only_keeps_nothing` <br> `jade-office-model/src/word/clipboard.rs::the_plain_text_joins_paragraphs_with_newlines` |
-| 11 | Paste Special | **none** |
+| 11 | Paste Special | `jade-gpui-app/src/word_characters.rs::paste_options_keep_merge_or_drop_formatting` <br> `jade-office-model/src/word/clipboard.rs::merging_keeps_emphasis_and_text_only_keeps_nothing` |
 | 12 | Format Painter | `jade-web/tests/painter_documents.rs::the_format_at_a_caret_paints_characters_and_paragraph` <br> `jade-web/tests/painter_documents.rs::a_selection_inside_a_paragraph_paints_only_characters` |
 | 13 | undo / redo | `jade-web/tests/finds_documents.rs::replace_all_is_one_undo_step` <br> `jade-web/tests/edits_documents.rs::a_long_paste_undoes_and_redoes_whole` |
 | 14 | symbols | `core/jade-docx-reader/src/parser.rs::parses_symbol_char_into_run_text_and_font` <br> `jade-office-model/src/word/insert.rs::pictures_and_codes` |
@@ -122,36 +118,36 @@ evaluation shares one code path with fields that are tested
 | 51 | no hyphenation | `jade-docx-reader/src/parser.rs::parses_soft_hyphen_into_run_text` <br> `jade-docx-editor/src/word_document.rs::soft_hyphen_round_trips_as_word_run_element` |
 | 52 | drop cap | `core/jade-docx-editor/src/commands/set_drop_cap.rs::drop_cap_kinds_and_lines_round_trip_byte_exact_history` <br> `core/jade-docx-layout/src/line_wrap.rs::prepared_drop_caps_preserve_unicode_text_and_reserve_exact_line_bands` |
 | 53 | bullets | `jade-docx-editor/src/shortcuts.rs::resolves_word_point_step_break_and_bullet_shortcuts` |
-| 54 | picture bullets | **none** |
+| 54 | picture bullets | `jade-web/tests/lists_styles_documents.rs::a_picture_bullet_is_saved_and_drawn` |
 | 55 | number formats | `jade-docx-reader/src/numbering.rs::japanese_counting_uses_multiplicative_kanji_units` <br> `jade-docx-editor/src/canvas_renderer.rs::unspecified_endnote_format_uses_words_lower_roman_default` |
 | 56 | start value | `core/jade-docx-reader/src/numbering.rs::zero_start_override_formats_zero_then_one` <br> `core/jade-docx-editor/src/commands/insert_footnote.rs::inserted_footnote_caret_accounts_for_a_multi_digit_start_number` |
 | 57 | restart / continue | `core/jade-docx-editor/src/canvas_renderer.rs::note_ordinal_restarts_follow_num_restart` <br> `core/jade-docx-reader/src/numbering.rs::continues_numbering_across_num_id_without_start_override` |
 | 58 | multilevel lists | `jade-docx-editor/src/commands/apply_multilevel_list.rs::invalid_custom_multilevel_definitions_are_atomic` |
-| 59 | legal (isLgl) numbering | **none** |
+| 59 | legal (isLgl) numbering | `jade-web/tests/lists_styles_documents.rs::a_defined_list_sets_alignment_indents_suffix_and_legal_numbering` |
 | 60 | headings linked to list | `jade-docx-editor/src/headless_api.rs::insert_after_heading_resolves_numbering_prefixed_article_heading` |
-| 61 | number alignment & indent | **none** |
+| 61 | number alignment & indent | `jade-web/tests/lists_styles_documents.rs::a_defined_list_sets_alignment_indents_suffix_and_legal_numbering` |
 | 62 | number suffix | `core/jade-docx-editor/src/canvas_renderer.rs::numbering_space_suffix_can_start_body_before_left_indent` |
-| 63 | list styles | **none** |
+| 63 | list styles | `jade-web/tests/lists_styles_documents.rs::list_styles_are_created_and_applied` |
 | 64 | change list level | `jade-docx-editor/src/commands/adjust_paragraph_indent.rs::hanging_step_leaves_list_levels_alone` <br> `jade-docx-editor/src/headless_api.rs::undoing_a_list_level_step_restores_the_saved_level` |
 | 65 | paragraph styles | `jade-web/tests/formats_documents.rs::the_gallery_applies_a_heading_and_normal` <br> `jade-docx-native-render/tests/formatting_and_clipboard.rs::a_paragraph_style_and_a_list_are_applied` |
 | 66 | character styles | `jade-docx-reader/tests/generated_fixtures.rs::character_styles_fixture_lists_gallery_styles_and_hides_hyperlink` <br> `jade-docx-reader/src/parser.rs::parses_run_styles` |
-| 67 | linked styles | **none** |
+| 67 | linked styles | `jade-web/tests/lists_styles_documents.rs::character_and_linked_styles_apply_to_the_selection` |
 | 68 | table styles | `jade-docx-reader/src/styles.rs::default_table_style_requires_the_default_marker` <br> `jade-docx-editor/src/canvas_renderer/table.rs::package_borderless_table_style_does_not_invent_a_grid` |
 | 69 | new style | `jade-docx-editor/src/commands/set_paragraph_style.rs::cascades_new_style_run_properties_onto_runs` <br> `jade-docx-editor/src/headless_api.rs::restyled_runs_take_the_new_styles_theme_fonts` |
-| 70 | modify style | **none** |
+| 70 | modify style | `jade-web/tests/lists_styles_documents.rs::styles_are_created_modified_updated_and_applied` <br> `jade-gpui-app/src/word_tools.rs::styles_are_created_and_modified_from_the_dialog` |
 | 71 | based-on chain | `jade-docx-editor/src/word_document.rs::fill_missing_indent_inherits_per_property_group` <br> `jade-docx-editor/src/commands/set_font_family.rs::concrete_font_family_replaces_inherited_theme_slots` |
 | 72 | next-paragraph style | `jade-docx-editor/src/commands/insert_paragraph_break.rs::enter_at_the_end_of_a_heading_starts_its_next_style` <br> `jade-docx-editor/src/headless_api.rs::the_next_style_turns_off_a_list_a_pending_change_records` |
-| 73 | update style from selection | **none** |
-| 74 | auto-update style | **none** |
+| 73 | update style from selection | `jade-web/tests/lists_styles_documents.rs::styles_are_created_modified_updated_and_applied` |
+| 74 | auto-update style | `jade-web/tests/lists_styles_documents.rs::styles_are_created_modified_updated_and_applied` |
 | 75 | gallery order | `jade-web/tests/formats_documents.rs::the_gallery_applies_a_heading_and_normal` <br> `jade-web/tests/tables_documents.rs::style_options_and_a_gallery_style_apply_and_save` |
 | 76 | themes | `jade-office-model/src/word/font.rs::the_theme_palette_tints_and_shades_as_word_writes_them` <br> `jade-docx-editor/tests/word_schema.rs::a_theme_created_for_a_document_without_one_has_a_full_format_scheme` |
 | 77 | theme colours | `jade-office-model/src/word/font.rs::the_theme_palette_tints_and_shades_as_word_writes_them` <br> `jade-docx-reader/src/theme.rs::parses_theme_color_scheme_slots` |
 | 78 | theme fonts | `jade-docx-reader/src/theme.rs::parses_theme_fonts` <br> `jade-docx-editor/src/word_document.rs::theme_fonts_resolve_from_doc_defaults` |
-| 79 | theme effects | **none** |
-| 80 | style sets | **none** |
+| 79 | theme effects | `jade-web/tests/lists_styles_documents.rs::theme_effects_reach_the_shapes_that_name_them` |
+| 80 | style sets | `jade-web/tests/lists_styles_documents.rs::themes_colors_fonts_effects_and_style_sets` <br> `jade-gpui-app/src/word_tools.rs::the_design_tab_sets_the_theme_and_style_sets` |
 | 81 | attach template | `jade-office-model/src/word/new.rs::a_template_opens_as_a_document` <br> `jade-web/tests/new_documents.rs::a_template_opens_as_a_document` |
-| 82 | AutoText / building blocks | **none** |
-| 83 | set as default | **none** |
+| 82 | AutoText / building blocks | `jade-office-model/src/word/building_blocks.rs::entries_round_trip_through_the_glossary` <br> `jade-gpui-app/src/word_tools.rs::quick_parts_are_saved_and_inserted` |
+| 83 | set as default | `jade-web/tests/lists_styles_documents.rs::set_as_default_writes_the_document_defaults` |
 | 84 | insert table | `jade-docx-editor/src/commands/insert_table.rs::insert_table_supports_undo_and_redo` <br> `jade-docx-editor/src/headless_api.rs::insert_table_cell_rejects_merged_cells` |
 | 85 | draw table | `jade-web/tests/tables_documents.rs::the_pencil_splits_and_the_eraser_merges` |
 | 86 | rows & columns in/out | `jade-docx-editor/src/commands/table_structure.rs::insert_row_supports_undo_and_redo` <br> `jade-docx-headless-editor/src/lib.rs::property_insert_delete_column_roundtrip_keeps_merged_shape` |
@@ -171,17 +167,17 @@ evaluation shares one code path with fields that are tested
 | 100 | column width, row height | `jade-web/tests/tables_documents.rs::borders_drag_to_resize_columns_and_rows` <br> `jade-docx-reader/tests/generated_fixtures.rs::yokohama_table_row_heights_fixture_keeps_word_row_rules` |
 | 101 | row height rule | `jade-docx-reader/tests/generated_fixtures.rs::yokohama_table_row_heights_fixture_keeps_word_row_rules` <br> `jade-docx-editor/src/word_document.rs::row_height_nodes_receive_unique_non_root_ids` |
 | 102 | AutoFit to contents | `jade-web/tests/tables_documents.rs::borders_text_direction_and_autofit` <br> `jade-docx-reader/tests/generated_fixtures.rs::table_no_wrap_autofit_fixture_preserves_absolute_and_percentage_constraints` |
-| 103 | AutoFit to window | **none** |
+| 103 | AutoFit to window | `jade-web/tests/tables_documents.rs::borders_text_direction_and_autofit` |
 | 104 | distribute rows / columns | `core/jade-docx-editor/src/commands/table_structure.rs::distributing_rows_and_columns_evens_them_out_like_word` |
 | 105 | cell margins | `jade-docx-reader/src/parser/table.rs::parses_table_cell_margins` <br> `jade-docx-editor/src/canvas_renderer/table.rs::split_prepared_row_uses_resolved_zero_cell_padding` |
 | 106 | cell spacing | `jade-docx-reader/tests/generated_fixtures.rs::table_cell_spacing_fixture_preserves_table_default_and_row_overrides` <br> `jade-docx-reader/src/parser/table.rs::parses_row_cell_spacing_override` |
 | 107 | cell vertical alignment | `core/jade-docx-reader/src/parser/table.rs::parses_cell_vertical_alignment` <br> `core/jade-docx-editor/src/canvas_renderer/table.rs::cell_vertical_align_share_maps_tokens_to_offset_fraction` |
 | 108 | cell text direction | `jade-web/tests/tables_documents.rs::borders_text_direction_and_autofit` <br> `jade-docx-reader/src/parser.rs::parses_section_text_direction` |
 | 109 | table borders | `jade-web/tests/tables_documents.rs::borders_text_direction_and_autofit` <br> `jade-docx-reader/tests/generated_fixtures.rs::table_border_conflict_fixture_preserves_visible_and_hidden_opponents` |
-| 110 | cell shading | **none** |
+| 110 | cell shading | `jade-web/tests/formats_documents.rs::cell_shading_is_saved_on_the_cell` <br> `core/jade-docx-headless-mcp/src/server.rs::table_appearance_round_trips_and_undoes` |
 | 111 | header / total row styles | `jade-docx-editor/src/canvas_renderer.rs::nested_table_header_rows_are_not_repeated_like_word` <br> `jade-docx-reader/src/document/table_conditional.rs::banding_skips_header_rows_and_honors_band_size_zero` |
 | 112 | banding | `core/jade-docx-reader/src/document/table_conditional.rs::banding_skips_header_rows_and_honors_band_size_zero` <br> `core/jade-docx-reader/src/document/table_conditional.rs::band_regions_report_group_edges` |
-| 113 | first / last column | **none** |
+| 113 | first / last column | `core/jade-docx-editor/src/word_document/table_tools.rs::style_options_write_every_switch_and_read_back` |
 | 114 | repeat header rows | `jade-docx-reader/tests/generated_fixtures.rs::table_repeating_header_fixture_parses_empty_on_and_explicit_false` <br> `jade-docx-reader/src/parser/table.rs::parses_repeating_table_header_on_off_values` |
 | 115 | row may break across pages | `jade-docx-reader/src/parser/table.rs::parses_cant_split_row_property` <br> `jade-docx-editor/src/canvas_renderer/table.rs::split_prepared_row_splits_at_block_boundaries` |
 | 116 | floating tables | `jade-docx-pdf-renderer/tests/pdf_fixtures.rs::render_pdf_embeds_floating_png_images` <br> `jade-docx-native-render/tests/header_and_objects.rs::a_floating_object_can_be_moved_and_undone` |
@@ -208,7 +204,7 @@ evaluation shares one code path with fields that are tested
 | 137 | wrap: square | `jade-docx-reader/src/parser.rs::parses_floating_image_wrap_square_and_distances` <br> `jade-docx-layout/src/line_wrap.rs::both_sides_square_wrap_fills_both_gaps_of_a_band` |
 | 138 | wrap: tight / through | `jade-docx-reader/src/parser.rs::parses_edited_tight_wrap_polygon_points` <br> `jade-docx-layout/src/line_wrap.rs::tight_polygon_narrows_the_exclusion_toward_its_apex` |
 | 139 | wrap: top & bottom | `jade-docx-reader/src/parser.rs::parses_floating_image_wrap_top_and_bottom_and_none` <br> `jade-docx-editor/src/canvas_renderer.rs::top_and_bottom_exclusion_uses_resolved_vertical_position` |
-| 140 | wrap: behind / in front | **none** |
+| 140 | wrap: behind / in front | `core/jade-docx-native-render/tests/floating_layers.rs::a_shape_in_front_of_text_covers_the_paragraphs_after_its_anchor` <br> `core/jade-docx-native-render/tests/floating_layers.rs::a_shape_behind_text_lies_under_the_paragraphs_before_its_anchor` |
 | 141 | wrap points | `core/jade-docx-reader/src/parser.rs::parses_edited_tight_wrap_polygon_points` |
 | 142 | distance from text | `core/jade-docx-reader/src/parser.rs::parses_floating_image_wrap_square_and_distances` <br> `core/jade-docx-editor/src/canvas_renderer.rs::floating_object_exclusion_uses_resolved_position_rotation_and_distances` |
 | 143 | horizontal position | `jade-docx-reader/src/parser/table.rs::parses_floating_table_horizontal_position_and_text_distances` <br> `jade-docx-editor/src/canvas_renderer/table.rs::floating_table_horizontal_position_overrides_inline_alignment` |
@@ -217,7 +213,7 @@ evaluation shares one code path with fields that are tested
 | 146 | fixed on page | **none** |
 | 147 | lock anchor | **none** |
 | 148 | allow overlap | `core/jade-docx-reader/tests/generated_fixtures.rs::table_floating_overlap_fixture_preserves_pairwise_never_policy` |
-| 149 | z-order | **none** |
+| 149 | z-order | `core/jade-docx-editor/src/canvas_renderer/page_layers.rs::objects_stack_by_relative_height_across_paragraphs` |
 | 150 | align / distribute objects | **none** |
 | 151 | group / ungroup | `core/jade-docx-editor/src/canvas_renderer.rs::a_deferred_group_shares_one_transform_and_one_font_state` <br> `core/jade-docx-editor/src/canvas_renderer.rs::full_layout_capture_reports_nested_group_shape_text` |
 | 152 | selection pane | **none** |
@@ -278,10 +274,10 @@ evaluation shares one code path with fields that are tested
 | 207 | total page count | `jade-docx-native-render/tests/pdf_export.rs::pdf_retains_the_live_total_page_field_on_early_pages` <br> `jade-docx-editor/src/word_document.rs::extract_text_lines_emits_numpages_placeholder` |
 | 208 | STYLEREF in header | `jade-docx-editor/src/canvas_renderer.rs::style_reference_follows_the_page` |
 | 209 | insert / edit field | `jade-docx-headless-mcp/src/server.rs::export_preserves_field_codes` <br> `jade-docx-editor/src/commands/insert_field.rs::fields_replace_arbitrary_unicode_run_ranges_and_round_trip` |
-| 210 | toggle field codes | **none** |
-| 211 | update fields | **none** |
+| 210 | toggle field codes | `core/jade-docx-editor/src/fields/tests.rs::code_display_shows_each_field_once_in_braces` <br> `jade-office-model/tests/fields_like_word.rs::properties_feed_property_fields_and_codes_toggle` |
+| 211 | update fields | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` <br> `core/jade-docx-editor/src/fields/tests.rs::field_commands_undo_and_redo_whole` |
 | 212 | lock / unlock field | `core/jade-docx-editor/src/word_document.rs::locked_simple_and_complex_field_wrappers_survive_text_edits_and_roundtrip` <br> `core/jade-docx-reader/src/parser.rs::field_lock_false_and_omitted_keep_live_values_and_attribute_order_is_irrelevant` |
-| 213 | unlink field | **none** |
+| 213 | unlink field | `core/jade-docx-editor/src/fields/tests.rs::locked_fields_keep_their_results_until_unlocked_and_unlink_leaves_text` |
 | 214 | nested fields | `core/jade-docx-reader/src/parser.rs::nested_mergefield_cache_becomes_if_operand_without_leaking_result` <br> `core/jade-docx-reader/src/parser.rs::nested_non_display_field_contributes_empty_operand_not_cached_storage` |
 | 215 | format switches | `core/jade-docx-reader/src/parser.rs::extract_field_format_switch_handles_quoted_unquoted_and_missing` <br> `core/jade-docx-reader/src/field_datetime.rs::formats_word_picture_tokens_and_literals` |
 | 216 | PAGE / NUMPAGES / SECTIONPAGES | `jade-docx-native-render/tests/pdf_export.rs::pdf_retains_the_live_total_page_field_on_early_pages` <br> `jade-docx-editor/src/word_document.rs::extract_text_lines_emits_numpages_placeholder` |
@@ -293,7 +289,7 @@ evaluation shares one code path with fields that are tested
 | 222 | IF / COMPARE | `jade-docx-reader/src/parser.rs::set_assignment_is_available_to_a_following_if_field` <br> `jade-docx-editor/src/canvas_renderer.rs::resolve_run_field_if_and_compare_prefer_recomputed_values` |
 | 223 | ASK / FILLIN | `jade-docx-editor/src/canvas_renderer.rs::resolve_run_field_fillin_does_not_duplicate_editable_response` <br> `jade-docx-reader/src/parser.rs::parses_fragmented_fillin_with_omitted_prompt_and_blank_default` |
 | 224 | = formula | `jade-web/tests/tables_documents.rs::rows_sort_and_formulas_compute` |
-| 225 | INCLUDETEXT / INCLUDEPICTURE | **none** |
+| 225 | INCLUDETEXT / INCLUDEPICTURE | `core/jade-docx-editor/src/fields/tests.rs::headers_update_with_the_document_and_include_text_reads_local_files` |
 | 226 | document properties | `core/jade-docx-reader/tests/generated_fixtures.rs::document_property_fixture_retains_extended_properties_and_header_field` |
 | 227 | footnotes in / out | `jade-docx-pdf-renderer/tests/pdf_fixtures.rs::render_pdf_draws_simple_footnote_text` <br> `jade-docx-document-core/tests/tracked_revisions.rs::deleted_text_in_a_footnote_keeps_its_edge_spaces_in_the_file` |
 | 228 | endnotes in / out | `jade-docx-pdf-renderer/tests/pdf_fixtures.rs::render_pdf_draws_simple_endnote_text` <br> `jade-docx-reader/src/settings.rs::parses_document_wide_endnote_position` |
@@ -413,62 +409,62 @@ evaluation shares one code path with fields that are tested
 | 342 | customise ribbon / QAT | `jade-gpui-app/src/word_views/prefs.rs::the_options_dialog_draws_and_takes_effect` <br> `jade-gpui-app/src/word_views/customize.rs::the_lists_round_trip_through_the_settings` |
 | 343 | ADVANCE | **none** |
 | 344 | ASK | `jade-docx-reader/src/parser.rs::parses_fragmented_ask_with_blank_default` <br> `jade-docx-editor/src/word_document.rs::extract_header_lines_hides_ask_saved_result_at_field_position` |
-| 345 | AUTHOR | **none** |
+| 345 | AUTHOR | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` <br> `core/jade-docx-editor/src/fields/tests.rs::property_fields_read_and_write_document_properties` |
 | 346 | AUTONUM | `jade-docx-reader/src/parser.rs::original_autonum_fields_resolve_without_cached_result_runs` |
-| 347 | AUTONUMLGL | **none** |
+| 347 | AUTONUMLGL | `core/jade-docx-editor/src/fields/tests.rs::sequences_lists_styles_and_references_count_in_document_order` |
 | 348 | AUTONUMOUT | `jade-docx-reader/src/parser.rs::autonumout_unknown_heading_format_preserves_cache_and_advances_counters` |
-| 349 | AUTOTEXT | **none** |
-| 350 | AUTOTEXTLIST | **none** |
+| 349 | AUTOTEXT | `core/jade-docx-editor/src/fields/tests.rs::autotext_fields_show_glossary_entries` |
+| 350 | AUTOTEXTLIST | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` |
 | 351 | BIBLIOGRAPHY | `jade-docx-editor/src/commands/insert_citation.rs::citation_catalog_text_and_bibliography_round_trip_across_unicode_run_boundaries` |
 | 352 | CITATION | `jade-docx-editor/src/headless_api.rs::query_citation_sources_returns_the_word_catalog` <br> `jade-docx-editor/src/commands/insert_citation.rs::snapshot_batches_rebase_citations_and_following_edits` |
-| 353 | COMMENTS | **none** |
+| 353 | COMMENTS | `core/jade-docx-editor/src/fields/tests.rs::subject_keywords_and_comments_fields_read_and_write_their_properties` |
 | 354 | COMPARE | `core/jade-docx-reader/tests/generated_fixtures.rs::if_compare_fixture_preserves_fragmented_instructions_and_live_results` |
 | 355 | CREATEDATE | `core/jade-docx-reader/src/parser.rs::parses_package_backed_date_fields_without_collapsing_them_to_date` |
 | 356 | DATE | `core/jade-docx-editor/tests/date_time.rs::a_date_field_keeps_its_picture` <br> `core/jade-docx-reader/src/parser.rs::parses_date_field_with_picture_switch` |
 | 357 | DOCPROPERTY | `jade-docx-reader/tests/generated_fixtures.rs::document_property_fixture_retains_extended_properties_and_header_field` <br> `jade-docx-reader/src/parser.rs::parses_builtin_title_field_through_document_property_path` |
 | 358 | DOCVARIABLE | `jade-docx-reader/tests/generated_fixtures.rs::document_variable_fixture_retains_settings_values_and_fragmented_fields` <br> `jade-docx-editor/src/word_document.rs::document_variable_fields_apply_word_capitalization_switches` |
 | 359 | EQ | `core/jade-docx-reader/src/parser.rs::parses_eq_overstrike_ruby_field` <br> `core/jade-docx-reader/src/parser.rs::parses_eq_overstrike_distributed_text_field` |
-| 360 | FILENAME | **none** |
+| 360 | FILENAME | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` |
 | 361 | FILESIZE | `jade-docx-editor/src/word_document.rs::filesize_resolves_original_package_bytes_and_decimal_units` <br> `jade-docx-reader/src/parser.rs::parses_filesize_units_from_simple_and_fragmented_instructions` |
 | 362 | FILLIN | `jade-docx-editor/src/canvas_renderer.rs::resolve_run_field_fillin_does_not_duplicate_editable_response` <br> `jade-docx-reader/src/parser.rs::parses_fragmented_fillin_with_omitted_prompt_and_blank_default` |
 | 363 | = (formula) | `jade-web/tests/tables_documents.rs::rows_sort_and_formulas_compute` |
 | 364 | HYPERLINK | `core/jade-docx-reader/src/parser.rs::parses_hyperlink_field_instruction_and_preserves_editable_result_text` <br> `core/jade-docx-pdf-renderer/tests/pdf_fixtures.rs::render_pdf_emits_external_hyperlink_annotations` |
 | 365 | IF | `jade-docx-reader/src/parser.rs::resolves_if_with_empty_quoted_operands` <br> `jade-docx-editor/src/canvas_renderer.rs::resolve_run_field_if_and_compare_prefer_recomputed_values` |
-| 366 | INCLUDEPICTURE | **none** |
-| 367 | INCLUDETEXT | **none** |
+| 366 | INCLUDEPICTURE | `core/jade-docx-editor/src/fields/tests.rs::headers_update_with_the_document_and_include_text_reads_local_files` |
+| 367 | INCLUDETEXT | `core/jade-docx-editor/src/fields/tests.rs::headers_update_with_the_document_and_include_text_reads_local_files` |
 | 368 | INDEX | `core/jade-docx-editor/src/commands/insert_index.rs::current_state_batches_follow_prior_structural_coordinates_and_generate_index` |
 | 369 | INFO | `core/jade-docx-reader/src/parser.rs::parses_read_only_info_as_a_package_property_field` |
-| 370 | KEYWORDS | **none** |
-| 371 | LASTSAVEDBY | **none** |
-| 372 | LISTNUM | **none** |
+| 370 | KEYWORDS | `core/jade-docx-editor/src/fields/tests.rs::subject_keywords_and_comments_fields_read_and_write_their_properties` |
+| 371 | LASTSAVEDBY | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` |
+| 372 | LISTNUM | `core/jade-docx-editor/src/fields/tests.rs::sequences_lists_styles_and_references_count_in_document_order` |
 | 373 | NOTEREF | `jade-docx-editor/src/commands/bookmark.rs::note_targets_insert_scoped_noteref_fields_with_exact_history` <br> `jade-docx-editor/src/canvas_renderer.rs::noteref_uses_layout_note_ordinals_and_retains_relative_position_cache` |
 | 374 | NUMCHARS | `jade-docx-reader/src/parser.rs::parses_numwords_and_numchars_as_dedicated_statistics_fields` <br> `jade-docx-editor/src/word_document.rs::numwords_and_numchars_prefer_extended_properties_over_stale_results` |
 | 375 | NUMPAGES | `jade-docx-editor/src/word_document.rs::extract_text_lines_emits_numpages_placeholder` <br> `jade-docx-reader/src/parser.rs::parses_numpages_field_instruction_from_fld_simple` |
 | 376 | NUMWORDS | `jade-docx-reader/src/parser.rs::parses_numwords_and_numchars_as_dedicated_statistics_fields` <br> `jade-docx-editor/src/word_document.rs::numwords_and_numchars_prefer_extended_properties_over_stale_results` |
 | 377 | PAGE | `jade-web/tests/pages_documents.rs::headers_and_footers_take_text_and_a_page_number` <br> `jade-web/tests/section_setup_documents.rs::columns_line_numbers_and_page_numbers_are_saved` |
 | 378 | PAGEREF | `jade-docx-reader/src/parser.rs::parses_pageref_field_from_fld_simple` <br> `jade-docx-editor/src/canvas_renderer.rs::resolve_run_field_pageref_resolves_bookmark_page_with_cached_fallback` |
-| 379 | PRINTDATE | **none** |
+| 379 | PRINTDATE | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` |
 | 380 | QUOTE | `core/jade-docx-editor/src/canvas_renderer.rs::resolve_run_field_quote_prefers_instruction_literal_over_saved_result` <br> `core/jade-docx-editor/src/word_document.rs::extract_header_lines_prefers_quote_literal_over_saved_result` |
 | 381 | REF | `core/jade-docx-reader/src/parser.rs::parses_ref_field_and_resolves_bookmark_text` <br> `core/jade-docx-editor/src/word_document.rs::header_ref_resolves_bookmark_from_main_document_story` |
-| 382 | REVNUM | **none** |
+| 382 | REVNUM | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` |
 | 383 | SAVEDATE | `core/jade-docx-reader/src/parser.rs::parses_package_backed_date_fields_without_collapsing_them_to_date` |
 | 384 | SECTION | `jade-docx-editor/src/canvas_renderer.rs::section_run_field_resolves_one_based_active_section_index` <br> `jade-docx-editor/src/canvas_view.rs::section_field_placeholder_is_one_header_footer_caret_unit` |
 | 385 | SECTIONPAGES | `jade-docx-reader/src/parser.rs::parses_sectionpages_instruction_split_across_instr_text_runs` <br> `jade-docx-editor/src/canvas_renderer.rs::header_footer_substitutes_sectionpages_for_the_current_section` |
 | 386 | SEQ | `core/jade-docx-reader/src/parser.rs::parses_seq_fields_and_numbers_them_in_document_order` |
 | 387 | SET | `core/jade-docx-editor/src/canvas_renderer.rs::resolve_run_field_set_never_displays_saved_assignment` <br> `core/jade-docx-reader/src/parser.rs::set_assignment_is_available_to_a_following_if_field` |
 | 388 | STYLEREF | `jade-docx-editor/src/canvas_renderer.rs::style_reference_follows_the_page` |
-| 389 | SUBJECT | **none** |
+| 389 | SUBJECT | `core/jade-docx-editor/src/fields/tests.rs::subject_keywords_and_comments_fields_read_and_write_their_properties` |
 | 390 | SYMBOL | `core/jade-docx-reader/src/parser.rs::parses_symbol_char_into_run_text_and_font` <br> `core/jade-docx-reader/src/parser.rs::fragmented_symbol_field_preserves_switch_semantics_and_safe_fallbacks` |
-| 391 | TA | **none** |
+| 391 | TA | `jade-web/tests/index_documents.rs::a_table_of_authorities_lists_marked_citations` <br> `jade-office-model/src/word/references/index.rs::authorities_list_by_category_with_passim` |
 | 392 | TC | `core/jade-docx-reader/tests/generated_fixtures.rs::focused_tc_field_fixture_filters_hidden_entries_by_type_and_level` <br> `core/jade-docx-reader/src/parser.rs::ordinary_toc_merges_untyped_tc_fields_with_headings_in_document_order` |
 | 393 | TEMPLATE | `core/jade-docx-reader/src/parser.rs::parses_template_without_path_switch_as_a_package_property_field` |
 | 394 | TIME | `core/jade-docx-reader/src/parser.rs::parses_time_field_without_switch_from_fld_simple` |
 | 395 | TITLE | `core/jade-docx-reader/src/parser.rs::parses_builtin_title_field_through_document_property_path` |
-| 396 | TOA | **none** |
+| 396 | TOA | `jade-web/tests/index_documents.rs::a_table_of_authorities_lists_marked_citations` |
 | 397 | TOC | `jade-docx-reader/tests/generated_fixtures.rs::focused_toc_direct_outline_fixture_requires_u_for_direct_formatting` <br> `jade-docx-reader/src/document.rs::toc_f_after_l_resets_the_tc_level_filter` |
-| 398 | USERADDRESS | **none** |
-| 399 | USERINITIALS | **none** |
-| 400 | USERNAME | **none** |
+| 398 | USERADDRESS | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` |
+| 399 | USERINITIALS | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` <br> `jade-office-model/tests/fields_like_word.rs::user_information_and_page_fields_come_from_the_host_and_layout` |
+| 400 | USERNAME | `core/jade-docx-editor/src/fields/tests.rs::update_evaluates_each_kind_as_word_does` <br> `jade-office-model/tests/fields_like_word.rs::user_information_and_page_fields_come_from_the_host_and_layout` |
 | 401 | XE | `core/jade-docx-editor/src/commands/insert_index.rs::unicode_index_entries_round_trip_at_arbitrary_run_boundaries` |
 | 402 | ribbon & dialog map (docs/word/ribbon-map.md) | **none** |
 | 403 | web vs desktop (docs/word/web-vs-desktop.md) | **none** |
@@ -512,8 +508,8 @@ evaluation shares one code path with fields that are tested
 | 441 | side-to-side paging | `jade-gpui-app/src/word_views.rs::movement_and_bands` <br> `jade-office-model/src/word/view.rs::the_scrolled_to_page_follows_rows_and_columns` |
 | 442 | one / many pages, page width | `jade-gpui-app/src/word_views.rs::the_zoom_fits_follow_the_window` <br> `jade-office-model/src/word/view.rs::fits_follow_the_window` |
 | 443 | zoom percentage | `jade-gpui-app/src/editor.rs::zoom_is_clamped_and_never_nan` |
-| 444 | horizontal ruler | **none** |
-| 445 | vertical ruler | **none** |
+| 444 | horizontal ruler | `jade-web/tests/lists_styles_documents.rs::tab_stops_from_the_dialog_and_the_ruler_are_saved` <br> `jade-gpui-app/src/word_tools.rs::tab_stops_from_the_ruler_and_the_dialog` |
+| 445 | vertical ruler | `jade-gpui-app/src/word_ruler.rs::the_vertical_ruler_follows_the_caret_page` |
 | 446 | ruler units | `jade-web/tests/paragraphs_documents.rs::an_english_document_measures_in_millimetres_and_hanging_indents` |
 | 447 | gridlines | `jade-gpui-app/src/word_views.rs::gridlines_draw_over_the_page` <br> `jade-office-model/src/word/view.rs::the_grid_comes_from_the_settings` |
 | 448 | navigation pane view | `core/jade-docx-editor/src/headless_api.rs::document_outline_lists_every_navigation_pane_heading` |
@@ -538,10 +534,10 @@ evaluation shares one code path with fields that are tested
 | 467 | recover unsaved | **none** |
 | 468 | backup copy | **none** |
 | 469 | standard properties | `core/jade-docx-reader/tests/generated_fixtures.rs::document_property_fixture_retains_extended_properties_and_header_field` |
-| 470 | custom properties | **none** |
+| 470 | custom properties | `core/jade-docx-editor/src/fields/properties.rs::reads_and_writes_standard_and_custom_properties` |
 | 471 | statistics | `jade-web/tests/counts_documents.rs::typing_and_selecting_change_the_count_as_word_counts` <br> `jade-office-model/src/word/count.rs::east_asian_characters_are_words_of_their_own` |
 | 472 | repair on open | `jade-web/tests/damaged_documents.rs::damaged_documents_fail_to_open_without_crashing` <br> `core/jade-docx-diff/tests/document.rs::a_file_that_is_not_a_docx_is_reported_readably` |
-| 473 | .docm without macros | **none** |
+| 473 | .docm without macros | `jade-office-model/tests/macro_and_template_files.rs::macro_documents_and_templates_open_edit_and_save_whole` |
 | 474 | pen / pencil / highlighter | **none** |
 | 475 | pen options | **none** |
 | 476 | eraser | **none** |
@@ -551,7 +547,7 @@ evaluation shares one code path with fields that are tested
 | 480 | ink to shape | **none** |
 | 481 | ink editor | **none** |
 | 482 | mini toolbar, live preview | `jade-gpui-app/src/word_views/mini.rs::a_previewed_size_shows_and_goes` <br> `jade-gpui-app/src/word_views/mini.rs::the_mini_toolbar_comes_with_a_mouse_selection` |
-| 483 | ScreenTips | **none** |
+| 483 | ScreenTips | `jade-gpui-app/src/tooltip.rs::a_screen_tip_shows_its_text` <br> `jade-gpui-app/src/i18n.rs::every_screen_tip_has_text_in_both_languages` |
 | 484 | user name / initials | `jade-docx-editor/src/lib.rs::author_name_falls_back_when_unset_or_blank` |
 | 485 | overtype | `jade-gpui-app/src/word_views/input.rs::overtype_replaces_what_follows` |
 | 486 | drag & drop | `jade-gpui-app/src/word_views/select.rs::dragged_text_moves_or_copies` <br> `jade-web/tests/edits_documents.rs::a_double_click_takes_a_run_of_one_script` |

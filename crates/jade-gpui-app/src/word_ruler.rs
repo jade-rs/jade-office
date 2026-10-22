@@ -581,3 +581,39 @@ impl DocumentView {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::Focusable;
+
+    /// 垂直ルーラー: beside the caret's page only, while the ruler is on, in
+    /// lines when the unit is characters.
+    #[gpui::test]
+    fn the_vertical_ruler_follows_the_caret_page(cx: &mut gpui::TestAppContext) {
+        let path = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../jade-core/contract.docx"
+        ));
+        let (view, cx) =
+            cx.add_window_view(|_window, cx| crate::open_document_view(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        view.update(cx, |view, _| {
+            view.tools.ruler = true;
+            let page = view.caret_page_1idx() - 1;
+            assert!(
+                view.vertical_ruler(page).is_some(),
+                "beside the caret's page"
+            );
+            assert!(
+                view.vertical_ruler(page + 1).is_none(),
+                "not beside another"
+            );
+            view.tools.ruler = false;
+            assert!(
+                view.vertical_ruler(page).is_none(),
+                "hidden with the ruler off"
+            );
+        });
+    }
+}

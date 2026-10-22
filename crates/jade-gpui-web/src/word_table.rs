@@ -555,16 +555,7 @@ fn look_key(option: LookOption) -> &'static str {
 }
 
 fn line_key(style: &str) -> &'static str {
-    match style {
-        "dotted" => "table.line.dotted",
-        "dashed" => "table.line.dashed",
-        "dotDash" => "table.line.dot_dash",
-        "double" => "table.line.double",
-        "triple" => "table.line.triple",
-        "thick" => "table.line.thick",
-        "wave" => "table.line.wave",
-        _ => "table.line.single",
-    }
+    jade_web::word::borders::style_label(style)
 }
 
 fn border_key(set: BorderSet) -> &'static str {
