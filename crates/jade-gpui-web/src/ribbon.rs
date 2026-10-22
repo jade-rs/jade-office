@@ -678,6 +678,10 @@ pub struct TabState {
     pub story: Option<crate::view::word_story::StoryTabState>,
     /// ⌥F9: whether every field shows its code.
     pub field_codes: bool,
+    /// Whether the スタイル pane is open.
+    pub styles_pane: bool,
+    /// Whether the rulers show, and their unit.
+    pub ruler: (bool, jade_web::word::ruler::RulerUnit),
 }
 
 pub fn ribbon(
@@ -734,12 +738,27 @@ pub fn ribbon(
             let lists =
                 crate::word_tools::list_group(ribbon, &shown.tools, state.alignment.as_deref(), cx);
             groups.insert(2.min(groups.len()), lists);
+            let styles_at = groups.len().saturating_sub(1);
+            groups.insert(
+                styles_at,
+                crate::view::word_styles::style_tools_group(
+                    ribbon,
+                    state.style_id.clone(),
+                    shown.styles_pane,
+                    cx,
+                ),
+            );
             groups
         }
         Tab::Design => crate::word_tools::design(ribbon, &shown.tools, cx),
         Tab::Insert => {
             let mut groups = insert(ribbon, cx);
             groups.push(crate::word_tools::drop_cap_group(ribbon, &shown.tools, cx));
+            groups.push(crate::view::word_design::quick_parts_group(
+                ribbon,
+                &shown.tools.quick_parts,
+                cx,
+            ));
             groups.push(crate::word_page::pictures(shown.picture, cx));
             groups.push(crate::word_objects::objects(ribbon.popup, shown.object, cx));
             groups.push(group(
@@ -787,6 +806,12 @@ pub fn ribbon(
                     cx,
                 ));
             }
+            groups.push(crate::view::word_ruler::ruler_group(
+                ribbon,
+                shown.ruler.0,
+                shown.ruler.1,
+                cx,
+            ));
             groups
         }
         Tab::References => {
