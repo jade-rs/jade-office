@@ -1,0 +1,20 @@
+[workspace]
+
+[package]
+name = "jade-office-collab-preview"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jade-web = { path = "../../../crates/jade-web" }
+wasm-bindgen = "=0.2.128"
+
+[profile.release]
+opt-level = "s"
+debug = 0
+
