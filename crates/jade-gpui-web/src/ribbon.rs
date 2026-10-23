@@ -1050,8 +1050,11 @@ pub fn ribbon(
             div()
                 .id("ribbon-groups")
                 .flex()
-                .items_start()
-                .h(px(78.0))
+                // Stretched so every caption sits on one line; at least the old
+                // height so tabs keep it, but as tall as Home's three rows need.
+                .items_stretch()
+                .flex_none()
+                .min_h(px(78.0))
                 .px_2()
                 .py_1p5()
                 // Scrolls rather than cuts off: a group past the edge is a
