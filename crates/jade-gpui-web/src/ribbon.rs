@@ -36,6 +36,8 @@ pub(crate) const FONT_SIZES: [f32; 17] = [
 /// What an empty size or family box falls back to, as in jade-ide.
 pub(crate) const DEFAULT_FAMILY: &str = "游明朝";
 pub(crate) const DEFAULT_SIZE: f32 = 12.0;
+// Temporarily hide the extra controls until their Word-compatible placement is decided.
+const SHOW_EXTRA_FONT_ROW: bool = false;
 /// Word's highlight names and what they look like.
 const HIGHLIGHTS: [(&str, u32); 16] = jade_web::word::font::HIGHLIGHT_COLORS;
 const LINE_SPACINGS: [(&str, f32); 4] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)];
@@ -1361,8 +1363,13 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         cx,
                     ),
                 ]),
-                crate::view::word_characters::font_row(ribbon, state, cx),
-            ],
+            ]
+            .into_iter()
+            .chain(
+                SHOW_EXTRA_FONT_ROW
+                    .then(|| crate::view::word_characters::font_row(ribbon, state, cx)),
+            )
+            .collect(),
         ),
         group(
             i18n::text("doc.group.paragraph"),
