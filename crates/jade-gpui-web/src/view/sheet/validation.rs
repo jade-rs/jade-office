@@ -106,13 +106,11 @@ impl DocView {
         let Some(sheet) = self.sheet_mut() else {
             return false;
         };
-        if sheet.validation_pending.is_some() {
+        if let Some(pending) = &sheet.validation_pending {
             match key {
                 "escape" => self.answer_validation(ValidationAnswer::Cancel, cx),
                 "enter" => {
-                    let answer = if sheet.validation_pending.as_ref().unwrap().alert.style
-                        == AlertStyle::Stop
-                    {
+                    let answer = if pending.alert.style == AlertStyle::Stop {
                         ValidationAnswer::Retry
                     } else {
                         ValidationAnswer::Accept
