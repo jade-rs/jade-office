@@ -1,18 +1,19 @@
 import initReplica, { BrowserDocument } from '/collab-pkg/jade_collab_browser.js';
 import initOffice, { PreviewFonts, OfficePreview } from '/office-pkg/jade_office_collab_preview.js';
-import { replacement, anchor, position } from './editing.mjs';
+import { replacement, renderInput } from './editing.mjs';
 
 const $ = (id) => document.getElementById(id);
 const name = (new URLSearchParams(location.search).get('name') || 'Alice').slice(0,60);
+const documentName = new URLSearchParams(location.search).get('document') || 'demo.docx';
+const documentPath = `/documents/${encodeURIComponent(documentName)}`;
+$('document-name').textContent = documentName;
+document.querySelector('.download').href = documentPath;
+document.querySelector('.download').download = documentName;
 const entries = new Map(), peers = new Map();
 let replica, state, socket, ready = false, paused = false, stopped = false;
 let composing = null, queued = [], fonts, previewTimer, retryTimer, retry = 250;
 let previewSerial = 0;
 const notice = (message) => { $('notice').textContent = String(message); };
-
-function selection(entry) {
-  return [anchor(entry.paragraph.chars, entry.input.selectionStart), anchor(entry.paragraph.chars, entry.input.selectionEnd)];
-}
 
 function render(localCaret) {
   state = JSON.parse(replica.state());
@@ -47,16 +48,13 @@ function render(localCaret) {
       input.addEventListener('select', () => presence(entry));
       input.addEventListener('focus', () => presence(entry));
     }
-    const points = active === entry.input ? selection(entry) : null;
-    if (composing !== entry) entry.input.value = p.text;
+    renderInput(entry.input,entry.paragraph,p,composing===entry,active===entry.input,localCaret?.key===p.key ? localCaret : null);
     entry.input.disabled = stopped;
     entry.label.textContent = p.story.startsWith('Body') ? `段落 ${p.index + 1}` : `表のセル · 段落 ${p.index + 1}`;
     entry.paragraph = p;
-    if (points) entry.input.setSelectionRange(position(p.chars, points[0]),position(p.chars, points[1]));
     // Reorder only when necessary: moving the focused textarea breaks IME.
     const at = $('editor').children[p.index];
     if (at !== entry.box) $('editor').insertBefore(entry.box, at ?? null);
-    if (localCaret?.key === p.key) entry.input.setSelectionRange(localCaret.start,localCaret.end);
   }
   for (const [key,entry] of entries) if (!keys.has(key)) { entry.box.remove(); entries.delete(key); }
 }
@@ -130,7 +128,7 @@ function connect() {
   // Drain any frames buffered for IME before choosing the resume watermark.
   if (composing) { retryTimer = setTimeout(connect,250); return; }
   peers.clear(); showPeers(); ready = false;
-  socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/documents/demo.docx/ws`);
+  socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${documentPath}/ws`);
   const current = socket;
   current.onopen = () => { if (current === socket) current.send(replica ? replica.resume_message() : '{"type":"join"}'); };
   current.onmessage = (event) => { if (current === socket) accept(event.data); };
@@ -150,7 +148,7 @@ async function paintPreview() {
   const serial = ++previewSerial;
   let preview;
   try {
-    const response = await fetch('/documents/demo.docx',{cache:'no-store'});
+    const response = await fetch(documentPath,{cache:'no-store'});
     if (!response.ok) throw new Error(`DOCX取得: ${response.status}`);
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (serial !== previewSerial) return;

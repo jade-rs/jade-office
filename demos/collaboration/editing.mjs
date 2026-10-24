@@ -28,3 +28,15 @@ export function position(chars, point) {
   }
   return afterLeft ?? (point.left === null ? 0 : units);
 }
+
+// Changing a textarea's value also changes its selection. Keep that DOM
+// boundary in one place for the composition/reconnect regression tests.
+export function renderInput(input, previous, next, composing, focused, localCaret) {
+  // Even setSelectionRange with an unchanged confirmed model can move the
+  // caret out of the uncommitted IME text. The browser owns both until end.
+  if (composing) return;
+  const points = focused ? [anchor(previous.chars,input.selectionStart),anchor(previous.chars,input.selectionEnd)] : null;
+  input.value = next.text;
+  if (points) input.setSelectionRange(position(next.chars,points[0]),position(next.chars,points[1]));
+  if (localCaret) input.setSelectionRange(localCaret.start,localCaret.end);
+}
