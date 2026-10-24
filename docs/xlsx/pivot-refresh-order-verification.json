@@ -1,0 +1,3286 @@
+{
+  "runtime_profile": "Rust 1.93.1, test/dev opt-level=1, debug information/incremental off, one job. Actual manifests, lockfiles, compiler/dependency graphs and assertions retained. Only debug stripping of executed test binaries is disabled by the existing task-private wrapper.",
+  "manifest_and_lockfile_sha256": {
+    "jade-core/third_party/ironcalc-base/Cargo.toml": "485b654d5083e7391b948ed5ec81fb77b04e5010c0ad61e22752958de2349276",
+    "jade-core/third_party/ironcalc-base/Cargo.lock": "efc11cf98729f85f6e06d0e8028165223179878748ee2c9a25e9000d88e036e5",
+    "crates/jade-office-model/Cargo.toml": "c2019485380f428d3baed25dac951b1ce6e57c50d0d456a751a59dc47b8daf14",
+    "jade-core/crates/jade-xlsx-headless-mcp/Cargo.toml": "ffc53186a4c9d089885aad294be15f688773418b9b2dbd9584dd9ac17406c333",
+    "crates/jade-gpui-app/Cargo.lock": "72008ad54a8069e72445135b5fbc423719df281ca6a27f9e9a1fcb2e5aefb9b9",
+    "jade-core/crates/jade-xlsx-headless-cli/Cargo.toml": "07cfa837b1af271c0ab0e7313ce7f8987a16976fc10cbcf11086ac631d9c92cb",
+    "jade-core/crates/jade-xlsx-diff/Cargo.toml": "fe775110b4d38f6075eb03096b8c8f179321e1991a34ce019e147ffde01fa99e",
+    "jade-core/crates/jade-opc/Cargo.toml": "8372bf347739ad26bc5e87835d91ce3fd40cca4e06d616f387b91db44c3c4741",
+    "crates/jade-gpui-web/Cargo.lock": "e136971550b96d282a6f8802bbc481f759318384d7f626cc4017e96ddc722992",
+    "jade-core/Cargo.toml": "896ad497bd44ecae193fdc78cb66752e69167bb5e38868b199c294e9304c3dff",
+    "jade-core/Cargo.lock": "695f15b05ba2f0c1aa0a17414bcb8a6639aded29cb1a297bc83cb0aa0772cbb6",
+    "crates/jade-office-model/Cargo.lock": "01f59c9258247997018165a6ae83cc6bb17a94682202767b5d84cd201f100c8a",
+    "jade-core/crates/jade-xlsx-writer/Cargo.toml": "379f748fe5b1056b8845c1c174fb77621d5c33f62a0adc40ec6e31088a1d9c04",
+    "jade-core/crates/jade-xlsx-reader/Cargo.toml": "ead6f3dd37ec305e517bb79bf82a61650368d0ed9185f7765046b20d373ddddb",
+    "jade-core/crates/jade-xlsx-native-render/Cargo.toml": "53ad9c6612168b84680c980d4c692f2f44d0b4432e828067cd5d3ba620fda815",
+    "jade-core/crates/jade-xlsx-headless-api/Cargo.toml": "70cac9a7179e12b3d26a5091e847636b945c5a78588484299f196810bbb0da3e",
+    "crates/jade-gpui-app/Cargo.toml": "1863cc8ccae7e68c5ddc1ecd2b6dc7789803cc5b0f69379b55387b63968fb3de",
+    "crates/jade-gpui-web/Cargo.toml": "fce66cdbf65a355c9d1f00c99843825173fba95c0b890173bf20a78ffc0b8659",
+    "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd"
+  },
+  "reference_revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
+  "reference_implementation_code_incorporated": false,
+  "oracle_limits": "Generated original fixtures and runtime reader/editor/model checks plus actual application compiler graphs. No producer corpus/Excel schema-repair/save/render oracle or native/browser keyboard/pointer/paint exercise was performed.",
+  "scope_note": {
+    "excluded_paths": [
+      "demos/"
+    ],
+    "reason": "Unrelated concurrent demo work was excluded from all source hashes and formatting in this milestone.",
+    "historical_checkpoint_note": {
+      "excluded_path": "demos/collaboration/renderer/src/lib.rs",
+      "reason": "An unrelated concurrent demo change appeared in git status between freezes. The blanket formatter included it once; no feature/source edits were made to it. It is outside all XLSX/core/model/native/browser validation manifests and excluded from XLSX source hashes/format-count claims. The guarded own-source list now prevents formatting future unrelated paths.",
+      "xlsx_runtime_sources_or_assertions_changed": false,
+      "checked_at_utc": "2026-10-23T23:49:38.353526+00:00"
+    }
+  },
+  "reader_resource_limits": {
+    "metadata_nodes_per_part": 1000000,
+    "metadata_depth_check": "stack length greater than128 refuses further elements",
+    "record_values_per_part": 1000000,
+    "record_rows_per_part": 1000000,
+    "cache_values_per_workbook": 1000000,
+    "cache_and_table_fields_per_workbook": 65536,
+    "pivot_declarations_per_container": 4096,
+    "pivot_table_declarations_per_workbook": 4096
+  },
+  "getpivot_resource_limits": {
+    "aggregate_input_cells": 1000000,
+    "broadcast_output_cells": 1000000,
+    "range_values_checked_before_expansion": true,
+    "coordinate_addition_checked": true,
+    "limits_are_excel_equivalence_claims": false
+  },
+  "checked_at_utc": "2026-10-24T04:35:00.992116+00:00",
+  "scope": "Observed dependency ordering and dynamic footprint/freshness checks for atomic all-pivot refresh, with opt-in model-owned read tracing. Full styles/autofit/PivotCharts, authoring and overall ibisOffice parity remain incomplete.",
+  "xlsx_package_suites": {
+    "passed": 1350,
+    "failed": 0,
+    "ignored": 0,
+    "targets": 189,
+    "packages": [
+      "jade-xlsx-calc",
+      "jade-xlsx-diff",
+      "jade-xlsx-headless-api",
+      "jade-xlsx-headless-cli",
+      "jade-xlsx-headless-editor",
+      "jade-xlsx-headless-mcp",
+      "jade-xlsx-layout",
+      "jade-xlsx-native-render",
+      "jade-xlsx-reader",
+      "jade-xlsx-render",
+      "jade-xlsx-writer"
+    ],
+    "selected_six_passed": 1156,
+    "selected_six_targets": 170,
+    "broader_five_passed": 194,
+    "broader_five_targets": 19
+  },
+  "shared_opc_suite": {
+    "passed": 22,
+    "failed": 0,
+    "ignored": 0,
+    "targets": 1,
+    "selection": "jade-opc --lib complete unit suite",
+    "rerun_this_milestone": true
+  },
+  "shared_model_runtime": {
+    "manifest": "crates/jade-office-model/Cargo.toml",
+    "features": [
+      "tiny-skia"
+    ],
+    "passed": 151,
+    "failed": 0,
+    "ignored": 0,
+    "targets": 28,
+    "selection": "All twenty-eight *_like_excel.rs targets under tiny-skia; pivot source-cycle refusal leaves saved state/revision unchanged",
+    "gated_out": [
+      "print_like_excel ran zero cases: it requires both tiny-skia and skia",
+      "One Skia-only thai_text_like_excel case was not enabled; two TinySkia cases passed"
+    ],
+    "other_model_unit_integration_feature_targets_run": false,
+    "targets_detail": [
+      {
+        "target": "pivot_refresh_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "pivots_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            4,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "bulk_range_unlock_prompt_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            16,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "bulk_atomicity_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            10,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "range_unlock_prompt_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "individual_object_protection_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "object_protection_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "editable_ranges_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "sheet_protection_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "workbook_protection_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            9,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "charts_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "clipboard_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "conditional_formatting_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "csv_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            6,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "dynamic_arrays_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "find_replace_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            9,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "format_cells_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "japanese_functions_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "links_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "names_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "number_formats_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            3,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "paste_special_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            8,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "print_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "protected_sheets_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "tables_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            7,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "thai_text_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            2,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "typing_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            5,
+            0,
+            0
+          ]
+        ]
+      },
+      {
+        "target": "validation_like_excel",
+        "exit_code": 0,
+        "counts": [
+          [
+            13,
+            0,
+            0
+          ]
+        ]
+      }
+    ]
+  },
+  "engine_regression": {
+    "manifest": "jade-core/third_party/ironcalc-base/Cargo.toml",
+    "selection": "--lib complete actual standalone engine suite",
+    "passed": 2246,
+    "failed": 0,
+    "ignored": 8,
+    "new_tests": 4,
+    "rerun_this_milestone": true,
+    "carried_forward": false,
+    "engine_sources_unchanged_this_milestone": false
+  },
+  "engine_patch_replay": {
+    "result": "passed",
+    "source_and_build_files": 489,
+    "updated": false,
+    "changed_files": null,
+    "archive_sha256": "ce1dd83cada7da742782076daccda92e33162e9f4396a958ae3e7c5bb64e6a01",
+    "jade_patch_sha256": "c105a6b9991baa2b1d8fdffba1142b01b23c49a540ef1ab29d1bff5a82fa630e",
+    "upstream_hash_inventory_checked": 480,
+    "regenerated_this_milestone": true,
+    "replayed_this_milestone": true,
+    "carried_forward": false
+  },
+  "function_inventory": {
+    "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
+    "jade_registered": 507,
+    "ibis_registered": 512,
+    "shared": 507,
+    "not_registered_in_jade": [
+      "FILTERXML",
+      "GROUPBY",
+      "IMAGE",
+      "PIVOTBY",
+      "WEBSERVICE"
+    ],
+    "jade_only": [],
+    "method": "Executed actual locked/offline engine inventory example; output equals recorded inventory and pinned-reference comparison",
+    "registration_changed_this_milestone": false,
+    "remaining_functions_are_placeholders": false
+  },
+  "new_cases": {
+    "headless_dependency_order": 9,
+    "calculation_read_dependencies": 3,
+    "shared_model_cycle": 1,
+    "engine_read_trace": 4
+  },
+  "native_compile": {
+    "manifest": "crates/jade-gpui-app/Cargo.toml",
+    "production_and_test_code": true,
+    "result": "passed",
+    "compiler": "Rust 1.93.1",
+    "profile": "actual unoptimized check graph, metadata outputs relocated with unchanged rustc arguments except output directory",
+    "rerun_this_milestone": true
+  },
+  "browser_compile": {
+    "manifest": "crates/jade-gpui-web/Cargo.toml",
+    "target": "wasm32-unknown-unknown",
+    "result": "passed",
+    "compiler": "Rust 1.99.0",
+    "profile": "actual unoptimized production check graph",
+    "warning": "Existing engine build-script rust-objcopy cannot load libLLVM.dylib while stripping debug info; actual wasm check succeeds, without bypassing compiler/build-script behavior.",
+    "rerun_this_milestone": true
+  },
+  "locked_final_checks": true,
+  "offline_final_checks": true,
+  "dependency_or_locked_version_changes_this_milestone": false,
+  "core_and_broader_targets": [
+    {
+      "package": "jade-xlsx-reader",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          17,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "auto_filters",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "calculation_properties",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "cell_content",
+      "exit_code": 0,
+      "counts": [
+        [
+          12,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "cell_shifts",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "chart_references",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "charts",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "conditional_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "individual_object_protection",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "moves_formula",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "normal_style",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "page_setup",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "pictures",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "pivots",
+      "exit_code": 0,
+      "counts": [
+        [
+          19,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "protected_ranges",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "reads_a_workbook",
+      "exit_code": 0,
+      "counts": [
+        [
+          29,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "reads_objects",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "retargets_sheet_references",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "row_defaults",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "sheet_protection",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "shifts_formula_references",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "sparkline_ownership",
+      "exit_code": 0,
+      "counts": [
+        [
+          7,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "table_formula_rewrite",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "workbook_protection",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "x14_bars",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-reader",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "adds_a_border",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "adds_a_cell_format",
+      "exit_code": 0,
+      "counts": [
+        [
+          10,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "axis_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "calculation_properties",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "cell_content",
+      "exit_code": 0,
+      "counts": [
+        [
+          12,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "cell_shift_extensions",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "chart_caches",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "dimensions",
+      "exit_code": 0,
+      "counts": [
+        [
+          10,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "edits_shared_formulas",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "filter_structure",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "follows_tables_and_drawings",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "individual_object_protection",
+      "exit_code": 0,
+      "counts": [
+        [
+          7,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "insertion_bounds",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "pivot_refresh",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "preserves_charts",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "preserves_pictures",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "property_roundtrip",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "protected_ranges",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "restructures_rows_and_columns",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "sheet_protection_authoring",
+      "exit_code": 0,
+      "counts": [
+        [
+          7,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "table_namespaces",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "updates_cached_values",
+      "exit_code": 0,
+      "counts": [
+        [
+          7,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "validates_sheet_names",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "workbook_protection",
+      "exit_code": 0,
+      "counts": [
+        [
+          12,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "workbook_protection_authoring",
+      "exit_code": 0,
+      "counts": [
+        [
+          11,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "writes_a_workbook",
+      "exit_code": 0,
+      "counts": [
+        [
+          32,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "writes_spills",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-writer",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-calc",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-calc",
+      "target": "argument_counts",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-calc",
+      "target": "phonetic",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-calc",
+      "target": "pivot_calculation",
+      "exit_code": 0,
+      "counts": [
+        [
+          17,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-calc",
+      "target": "recalculates",
+      "exit_code": 0,
+      "counts": [
+        [
+          28,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-calc",
+      "target": "validation",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-calc",
+      "target": "value_dependencies",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-calc",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "auto_filters",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "axis_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "calculation_mode",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "calculation_open",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "calculation_status",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "cell_content",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "cell_shifts",
+      "exit_code": 0,
+      "counts": [
+        [
+          20,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "changes_filters",
+      "exit_code": 0,
+      "counts": [
+        [
+          17,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "chart_caches",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "charts",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "clipboard",
+      "exit_code": 0,
+      "counts": [
+        [
+          11,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "compatibility_functions",
+      "exit_code": 0,
+      "counts": [
+        [
+          13,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "current_region",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "custom_filters",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "data_validations",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "date_epoch",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "date_filters",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "deferred_range_authentication",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "defined_names",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "dimensions",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "dynamic_arrays",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "edit_checkpoints",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "editable_ranges",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "edits_charts",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "edits_conditional_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "edits_drawing_objects",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "edits_tables_and_shapes",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "excel_conformance",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "extended_validations",
+      "exit_code": 0,
+      "counts": [
+        [
+          7,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "fills_a_series",
+      "exit_code": 0,
+      "counts": [
+        [
+          16,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "format_views",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "formula_ownership",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "hyperlinks",
+      "exit_code": 0,
+      "counts": [
+        [
+          11,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "individual_object_protection",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "manages_sheets",
+      "exit_code": 0,
+      "counts": [
+        [
+          13,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "merges_cells",
+      "exit_code": 0,
+      "counts": [
+        [
+          13,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "moves_rows_and_columns",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "object_protection",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "page_setup",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "phonetic_readings",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "pivot_preservation",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "pivot_refresh",
+      "exit_code": 0,
+      "counts": [
+        [
+          38,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "pivot_structure",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "protected_sheets",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "quoted_validations",
+      "exit_code": 0,
+      "counts": [
+        [
+          11,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "range_unlock_candidates",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "rank_filters",
+      "exit_code": 0,
+      "counts": [
+        [
+          10,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "reads_without_a_window",
+      "exit_code": 0,
+      "counts": [
+        [
+          47,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "round_trip_corpus",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "sets_borders",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "sets_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "sheet_properties",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "sorting",
+      "exit_code": 0,
+      "counts": [
+        [
+          17,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "subtotal_visibility",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "table_ownership",
+      "exit_code": 0,
+      "counts": [
+        [
+          6,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "tables_authoring",
+      "exit_code": 0,
+      "counts": [
+        [
+          14,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "validation_structure",
+      "exit_code": 0,
+      "counts": [
+        [
+          13,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "visual_conditional",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "x14_bars",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-headless-editor",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "axis_selection",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "axis_styles",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "calendar_fields",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "chart_elements",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "charts",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "column_width_encoding",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "conditional_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "excel_grid_compat",
+      "exit_code": 0,
+      "counts": [
+        [
+          10,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "excel_number_format_conformance",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "filter_buttons",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "formatted_cells",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "formula_conditional_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          7,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "grid_geometry",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "headers_and_hit_testing",
+      "exit_code": 0,
+      "counts": [
+        [
+          7,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "normal_font",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "number_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          34,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "pictures",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "property_number_format",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "resize",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "rich_text",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "shape_styles",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "sparklines",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "table_styles",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "viewport",
+      "exit_code": 0,
+      "counts": [
+        [
+          8,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "visual_conditional_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "wrapped_cells",
+      "exit_code": 0,
+      "counts": [
+        [
+          11,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "x14_bars",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-layout",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_a_dark_theme",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_a_selection",
+      "exit_code": 0,
+      "counts": [
+        [
+          7,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_a_sheet",
+      "exit_code": 0,
+      "counts": [
+        [
+          11,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_a_viewport",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_axis_selection",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_axis_styles",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_charts",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_conditional_formats",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_filter_buttons",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_headers",
+      "exit_code": 0,
+      "counts": [
+        [
+          7,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_overflow",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_pictures",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_shapes",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "paints_wrapped_text",
+      "exit_code": 0,
+      "counts": [
+        [
+          5,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "resize_guide",
+      "exit_code": 0,
+      "counts": [
+        [
+          2,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "package": "jade-xlsx-render",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-headless-api",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-headless-api",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-headless-cli",
+      "target": "jade-xlsx-headless-cli",
+      "exit_code": 0,
+      "counts": [
+        [
+          12,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-headless-cli",
+      "target": "set_batch",
+      "exit_code": 0,
+      "counts": [
+        [
+          9,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-headless-mcp",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-headless-mcp",
+      "target": "jade-xlsx-headless-mcp",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-headless-mcp",
+      "target": "speaks_the_protocol",
+      "exit_code": 0,
+      "counts": [
+        [
+          40,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-headless-mcp",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-diff",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          110,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-diff",
+      "target": "xlsx-diff",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-diff",
+      "target": "accuracy",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-diff",
+      "target": "cli",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-diff",
+      "target": "public_corpus",
+      "exit_code": 0,
+      "counts": [
+        [
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-diff",
+      "target": "stress",
+      "exit_code": 0,
+      "counts": [
+        [
+          4,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/Cargo.toml",
+      "package": "jade-xlsx-diff",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/crates/jade-xlsx-native-render/Cargo.toml",
+      "package": "jade-xlsx-native-render",
+      "target": "lib",
+      "exit_code": 0,
+      "counts": [
+        [
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/crates/jade-xlsx-native-render/Cargo.toml",
+      "package": "jade-xlsx-native-render",
+      "target": "xlsx_to_png",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/crates/jade-xlsx-native-render/Cargo.toml",
+      "package": "jade-xlsx-native-render",
+      "target": "renders_a_workbook",
+      "exit_code": 0,
+      "counts": [
+        [
+          11,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "manifest": "jade-core/crates/jade-xlsx-native-render/Cargo.toml",
+      "package": "jade-xlsx-native-render",
+      "target": "doc",
+      "exit_code": 0,
+      "counts": [
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    }
+  ],
+  "source_build_translation_test_corpus_and_provenance_sha256": {
+    "crates/jade-gpui-app/Cargo.lock": "72008ad54a8069e72445135b5fbc423719df281ca6a27f9e9a1fcb2e5aefb9b9",
+    "crates/jade-gpui-app/i18n/en.tsv": "9277501f4b1ecdfb572aa70771e0391b8c29cb62bcbf58a04cbe87ff772978d3",
+    "crates/jade-gpui-app/i18n/ja.tsv": "aea35cc91fa15f3395bdde006d6b95de9710570174305ec0d81d5dc5f8f5afc9",
+    "crates/jade-gpui-app/src/workbook.rs": "f4535c8d72872b2555684dfd059aa2a1236568a090f35d83aec6c039e4219011",
+    "crates/jade-gpui-app/src/workbook/links.rs": "160bd635c0febd84e5bb6117478b4fef2428c1b2a5e8c1ecf2ae35c5dff4db49",
+    "crates/jade-gpui-app/src/workbook/links_ui.rs": "fc2f8d34bfb28c2686adec2c61d153217a4ef6ef1f6fc166de5a5967e2a7acbd",
+    "crates/jade-gpui-app/src/workbook/protection.rs": "ae26a1f622994d4df30cc88ec06bf58ce4a4d1e4c458988d9513774713638d16",
+    "crates/jade-gpui-app/src/workbook/protection_ui.rs": "fca64bb7ba0fb366dbc6732fd5c6d202572b8c47abb103216ef6ace11ab5e275",
+    "crates/jade-gpui-app/src/workbook/tables.rs": "1e493b9ac50fd9e2cccc7ab593816cce7ed21b79f77b1ee2c68256ba3331e6dc",
+    "crates/jade-gpui-app/src/workbook/tables_ui.rs": "8cf209923c4986b4ee05239ee08133219cc392a523db18e9cce9c9df7577e4de",
+    "crates/jade-gpui-app/src/workbook/validation.rs": "5d28c8590175a57a225061d253cfe6415f3da74d1072cdfd66ee5f6f81c42dc9",
+    "crates/jade-gpui-app/src/workbook/validation_ui.rs": "e77a6dfd49c1f196e8d7dc123c504255305da937d99d256deeea2d51602f9914",
+    "crates/jade-gpui-web/Cargo.lock": "e136971550b96d282a6f8802bbc481f759318384d7f626cc4017e96ddc722992",
+    "crates/jade-gpui-web/src/view.rs": "be374985d849e014ccb51207e98bee834a8497bff66164fc14aab65fa643e3d8",
+    "crates/jade-gpui-web/src/view/sheet.rs": "44dc584e7ecc152d5bec143b5a44bdb44b431eb9ca96f1e53c299fe78014795e",
+    "crates/jade-gpui-web/src/view/sheet/links.rs": "96d5dd588b14d8afc5c20f07f6c13e2016005993b97f41d84628ca5660063ebb",
+    "crates/jade-gpui-web/src/view/sheet/protection.rs": "a318b41ad992393b5073d0c3c8d151cc318fd6470506178552fa35c77e7bb453",
+    "crates/jade-gpui-web/src/view/sheet/tables.rs": "76c5eaae6f3a7cbe5d34db314bf6d40834ba790fb220f0af82e844ce51b0aa88",
+    "crates/jade-gpui-web/src/view/sheet/validation.rs": "214de9482073fa63d1451c85adcf008bd30a399e98c50cda495d2febbefedb3b",
+    "crates/jade-office-model/Cargo.lock": "01f59c9258247997018165a6ae83cc6bb17a94682202767b5d84cd201f100c8a",
+    "crates/jade-office-model/Cargo.toml": "c2019485380f428d3baed25dac951b1ce6e57c50d0d456a751a59dc47b8daf14",
+    "crates/jade-office-model/src/editable_ranges.rs": "e00bb48a0c974d95862eb8f32f9678640ca27480fcd71cedda175c2b5f4fb39c",
+    "crates/jade-office-model/src/lib.rs": "ded8ff768e3fd567c5f2bd9ee8c0be86906ce9037450fdba88d564ca05877eb7",
+    "crates/jade-office-model/src/links.rs": "5e75d94aff7e455eb951e0d87ad1fa0fdaaac05405edae8debb20ec4cfae6e83",
+    "crates/jade-office-model/src/names.rs": "bd8c1171b1a4191e608aaf02f47024bc20a7c3bba8b8d3776bdc78bee55abfe5",
+    "crates/jade-office-model/src/pivots.rs": "61cefe21510d3627ebf89bfed972b672a9a8360ced8837fec05bc17fa474bf4b",
+    "crates/jade-office-model/src/protected_edits.rs": "5314bd8d99687400b934eb59af41fa60533dc43937ec5869fa51c0280345a92a",
+    "crates/jade-office-model/src/protection.rs": "1e3f5cfbf90e7b0ec7be1c643e9ca019dcb60dc41217a98f88037adc022a753a",
+    "crates/jade-office-model/src/sheet.rs": "94afa3450132a747254fb26b4c4f3579060cf4c79d67a951376aa383d35472db",
+    "crates/jade-office-model/src/sheet_properties.rs": "b34592b2f93b1e93dded8085ee5cf063e55bb0c36c64ee9b95b70517f3906e8e",
+    "crates/jade-office-model/src/tables.rs": "e6c1817df500b35bddcd9c11e6b2420ff900e100e8a546144526518466d6df69",
+    "crates/jade-office-model/src/validation.rs": "beda190521cb179468aecfadcc4f6ccdc8b09503c99bb8ba8409e8e9d528274d",
+    "crates/jade-office-model/tests/bulk_atomicity_like_excel.rs": "d2205a29c072ce9c4cc12db1873aff0de407343cabcd65c7f019457820dee83f",
+    "crates/jade-office-model/tests/bulk_range_unlock_prompt_like_excel.rs": "33a4d923cbceba1b643188c5721e69443546320401c9d122db0803e14595f669",
+    "crates/jade-office-model/tests/editable_ranges_like_excel.rs": "47edb97f755e85ac00eeec0228d3667a21230acf8c61c02e8834595238f73f63",
+    "crates/jade-office-model/tests/individual_object_protection_like_excel.rs": "33c70e32efa1641650cc0ce2c20120aa9ec636abfde4bf2d76c36d39c8d801bf",
+    "crates/jade-office-model/tests/links_like_excel.rs": "42b1796f1f9d04d61d041d5862e22636a1f11a01e652eac38eae6f4224d90ce5",
+    "crates/jade-office-model/tests/names_like_excel.rs": "51a2714b98d509c14001c2110bff2eefce45b5b2ed52297bad634b5da4abcd12",
+    "crates/jade-office-model/tests/object_protection_like_excel.rs": "399d190ed9e9bd58d628a50486c08b965ded7d87ac73bb8a3e01104c9c72dc0c",
+    "crates/jade-office-model/tests/pivot_refresh_like_excel.rs": "8fbc9131ec2a8d8ef6cecebd407bfdc0f1a1f14276d44082ecf2c7b587057627",
+    "crates/jade-office-model/tests/pivots_like_excel.rs": "67418c679e41f255bdbae472fba7780b2e669833724ab44c7feac746abb0e54c",
+    "crates/jade-office-model/tests/range_unlock_prompt_like_excel.rs": "63038c1118dbe7ccb59c0156b12db8c67d5c3c34584d741c34a0f4ef7ab4c1c8",
+    "crates/jade-office-model/tests/sheet_protection_like_excel.rs": "6233565379d57b501dc0ab336e28e36cf947218c933c329aa3263fd00bdfa866",
+    "crates/jade-office-model/tests/tables_like_excel.rs": "afb8ebe8fdacffc4ef12474654c13175afaf61a47b2a03bf1e5ff3ca697c26d4",
+    "crates/jade-office-model/tests/typing_like_excel.rs": "a72dad69bc0ca4cb0bf0e47d819d5af71d6d58294f0ff8032a4a007b7e45ace7",
+    "crates/jade-office-model/tests/validation_like_excel.rs": "f11169585fe9d7307c96a8cd563ed94fdf2a4049b40fd8fa9b7a471113828963",
+    "crates/jade-office-model/tests/workbook_protection_like_excel.rs": "5ff9ce3922fa5a0860a0bfe4240c1bae3d308b8b3255ab9f47e1e228c4079894",
+    "crates/jade-web/src/lib.rs": "edd19b232205e8c42548699fa1d498f46d5fe28ba00275852ae53f923aca4db2",
+    "jade-core/Cargo.lock": "695f15b05ba2f0c1aa0a17414bcb8a6639aded29cb1a297bc83cb0aa0772cbb6",
+    "jade-core/crates/jade-opc/Cargo.toml": "8372bf347739ad26bc5e87835d91ce3fd40cca4e06d616f387b91db44c3c4741",
+    "jade-core/crates/jade-opc/src/lib.rs": "81dce17a5200d45ae3111d7a7f253250b848cfbf88a49d2d5e7203eb16c3fb7e",
+    "jade-core/crates/jade-opc/src/protection.rs": "e85beff778f5e7b69a0b8fb7c1566ef879fa85e2a772741a10588b3e9dcbf4f4",
+    "jade-core/crates/jade-xlsx-calc/src/conditional.rs": "1cd102f32d5d14b5a7eb0e22339e24b4761db19a70a5837ab4d655520d8cae42",
+    "jade-core/crates/jade-xlsx-calc/src/lib.rs": "2ccbb65958c84b23b77c16c2dcdd8475271bc36cca57589ec8e9664f27be9f5f",
+    "jade-core/crates/jade-xlsx-calc/src/pivot.rs": "2c3f885dce19a41cca91d5aa38b4313d24b3e86f22b2ac456ee689ef3355dbb8",
+    "jade-core/crates/jade-xlsx-calc/src/validation.rs": "61dd53d936237d4842dbc572bf07d24108e37e8fa8e56d205087113678665cbf",
+    "jade-core/crates/jade-xlsx-calc/tests/pivot_calculation.rs": "fe3d254e1215251d0671d6b77d5e2d42afc26dd6c2c9a67d54960b2206e1f650",
+    "jade-core/crates/jade-xlsx-calc/tests/validation.rs": "12d1194d68e91a94a8c2802ff3383cb8feffd13a47c5232d6ed3bcf9c978eb87",
+    "jade-core/crates/jade-xlsx-calc/tests/value_dependencies.rs": "610a3ab4758e6da62d30540e2934ee463eef472ff233045874f151dc868453de",
+    "jade-core/crates/jade-xlsx-diff/CHANGELOG.md": "cf7c1be362492da6a1afe8c7049fc0d1f2cb3849ca28572e75f362735c296448",
+    "jade-core/crates/jade-xlsx-diff/Cargo.toml": "fe775110b4d38f6075eb03096b8c8f179321e1991a34ce019e147ffde01fa99e",
+    "jade-core/crates/jade-xlsx-diff/LICENSE": "c0d2689621deb58b2ac9dc7c122d261bfc345c7471b4fad28dcbd51699b1c9f5",
+    "jade-core/crates/jade-xlsx-diff/README.md": "1d4e5151bfeae92c9c615440737f73346266f9896c233bb12977727592ac2501",
+    "jade-core/crates/jade-xlsx-diff/benches/alignment.rs": "7912ea0840d45d5d93e3f7b84129592ee8793cd8da333f9b0cec43ddfdb3680b",
+    "jade-core/crates/jade-xlsx-diff/examples/profile_large_workbooks.rs": "a4eb07fd77559f6e1baff0488e6523a9e0eac96b073edf9c2dd467a1102a1d41",
+    "jade-core/crates/jade-xlsx-diff/proptest-regressions/lib.txt": "7ac4ce7d3fc9bc4d78ce1f35ed335bcca2d34080feee37926985cd4cf67a0f18",
+    "jade-core/crates/jade-xlsx-diff/schema/diff-v1.schema.json": "0d3b274bf4e7284d6935285463e503016a0974a4d2e8fc8f9674682b4f29d377",
+    "jade-core/crates/jade-xlsx-diff/src/lib.rs": "082fd07657682861c2ac6bd7492b115d0a301770cce18ce4770d2b6c8a6d7ba2",
+    "jade-core/crates/jade-xlsx-diff/src/main.rs": "b90fe77e2a1dc6236b83da411d51f41f20329fec94c2e80d7da5a10ce9954040",
+    "jade-core/crates/jade-xlsx-diff/tests/accuracy.rs": "67a3fd1b534405b89d6b97f0d29fe935d7041724515ef58abed4ff016f27ffa9",
+    "jade-core/crates/jade-xlsx-diff/tests/cli.rs": "7c76715ad906026e1a6f6a6de7d1d04670f6195331d0eea71c4aa8a1dbeedce1",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/p3/README.md": "5375ff0f2e1928b30bb7c85e16ea5bfd23da41edabe3ff8f70a3883c0128aac5",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/p3/stress-cases.json": "2403550eae6a94e35c4f07049859ed1b6b2128a978d9f5e1022b6c87489ce68b",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/LICENSE-APACHE-2.0.txt": "b65a1ef083b6dd921118c8f7988e0aaea15792108aae2b564d226c244fab423a",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/LICENSE-CALAMINE-MIT.txt": "f0cf9b1c62bbe3bd3a69f5f79c7158f513f612b4940a0a812d1db39d605318bc",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/README.md": "de694c7d0820aa959562e8cc8f30958c26ebe30e447b485c349561df702ce05e",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/calamine-any-sheets.xlsx": "fba48e0141f847d80738a4417f0a336cba92e4ac692d8dd7516eac41e32c9e4f",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/calamine-inventory-table.xlsx": "d63fa89e938aad9635cd556f683b901cc1c118bf11b494b1156c4711e5329631",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/calamine-merge-cells.xlsx": "34f6b2779f49991859045791d8be0c5027e09b395f067c4363e38813d1e6431c",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/calamine-shared-formula.xlsx": "aa951fd8c55f7a9104515736e497e2dd393daec1077cf9401162070555ee6fe4",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/corexlsx-categories.xlsx": "0d82f7c2e64cd2ef1226ca9ddc362ac82cf5940828026daf2cf79eb625580b72",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/corexlsx-dates.xlsx": "e3bfb6d49d8429ed53a2d675e86c8ed17db9310d1609d835e8bcaffc62519afb",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/manifest.json": "37bd9ebba6a1439fb9c58a1eb7975a3e29dc6c4ac4b1a2c11bfb0220980120e6",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/mutations.json": "4f4463fc37a97400ef971aeeca407fe58642c1589750a7e99adfbaef932f9b0e",
+    "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/ons-population-v15.xlsx": "ae6eb26559d2aa5e985e2a4de78ced7d3b6774f3166b59b9539d782cf85563e3",
+    "jade-core/crates/jade-xlsx-diff/tests/public_corpus.rs": "deeda70518f03132a37eaf2c4fa21f1ec87ab6a22a88b9eed17b9cf9866abf68",
+    "jade-core/crates/jade-xlsx-diff/tests/snapshots/public_corpus__public_corpus_mutation_diffs.snap": "8eed1f81ab12ec4aa0d58cf0b87560d31cd48e76b7f8081349ffc81e73742916",
+    "jade-core/crates/jade-xlsx-diff/tests/snapshots/public_corpus__public_corpus_profiles.snap": "ff75a61cba803b1518cc0f4e8f1f980ba3ca1d69e2ea7d765677de5043753abe",
+    "jade-core/crates/jade-xlsx-diff/tests/snapshots/stress__p3_duplicate_heavy_result.snap": "3d5d4152bb6fa6cdda02b9a75e7a66287161c83baacab7e6a5199b03194fc572",
+    "jade-core/crates/jade-xlsx-diff/tests/snapshots/stress__p3_multi_sheet_result.snap": "d013b10ca1c0e23955068241b749fdf4f4da0e571fa0c0a5ea68ab101bc51e09",
+    "jade-core/crates/jade-xlsx-diff/tests/snapshots/stress__p3_wide_sparse_result.snap": "b231b5bea5f1dcc7e0195de08e96dc31791d91d2549ee26381fd1ac8e747c2a5",
+    "jade-core/crates/jade-xlsx-diff/tests/stress.rs": "3ba20c6e17d78ac3bd0752e2d88816b19f3de8dacc1102e699f4d063bfe59b38",
+    "jade-core/crates/jade-xlsx-headless-api/Cargo.toml": "70cac9a7179e12b3d26a5091e847636b945c5a78588484299f196810bbb0da3e",
+    "jade-core/crates/jade-xlsx-headless-api/src/lib.rs": "9ea762771baa658ce244837ebdc6c6da700cf065a2c709fdfbe77d9bd61c5766",
+    "jade-core/crates/jade-xlsx-headless-cli/Cargo.toml": "07cfa837b1af271c0ab0e7313ce7f8987a16976fc10cbcf11086ac631d9c92cb",
+    "jade-core/crates/jade-xlsx-headless-cli/src/main.rs": "8e28ec399a6d4e1ffed77caea74c9a7367e263f512df6f819c0c959e0728e56b",
+    "jade-core/crates/jade-xlsx-headless-cli/tests/set_batch.rs": "83f4f6425c8294feabcd797467529975cab3c935982f1f2e1a2650f41bcb4a82",
+    "jade-core/crates/jade-xlsx-headless-editor/examples/function_inventory.rs": "c01b36d81796c4fdda1fb5ed41d94f4514a3035393729891cb000896522950b9",
+    "jade-core/crates/jade-xlsx-headless-editor/src/cell_shift.rs": "3fc1e4114a4435751fef11c6e164af23b9f63225100b81aaf3a9aab951a4250f",
+    "jade-core/crates/jade-xlsx-headless-editor/src/charts.rs": "94a755550408579c42f6559ec876bee9e646d55f592ae42f1b68cc255e44ad42",
+    "jade-core/crates/jade-xlsx-headless-editor/src/data_validations.rs": "a5d7ec296468a18f08fc4a2c741a2f16fcea45cf35cae7a728d729f7662c800a",
+    "jade-core/crates/jade-xlsx-headless-editor/src/defined_names.rs": "32440611a7baa512241b2ad9a3d75882066d3283375c037d18130443ee9065a5",
+    "jade-core/crates/jade-xlsx-headless-editor/src/editable_ranges.rs": "30e1de87a40bf6803ea3ac60dd9af07cb797b04a6370b3266e71f7e26429260a",
+    "jade-core/crates/jade-xlsx-headless-editor/src/hyperlinks.rs": "71d3cf53c968baef31473800a9224a12074a0a125daaed70286a4df1ca3a08e3",
+    "jade-core/crates/jade-xlsx-headless-editor/src/lib.rs": "cd17cc3387f40de568a63efb9535dbef46d437da15a0686dccd31fbd232a2797",
+    "jade-core/crates/jade-xlsx-headless-editor/src/objects.rs": "203facaa581845cd746cfc3db8b081c2b94eeeeefd1b4eea966c2dbdd4edc918",
+    "jade-core/crates/jade-xlsx-headless-editor/src/page_setup.rs": "9baec562f5f46e249f6f93abd4e6888dc6d883e255e88818bb22e27fcf910feb",
+    "jade-core/crates/jade-xlsx-headless-editor/src/pivots.rs": "97de17c2231fd9d5f60a0bd979f263d6d7f1772bc20ffa2f73703f995c879a2f",
+    "jade-core/crates/jade-xlsx-headless-editor/src/pivots/order.rs": "81700441c35d9c765bf94e08b0cd9334d4096c1f09521da52d2a29c10533a8fe",
+    "jade-core/crates/jade-xlsx-headless-editor/src/protection.rs": "ca0110f6c9a91b454060d67f9157f9ebe4a97726643357ebd52953d1a9d60659",
+    "jade-core/crates/jade-xlsx-headless-editor/src/range_authentication.rs": "0046ca85a5cd2b9a1a79975b7ef4e0ab1676ed19399697628b8f04ef1ac5c446",
+    "jade-core/crates/jade-xlsx-headless-editor/src/sheets.rs": "c41f690d5fedfa6808f52040bd89ae0ae6cc44f2f9a9178d2091073e5b3b75a3",
+    "jade-core/crates/jade-xlsx-headless-editor/src/tables.rs": "46a4f56ce2208dbead757dd5abdb6853fe38454664463ac5d2a1facb270a3208",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/cell_content.rs": "c644a9827ed829bc8ca556c3c3684b2b4ec9d895c6e4b741f5ac38a20921f02e",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/cell_shifts.rs": "f8e56194a9ad4d41a57f268fdd3b152733d5ea35dfa5ad7e9ec585ecac59a5d0",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/compatibility_functions.rs": "15c0086e5358b8878787ce81ae9ec60f4c7d013d610d177a468b82e8a9165ad5",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/data_validations.rs": "809d641b965ec1141daf08b251b65d0bc6ee6db1464a57f7dc84794ce1e4b6ec",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/deferred_range_authentication.rs": "0d2ea051742e4da192c47f96cbac5c57603bf8799f9c0b203250eeebab2f312b",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/defined_names.rs": "e280c721dd43600a48b8780d9080ade6422c4026b0cae742c8160e80e7003e06",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/edit_checkpoints.rs": "deaa2b4b04a1ff1e371966a93e7784974214836426a7ccb32f9c114a0caa2d84",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/editable_ranges.rs": "69d739ff07db6ffdb39956d5c181c9cab9d4656b256d9d2e222e1cdb59f3a4af",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/edits_tables_and_shapes.rs": "0ee58a7e1d41ef4ff4a62a30b4079c6c2df1ae749ae904ac5447e6636cb35860",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/extended_validations.rs": "18f4102463bec3503362fcab3f75d6dfad82f9515be53d78becb64aa50bcef17",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/format_views.rs": "240ba7daf2244745ae783f0b573cacdd32ed5cb237ab793f3a5a2ed573b293bf",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/formula_ownership.rs": "444707a3c6018796473dd87677050849ff4171e2da9fc5213031c01d91cc77b1",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/hyperlinks.rs": "2baff881852d8638858f05c5c0778f1d5b07f3fbbb002c74df3bb77204253295",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/individual_object_protection.rs": "1a297615a4e5eaf209e7e1263b6a89228f3d46b33350e5f10d6ca56e37044bed",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/manages_sheets.rs": "5ebc95d53b11551a6693fde5538a9dcc213afece2f56542cc25cfe11bb4ff000",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/object_protection.rs": "9ffa033fea4e3868d634ef5e2cffa56f77607cdefc4c699d762ab08f7acbd859",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/page_setup.rs": "ed9652b0008438adddfa9d123d66ee2cb0607f2b9265a8c5fa31ce02c20f7f10",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/pivot_preservation.rs": "d541fa8f336542fa72dc7878f350cfff84bf82c88748e2338f2070a98ed3223b",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/pivot_refresh.rs": "85a3390d499aa1aabdbba174fa83030ddb343bf8b5e7e5a1f8a79e8a9930578c",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/pivot_structure.rs": "5ddfef5422ec7f0914b8914a0458bc9b930c034876d2a9a960c59362278bacfe",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/quoted_validations.rs": "75f98c8f0df74e6de8fec0acafad33e97feef7942c77aa59b1bfdcad47052cce",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/range_unlock_candidates.rs": "4f9f250437dc0bd275c3d62269624deb6c08198f75089e932a3660d061927efe",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/sheet_properties.rs": "5da29e4add6275c7fb40c68dae77d5f257e89250f0d26cacb43b60fe73f2fe00",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/table_ownership.rs": "8e48710bd2ac67e25ae4cb09105599e5245094c068af3e6762eae673e87963ad",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/tables_authoring.rs": "68dd4045a2098b247f43847fabe6468c03f4ec1a5092900f389304f7726f8455",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/validation_structure.rs": "f9c14747dba51578951f87d8515569df990eac01a5e28e2f9a4e58b8a02ccae3",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/x14_bars.rs": "8f28083f430680800ae5a92f16e743daad167a8e9ff04bc2d7f0b70c8fdef3fb",
+    "jade-core/crates/jade-xlsx-headless-mcp/Cargo.toml": "ffc53186a4c9d089885aad294be15f688773418b9b2dbd9584dd9ac17406c333",
+    "jade-core/crates/jade-xlsx-headless-mcp/README.md": "50d4db8af5c4b575687b4078727c26418d513405505fe1959855035a46928b2b",
+    "jade-core/crates/jade-xlsx-headless-mcp/src/lib.rs": "8f72c9c37fc435c07aa5cf90b58457a805e78b9ab2143b0d750f0b42385e4eb0",
+    "jade-core/crates/jade-xlsx-headless-mcp/src/main.rs": "035b22a6cdd9baeef04170e1d925bbbeffbe4de1937dc180a2ce0ac854049384",
+    "jade-core/crates/jade-xlsx-headless-mcp/src/server.rs": "f6798f47f05774c1956a087a71e6635160c230d63136876831b70760775bc48a",
+    "jade-core/crates/jade-xlsx-headless-mcp/tests/speaks_the_protocol.rs": "f49993fcb245b98daab9ee6209113454ff5f75b35e5a5a34181897f77af2b5ad",
+    "jade-core/crates/jade-xlsx-layout/src/number_format.rs": "431f3eb6a746c56890a58e4a22977ee178b020a4757a2b537fa5fb05f483a69e",
+    "jade-core/crates/jade-xlsx-layout/tests/calendar_fields.rs": "229b4dd0e92cede74bbe98e273f215e8dd3bdecf65903c89d6950ff009e552a9",
+    "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd",
+    "jade-core/crates/jade-xlsx-native-render/Cargo.toml": "53ad9c6612168b84680c980d4c692f2f44d0b4432e828067cd5d3ba620fda815",
+    "jade-core/crates/jade-xlsx-native-render/src/bin/xlsx_to_png.rs": "bcddc58d233e1b76f1ef17463458a4a8488a461a4dccb6522c7bcb07dea59725",
+    "jade-core/crates/jade-xlsx-native-render/src/lib.rs": "b56711dfe84bbe9fedb1f6c10aabb937706dfe9f7a5d87d7ba4b7bcdbb492829",
+    "jade-core/crates/jade-xlsx-native-render/tests/renders_a_workbook.rs": "e7d59e1eb0a1de31dc9825c236f7cd8e338adc9b9974caeda0663bb7e6f85f06",
+    "jade-core/crates/jade-xlsx-reader/Cargo.toml": "ead6f3dd37ec305e517bb79bf82a61650368d0ed9185f7765046b20d373ddddb",
+    "jade-core/crates/jade-xlsx-reader/src/auto_filter.rs": "239af99b0b09a34090ce3418078f9f8a90cabf042abc313c45c612a48cb2fb1c",
+    "jade-core/crates/jade-xlsx-reader/src/cell_content.rs": "ea18f319d0d10fab41c5ad66736abf4ad8979572fde07907a602568fd2da3c1f",
+    "jade-core/crates/jade-xlsx-reader/src/cell_shift.rs": "c2ccd53427099d9aa71e30fdcb4ce8fac014c72d34480450f0d574398bb83706",
+    "jade-core/crates/jade-xlsx-reader/src/chart.rs": "00c494dbb9d0d56096c08a02fb2d51eed1d85f5c0a41c457fa63239c1d0ab38c",
+    "jade-core/crates/jade-xlsx-reader/src/comments.rs": "b6b64a61db942d641fde04bb27fb8c803b93d3718a65a73385c5ebb23da74d3e",
+    "jade-core/crates/jade-xlsx-reader/src/conditional_format.rs": "f5a1ff9e9196e38736a75a626f308cdd3f2811fdf2db83505fa77d5e12427b58",
+    "jade-core/crates/jade-xlsx-reader/src/conditional_format/x14.rs": "54e3565536eedad0dbbf023995d641346156d5599eddc65a2a3b5c66dcf5d880",
+    "jade-core/crates/jade-xlsx-reader/src/data_validations.rs": "cafae00d7f4ba2fd9dba5e0b82ee7cb75620f026cde7e0bea3156452d6264693",
+    "jade-core/crates/jade-xlsx-reader/src/drawing.rs": "fe4f6a6cc766e808859ce0433badb7a8408fb3450adf6d61f9df5a8f8b364f62",
+    "jade-core/crates/jade-xlsx-reader/src/error.rs": "0b5d537f91348ad303515d9aa0457815defca538e059c4042c67159c7ed09928",
+    "jade-core/crates/jade-xlsx-reader/src/filter_state.rs": "8a3550a79715953279f1260d1899ebf3ce06cf08d2ae44177bf7e680ea499521",
+    "jade-core/crates/jade-xlsx-reader/src/formula.rs": "953a4c3d75cdb2c839f45a2a81830411f478f5b4941963da13f17ab50c2f3395",
+    "jade-core/crates/jade-xlsx-reader/src/hyperlinks.rs": "48840b36adf67506db8bb68fa91b081d0839f5c17ff7519d1e889b68d3e40f17",
+    "jade-core/crates/jade-xlsx-reader/src/lib.rs": "7c8766d71ad07dee98093e81af7e415fc78ad39e7396da3bee44249c6fa0a294",
+    "jade-core/crates/jade-xlsx-reader/src/model.rs": "ea74ff3551cdd784d412df9ea7649d7e67a296da7eef66943467fb0c1adb081f",
+    "jade-core/crates/jade-xlsx-reader/src/object_protection.rs": "26897ebceccbf0cae620ba71cfaefdad80facc526c3ae8e4470e1d0ec47f2593",
+    "jade-core/crates/jade-xlsx-reader/src/phonetic.rs": "fd92fc20af5082cf98821c31379535f48b43a0daa7a54f50111b76df5f39199c",
+    "jade-core/crates/jade-xlsx-reader/src/pivot.rs": "5b305d869846c18b73eea89cc202ab1153405d9f3513e9ece0a6324baa2df52f",
+    "jade-core/crates/jade-xlsx-reader/src/pivot/read.rs": "e6cea951192d2a2de295daa8d6b810a22a3c222905fb4bc6ff57b8f861ba12b5",
+    "jade-core/crates/jade-xlsx-reader/src/pivot/xml.rs": "0f6ecf2ba5c7be269b40b8ea139419a0dd6ed4b4b67c2ed5f1a9f29221ac2365",
+    "jade-core/crates/jade-xlsx-reader/src/protected_ranges.rs": "a59959ed112ba25bfdc566191cccef61a79f2e39fb9011e9b711668f525e3094",
+    "jade-core/crates/jade-xlsx-reader/src/rich_text.rs": "d5dc91a116201097f67597bec825c8c63b6ab5cd4452377f113cca2ff90bffa0",
+    "jade-core/crates/jade-xlsx-reader/src/shared_strings.rs": "cb22109d9467a80ac3bcceb82e9fa1bf33a4a207b9be2bfd30813f22325f7480",
+    "jade-core/crates/jade-xlsx-reader/src/sheet.rs": "b1518ccccb69fc093d492672b1ec85354f2adf2413d4e391b898279801c4949f",
+    "jade-core/crates/jade-xlsx-reader/src/sheet_protection.rs": "643c058ad3ed2b186cfc0b97b8f13340b7dee47f7a2a9401dd46ef523ff3e679",
+    "jade-core/crates/jade-xlsx-reader/src/sparkline.rs": "65e670a44ad2aeac996cc223a613a1b634f8b878e4391e8c4d7a8f646f8357b1",
+    "jade-core/crates/jade-xlsx-reader/src/styles.rs": "250e13e3e028a1f68dc344ee8eff2066f390a1a3792f4ea972b38eb5b5627be2",
+    "jade-core/crates/jade-xlsx-reader/src/table.rs": "00075b80e4340806892c4b6460fbd7dff3fd21fc5f6b1eebc3ade29f8da029d6",
+    "jade-core/crates/jade-xlsx-reader/src/table_reference.rs": "1f6228f4cd4496f103fc8bfff44be45573061ca1c7338a17a3fb8c578b22e289",
+    "jade-core/crates/jade-xlsx-reader/src/theme.rs": "f0c5c02f26c1b8ff091accb1bd9f49015830e7b70e149bea91d1d61ae0b2f673",
+    "jade-core/crates/jade-xlsx-reader/src/workbook_part.rs": "5c068f065e9d51bb1839f7cbe74dd73439d51ec4f336d4a4ed16909c55df342d",
+    "jade-core/crates/jade-xlsx-reader/src/xstring.rs": "9c58bce05785065fe97c6a487f2ef992d439332c88bb4312b72f95349caa9332",
+    "jade-core/crates/jade-xlsx-reader/tests/auto_filters.rs": "7703302a465d59c79a3197b679b09b53be4c0cf7a327acd0b4641902b9239382",
+    "jade-core/crates/jade-xlsx-reader/tests/calculation_properties.rs": "20e3a8c3ee54af8a6a9fcdabb5b5df64acdc7b34c215e5cb91f1b2e2106a1ea2",
+    "jade-core/crates/jade-xlsx-reader/tests/cell_content.rs": "c2519e0b29731a49d70355e382390ed9416108b228a35a70d1caffa8956bf7ac",
+    "jade-core/crates/jade-xlsx-reader/tests/cell_shifts.rs": "8f4dd622c60a95a1ed1269a17ced4f85eeaa55e69a0bb9ac9f0621b59cd11680",
+    "jade-core/crates/jade-xlsx-reader/tests/chart_references.rs": "d0f1b4334a004063fbbc0b3505cb5bac5527eaea4026f3deba3ce6708eb36325",
+    "jade-core/crates/jade-xlsx-reader/tests/charts.rs": "1ba6e16fe5b12224c51894f5e9c53ce2a6ece57b8492b92767058d9bbad8c854",
+    "jade-core/crates/jade-xlsx-reader/tests/common/mod.rs": "e0443ddf76aec7e82a1a8a36f2c0bad51c2e5618efa8cee264ccfb966ec58623",
+    "jade-core/crates/jade-xlsx-reader/tests/conditional_formats.rs": "c90805e2b710a4e79d248dab640832fc38b82cf5c21e91b06116749dacbb6f63",
+    "jade-core/crates/jade-xlsx-reader/tests/individual_object_protection.rs": "8126ecab791284832ce7863fa955abb00b1e2df7b5f1ff130fd9c771f7efe832",
+    "jade-core/crates/jade-xlsx-reader/tests/moves_formula.rs": "c93aaf898b50d37d8c77ecdc5d34a2d0e1769513096f5617def836cdb8d980c5",
+    "jade-core/crates/jade-xlsx-reader/tests/normal_style.rs": "0a3db0fe116d570ab2f9609753e209b83c559fa60fe43d1f077d6f2ce17c204a",
+    "jade-core/crates/jade-xlsx-reader/tests/page_setup.rs": "b0f3f040cb9d137622b9af8c5f1eeafee978508fd022583f5fea3a179190ad46",
+    "jade-core/crates/jade-xlsx-reader/tests/pictures.rs": "7a0f9a391558fcb7b188c7a93501bcbf68918f92e2ca1ae3d54bbc7b06a9462e",
+    "jade-core/crates/jade-xlsx-reader/tests/pivots.rs": "58f95609c6c7da969768196f1ff317aed3baa84c8279cc5bda30ce27ee6c3ab6",
+    "jade-core/crates/jade-xlsx-reader/tests/protected_ranges.rs": "10d59f8836a03937053dab0b84049fade66019eebff952cd56cc92495aa7f7d7",
+    "jade-core/crates/jade-xlsx-reader/tests/reads_a_workbook.rs": "5c58e8eb2e777c7fec1a1e6ab1608ee1c53711101c969525859e424d6cd016fc",
+    "jade-core/crates/jade-xlsx-reader/tests/reads_objects.rs": "653a4aa7377bc96db5d843e5f4de837f650ac9b968357f471bd7db6029bbe541",
+    "jade-core/crates/jade-xlsx-reader/tests/retargets_sheet_references.rs": "eab162ad6c5c968e724fe55eb75a1059e1afc24b9c8b7b78d004b2998a3102e8",
+    "jade-core/crates/jade-xlsx-reader/tests/row_defaults.rs": "eb3f597348c357f7fc9dc6777467b39a96b19debdcf3959a94d4394703eece49",
+    "jade-core/crates/jade-xlsx-reader/tests/sheet_protection.rs": "fbabcfca9685091c35242329fd898c663094576dcf371ac83300b61c984d5768",
+    "jade-core/crates/jade-xlsx-reader/tests/shifts_formula_references.rs": "b2f21ab376152e1de7f5399064a6dc8bbd79a1b959554e0a0fabc8ec59e6c8c1",
+    "jade-core/crates/jade-xlsx-reader/tests/sparkline_ownership.rs": "0919ff30725773a8930c28cdd0074d7b5f9d2a427a5d1da4012363ee8180b6d4",
+    "jade-core/crates/jade-xlsx-reader/tests/table_formula_rewrite.rs": "823ad6c99ac77907b07c02b7ebdca06ede345545e807b05a4c32022a4712908b",
+    "jade-core/crates/jade-xlsx-reader/tests/workbook_protection.rs": "f1b924100843bfab37b1253defa287db956c671b04f3a925d2e6bda1b91cb7d2",
+    "jade-core/crates/jade-xlsx-reader/tests/x14_bars.rs": "39ca5fd8907527222f36762d420acb7f5ee19563e2cd5fb9ded5226f698c58ec",
+    "jade-core/crates/jade-xlsx-writer/Cargo.toml": "379f748fe5b1056b8845c1c174fb77621d5c33f62a0adc40ec6e31088a1d9c04",
+    "jade-core/crates/jade-xlsx-writer/src/auto_filter.rs": "ca09e53f125ebb46a493e7ff4367eabb7c0e6e3235c69ca9ebdba562510cae77",
+    "jade-core/crates/jade-xlsx-writer/src/calc.rs": "ecddd2157aabd50ef15eda6cce5bac5c81683de0588f2f75d8a6d80efb6c773a",
+    "jade-core/crates/jade-xlsx-writer/src/cell_shift.rs": "af3a51f5a64dc83e104c077cfc147a5ca8d532daa3974dbe84ee6e21ff54e64a",
+    "jade-core/crates/jade-xlsx-writer/src/cell_shift_extensions.rs": "ff903bbe03bdcb715039cf3a2672b437c3354f46c46529ed517c40f52aa0a4d5",
+    "jade-core/crates/jade-xlsx-writer/src/chart_cache.rs": "fac3c0c6d14953ededa0e6c1cded94d201fa9260d97e512ae46b1a0884d745cc",
+    "jade-core/crates/jade-xlsx-writer/src/charts.rs": "66a770dc23da7a1b1f57917da43160f63f6fb2a1c33a0920a70f90aace2557c3",
+    "jade-core/crates/jade-xlsx-writer/src/clipboard.rs": "8cfd40e57c18caa478d50b8a7ba535cef2148edfc367a381fa69604cdcb4dea1",
+    "jade-core/crates/jade-xlsx-writer/src/conditional_formats.rs": "e04a9683c99389b2bf6fccd5e27f7451a89a462940ade807476fbcf998556903",
+    "jade-core/crates/jade-xlsx-writer/src/data_validations.rs": "f97db264b63f8ca9d11a38782468b95376fca3ddfe351ba44a1bbe67a72e8f73",
+    "jade-core/crates/jade-xlsx-writer/src/defined_names.rs": "c1783df52684c923d9040136a087582adc0b0106a49c5e4d5e3ce9076aedd7d4",
+    "jade-core/crates/jade-xlsx-writer/src/dimensions.rs": "f28a1b8978f1e1601dbc42bdc90fdef98684f099d84fb1bfc54412e0244b5570",
+    "jade-core/crates/jade-xlsx-writer/src/drawing.rs": "b956f9466484155396bc540631a939ca8e58cb1c8be74504faa1aeceed56a0ad",
+    "jade-core/crates/jade-xlsx-writer/src/filter.rs": "0c2837ce7f8320179d9f434f5655b4c8908723f3bfcbf6548a142d8e081cb4cb",
+    "jade-core/crates/jade-xlsx-writer/src/filter_state.rs": "c36e7b2bffd44610cdc375346b6933a53e777d404e85df552358b74b20d31f6d",
+    "jade-core/crates/jade-xlsx-writer/src/format_axes.rs": "21a632012ac4aa59a9e539c919388c8da6e7b9bf304b75dd363caebee79520a6",
+    "jade-core/crates/jade-xlsx-writer/src/header_footer.rs": "8020bbe79792d5b8f6b5c7999a3afae9fabe27ce0734e026a4d63c966304237b",
+    "jade-core/crates/jade-xlsx-writer/src/hyperlinks.rs": "e3f8d4f0def78c4a56376114c45b666246dad5803f50145c500ce0beef098603",
+    "jade-core/crates/jade-xlsx-writer/src/lib.rs": "db521cad846351ae40f0162e3cde62471aff53bca4ae1b574f95fb28152c58a1",
+    "jade-core/crates/jade-xlsx-writer/src/merges.rs": "a0a944558725025f8cdc943a698ed29be2d08f5b206f57e3925e3d7145a1a472",
+    "jade-core/crates/jade-xlsx-writer/src/notes.rs": "35919b8977a4d07ba2d18c468e5a4d8c7c1cec0b648d88072478c3a60861e74a",
+    "jade-core/crates/jade-xlsx-writer/src/objects.rs": "b68be5f9c8db1f4ec6b0f26adb74118a020791626f437e0d747d5239fa91bd99",
+    "jade-core/crates/jade-xlsx-writer/src/page_setup.rs": "7defff45f86784de1259f4348cfe58c492bbeb26498591c277c8b5d64a59029a",
+    "jade-core/crates/jade-xlsx-writer/src/patch.rs": "85d2083c6324bc336c73283e220f6509e62e0e7591bf9f30c62a7a73c5fa402b",
+    "jade-core/crates/jade-xlsx-writer/src/pivot_refresh/aggregate.rs": "d7815a02c228506b7ffb9fd73a299263336925c093c8fdb347da4f4ac3dfad10",
+    "jade-core/crates/jade-xlsx-writer/src/pivot_refresh/cache.rs": "095cae7241af45b77244e98e637f7722f2e977bbcf64d16362a0dc63a8932963",
+    "jade-core/crates/jade-xlsx-writer/src/pivot_refresh/mod.rs": "e39a38914944b2c27a22e1f4dd5caa51c0b648ac2027e025cea161159e550c95",
+    "jade-core/crates/jade-xlsx-writer/src/pivot_refresh/report.rs": "3340f59eee44c82e0e1b94062e7dfd7b8ab57442971a2eb0c92f9d5c50172532",
+    "jade-core/crates/jade-xlsx-writer/src/pivot_refresh/source.rs": "f345be11f9a3a2338c30ffbe7c3a37b1baea21b5aaf2a0cb96f7d71c6ca915d8",
+    "jade-core/crates/jade-xlsx-writer/src/pivot_refresh/xml.rs": "01bc9e3241655926fa8e212657903cb822957220ae1179ebd64ce6f6e905b506",
+    "jade-core/crates/jade-xlsx-writer/src/pivots.rs": "3420d8c9b6889fcfddfc163761b49a0f3486d405f8b4632a1ac5418ac96abad5",
+    "jade-core/crates/jade-xlsx-writer/src/protected_ranges.rs": "96c9fd10fc2c40a6602abacf439e64c07968d1621dc5240825ff6556c3d49000",
+    "jade-core/crates/jade-xlsx-writer/src/protection.rs": "2a7e224c41da68adc17b2ed07da2cfa269c7bad10c6e8af70538b6c3d84685dd",
+    "jade-core/crates/jade-xlsx-writer/src/refresh.rs": "d1e0c41c2993d01e056d5132297a975abd2c853c112c9bca0c0ebd1b0133e002",
+    "jade-core/crates/jade-xlsx-writer/src/sheet_protection.rs": "4fd49a59b79f728e9423354a4a64976f55bf43afba4887b67b5adf023cb1bad4",
+    "jade-core/crates/jade-xlsx-writer/src/sheets.rs": "4415433226b6f8a65c8ae28858c266d8535b6ee12634d1c9c5be996901010a37",
+    "jade-core/crates/jade-xlsx-writer/src/shift.rs": "41b4831c14068354b7df72c6a575654b62d0a167c6a519f0c947882615998efa",
+    "jade-core/crates/jade-xlsx-writer/src/sort.rs": "e957ededbbcfa401fd9858c82e5916f3af9b5f1baea873c83d8db1ca902c2228",
+    "jade-core/crates/jade-xlsx-writer/src/spills.rs": "47fc22d038a0f986d59953187448d079b0195d667f9ffe8195dbcd2c19dbb8b3",
+    "jade-core/crates/jade-xlsx-writer/src/styles.rs": "c27f89f6737259419bd7729ff7408af38e465ad52656645a9cfab10a78ee1bbe",
+    "jade-core/crates/jade-xlsx-writer/src/table.rs": "aaaf4fe40677e37bef201b643d8d0fb942947d40e15fef6c737a4849b2d9c293",
+    "jade-core/crates/jade-xlsx-writer/src/table_calculation.rs": "e39a57378b234389b792b9b5decd14c4ed86dc1282567e3bc93b368bd438c3a2",
+    "jade-core/crates/jade-xlsx-writer/src/table_formulas.rs": "2c52ccf1db7aa437040a81d935eb2c2aeff737585003fdb4a44cd90136ab572e",
+    "jade-core/crates/jade-xlsx-writer/src/tables.rs": "5ff4de9cd38602bc49daee66444d556cc87b29716a5cca5f6819efd1df57814a",
+    "jade-core/crates/jade-xlsx-writer/src/validation_sources.rs": "638b457c2e3d23d48ed63f4e01262911f36dd0d7b045a81eb47ca481585f4273",
+    "jade-core/crates/jade-xlsx-writer/src/validation_structure.rs": "34249332c517254f8b30256d74508c9411b5b5fc643c4fc8cad109a2cd00ad64",
+    "jade-core/crates/jade-xlsx-writer/src/worksheet_formulas.rs": "67c047003757f752da478927287e0e7b8ca5be0efcf8205773c6eda3632dff46",
+    "jade-core/crates/jade-xlsx-writer/src/xml_edit.rs": "b0ab13a287cda52b40e02ff676b5c4561958fbdfc1c2011f8e1a4ac70486be61",
+    "jade-core/crates/jade-xlsx-writer/src/xml_edit_ns.rs": "7adb0304d063d2f71ed5a83b325466995b9d71c0e1078a27cee69c9ace83a83a",
+    "jade-core/crates/jade-xlsx-writer/tests/adds_a_border.rs": "868c9b02e3f82ed40b1b216848c4554d1216299c86ff3f05356959a2da7da755",
+    "jade-core/crates/jade-xlsx-writer/tests/adds_a_cell_format.rs": "54fc9606386b0acbad5114b2a7ccbbe27f7b574bc9f68c0938cbd57b313e39df",
+    "jade-core/crates/jade-xlsx-writer/tests/axis_formats.rs": "ff6a45c64506c9b096760aac33d4760bfad85c21349102bd3db2a6fc5191fbe7",
+    "jade-core/crates/jade-xlsx-writer/tests/calculation_properties.rs": "3636668ed4f7fb52c443ace71c6e566018d05acc9fe5e822e2dc1e2ccc269912",
+    "jade-core/crates/jade-xlsx-writer/tests/cell_content.rs": "21b80379431b4d71d60c158a2a675fb3474b573d1b4bc198977cd102ccd7f193",
+    "jade-core/crates/jade-xlsx-writer/tests/cell_shift_extensions.rs": "7a98526c4488d6d0a53643ec6bd60cb5fdbe2e1d9269d568a6023ec4563ef18d",
+    "jade-core/crates/jade-xlsx-writer/tests/chart_caches.rs": "40be7706352125da6e169a6f20c58b7950231b5feef04706aa7e79859ce39413",
+    "jade-core/crates/jade-xlsx-writer/tests/common/mod.rs": "131d6bff7229c6cf987c86e59dbeccf500dde2d1d0efd93ffc61e237bd727cfc",
+    "jade-core/crates/jade-xlsx-writer/tests/dimensions.rs": "d586bf603552514688473a6af0f9378df9ee5aefa595319491a75de71e3eb4b9",
+    "jade-core/crates/jade-xlsx-writer/tests/edits_shared_formulas.rs": "4fd598bc232a5a33731da91fafe4e1614a52a398e5df9e136a2f08acdd4f4007",
+    "jade-core/crates/jade-xlsx-writer/tests/filter_structure.rs": "6292e412246c9b68a3685bc492ecceb5b9fd0657dbc4d7b230733bd03055be55",
+    "jade-core/crates/jade-xlsx-writer/tests/follows_tables_and_drawings.rs": "8e96c086872f70437b8821cd9833465f894d2c21e7408137fa258b915372b876",
+    "jade-core/crates/jade-xlsx-writer/tests/individual_object_protection.rs": "ee58c6bdc59b4c083ba1af326522ae0b82915e672a89a60e3e13a400decd25d6",
+    "jade-core/crates/jade-xlsx-writer/tests/insertion_bounds.rs": "561a68c2a4d0c4e2328dd2109375445a3e58c605a3b06d8c0231960b32319092",
+    "jade-core/crates/jade-xlsx-writer/tests/pivot_refresh.rs": "dcd1d85e360b6b2247db9e846949729c7c92149548df279b688be3aea5f1f809",
+    "jade-core/crates/jade-xlsx-writer/tests/preserves_charts.rs": "6a5fc15fee72b48dcb07963ad1901bcdd643186eb4b238d5bfcec914c463cc7f",
+    "jade-core/crates/jade-xlsx-writer/tests/preserves_pictures.rs": "a572938890a9b395da2258e03302cd31f276d741bee5c3f808c06d41307168f6",
+    "jade-core/crates/jade-xlsx-writer/tests/property_roundtrip.rs": "7b4865daaca813e99fb3c86eacdd211fd22c7f4f996c75c332ac025feaae8f55",
+    "jade-core/crates/jade-xlsx-writer/tests/protected_ranges.rs": "64462b02c81deef702f91facc9ebdba3bc4304388b48a9530e6079a1b259d3e5",
+    "jade-core/crates/jade-xlsx-writer/tests/restructures_rows_and_columns.rs": "b6cb3428edf7f72f7171dd1d60273e8ba8d21619e83eb72b13ee9aecc85f9219",
+    "jade-core/crates/jade-xlsx-writer/tests/sheet_protection_authoring.rs": "509b230e9de4144e9ea5830bc93cef09a1090a159717bcc819c1facbe593c3ac",
+    "jade-core/crates/jade-xlsx-writer/tests/table_namespaces.rs": "f549e1a955e5fa3da0d2ff2f2e4747fab4e7f9111ededc83986fbd1950a9fe01",
+    "jade-core/crates/jade-xlsx-writer/tests/updates_cached_values.rs": "aa6a9a3bd3b9d0906939ba4cc3a02c183eda1cf8a8e640aedcb2d5d96e3e9abb",
+    "jade-core/crates/jade-xlsx-writer/tests/validates_sheet_names.rs": "c33be50ce183a7beaa584f01de0c51edba21d18cc1e77029469c7ef65e479261",
+    "jade-core/crates/jade-xlsx-writer/tests/workbook_protection.rs": "585427ddb3bf727c370a3469d488c8977f7ae35c2a2e61f40046a4b579db0243",
+    "jade-core/crates/jade-xlsx-writer/tests/workbook_protection_authoring.rs": "2a87d2be68530d1075c298de1036fff3613aa0831a667e0eaf61731bdcd14cb2",
+    "jade-core/crates/jade-xlsx-writer/tests/writes_a_workbook.rs": "13aab6daf3024a2daacf6216b8bc6b1a7d5d3f200d4b95e84939858667c0d326",
+    "jade-core/crates/jade-xlsx-writer/tests/writes_spills.rs": "39a7e141b8fe3f3ad5abbcd7f4c320e16ebaeee65692f0f7c9050fa6a0e9064d",
+    "jade-core/public/fixtures/pivot-cache-compat.md": "47801106d25232e8ab481c8f9250ec535162842a7fdba615140b0fe61d585a69",
+    "jade-core/public/fixtures/pivot-cache-compat.xlsx": "f214657063d7fb78e72e1aa3690c73c6f8caa65be977e9ebe2ca443adc931523",
+    "jade-core/third_party/ironcalc-base/Cargo.lock": "efc11cf98729f85f6e06d0e8028165223179878748ee2c9a25e9000d88e036e5",
+    "jade-core/third_party/ironcalc-base/Cargo.toml": "485b654d5083e7391b948ed5ec81fb77b04e5010c0ad61e22752958de2349276",
+    "jade-core/third_party/ironcalc-base/README.jade.md": "d5090994f0b37cb0ec01c81843dab32adb0c61400e43039c394b68c7dbbbac01",
+    "jade-core/third_party/ironcalc-base/jade.patch": "c105a6b9991baa2b1d8fdffba1142b01b23c49a540ef1ab29d1bff5a82fa630e",
+    "jade-core/third_party/ironcalc-base/src/anchored_formula.rs": "ad2f88a9795bb9e2d21c602d45b06845c292edf8a2763e91c2fadc1112c732f2",
+    "jade-core/third_party/ironcalc-base/src/dependencies.rs": "c0f65cc877e619bff44bb033c3b8d0baa3318435dd02a289976a8723447fec39",
+    "jade-core/third_party/ironcalc-base/src/expressions/parser/mod.rs": "71f563ba727df0a86d21dd5dcbf3b0fa2c55d79b3e227a3796a0f94885719eca",
+    "jade-core/third_party/ironcalc-base/src/expressions/parser/static_analysis.rs": "93c68d63879eea812c709c68ea762d3c889d009b06c00c66e211e2398a6af9b0",
+    "jade-core/third_party/ironcalc-base/src/functions/compatibility.rs": "ff426f2d4df5d21313132576a655d86d93993551f280af9ee0d1b00ce6738d9f",
+    "jade-core/third_party/ironcalc-base/src/functions/information/mod.rs": "ee237e7a3cbb0265a42036789a7562cae6c06e89b6404c9bd249bfc3c30345a4",
+    "jade-core/third_party/ironcalc-base/src/functions/lookup_and_reference/mod.rs": "c13ff08ed16ad4f3a887f6bab2a2e5b3f99c8ae470856004182ce45075e36965",
+    "jade-core/third_party/ironcalc-base/src/functions/math_and_trigonometry/array_size.rs": "fedc4186319eab18996f7f573e97f20447bac1180151bfbbcbaaea945016bfb3",
+    "jade-core/third_party/ironcalc-base/src/functions/math_and_trigonometry/mathematical.rs": "1547f709af4c5adb51180e5b37ef7375803d2c178e95e84f0dd6b3a8b04cc697",
+    "jade-core/third_party/ironcalc-base/src/functions/mod.rs": "e41b3263f11c4e8137cbf465468ea0f16060cfa7fc0d68a1f4de46a7bcf72ba2",
+    "jade-core/third_party/ironcalc-base/src/implicit_intersection.rs": "ffdcad38e7bc8860320605d5506c4255e740752128a91894ac60ee92eaa9d246",
+    "jade-core/third_party/ironcalc-base/src/lib.rs": "af790a402f67d0ab6d21f6bbb9f94bd3a2eb9bc42e0e368853994c2eecc071c2",
+    "jade-core/third_party/ironcalc-base/src/model.rs": "44d0537cad4eac2e69fa6b0e5bf9143f91c38b67f3d4bd9f898c11627a3aff6b",
+    "jade-core/third_party/ironcalc-base/src/new_empty.rs": "e4e9dc3fd236c66814b6e7ee7ec16755f31fde6ee0a67aa6020a9acb916dc0d5",
+    "jade-core/third_party/ironcalc-base/src/pivot.rs": "c6fc82a9e9b853843b56f25239dd7cd5e1266addc9526fcfc9a0f86486a5beb5",
+    "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
+    "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
+    "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
+    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
+    "scripts/xlsx/generate_pivot_fixture.py": "224ace9682c0f1da78712e34dce584b9c12ce462f286e2ff26d63263a1884256",
+    "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2"
+  },
+  "shared_model_target_source_sha256": {
+    "crates/jade-office-model/tests/bulk_atomicity_like_excel.rs": "d2205a29c072ce9c4cc12db1873aff0de407343cabcd65c7f019457820dee83f",
+    "crates/jade-office-model/tests/bulk_range_unlock_prompt_like_excel.rs": "33a4d923cbceba1b643188c5721e69443546320401c9d122db0803e14595f669",
+    "crates/jade-office-model/tests/charts_like_excel.rs": "852667f6cdf8741db7016b77f63ccbca57c4eddb2a4dbe42f5883b3e7b89ef5d",
+    "crates/jade-office-model/tests/clipboard_like_excel.rs": "87489ba539eea6428adbc743303319fbe1fac0edb974f6d7122c223ed31f4e8c",
+    "crates/jade-office-model/tests/conditional_formatting_like_excel.rs": "8530b4c955243cdf44964756261082cb794ed0ea1b9e4406007e31ea7b204c16",
+    "crates/jade-office-model/tests/csv_like_excel.rs": "d072c3127bbd83c3ef0fb5d9df68c384b31be67be7234273bf9ef525b1d97ed3",
+    "crates/jade-office-model/tests/dynamic_arrays_like_excel.rs": "b0a4122f8f9f5d8f3ef35a80af0d6c27a885c4e49b4ad470377b5598be6f0d46",
+    "crates/jade-office-model/tests/editable_ranges_like_excel.rs": "47edb97f755e85ac00eeec0228d3667a21230acf8c61c02e8834595238f73f63",
+    "crates/jade-office-model/tests/find_replace_like_excel.rs": "daa8cb2ebc9642045cc4df95e6bcc4cb49e2c139a8d2abbcf468fae6efc4a503",
+    "crates/jade-office-model/tests/format_cells_like_excel.rs": "6a8c8229cd821eefecf29af13e6cfa21b736b4a845deabd7a7cc69a8312271eb",
+    "crates/jade-office-model/tests/individual_object_protection_like_excel.rs": "33c70e32efa1641650cc0ce2c20120aa9ec636abfde4bf2d76c36d39c8d801bf",
+    "crates/jade-office-model/tests/japanese_functions_like_excel.rs": "67aab54031b816e6221a2cc3694bc0ab9868d0dd4523edd9666548501fcb7fb9",
+    "crates/jade-office-model/tests/links_like_excel.rs": "42b1796f1f9d04d61d041d5862e22636a1f11a01e652eac38eae6f4224d90ce5",
+    "crates/jade-office-model/tests/names_like_excel.rs": "51a2714b98d509c14001c2110bff2eefce45b5b2ed52297bad634b5da4abcd12",
+    "crates/jade-office-model/tests/number_formats_like_excel.rs": "acb0e30adb35b0ebeaa0bb8aa10fc49f64d03d45aa4755586f2d32fdca6dbee5",
+    "crates/jade-office-model/tests/object_protection_like_excel.rs": "399d190ed9e9bd58d628a50486c08b965ded7d87ac73bb8a3e01104c9c72dc0c",
+    "crates/jade-office-model/tests/paste_special_like_excel.rs": "56148b2c66b28c5b2ac659ca13f25a7b9a9c493df082e4e0a1c8ff96671d74fa",
+    "crates/jade-office-model/tests/pivot_refresh_like_excel.rs": "8fbc9131ec2a8d8ef6cecebd407bfdc0f1a1f14276d44082ecf2c7b587057627",
+    "crates/jade-office-model/tests/pivots_like_excel.rs": "67418c679e41f255bdbae472fba7780b2e669833724ab44c7feac746abb0e54c",
+    "crates/jade-office-model/tests/print_like_excel.rs": "ade18fff307c4f2272678a011167ab68a1c5a79cb8ca5f346a542a26a40d5e6a",
+    "crates/jade-office-model/tests/protected_sheets_like_excel.rs": "44c788ca3634df1da3d8ddaa833c8ec0c8c1e807180a17231f4a9fe7f440b760",
+    "crates/jade-office-model/tests/range_unlock_prompt_like_excel.rs": "63038c1118dbe7ccb59c0156b12db8c67d5c3c34584d741c34a0f4ef7ab4c1c8",
+    "crates/jade-office-model/tests/sheet_protection_like_excel.rs": "6233565379d57b501dc0ab336e28e36cf947218c933c329aa3263fd00bdfa866",
+    "crates/jade-office-model/tests/tables_like_excel.rs": "afb8ebe8fdacffc4ef12474654c13175afaf61a47b2a03bf1e5ff3ca697c26d4",
+    "crates/jade-office-model/tests/thai_text_like_excel.rs": "727892b5e519c65438d6bfd0a48c433e6e39a2a090e69ccd2bd861a8af26c3bd",
+    "crates/jade-office-model/tests/typing_like_excel.rs": "a72dad69bc0ca4cb0bf0e47d819d5af71d6d58294f0ff8032a4a007b7e45ace7",
+    "crates/jade-office-model/tests/validation_like_excel.rs": "f11169585fe9d7307c96a8cd563ed94fdf2a4049b40fd8fa9b7a471113828963",
+    "crates/jade-office-model/tests/workbook_protection_like_excel.rs": "5ff9ce3922fa5a0860a0bfe4240c1bae3d308b8b3255ab9f47e1e228c4079894"
+  },
+  "source_record": "315 scoped primary files, 28 model targets; fifteen source/test/provenance files changed this milestone, three new Rust paths. All selected package/model/engine and actual app compiler graphs ran against frozen final sources. Unrelated concurrent work excluded.",
+  "formatting": {
+    "changed_or_new_rust_files": 196,
+    "rustfmt": "passed; explicit own-source set, edition2021, skip_children=true",
+    "root_diff_check": "passed",
+    "core_diff_check": "passed"
+  },
+  "fixture": {
+    "path": "jade-core/public/fixtures/pivot-cache-compat.xlsx",
+    "sha256": "f214657063d7fb78e72e1aa3690c73c6f8caa65be977e9ebe2ca443adc931523",
+    "generator": "scripts/xlsx/generate_pivot_fixture.py",
+    "regeneration_byte_identical": true,
+    "provenance": "Original deterministic Jade test data and XML; no third-party/reference workbook content. Source East10+5/West20+7, saved report15/27/42, preserved unused shared item, dates and declared relationships/content types.",
+    "office_or_schema_validation_oracle": false,
+    "new_multi_cache_fixture": "Independent Rust test fixture builds two distinct cache/records parts and sources, or two reports sharing one cache, from the original Jade fixture; no reference workbook content."
+  },
+  "implementation_policies": [
+    "Source resolves worksheet ranges, scoped/global defined-name aliases and tables excluding totals. Existing header identity/count must match; grouped/calculated/external/uninterpreted sources are refused.",
+    "Source formula caches require caller verification. Headless stages recalculation; any skips leave formulas unverified. Literal-only sources may still refresh. On refusal the entire checkpoint is restored before returning.",
+    "Existing shared indices and unused items remain stable; new typed values append. Records, flags, relationships/content types and all reports sharing the cache are planned and committed together.",
+    "Eleven standard aggregate kinds, rows/columns/default subtotals/grand totals, hidden member and selected page filters, manual/label order, multiple measures and compact hierarchy are rebuilt within the supported subset.",
+    "Date classification uses source styles and typed old-cache fallback; equivalent ISO dates retain item identity, both epochs and fractional values work, and the fictional 1900 leap day stays numeric rather than invalid XSD date.",
+    "Existing cell styles are retained, number/date formats and compact indent are generated. Full pivot style/theme/banding reapplication, autofit and PivotChart synchronization are not implemented.",
+    "Collision and resource checks precede mutation, including shared siblings/source/table/merge/array/occupied cells. Old large sparse footprints clear stored cells only.",
+    "Owned namespace paths preserve qualified prefixes and foreign/opaque metadata. Unknown content in replaced entries is refused. Generated output is reread for new catalog issues; this is not schema or Office oracle validation.",
+    "One shared model operation backs native/browser refresh menus, saving and Undo/Redo. Source edits do not refresh implicitly. Ordinary chart cache updates do not imply PivotChart connection synchronization."
+  ],
+  "refresh_resource_limits": {
+    "source_cells": 1000000,
+    "cache_values": 1000000,
+    "report_output_cells": 1000000,
+    "axis_lines_or_coordinates": 1000000,
+    "aggregate_work_and_key_coordinates": 5000000,
+    "combined_shared_report_edits": 1000000,
+    "limits_are_excel_equivalence_claims": false
+  },
+  "reference_review_evidence": {
+    "records": [
+      {
+        "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/pivot.rs",
+        "file": "/tmp/jade-xlsx-parity-fallback/reference-pivot-app-pinned.rs",
+        "sha256": "cda2f88f8ed2594217e222ebf109ab02cd1bdbb21a83ba19f73bd22bb1329e9f",
+        "bytes": 149473,
+        "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
+        "license": "AGPL-3.0-only; behavior inspection only; no implementation copied",
+        "fetched_at": "2026-10-24T03:21:58.422839+00:00"
+      }
+    ]
+  },
+  "reference_scope": "Pinned app saved-order working-copy refresh reviewed for behavior only; new scheduling and read tracing are independent Jade code, with no AGPL implementation copied.",
+  "official_behavior_sources": [
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.pivotcachedefinition?view=openxml-3.0.1",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.pivottabledefinition?view=openxml-3.0.1",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.shareditems?view=openxml-3.0.1",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.dataconsolidatefunctionvalues?view=openxml-3.0.1"
+  ],
+  "cache_preservation": {
+    "shared_rust193": {
+      "raw_target": "/tmp/jade-xlsx-parity-fallback/extended-validation-model-target",
+      "directory_exists": true,
+      "symlink_aliases": false,
+      "prior_archive_consumed": true,
+      "restore_progress_sha256": "bf29aab83533c4dc2ea9cdcb783b3470700308a694bad7bb3c8860816cd05b97",
+      "prior_manifest_sha256": "51b2e221115a37dc7c0fbc805cb70b38123944e1947e534ba568c668534fda03",
+      "prior_manifest": "/tmp/jade-xlsx-parity-fallback/pivot-reader-shared-cache.parts/manifest.json",
+      "restore_complete": true,
+      "remaining_prior_parts": 0,
+      "new_archive_created_this_milestone": false,
+      "raw_cache_verified_this_milestone": true
+    },
+    "native_renderer_and_opc": {
+      "raw_target": "/tmp/jade-xlsx-parity-fallback/x14-target",
+      "directory_exists": true,
+      "symlink_aliases": false,
+      "prior_archive_consumed": true,
+      "restore_progress_sha256": "f8a1ddec1ecd03039edf538cc384c2d733cc86f977e467b3bfb5c913e7ebd221",
+      "prior_manifest_sha256": "7e67b00921402bd8774031d74e24d839a8baa588b61e6dcd85bee88a1dddc7b9",
+      "prior_manifest": "/tmp/jade-xlsx-parity-fallback/pivot-reader-native-opc-cache.parts/manifest.json",
+      "restore_complete": true,
+      "remaining_prior_parts": 0,
+      "new_archive_created_this_milestone": false,
+      "raw_cache_verified_this_milestone": true
+    },
+    "browser": {
+      "raw_target": "/tmp/jade-xlsx-parity-fallback/table-ownership-browser-target",
+      "directory_exists": true,
+      "symlink_aliases": false,
+      "prior_archive_consumed": true,
+      "restore_progress_sha256": "f8a1ddec1ecd03039edf538cc384c2d733cc86f977e467b3bfb5c913e7ebd221",
+      "prior_manifest_sha256": "d5518cbaad49ef1b3a238b565abbe51cc88da7f2a133cd45791a8162a71b2bac",
+      "prior_manifest": "/tmp/jade-xlsx-parity-fallback/pivot-reader-browser-cache.parts/manifest.json",
+      "restore_complete": true,
+      "remaining_prior_parts": 0,
+      "new_archive_created_this_milestone": false,
+      "raw_cache_verified_this_milestone": true
+    }
+  },
+  "cache_note": "All three prior split archives were hash/gzip-verified and consumed to restore regular raw compiler caches. Final raw caches remain present; consumed archive manifests are historical and must not be reused. Native metadata directory links/real destinations are retained. Storage is ample; no cache aliases or unrelated work cleanup.",
+  "not_proven": [
+    "Complete static/all-branches/producer/Excel dependency oracles, Office/reference behavior for cyclic cache sources, every dynamic/volatile/metadata-reference edge and performance across the entire workbook size domain; conservative references can overapproximate dependencies",
+    "Automatic refresh-on-load, external/query/connection Refresh All, full pivot styles/theme/banding/autofit and PivotChart synchronization",
+    "Create/delete/source/layout/filter authoring, grouping/calculated/show-as/advanced filters/OLAP, unsupported compact layouts, slicers/timelines and remaining full audit areas",
+    "Complete Excel/native/browser interaction/repair/save/calculation/pixel oracles, all model feature/unit matrices including Skia-only print/Thai cases and five missing function registrations"
+  ],
+  "prior_checkpoint": "pivot-refresh-all-verification.json",
+  "counts_are_additive_with_prior_checkpoints": false,
+  "goal_status": "active; full ibisOffice parity remains incomplete",
+  "evidence_file_sha256": {
+    "pivot-order-core-report.json": "051599544be6ca116c4c2a77e3c38082d7c029a14d8be5c191a33473245acc84",
+    "pivot-order-broader-report.json": "4149f32d047aaf1fbc5528360f295f9194e9c970f74b62d9e2793f6ba43b37a0",
+    "pivot-order-native-runtime-report.json": "c3e7f74e522b349dfb951188fdcf987a75be5ce111a35de494253f5601601bb9",
+    "pivot-order-model-final-report.json": "77f3c77aa89436c9ade0c5a6cb591fa37c6c2713e70c022de96a07aa9703676a",
+    "pivot-order-engine-final.log": "1f27ca9b6350df1d544a5ca17d2c82ba3a9ecdf70ad222adde4fc05381f11639",
+    "pivot-order-opc-final.log": "8dd8628e9304f230beda12461b3552e5c237057123586cac55ecb7c338c9fea4",
+    "pivot-order-native-final.log": "c5327feb7dae587c556da31634bb9b312bae14a05efa18e07dc7d351cf20bcfd",
+    "pivot-order-browser-final.log": "0b540c309609d27f5838104408ee9dbee2141bf598d0c23b5e9d864a40b5575f",
+    "pivot-order-native-exit.json": "e89df0eae5ec7db81135aed16463968955c578bcc4f2ec43172eff351f080c17",
+    "pivot-order-browser-exit.json": "e89df0eae5ec7db81135aed16463968955c578bcc4f2ec43172eff351f080c17",
+    "pivot-order-patch-replay-final.json": "9d443d34775f7bc14c0d577ef7b1d3e3c1a56f57b24b55ea89459ac623d47968",
+    "pivot-order-actual-inventory.json": "4af05e53343609f98a85c30a73000dc25e277f266c02d949d49fc530413ececb",
+    "pivot-order-first-red.log": "c536e8e93b5e9da8e9caa9989fa630c82d1d8a00f75f0b6c0be0d763e4430185",
+    "pivot-order-compressed-runtime.log": "bbca55b4710eb16a52f5854a7a03e31cf25740e75bad87557a425d580abfd7d0",
+    "pivot-order-model-preflight.log": "1a9cc858d79cf03f6390e1750c87f5e4efba601a413315f654108b793d6cf7ca"
+  },
+  "changed_paths_this_milestone": [
+    "crates/jade-office-model/tests/pivot_refresh_like_excel.rs",
+    "jade-core/crates/jade-xlsx-calc/src/lib.rs",
+    "jade-core/crates/jade-xlsx-calc/tests/value_dependencies.rs",
+    "jade-core/crates/jade-xlsx-headless-editor/src/lib.rs",
+    "jade-core/crates/jade-xlsx-headless-editor/src/pivots.rs",
+    "jade-core/crates/jade-xlsx-headless-editor/src/pivots/order.rs",
+    "jade-core/crates/jade-xlsx-headless-editor/tests/pivot_refresh.rs",
+    "jade-core/crates/jade-xlsx-writer/src/pivot_refresh/mod.rs",
+    "jade-core/crates/jade-xlsx-writer/src/pivot_refresh/source.rs",
+    "jade-core/third_party/ironcalc-base/README.jade.md",
+    "jade-core/third_party/ironcalc-base/jade.patch",
+    "jade-core/third_party/ironcalc-base/src/dependencies.rs",
+    "jade-core/third_party/ironcalc-base/src/lib.rs",
+    "jade-core/third_party/ironcalc-base/src/model.rs",
+    "jade-core/third_party/ironcalc-base/src/new_empty.rs"
+  ],
+  "initial_red_regression": {
+    "log_sha256": "c536e8e93b5e9da8e9caa9989fa630c82d1d8a00f75f0b6c0be0d763e4430185",
+    "passed": 3,
+    "failed": 2,
+    "observed": [
+      "Reverse-declared consumer retained old total27 instead of117",
+      "Cycle between cache sources incorrectly succeeded"
+    ],
+    "fixes": [
+      "Trace actual calculation references and schedule observed producer dependencies first",
+      "Refuse cycles and restore the complete edit checkpoint before returning an error"
+    ]
+  },
+  "dependency_policies": [
+    "Tracing is optional and model-owned. Both model constructors start without a trace; enabled evaluation tracks scalar reads, reference/range results, dynamic/named/structured references and spill edges. Conditional formatting is excluded and spill restarts reset trace state.",
+    "Trace rectangles retain empty cells; contained point reads compact into a covering rectangle. Incomplete traces are explicitly refused. Normal calculation uses the same evaluation/cache/spill/chart path without a trace allocation.",
+    "Source rectangles use the exact writer resolver. Sparse transitive formula reads intersect current report footprints, producing cache predecessor sets. Cycles are refused before choosing a ready cache; saved order breaks ties.",
+    "Each staged refresh triggers a fresh observed graph. Completion timestamps invalidate consumers whose predecessors changed later or became pending, including growth into previously empty dependency cells. Targets deduplicate shared caches; invalidation may require refreshing an affected cache again.",
+    "A final traced calculation supplies the exact committed formula caches without another volatile pass after validation. There is no numeric value-convergence loop. Later ordinary calculation may generate a new volatile source sample.",
+    "Reference-only operands conservatively overapproximate value dependencies; activated branches are rechecked. This is not a static all-branches or Excel calculation-chain oracle. Resource/retry exhaustion refuses the entire atomic batch."
+  ],
+  "dependency_resource_limits": {
+    "read_edges_per_evaluation_after_compaction": 1000000,
+    "work_steps_per_batch": 20000000,
+    "cache_refresh_limit": "min(N*(N+1),16384) for N distinct cache targets",
+    "rectangles_expanded_to_whole_axis_cells": false,
+    "limits_are_excel_equivalence_claims": false
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
+  "jade_registered": 507,
+  "ibis_registered": 512,
+  "shared": 507,
+  "not_registered_in_jade": [
+    "FILTERXML",
+    "GROUPBY",
+    "IMAGE",
+    "PIVOTBY",
+    "WEBSERVICE"
+  ],
+  "jade_only": []
+}

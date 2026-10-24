@@ -23,17 +23,26 @@ pub mod clipboard;
 pub mod conditional_formatting;
 pub mod csv;
 pub mod deck;
+pub mod editable_ranges;
 pub mod find;
 pub mod format_cells;
 pub mod grid;
+pub mod links;
+pub mod names;
 pub mod number_formats;
 pub mod paste_special;
 #[cfg(feature = "tiny-skia")]
 pub mod pdf;
+pub mod pivots;
 pub mod print;
+pub mod protection;
+pub use sheet::protected_edits;
 pub mod sheet;
+pub mod sheet_properties;
+pub mod tables;
 pub mod text;
 pub mod typing;
+pub mod validation;
 pub mod word;
 
 #[cfg(feature = "skia")]
