@@ -4,6 +4,9 @@ export class CanvasEditor {
   constructor(root, input, document, hooks) {
     Object.assign(this,{root,input,document,hooks,dragging:false,composing:false,readonly:false});
     this.pages=[];
+    // Keep the OS input attached to one stable parent, even when typing or
+    // IME drafts create/remove native pages. Reparenting it blurs the IME.
+    root.append(input);
     root.addEventListener('pointerdown',e=>this.pointerDown(e));
     root.addEventListener('pointermove',e=>this.pointerMove(e));
     root.addEventListener('pointerup',e=>{this.dragging=false;if(root.hasPointerCapture(e.pointerId))root.releasePointerCapture(e.pointerId);});
@@ -18,7 +21,7 @@ export class CanvasEditor {
     input.addEventListener('cut',e=>{e.preventDefault();e.clipboardData.setData('text/plain',document.selected_text());this.edit(()=>document.insert(''));});
     input.addEventListener('focus',()=>root.classList.add('focused'));
     input.addEventListener('blur',()=>root.classList.remove('focused'));
-    this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(root);
+    this.resizeObserver=new ResizeObserver(()=>{this.resize();this.overlay();});this.resizeObserver.observe(root);
     this.paint();
   }
   state(){return JSON.parse(this.document.state());}
@@ -155,7 +158,11 @@ export class CanvasEditor {
     for(const r of s.highlights)box(r,'selection');
     if(s.caret){
       box(s.caret,'caret');
-      const page=this.pages[s.caret.page];if(page){if(this.input.parentElement!==page)page.append(this.input);Object.assign(this.input.style,{left:`${s.caret.x}px`,top:`${s.caret.y}px`,height:`${s.caret.height}px`});}
+      const page=this.pages[s.caret.page];
+      if(page){
+        const rect=page.getBoundingClientRect(),root=this.root.getBoundingClientRect(),scale=rect.width/page.offsetWidth;
+        Object.assign(this.input.style,{left:`${rect.left-root.left+this.root.scrollLeft+s.caret.x*scale}px`,top:`${rect.top-root.top+this.root.scrollTop+s.caret.y*scale}px`,height:`${s.caret.height*scale}px`});
+      }
     }
     this.root.dataset.composing=String(this.composing);
   }
