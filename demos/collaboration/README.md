@@ -30,3 +30,10 @@ unrelated local work. `Cargo.lock` is generated against those clean sources.
 node --test demos/collaboration/editing.test.mjs
 cargo +stable fmt --manifest-path demos/collaboration/renderer/Cargo.toml -- --check
 ```
+
+While the demo host is running, `/browser-tests.html` exercises two real
+editor frames on a separate document. It verifies that composition text and
+the caret survive a disconnect, a peer commit is reconciled after resuming,
+and both final-input/compositionend event orders produce exactly one edit.
+The collaboration repository also runs this screen in Chromium CI. These
+are browser composition-event tests, rather than an automated OS IME driver.
