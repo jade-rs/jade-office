@@ -57,7 +57,7 @@ impl OfficePreview {
         self.width = painter.width();
         self.height = painter.height();
         let mut pixels = painter.rgba_premultiplied();
-        for p in pixels.chunks_exact_mut(4) {
+        for p in pixels.as_chunks_mut::<4>().0 {
             let alpha = u16::from(p[3]);
             if alpha != 0 && alpha != 255 {
                 for c in &mut p[..3] {
@@ -214,7 +214,7 @@ impl OfficeEditor {
         self.width = painter.width();
         self.height = painter.height();
         let mut pixels = painter.rgba_premultiplied();
-        for p in pixels.chunks_exact_mut(4) {
+        for p in pixels.as_chunks_mut::<4>().0 {
             let alpha = u16::from(p[3]);
             if alpha != 0 && alpha != 255 {
                 for c in &mut p[..3] {
