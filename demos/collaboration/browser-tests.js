@@ -63,6 +63,17 @@ document.getElementById('run').onclick=async()=>{
     assert(JSON.stringify(editor(author).paragraphs)===JSON.stringify(beforeCancel.paragraphs),'cancelled IME must restore selection contents');
     assert(JSON.stringify(editor(author).selection)===JSON.stringify(beforeCancel.selection),'cancelled IME selection');
     assert(model(author).pending===0,'cancelled composition submits nothing');
-    output.dataset.status='passed';output.textContent=JSON.stringify({status:'passed',document:name,checks:['canvas-editor-without-textarea','composition-text-and-caret-survive-disconnect','peer-commit-during-composition','resume-after-queued-frames','cancel-selected-composition',...checks]},null,2);
+    // Composition may create and remove pages before it commits. Its DOM
+    // input must stay attached and focused throughout native repagination.
+    focus(author);input(author).dispatchEvent(new author.contentWindow.KeyboardEvent('keydown',{key:'Home',ctrlKey:true,bubbles:true,cancelable:true}));
+    const beforePages=editor(author);
+    event(author,'compositionstart',{data:''});event(author,'compositionupdate',{data:'ページ\n'.repeat(90)});
+    assert(editor(author).pages>beforePages.pages,'draft must create additional native pages');
+    assert(author.contentDocument.activeElement===input(author),'repagination must keep the OS IME input focused');
+    event(author,'compositionupdate',{data:'短い変換'});
+    assert(author.contentDocument.activeElement===input(author),'shrinking the draft must retain IME focus');
+    event(author,'compositionend',{data:''});
+    assert(JSON.stringify(editor(author).paragraphs)===JSON.stringify(beforePages.paragraphs),'cancelled multi-page composition restores text');
+    output.dataset.status='passed';output.textContent=JSON.stringify({status:'passed',document:name,checks:['canvas-editor-without-textarea','composition-text-and-caret-survive-disconnect','peer-commit-during-composition','resume-after-queued-frames','cancel-selected-composition','ime-focus-survives-repagination',...checks]},null,2);
   }catch(error){output.dataset.status='failed';output.textContent=String(error.stack??error);}
 };

@@ -47,7 +47,7 @@ cargo +stable fmt --manifest-path demos/collaboration/renderer/Cargo.toml -- --c
 
 `/browser-tests.html` drives two real canvas editors on a separate document.
 It tests IME drafts/carets during peer edits and reconnect, both final-input
-orders and cancellation over a selection. These are composition-event tests,
+orders, cancellation over a selection and IME focus while draft text adds/removes pages. These are composition-event tests,
 not an automated OS IME driver. The collaboration repository additionally
 checks actual pointer/keyboard input in Chromium CI, real-socket convergence,
 range projection into the native Word editor and native DOCX export/reopen.
