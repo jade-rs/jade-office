@@ -19,8 +19,8 @@ export class CanvasEditor {
     input.addEventListener('paste',e=>{e.preventDefault();this.edit(()=>document.insert(e.clipboardData.getData('text/plain').replace(/\r\n?/g,'\n')));});
     input.addEventListener('copy',e=>{e.preventDefault();e.clipboardData.setData('text/plain',document.selected_text());});
     input.addEventListener('cut',e=>{e.preventDefault();e.clipboardData.setData('text/plain',document.selected_text());this.edit(()=>document.insert(''));});
-    input.addEventListener('focus',()=>root.classList.add('focused'));
-    input.addEventListener('blur',()=>root.classList.remove('focused'));
+    input.addEventListener('focus',()=>{root.classList.add('focused');hooks.selection?.();});
+    input.addEventListener('blur',()=>{root.classList.remove('focused');hooks.selection?.();});
     this.resizeObserver=new ResizeObserver(()=>{this.resize();this.overlay();});this.resizeObserver.observe(root);
     this.paint();
   }
@@ -82,7 +82,7 @@ export class CanvasEditor {
     if(mod&&['c','v','x'].includes(event.key.toLowerCase()))return;
     if(mod&&event.key.toLowerCase()==='a'){
       event.preventDefault();const s=this.state(),p=s.selection.focus[0];
-      this.document.select(p,0,p,s.paragraphs[p].length);this.overlay();return;
+      this.document.select(p,0,p,s.paragraphs[p].length);this.overlay();this.hooks.selection?.();return;
     }
     if(mod&&['z','y','b','i','u'].includes(event.key.toLowerCase())){event.preventDefault();this.hooks.error('書式変更と共同編集のUndoはこのデモの対象外です。');return;}
     const motion={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',Home:'home',End:'end'}[event.key];
@@ -149,7 +149,7 @@ export class CanvasEditor {
   }
   overlay(){
     const s=this.state();
-    for(const page of this.pages)for(const item of page.querySelectorAll('.caret,.selection'))item.remove();
+    for(const page of this.pages)for(const item of page.querySelectorAll('.caret,.selection,.peer-caret,.peer-selection'))item.remove();
     const box=(rect,kind)=>{
       const page=this.pages[rect.page];if(!page)return;
       const item=globalThis.document.createElement('div');item.className=kind;
@@ -164,7 +164,26 @@ export class CanvasEditor {
         Object.assign(this.input.style,{left:`${rect.left-root.left+this.root.scrollLeft+s.caret.x*scale}px`,top:`${rect.top-root.top+this.root.scrollTop+s.caret.y*scale}px`,height:`${s.caret.height*scale}px`});
       }
     }
+    for(const [index,peer] of (this.hooks.peers?.(s)??[]).entries()){
+      try{
+        const geometry=JSON.parse(this.document.selection_geometry(...peer.selection.anchor,...peer.selection.focus));
+        const add=(r,kind)=>{
+          const page=this.pages[r.page];if(!page)return null;
+          const item=globalThis.document.createElement('div');item.className=kind;item.dataset.peer=peer.id;
+          item.dataset.focused=String(!!peer.focused);item.dataset.anchor=JSON.stringify(peer.selection.anchor);item.dataset.focus=JSON.stringify(peer.selection.focus);
+          item.style.setProperty('--peer-color',peer.color);
+          Object.assign(item.style,{left:`${r.x}px`,top:`${r.y}px`,width:`${kind==='peer-caret'?2/(page.getBoundingClientRect().width/page.offsetWidth):Math.max(1,r.width)}px`,height:`${r.height}px`});
+          page.append(item);return item;
+        };
+        for(const r of geometry.highlights)add(r,'peer-selection');
+        if(geometry.caret){
+          const caret=add(geometry.caret,'peer-caret');
+          if(caret){const label=globalThis.document.createElement('span');label.className='peer-name';label.textContent=peer.name+(peer.composing?' · 変換中':peer.focused?'':' · 未フォーカス');const page=this.pages[geometry.caret.page],scale=page.getBoundingClientRect().width/page.offsetWidth;label.style.top=`${(-19-(index%3)*17)/scale}px`;label.style.fontSize=`${12/scale}px`;label.style.lineHeight=`${15/scale}px`;caret.append(label);caret.title=label.textContent;}
+        }
+      }catch{/* Invalid/missing remote geometry must never interrupt local input. */}
+    }
     this.root.dataset.composing=String(this.composing);
   }
+  revealPeer(id){[...this.root.querySelectorAll('.peer-caret')].find(item=>item.dataset.peer===id)?.scrollIntoView({block:'center',inline:'nearest'});}
   reveal(){const caret=this.root.querySelector('.caret');caret?.scrollIntoView({block:'nearest',inline:'nearest'});}
 }
