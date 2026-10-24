@@ -573,6 +573,46 @@ impl EditableDocument {
         if self.selection().is_none() {
             return Vec::new();
         }
+        self.highlight_rects()
+    }
+
+    /// Measure another participant in the current layout without changing
+    /// this editor's caret, selection, composition or undo history.
+    pub fn selection_geometry(
+        &mut self,
+        anchor: (usize, usize),
+        focus: (usize, usize),
+    ) -> (Option<CaretRect>, Vec<HighlightRect>) {
+        let caret = self
+            .renderer
+            .caret_metrics_at(TextPosition::new(focus.0, focus.1))
+            .map(|metrics| CaretRect {
+                x: metrics.x,
+                document_y: metrics.absolute_top,
+                width: metrics.width.max(1.0),
+                height: metrics.height,
+            });
+        // A rectangular whole-cell selection has additional renderer state.
+        // Keep it intact; the demo measures text ranges, not cell commands.
+        if self
+            .renderer
+            .selection_manager()
+            .cell_selection_span()
+            .is_some()
+        {
+            return (caret, Vec::new());
+        }
+        let saved = self.renderer.selection_range();
+        self.renderer.set_selection_range(Some(SelectionRange::new(
+            TextPosition::new(anchor.0, anchor.1),
+            TextPosition::new(focus.0, focus.1),
+        )));
+        let highlights = self.highlight_rects();
+        self.renderer.set_selection_range(saved);
+        (caret, highlights)
+    }
+
+    fn highlight_rects(&self) -> Vec<HighlightRect> {
         let pitch = self.page_pitch();
         self.renderer
             .get_selection_rects()
