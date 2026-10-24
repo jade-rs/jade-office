@@ -178,7 +178,7 @@ export class CanvasEditor {
         for(const r of geometry.highlights)add(r,'peer-selection');
         if(geometry.caret){
           const caret=add(geometry.caret,'peer-caret');
-          if(caret){const label=globalThis.document.createElement('span');label.className='peer-name';label.textContent=peer.name+(peer.composing?' · 変換中':peer.focused?'':' · 未フォーカス');const page=this.pages[geometry.caret.page],scale=page.getBoundingClientRect().width/page.offsetWidth;label.style.top=`${(-19-(index%3)*17)/scale}px`;label.style.fontSize=`${12/scale}px`;label.style.lineHeight=`${15/scale}px`;caret.append(label);caret.title=label.textContent;}
+          if(caret){const label=globalThis.document.createElement('span');label.className='peer-name';label.textContent=peer.name+(peer.composing?' · 変換中':'');const page=this.pages[geometry.caret.page],scale=page.getBoundingClientRect().width/page.offsetWidth;label.style.top=`${(-19-(index%3)*17)/scale}px`;label.style.fontSize=`${12/scale}px`;label.style.lineHeight=`${15/scale}px`;caret.append(label);caret.title=label.textContent;}
         }
       }catch{/* Invalid/missing remote geometry must never interrupt local input. */}
     }

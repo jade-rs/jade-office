@@ -2,7 +2,7 @@ import initReplica, { BrowserDocument } from '/collab-pkg/jade_collab_browser.js
 import initOffice, { PreviewFonts, OfficeEditor } from '/office-pkg/jade_office_collab_preview.js';
 import { replacement, projectDocument } from './editing.mjs';
 import { CanvasEditor } from './canvas-editor.mjs';
-import { PresencePublisher, peerColor, draftSelection, validPresence } from './presence.mjs';
+import { PresencePublisher, peerColor, draftSelection, validPresence, activePeers } from './presence.mjs';
 
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
@@ -26,8 +26,7 @@ const publisher=new PresencePublisher(()=>{
 function remoteSelections(native){
   if(!replica)return [];
   const result=[];
-  for(const [id,peer] of peers){
-    if(performance.now()-peer.seen>30000)continue;
+  for(const [id,peer] of activePeers(peers)){
     try{
       const selection=JSON.parse(replica.resolve_selection(JSON.stringify(peer.selection)));
       if(!selection)continue; // its edit may still be in flight
@@ -102,10 +101,10 @@ async function openEditor(){
 function presence(){publisher.update();}
 function showPeers(){
   $('peers').replaceChildren();
-  for(const [id,peer] of peers){
+  for(const [id,peer] of activePeers(peers)){
     const button=document.createElement('button');button.type='button';button.className='peer-chip';
     button.style.setProperty('--peer-color',peerColor(id));button.dataset.peer=id;
-    button.textContent=`${peer.name} · ${peer.focused?(peer.composing?'変換中':'編集中'):'未フォーカス'}`;
+    button.textContent=`${peer.name} · ${peer.composing?'変換中':'編集中'}`;
     button.title=`${peer.name} の位置へ移動`;
     button.onclick=()=>canvas?.revealPeer(id);$('peers').append(button);
   }

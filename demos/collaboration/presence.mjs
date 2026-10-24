@@ -7,6 +7,11 @@ export function validPresence(value){
     !!value.selection&&['anchor','focus'].every(key=>typeof value.selection[key]==='string'&&value.selection[key].length<=3500);
 }
 
+// Keep inactive anchors for refocus, but never expose them as visible peers.
+export function activePeers(peers,now=performance.now()){
+  return [...peers].filter(([,peer])=>peer.focused===true&&now-peer.seen<=30000);
+}
+
 // Leading + trailing publication: fast drags must not lose their last point.
 export class PresencePublisher {
   constructor(read,send,interval=100){Object.assign(this,{read,send,interval,last:-Infinity,timer:null});}
