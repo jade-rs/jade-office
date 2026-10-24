@@ -11,6 +11,11 @@
 //! (`sheet::Workbook`, `grid::Selection`), the same code the native app
 //! runs; this is the gpui around it.
 
+use jade_web::links::LinkDialog;
+use jade_web::pivots::PivotPanel;
+use jade_web::protected_edits::{attempt, ProtectedEdit};
+use jade_web::protection::ProtectionDialog;
+use jade_web::tables::TableDialog;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -20,7 +25,7 @@ use jade_web::number_formats::NUMBER_FORMATS;
 use jade_web::sheet::{
     column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
     CellRange, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay, ResizeGesture,
-    MAX_COLUMN, MAX_ROW,
+    SheetVisibility, MAX_COLUMN, MAX_ROW,
 };
 
 use super::*;
@@ -28,14 +33,20 @@ use super::*;
 mod charts;
 mod conditional;
 mod find_bar;
+mod links;
 mod paste_special;
+mod pivots;
+mod protection;
 mod save_as;
+mod tables;
+mod validation;
 use charts::ChartTool;
 use conditional::Conditional;
 use jade_web::charts::{ChartAsk, Handle};
 use jade_web::conditional_formatting::RuleAsk;
 use jade_web::find::FindBar;
 use jade_web::paste_special::PasteSpecial;
+use jade_web::validation::{PendingValidation, ValidationDialog};
 
 /// How far past the grid's edge the pointer has to be for a drag to scroll
 /// it, and how often it scrolls while held there.
@@ -91,6 +102,12 @@ pub(super) struct Sheet {
     pub chart_asking: Option<ChartAsk>,
     /// The Paste Special dialog, open, with its choices.
     pub pasting: Option<PasteSpecial>,
+    pub(super) validation_dialog: Option<ValidationDialog>,
+    pub(super) link_dialog: Option<LinkDialog>,
+    pub(super) protection_dialog: Option<ProtectionDialog>,
+    pub(super) table_dialog: Option<TableDialog>,
+    pub(super) pivot_dialog: Option<PivotPanel>,
+    pub(super) validation_pending: Option<PendingValidation>,
     /// The note under the pointer, and where its cell's top-right corner
     /// is in the grid's px.
     note: Option<(CellRef, (f32, f32))>,
@@ -518,6 +535,16 @@ enum FilterCommand {
 #[derive(Clone, Copy)]
 enum MenuCommand {
     FormatCells,
+    Validation,
+    ClearValidation,
+    Link,
+    RemoveLinks,
+    Table,
+    RefreshPivot,
+    EditPivot,
+    CreatePivot,
+    DeletePivot,
+    RefreshAllPivots,
     Cut,
     Copy,
     Paste,
@@ -527,12 +554,18 @@ enum MenuCommand {
     DeleteRows,
     InsertColumns,
     DeleteColumns,
+    ShiftCells(Axis, bool),
     FillDown,
     FillRight,
     SortAscending,
     SortDescending,
     MergeCenter,
     InsertSheet,
+    ProtectWorkbook,
+    ProtectSheet(usize),
+    EditRanges(usize),
+    CellLocked,
+    CellHidden,
     RenameSheet(usize),
     MoveSheet(usize, usize),
     EditNote,
@@ -540,6 +573,8 @@ enum MenuCommand {
     Hide,
     Unhide,
     DeleteSheet(usize),
+    HideSheet(usize),
+    UnhideSheet(usize),
 }
 
 impl Sheet {
@@ -571,6 +606,12 @@ impl Sheet {
             object: None,
             chart_asking: None,
             pasting: None,
+            validation_dialog: None,
+            link_dialog: None,
+            protection_dialog: None,
+            table_dialog: None,
+            pivot_dialog: None,
+            validation_pending: None,
             note: None,
             menu: None,
             filter: None,
@@ -584,6 +625,24 @@ impl Sheet {
 
     /// The text being typed into: a tab's new name, the name box, or a cell.
     pub fn typing(&mut self) -> Option<&mut TextEdit> {
+        if self.validation_pending.is_some() {
+            return None;
+        }
+        if let Some(dialog) = self.pivot_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.table_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.protection_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.link_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.validation_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
         }
@@ -609,6 +668,24 @@ impl Sheet {
     }
 
     pub fn typed(&self) -> Option<&TextEdit> {
+        if self.validation_pending.is_some() {
+            return None;
+        }
+        if let Some(dialog) = self.pivot_dialog.as_ref() {
+            return Some(dialog.field());
+        }
+        if let Some(dialog) = self.table_dialog.as_ref() {
+            return Some(dialog.field());
+        }
+        if let Some(dialog) = self.protection_dialog.as_ref() {
+            return Some(dialog.field());
+        }
+        if let Some(dialog) = self.link_dialog.as_ref() {
+            return Some(dialog.field());
+        }
+        if let Some(dialog) = self.validation_dialog.as_ref() {
+            return Some(dialog.field());
+        }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);
         }
@@ -709,19 +786,6 @@ fn range_label(range: CellRange) -> String {
     }
 }
 
-/// `B3` or `B3:D7` typed into the name box.
-fn parse_reference(text: &str) -> Option<CellRange> {
-    let text = text.trim().replace('$', "").to_uppercase();
-    let (start, end) = text.split_once(':').unwrap_or((&text, &text));
-    let start = CellRef::parse(start).ok()?;
-    let end = CellRef::parse(end).ok()?;
-    (start.column <= MAX_COLUMN
-        && end.column <= MAX_COLUMN
-        && start.row <= MAX_ROW
-        && end.row <= MAX_ROW)
-        .then(|| span(start, end))
-}
-
 /// Today's date, or the time now, as typed into a cell (`2026/10/19`,
 /// `9:41`), for ⌃; and ⌘;.
 fn now_text(time: bool) -> String {
@@ -800,13 +864,21 @@ impl DocView {
     /// The selection becomes `to` — a single cell — or, extending, keeps
     /// its anchor and active cell and reaches `to`.
     fn select_cell(&mut self, to: CellRef, extend: bool, cx: &mut Context<Self>) {
+        if !self.sheet_ref().is_some_and(|s| s.book.can_select_cell(to)) {
+            return;
+        }
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
+        let previous_selection = sheet.selection;
         if extend {
             sheet.selection.extend_to(to);
         } else {
             sheet.selection = Selection::cell(to);
+        }
+        if !sheet.book.can_select_range(sheet.selection.range()) {
+            sheet.selection = previous_selection;
+            return;
         }
         sheet.tab_start = None;
         self.reveal_cell(to);
@@ -1399,10 +1471,45 @@ impl DocView {
         let Some(sheet) = self.sheet_mut() else {
             return true;
         };
+        if sheet.validation_pending.is_some()
+            || sheet.validation_dialog.is_some()
+            || sheet.link_dialog.is_some()
+            || sheet.protection_dialog.is_some()
+            || sheet.table_dialog.is_some()
+            || sheet.pivot_dialog.is_some()
+        {
+            return false;
+        }
         let Some(edit) = sheet.edit.take() else {
             return true;
         };
         let result = sheet.book.set_cell(sheet.selection.active, &edit.text.text);
+        if result
+            .as_ref()
+            .is_err_and(|e| jade_web::sheet::validation_refusal(e).is_some())
+        {
+            if let Ok(Some(alert)) = sheet
+                .book
+                .validation_alert(sheet.selection.active, &edit.text.text)
+            {
+                sheet.validation_pending = Some(PendingValidation {
+                    at: sheet.selection.active,
+                    text: edit.text.text.clone(),
+                    alert,
+                });
+            }
+        }
+        if result
+            .as_ref()
+            .is_err_and(|e| jade_web::sheet::protected_refusal(e))
+        {
+            if let Ok(Some(dialog)) =
+                ProtectionDialog::for_entry(&sheet.book, sheet.selection.active, &edit.text.text)
+            {
+                sheet.protection_dialog = Some(dialog);
+                sheet.menu = None;
+            }
+        }
         let refused = result.is_err();
         if let Some(sheet) = self.sheet_mut() {
             if refused {
@@ -1440,6 +1547,15 @@ impl DocView {
     }
 
     fn select_sheet(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.sheet_ref().is_some_and(|s| {
+            s.validation_dialog.is_some()
+                || s.link_dialog.is_some()
+                || s.protection_dialog.is_some()
+                || s.table_dialog.is_some()
+                || s.pivot_dialog.is_some()
+        }) {
+            return;
+        }
         if !self.commit_cell(cx) {
             return;
         }
@@ -1549,6 +1665,37 @@ impl DocView {
         let key = event.keystroke.key.as_str();
         let command = modifiers.platform || modifiers.control;
         let shift = modifiers.shift;
+        if let Some(handled) = self.protection_key(key, shift, command, cx) {
+            return handled;
+        }
+        if self
+            .sheet_ref()
+            .and_then(|s| s.validation_dialog.as_ref())
+            .is_some_and(|d| d.field().marked.is_some())
+        {
+            return false;
+        }
+        if self.pivot_editor_marked() {
+            return false;
+        }
+        if self.pivot_key(key, shift, command, cx) {
+            return true;
+        }
+        if self.table_editor_marked() {
+            return false;
+        }
+        if self.table_key(key, shift, command, cx) {
+            return true;
+        }
+        if self.link_editor_marked() {
+            return false;
+        }
+        if self.link_key(key, shift, command, cx) {
+            return true;
+        }
+        if self.validation_key(key, shift, command, modifiers.alt, cx) {
+            return true;
+        }
         let zoom = self.shown_zoom.max(0.01);
         let Some(sheet) = self.sheet_mut() else {
             return false;
@@ -1628,10 +1775,21 @@ impl DocView {
                 // ⌘Enter: what was typed into every selected cell.
                 "enter" if command => {
                     let text = edit.text.text.clone();
-                    sheet.edit = None;
                     let range = sheet.selection.range();
                     let active = sheet.selection.active;
-                    let result = sheet.book.fill_with(range, active, &text);
+                    let result = attempt(
+                        &mut sheet.book,
+                        &mut sheet.protection_dialog,
+                        ProtectedEdit::FillWith {
+                            range,
+                            active,
+                            text,
+                        },
+                    )
+                    .map(|outcome| outcome.changed);
+                    if result.is_ok() {
+                        sheet.edit = None;
+                    }
                     self.edited(result, cx);
                 }
                 "enter" => {
@@ -1757,7 +1915,12 @@ impl DocView {
                     return false;
                 };
                 let range = sheet.selection.range();
-                let result = sheet.book.clear(range);
+                let result = attempt(
+                    &mut sheet.book,
+                    &mut sheet.protection_dialog,
+                    ProtectedEdit::Clear { range },
+                )
+                .map(|outcome| outcome.changed);
                 self.edited(result, cx);
             }
             "escape" => {
@@ -1767,7 +1930,7 @@ impl DocView {
             "=" if modifiers.alt => self.autosum(cx),
             // ⌥↓: the active cell's list of choices.
             "down" if modifiers.alt => {
-                let list = sheet.book.validation_list(sheet.selection.active);
+                let list = sheet.book.validation_dropdown(sheet.selection.active);
                 sheet.choices = list;
                 cx.notify();
             }
@@ -1833,6 +1996,8 @@ impl DocView {
                 self.edited(result, cx);
             }
             "f" => self.open_sheet_find(false, cx),
+            "t" => self.open_sheet_table_dialog(cx),
+            "k" => self.open_sheet_link_dialog(cx),
             // ⌘⇧S: Save As, its extension picking the format.
             "s" if shift => self.open_save_as(cx),
             // ⌘P: the pages, as a PDF to print.
@@ -1847,6 +2012,7 @@ impl DocView {
             // ⌘A: the block of data round the active cell, then the sheet.
             "a" => {
                 let region = sheet.book.current_region(active);
+                let previous_selection = sheet.selection;
                 sheet.selection = match region {
                     Some(region) if region != range => Selection {
                         active,
@@ -1858,14 +2024,27 @@ impl DocView {
                         ..Selection::all()
                     },
                 };
+                if !sheet.book.can_select_range(sheet.selection.range()) {
+                    sheet.selection = previous_selection;
+                }
                 cx.notify();
             }
             "d" => {
-                let result = sheet.book.fill_down(range);
+                let result = attempt(
+                    &mut sheet.book,
+                    &mut sheet.protection_dialog,
+                    ProtectedEdit::FillDown { range },
+                )
+                .map(|outcome| outcome.changed);
                 self.edited(result, cx);
             }
             "r" => {
-                let result = sheet.book.fill_right(range);
+                let result = attempt(
+                    &mut sheet.book,
+                    &mut sheet.protection_dialog,
+                    ProtectedEdit::FillRight { range },
+                )
+                .map(|outcome| outcome.changed);
                 self.edited(result, cx);
             }
             // ⌘1: Format Cells, as in Excel.
@@ -1960,12 +2139,28 @@ impl DocView {
             // Escape or Tab closes the find bar where the search got to.
         } else if let Some(text) = sheet.naming.take() {
             if take {
-                match parse_reference(&text.text) {
-                    Some(range) => {
-                        sheet.selection = Selection::range_from(range.start, range.end);
+                match sheet.book.resolve_reference(&text.text) {
+                    Some((index, range)) => {
+                        if !sheet.book.sheet_tabs().contains(&index) {
+                            self.status = i18n::text("sheet.no_reference").into();
+                            cx.notify();
+                            return;
+                        }
+                        self.select_sheet(index, cx);
+                        let Some(sheet) = self.sheet_mut() else {
+                            return;
+                        };
+                        if sheet.book.can_select_range(range) {
+                            sheet.selection = Selection::range_from(range.start, range.end);
+                        }
                         self.reveal_cell(range.start);
                     }
-                    None => self.status = i18n::text("sheet.no_reference").into(),
+                    None => {
+                        let result = sheet
+                            .book
+                            .define_range_name(&text.text, sheet.selection.range());
+                        self.edited(result, cx);
+                    }
                 }
             }
         }
@@ -2013,6 +2208,16 @@ impl DocView {
     /// clipboard still holds it, otherwise the clipboard's text, from the
     /// selection's top-left or tiled over it.
     pub(super) fn sheet_paste(&mut self, text: Option<&str>, cx: &mut Context<Self>) {
+        if self.sheet_ref().is_some_and(|s| {
+            s.validation_pending.is_some()
+                || s.validation_dialog.is_some()
+                || s.link_dialog.is_some()
+                || s.protection_dialog.is_some()
+                || s.table_dialog.is_some()
+                || s.pivot_dialog.is_some()
+        }) {
+            return;
+        }
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
@@ -2024,7 +2229,12 @@ impl DocView {
         else {
             return;
         };
-        let result = sheet.book.paste_over(target, &text);
+        let result = attempt(
+            &mut sheet.book,
+            &mut sheet.protection_dialog,
+            ProtectedEdit::Paste { target, text },
+        )
+        .map(|outcome| outcome.selection);
         if let Ok(Some(filled)) = &result {
             let active = sheet.selection.active;
             sheet.selection = Selection {
@@ -2050,6 +2260,21 @@ impl DocView {
             return;
         };
         sheet.menu = None;
+        if sheet.book.structure_protected()
+            && matches!(
+                command,
+                MenuCommand::InsertSheet
+                    | MenuCommand::RenameSheet(_)
+                    | MenuCommand::DeleteSheet(_)
+                    | MenuCommand::MoveSheet(_, _)
+                    | MenuCommand::HideSheet(_)
+                    | MenuCommand::UnhideSheet(_)
+            )
+        {
+            self.status = i18n::text("sheet.workbook_protected").into();
+            cx.notify();
+            return;
+        }
         let selection = sheet.selection;
         let range = selection.range();
         let rows = range.end.row.saturating_sub(range.start.row) + 1;
@@ -2066,24 +2291,85 @@ impl DocView {
             command => command,
         };
         let result = match command {
+            MenuCommand::EditRanges(index) => return self.open_editable_ranges(index, cx),
+            MenuCommand::ProtectWorkbook => return self.open_workbook_protection(cx),
+            MenuCommand::ProtectSheet(index) => return self.open_sheet_protection(index, cx),
+            MenuCommand::CellLocked => {
+                let locked = sheet
+                    .book
+                    .format_at(sheet.selection.active)
+                    .locked
+                    .unwrap_or(true);
+                sheet.book.format(
+                    range,
+                    &CellFormat {
+                        locked: Some(!locked),
+                        ..Default::default()
+                    },
+                )
+            }
+            MenuCommand::CellHidden => {
+                let hidden = sheet
+                    .book
+                    .format_at(sheet.selection.active)
+                    .formula_hidden
+                    .unwrap_or(false);
+                sheet.book.format(
+                    range,
+                    &CellFormat {
+                        formula_hidden: Some(!hidden),
+                        ..Default::default()
+                    },
+                )
+            }
             MenuCommand::FormatCells => return self.open_format_dialog(cx),
+            MenuCommand::Validation => return self.open_validation(cx),
+            MenuCommand::Table => return self.open_sheet_table_dialog(cx),
+            MenuCommand::EditPivot => return self.open_pivot_dialog(cx),
+            MenuCommand::CreatePivot => return self.open_create_pivot(cx),
+            MenuCommand::DeletePivot => sheet.book.delete_pivot_at(selection.active),
+            MenuCommand::RefreshPivot => sheet.book.refresh_pivot_at(sheet.selection.active),
+            MenuCommand::RefreshAllPivots => sheet.book.refresh_all_pivots(),
+            MenuCommand::Link => return self.open_sheet_link_dialog(cx),
+            MenuCommand::RemoveLinks => sheet.book.clear_hyperlinks(&[range]),
+            MenuCommand::ClearValidation => sheet.book.clear_data_validations(Some(range)),
             MenuCommand::Cut => return self.sheet_copy(true, cx),
             MenuCommand::Copy => return self.sheet_copy(false, cx),
             MenuCommand::Paste => return self.sheet_paste(None, cx),
             MenuCommand::PasteSpecial => return self.open_paste_special(cx),
-            MenuCommand::Clear => sheet.book.clear(range),
+            MenuCommand::Clear => attempt(
+                &mut sheet.book,
+                &mut sheet.protection_dialog,
+                ProtectedEdit::Clear { range },
+            )
+            .map(|outcome| outcome.changed),
             MenuCommand::InsertRows => sheet.book.insert_rows(range.start.row, rows),
             MenuCommand::DeleteRows => sheet.book.delete_rows(range.start.row, rows),
             MenuCommand::InsertColumns => sheet.book.insert_columns(range.start.column, columns),
             MenuCommand::DeleteColumns => sheet.book.delete_columns(range.start.column, columns),
-            MenuCommand::FillDown => sheet.book.fill_down(range),
-            MenuCommand::FillRight => sheet.book.fill_right(range),
+            MenuCommand::ShiftCells(axis, inserted) => {
+                sheet.book.shift_cells(range, axis, inserted)
+            }
+            MenuCommand::FillDown => attempt(
+                &mut sheet.book,
+                &mut sheet.protection_dialog,
+                ProtectedEdit::FillDown { range },
+            )
+            .map(|outcome| outcome.changed),
+            MenuCommand::FillRight => attempt(
+                &mut sheet.book,
+                &mut sheet.protection_dialog,
+                ProtectedEdit::FillRight { range },
+            )
+            .map(|outcome| outcome.changed),
             MenuCommand::SortAscending => sheet.book.sort(range, selection.active, false),
             MenuCommand::SortDescending => sheet.book.sort(range, selection.active, true),
             MenuCommand::MergeCenter => {
                 let range = sheet.book.with_merges(range);
                 let result = sheet.book.merge_and_center(range);
-                sheet.selection = Selection::range_from(range.start, range.end);
+                if sheet.book.can_select_range(range) {
+                    sheet.selection = Selection::range_from(range.start, range.end);
+                }
                 result
             }
             MenuCommand::InsertSheet => {
@@ -2130,6 +2416,17 @@ impl DocView {
                 sheet.scroll.set_offset(point(px(0.0), px(0.0)));
                 result
             }
+            MenuCommand::HideSheet(index) => {
+                let result = sheet
+                    .book
+                    .set_sheet_visibility(index, SheetVisibility::Hidden);
+                sheet.selection = Selection::default();
+                sheet.scroll.set_offset(point(px(0.0), px(0.0)));
+                result
+            }
+            MenuCommand::UnhideSheet(index) => sheet
+                .book
+                .set_sheet_visibility(index, SheetVisibility::Visible),
         };
         // Rows or columns gone from under a copy let go of it, as in Excel.
         if matches!(
@@ -2151,6 +2448,16 @@ impl DocView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.sheet_ref().is_some_and(|s| {
+            s.validation_dialog.is_some()
+                || s.validation_pending.is_some()
+                || s.link_dialog.is_some()
+                || s.protection_dialog.is_some()
+                || s.table_dialog.is_some()
+                || s.pivot_dialog.is_some()
+        }) {
+            return;
+        }
         window.focus(&self.focus, cx);
         let Some((x, y)) = self.grid_point(event.position) else {
             return;
@@ -2260,9 +2567,19 @@ impl DocView {
         if !event.modifiers.shift && sheet.book.on_fill_handle(x, y, scroll, range) {
             if event.click_count >= 2 {
                 if let Some(target) = sheet.book.fill_handle_extent(range) {
-                    let result = sheet.book.fill_series(range, target);
-                    sheet.selection.focus = target.end;
-                    sheet.selection.anchor = target.start;
+                    let result = attempt(
+                        &mut sheet.book,
+                        &mut sheet.protection_dialog,
+                        ProtectedEdit::FillSeries {
+                            source: range,
+                            target,
+                        },
+                    )
+                    .map(|outcome| outcome.changed);
+                    if matches!(result, Ok(true)) {
+                        sheet.selection.focus = target.end;
+                        sheet.selection.anchor = target.start;
+                    }
                     self.edited(result, cx);
                 }
                 return;
@@ -2296,7 +2613,12 @@ impl DocView {
         let Some(hit) = hit else {
             return;
         };
+        let previous_selection = sheet.selection;
         let kind = sheet.selection.press(hit, event.modifiers.shift);
+        if !sheet.book.can_select_range(sheet.selection.range()) {
+            sheet.selection = previous_selection;
+            return;
+        }
         sheet.drag = Some(SheetDrag::Select(kind));
         sheet.pending_link = match hit {
             Hit::Cell(cell) if !event.modifiers.shift && event.click_count == 1 => {
@@ -2327,7 +2649,7 @@ impl DocView {
             return;
         };
         let active = sheet.selection.active;
-        let result = sheet.book.set_cell(active, &choice);
+        let result = sheet.book.set_validation_choice(active, &choice);
         self.edited(result, cx);
     }
 
@@ -2384,7 +2706,12 @@ impl DocView {
                 Hit::All => false,
             };
             if !inside {
+                let previous_selection = sheet.selection;
                 sheet.selection.press(hit, false);
+                if !sheet.book.can_select_range(sheet.selection.range()) {
+                    sheet.selection = previous_selection;
+                    return;
+                }
             }
         }
         sheet.menu = Some(SheetMenu {
@@ -2439,7 +2766,7 @@ impl DocView {
             cx.notify();
         }
         let note = match sheet.book.hit(x, y, scroll) {
-            Some(Hit::Cell(cell)) if sheet.book.note(cell).is_some() => sheet
+            Some(Hit::Cell(cell)) if sheet.book.hover_text(cell).is_some() => sheet
                 .book
                 .cell_rect(cell, scroll)
                 .map(|(cx_, cy, w, _)| (cell, (((cx_ + w) as f32) * zoom, cy as f32 * zoom))),
@@ -2479,6 +2806,10 @@ impl DocView {
                 };
                 let before = sheet.selection;
                 sheet.selection.drag(kind, hit);
+                if !sheet.book.can_select_range(sheet.selection.range()) {
+                    sheet.selection = before;
+                    return;
+                }
                 if sheet.selection != before {
                     sheet.book.reach(reached);
                     cx.notify();
@@ -2565,7 +2896,12 @@ impl DocView {
         sheet.pointer = None;
         match drag {
             SheetDrag::Fill { source, target } => {
-                let result = sheet.book.fill_series(source, target);
+                let result = attempt(
+                    &mut sheet.book,
+                    &mut sheet.protection_dialog,
+                    ProtectedEdit::FillSeries { source, target },
+                )
+                .map(|outcome| outcome.changed);
                 if matches!(result, Ok(true)) {
                     sheet.selection.anchor = target.start;
                     sheet.selection.focus = target.end;
@@ -2623,7 +2959,16 @@ impl DocView {
                     cx.notify();
                     return;
                 }
-                let result = sheet.book.move_range(source, target.start, copy);
+                let result = attempt(
+                    &mut sheet.book,
+                    &mut sheet.protection_dialog,
+                    ProtectedEdit::MoveRange {
+                        source,
+                        to: target.start,
+                        copy,
+                    },
+                )
+                .map(|outcome| outcome.selection.unwrap_or(source));
                 if let Ok(moved) = &result {
                     let active = sheet.selection.active;
                     sheet.selection = Selection {
@@ -2816,6 +3161,13 @@ impl DocView {
         let object_frame = self.object_frame();
         let find_bar = self.sheet_find_bar(cx);
         let paste_special = self.paste_special_dialog(cx);
+        let table_panel = self.table_panel(cx);
+        let pivot_panel = self.pivot_panel(cx);
+        let link_panel = self.link_panel(cx);
+        let protection_panel = self.protection_panel(cx);
+        let validation_panel = self.validation_panel(cx);
+        let validation_alert = self.validation_alert_panel(cx);
+        let validation_input = self.validation_input_panel();
         let save_as_bar = self.save_as_bar();
         let Document::Workbook(sheet) = &mut self.document else {
             unreachable!()
@@ -2998,9 +3350,16 @@ impl DocView {
                 Some(index) => {
                     let mut items = vec![
                         (MenuCommand::InsertSheet, "sheet.menu.insert_sheet"),
+                        (MenuCommand::ProtectWorkbook, "protection.menu"),
+                        (MenuCommand::ProtectSheet(index), "protection.sheet_menu"),
+                        (MenuCommand::EditRanges(index), "protection.ranges_menu"),
                         (MenuCommand::RenameSheet(index), "sheet.menu.rename_sheet"),
                         (MenuCommand::DeleteSheet(index), "sheet.menu.delete_sheet"),
+                        (MenuCommand::HideSheet(index), "sheet.menu.hide_sheet"),
                     ];
+                    for hidden in sheet.book.hidden_sheets() {
+                        items.push((MenuCommand::UnhideSheet(hidden), "sheet.menu.unhide_sheet"));
+                    }
                     if index > 0 {
                         items.push((
                             MenuCommand::MoveSheet(index, index - 1),
@@ -3046,6 +3405,26 @@ impl DocView {
                             (MenuCommand::DeleteColumns, "sheet.menu.delete_columns"),
                         ]);
                     }
+                    if !sheet.selection.is_whole_rows() && !sheet.selection.is_whole_columns() {
+                        items.extend([
+                            (
+                                MenuCommand::ShiftCells(Axis::Rows, true),
+                                "sheet.menu.insert_cells_down",
+                            ),
+                            (
+                                MenuCommand::ShiftCells(Axis::Columns, true),
+                                "sheet.menu.insert_cells_right",
+                            ),
+                            (
+                                MenuCommand::ShiftCells(Axis::Rows, false),
+                                "sheet.menu.delete_cells_up",
+                            ),
+                            (
+                                MenuCommand::ShiftCells(Axis::Columns, false),
+                                "sheet.menu.delete_cells_left",
+                            ),
+                        ]);
+                    }
                     if sheet.selection.is_whole_rows() || sheet.selection.is_whole_columns() {
                         items.extend([
                             (MenuCommand::Hide, "sheet.menu.hide"),
@@ -3061,14 +3440,44 @@ impl DocView {
                         items.push((MenuCommand::EditNote, "sheet.menu.insert_note"));
                     }
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
+                    items.push((MenuCommand::CellLocked, "protection.cell_locked"));
+                    items.push((MenuCommand::CellHidden, "protection.cell_hidden"));
+                    items.push((
+                        MenuCommand::EditRanges(sheet.book.sheet_index()),
+                        "protection.ranges_menu",
+                    ));
+                    items.push((MenuCommand::CreatePivot, "pivot.create"));
+                    if sheet.book.has_pivots() {
+                        items.push((MenuCommand::RefreshAllPivots, "pivot.refresh_all"));
+                    }
+                    if sheet.book.pivot_at(sheet.selection.active).is_some() {
+                        items.push((MenuCommand::RefreshPivot, "pivot.refresh"));
+                        items.push((MenuCommand::EditPivot, "pivot.edit"));
+                        items.push((MenuCommand::DeletePivot, "pivot.delete"));
+                    }
+                    items.extend([
+                        (MenuCommand::Table, "table.menu"),
+                        (MenuCommand::Link, "link.dialog"),
+                        (MenuCommand::RemoveLinks, "link.remove"),
+                        (MenuCommand::Validation, "validation.dialog"),
+                        (MenuCommand::ClearValidation, "validation.clear_selection"),
+                    ]);
                     items
                 }
             };
+            let max_height = (sheet.viewport.1 - 16.).max(80.);
+            let height = (items.len() as f32 * 26. + 8.).min(max_height);
+            let top = menu.at.1.clamp(0., (sheet.viewport.1 - height).max(0.));
             div()
+                .id("sheet-context-menu")
                 .absolute()
                 .left(px(menu.at.0))
-                .top(px(menu.at.1.max(0.0)))
+                .top(px(top))
                 .min_w(px(180.0))
+                .max_h(px(max_height))
+                .overflow_y_scroll()
+                .occlude()
+                .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                 .py_1()
                 .rounded_md()
                 .border_1()
@@ -3082,13 +3491,19 @@ impl DocView {
                         .into_iter()
                         .enumerate()
                         .map(|(index, (command, label))| {
+                            let label: SharedString = match command {
+                                MenuCommand::UnhideSheet(index) => {
+                                    format!("{}: {}", i18n::text(label), sheet.names[index]).into()
+                                }
+                                _ => i18n::text(label).into(),
+                            };
                             div()
                                 .id(("sheet-menu", index))
                                 .px_3()
                                 .py_1()
                                 .cursor_pointer()
                                 .hover(|item| item.bg(palette::hovered()))
-                                .child(i18n::text(label))
+                                .child(label)
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                                 .on_click(cx.listener(move |view, _event, window, cx| {
                                     window.focus(&view.focus, cx);
@@ -3099,7 +3514,7 @@ impl DocView {
         });
 
         let note = sheet.note.and_then(|(cell, (x, y))| {
-            let text = sheet.book.note(cell)?.to_string();
+            let text = sheet.book.hover_text(cell)?.to_string();
             Some(
                 div()
                     .absolute()
@@ -3119,7 +3534,7 @@ impl DocView {
         // A cell with a list of choices shows Excel's ▼ beside it, and the
         // list under it when open.
         let list_button = (sheet.edit.is_none())
-            .then(|| sheet.book.validation_list(active))
+            .then(|| sheet.book.validation_dropdown(active))
             .flatten()
             .and_then(|_| {
                 let (x, y, w, h) = sheet
@@ -3163,7 +3578,7 @@ impl DocView {
                                         sheet.choices = if sheet.choices.is_some() {
                                             None
                                         } else {
-                                            sheet.book.validation_list(sheet.selection.active)
+                                            sheet.book.validation_dropdown(sheet.selection.active)
                                         };
                                     }
                                     cx.notify();
@@ -3522,6 +3937,13 @@ impl DocView {
                     .children(chart_dialog)
                     .children(object_frame)
                     .children(paste_special)
+                    .children(validation_input)
+                    .children(table_panel)
+                    .children(pivot_panel)
+                    .children(link_panel)
+                    .children(protection_panel)
+                    .children(validation_panel)
+                    .children(validation_alert)
                     .children(menu)
                     .children(format_dialog)
                     // Records where the grid is, registers the input handler

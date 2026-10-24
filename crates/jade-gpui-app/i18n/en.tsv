@@ -675,6 +675,7 @@ format.fill.none	No color
 format.ok	OK
 format.cancel	Cancel
 sheet.protected	The cell or sheet you are trying to change is protected.
+sheet.workbook_protected	The workbook structure is protected.
 menu.insert	Insert
 menu.insert.hyperlink	Link…
 link.group	Links
@@ -3355,3 +3356,242 @@ views.group.options	Options
 files.group.compatibility	Compatibility
 objects.compress	Compress Pictures
 recovered.browser_note	AutoRecover data is kept in this browser: a document closed without saving can be opened from Recovered Files in the explorer next time. A backup is downloaded as .wbk with each save (download).
+
+sheet.menu.hide_sheet	Hide Sheet
+sheet.menu.unhide_sheet	Unhide Sheet
+
+validation.dialog	Data Validation
+validation.settings	Settings
+validation.input_tab	Input Message
+validation.error_tab	Error Alert
+validation.allow	Allow
+validation.data	Data
+validation.alert_style	Style
+validation.any	Any value
+validation.whole	Whole number
+validation.decimal	Decimal
+validation.list	List
+validation.date	Date
+validation.time	Time
+validation.text_length	Text length
+validation.custom	Custom formula
+validation.between	Between
+validation.not_between	Not between
+validation.equal	Equal to
+validation.not_equal	Not equal to
+validation.greater	Greater than
+validation.less	Less than
+validation.greater_equal	Greater than or equal to
+validation.less_equal	Less than or equal to
+validation.stop	Stop
+validation.warning	Warning
+validation.information	Information
+validation.ignore_blank	Ignore blank
+validation.dropdown	In-cell dropdown
+validation.show_input	Show input message when cell is selected
+validation.show_error	Show error alert after invalid data is entered
+validation.ranges	Applies to
+validation.first	Minimum / formula
+validation.second	Maximum
+validation.source	Source
+validation.title	Title
+validation.message	Message
+validation.ime	IME mode
+validation.ime.none	No control
+validation.ime.off	Off
+validation.ime.on	On
+validation.ime.disabled	Disabled
+validation.ime.hiragana	Hiragana
+validation.ime.katakana	Full-width katakana
+validation.ime.half_katakana	Half-width katakana
+validation.ime.full_alpha	Full-width alphanumeric
+validation.ime.half_alpha	Half-width alphanumeric
+validation.ime.hangul	Full-width Hangul
+validation.ime.half_hangul	Half-width Hangul
+validation.clear	Clear All
+validation.clear_selection	Clear Data Validation
+validation.cancel	Cancel
+validation.ok	OK
+validation.yes	Yes
+validation.no	No
+validation.retry	Retry
+validation.bad_range	Enter valid cell ranges separated by spaces.
+validation.missing_formula	Enter a source or the required bounds.
+validation.unsupported	This validation rule could not be evaluated.
+validation.apply_same	Apply changes to all cells with the same settings
+link.dialog	Hyperlink…
+link.remove	Remove Hyperlinks
+link.label	Text to display
+link.tooltip	ScreenTip
+link.address_hint	Enter a URL, file path, or #Sheet1!A1 / #Name.
+link.places	Places in this workbook
+link.missing_address	Enter a link address.
+table.menu	Create / Design Table…
+table.create	Create Table
+table.design	Table Design
+table.range	Range
+table.name	Table name
+table.calculated_formula	Calculated column formula
+table.total_value	Total label or formula
+table.has_headers	My table has headers
+table.headers	Header row
+table.totals	Total row
+table.filter	Filter buttons
+table.first_column	First column
+table.last_column	Last column
+table.banded_rows	Banded rows
+table.banded_columns	Banded columns
+table.style	Style
+table.no_style	No style
+table.light	Light
+table.medium	Medium
+table.dark	Dark
+table.column	Column
+table.total_function	Total function
+table.total_none	None
+table.total_sum	Sum
+table.total_average	Average
+table.total_count	Count
+table.total_numbers	Count numbers
+table.total_max	Maximum
+table.total_min	Minimum
+table.total_stddev	Standard deviation
+table.total_variance	Variance
+table.total_label	Label
+table.total_formula	Custom formula
+table.convert	Convert to Range
+table.invalid_range	Enter a valid table range.
+table.missing_name	Enter a table name.
+sheet.menu.insert_cells_down	Insert cells, shift down
+sheet.menu.insert_cells_right	Insert cells, shift right
+sheet.menu.delete_cells_up	Delete cells, shift up
+sheet.menu.delete_cells_left	Delete cells, shift left
+validation.invalid_list	Use commas between choices; put a choice containing a comma in double quotes and double any quotes inside it.
+protection.menu	Workbook Protection…
+protection.protect	Protect Workbook
+protection.unprotect	Unprotect Workbook
+protection.hint	Prevent adding, deleting, moving, renaming or hiding sheets. A password is optional.
+protection.password	Password
+protection.confirm	Confirm password
+protection.mismatch	The passwords do not match.
+protection.long	The password is too long.
+protection.incorrect	The password is incorrect.
+protection.random_failed	A secure random source is unavailable.
+protection.unsupported	These protection settings could not be verified or changed.
+protection.sheet_menu	Sheet Protection…
+protection.sheet_protect	Protect Sheet
+protection.sheet_unprotect	Unprotect Sheet
+protection.sheet_hint	Protect locked cells and choose the actions people can perform. A password is optional.
+protection.sheet_permissions	Allow these actions:
+protection.cell_locked	Toggle Cell Lock
+protection.cell_hidden	Toggle Hidden Formulas
+protection.allow_select_locked	Select locked cells
+protection.allow_select_unlocked	Select unlocked cells
+protection.allow_format_cells	Format cells
+protection.allow_format_columns	Format columns
+protection.allow_format_rows	Format rows
+protection.allow_insert_columns	Insert columns
+protection.allow_insert_rows	Insert rows
+protection.allow_insert_hyperlinks	Insert hyperlinks
+protection.allow_delete_columns	Delete columns
+protection.allow_delete_rows	Delete rows
+protection.allow_sort	Sort
+protection.allow_auto_filter	Use AutoFilter
+protection.allow_pivot_tables	Use PivotTables and PivotCharts
+protection.allow_objects	Edit objects
+protection.allow_scenarios	Edit scenarios
+protection.ranges_menu	Allow Edit Ranges…
+protection.range_default	Range
+protection.range_session_hint	Unlock a range for this open workbook. Unlocks are not saved in the file.
+protection.range_edit_hint	Register the cells people may edit before protecting the sheet.
+protection.range_empty	No editable ranges are registered.
+protection.range_invalid	Unsupported range
+protection.range_unlocked	Unlocked
+protection.range_password_set	Password set
+protection.range_passwordless	No password
+protection.range_lock	Relock all ranges
+protection.range_new	New range
+protection.range_delete	Delete selected range
+protection.range_change_password	Set or change the password
+protection.range_clear_password_hint	Applying an empty password lets everyone edit this range.
+protection.range_title	Title
+protection.range_reference_label	Cells (for example A1:B3, D5)
+protection.range_close	Close
+protection.range_unlock	Unlock range
+protection.range_apply	Add / Apply
+protection.range_select	Select a range first.
+protection.range_duplicate	Another range already has this title.
+protection.range_name	Enter a valid title of up to 255 characters, starting with a letter, underscore or backslash.
+protection.range_reference	Enter valid cell ranges on this sheet.
+protection.range_unsupported	This range could not be verified or changed. Unprotect the sheet to manage its definitions.
+protection.range_stale	The worksheet changed while this dialog was open. Close and reopen it.
+protection.range_entry_title	Unlock editable range
+protection.range_entry_hint	Enter the password for a range covering {cell} to finish this entry.
+
+protection.range_operation_title	Unlock cells to finish editing
+protection.range_operation_hint	Enter the passwords for the required ranges. The edit is applied when all required cells are unlocked.
+pivot.refresh	Refresh PivotTable
+pivot.refresh_all	Refresh All PivotTables
+pivot.edit	PivotTable settings…
+pivot.source	Data source
+pivot.source_hint	Enter a range, table name or defined name with the same column headers.
+pivot.origin	Top-left report cell
+pivot.shared_source	Changing the source refreshes all {count} reports that share it.
+pivot.fields	Source fields
+pivot.rows	Rows
+pivot.columns	Columns
+pivot.filters	Report filters
+pivot.unused	Remove from layout
+pivot.values	Values
+pivot.compact	Compact layout
+pivot.outline	Outline layout
+pivot.tabular	Tabular layout
+pivot.values_rows	Values on rows
+pivot.values_columns	Values on columns
+pivot.field_caption	Field caption
+pivot.value_caption	Value caption
+pivot.manual	Manual item order
+pivot.ascending	Sort ascending
+pivot.descending	Sort descending
+pivot.subtotals	Automatic subtotals
+pivot.subtotal_top	Subtotals above groups
+pivot.add_value	Add selected field to Values
+pivot.remove_value	Remove selected value
+pivot.visible_items	Visible items of the selected field
+pivot.search	Search items
+pivot.select_all	Select all
+pivot.select_none	Clear selection
+pivot.blank	(blank)
+pivot.previous_items	Previous items
+pivot.next_items	Next items
+pivot.row_grand	Grand totals for rows
+pivot.column_grand	Grand totals for columns
+pivot.autofit	Fit column widths on refresh
+pivot.row_headers	Style row headers
+pivot.column_headers	Style column headers
+pivot.apply	Apply and refresh
+pivot.invalid_source	Enter a worksheet range, table name or defined name.
+pivot.invalid_origin	Enter a valid cell for the report’s top-left corner.
+pivot.stale	The pivot settings changed while this dialog was open. Close it and open it again.
+pivot.sum	Sum
+pivot.count	Count
+pivot.average	Average
+pivot.max	Maximum
+pivot.min	Minimum
+pivot.product	Product
+pivot.count_numbers	Count numbers
+pivot.stddev	Sample standard deviation
+pivot.stddevp	Population standard deviation
+pivot.var	Sample variance
+pivot.varp	Population variance
+pivot.refresh_items	Refresh item choices
+pivot.no_items	No saved items yet. Refresh the choices to read current data.
+pivot.apply_source_first	Apply the data-source change first, then refresh item choices.
+pivot.create	Create PivotTable
+pivot.delete	Delete PivotTable
+pivot.name	PivotTable name
+pivot.destination	Location (sheet!cell for an existing sheet)
+pivot.new_sheet	New worksheet
+pivot.new_sheet_name	New worksheet name
+pivot.create_hint	Creates an initial summary. You can change its fields, values and style next.
+pivot.hidden_destination	Choose a visible worksheet for the report.

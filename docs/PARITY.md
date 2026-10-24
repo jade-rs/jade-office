@@ -1,5 +1,16 @@
 # Parity with a full Office suite
 
+The current XLSX comparison against a pinned ibisOffice revision, with
+implementation gaps and regression gates, is in [xlsx/ibis-parity.md](xlsx/ibis-parity.md).
+The current generated function inventory is 507 names against the pinned
+reference's 512. This measures registration, not complete calculation or
+application compatibility; current results and limits are in
+[xlsx/verification.md](xlsx/verification.md). The latest [pivot creation/deletion](xlsx/pivot-lifecycle.md) adds a common
+creation dialog, atomic new-sheet/report/cache graphs and static chart snapshots
+of currently displayed values, with independent schema and SDK checks;
+full parity remains open. The
+counts below describe the earlier baseline.
+
 The goal set on 2026-10-21: jade office opens, draws, edits and saves Word,
 Excel and PowerPoint files as a complete office suite does, measured
 against a reference list of some 1,800 features an Office user reaches
