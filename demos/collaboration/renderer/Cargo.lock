@@ -1079,6 +1079,7 @@ name = "jade-office-collab-preview"
 version = "0.1.0"
 dependencies = [
  "jade-web",
+ "serde_json",
  "wasm-bindgen",
 ]
 

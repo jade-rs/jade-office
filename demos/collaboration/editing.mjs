@@ -9,34 +9,56 @@ export function replacement(before, after) {
   return { start, end, text: after.slice(start, tail) };
 }
 
+// Keep the surrounding IDs as well: both immediate neighbours can be deleted
+// by a concurrent range replacement. Prefer the nearest surviving right ID.
 export function anchor(chars, offset) {
-  let units = 0, left = null;
+  let units=0, split=0;
   for (const ch of chars) {
-    if (units >= offset) return { left, right: ch.id };
-    units += ch.units;
-    left = ch.id;
+    if (units>=offset) break;
+    units+=ch.units; split++;
   }
-  return { left, right: null };
+  return {left:chars.slice(0,split).map(c=>c.id).reverse(),right:chars.slice(split).map(c=>c.id)};
 }
 
 export function position(chars, point) {
-  let units = 0, afterLeft = null;
-  for (const ch of chars) {
-    if (ch.id === point.right) return units;
-    units += ch.units;
-    if (ch.id === point.left) afterLeft = units;
-  }
-  return afterLeft ?? (point.left === null ? 0 : units);
+  const starts=new Map(),ends=new Map();let units=0;
+  for(const ch of chars){starts.set(ch.id,units);units+=ch.units;ends.set(ch.id,units);}
+  for(const id of point.right)if(starts.has(id))return starts.get(id);
+  for(const id of point.left)if(ends.has(id))return ends.get(id);
+  return point.left.length ? units : 0;
 }
 
-// Changing a textarea's value also changes its selection. Keep that DOM
-// boundary in one place for the composition/reconnect regression tests.
-export function renderInput(input, previous, next, composing, focused, localCaret) {
-  // Even setSelectionRange with an unchanged confirmed model can move the
-  // caret out of the uncommitted IME text. The browser owns both until end.
-  if (composing) return;
-  const points = focused ? [anchor(previous.chars,input.selectionStart),anchor(previous.chars,input.selectionEnd)] : null;
-  input.value = next.text;
-  if (points) input.setSelectionRange(position(next.chars,points[0]),position(next.chars,points[1]));
-  if (localCaret) input.setSelectionRange(localCaret.start,localCaret.end);
+export function captureSelection(paragraphs, selection) {
+  if(!selection)return null;
+  const capture=([p,offset])=>({key:paragraphs[p].key,point:anchor(paragraphs[p].chars,offset)});
+  return {anchor:capture(selection.anchor),focus:capture(selection.focus)};
+}
+
+export function restoreSelection(paragraphs, saved) {
+  if(!saved||!paragraphs.length)return null;
+  const restore=({key,point})=>{
+    const p=paragraphs.find(p=>p.key===key)??paragraphs[0];
+    return [p.index,position(p.chars,point)];
+  };
+  return {anchor:restore(saved.anchor),focus:restore(saved.focus)};
+}
+
+// Apply only changed ranges to the real Word editor. This preserves native
+// paragraph/run/table layout and reanchors the caret against character IDs.
+export function projectDocument(editor, previous, next, selection) {
+  const actual=JSON.parse(editor.state());
+  if(actual.paragraphs.length!==next.length)throw new Error('段落構造が変更されました。文書を保存してから開き直してください。');
+  const saved=selection===undefined?captureSelection(previous,actual.selection):null;
+  let changed=false;
+  for(const p of next){
+    const before=actual.paragraphs[p.index];
+    if(before===p.text)continue;
+    const r=replacement(before,p.text);
+    editor.select(p.index,r.start,p.index,r.end);editor.insert(r.text);changed=true;
+  }
+  const target=selection??restoreSelection(next,saved);
+  if(target)editor.select(...target.anchor,...target.focus);
+  const result=JSON.parse(editor.state());
+  if(result.paragraphs.some((text,index)=>text!==next[index].text))throw new Error('エディタと共同編集モデルの内容が一致しません');
+  return changed;
 }
