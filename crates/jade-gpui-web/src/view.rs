@@ -1198,6 +1198,15 @@ impl DocView {
                 result
             }
             Document::Workbook(sheet) => {
+                if sheet.validation_dialog.is_some()
+                    || sheet.validation_pending.is_some()
+                    || sheet.link_dialog.is_some()
+                    || sheet.protection_dialog.is_some()
+                    || sheet.table_dialog.is_some()
+                    || sheet.pivot_dialog.is_some()
+                {
+                    return;
+                }
                 sheet.edit = None;
                 let result = if undo {
                     sheet.book.undo()
@@ -3258,7 +3267,10 @@ impl DocView {
             // Typing into a selected cell replaces it, as in Excel.
             // A dialog over the grid takes no typing into the cells.
             Document::Workbook(sheet)
-                if sheet.asking.is_some() || sheet.managing || sheet.pasting.is_some() => {}
+                if sheet.asking.is_some()
+                    || sheet.managing
+                    || sheet.pasting.is_some()
+                    || sheet.validation_pending.is_some() => {}
             Document::Workbook(sheet) if sheet.typed().is_none() => {
                 self.begin_cell_edit(Some(String::new()), false, cx)
             }
@@ -3606,6 +3618,17 @@ impl EntityInputHandler for DocView {
             Document::Workbook(sheet) if sheet.typed().is_none() => {
                 self.sheet_paste(Some(&text), cx);
             }
+            Document::Workbook(sheet)
+                if sheet.validation_dialog.as_ref().is_some_and(|d| {
+                    matches!(
+                        d.field,
+                        jade_web::validation::ValidationField::Prompt
+                            | jade_web::validation::ValidationField::Error
+                    )
+                }) =>
+            {
+                self.replace_text_in_range(None, &text, window, cx);
+            }
             // Into a cell being typed into, its first line, as in Excel.
             Document::Workbook(_) => {
                 let line = text.lines().next().unwrap_or_default().to_string();
@@ -3789,6 +3812,42 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
+        if let Document::Workbook(sheet) = &self.document {
+            if let Some(bounds) = sheet
+                .validation_dialog
+                .as_ref()
+                .and_then(|d| d.input_bounds.get())
+                .or_else(|| {
+                    sheet
+                        .protection_dialog
+                        .as_ref()
+                        .and_then(|d| d.input_bounds.get())
+                })
+                .or_else(|| {
+                    sheet
+                        .link_dialog
+                        .as_ref()
+                        .and_then(|d| d.input_bounds.get())
+                })
+                .or_else(|| {
+                    sheet
+                        .pivot_dialog
+                        .as_ref()
+                        .and_then(|d| d.input_bounds.get())
+                })
+                .or_else(|| {
+                    sheet
+                        .table_dialog
+                        .as_ref()
+                        .and_then(|d| d.input_bounds.get())
+                })
+            {
+                return Some(Bounds {
+                    origin: point(px(bounds[0]), px(bounds[1])),
+                    size: size(px(bounds[2]), px(bounds[3])),
+                });
+            }
+        }
         // In a Word document, beside the caret — a selection's moving end,
         // which the renderer reports no caret for.
         if let Document::Pages {
