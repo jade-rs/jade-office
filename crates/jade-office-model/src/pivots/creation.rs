@@ -176,20 +176,20 @@ pub struct PivotPanel {
     state: Panel,
 }
 enum Panel {
-    Create(PivotCreation),
-    Edit(PivotDialog),
+    Create(Box<PivotCreation>),
+    Edit(Box<PivotDialog>),
 }
 impl PivotPanel {
     pub fn create(d: PivotCreation) -> Self {
         Self {
             input_bounds: d.input_bounds.clone(),
-            state: Panel::Create(d),
+            state: Panel::Create(Box::new(d)),
         }
     }
     pub fn edit(d: PivotDialog) -> Self {
         Self {
             input_bounds: d.input_bounds.clone(),
-            state: Panel::Edit(d),
+            state: Panel::Edit(Box::new(d)),
         }
     }
     pub fn editor(&self) -> Option<&PivotDialog> {

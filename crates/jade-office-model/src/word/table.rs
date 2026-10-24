@@ -2527,6 +2527,7 @@ mod tests {
             column,
             column_span: 1,
             order: row * 10 + column,
+            text_bounds: None,
         }
     }
 

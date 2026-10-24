@@ -413,10 +413,10 @@ impl ValidationDialog {
             (!s.is_empty()).then(|| s.to_string())
         };
         if self.kind != 0 && optional(ValidationField::First).is_none() {
-            return Err("validation.missing_formula".into());
+            return Err("validation.missing_formula");
         }
         if self.visible_settings_second() && optional(ValidationField::Second).is_none() {
-            return Err("validation.missing_formula".into());
+            return Err("validation.missing_formula");
         }
         let bound = |field| {
             optional(field).map(|s| {
@@ -496,7 +496,7 @@ impl ValidationDialog {
                 .iter()
                 .any(|r| r.start.column > r.end.column || r.start.row > r.end.row)
         {
-            return Err("validation.bad_range".into());
+            return Err("validation.bad_range");
         }
         Ok(ranges)
     }
