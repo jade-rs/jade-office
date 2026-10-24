@@ -119,3 +119,28 @@ jobs:
         run: |
           cargo fmt -- --check
           cargo clippy --target wasm32-unknown-unknown --locked -- -D warnings
+
+  collaboration-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: demos/collaboration/renderer
+      - name: Cursor projection and active presence regressions
+        run: node --test demos/collaboration/editing.test.mjs demos/collaboration/presence.test.mjs
+      - name: Word editor WASM bridge (fmt, clippy, build)
+        run: |
+          cargo +stable fmt --manifest-path demos/collaboration/renderer/Cargo.toml -- --check
+          cargo +stable clippy --manifest-path demos/collaboration/renderer/Cargo.toml --target wasm32-unknown-unknown --release --locked --no-deps -- -D warnings
+          cargo +stable build --manifest-path demos/collaboration/renderer/Cargo.toml --target wasm32-unknown-unknown --release --locked

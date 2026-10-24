@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PresencePublisher, peerColor, draftSelection, validPresence } from './presence.mjs';
+import { PresencePublisher, peerColor, draftSelection, validPresence, activePeers } from './presence.mjs';
 
 test('presence publishes the final cursor of a rapid gesture',async()=>{
   let value=0;const sent=[];
@@ -28,4 +28,13 @@ test('peer color is deterministic; malformed selections cannot become DOM geomet
   assert.notEqual(peerColor('1'),peerColor('2'));
   assert.equal(validPresence({name:'Bob',selection:{anchor:'{}',focus:'{}'},focused:true}),true);
   for(const bad of [null,{}, {name:'x',selection:{anchor:1,focus:'{}'}},{name:'x',selection:{anchor:'x'.repeat(8193),focus:'{}'}}])assert.equal(validPresence(bad),false);
+});
+
+test('only focused, live peers are displayed; refocus restores the retained position',()=>{
+  const peers=new Map([['alice',{name:'Alice',focused:true,seen:100,selection:{anchor:'a',focus:'b'}}],['bob',{name:'Bob',focused:false,seen:100}]]);
+  assert.deepEqual(activePeers(peers,100).map(([id])=>id),['alice']);
+  peers.get('alice').focused=false;assert.deepEqual(activePeers(peers,101),[]);
+  peers.get('alice').focused=true;assert.equal(activePeers(peers,102)[0][1].selection.focus,'b');
+  assert.deepEqual(activePeers(peers,30101),[]);
+  assert.equal(peers.size,2);
 });

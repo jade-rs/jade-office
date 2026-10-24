@@ -31,7 +31,8 @@ same replica when reconnecting; unacknowledged state lives in this tab's memory.
 This dedicated canvas shell uses the real Office Word editing engine; the
 full GPUI ribbon/workspace is not connected. The page draws each peer’s
 name, distinct color, caret and selected text using the same Word layout.
-The participant chips show editing, composition or unfocused status; click
+Only focused participants have visible carets, selections and chips. The chips
+show editing or composition status; click
 a chip to scroll to that participant. Focus/selection updates are coalesced
 with a trailing update so the last drag/arrow position is retained.
 Compact CRDT boundaries resolve through tombstones, including after both
