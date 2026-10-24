@@ -287,7 +287,7 @@ pub fn kind_key(revision: &Revision) -> &'static str {
         "deleted" => "review.kind.deleted",
         "movedFrom" => "review.kind.moved_from",
         "movedTo" => "review.kind.moved_to",
-        "formatted" => "review.kind.formatted",
+        "formatted" | "runFormat" | "paragraphFormat" => "review.kind.formatted",
         "insertedRow" => "review.kind.inserted_row",
         "deletedRow" => "review.kind.deleted_row",
         kind if kind.to_ascii_lowercase().starts_with("ins") => "review.kind.inserted",

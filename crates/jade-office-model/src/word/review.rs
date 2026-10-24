@@ -87,7 +87,8 @@ impl Revision {
     /// Whether the change is to formatting (`w:rPrChange`, `w:pPrChange`)
     /// rather than to the text.
     pub fn is_formatting(&self) -> bool {
-        self.kind.to_ascii_lowercase().starts_with("format")
+        matches!(self.kind.as_str(), "runFormat" | "paragraphFormat")
+            || self.kind.to_ascii_lowercase().starts_with("format")
     }
 
     /// Whether `next` carries this change on: the same author's same kind

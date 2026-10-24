@@ -1,8 +1,8 @@
 {
-  "checked_at_utc": "2026-10-24T13:01:07.180945+00:00",
+  "checked_at_utc": "2026-10-24T13:19:45.621717+00:00",
   "core_pr": "https://github.com/jade-rs/jade-core/pull/190",
   "office_pr": "https://github.com/jade-rs/jade-office/pull/121",
-  "core_revision": "a5af99d63bd835f05e1c8b760af36e3758e99406",
+  "core_revision": "831b25abe8091a8a4a11241694bc2e1a0695bd8f",
   "previous_checkpoint": "pivot-lifecycle-verification.json",
   "previous_checkpoint_is_historical": true,
   "historical_source_inputs_changed": [
@@ -81,7 +81,7 @@
     },
     "shared_model_all_targets_skia_tiny_skia_clippy": {
       "passed": true,
-      "log_sha256": "063dc2d9f872c08969048b32807f8e6971d0559b118a26a8811005fdde769b5e"
+      "log_sha256": "750357c22e96ae5f91936f246eff10be64685795aaa17e958f70213498d049b2"
     }
   },
   "canonical_engine_patch_replay": {
@@ -464,8 +464,27 @@
     "scripts/xlsx/openxml-validator/Program.cs": "f9ca28739699d39da43cb929b5d07c59f7b4438eebdb6f9808828686d0c4eece",
     "scripts/xlsx/openxml-validator/packages.lock.json": "bec2cd3769b9cdfc259cd813dbb1a6a20bcef3dfaaaac69d135692b9618fedd0",
     "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2",
-    "scripts/xlsx/validate_pivot_authoring_corpus.py": "2670e539e35b76879b2904f61a3aa2bb42dcdb14d30dccb353534a58c88c72bf"
+    "scripts/xlsx/validate_pivot_authoring_corpus.py": "2670e539e35b76879b2904f61a3aa2bb42dcdb14d30dccb353534a58c88c72bf",
+    "crates/jade-office-model/src/word/review.rs": "6f0fcd6c1a433c4ad2eda7a59659dfbdf21d55ab3f54c6350eb8b8866bbe509d",
+    "crates/jade-office-model/src/word/markup.rs": "11e9eee924a8ea1bdcc6922c2fdde7be6111f951378876c7361aa89699e943a2"
   },
   "ci": "Final integration test and build status is attached to the two PRs. This record does not claim all CI jobs completed at its creation.",
-  "scope_limits": "No new feature equivalence is claimed. The historic XSD/SDK and runtime suite totals remain evidence for their frozen inputs, not a claim that those gates were rerun unchanged after integration."
+  "scope_limits": "No new feature equivalence is claimed. The historic XSD/SDK and runtime suite totals remain evidence for their frozen inputs, not a claim that those gates were rerun unchanged after integration.",
+  "core_pr_merged": true,
+  "integration_regressions": {
+    "word_revision_classification": {
+      "observed_ci_failures": [
+        "native word_revisions::tests::formatting_changes_are_listed_and_rejected",
+        "web comparing_two_versions_tracks_their_differences"
+      ],
+      "resolution": "Recognize upstream runFormat and paragraphFormat kinds as formatting changes in both model classification and displayed labels; preserve historic formatted recognition. Existing production tests cover comparison and reject-from-pane behavior."
+    },
+    "core_native_timing": {
+      "job": "https://github.com/jade-rs/jade-core/actions/runs/40096109621/job/120878825478",
+      "fastest_ms": 29.532875,
+      "threshold_ms": 25,
+      "test": "repeated_typing_stays_far_cheaper_than_the_open",
+      "resolution": "Unchanged timing condition; rerun requested. The passing core test, lint, XLSX native, Word oracle and benchmark checks are retained."
+    }
+  }
 }
