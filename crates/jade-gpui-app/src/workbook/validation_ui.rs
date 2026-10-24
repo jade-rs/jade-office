@@ -243,7 +243,7 @@ impl View {
                 div()
                     .mt_2()
                     .text_color(gpui::rgb(0xd43f3f))
-                    .child(gpui::SharedString::from(i18n::text(*problem).to_string())),
+                    .child(gpui::SharedString::from(i18n::text(problem).to_string())),
             );
         }
         panel = panel.child(
