@@ -15,6 +15,10 @@ verified. Rebasing adds current upstream package/signature dependencies and
 requires downstream lock updates. Clippy fixes subsequently simplify checked
 option access, iterator use, type signatures and dialog state allocation; a
 Word table unit-test fixture supplies the upstream `text_bounds` field.
+The model also recognizes upstream `runFormat`/`paragraphFormat` revisions in
+formatting classification and pane labels, retaining the earlier `formatted`
+name. This resolves the native reject-from-pane and web document-comparison
+regressions observed during full CI.
 Those changes mean the historical hashes are not all the final PR hashes.
 
 Integration checks pass with warnings denied for the XLSX/OPC packages and
@@ -29,4 +33,8 @@ current scoped hashes, changed historical inputs and local check evidence.
 The PR checks contain the final integrated runtime suites, complete CI build
 results and any platform limitations. The integration record does not turn
 historical oracle results into new final-source or full Office-equivalence claims.
+The core PR is merged. Its workspace tests, lint, XLSX native checks, Word
+oracle and benchmark checks pass. The macOS Word timing case exceeded its
+unchanged 25ms limit once (29.5ms); a rerun was requested without weakening it.
+Final job results remain linked from the PR.
 All remaining compatibility gaps in [ibis-parity.md](ibis-parity.md) still apply.
