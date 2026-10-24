@@ -1,0 +1,14 @@
+{
+  "reference_commit": "",
+  "jade_registered": 507,
+  "baseline_registered": 512,
+  "shared": 507,
+  "not_registered_in_jade": [
+    "FILTERXML",
+    "GROUPBY",
+    "IMAGE",
+    "PIVOTBY",
+    "WEBSERVICE"
+  ],
+  "jade_only": []
+}

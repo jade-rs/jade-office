@@ -33,6 +33,45 @@ fn book() -> Workbook<TinySkiaBackend> {
     Workbook::open(&bytes, "UTC", backend).unwrap()
 }
 
+#[test]
+fn compatibility_calls_type_recalculate_validate_and_save_through_the_shared_model() {
+    let mut book = book();
+    let at = CellRef::new(15, 0);
+    book.set_cell(at, "=SINGLE({1,2;3,4})").unwrap();
+    assert_eq!(book.number(at), Some(1.0));
+    assert_eq!(book.display_text(CellRef::new(16, 0)), "");
+    book.set_cell(at, "=ECMA.CEILING(-4.3,-2)").unwrap();
+    assert_eq!(book.number(at), Some(-6.0));
+    for invalid in [
+        "=SINGLE()",
+        "=SINGLE(1,2)",
+        "=ANCHORARRAY()",
+        "=ECMA.CEILING(1)",
+    ] {
+        assert!(book.set_cell(at, invalid).is_err());
+        assert_eq!(book.number(at), Some(-6.0));
+    }
+    book.undo().unwrap();
+    assert_eq!(book.number(at), Some(1.0));
+    book.redo().unwrap();
+    assert_eq!(book.number(at), Some(-6.0));
+    book.set_cell(CellRef::new(19, 0), "=SEQUENCE(3)").unwrap();
+    book.set_cell(CellRef::new(17, 0), "=SUM(ANCHORARRAY(T1))")
+        .unwrap();
+    assert_eq!(book.number(CellRef::new(17, 0)), Some(6.0));
+    let saved = book.save_bytes().unwrap();
+    // Reuse the same backend/font setup through the ordinary model opener.
+    let directory = core().join("fonts/Noto_Sans_JP/static");
+    let backend = TinySkiaBackend::new(&aliased_faces(
+        Arc::new(std::fs::read(directory.join("NotoSansJP-Regular.ttf")).unwrap()),
+        None,
+    ))
+    .unwrap();
+    let reopened = Workbook::open(&saved, "UTC", backend).unwrap();
+    assert_eq!(reopened.number(at), Some(-6.0));
+    assert_eq!(reopened.number(CellRef::new(17, 0)), Some(6.0));
+}
+
 /// Typed text → what the cell shows, what the formula bar shows, and the
 /// number it holds (`None` for text).
 const CASES: &[(&str, &str, &str, Option<f64>)] = &[

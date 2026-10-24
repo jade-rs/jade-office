@@ -38,16 +38,22 @@ use gpui::{
 use jade_office_model::csv;
 use jade_office_model::find::FindBar;
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
+use jade_office_model::links::LinkDialog;
 use jade_office_model::number_formats::NUMBER_FORMATS;
 use jade_office_model::paste_special::PasteSpecial;
+use jade_office_model::pivots::PivotPanel;
 use jade_office_model::print;
+use jade_office_model::protected_edits::{attempt, ProtectedEdit};
+use jade_office_model::protection::ProtectionDialog;
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
     CellFormat, CellRange, CellRef, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay,
-    ResizeGesture, Workbook, MAX_COLUMN, MAX_ROW,
+    ResizeGesture, SheetVisibility, Workbook, MAX_COLUMN, MAX_ROW,
 };
 use jade_office_model::skia::SkiaBackend;
+use jade_office_model::tables::TableDialog;
 use jade_office_model::text::TextEdit;
+use jade_office_model::validation::{PendingValidation, ValidationDialog};
 use jade_office_model::Backend;
 use std::cell::Cell;
 use std::ops::Range;
@@ -61,7 +67,12 @@ use crate::editor::{self, Editor};
 mod charts;
 mod conditional;
 mod find_bar;
+mod links;
 mod paste_special;
+mod pivots;
+mod protection;
+mod tables;
+mod validation;
 use crate::{
     byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Print, Redo, Save,
     SaveAs, SelectAll, Undo, UI_FONT_FAMILY,
@@ -144,19 +155,6 @@ fn range_label(range: CellRange) -> String {
         ),
         (false, false) => range_text(range),
     }
-}
-
-/// `B3` or `B3:D7` typed into the name box.
-fn parse_reference(text: &str) -> Option<CellRange> {
-    let text = text.trim().replace('$', "").to_uppercase();
-    let (start, end) = text.split_once(':').unwrap_or((&text, &text));
-    let start = CellRef::parse(start).ok()?;
-    let end = CellRef::parse(end).ok()?;
-    (start.column <= MAX_COLUMN
-        && end.column <= MAX_COLUMN
-        && start.row <= MAX_ROW
-        && end.row <= MAX_ROW)
-        .then(|| span(start, end))
 }
 
 /// A cell being typed into.
@@ -294,6 +292,16 @@ enum Tool {
 #[derive(Clone, Copy)]
 enum MenuCommand {
     FormatCells,
+    Validation,
+    ClearValidation,
+    Link,
+    RemoveLinks,
+    Table,
+    RefreshPivot,
+    EditPivot,
+    CreatePivot,
+    DeletePivot,
+    RefreshAllPivots,
     Cut,
     Copy,
     Paste,
@@ -303,14 +311,22 @@ enum MenuCommand {
     DeleteRows,
     InsertColumns,
     DeleteColumns,
+    ShiftCells(Axis, bool),
     FillDown,
     FillRight,
     SortAscending,
     SortDescending,
     MergeCenter,
     InsertSheet,
+    ProtectWorkbook,
+    ProtectSheet(usize),
+    EditRanges(usize),
+    CellLocked,
+    CellHidden,
     RenameSheet(usize),
     DeleteSheet(usize),
+    HideSheet(usize),
+    UnhideSheet(usize),
     /// A sheet tab from one place to another.
     MoveSheet(usize, usize),
     /// New Note, or Edit Note on a cell that has one.
@@ -371,6 +387,12 @@ pub struct WorkbookView {
     chart_asking: Option<ChartAsk>,
     /// The Paste Special dialog, open, with its choices.
     pasting: Option<PasteSpecial>,
+    validation_dialog: Option<ValidationDialog>,
+    link_dialog: Option<LinkDialog>,
+    protection_dialog: Option<ProtectionDialog>,
+    table_dialog: Option<TableDialog>,
+    pivot_dialog: Option<PivotPanel>,
+    validation_pending: Option<PendingValidation>,
     /// The active cell's list of choices (its data validation), open.
     choices: Option<Vec<String>>,
     /// A hyperlink pressed: followed when the press lets go on it, as in
@@ -415,6 +437,24 @@ impl WorkbookView {
 
     /// The text being typed into: a tab's new name, the name box, or a cell.
     fn typing(&mut self) -> Option<&mut TextEdit> {
+        if self.validation_pending.is_some() {
+            return None;
+        }
+        if let Some(dialog) = self.pivot_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.table_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.protection_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.link_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.validation_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
         }
@@ -437,6 +477,24 @@ impl WorkbookView {
     }
 
     fn typed(&self) -> Option<&TextEdit> {
+        if self.validation_pending.is_some() {
+            return None;
+        }
+        if let Some(dialog) = self.pivot_dialog.as_ref() {
+            return Some(dialog.field());
+        }
+        if let Some(dialog) = self.table_dialog.as_ref() {
+            return Some(dialog.field());
+        }
+        if let Some(dialog) = self.protection_dialog.as_ref() {
+            return Some(dialog.field());
+        }
+        if let Some(dialog) = self.link_dialog.as_ref() {
+            return Some(dialog.field());
+        }
+        if let Some(dialog) = self.validation_dialog.as_ref() {
+            return Some(dialog.field());
+        }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);
         }
@@ -511,6 +569,14 @@ impl WorkbookView {
     }
 
     fn select_sheet(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.validation_dialog.is_some()
+            || self.link_dialog.is_some()
+            || self.protection_dialog.is_some()
+            || self.table_dialog.is_some()
+            || self.pivot_dialog.is_some()
+        {
+            return;
+        }
         if !self.commit_cell(cx) {
             return;
         }
@@ -599,10 +665,18 @@ impl WorkbookView {
     /// The selection becomes `to` — a single cell — or, extending, keeps
     /// its anchor and active cell and reaches `to`.
     fn select_cell(&mut self, to: CellRef, extend: bool, cx: &mut Context<Self>) {
+        if !self.book.can_select_cell(to) {
+            return;
+        }
+        let previous_selection = self.selection;
         if extend {
             self.selection.extend_to(to);
         } else {
             self.selection = Selection::cell(to);
+        }
+        if !self.book.can_select_range(self.selection.range()) {
+            self.selection = previous_selection;
+            return;
         }
         self.tab_start = None;
         self.reveal(to);
@@ -709,6 +783,7 @@ impl WorkbookView {
         }
         let active = self.selection.active;
         let range = self.selection.range();
+        let previous_selection = self.selection;
         self.selection = match self.book.current_region(active) {
             Some(region) if region != range => Selection {
                 active,
@@ -720,6 +795,9 @@ impl WorkbookView {
                 ..Selection::all()
             },
         };
+        if !self.book.can_select_range(self.selection.range()) {
+            self.selection = previous_selection;
+        }
         cx.notify();
     }
 
@@ -740,10 +818,42 @@ impl WorkbookView {
     /// dependent formulas have moved before the next paint. A formula Excel
     /// would refuse keeps the editor open and returns false.
     fn commit_cell(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.validation_pending.is_some()
+            || self.validation_dialog.is_some()
+            || self.link_dialog.is_some()
+            || self.protection_dialog.is_some()
+            || self.table_dialog.is_some()
+            || self.pivot_dialog.is_some()
+        {
+            return false;
+        }
         let Some(edit) = self.edit.take() else {
             return true;
         };
         let result = self.book.set_cell(self.active(), &edit.text.text);
+        if result
+            .as_ref()
+            .is_err_and(|e| jade_office_model::sheet::validation_refusal(e).is_some())
+        {
+            if let Ok(Some(alert)) = self.book.validation_alert(self.active(), &edit.text.text) {
+                self.validation_pending = Some(PendingValidation {
+                    at: self.active(),
+                    text: edit.text.text.clone(),
+                    alert,
+                });
+            }
+        }
+        if result
+            .as_ref()
+            .is_err_and(|e| jade_office_model::sheet::protected_refusal(e))
+        {
+            if let Ok(Some(dialog)) =
+                ProtectionDialog::for_entry(&self.book, self.active(), &edit.text.text)
+            {
+                self.protection_dialog = Some(dialog);
+                self.menu = None;
+            }
+        }
         let refused = result.is_err();
         if refused {
             self.edit = Some(CellEdit {
@@ -794,6 +904,15 @@ impl WorkbookView {
     }
 
     fn step_history(&mut self, undo: bool, cx: &mut Context<Self>) {
+        if self.validation_dialog.is_some()
+            || self.validation_pending.is_some()
+            || self.link_dialog.is_some()
+            || self.protection_dialog.is_some()
+            || self.table_dialog.is_some()
+            || self.pivot_dialog.is_some()
+        {
+            return;
+        }
         self.edit = None;
         self.renaming = None;
         self.naming = None;
@@ -892,10 +1011,24 @@ impl WorkbookView {
     /// ⌘V: into text being typed, the clipboard's first line, as in Excel;
     /// onto the sheet, the clipboard's cells.
     fn paste(&mut self, cx: &mut Context<Self>) {
+        if self.validation_pending.is_some() {
+            return;
+        }
+        let multiline = self.validation_dialog.as_ref().is_some_and(|d| {
+            matches!(
+                d.field,
+                jade_office_model::validation::ValidationField::Prompt
+                    | jade_office_model::validation::ValidationField::Error
+            )
+        });
         let text = cx.read_from_clipboard().and_then(|item| item.text());
         if let Some(typing) = self.typing() {
             if let Some(text) = text {
-                typing.insert(text.lines().next().unwrap_or(""));
+                typing.insert(if multiline {
+                    &text
+                } else {
+                    text.lines().next().unwrap_or("")
+                });
                 self.typed_into();
                 cx.notify();
             }
@@ -908,12 +1041,26 @@ impl WorkbookView {
     /// clipboard still holds it, otherwise the clipboard's text, from the
     /// selection's top-left or tiled over it.
     fn sheet_paste(&mut self, text: Option<&str>, cx: &mut Context<Self>) {
+        if self.validation_pending.is_some()
+            || self.validation_dialog.is_some()
+            || self.link_dialog.is_some()
+            || self.protection_dialog.is_some()
+            || self.table_dialog.is_some()
+            || self.pivot_dialog.is_some()
+        {
+            return;
+        }
         let target = self.range();
         // From a menu there is no clipboard text: the copy made here.
         let Some(text) = text.map(str::to_string).or_else(|| self.book.copied_text()) else {
             return;
         };
-        let result = self.book.paste_over(target, &text);
+        let result = attempt(
+            &mut self.book,
+            &mut self.protection_dialog,
+            ProtectedEdit::Paste { target, text },
+        )
+        .map(|outcome| outcome.selection);
         if let Ok(Some(filled)) = &result {
             let active = self.selection.active;
             self.selection = Selection {
@@ -947,6 +1094,21 @@ impl WorkbookView {
 
     fn menu_command(&mut self, command: MenuCommand, from_keys: bool, cx: &mut Context<Self>) {
         self.menu = None;
+        if self.book.structure_protected()
+            && matches!(
+                command,
+                MenuCommand::InsertSheet
+                    | MenuCommand::RenameSheet(_)
+                    | MenuCommand::DeleteSheet(_)
+                    | MenuCommand::MoveSheet(_, _)
+                    | MenuCommand::HideSheet(_)
+                    | MenuCommand::UnhideSheet(_)
+            )
+        {
+            self.status = i18n::text("sheet.workbook_protected").into();
+            cx.notify();
+            return;
+        }
         let selection = self.selection;
         let range = selection.range();
         let rows = range.end.row.saturating_sub(range.start.row) + 1;
@@ -963,18 +1125,71 @@ impl WorkbookView {
             command => command,
         };
         let result = match command {
+            MenuCommand::EditRanges(index) => return self.open_editable_ranges(index, cx),
+            MenuCommand::ProtectWorkbook => return self.open_workbook_protection(cx),
+            MenuCommand::ProtectSheet(index) => return self.open_sheet_protection(index, cx),
+            MenuCommand::CellLocked => {
+                let locked = self.book.format_at(self.active()).locked.unwrap_or(true);
+                self.book.format(
+                    range,
+                    &CellFormat {
+                        locked: Some(!locked),
+                        ..Default::default()
+                    },
+                )
+            }
+            MenuCommand::CellHidden => {
+                let hidden = self
+                    .book
+                    .format_at(self.active())
+                    .formula_hidden
+                    .unwrap_or(false);
+                self.book.format(
+                    range,
+                    &CellFormat {
+                        formula_hidden: Some(!hidden),
+                        ..Default::default()
+                    },
+                )
+            }
             MenuCommand::FormatCells => return self.open_format_dialog(cx),
+            MenuCommand::Validation => return self.open_validation(cx),
+            MenuCommand::Table => return self.open_table_dialog(cx),
+            MenuCommand::EditPivot => return self.open_pivot_dialog(cx),
+            MenuCommand::CreatePivot => return self.open_create_pivot(cx),
+            MenuCommand::DeletePivot => self.book.delete_pivot_at(selection.active),
+            MenuCommand::RefreshPivot => self.book.refresh_pivot_at(selection.active),
+            MenuCommand::RefreshAllPivots => self.book.refresh_all_pivots(),
+            MenuCommand::Link => return self.open_link_dialog(cx),
+            MenuCommand::RemoveLinks => self.book.clear_hyperlinks(&[range]),
+            MenuCommand::ClearValidation => self.book.clear_data_validations(Some(range)),
             MenuCommand::Cut => return self.sheet_copy(true, cx),
             MenuCommand::Copy => return self.sheet_copy(false, cx),
             MenuCommand::Paste => return self.sheet_paste(None, cx),
             MenuCommand::PasteSpecial => return self.open_paste_special(cx),
-            MenuCommand::Clear => self.book.clear(range),
+            MenuCommand::Clear => attempt(
+                &mut self.book,
+                &mut self.protection_dialog,
+                ProtectedEdit::Clear { range },
+            )
+            .map(|outcome| outcome.changed),
             MenuCommand::InsertRows => self.book.insert_rows(range.start.row, rows),
             MenuCommand::DeleteRows => self.book.delete_rows(range.start.row, rows),
             MenuCommand::InsertColumns => self.book.insert_columns(range.start.column, columns),
             MenuCommand::DeleteColumns => self.book.delete_columns(range.start.column, columns),
-            MenuCommand::FillDown => self.book.fill_down(range),
-            MenuCommand::FillRight => self.book.fill_right(range),
+            MenuCommand::ShiftCells(axis, inserted) => self.book.shift_cells(range, axis, inserted),
+            MenuCommand::FillDown => attempt(
+                &mut self.book,
+                &mut self.protection_dialog,
+                ProtectedEdit::FillDown { range },
+            )
+            .map(|outcome| outcome.changed),
+            MenuCommand::FillRight => attempt(
+                &mut self.book,
+                &mut self.protection_dialog,
+                ProtectedEdit::FillRight { range },
+            )
+            .map(|outcome| outcome.changed),
             MenuCommand::SortAscending => self.book.sort(range, selection.active, false),
             MenuCommand::SortDescending => self.book.sort(range, selection.active, true),
             // Merge & Center takes in every merged cell the range touches,
@@ -982,7 +1197,9 @@ impl WorkbookView {
             MenuCommand::MergeCenter => {
                 let range = self.book.with_merges(range);
                 let result = self.book.merge_and_center(range);
-                self.selection = Selection::range_from(range.start, range.end);
+                if self.book.can_select_range(range) {
+                    self.selection = Selection::range_from(range.start, range.end);
+                }
                 result
             }
             MenuCommand::InsertSheet => {
@@ -1003,6 +1220,17 @@ impl WorkbookView {
                 self.scroll.set_offset(point(px(0.0), px(0.0)));
                 result
             }
+            MenuCommand::HideSheet(index) => {
+                let result = self
+                    .book
+                    .set_sheet_visibility(index, SheetVisibility::Hidden);
+                self.selection = Selection::default();
+                self.scroll.set_offset(point(px(0.0), px(0.0)));
+                result
+            }
+            MenuCommand::UnhideSheet(index) => self
+                .book
+                .set_sheet_visibility(index, SheetVisibility::Visible),
             MenuCommand::MoveSheet(index, to) => {
                 let result = self.book.move_sheet(index, to);
                 self.selection = Selection::default();
@@ -1287,6 +1515,37 @@ impl WorkbookView {
         // ⌘ on a Mac; Excel's Ctrl shortcuts are taken with Ctrl as well.
         let command = modifiers.platform || modifiers.control;
         let shift = modifiers.shift;
+        if let Some(handled) = self.protection_key(key, shift, command, cx) {
+            return handled;
+        }
+        if self
+            .validation_dialog
+            .as_ref()
+            .is_some_and(|d| d.field().marked.is_some())
+        {
+            return false;
+        }
+        if self.pivot_editor_marked() {
+            return false;
+        }
+        if self.pivot_key(key, shift, command, cx) {
+            return true;
+        }
+        if self.table_editor_marked() {
+            return false;
+        }
+        if self.table_key(key, shift, command, cx) {
+            return true;
+        }
+        if self.link_editor_marked() {
+            return false;
+        }
+        if self.link_key(key, shift, command, cx) {
+            return true;
+        }
+        if self.validation_key(key, shift, command, modifiers.alt, cx) {
+            return true;
+        }
         if self.menu.take().is_some() {
             cx.notify();
         }
@@ -1360,10 +1619,20 @@ impl WorkbookView {
                 // ⌘Enter: what was typed into every selected cell.
                 "enter" if command => {
                     let text = edit.text.text.clone();
-                    self.edit = None;
-                    let result = self.book.fill_with(self.range(), self.active(), &text);
-                    if matches!(result, Ok(true)) {
-                        self.book.forget_copy();
+                    let range = self.range();
+                    let active = self.active();
+                    let result = attempt(
+                        &mut self.book,
+                        &mut self.protection_dialog,
+                        ProtectedEdit::FillWith {
+                            range,
+                            active,
+                            text,
+                        },
+                    )
+                    .map(|outcome| outcome.changed);
+                    if result.is_ok() {
+                        self.edit = None;
                     }
                     self.after_write(result, cx);
                 }
@@ -1450,7 +1719,13 @@ impl WorkbookView {
             "tab" => self.advance_cell(true, shift, cx),
             "f2" => self.begin_edit(None, true, cx),
             "delete" | "backspace" => {
-                let result = self.book.clear(self.range());
+                let range = self.range();
+                let result = attempt(
+                    &mut self.book,
+                    &mut self.protection_dialog,
+                    ProtectedEdit::Clear { range },
+                )
+                .map(|outcome| outcome.changed);
                 self.after_write(result, cx);
             }
             // Escape lets go of what was copied.
@@ -1461,7 +1736,7 @@ impl WorkbookView {
             "=" if modifiers.alt => self.autosum(cx),
             // ⌥↓: the active cell's list of choices.
             "down" if modifiers.alt => {
-                self.choices = self.book.validation_list(self.active());
+                self.choices = self.book.validation_dropdown(self.active());
                 cx.notify();
             }
             // Shift+Space: the selection's rows, whole.
@@ -1549,6 +1824,8 @@ impl WorkbookView {
                 self.after_write(result, cx);
             }
             "f" => self.open_find(false, cx),
+            "t" => self.open_table_dialog(cx),
+            "k" => self.open_link_dialog(cx),
             // ⌃H, as Excel for Mac: Find and Replace (⌘H hides the app).
             "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
             "end" => {
@@ -1565,11 +1842,21 @@ impl WorkbookView {
             "v" if !modifiers.platform => self.paste(cx),
             "a" if !modifiers.platform => self.select_all(cx),
             "d" => {
-                let result = self.book.fill_down(range);
+                let result = attempt(
+                    &mut self.book,
+                    &mut self.protection_dialog,
+                    ProtectedEdit::FillDown { range },
+                )
+                .map(|outcome| outcome.changed);
                 self.after_write(result, cx);
             }
             "r" => {
-                let result = self.book.fill_right(range);
+                let result = attempt(
+                    &mut self.book,
+                    &mut self.protection_dialog,
+                    ProtectedEdit::FillRight { range },
+                )
+                .map(|outcome| outcome.changed);
                 self.after_write(result, cx);
             }
             // ⌘1: Format Cells, as in Excel.
@@ -1655,13 +1942,26 @@ impl WorkbookView {
             // Escape or Tab closes the find bar where the search got to.
         } else if let Some(text) = self.naming.take() {
             if take {
-                match parse_reference(&text.text) {
-                    Some(range) => {
-                        self.selection = Selection::range_from(range.start, range.end);
+                match self.book.resolve_reference(&text.text) {
+                    Some((sheet, range)) => {
+                        if !self.book.sheet_tabs().contains(&sheet) {
+                            self.status = i18n::text("sheet.no_reference").into();
+                            cx.notify();
+                            return;
+                        }
+                        self.select_sheet(sheet, cx);
+                        if self.book.can_select_range(range) {
+                            self.selection = Selection::range_from(range.start, range.end);
+                        }
                         self.tab_start = None;
                         self.reveal(range.start);
                     }
-                    None => self.status = SharedString::from(i18n::text("sheet.no_reference")),
+                    None => {
+                        let result = self
+                            .book
+                            .define_range_name(&text.text, self.selection.range());
+                        self.after_write(result, cx);
+                    }
                 }
             }
         }
@@ -1671,6 +1971,15 @@ impl WorkbookView {
     // ---- the mouse -------------------------------------------------------
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.validation_dialog.is_some()
+            || self.validation_pending.is_some()
+            || self.link_dialog.is_some()
+            || self.protection_dialog.is_some()
+            || self.table_dialog.is_some()
+            || self.pivot_dialog.is_some()
+        {
+            return;
+        }
         window.focus(&self.focus);
         self.menu = None;
         self.filter = None;
@@ -1749,9 +2058,19 @@ impl WorkbookView {
             // A double-click carries it down as far as the data beside it.
             if event.click_count >= 2 {
                 if let Some(target) = self.book.fill_handle_extent(range) {
-                    let result = self.book.fill_series(range, target);
-                    self.selection.anchor = target.start;
-                    self.selection.focus = target.end;
+                    let result = attempt(
+                        &mut self.book,
+                        &mut self.protection_dialog,
+                        ProtectedEdit::FillSeries {
+                            source: range,
+                            target,
+                        },
+                    )
+                    .map(|outcome| outcome.changed);
+                    if matches!(result, Ok(true)) {
+                        self.selection.anchor = target.start;
+                        self.selection.focus = target.end;
+                    }
                     self.after_write(result, cx);
                 }
                 return;
@@ -1786,7 +2105,12 @@ impl WorkbookView {
         let Some(hit) = hit else {
             return;
         };
+        let previous_selection = self.selection;
         let kind = self.selection.press(hit, event.modifiers.shift);
+        if !self.book.can_select_range(self.selection.range()) {
+            self.selection = previous_selection;
+            return;
+        }
         self.drag = Some(SheetDrag::Select(kind));
         // A hyperlink is followed when this press lets go on it.
         self.pending_link = match hit {
@@ -1830,7 +2154,12 @@ impl WorkbookView {
                 Hit::All => false,
             };
             if !inside {
+                let previous_selection = self.selection;
                 self.selection.press(hit, false);
+                if !self.book.can_select_range(self.selection.range()) {
+                    self.selection = previous_selection;
+                    return;
+                }
             }
         }
         let zoom = f64::from(self.zoom);
@@ -1878,7 +2207,7 @@ impl WorkbookView {
         // on it, as Excel does.
         let zoom = self.zoom;
         let note = match self.book.hit(x, y, scroll) {
-            Some(Hit::Cell(cell)) if self.book.note(cell).is_some() => self
+            Some(Hit::Cell(cell)) if self.book.hover_text(cell).is_some() => self
                 .book
                 .cell_rect(cell, scroll)
                 .map(|(left, top, width, _)| {
@@ -1916,6 +2245,10 @@ impl WorkbookView {
                 };
                 let before = self.selection;
                 self.selection.drag(kind, hit);
+                if !self.book.can_select_range(self.selection.range()) {
+                    self.selection = before;
+                    return;
+                }
                 if self.selection != before {
                     self.book.reach(reached);
                     cx.notify();
@@ -2001,7 +2334,12 @@ impl WorkbookView {
         self.pointer = None;
         match drag {
             SheetDrag::Fill { source, target } => {
-                let result = self.book.fill_series(source, target);
+                let result = attempt(
+                    &mut self.book,
+                    &mut self.protection_dialog,
+                    ProtectedEdit::FillSeries { source, target },
+                )
+                .map(|outcome| outcome.changed);
                 if matches!(result, Ok(true)) {
                     self.selection.anchor = target.start;
                     self.selection.focus = target.end;
@@ -2062,7 +2400,16 @@ impl WorkbookView {
                     cx.notify();
                     return;
                 }
-                let result = self.book.move_range(source, target.start, copy);
+                let result = attempt(
+                    &mut self.book,
+                    &mut self.protection_dialog,
+                    ProtectedEdit::MoveRange {
+                        source,
+                        to: target.start,
+                        copy,
+                    },
+                )
+                .map(|outcome| outcome.selection.unwrap_or(source));
                 if let Ok(moved) = &result {
                     let active = self.selection.active;
                     self.selection = Selection {
@@ -2091,7 +2438,9 @@ impl WorkbookView {
             Link::Url(url) => cx.open_url(&url),
             Link::Place { sheet, range } => {
                 self.select_sheet(sheet, cx);
-                self.selection = Selection::range_from(range.start, range.end);
+                if self.book.can_select_range(range) {
+                    self.selection = Selection::range_from(range.start, range.end);
+                }
                 self.reveal(range.start);
                 cx.notify();
             }
@@ -2107,7 +2456,7 @@ impl WorkbookView {
         else {
             return;
         };
-        let result = self.book.set_cell(self.active(), &choice);
+        let result = self.book.set_validation_choice(self.active(), &choice);
         if matches!(result, Ok(true)) {
             self.book.forget_copy();
         }
@@ -2372,9 +2721,16 @@ impl WorkbookView {
             Some(index) => {
                 let mut items = vec![
                     (MenuCommand::InsertSheet, "sheet.menu.insert_sheet"),
+                    (MenuCommand::ProtectWorkbook, "protection.menu"),
+                    (MenuCommand::ProtectSheet(index), "protection.sheet_menu"),
+                    (MenuCommand::EditRanges(index), "protection.ranges_menu"),
                     (MenuCommand::RenameSheet(index), "sheet.menu.rename_sheet"),
                     (MenuCommand::DeleteSheet(index), "sheet.menu.delete_sheet"),
+                    (MenuCommand::HideSheet(index), "sheet.menu.hide_sheet"),
                 ];
+                for hidden in self.book.hidden_sheets() {
+                    items.push((MenuCommand::UnhideSheet(hidden), "sheet.menu.unhide_sheet"));
+                }
                 if index > 0 {
                     items.push((
                         MenuCommand::MoveSheet(index, index - 1),
@@ -2420,6 +2776,26 @@ impl WorkbookView {
                         (MenuCommand::DeleteColumns, "sheet.menu.delete_columns"),
                     ]);
                 }
+                if !self.selection.is_whole_rows() && !self.selection.is_whole_columns() {
+                    items.extend([
+                        (
+                            MenuCommand::ShiftCells(Axis::Rows, true),
+                            "sheet.menu.insert_cells_down",
+                        ),
+                        (
+                            MenuCommand::ShiftCells(Axis::Columns, true),
+                            "sheet.menu.insert_cells_right",
+                        ),
+                        (
+                            MenuCommand::ShiftCells(Axis::Rows, false),
+                            "sheet.menu.delete_cells_up",
+                        ),
+                        (
+                            MenuCommand::ShiftCells(Axis::Columns, false),
+                            "sheet.menu.delete_cells_left",
+                        ),
+                    ]);
+                }
                 if self.selection.is_whole_rows() || self.selection.is_whole_columns() {
                     items.extend([
                         (MenuCommand::Hide, "sheet.menu.hide"),
@@ -2435,16 +2811,44 @@ impl WorkbookView {
                     items.push((MenuCommand::EditNote, "sheet.menu.insert_note"));
                 }
                 items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
+                items.push((MenuCommand::CellLocked, "protection.cell_locked"));
+                items.push((MenuCommand::CellHidden, "protection.cell_hidden"));
+                items.push((
+                    MenuCommand::EditRanges(self.book.sheet_index()),
+                    "protection.ranges_menu",
+                ));
+                items.push((MenuCommand::CreatePivot, "pivot.create"));
+                if self.book.has_pivots() {
+                    items.push((MenuCommand::RefreshAllPivots, "pivot.refresh_all"));
+                }
+                if self.book.pivot_at(self.active()).is_some() {
+                    items.push((MenuCommand::RefreshPivot, "pivot.refresh"));
+                    items.push((MenuCommand::EditPivot, "pivot.edit"));
+                    items.push((MenuCommand::DeletePivot, "pivot.delete"));
+                }
+                items.extend([
+                    (MenuCommand::Table, "table.menu"),
+                    (MenuCommand::Link, "link.dialog"),
+                    (MenuCommand::RemoveLinks, "link.remove"),
+                    (MenuCommand::Validation, "validation.dialog"),
+                    (MenuCommand::ClearValidation, "validation.clear_selection"),
+                ]);
                 items
             }
         };
+        let max_height = (self.viewport.1 - 16.).max(80.);
+        let height = (items.len() as f32 * 26. + 8.).min(max_height);
+        let top = menu.at.1.clamp(0., (self.viewport.1 - height).max(0.));
         Some(
             div()
                 .id("sheet-menu")
                 .absolute()
                 .left(px(menu.at.0))
-                .top(px(menu.at.1.max(0.0)))
+                .top(px(top))
                 .min_w(px(180.0))
+                .max_h(px(max_height))
+                .overflow_y_scroll()
+                .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                 .py_1()
                 .rounded_md()
                 .border_1()
@@ -2459,13 +2863,20 @@ impl WorkbookView {
                         .into_iter()
                         .enumerate()
                         .map(|(index, (command, label))| {
+                            let label: SharedString = match command {
+                                MenuCommand::UnhideSheet(sheet) => {
+                                    format!("{}: {}", i18n::text(label), self.sheet_names[sheet])
+                                        .into()
+                                }
+                                _ => i18n::text(label).into(),
+                            };
                             div()
                                 .id(("sheet-menu-item", index))
                                 .px_3()
                                 .py_1()
                                 .cursor_pointer()
                                 .hover(|item| item.bg(theme::hovered()))
-                                .child(i18n::text(label))
+                                .child(label)
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                                 .on_click(cx.listener(move |view, _event, window, cx| {
                                     window.focus(&view.focus);
@@ -2828,7 +3239,7 @@ impl WorkbookView {
         if self.edit.is_some() {
             return None;
         }
-        self.book.validation_list(self.active())?;
+        self.book.validation_dropdown(self.active())?;
         let grid = self.grid_bounds.get()?;
         let cell = self.cell_bounds(self.active())?;
         let (x, y) = (cell.origin.x - grid.origin.x, cell.origin.y - grid.origin.y);
@@ -3330,7 +3741,11 @@ impl EntityInputHandler for WorkbookView {
         // Typing into a selected cell replaces what is in it, as in Excel.
         if self.typed().is_none() {
             // A dialog over the grid takes no typing into the cells.
-            if self.asking.is_some() || self.managing || self.pasting.is_some() {
+            if self.asking.is_some()
+                || self.managing
+                || self.pasting.is_some()
+                || self.validation_pending.is_some()
+            {
                 return;
             }
             self.begin_edit(Some(String::new()), false, cx);
@@ -3352,7 +3767,11 @@ impl EntityInputHandler for WorkbookView {
     ) {
         if self.typed().is_none() {
             // A dialog over the grid takes no typing into the cells.
-            if self.asking.is_some() || self.managing || self.pasting.is_some() {
+            if self.asking.is_some()
+                || self.managing
+                || self.pasting.is_some()
+                || self.validation_pending.is_some()
+            {
                 return;
             }
             self.begin_edit(Some(String::new()), false, cx);
@@ -3371,6 +3790,32 @@ impl EntityInputHandler for WorkbookView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
+        if let Some(bounds) = self
+            .validation_dialog
+            .as_ref()
+            .and_then(|d| d.input_bounds.get())
+            .or_else(|| {
+                self.protection_dialog
+                    .as_ref()
+                    .and_then(|d| d.input_bounds.get())
+            })
+            .or_else(|| self.link_dialog.as_ref().and_then(|d| d.input_bounds.get()))
+            .or_else(|| {
+                self.pivot_dialog
+                    .as_ref()
+                    .and_then(|d| d.input_bounds.get())
+            })
+            .or_else(|| {
+                self.table_dialog
+                    .as_ref()
+                    .and_then(|d| d.input_bounds.get())
+            })
+        {
+            return Some(Bounds {
+                origin: point(px(bounds[0]), px(bounds[1])),
+                size: size(px(bounds[2]), px(bounds[3])),
+            });
+        }
         // The candidate window goes under the active cell, or at the grid's
         // corner for the name box and a tab's name.
         if self.edit.is_some() {
@@ -3431,7 +3876,7 @@ impl Render for WorkbookView {
         let menu = self.context_menu(cx);
         let format_dialog = self.format_dialog_element(cx);
         let note = self.note.and_then(|(cell, (x, y))| {
-            let text = self.book.note(cell)?.to_string();
+            let text = self.book.hover_text(cell)?.to_string();
             Some(
                 div()
                     .absolute()
@@ -3483,6 +3928,13 @@ impl Render for WorkbookView {
         let chart_dialog = self.chart_dialog(cx);
         let rules_manager = self.rules_manager(cx);
         let paste_special = self.paste_special_dialog(cx);
+        let table_panel = self.table_panel(cx);
+        let pivot_panel = self.pivot_panel(cx);
+        let link_panel = self.link_panel(cx);
+        let protection_panel = self.protection_panel(cx);
+        let validation_panel = self.validation_panel(cx);
+        let validation_alert = self.validation_alert_panel(cx);
+        let validation_input = self.validation_input_panel();
         let filter_panel = self.filter_panel(cx);
 
         div()
@@ -3629,6 +4081,13 @@ impl Render for WorkbookView {
             .children(rules_manager)
             .children(chart_dialog)
             .children(paste_special)
+            .children(validation_input)
+            .children(table_panel)
+            .children(pivot_panel)
+            .children(link_panel)
+            .children(protection_panel)
+            .children(validation_panel)
+            .children(validation_alert)
     }
 }
 
@@ -3665,6 +4124,12 @@ impl WorkbookView {
             object: None,
             chart_asking: None,
             pasting: None,
+            validation_dialog: None,
+            link_dialog: None,
+            protection_dialog: None,
+            table_dialog: None,
+            pivot_dialog: None,
+            validation_pending: None,
             choices: None,
             pending_link: None,
             menu: None,
@@ -3706,6 +4171,263 @@ pub fn new_view(path: &Path, cx: &mut App) -> Result<Entity<WorkbookView>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[gpui::test]
+    fn cell_shift_menu_commands_move_only_the_selection_strip(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            for (cell, text) in [(at(7, 1), "2"), (at(7, 2), "3"), (at(8, 1), "20")] {
+                view.book.set_cell(cell, text).unwrap();
+            }
+            view.selection = Selection::cell(at(7, 1));
+            view.menu_command(MenuCommand::ShiftCells(Axis::Rows, true), false, cx);
+            assert_eq!(view.book.number(at(7, 2)), Some(2.));
+            assert_eq!(view.book.number(at(7, 3)), Some(3.));
+            assert_eq!(view.book.number(at(8, 1)), Some(20.));
+            view.step_history(true, cx);
+            assert_eq!(view.book.number(at(7, 1)), Some(2.));
+            assert_eq!(view.book.number(at(7, 2)), Some(3.));
+            view.menu_command(MenuCommand::ShiftCells(Axis::Columns, false), false, cx);
+            assert_eq!(view.book.number(at(7, 1)), Some(20.));
+            assert_eq!(view.book.number(at(7, 2)), Some(3.));
+        });
+    }
+
+    #[gpui::test]
+    fn table_dialog_creates_totals_and_converts_with_one_undo(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::tables::TableField;
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            for (cell, text) in [
+                (at(7, 1), "Item"),
+                (at(8, 1), "Qty"),
+                (at(7, 2), "A"),
+                (at(8, 2), "2"),
+                (at(7, 3), "B"),
+                (at(8, 3), "3"),
+            ] {
+                view.book.set_cell(cell, text).unwrap();
+            }
+            view.selection = Selection::range_from(at(7, 1), at(8, 3));
+            view.sheet_command(
+                "t",
+                Modifiers {
+                    platform: true,
+                    ..Default::default()
+                },
+                cx,
+            );
+            let d = view.table_dialog.as_mut().unwrap();
+            d.focus(TableField::Name);
+            d.field_mut().replace(None, "Sales", false);
+            view.sheet_table_action(tables::TableAction::Take, cx);
+            assert!(view.table_dialog.is_none());
+            assert_eq!(view.book.table(at(7, 1)).unwrap().name, "Sales");
+            view.selection = Selection::cell(at(8, 2));
+            view.open_table_dialog(cx);
+            let d = view.table_dialog.as_mut().unwrap();
+            d.has_totals = true;
+            d.total_kind = 1;
+            view.sheet_table_action(tables::TableAction::Take, cx);
+            assert!(view.table_dialog.is_none());
+            assert_eq!(view.book.number(at(8, 4)), Some(5.));
+            view.open_table_dialog(cx);
+            view.sheet_table_action(tables::TableAction::Convert, cx);
+            assert!(view.book.table(at(8, 2)).is_none());
+            assert_eq!(view.book.number(at(8, 4)), Some(5.));
+            view.step_history(true, cx);
+            assert_eq!(view.book.table(at(8, 2)).unwrap().name, "Sales");
+        });
+    }
+
+    #[gpui::test]
+    fn hyperlink_dialog_edits_and_removes_a_link_without_replacing_a_formula(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            let at = CellRef::new(7, 1);
+            view.selection = Selection::cell(at);
+            view.sheet_command(
+                "k",
+                Modifiers {
+                    platform: true,
+                    ..Default::default()
+                },
+                cx,
+            );
+            let dialog = view.link_dialog.as_mut().unwrap();
+            dialog
+                .field_mut()
+                .replace(None, "https://example.com", false);
+            dialog.focus(jade_office_model::links::LinkField::Label);
+            dialog.field_mut().replace(None, "リンク", false);
+            view.link_action(links::LinkAction::Take, cx);
+            assert!(view.link_dialog.is_none());
+            assert_eq!(view.book.display_text(at), "リンク");
+            assert_eq!(
+                view.book.link(at),
+                Some(Link::Url("https://example.com".into()))
+            );
+            view.menu_command(MenuCommand::RemoveLinks, false, cx);
+            assert!(view.book.link(at).is_none());
+            assert_eq!(view.book.display_text(at), "リンク");
+            view.step_history(true, cx);
+            assert!(view.book.link(at).is_some());
+            view.book.set_cell(at, "=1+2").unwrap();
+            view.open_link_dialog(cx);
+            let dialog = view.link_dialog.as_mut().unwrap();
+            dialog.focus(jade_office_model::links::LinkField::Label);
+            dialog.field_mut().replace(None, "保持", false);
+            view.link_action(links::LinkAction::Take, cx);
+            assert_eq!(view.book.edit_text(at), "=1+2");
+        });
+    }
+
+    #[gpui::test]
+    fn validation_ime_composition_is_not_treated_as_dialog_ok(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::validation::ValidationField;
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::range_from(at(7, 1), at(7, 1));
+            view.open_validation(cx);
+            let dialog = view.validation_dialog.as_mut().unwrap();
+            dialog.kind = 3;
+            dialog.focus(ValidationField::First);
+            dialog.field_mut().replace(None, "東京", true);
+        });
+        view.update(cx, |view, cx| {
+            // IME key routing and the subsequent committed text are distinct
+            // events. A synthetic plain Enter would inject a newline instead.
+            let event = KeyDownEvent {
+                keystroke: gpui::Keystroke::parse("enter").unwrap(),
+                is_held: false,
+            };
+            assert!(!view.sheet_key(&event, cx));
+            assert!(view.validation_dialog.is_some());
+            assert_eq!(
+                view.validation_dialog.as_ref().unwrap().field().text,
+                "東京"
+            );
+            view.typing().unwrap().replace(None, "東京", false);
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.validation_dialog.is_none());
+            assert_eq!(
+                view.book.validation_dropdown(at(7, 1)),
+                Some(vec!["東京".into()])
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn validation_dialog_creates_a_list_and_clear_undo_restores_it(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::validation::{ValidationField, ValidationTab};
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::range_from(at(7, 1), at(7, 3));
+            view.menu_command(MenuCommand::Validation, false, cx);
+            let dialog = view.validation_dialog.as_mut().unwrap();
+            dialog.kind = 3;
+            dialog.fields[1] = TextEdit::new("東京,大阪".into());
+            dialog.select_tab(ValidationTab::Input);
+            dialog.field_mut().insert("都市");
+            dialog.focus(ValidationField::Prompt);
+            dialog.field_mut().insert("一覧から選択してください");
+            assert!(view.validation_key("enter", false, false, true, cx));
+            view.validation_dialog
+                .as_mut()
+                .unwrap()
+                .field_mut()
+                .insert("候補は2件です");
+            view.validation_action(validation::ValidationAction::Take, cx);
+            assert!(view.validation_dialog.is_none());
+            assert_eq!(
+                view.book.validation_dropdown(at(7, 1)),
+                Some(vec!["東京".into(), "大阪".into()])
+            );
+            assert_eq!(
+                view.book.validation_prompt(at(7, 1)),
+                Some((
+                    "都市".into(),
+                    "一覧から選択してください\n候補は2件です".into()
+                ))
+            );
+            view.begin_edit(Some("福岡".into()), false, cx);
+            assert!(!view.commit_cell(cx));
+            assert!(view.validation_pending.is_some());
+            view.answer_validation(validation::ValidationAnswer::Cancel, cx);
+            assert_eq!(view.book.edit_text(at(7, 1)), "");
+            view.menu_command(MenuCommand::ClearValidation, false, cx);
+            assert!(view.book.data_validation_at(at(7, 1)).is_none());
+            view.step_history(true, cx);
+            assert!(view.book.data_validation_at(at(7, 1)).is_some());
+        });
+    }
+
+    #[gpui::test]
+    fn validation_warning_requires_a_choice_before_the_cell_changes(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::range_from(at(7, 1), at(7, 1));
+            view.menu_command(MenuCommand::Validation, false, cx);
+            let dialog = view.validation_dialog.as_mut().unwrap();
+            dialog.kind = 3;
+            dialog.style = 1;
+            dialog.fields[1] = TextEdit::new("東京,大阪".into());
+            view.validation_action(validation::ValidationAction::Take, cx);
+            view.begin_edit(Some("福岡".into()), false, cx);
+            assert!(!view.commit_cell(cx));
+            assert!(view.validation_pending.is_some());
+            assert_eq!(view.book.edit_text(at(7, 1)), "");
+            view.sheet_paste(Some("99"), cx);
+            assert_eq!(view.book.edit_text(at(7, 1)), "");
+            view.answer_validation(validation::ValidationAnswer::Retry, cx);
+            assert!(view.edit.is_some());
+            assert!(!view.commit_cell(cx));
+            view.answer_validation(validation::ValidationAnswer::Accept, cx);
+            assert_eq!(view.book.edit_text(at(7, 1)), "福岡");
+            assert!(view.edit.is_none());
+            view.step_history(true, cx);
+            assert_eq!(view.book.edit_text(at(7, 1)), "");
+        });
+    }
+
+    #[gpui::test]
+    fn names_and_tab_commands_work_through_the_view(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            let selected = span(at(1, 1), at(2, 3));
+            view.selection = Selection::range_from(selected.start, selected.end);
+            view.naming = Some(TextEdit::new("SalesRange".into()));
+            view.finish_naming(true, cx);
+            assert_eq!(
+                view.book.resolve_reference("salesrange"),
+                Some((view.book.sheet_index(), selected))
+            );
+            view.selection = Selection::default();
+            view.naming = Some(TextEdit::new("SalesRange".into()));
+            view.finish_naming(true, cx);
+            assert_eq!(view.range(), selected);
+            // Hide and unhide travel through the same commands as the tab menu.
+            let hidden = view.book.sheet_index();
+            if view.book.sheet_tabs().len() == 1 {
+                view.book.add_sheet().unwrap();
+                view.sheet_names = view
+                    .book
+                    .sheet_names()
+                    .into_iter()
+                    .map(Into::into)
+                    .collect();
+            }
+            view.menu_command(MenuCommand::HideSheet(hidden), false, cx);
+            assert!(!view.book.sheet_tabs().contains(&hidden));
+            assert_ne!(view.book.sheet_index(), hidden);
+            view.menu_command(MenuCommand::UnhideSheet(hidden), false, cx);
+            assert!(view.book.sheet_tabs().contains(&hidden));
+        });
+    }
 
     fn fixture(name: &str) -> PathBuf {
         PathBuf::from(concat!(
