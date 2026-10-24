@@ -159,6 +159,35 @@ impl OfficeEditor {
         serde_json::to_string(&point).expect("hit position serializes")
     }
 
+    pub fn selection_geometry(
+        &mut self,
+        ap: usize,
+        au: usize,
+        fp: usize,
+        fu: usize,
+    ) -> Result<String, String> {
+        let a = self
+            .document
+            .paragraph_text(ap)
+            .ok_or("Missing anchor paragraph")?;
+        let f = self
+            .document
+            .paragraph_text(fp)
+            .ok_or("Missing focus paragraph")?;
+        let (caret, rects) = self
+            .document
+            .selection_geometry((ap, byte_at(&a, au)?), (fp, byte_at(&f, fu)?));
+        let caret = caret.map(|r| {
+            let (page, y) = self.document.page_and_offset(r.document_y);
+            json!({"page":page,"x":r.x,"y":y,"width":r.width,"height":r.height})
+        });
+        let highlights: Vec<_> = rects
+            .iter()
+            .map(|r| json!({"page":r.page,"x":r.x,"y":r.y,"width":r.width,"height":r.height}))
+            .collect();
+        Ok(json!({"caret":caret,"highlights":highlights}).to_string())
+    }
+
     pub fn select_word(&mut self, paragraph: usize, offset: usize) -> Result<(), String> {
         let text = self
             .document

@@ -29,19 +29,28 @@ export. Offline edits are visible in the page immediately and resume with the
 same replica when reconnecting; unacknowledged state lives in this tab's memory.
 
 This dedicated canvas shell uses the real Office Word editing engine; the
-full GPUI ribbon/workspace is not connected. Editing is confined to existing
+full GPUI ribbon/workspace is not connected. The page draws each peer’s
+name, distinct color, caret and selected text using the same Word layout.
+The participant chips show editing, composition or unfocused status; click
+a chip to scroll to that participant. Focus/selection updates are coalesced
+with a trailing update so the last drag/arrow position is retained.
+Compact CRDT boundaries resolve through tombstones, including after both
+neighbouring characters are deleted. Unknown future IDs wait for their edit.
+Measuring peer geometry preserves the local selection and IME. Disconnects
+remove overlays; resuming republishes the retained position.
+
+Editing is confined to existing
 paragraphs and table cells. Enter inserts a Word line break within a paragraph;
 paste supports line breaks and tabs. Paragraph creation/merging, table
-structure, formatting controls, collaborative undo, XLSX/PPTX and remote
-cursor graphics are outside this demo's scope. Cmd/Ctrl+A selects the current
-paragraph. Cross-paragraph text replacement is refused before mutation.
+structure, formatting controls, collaborative undo and XLSX/PPTX are outside
+this demo's scope. Cmd/Ctrl+A selects the current paragraph. Cross-paragraph text replacement is refused before mutation.
 
 The `renderer` WASM bridge exposes `OfficeEditor` and the bundled fonts. The
 launcher builds committed Office/engine sources in an isolated generated tree,
 then overlays only this demo, preserving unrelated work in the checkout.
 
 ```sh
-node --test demos/collaboration/editing.test.mjs
+node --test demos/collaboration/editing.test.mjs demos/collaboration/presence.test.mjs
 cargo +stable fmt --manifest-path demos/collaboration/renderer/Cargo.toml -- --check
 ```
 

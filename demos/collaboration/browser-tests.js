@@ -27,6 +27,13 @@ document.getElementById('run').onclick=async()=>{
     const [author,peer]=frames;
     await until(()=>frames.every(f=>synced(f)&&f.contentWindow.jadeDemo?.ready),'both canvas editors must become ready');
     assert(frames.every(f=>!f.contentDocument.querySelector('textarea')),'no textarea editor is allowed');
+    await until(()=>frames.every(f=>f.contentDocument.querySelector('.peer-caret')),'both participants must appear on the page');
+    focus(author);key(author,'Home');
+    input(author).dispatchEvent(new author.contentWindow.KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true,cancelable:true}));
+    input(author).dispatchEvent(new author.contentWindow.KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true,cancelable:true}));
+    const range=editor(author).selection;
+    await until(()=>peer.contentDocument.querySelector('.peer-selection')?.dataset.focus===JSON.stringify(range.focus),'the final selected range must reach the peer');
+    assert(peer.contentDocument.querySelector('.peer-name').textContent.includes('IME author'),'selection must be labelled with its participant');
     const checks=[];
     // DocumentStart positions both clients through the real Word navigator.
     for(const frame of frames){focus(frame);input(frame).dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown',{key:'Home',ctrlKey:true,bubbles:true,cancelable:true}));}
@@ -74,6 +81,10 @@ document.getElementById('run').onclick=async()=>{
     assert(author.contentDocument.activeElement===input(author),'shrinking the draft must retain IME focus');
     event(author,'compositionend',{data:''});
     assert(JSON.stringify(editor(author).paragraphs)===JSON.stringify(beforePages.paragraphs),'cancelled multi-page composition restores text');
-    output.dataset.status='passed';output.textContent=JSON.stringify({status:'passed',document:name,checks:['canvas-editor-without-textarea','composition-text-and-caret-survive-disconnect','peer-commit-during-composition','resume-after-queued-frames','cancel-selected-composition','ime-focus-survives-repagination',...checks]},null,2);
+    author.contentDocument.getElementById('connection').click();
+    await until(()=>!peer.contentDocument.querySelector('.peer-caret'),'disconnected participant must disappear');
+    author.contentDocument.getElementById('connection').click();
+    await until(()=>frames.every(synced)&&peer.contentDocument.querySelector('.peer-caret'),'resuming must republish the retained cursor without a new edit');
+    output.dataset.status='passed';output.textContent=JSON.stringify({status:'passed',document:name,checks:['canvas-editor-without-textarea','named-peer-caret-and-selection','peer-left-and-resume','composition-text-and-caret-survive-disconnect','peer-commit-during-composition','resume-after-queued-frames','cancel-selected-composition','ime-focus-survives-repagination',...checks]},null,2);
   }catch(error){output.dataset.status='failed';output.textContent=String(error.stack??error);}
 };
