@@ -17,6 +17,7 @@
 //! and time its measurement calls (`std::time::Instant` panics in wasm).
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -76,6 +77,41 @@ pub struct TinySkiaRenderHost {
     /// document can switch it after the renderer has taken the host, and read
     /// when a page is added so it matches the others.
     pub(crate) dark_paper: Rc<Cell<bool>>,
+    /// Each picture's bytes, decoded once from its data URI, by
+    /// [`data_uri_hash`]. Every repaint draws every picture on the page
+    /// again, and decoding the URI's base64 at each draw was most of a
+    /// keystroke's time in a page of pictures.
+    pictures: RefCell<DecodedPictures>,
+}
+
+/// Pictures decoded from their data URIs, dropped whole past
+/// [`DECODED_PICTURE_BYTES`].
+#[derive(Default)]
+struct DecodedPictures {
+    by_uri: HashMap<u64, Rc<[u8]>>,
+    bytes: usize,
+}
+
+/// The most encoded picture bytes [`DecodedPictures`] holds before it starts
+/// over: the painter keeps the decoded pixels, so this only saves the
+/// base64 pass.
+const DECODED_PICTURE_BYTES: usize = 64 << 20;
+
+impl DecodedPictures {
+    /// The bytes behind `data_uri`, whose [`data_uri_hash`] is `hash`.
+    fn get(&mut self, hash: u64, data_uri: &str) -> Option<Rc<[u8]>> {
+        if let Some(bytes) = self.by_uri.get(&hash) {
+            return Some(Rc::clone(bytes));
+        }
+        let bytes: Rc<[u8]> = decode_data_uri(data_uri)?.into();
+        if self.bytes + bytes.len() > DECODED_PICTURE_BYTES {
+            self.by_uri.clear();
+            self.bytes = 0;
+        }
+        self.bytes += bytes.len();
+        self.by_uri.insert(hash, Rc::clone(&bytes));
+        Some(bytes)
+    }
 }
 
 impl TinySkiaRenderHost {
@@ -126,6 +162,7 @@ impl TinySkiaRenderHost {
             page_height,
             scale,
             dark_paper: Rc::new(Cell::new(false)),
+            pictures: RefCell::default(),
         })
     }
 
@@ -272,7 +309,10 @@ impl CanvasRenderHost for TinySkiaRenderHost {
         height: f64,
         crop: Option<ImageCropMapping>,
     ) -> bool {
-        let Some(bytes) = decode_data_uri(data_uri) else {
+        // Keyed by a hash of the URI: the same picture on every page decodes
+        // once, rather than per draw.
+        let hash = data_uri_hash(data_uri);
+        let Some(bytes) = self.pictures.borrow_mut().get(hash, data_uri) else {
             self.render_error
                 .replace(Some("invalid image data URI".to_string()));
             return true;
@@ -302,9 +342,7 @@ impl CanvasRenderHost for TinySkiaRenderHost {
                 },
             ),
         };
-        // Keyed by a hash of the URI: the same picture on every page decodes
-        // once per surface rather than per draw.
-        let key = format!("docx-image-{:016x}", fnv1a(data_uri.as_bytes()));
+        let key = format!("docx-image-{hash:016x}");
         let painter = self.painter();
         if !painter.draw_encoded_image_rect(&key, &bytes, source, destination) {
             // A picture in a format this build cannot draw costs that
@@ -434,11 +472,22 @@ impl CanvasRenderHost for TinySkiaRenderHost {
     }
 }
 
-/// FNV-1a, for a short stable key from a long data URI.
-fn fnv1a(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
-    })
+/// A short stable key from a long data URI: rustc's FxHash, a word at a
+/// time, mixed with the length. A byte at a time (FNV-1a) took as long as
+/// decoding the URI, and both ran at every draw.
+fn data_uri_hash(data_uri: &str) -> u64 {
+    let add =
+        |hash: u64, word: u64| (hash.rotate_left(5) ^ word).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    let (words, rest) = data_uri.as_bytes().as_chunks::<8>();
+    let mut hash = words.iter().fold(data_uri.len() as u64, |hash, word| {
+        add(hash, u64::from_le_bytes(*word))
+    });
+    if !rest.is_empty() {
+        let mut word = [0; 8];
+        word[..rest.len()].copy_from_slice(rest);
+        hash = add(hash, u64::from_le_bytes(word));
+    }
+    hash
 }
 
 /// The bytes behind a base64 `data:` URI; `None` for anything else.
