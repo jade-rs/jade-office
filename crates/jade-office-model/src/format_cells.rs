@@ -396,6 +396,12 @@ pub struct FormatCellsDialog {
     pub horizontal: HorizontalAlignment,
     pub vertical: VerticalAlignment,
     pub wrap: bool,
+    /// Shrink to fit; Excel greys it out while Wrap text is ticked.
+    pub shrink: bool,
+    /// Indent level, 0–15 as the dialog's spinner offers.
+    pub indent: u32,
+    /// Degrees, −90 to 90, or [`VERTICAL_TEXT`] for stacked text.
+    pub rotation: i16,
     pub font_name: Option<String>,
     pub font_size: Option<f32>,
     pub bold: bool,
@@ -411,6 +417,30 @@ pub struct FormatCellsDialog {
     pub border_top: Option<BorderLine>,
     pub border_bottom: Option<BorderLine>,
     original: FormatChange,
+}
+
+/// The dialog's rotation for vertical (stacked) text.
+pub const VERTICAL_TEXT: i16 = 255;
+/// The deepest indent the dialog's spinner offers.
+pub const MAX_INDENT: u32 = 15;
+
+/// SpreadsheetML's rotation as the dialog's degrees: 91–180 are below the
+/// horizon, so they read as −1 to −90.
+pub fn rotation_degrees(rotation: u16) -> i16 {
+    match rotation {
+        255 => VERTICAL_TEXT,
+        91..=180 => 90 - rotation as i16,
+        rotation => rotation.min(90) as i16,
+    }
+}
+
+/// The dialog's degrees as SpreadsheetML's rotation.
+pub fn text_rotation(degrees: i16) -> u16 {
+    match degrees {
+        VERTICAL_TEXT => 255,
+        degrees if degrees < 0 => 90 + degrees.max(-90).unsigned_abs(),
+        degrees => degrees.min(90) as u16,
+    }
 }
 
 /// A border edge as the dialog holds it: `None` for no line.
@@ -429,6 +459,9 @@ impl FormatCellsDialog {
             horizontal: current.horizontal.unwrap_or_default(),
             vertical: current.vertical.unwrap_or_default(),
             wrap: current.wrap_text.unwrap_or(false),
+            shrink: current.shrink_to_fit.unwrap_or(false),
+            indent: current.indent.unwrap_or(0),
+            rotation: rotation_degrees(current.text_rotation.unwrap_or(0)),
             font_name: current.font_name.clone(),
             font_size: current.font_size,
             bold: current.bold.unwrap_or(false),
@@ -471,6 +504,24 @@ impl FormatCellsDialog {
             change.vertical = Some(self.vertical);
         }
         change.wrap_text = differs(self.wrap, original.wrap_text);
+        // Wrapped text cannot also shrink: Excel drops the tick.
+        let shrink = self.shrink && !self.wrap;
+        change.shrink_to_fit = differs(shrink, original.shrink_to_fit);
+        // Only left, right and distributed text keep an indent.
+        let indent = match self.horizontal {
+            HorizontalAlignment::Left
+            | HorizontalAlignment::Right
+            | HorizontalAlignment::Distributed
+            | HorizontalAlignment::General => self.indent.min(MAX_INDENT),
+            _ => 0,
+        };
+        if indent != original.indent.unwrap_or(0) {
+            change.indent = Some(indent);
+        }
+        let rotation = text_rotation(self.rotation);
+        if rotation != original.text_rotation.unwrap_or(0) {
+            change.text_rotation = Some(rotation);
+        }
         change.bold = differs(self.bold, original.bold);
         change.italic = differs(self.italic, original.italic);
         change.underline = differs(self.underline, original.underline);

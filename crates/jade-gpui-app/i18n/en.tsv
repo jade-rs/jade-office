@@ -252,6 +252,8 @@ sheet.menu.edit_note	Edit Note
 sheet.menu.delete_note	Delete Note
 sheet.menu.hide	Hide
 sheet.menu.unhide	Unhide
+sheet.menu.freeze_panes	Freeze Panes
+sheet.menu.unfreeze_panes	Unfreeze Panes
 sheet.menu.move_left	Move Left
 sheet.menu.move_right	Move Right
 sheet.validation_refused	This value doesn't match the data validation restrictions defined for this cell.
@@ -647,6 +649,14 @@ format.align.right	Right
 format.align.top	Top
 format.align.middle	Center
 format.align.bottom	Bottom
+format.shrink	Shrink to fit
+format.indent	Indent
+format.orientation	Orientation
+format.orientation.vertical	Vertical text
+format.align.fill	Fill
+format.align.justify	Justify
+format.align.center_across	Center Across Selection
+format.align.distributed	Distributed
 format.font	Font
 format.size	Size
 format.style	Style
