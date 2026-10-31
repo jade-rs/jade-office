@@ -3694,3 +3694,9 @@ sheet.menu.tab_color	シート見出しの色
 sheet.filter.top	トップテン
 sheet.filter.bottom	ボトムテン
 sheet.filter.reapply	再適用
+sheet.paste_special.operation	演算
+sheet.paste_special.op_none	しない
+sheet.paste_special.op_add	加算
+sheet.paste_special.op_subtract	減算
+sheet.paste_special.op_multiply	乗算
+sheet.paste_special.op_divide	除算

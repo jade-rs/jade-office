@@ -3694,3 +3694,9 @@ sheet.menu.tab_color	Tab Color
 sheet.filter.top	Top 10
 sheet.filter.bottom	Bottom 10
 sheet.filter.reapply	Reapply
+sheet.paste_special.operation	Operation
+sheet.paste_special.op_none	None
+sheet.paste_special.op_add	Add
+sheet.paste_special.op_subtract	Subtract
+sheet.paste_special.op_multiply	Multiply
+sheet.paste_special.op_divide	Divide

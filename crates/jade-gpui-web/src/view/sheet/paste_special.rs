@@ -1,10 +1,10 @@
 //! Paste Special (⌃⌘V or Ctrl+Alt+V, or the right-click menu): a dialog
-//! choosing All, Formulas, Values or Formats, with Skip blanks and
-//! Transpose, over `jade-office-model`'s `paste_special` — the native
-//! app's dialog. The browser hands over clipboard text only in a paste
-//! event, so what pastes here is this workbook's own copy.
+//! choosing All, Formulas, Values or Formats, an Operation, and Skip
+//! blanks and Transpose, over `jade-office-model`'s `paste_special` — the
+//! native app's dialog. The browser hands over clipboard text only in a
+//! paste event, so what pastes here is this workbook's own copy.
 
-use jade_web::paste_special::{PasteSpecial, PasteWhat};
+use jade_web::paste_special::{PasteOperation, PasteSpecial, PasteWhat};
 
 use super::conditional::centred;
 use super::*;
@@ -108,6 +108,36 @@ impl DocView {
                     cx.notify();
                 }))
         };
+        let operation = |operation: PasteOperation| {
+            let chosen = special.operation == operation;
+            div()
+                .id(operation.label())
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .py_0p5()
+                .rounded_sm()
+                .cursor_pointer()
+                .hover(|row| row.bg(palette::hovered()))
+                .child(
+                    div()
+                        .size(px(10.0))
+                        .rounded_full()
+                        .border_1()
+                        .border_color(palette::dim())
+                        .when(chosen, |dot| dot.bg(palette::accent())),
+                )
+                .child(i18n::text(operation.label()))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, _window, cx| {
+                    if let Some(special) = view.sheet_mut().and_then(|sheet| sheet.pasting.as_mut())
+                    {
+                        special.operation = operation;
+                    }
+                    cx.notify();
+                }))
+        };
         let tick =
             |id: &'static str, label: &'static str, on: bool, flip: fn(&mut PasteSpecial)| {
                 div()
@@ -154,6 +184,17 @@ impl DocView {
                         .flex()
                         .flex_col()
                         .children(PasteWhat::ALL.into_iter().map(choice)),
+                )
+                .child(
+                    div()
+                        .text_color(palette::dim())
+                        .child(i18n::text("sheet.paste_special.operation")),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .children(PasteOperation::ALL.into_iter().map(operation)),
                 )
                 .child(
                     div()
