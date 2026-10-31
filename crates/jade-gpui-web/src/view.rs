@@ -1206,6 +1206,7 @@ impl DocView {
                     || sheet.pivot_dialog.is_some()
                     || sheet.subtotal_dialog.is_some()
                     || sheet.text_columns_dialog.is_some()
+                    || sheet.sort_dialog.is_some()
                 {
                     return;
                 }
