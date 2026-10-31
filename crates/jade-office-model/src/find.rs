@@ -36,6 +36,8 @@ pub struct FindOptions {
     /// Look in: Values — what cells show, not their formulas. Find only;
     /// Replace always looks in formulas.
     pub values: bool,
+    /// Look in: Notes — the text of the cells' notes. Find only.
+    pub notes: bool,
     /// The selection, when it is more than one cell on this sheet: Find
     /// and Replace look nowhere else.
     pub within: Option<CellRange>,
@@ -103,6 +105,7 @@ impl FindBar {
         FindOptions {
             formulas: self.replacing,
             values: self.options.values && !self.replacing,
+            notes: self.options.notes && !self.replacing,
             ..self.options
         }
     }
@@ -198,6 +201,34 @@ impl<B: Backend> Workbook<B> {
         let here = self.sheet_index();
         let engine = self.engine();
         let sheets = &engine.workbook().sheets;
+        let inside = |sheet: usize, cell: CellRef| match options.within {
+            Some(range) => {
+                sheet == here
+                    && (range.start.row..=range.end.row).contains(&cell.row)
+                    && (range.start.column..=range.end.column).contains(&cell.column)
+            }
+            None => true,
+        };
+        if options.notes && !options.formulas {
+            let mut hits: Vec<(usize, CellRef)> = sheets
+                .iter()
+                .enumerate()
+                .filter(|(index, sheet)| {
+                    (options.workbook || *index == here)
+                        && sheet.visibility == SheetVisibility::Visible
+                })
+                .flat_map(|(index, sheet)| {
+                    sheet
+                        .comments
+                        .iter()
+                        .filter(|note| replaced(&note.text, needle, needle, options).is_some())
+                        .map(move |note| (index, note.reference))
+                })
+                .filter(|(sheet, cell)| inside(*sheet, *cell))
+                .collect();
+            hits.sort_by_key(|(sheet, cell)| (*sheet, cell.row, cell.column));
+            return hits;
+        }
         let mut hits: Vec<(usize, CellRef)> = engine
             .find(needle, options.match_case)
             .into_iter()
