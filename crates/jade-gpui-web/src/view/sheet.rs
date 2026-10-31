@@ -589,6 +589,8 @@ enum MenuCommand {
     Subtotal,
     RemoveDuplicates,
     TextToColumns,
+    ManualCalculation(bool),
+    CalculateNow,
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -2023,6 +2025,11 @@ impl DocView {
             "enter" => self.advance_cell(false, shift, cx),
             "tab" => self.advance_cell(true, shift, cx),
             "f2" => self.begin_cell_edit(None, true, cx),
+            // Calculate Now, as in Excel.
+            "f9" => {
+                let result = sheet.book.calculate_now();
+                self.edited(result, cx);
+            }
             "delete" | "backspace" => {
                 let Some(sheet) = self.sheet_mut() else {
                     return false;
@@ -2527,6 +2534,8 @@ impl DocView {
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::RemoveDuplicates => return self.remove_sheet_duplicates(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
+            MenuCommand::ManualCalculation(manual) => sheet.book.set_manual_calculation(manual),
+            MenuCommand::CalculateNow => sheet.book.calculate_now(),
             MenuCommand::AutoOutline => sheet.book.auto_outline(),
             MenuCommand::ClearOutline => {
                 sheet.book.clear_outline(if selection.is_whole_columns() {
@@ -3655,6 +3664,18 @@ impl DocView {
                     let selected = sheet.selection.range();
                     if selected.start.column == selected.end.column {
                         items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
+                    }
+                    if sheet.book.manual_calculation() {
+                        items.push((MenuCommand::CalculateNow, "sheet.menu.calculate_now"));
+                        items.push((
+                            MenuCommand::ManualCalculation(false),
+                            "sheet.menu.automatic_calculation",
+                        ));
+                    } else {
+                        items.push((
+                            MenuCommand::ManualCalculation(true),
+                            "sheet.menu.manual_calculation",
+                        ));
                     }
                     items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));

@@ -2787,6 +2787,43 @@ impl<B: Backend> Workbook<B> {
         Some(self.outline(axis, index, index, change))
     }
 
+    /// Whether formulas wait for Calculate Now (Formulas ▸ Calculation
+    /// Options ▸ Manual) rather than recalculating as cells change.
+    pub fn manual_calculation(&self) -> bool {
+        self.book.workbook().calculation_mode == jade_xlsx_reader::CalculationMode::Manual
+    }
+
+    /// Formulas ▸ Calculation Options: manual, or automatic again — which
+    /// recalculates at once, as Excel does. Saved with the workbook; not an
+    /// undo step, as in Excel.
+    pub fn set_manual_calculation(&mut self, manual: bool) -> Result<bool, String> {
+        if self.manual_calculation() == manual {
+            return Ok(false);
+        }
+        let mode = if manual {
+            jade_xlsx_reader::CalculationMode::Manual
+        } else {
+            jade_xlsx_reader::CalculationMode::Auto
+        };
+        let on_save = self.book.workbook().calculate_on_save;
+        self.book
+            .set_calculation_properties(mode, on_save)
+            .map_err(|error| error.to_string())?;
+        self.after_write()?;
+        Ok(true)
+    }
+
+    /// Formulas ▸ Calculate Now (F9): every formula recalculated, in manual
+    /// calculation as in automatic. Not an undo step, as in Excel.
+    pub fn calculate_now(&mut self) -> Result<bool, String> {
+        let summary = self.book.recalculate().map_err(|error| error.to_string())?;
+        if summary.refreshed == 0 {
+            return Ok(false);
+        }
+        self.after_write()?;
+        Ok(true)
+    }
+
     /// Data ▸ Group ▸ Auto Outline: rows and columns grouped under the
     /// formulas summing them, replacing the sheet's outline. One undo step.
     pub fn auto_outline(&mut self) -> Result<bool, String> {
