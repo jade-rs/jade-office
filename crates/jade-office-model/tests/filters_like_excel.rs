@@ -138,3 +138,50 @@ fn custom_filters_compare_with_the_value_typed() {
     assert_eq!(dialog.value.text, "c");
     assert_eq!(dialog.key("enter", false), CustomFilterKey::Take);
 }
+
+/// Two conditions: And keeps the rows that pass both, Or those that pass
+/// either; Tab types into the second value.
+#[test]
+fn two_conditions_join_by_and_or_or() {
+    use jade_office_model::custom_filter::{CustomFilterDialog, FilterTest};
+    let mut book = book();
+    let header = CellRef::new(20, 99);
+    book.set_cell(header, "Qty").unwrap();
+    for (offset, qty) in ["5", "15", "25", "35"].iter().enumerate() {
+        book.set_cell(CellRef::new(20, 100 + offset as u32), qty)
+            .unwrap();
+    }
+    let range = span(header, CellRef::new(20, 103));
+    book.toggle_filter(range).unwrap();
+    let button = FilterButton {
+        target: FilterButtonTarget::Worksheet,
+        column: 0,
+        reference: header,
+        range,
+        active: false,
+        rect: jade_xlsx_layout::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        },
+    };
+    let mut dialog = CustomFilterDialog::new(button);
+    dialog.test = FilterTest::Greater;
+    dialog.value.insert("10");
+    dialog.key("tab", false);
+    dialog.second_test = FilterTest::Less;
+    dialog.field_mut().insert("30");
+    assert_eq!(dialog.second.text, "30");
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(showing(&book, header, 103), ["15", "25"]);
+    dialog.and = false;
+    dialog.test = FilterTest::Less;
+    dialog.second_test = FilterTest::Greater;
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(showing(&book, header, 103), ["5", "35"]);
+    // A second condition left empty is left out.
+    dialog.second.text.clear();
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(showing(&book, header, 103), ["5"]);
+}
