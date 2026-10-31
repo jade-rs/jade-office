@@ -277,7 +277,14 @@ struct SheetMenu {
     at: (f32, f32),
     /// Opened on a sheet tab: its index.
     tab: Option<usize>,
+    /// The header of the grid's menu open in place, if any.
+    open: Option<MenuGroup>,
 }
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../jade-gpui-app/src/workbook/menu_groups.rs"
+));
 
 /// The dropdown a filter button opens: sorts, a clear, and the column's
 /// values to tick.
@@ -685,6 +692,8 @@ enum MenuCommand {
     UnhideSheet(usize),
     /// Tab Color: an `RRGGBB` for the sheet's tab, or none.
     TabColor(usize, Option<&'static str>),
+    /// A header of the grid's menu opened or closed in place.
+    OpenGroup(MenuGroup),
 }
 
 impl Sheet {
@@ -2563,6 +2572,14 @@ impl DocView {
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
+        // A header opens (or closes) in place; the menu stays.
+        if let MenuCommand::OpenGroup(group) = command {
+            if let Some(menu) = sheet.menu.as_mut() {
+                menu.open = (menu.open != Some(group)).then_some(group);
+            }
+            cx.notify();
+            return;
+        }
         sheet.menu = None;
         if sheet.book.structure_protected()
             && matches!(
@@ -2761,6 +2778,7 @@ impl DocView {
                 .book
                 .set_sheet_visibility(index, SheetVisibility::Visible),
             MenuCommand::TabColor(index, color) => sheet.book.set_tab_color(index, color),
+            MenuCommand::OpenGroup(_) => return,
         };
         // Rows or columns gone from under a copy let go of it, as in Excel.
         if matches!(
@@ -3070,6 +3088,7 @@ impl DocView {
         sheet.menu = Some(SheetMenu {
             at: ((x * f64::from(zoom)) as f32, (y * f64::from(zoom)) as f32),
             tab: None,
+            open: None,
         });
         cx.notify();
     }
@@ -3687,6 +3706,7 @@ impl DocView {
                                         f32::from(event.position.y - origin.y) - 150.0,
                                     ),
                                     tab: Some(index),
+                                    open: None,
                                 });
                             }
                             cx.notify();
@@ -3903,9 +3923,10 @@ impl DocView {
                     items
                 }
             };
+            let rows = grouped_menu(items, menu.open);
             let max_height = (sheet.viewport.1 - 16.).max(80.);
             let swatch_rows = if menu.tab.is_some() { 3. } else { 0. };
-            let height = ((items.len() as f32 + swatch_rows) * 26. + 8.).min(max_height);
+            let height = ((rows.len() as f32 + swatch_rows) * 26. + 8.).min(max_height);
             let top = menu.at.1.clamp(0., (sheet.viewport.1 - height).max(0.));
             div()
                 .id("sheet-context-menu")
@@ -3925,31 +3946,35 @@ impl DocView {
                 .shadow_lg()
                 .text_xs()
                 .text_color(palette::text())
-                .children(
-                    items
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, (command, label))| {
-                            let label: SharedString = match command {
-                                MenuCommand::UnhideSheet(index) => {
-                                    format!("{}: {}", i18n::text(label), sheet.names[index]).into()
-                                }
-                                _ => i18n::text(label).into(),
-                            };
-                            div()
-                                .id(("sheet-menu", index))
-                                .px_3()
-                                .py_1()
-                                .cursor_pointer()
-                                .hover(|item| item.bg(palette::hovered()))
-                                .child(label)
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .on_click(cx.listener(move |view, _event, window, cx| {
-                                    window.focus(&view.focus, cx);
-                                    view.sheet_menu_command(command, false, cx);
-                                }))
-                        }),
-                )
+                .children(rows.into_iter().enumerate().map(
+                    |(index, (command, label, indented))| {
+                        let label: SharedString = match command {
+                            MenuCommand::OpenGroup(group) => format!(
+                                "{} {}",
+                                i18n::text(label),
+                                if menu.open == Some(group) { "−" } else { "+" }
+                            )
+                            .into(),
+                            MenuCommand::UnhideSheet(index) => {
+                                format!("{}: {}", i18n::text(label), sheet.names[index]).into()
+                            }
+                            _ => i18n::text(label).into(),
+                        };
+                        div()
+                            .id(("sheet-menu", index))
+                            .px_3()
+                            .when(indented, |item| item.pl_6())
+                            .py_1()
+                            .cursor_pointer()
+                            .hover(|item| item.bg(palette::hovered()))
+                            .child(label)
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |view, _event, window, cx| {
+                                window.focus(&view.focus, cx);
+                                view.sheet_menu_command(command, false, cx);
+                            }))
+                    },
+                ))
                 .when_some(menu.tab, |list, tab| {
                     // Tab Color: Excel's standard colours, and No Color.
                     let swatch = |id: usize, color: Option<&'static str>| {
