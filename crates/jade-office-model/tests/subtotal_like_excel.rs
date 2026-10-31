@@ -47,23 +47,41 @@ fn each_run_gets_a_total_and_the_list_a_grand_total_in_an_outline() {
         columns: vec![8],
         label: "{} 集計".into(),
         grand_label: "総計".into(),
+        replace: true,
     };
     assert!(book
         .subtotal(span(CellRef::new(7, 29), CellRef::new(8, 34)), &subtotals)
         .unwrap());
 
-    let shown = |row: u32| {
+    let shown = |book: &Workbook<TinySkiaBackend>, row: u32| {
         (
             book.display_text(CellRef::new(7, row)),
             book.display_text(CellRef::new(8, row)),
         )
     };
-    assert_eq!(shown(32), ("東京 集計".into(), "30".into()));
-    assert_eq!(shown(36), ("大阪 集計".into(), "6".into()));
+    assert_eq!(shown(&book, 32), ("東京 集計".into(), "30".into()));
+    assert_eq!(shown(&book, 36), ("大阪 集計".into(), "6".into()));
     // The grand total reads past the subtotals.
-    assert_eq!(shown(37), ("総計".into(), "36".into()));
+    assert_eq!(shown(&book, 37), ("総計".into(), "36".into()));
     assert_eq!(book.edit_text(CellRef::new(8, 32)), "=SUBTOTAL(9,I31:I32)");
     assert!(book.has_outline(Axis::Rows));
+
+    // Again with averages: the sums go, the averages take their rows.
+    let averages = Subtotals {
+        function: SubtotalFunction::Average,
+        label: "{} 平均".into(),
+        grand_label: "全体の平均".into(),
+        ..subtotals.clone()
+    };
+    assert!(book
+        .subtotal(span(CellRef::new(7, 29), CellRef::new(8, 37)), &averages)
+        .unwrap());
+    assert_eq!(shown(&book, 32), ("東京 平均".into(), "15".into()));
+    assert_eq!(shown(&book, 36), ("大阪 平均".into(), "2".into()));
+    assert_eq!(shown(&book, 37), ("全体の平均".into(), "7.2".into()));
+    assert_eq!(book.display_text(CellRef::new(7, 38)), "");
+    assert!(book.undo().unwrap());
+    assert_eq!(shown(&book, 37), ("総計".into(), "36".into()));
 
     // One undo takes all of it back.
     assert!(book.undo().unwrap());
