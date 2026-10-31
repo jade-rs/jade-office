@@ -562,6 +562,8 @@ enum MenuCommand {
     Paste,
     PasteSpecial,
     Clear,
+    ClearFormats,
+    ClearAll,
     InsertRows,
     DeleteRows,
     InsertColumns,
@@ -2482,6 +2484,8 @@ impl DocView {
                 ProtectedEdit::Clear { range },
             )
             .map(|outcome| outcome.changed),
+            MenuCommand::ClearFormats => sheet.book.clear_formats(range),
+            MenuCommand::ClearAll => sheet.book.clear_all(range),
             MenuCommand::InsertRows => sheet.book.insert_rows(range.start.row, rows),
             MenuCommand::DeleteRows => sheet.book.delete_rows(range.start.row, rows),
             MenuCommand::InsertColumns => sheet.book.insert_columns(range.start.column, columns),
@@ -3581,6 +3585,8 @@ impl DocView {
                     }
                     items.extend([
                         (MenuCommand::Clear, "sheet.menu.clear"),
+                        (MenuCommand::ClearFormats, "sheet.menu.clear_formats"),
+                        (MenuCommand::ClearAll, "sheet.menu.clear_all"),
                         (MenuCommand::FillDown, "sheet.menu.fill_down"),
                         (MenuCommand::FillRight, "sheet.menu.fill_right"),
                         (MenuCommand::SortAscending, "sheet.menu.sort_ascending"),

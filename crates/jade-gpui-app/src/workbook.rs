@@ -311,6 +311,8 @@ enum MenuCommand {
     Paste,
     PasteSpecial,
     Clear,
+    ClearFormats,
+    ClearAll,
     InsertRows,
     DeleteRows,
     InsertColumns,
@@ -1225,6 +1227,8 @@ impl WorkbookView {
                 ProtectedEdit::Clear { range },
             )
             .map(|outcome| outcome.changed),
+            MenuCommand::ClearFormats => self.book.clear_formats(range),
+            MenuCommand::ClearAll => self.book.clear_all(range),
             MenuCommand::InsertRows => self.book.insert_rows(range.start.row, rows),
             MenuCommand::DeleteRows => self.book.delete_rows(range.start.row, rows),
             MenuCommand::InsertColumns => self.book.insert_columns(range.start.column, columns),
@@ -2916,6 +2920,8 @@ impl WorkbookView {
                 }
                 items.extend([
                     (MenuCommand::Clear, "sheet.menu.clear"),
+                    (MenuCommand::ClearFormats, "sheet.menu.clear_formats"),
+                    (MenuCommand::ClearAll, "sheet.menu.clear_all"),
                     (MenuCommand::FillDown, "sheet.menu.fill_down"),
                     (MenuCommand::FillRight, "sheet.menu.fill_right"),
                     (MenuCommand::SortAscending, "sheet.menu.sort_ascending"),
@@ -5602,6 +5608,28 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.book.display_text(at(7, 30)), "Osaka");
             assert_eq!(view.book.display_text(at(8, 30)), "800  West");
+        });
+    }
+
+    /// Clear Formats from the menu keeps the values; Clear All empties the
+    /// cells too.
+    #[gpui::test]
+    fn clear_formats_and_clear_all_from_the_menu(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(10, 40), "0.5").unwrap();
+            let change = CellFormat {
+                number_format: Some("0.00%".into()),
+                ..CellFormat::default()
+            };
+            view.book
+                .format(span(at(10, 40), at(10, 40)), &change)
+                .unwrap();
+            view.selection = Selection::cell(at(10, 40));
+            view.menu_command(MenuCommand::ClearFormats, false, cx);
+            assert_eq!(view.book.display_text(at(10, 40)), "0.5");
+            view.menu_command(MenuCommand::ClearAll, false, cx);
+            assert_eq!(view.book.display_text(at(10, 40)), "");
         });
     }
 
