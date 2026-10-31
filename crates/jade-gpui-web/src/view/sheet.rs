@@ -32,6 +32,7 @@ use super::*;
 
 mod charts;
 mod conditional;
+mod duplicates;
 mod find_bar;
 mod links;
 mod paste_special;
@@ -110,6 +111,7 @@ pub(super) struct Sheet {
     pub(super) subtotal_dialog: Option<jade_web::subtotal::SubtotalDialog>,
     pub(super) text_columns_dialog: Option<jade_web::text_columns::TextColumnsDialog>,
     pub(super) sort_dialog: Option<jade_web::sort_dialog::SortDialog>,
+    pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
     pub(super) pivot_dialog: Option<PivotPanel>,
@@ -633,6 +635,7 @@ impl Sheet {
             subtotal_dialog: None,
             text_columns_dialog: None,
             sort_dialog: None,
+            duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -1533,6 +1536,7 @@ impl DocView {
             || sheet.subtotal_dialog.is_some()
             || sheet.text_columns_dialog.is_some()
             || sheet.sort_dialog.is_some()
+            || sheet.duplicates_dialog.is_some()
         {
             return false;
         }
@@ -1612,6 +1616,7 @@ impl DocView {
                 || s.subtotal_dialog.is_some()
                 || s.text_columns_dialog.is_some()
                 || s.sort_dialog.is_some()
+                || s.duplicates_dialog.is_some()
         }) {
             return;
         }
@@ -1635,27 +1640,20 @@ impl DocView {
         cx.notify();
     }
 
-    /// After a write that may have changed the sheets: their names again,
-    /// and the selection kept on the sheet.
-    /// Data ▸ Remove Duplicates over the selection — or, with one cell
-    /// selected, the list round it — every column compared, the first row a
-    /// header when it reads as one, and Excel's count in the status bar.
-    fn remove_sheet_duplicates(&mut self, cx: &mut Context<Self>) {
+    /// Data ▸ Remove Duplicates over `range`, comparing `columns`, its
+    /// first row a header when `headers`, and Excel's count in the status
+    /// bar.
+    fn remove_sheet_duplicates(
+        &mut self,
+        range: CellRange,
+        columns: &[u32],
+        headers: bool,
+        cx: &mut Context<Self>,
+    ) {
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
-        let selected = sheet.selection.range();
-        let range = if sheet.selection.is_cell() {
-            sheet
-                .book
-                .current_region(sheet.selection.active)
-                .unwrap_or(selected)
-        } else {
-            selected
-        };
-        let columns: Vec<u32> = (range.start.column..=range.end.column).collect();
-        let headers = sheet.book.looks_like_headers(range);
-        match sheet.book.remove_duplicates(range, &columns, headers) {
+        match sheet.book.remove_duplicates(range, columns, headers) {
             Ok(outcome) => {
                 self.edited(Ok(outcome.removed > 0), cx);
                 self.status = if outcome.removed == 0 {
@@ -1693,6 +1691,8 @@ impl DocView {
         cx.notify();
     }
 
+    /// After a write that may have changed the sheets: their names again,
+    /// and the selection kept on the sheet.
     pub(super) fn sheets_changed(&mut self, result: Result<bool, String>, cx: &mut Context<Self>) {
         if let Some(sheet) = self.sheet_mut() {
             sheet.names = sheet
@@ -1815,6 +1815,9 @@ impl DocView {
             return true;
         }
         if self.sort_key(key, cx) {
+            return true;
+        }
+        if self.duplicates_key(key, cx) {
             return true;
         }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
@@ -2349,6 +2352,7 @@ impl DocView {
                 || s.subtotal_dialog.is_some()
                 || s.text_columns_dialog.is_some()
                 || s.sort_dialog.is_some()
+                || s.duplicates_dialog.is_some()
         }) {
             return;
         }
@@ -2542,7 +2546,7 @@ impl DocView {
             MenuCommand::FreezePanes => sheet.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
-            MenuCommand::RemoveDuplicates => return self.remove_sheet_duplicates(cx),
+            MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::ManualCalculation(manual) => sheet.book.set_manual_calculation(manual),
@@ -2617,6 +2621,7 @@ impl DocView {
                 || s.subtotal_dialog.is_some()
                 || s.text_columns_dialog.is_some()
                 || s.sort_dialog.is_some()
+                || s.duplicates_dialog.is_some()
         }) {
             return;
         }
@@ -3352,6 +3357,7 @@ impl DocView {
         let subtotal_panel = self.subtotal_panel(cx);
         let text_columns_panel = self.text_columns_panel(cx);
         let sort_panel = self.sort_panel(cx);
+        let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -4197,6 +4203,7 @@ impl DocView {
                     .children(subtotal_panel)
                     .children(text_columns_panel)
                     .children(sort_panel)
+                    .children(duplicates_panel)
                     .children(protection_panel)
                     .children(validation_panel)
                     .children(validation_alert)

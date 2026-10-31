@@ -3677,3 +3677,8 @@ sort.add_level	Add Level
 sort.remove_level	Delete Level
 sort.header	My data has headers
 sort.case	Case sensitive
+duplicates.dialog	Remove Duplicates
+duplicates.columns	To delete duplicate values, select one or more columns that contain duplicates.
+duplicates.column	Column
+duplicates.select_all	Select All
+duplicates.unselect_all	Unselect All
