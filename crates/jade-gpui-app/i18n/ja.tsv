@@ -263,6 +263,9 @@ sheet.menu.clear_outline	アウトラインのクリア
 sheet.menu.subtotal	小計
 sheet.menu.remove_duplicates	重複の削除
 sheet.menu.text_to_columns	区切り位置
+sheet.menu.calculate_now	再計算実行 (F9)
+sheet.menu.manual_calculation	計算方法: 手動
+sheet.menu.automatic_calculation	計算方法: 自動
 text_columns.dialog	区切り位置指定ウィザード
 text_columns.delimiters	区切り文字
 text_columns.tab	タブ
