@@ -185,3 +185,52 @@ fn two_conditions_join_by_and_or_or() {
     assert!(dialog.apply(&mut book).unwrap());
     assert_eq!(showing(&book, header, 103), ["5"]);
 }
+
+/// Top 10's dialog: Bottom 2 items, or the top half by percent.
+#[test]
+fn the_top_ten_dialog_picks_how_many_and_items_or_percent() {
+    use jade_office_model::top_ten::{TopTenDialog, TopTenKey};
+    let mut book = book();
+    let header = CellRef::new(20, 99);
+    book.set_cell(header, "Score").unwrap();
+    for (offset, score) in ["40", "10", "70", "30"].iter().enumerate() {
+        book.set_cell(CellRef::new(20, 100 + offset as u32), score)
+            .unwrap();
+    }
+    let range = span(header, CellRef::new(20, 103));
+    book.toggle_filter(range).unwrap();
+    let button = FilterButton {
+        target: FilterButtonTarget::Worksheet,
+        column: 0,
+        reference: header,
+        range,
+        active: false,
+        rect: jade_xlsx_layout::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        },
+    };
+    let mut dialog = TopTenDialog::new(button);
+    assert_eq!(
+        (dialog.top, dialog.count, dialog.percent),
+        (true, 10, false)
+    );
+    dialog.top = false;
+    dialog.step(-8);
+    assert_eq!(dialog.key("enter"), TopTenKey::Take);
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(showing(&book, header, 103), ["10", "30"]);
+    dialog.top = true;
+    dialog.set_percent(true);
+    dialog.step(48);
+    assert_eq!(dialog.count, 50);
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(showing(&book, header, 103), ["40", "70"]);
+    // Held to Excel's bounds.
+    dialog.step(1000);
+    assert_eq!(dialog.count, 100);
+    dialog.step(-1000);
+    assert_eq!(dialog.count, 1);
+}
