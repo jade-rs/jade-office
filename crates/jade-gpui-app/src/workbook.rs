@@ -5369,6 +5369,30 @@ mod tests {
         view.read_with(cx, |view, _| assert!(view.finding.is_none()));
     }
 
+    /// Find All lists every match under the bar with the count in the
+    /// status bar; a row clicked selects its cell.
+    #[gpui::test]
+    fn find_all_lists_the_matches_and_goes_to_one(cx: &mut gpui::TestAppContext) {
+        use find_bar::FindCommand;
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("cmd-f");
+        cx.simulate_input("20");
+        view.update(cx, |view, cx| {
+            view.find_command(FindCommand::FindAll, cx);
+            let found = view
+                .finding
+                .as_ref()
+                .and_then(|bar| bar.found.clone())
+                .expect("Find All lists the matches");
+            assert!(!found.is_empty());
+            assert!(view.status.contains(&found.len().to_string()));
+            let last = found.last().unwrap().cell;
+            view.find_command(FindCommand::Go(found.len() - 1), cx);
+            assert_eq!(view.active(), last);
+            assert!(view.finding.is_some(), "the list stays open");
+        });
+    }
+
     /// Conditional Formatting ▸ Greater Than asks for its value in a
     /// dialog filled in from the selection: what is typed goes there, not
     /// into a cell, and Enter adds the rule. A data bar applies at once;

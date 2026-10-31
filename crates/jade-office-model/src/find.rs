@@ -43,6 +43,20 @@ pub struct FindBar {
     /// Typing goes into the Replace field.
     pub in_replace: bool,
     pub options: FindOptions,
+    /// Find All's list, until the bar closes or Find All runs again.
+    pub found: Option<Vec<Found>>,
+}
+
+/// One row of Find All's list, as Excel lists it: the sheet, the cell, what
+/// it shows and its formula.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Found {
+    pub sheet: usize,
+    pub sheet_name: String,
+    pub cell: CellRef,
+    pub value: String,
+    /// The formula with its `=`, or empty for a value.
+    pub formula: String,
 }
 
 impl FindBar {
@@ -54,6 +68,7 @@ impl FindBar {
             replacing,
             in_replace: false,
             options: FindOptions::default(),
+            found: None,
         }
     }
 
@@ -186,6 +201,32 @@ impl<B: Backend> Workbook<B> {
         // Excel searches by rows.
         hits.sort_by_key(|(sheet, cell)| (*sheet, cell.row, cell.column));
         hits
+    }
+
+    /// Find All: every match, in Find's order, with what Excel's list shows.
+    pub fn found(&self, needle: &str, options: FindOptions) -> Vec<Found> {
+        let names = self.sheet_names();
+        self.find_all(needle, options)
+            .into_iter()
+            .map(|(sheet, cell)| {
+                let typed = self.edit_text_on(sheet, cell);
+                Found {
+                    sheet,
+                    sheet_name: names[sheet].clone(),
+                    cell,
+                    value: self
+                        .engine()
+                        .cell(&names[sheet], &reference_text(cell))
+                        .map(|cell| cell.display)
+                        .unwrap_or_default(),
+                    formula: if typed.starts_with('=') {
+                        typed
+                    } else {
+                        String::new()
+                    },
+                }
+            })
+            .collect()
     }
 
     /// Find Next (or, `back`, Find Previous): the match after `from`, round
