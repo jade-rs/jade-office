@@ -3764,3 +3764,6 @@ sheet.paste_options.formats	Formatting
 sheet.paste_options.transpose	Transpose
 sheet.look_in_notes	Notes
 sheet.menu.merge_across	Merge Across
+filter.date.heading	Dates
+filter.date.year	{year}
+filter.date.month	Month {month}
