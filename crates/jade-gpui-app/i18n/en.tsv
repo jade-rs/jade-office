@@ -3684,3 +3684,4 @@ duplicates.select_all	Select All
 duplicates.unselect_all	Unselect All
 sheet.find_all	Find All
 sheet.found_cells	{n} cell(s) found
+sheet.look_in_values	Values

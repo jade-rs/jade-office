@@ -33,7 +33,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | **Done** (#93) | Paste Special (values, formats, transpose) | High | yes (`transpose_formula`, jade-core#119) |
 | **Done** (#92) | Find and Replace (only Find, no options) | High | yes (`find`) |
 | **Done** (#91) | Number-format dropdown in the native app (the browser has one) | High | yes |
-| Partial (2026-11-01) | Find All in both find bars (the matches listed with their sheet, cell, value and formula, the count in the status bar, a row clicked selects its cell); Look in Values or Notes and within the selection remain | Medium | yes (`find`) |
+| Partial (2026-11-01) | Find All in both find bars (the matches listed with their sheet, cell, value and formula, the count in the status bar, a row clicked selects its cell); Look in: Values, and Find and Replace looking only within a selection of several cells, the active cell moving through it as in Excel; Look in: Notes remains | Medium | yes (`find`) |
 | | Paste Special: operations (Add, Multiply…), column widths, Paste Link; Paste Options after a paste | Medium | partly |
 | | CSV: other delimiters and encodings (Text Import Wizard), leading zeros kept as text | Medium | — |
 | Done in both shells (2026-10-31) | Format Painter: a brush on the sheet tool strip and 書式のコピー/貼り付け on the right-click menu, the next selection taking the formats; a double-click on the brush keeps painting until Escape | Medium | yes (`copy_format`) |
