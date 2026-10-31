@@ -24,7 +24,7 @@ use jade_web::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_web::number_formats::NUMBER_FORMATS;
 use jade_web::sheet::{
     column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
-    CellRange, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay, ResizeGesture,
+    CellRange, FilterButton, FontToggle, Freeze, HorizontalAlignment, Link, Overlay, ResizeGesture,
     SheetVisibility, MAX_COLUMN, MAX_ROW,
 };
 
@@ -572,6 +572,8 @@ enum MenuCommand {
     DeleteNote,
     Hide,
     Unhide,
+    FreezePanes,
+    UnfreezePanes,
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -2404,6 +2406,8 @@ impl DocView {
                     sheet.book.unhide(axis, first, last)
                 }
             }
+            MenuCommand::FreezePanes => sheet.book.freeze_panes(Freeze::Panes(selection.active)),
+            MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
             MenuCommand::RenameSheet(index) => {
                 let name = sheet.names.get(index).map(|name| name.to_string());
                 sheet.renaming = name.map(|name| (index, TextEdit::selected(name)));
@@ -3439,6 +3443,11 @@ impl DocView {
                     } else {
                         items.push((MenuCommand::EditNote, "sheet.menu.insert_note"));
                     }
+                    items.push(if sheet.book.frozen_panes().is_some() {
+                        (MenuCommand::UnfreezePanes, "sheet.menu.unfreeze_panes")
+                    } else {
+                        (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
+                    });
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                     items.push((MenuCommand::CellLocked, "protection.cell_locked"));
                     items.push((MenuCommand::CellHidden, "protection.cell_hidden"));

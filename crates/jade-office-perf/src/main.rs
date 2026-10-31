@@ -46,6 +46,9 @@ fn keystrokes() -> usize {
         .and_then(|value| value.parse().ok())
         .unwrap_or(KEYSTROKES)
 }
+/// Numbers the `xlsx-edit` scenario types into a cell, each one a commit
+/// and a repaint.
+const CELL_EDITS: usize = 5;
 /// The sheet viewport, in device px.
 const VIEWPORT: (u32, u32) = (2560, 1600);
 /// A slide's width on screen, in device px.
@@ -57,6 +60,7 @@ const SCENARIOS: &[(&str, &str)] = &[
     ("docx-keystroke", "docx"),
     ("docx-select-all", "docx"),
     ("xlsx-paint", "xlsx"),
+    ("xlsx-edit", "xlsx"),
     ("pptx-paint", "pptx"),
 ];
 
@@ -155,6 +159,35 @@ fn run(scenario: &str, fixture: &Path) -> Result<Duration, String> {
                 )
                 .map(drop)
                 .ok_or_else(|| "no viewport".to_string())
+            })
+        }
+        // Typing numbers over a number in the sheet, each committed and the
+        // viewport painted again: the write, recalculation, relayout and
+        // repaint an edit costs.
+        "xlsx-edit" => {
+            let mut book = jade_web::Workbook::open(&bytes, "UTC", fonts.backend.clone())?;
+            let at = (0..64)
+                .flat_map(|row| {
+                    (0..16).map(move |column| jade_web::sheet::CellRef::new(column, row))
+                })
+                .find(|&at| {
+                    let text = book.edit_text(at);
+                    !text.starts_with('=') && text.parse::<f64>().is_ok()
+                })
+                .unwrap_or(jade_web::sheet::CellRef::new(1, 1));
+            measure(|| {
+                for edit in 0..CELL_EDITS {
+                    book.set_cell(at, &(edit + 1000).to_string())?;
+                    book.render_viewport(
+                        (0.0, 0.0),
+                        VIEWPORT.0,
+                        VIEWPORT.1,
+                        SCALE,
+                        &jade_web::sheet::Overlay::default(),
+                    )
+                    .ok_or_else(|| "no viewport".to_string())?;
+                }
+                Ok(())
             })
         }
         "pptx-paint" => {
