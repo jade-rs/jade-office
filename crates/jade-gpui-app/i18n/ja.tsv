@@ -3677,3 +3677,8 @@ sort.add_level	レベルの追加
 sort.remove_level	レベルの削除
 sort.header	先頭行をデータの見出しとして使用する
 sort.case	大文字と小文字を区別する
+duplicates.dialog	重複の削除
+duplicates.columns	重複する値を削除するには、重複が含まれている列を 1 つ以上選択してください。
+duplicates.column	列
+duplicates.select_all	すべて選択
+duplicates.unselect_all	すべて選択解除
