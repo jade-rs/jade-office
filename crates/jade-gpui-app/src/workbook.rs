@@ -340,6 +340,8 @@ enum MenuCommand {
     UnfreezePanes,
     /// Data ▸ Group and Outline on the selected whole rows or columns.
     Outline(OutlineChange),
+    /// The selection's formats picked up for the next selection.
+    FormatPainter,
 }
 
 /// What a painted image was painted for. A frame that matches it needs no new
@@ -403,6 +405,8 @@ pub struct WorkbookView {
     /// A hyperlink pressed: followed when the press lets go on it, as in
     /// Excel (a press held into a drag selects instead).
     pending_link: Option<(CellRef, Link)>,
+    /// Format Painter: the cells whose formats the next selection takes.
+    format_source: Option<CellRange>,
     menu: Option<SheetMenu>,
     /// The Format Cells dialog (⌘1), while it is open.
     format_dialog: Option<jade_office_model::format_cells::FormatCellsDialog>,
@@ -1158,6 +1162,11 @@ impl WorkbookView {
                 )
             }
             MenuCommand::FormatCells => return self.open_format_dialog(cx),
+            MenuCommand::FormatPainter => {
+                self.format_source = Some(range);
+                cx.notify();
+                return;
+            }
             MenuCommand::Validation => return self.open_validation(cx),
             MenuCommand::Table => return self.open_table_dialog(cx),
             MenuCommand::EditPivot => return self.open_pivot_dialog(cx),
@@ -1746,6 +1755,7 @@ impl WorkbookView {
             // Escape lets go of what was copied.
             "escape" => {
                 self.book.forget_copy();
+                self.format_source = None;
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
@@ -2402,6 +2412,12 @@ impl WorkbookView {
             // A click — a press let go where it started — on a hyperlink
             // follows it.
             SheetDrag::Select(_) => {
+                // The Format Painter's formats land on what was just selected.
+                if let Some(source) = self.format_source.take() {
+                    let result = self.book.copy_format(source, self.range());
+                    self.after_write(result, cx);
+                    return;
+                }
                 let link = self.pending_link.take();
                 if let Some((_, link)) = link
                     .filter(|(cell, _)| self.selection.is_cell() && self.selection.active == *cell)
@@ -2864,6 +2880,7 @@ impl WorkbookView {
                 } else {
                     (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
                 });
+                items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                 items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                 items.push((MenuCommand::CellLocked, "protection.cell_locked"));
                 items.push((MenuCommand::CellHidden, "protection.cell_hidden"));
@@ -4186,6 +4203,7 @@ impl WorkbookView {
             validation_pending: None,
             choices: None,
             pending_link: None,
+            format_source: None,
             menu: None,
             format_dialog: None,
             filter: None,

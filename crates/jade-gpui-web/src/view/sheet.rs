@@ -125,6 +125,8 @@ pub(super) struct Sheet {
     /// A hyperlink pressed: followed when the press lets go on it, as in
     /// Excel (a press held into a drag selects instead).
     pending_link: Option<(CellRef, Link)>,
+    /// Format Painter: the cells whose formats the next selection takes.
+    format_source: Option<CellRange>,
 }
 
 /// A cell being typed into.
@@ -575,6 +577,7 @@ enum MenuCommand {
     FreezePanes,
     UnfreezePanes,
     Outline(OutlineChange),
+    FormatPainter,
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -623,6 +626,7 @@ impl Sheet {
             format_dialog: None,
             hover: Hover::Cells,
             pending_link: None,
+            format_source: None,
         }
     }
 
@@ -1928,6 +1932,7 @@ impl DocView {
             }
             "escape" => {
                 sheet.book.forget_copy();
+                sheet.format_source = None;
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
@@ -2326,6 +2331,11 @@ impl DocView {
                 )
             }
             MenuCommand::FormatCells => return self.open_format_dialog(cx),
+            MenuCommand::FormatPainter => {
+                sheet.format_source = Some(range);
+                cx.notify();
+                return;
+            }
             MenuCommand::Validation => return self.open_validation(cx),
             MenuCommand::Table => return self.open_sheet_table_dialog(cx),
             MenuCommand::EditPivot => return self.open_pivot_dialog(cx),
@@ -2967,6 +2977,13 @@ impl DocView {
                 self.edited(result, cx);
             }
             SheetDrag::Select(_) => {
+                // The Format Painter's formats land on what was just selected.
+                if let Some(source) = sheet.format_source.take() {
+                    let target = sheet.selection.range();
+                    let result = sheet.book.copy_format(source, target);
+                    self.edited(result, cx);
+                    return;
+                }
                 let link = sheet.pending_link.take();
                 if let Some((_, link)) = link.filter(|(cell, _)| {
                     sheet.selection.is_cell() && sheet.selection.active == *cell
@@ -3497,6 +3514,7 @@ impl DocView {
                     } else {
                         (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
                     });
+                    items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                     items.push((MenuCommand::CellLocked, "protection.cell_locked"));
                     items.push((MenuCommand::CellHidden, "protection.cell_hidden"));
