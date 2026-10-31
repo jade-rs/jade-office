@@ -89,6 +89,9 @@ pub(super) struct Sheet {
     pub renaming: Option<(usize, TextEdit)>,
     /// The name box being typed into: a cell or range to go to.
     pub naming: Option<TextEdit>,
+    /// The name box was opened by Go To (F5, Ctrl+G): what is typed is
+    /// only gone to, never defined as a name.
+    pub going_to: bool,
     /// Find and Replace (⌘F, Ctrl+H): what is typed into it, and its
     /// options.
     pub finding: Option<FindBar>,
@@ -624,6 +627,7 @@ impl Sheet {
             tab_start: None,
             renaming: None,
             naming: None,
+            going_to: false,
             finding: None,
             noting: None,
             saving_as: None,
@@ -2039,6 +2043,7 @@ impl DocView {
             "enter" => self.advance_cell(false, shift, cx),
             "tab" => self.advance_cell(true, shift, cx),
             "f2" => self.begin_cell_edit(None, true, cx),
+            "f5" => self.open_go_to(cx),
             // Calculate Now, as in Excel.
             "f9" => {
                 let result = sheet.book.calculate_now();
@@ -2140,6 +2145,8 @@ impl DocView {
             "p" => self.print_sheet(cx),
             // Ctrl+H, as Excel: Find and Replace.
             "h" if modifiers.control && !modifiers.platform => self.open_sheet_find(true, cx),
+            // Ctrl+G, as F5: Go To.
+            "g" if modifiers.control && !modifiers.platform => self.open_go_to(cx),
             "x" if !shift => self.sheet_copy(true, cx),
             // ⌃⌘V (Ctrl+Alt+V elsewhere): Paste Special.
             "v" if modifiers.control && (modifiers.platform || modifiers.alt) => {
@@ -2256,6 +2263,20 @@ impl DocView {
     }
 
     /// Ends a tab rename or a name-box entry, taking it or not.
+    /// Go To (F5, Ctrl+G): the name box opened on the active cell, for a
+    /// cell, range or name to go to; one that does not exist is said so.
+    fn open_go_to(&mut self, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        if let Some(sheet) = self.sheet_mut() {
+            sheet.menu = None;
+            sheet.naming = Some(TextEdit::selected(reference_text(sheet.selection.active)));
+            sheet.going_to = true;
+        }
+        cx.notify();
+    }
+
     fn finish_naming(&mut self, take: bool, cx: &mut Context<Self>) {
         let Some(sheet) = self.sheet_mut() else {
             return;
@@ -2274,6 +2295,7 @@ impl DocView {
         } else if sheet.finding.take().is_some() {
             // Escape or Tab closes the find bar where the search got to.
         } else if let Some(text) = sheet.naming.take() {
+            let going_to = std::mem::take(&mut sheet.going_to);
             if take {
                 match sheet.book.resolve_reference(&text.text) {
                     Some((index, range)) => {
@@ -2291,6 +2313,7 @@ impl DocView {
                         }
                         self.reveal_cell(range.start);
                     }
+                    None if going_to => self.status = i18n::text("sheet.no_reference").into(),
                     None => {
                         let result = sheet
                             .book
@@ -4101,6 +4124,7 @@ impl DocView {
                                         sheet.naming = Some(TextEdit::selected(reference_text(
                                             sheet.selection.active,
                                         )));
+                                        sheet.going_to = false;
                                     }
                                 }
                                 cx.notify();
