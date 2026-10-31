@@ -55,3 +55,14 @@ fn indent_steps_up_and_down_and_moves_text_left() {
     // Nothing below none.
     assert!(!book.indent(range, at, false).unwrap());
 }
+
+#[test]
+fn the_font_box_sets_the_family() {
+    use jade_office_model::sheet::SHEET_FONTS;
+    let mut book = book();
+    let at = CellRef::new(10, 30);
+    assert!(book.set_font_name(span(at, at), SHEET_FONTS[2]).unwrap());
+    assert_eq!(book.format_at(at).font_name.as_deref(), Some("メイリオ"));
+    assert!(book.undo().unwrap());
+    assert_ne!(book.format_at(at).font_name.as_deref(), Some("メイリオ"));
+}
