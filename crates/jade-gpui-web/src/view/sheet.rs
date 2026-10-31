@@ -38,6 +38,7 @@ mod paste_special;
 mod pivots;
 mod protection;
 mod save_as;
+mod subtotal;
 mod tables;
 mod validation;
 use charts::ChartTool;
@@ -104,6 +105,7 @@ pub(super) struct Sheet {
     pub pasting: Option<PasteSpecial>,
     pub(super) validation_dialog: Option<ValidationDialog>,
     pub(super) link_dialog: Option<LinkDialog>,
+    pub(super) subtotal_dialog: Option<jade_web::subtotal::SubtotalDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
     pub(super) pivot_dialog: Option<PivotPanel>,
@@ -125,6 +127,10 @@ pub(super) struct Sheet {
     /// A hyperlink pressed: followed when the press lets go on it, as in
     /// Excel (a press held into a drag selects instead).
     pending_link: Option<(CellRef, Link)>,
+    /// Format Painter: the cells whose formats the next selection takes.
+    format_source: Option<CellRange>,
+    /// Whether the painter stays on until Escape (a double-click on it).
+    format_sticky: bool,
 }
 
 /// A cell being typed into.
@@ -575,6 +581,10 @@ enum MenuCommand {
     FreezePanes,
     UnfreezePanes,
     Outline(OutlineChange),
+    FormatPainter,
+    AutoOutline,
+    ClearOutline,
+    Subtotal,
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -611,6 +621,7 @@ impl Sheet {
             pasting: None,
             validation_dialog: None,
             link_dialog: None,
+            subtotal_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -623,6 +634,8 @@ impl Sheet {
             format_dialog: None,
             hover: Hover::Cells,
             pending_link: None,
+            format_source: None,
+            format_sticky: false,
         }
     }
 
@@ -1095,6 +1108,32 @@ impl DocView {
             .border_b_1()
             .border_color(palette::border())
             .child(
+                div()
+                    .id("tool-format-painter")
+                    .min_w(px(24.0))
+                    .h(px(24.0))
+                    .px_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .when(sheet.format_source.is_some(), |button| {
+                        button.bg(palette::selected())
+                    })
+                    .hover(|button| button.bg(palette::hovered()))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    // A double-click keeps painting until Escape, as Excel's
+                    // brush does.
+                    .on_click(
+                        cx.listener(move |view, event: &gpui::ClickEvent, window, cx| {
+                            window.focus(&view.focus, cx);
+                            view.pick_up_sheet_format(event.click_count() >= 2, cx);
+                        }),
+                    )
+                    .child(icon("icons/paintbrush.svg")),
+            )
+            .child(
                 button(
                     "tool-bold",
                     look.bold == Some(true),
@@ -1480,6 +1519,7 @@ impl DocView {
             || sheet.protection_dialog.is_some()
             || sheet.table_dialog.is_some()
             || sheet.pivot_dialog.is_some()
+            || sheet.subtotal_dialog.is_some()
         {
             return false;
         }
@@ -1556,6 +1596,7 @@ impl DocView {
                 || s.protection_dialog.is_some()
                 || s.table_dialog.is_some()
                 || s.pivot_dialog.is_some()
+                || s.subtotal_dialog.is_some()
         }) {
             return;
         }
@@ -1581,6 +1622,23 @@ impl DocView {
 
     /// After a write that may have changed the sheets: their names again,
     /// and the selection kept on the sheet.
+    /// The Format Painter: the selection's formats picked up for the next
+    /// selection, or for every one until Escape when `sticky`; a click while
+    /// it is on puts it down.
+    fn pick_up_sheet_format(&mut self, sticky: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        if sheet.format_source.is_some() && !sticky {
+            sheet.format_source = None;
+            sheet.format_sticky = false;
+        } else {
+            sheet.format_source = Some(sheet.selection.range());
+            sheet.format_sticky = sticky;
+        }
+        cx.notify();
+    }
+
     pub(super) fn sheets_changed(&mut self, result: Result<bool, String>, cx: &mut Context<Self>) {
         if let Some(sheet) = self.sheet_mut() {
             sheet.names = sheet
@@ -1694,6 +1752,9 @@ impl DocView {
             return false;
         }
         if self.link_key(key, shift, command, cx) {
+            return true;
+        }
+        if self.subtotal_key(key, cx) {
             return true;
         }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
@@ -1928,6 +1989,8 @@ impl DocView {
             }
             "escape" => {
                 sheet.book.forget_copy();
+                sheet.format_source = None;
+                sheet.format_sticky = false;
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
@@ -2218,6 +2281,7 @@ impl DocView {
                 || s.protection_dialog.is_some()
                 || s.table_dialog.is_some()
                 || s.pivot_dialog.is_some()
+                || s.subtotal_dialog.is_some()
         }) {
             return;
         }
@@ -2326,6 +2390,7 @@ impl DocView {
                 )
             }
             MenuCommand::FormatCells => return self.open_format_dialog(cx),
+            MenuCommand::FormatPainter => return self.pick_up_sheet_format(false, cx),
             MenuCommand::Validation => return self.open_validation(cx),
             MenuCommand::Table => return self.open_sheet_table_dialog(cx),
             MenuCommand::EditPivot => return self.open_pivot_dialog(cx),
@@ -2409,6 +2474,15 @@ impl DocView {
             }
             MenuCommand::FreezePanes => sheet.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
+            MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
+            MenuCommand::AutoOutline => sheet.book.auto_outline(),
+            MenuCommand::ClearOutline => {
+                sheet.book.clear_outline(if selection.is_whole_columns() {
+                    Axis::Columns
+                } else {
+                    Axis::Rows
+                })
+            }
             MenuCommand::Outline(change) => {
                 let (axis, first, last) = if selection.is_whole_columns() {
                     (Axis::Columns, range.start.column, range.end.column)
@@ -2468,6 +2542,7 @@ impl DocView {
                 || s.protection_dialog.is_some()
                 || s.table_dialog.is_some()
                 || s.pivot_dialog.is_some()
+                || s.subtotal_dialog.is_some()
         }) {
             return;
         }
@@ -2490,6 +2565,19 @@ impl DocView {
             return;
         };
         let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        // The outline gutter's level buttons and boxes collapse and expand.
+        let clicked = if sheet.edit.is_none() {
+            sheet.book.outline_click(x, y, scroll)
+        } else {
+            None
+        };
+        if let Some(result) = clicked {
+            self.sheets_changed(result, cx);
+            return;
+        }
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
         let hit = sheet.book.hit(x, y, scroll);
 
         // While a formula can take a reference, a click points at the cell.
@@ -2954,6 +3042,16 @@ impl DocView {
                 self.edited(result, cx);
             }
             SheetDrag::Select(_) => {
+                // The Format Painter's formats land on what was just selected.
+                if let Some(source) = sheet.format_source {
+                    if !sheet.format_sticky {
+                        sheet.format_source = None;
+                    }
+                    let target = sheet.selection.range();
+                    let result = sheet.book.copy_format(source, target);
+                    self.edited(result, cx);
+                    return;
+                }
                 let link = sheet.pending_link.take();
                 if let Some((_, link)) = link.filter(|(cell, _)| {
                     sheet.selection.is_cell() && sheet.selection.active == *cell
@@ -3177,6 +3275,7 @@ impl DocView {
         let table_panel = self.table_panel(cx);
         let pivot_panel = self.pivot_panel(cx);
         let link_panel = self.link_panel(cx);
+        let subtotal_panel = self.subtotal_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -3470,6 +3569,10 @@ impl DocView {
                                 ),
                             ]);
                         }
+                        items.push((MenuCommand::AutoOutline, "sheet.menu.auto_outline"));
+                        if sheet.book.has_outline(axis) {
+                            items.push((MenuCommand::ClearOutline, "sheet.menu.clear_outline"));
+                        }
                     }
                     if sheet.book.note(sheet.selection.active).is_some() {
                         items.extend([
@@ -3484,6 +3587,14 @@ impl DocView {
                     } else {
                         (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
                     });
+                    if !sheet.selection.is_whole_rows()
+                        && !sheet.selection.is_whole_columns()
+                        && sheet.selection.range().end.row > sheet.selection.range().start.row
+                        && sheet.selection.range().end.column > sheet.selection.range().start.column
+                    {
+                        items.push((MenuCommand::Subtotal, "sheet.menu.subtotal"));
+                    }
+                    items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                     items.push((MenuCommand::CellLocked, "protection.cell_locked"));
                     items.push((MenuCommand::CellHidden, "protection.cell_hidden"));
@@ -3986,6 +4097,7 @@ impl DocView {
                     .children(table_panel)
                     .children(pivot_panel)
                     .children(link_panel)
+                    .children(subtotal_panel)
                     .children(protection_panel)
                     .children(validation_panel)
                     .children(validation_alert)

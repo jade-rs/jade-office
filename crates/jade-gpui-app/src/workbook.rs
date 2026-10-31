@@ -71,6 +71,7 @@ mod links;
 mod paste_special;
 mod pivots;
 mod protection;
+mod subtotal;
 mod tables;
 mod validation;
 use crate::{
@@ -340,6 +341,14 @@ enum MenuCommand {
     UnfreezePanes,
     /// Data ▸ Group and Outline on the selected whole rows or columns.
     Outline(OutlineChange),
+    /// The selection's formats picked up for the next selection.
+    FormatPainter,
+    /// Data ▸ Group ▸ Auto Outline.
+    AutoOutline,
+    /// Data ▸ Ungroup ▸ Clear Outline on the selected rows' or columns' axis.
+    ClearOutline,
+    /// Data ▸ Subtotal over the selection with the dialog's defaults.
+    Subtotal,
 }
 
 /// What a painted image was painted for. A frame that matches it needs no new
@@ -394,6 +403,7 @@ pub struct WorkbookView {
     pasting: Option<PasteSpecial>,
     validation_dialog: Option<ValidationDialog>,
     link_dialog: Option<LinkDialog>,
+    subtotal_dialog: Option<jade_office_model::subtotal::SubtotalDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
     pivot_dialog: Option<PivotPanel>,
@@ -403,6 +413,11 @@ pub struct WorkbookView {
     /// A hyperlink pressed: followed when the press lets go on it, as in
     /// Excel (a press held into a drag selects instead).
     pending_link: Option<(CellRef, Link)>,
+    /// Format Painter: the cells whose formats the next selection takes.
+    format_source: Option<CellRange>,
+    /// Whether the painter stays on for selection after selection (a
+    /// double-click on its button) until Escape.
+    format_sticky: bool,
     menu: Option<SheetMenu>,
     /// The Format Cells dialog (⌘1), while it is open.
     format_dialog: Option<jade_office_model::format_cells::FormatCellsDialog>,
@@ -579,6 +594,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return;
         }
@@ -829,6 +845,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return false;
         }
@@ -915,6 +932,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return;
         }
@@ -1052,6 +1070,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return;
         }
@@ -1158,6 +1177,7 @@ impl WorkbookView {
                 )
             }
             MenuCommand::FormatCells => return self.open_format_dialog(cx),
+            MenuCommand::FormatPainter => return self.pick_up_format(false, cx),
             MenuCommand::Validation => return self.open_validation(cx),
             MenuCommand::Table => return self.open_table_dialog(cx),
             MenuCommand::EditPivot => return self.open_pivot_dialog(cx),
@@ -1264,6 +1284,13 @@ impl WorkbookView {
             }
             MenuCommand::FreezePanes => self.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
+            MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
+            MenuCommand::AutoOutline => self.book.auto_outline(),
+            MenuCommand::ClearOutline => self.book.clear_outline(if selection.is_whole_columns() {
+                Axis::Columns
+            } else {
+                Axis::Rows
+            }),
             MenuCommand::Outline(change) => {
                 let (axis, first, last) = if selection.is_whole_columns() {
                     (Axis::Columns, range.start.column, range.end.column)
@@ -1558,6 +1585,9 @@ impl WorkbookView {
         if self.link_key(key, shift, command, cx) {
             return true;
         }
+        if self.subtotal_key(key, cx) {
+            return true;
+        }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
             return true;
         }
@@ -1746,6 +1776,8 @@ impl WorkbookView {
             // Escape lets go of what was copied.
             "escape" => {
                 self.book.forget_copy();
+                self.format_source = None;
+                self.format_sticky = false;
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
@@ -1992,6 +2024,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return;
         }
@@ -2007,6 +2040,13 @@ impl WorkbookView {
             return;
         };
         let scroll = self.sheet_scroll();
+        // The outline gutter's level buttons and boxes collapse and expand.
+        if self.edit.is_none() {
+            if let Some(result) = self.book.outline_click(x, y, scroll) {
+                self.sheets_changed(result, cx);
+                return;
+            }
+        }
         let hit = self.book.hit(x, y, scroll);
 
         // While a formula can take a reference, a click points at the cell
@@ -2395,6 +2435,15 @@ impl WorkbookView {
             // A click — a press let go where it started — on a hyperlink
             // follows it.
             SheetDrag::Select(_) => {
+                // The Format Painter's formats land on what was just selected.
+                if let Some(source) = self.format_source {
+                    if !self.format_sticky {
+                        self.format_source = None;
+                    }
+                    let result = self.book.copy_format(source, self.range());
+                    self.after_write(result, cx);
+                    return;
+                }
                 let link = self.pending_link.take();
                 if let Some((_, link)) = link
                     .filter(|(cell, _)| self.selection.is_cell() && self.selection.active == *cell)
@@ -2444,6 +2493,20 @@ impl WorkbookView {
             } => self.object_drop(id, bounds, now, cx),
             SheetDrag::Point => cx.notify(),
         }
+    }
+
+    /// The Format Painter: the selection's formats picked up for the next
+    /// selection, or for every one until Escape when `sticky`; a click while
+    /// it is on puts it down.
+    fn pick_up_format(&mut self, sticky: bool, cx: &mut Context<Self>) {
+        if self.format_source.is_some() && !sticky {
+            self.format_source = None;
+            self.format_sticky = false;
+        } else {
+            self.format_source = Some(self.range());
+            self.format_sticky = sticky;
+        }
+        cx.notify();
     }
 
     /// Follows a hyperlink: a web address opens in the browser, a place in
@@ -2843,6 +2906,10 @@ impl WorkbookView {
                             ),
                         ]);
                     }
+                    items.push((MenuCommand::AutoOutline, "sheet.menu.auto_outline"));
+                    if self.book.has_outline(axis) {
+                        items.push((MenuCommand::ClearOutline, "sheet.menu.clear_outline"));
+                    }
                 }
                 if self.book.note(self.active()).is_some() {
                     items.extend([
@@ -2857,6 +2924,14 @@ impl WorkbookView {
                 } else {
                     (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
                 });
+                if !self.selection.is_whole_rows()
+                    && !self.selection.is_whole_columns()
+                    && self.selection.range().end.row > self.selection.range().start.row
+                    && self.selection.range().end.column > self.selection.range().start.column
+                {
+                    items.push((MenuCommand::Subtotal, "sheet.menu.subtotal"));
+                }
+                items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                 items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                 items.push((MenuCommand::CellLocked, "protection.cell_locked"));
                 items.push((MenuCommand::CellHidden, "protection.cell_hidden"));
@@ -3120,6 +3195,30 @@ impl WorkbookView {
             .bg(theme::panel())
             .border_b_1()
             .border_color(theme::border())
+            .child(
+                div()
+                    .id("tool-format-painter")
+                    .min_w(px(24.0))
+                    .h(px(24.0))
+                    .px_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .when(self.format_source.is_some(), |button| {
+                        button.bg(theme::selected())
+                    })
+                    .hover(|button| button.bg(theme::hovered()))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    // A double-click keeps painting until Escape, as Excel's
+                    // brush does.
+                    .on_click(cx.listener(move |view, event: &ClickEvent, window, cx| {
+                        window.focus(&view.focus);
+                        view.pick_up_format(event.click_count() >= 2, cx);
+                    }))
+                    .child(icon("icons/paintbrush.svg")),
+            )
             .child(
                 button(
                     "tool-bold",
@@ -3978,6 +4077,7 @@ impl Render for WorkbookView {
         let table_panel = self.table_panel(cx);
         let pivot_panel = self.pivot_panel(cx);
         let link_panel = self.link_panel(cx);
+        let subtotal_panel = self.subtotal_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -4132,6 +4232,7 @@ impl Render for WorkbookView {
             .children(table_panel)
             .children(pivot_panel)
             .children(link_panel)
+            .children(subtotal_panel)
             .children(protection_panel)
             .children(validation_panel)
             .children(validation_alert)
@@ -4173,12 +4274,15 @@ impl WorkbookView {
             pasting: None,
             validation_dialog: None,
             link_dialog: None,
+            subtotal_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
             validation_pending: None,
             choices: None,
             pending_link: None,
+            format_source: None,
+            format_sticky: false,
             menu: None,
             format_dialog: None,
             filter: None,
@@ -5297,6 +5401,74 @@ mod tests {
             view.menu_command(MenuCommand::DeleteNote, false, cx)
         });
         view.read_with(cx, |view, _| assert!(view.book.note(at(1, 1)).is_none()));
+    }
+
+    /// The Subtotal dialog totals the runs of the column it is told, with
+    /// the function picked, and closes.
+    #[gpui::test]
+    fn the_subtotal_dialog_totals_with_the_function_picked(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            for (offset, (branch, sales)) in [
+                ("支店", "売上"),
+                ("東京", "10"),
+                ("東京", "20"),
+                ("大阪", "1"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let row = 29 + offset as u32;
+                view.book.set_cell(at(7, row), branch).unwrap();
+                view.book.set_cell(at(8, row), sales).unwrap();
+            }
+            view.selection = Selection::cell(at(7, 29));
+            view.selection.anchor = at(7, 29);
+            view.selection.focus = at(8, 32);
+            view.open_subtotal_dialog(cx);
+            assert!(view.subtotal_dialog.is_some());
+            // Average, the third function.
+            view.subtotal_action(subtotal::SubtotalAction::Function(2), cx);
+            view.subtotal_action(subtotal::SubtotalAction::Take, cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.subtotal_dialog.is_none());
+            assert_eq!(view.book.edit_text(at(8, 32)), "=SUBTOTAL(1,I31:I32)");
+            assert_eq!(view.book.display_text(at(8, 32)), "15");
+        });
+    }
+
+    /// A double-click on the brush keeps painting: each selection after it
+    /// takes the formats, until Escape puts the brush down.
+    #[gpui::test]
+    fn a_double_clicked_format_painter_paints_until_escape(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let select = |view: &mut WorkbookView, at: CellRef, cx: &mut Context<WorkbookView>| {
+            view.selection = Selection::cell(at);
+            view.drag = Some(SheetDrag::Select(DragKind::Cells));
+            view.drag_end(cx);
+        };
+        view.update(cx, |view, cx| {
+            let source = at(6, 1);
+            view.selection = Selection::cell(source);
+            view.book
+                .toggle(span(source, source), source, FontToggle::Bold)
+                .unwrap();
+            view.pick_up_format(true, cx);
+            select(view, at(7, 1), cx);
+            select(view, at(7, 3), cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.format_at(at(7, 1)).bold, Some(true));
+            assert_eq!(view.book.format_at(at(7, 3)).bold, Some(true));
+            assert!(view.format_source.is_some());
+        });
+        cx.simulate_keystrokes("escape");
+        view.update(cx, |view, cx| select(view, at(7, 5), cx));
+        view.read_with(cx, |view, _| {
+            assert!(view.format_source.is_none());
+            assert_ne!(view.book.format_at(at(7, 5)).bold, Some(true));
+        });
     }
 
     /// Hide on a selected whole row takes it out of view — the arrows step
