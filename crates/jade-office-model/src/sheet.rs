@@ -2696,6 +2696,22 @@ impl<B: Backend> Workbook<B> {
         Ok(changed)
     }
 
+    /// Home ▸ Format Painter: `target` takes the formats of `source`, tiled
+    /// when it is larger and stamped in the source's shape from a single
+    /// cell; values stay. One undo step.
+    pub fn copy_format(&mut self, source: CellRange, target: CellRange) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let summary = self
+            .book
+            .copy_format(&name, &range_text_full(source), &range_text_full(target))
+            .map_err(|error| error.to_string())?;
+        if summary.cells.is_empty() {
+            return Ok(false);
+        }
+        self.wrote(1)?;
+        Ok(true)
+    }
+
     /// A click at viewport point `(x, y)` (headers included) on the outline
     /// gutter: a level button shows the outline down to its level, a group's
     /// box collapses or expands it. `None` when the point is not on one, so

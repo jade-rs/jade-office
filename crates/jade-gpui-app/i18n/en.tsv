@@ -258,6 +258,7 @@ sheet.menu.group	Group
 sheet.menu.ungroup	Ungroup
 sheet.menu.hide_detail	Hide Detail
 sheet.menu.show_detail	Show Detail
+sheet.menu.format_painter	Format Painter
 sheet.menu.move_left	Move Left
 sheet.menu.move_right	Move Right
 sheet.validation_refused	This value doesn't match the data validation restrictions defined for this cell.
