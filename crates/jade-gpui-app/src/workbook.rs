@@ -6403,6 +6403,25 @@ mod tests {
         });
     }
 
+    /// Look in: Notes finds the cell whose note says what is typed.
+    #[gpui::test]
+    fn find_looks_in_notes(cx: &mut gpui::TestAppContext) {
+        use find_bar::FindCommand;
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, _| {
+            view.book
+                .set_note(at(9, 44), "ask about the delivery", "jade")
+                .unwrap();
+        });
+        cx.simulate_keystrokes("cmd-f");
+        cx.simulate_input("delivery");
+        view.update(cx, |view, cx| {
+            view.find_command(FindCommand::Notes, cx);
+            view.find_command(FindCommand::Next(false), cx);
+            assert_eq!(view.active(), at(9, 44));
+        });
+    }
+
     /// With several cells selected, Find Next looks only there and moves
     /// the active cell through them, the selection staying.
     #[gpui::test]

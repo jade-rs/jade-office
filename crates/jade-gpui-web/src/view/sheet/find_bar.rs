@@ -26,6 +26,8 @@ pub(super) enum FindCommand {
     Workbook,
     /// Look in: Values, rather than formulas.
     Values,
+    /// Look in: Notes.
+    Notes,
     /// The Replace field shown or hidden.
     ToggleReplace,
     /// Typing into the Replace field (true) or Find.
@@ -64,7 +66,14 @@ impl DocView {
             FindCommand::MatchCase => bar.options.match_case = !bar.options.match_case,
             FindCommand::EntireCell => bar.options.entire_cell = !bar.options.entire_cell,
             FindCommand::Workbook => bar.options.workbook = !bar.options.workbook,
-            FindCommand::Values => bar.options.values = !bar.options.values,
+            FindCommand::Values => {
+                bar.options.values = !bar.options.values;
+                bar.options.notes = false;
+            }
+            FindCommand::Notes => {
+                bar.options.notes = !bar.options.notes;
+                bar.options.values = false;
+            }
             FindCommand::ToggleReplace => bar.toggle_replacing(),
             FindCommand::Field(replace) => bar.in_replace = replace && bar.replacing,
             // Where the search got to stays selected.
@@ -370,6 +379,10 @@ impl DocView {
                             row.child(
                                 button("find-values", options.values, FindCommand::Values)
                                     .child(i18n::text("sheet.look_in_values")),
+                            )
+                            .child(
+                                button("find-notes", options.notes, FindCommand::Notes)
+                                    .child(i18n::text("sheet.look_in_notes")),
                             )
                         }),
                 )

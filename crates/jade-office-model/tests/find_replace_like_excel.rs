@@ -321,3 +321,24 @@ fn look_in_values_finds_by_what_cells_show() {
     bar.replacing = true;
     assert!(!bar.options().values);
 }
+
+/// Look in: Notes finds cells by their notes' text, not their values.
+#[test]
+fn look_in_notes_finds_by_what_notes_say() {
+    let mut book = fruit();
+    book.set_note(at(10, 1), "check with the supplier", "jade")
+        .unwrap();
+    let mut bar = FindBar::new(false);
+    bar.options.notes = true;
+    let options = bar.options();
+    assert_eq!(
+        book.find_all("supplier", options)
+            .into_iter()
+            .map(|(_, cell)| cell)
+            .collect::<Vec<_>>(),
+        vec![at(10, 1)]
+    );
+    assert!(book.find_all("apple", options).is_empty(), "not the values");
+    bar.replacing = true;
+    assert!(!bar.options().notes);
+}

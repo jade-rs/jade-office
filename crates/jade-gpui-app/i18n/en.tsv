@@ -3762,3 +3762,4 @@ sheet.paste_options.values	Values
 sheet.paste_options.formulas	Formulas
 sheet.paste_options.formats	Formatting
 sheet.paste_options.transpose	Transpose
+sheet.look_in_notes	Notes
