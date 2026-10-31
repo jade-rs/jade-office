@@ -585,6 +585,7 @@ enum MenuCommand {
     AutoOutline,
     ClearOutline,
     Subtotal,
+    RemoveDuplicates,
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -1622,6 +1623,45 @@ impl DocView {
 
     /// After a write that may have changed the sheets: their names again,
     /// and the selection kept on the sheet.
+    /// Data ▸ Remove Duplicates over the selection — or, with one cell
+    /// selected, the list round it — every column compared, the first row a
+    /// header when it reads as one, and Excel's count in the status bar.
+    fn remove_sheet_duplicates(&mut self, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let selected = sheet.selection.range();
+        let range = if sheet.selection.is_cell() {
+            sheet
+                .book
+                .current_region(sheet.selection.active)
+                .unwrap_or(selected)
+        } else {
+            selected
+        };
+        let columns: Vec<u32> = (range.start.column..=range.end.column).collect();
+        let headers = sheet.book.looks_like_headers(range);
+        match sheet.book.remove_duplicates(range, &columns, headers) {
+            Ok(outcome) => {
+                self.edited(Ok(outcome.removed > 0), cx);
+                self.status = if outcome.removed == 0 {
+                    i18n::text("sheet.duplicates_none").into()
+                } else {
+                    i18n::format(
+                        "sheet.duplicates_removed",
+                        &[
+                            ("removed", &outcome.removed),
+                            ("remaining", &outcome.remaining),
+                        ],
+                    )
+                    .into()
+                };
+                cx.notify();
+            }
+            Err(error) => self.edited(Err(error), cx),
+        }
+    }
+
     /// The Format Painter: the selection's formats picked up for the next
     /// selection, or for every one until Escape when `sticky`; a click while
     /// it is on puts it down.
@@ -2475,6 +2515,7 @@ impl DocView {
             MenuCommand::FreezePanes => sheet.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
+            MenuCommand::RemoveDuplicates => return self.remove_sheet_duplicates(cx),
             MenuCommand::AutoOutline => sheet.book.auto_outline(),
             MenuCommand::ClearOutline => {
                 sheet.book.clear_outline(if selection.is_whole_columns() {
@@ -3593,6 +3634,10 @@ impl DocView {
                         && sheet.selection.range().end.column > sheet.selection.range().start.column
                     {
                         items.push((MenuCommand::Subtotal, "sheet.menu.subtotal"));
+                        items.push((
+                            MenuCommand::RemoveDuplicates,
+                            "sheet.menu.remove_duplicates",
+                        ));
                     }
                     items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
