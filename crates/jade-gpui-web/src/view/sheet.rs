@@ -640,6 +640,9 @@ enum Tool {
     Align(HorizontalAlignment),
     /// The font box: a family for the selection.
     FontName(&'static str),
+    /// A theme colour from the gallery, by its place, for the fill (true)
+    /// or the font.
+    ThemeColor(bool, usize),
     /// Top, Middle or Bottom Align.
     VAlign(VerticalAlignment),
     /// Increase Indent (true) or Decrease.
@@ -1212,6 +1215,16 @@ impl DocView {
             Tool::Decimals(more) => sheet.book.decimals(range, active, more),
             Tool::FontSize(larger) => sheet.book.grow_font(range, active, larger),
             Tool::Fill(color) => sheet.book.fill_color(range, color),
+            Tool::ThemeColor(fill, index) => {
+                let Some(color) = sheet.book.theme_palette().get(index).cloned() else {
+                    return;
+                };
+                if fill {
+                    sheet.book.fill_color(range, Some(&color))
+                } else {
+                    sheet.book.font_color(range, &color)
+                }
+            }
             Tool::FontColor(color) => sheet.book.font_color(range, color),
             Tool::Borders(borders) => sheet.book.borders(range, borders),
             Tool::Filter => sheet.book.toggle_filter(range),
@@ -1572,6 +1585,27 @@ impl DocView {
                     }))
             }
             Popup::Fill | Popup::Font => {
+                let fill = popup == Popup::Fill;
+                let theme_swatches = self
+                    .sheet_ref()
+                    .map(|sheet| sheet.book.theme_palette())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, color)| {
+                        div()
+                            .id(("theme-swatch", index))
+                            .size(px(16.0))
+                            .border_1()
+                            .border_color(palette::border())
+                            .bg(gpui::rgb(u32::from_str_radix(&color, 16).unwrap_or(0)))
+                            .cursor_pointer()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |view, _event, _window, cx| {
+                                view.tool(Tool::ThemeColor(fill, index), cx)
+                            }))
+                    })
+                    .collect::<Vec<_>>();
                 let swatches = STANDARD_COLORS.iter().enumerate().map(|(index, color)| {
                     swatch(
                         index,
@@ -1588,6 +1622,24 @@ impl DocView {
                     .flex_col()
                     .gap_1()
                     .p_2()
+                    .child(
+                        div()
+                            .text_color(palette::text_dim())
+                            .child(i18n::text("sheet.tool.theme_colors")),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .w(px(180.0))
+                            .gap(px(2.0))
+                            .children(theme_swatches),
+                    )
+                    .child(
+                        div()
+                            .text_color(palette::text_dim())
+                            .child(i18n::text("sheet.tool.standard_colors")),
+                    )
                     .child(
                         div()
                             .flex()
