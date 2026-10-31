@@ -333,6 +333,8 @@ struct FilterPanel {
     button: FilterButton,
     options: Vec<AutoFilterOption>,
     checked: Vec<bool>,
+    /// The years (with their months) the column has dates in.
+    dates: Vec<(u32, Vec<u32>)>,
     /// Under the button, in the grid's px.
     at: (f32, f32),
 }
@@ -684,6 +686,8 @@ enum FilterCommand {
     Reapply,
     /// Custom Filter…: its dialog.
     Custom,
+    /// A year (or a month of it) from the date list.
+    Date(u32, Option<u32>),
 }
 
 #[derive(Clone, Copy)]
@@ -1192,6 +1196,12 @@ impl DocView {
             }
             FilterCommand::TopTen => self.open_top_ten(cx),
             FilterCommand::Custom => self.open_custom_filter(cx),
+            FilterCommand::Date(year, month) => {
+                if let Some(panel) = sheet.filter.take() {
+                    let result = sheet.book.filter_date(&panel.button, year, month);
+                    self.edited(result, cx);
+                }
+            }
             FilterCommand::Reapply => {
                 if let Some(panel) = sheet.filter.take() {
                     let result = sheet.book.reapply_filter(&panel.button);
@@ -3164,10 +3174,12 @@ impl DocView {
                     let metrics = sheet.book.header_metrics();
                     let left = button.rect.x + metrics.row_width - scroll.0;
                     let top = button.rect.y + button.rect.height + metrics.column_height - scroll.1;
+                    let dates = sheet.book.filter_date_groups(&button);
                     sheet.filter = Some(FilterPanel {
                         button,
                         options: options.options,
                         checked,
+                        dates,
                         at: (
                             (left * f64::from(zoom)) as f32,
                             (top * f64::from(zoom)) as f32,
@@ -4521,6 +4533,41 @@ impl DocView {
             )
         });
         let filter_panel = sheet.filter.as_ref().map(|panel| {
+            // The date list: each year, then its months under it.
+            let mut date_rows = Vec::new();
+            for (year, months) in &panel.dates {
+                let year = *year;
+                date_rows.push(
+                    div()
+                        .id(("filter-year", year as usize))
+                        .px_3()
+                        .py_0p5()
+                        .cursor_pointer()
+                        .hover(|item| item.bg(palette::hovered()))
+                        .child(i18n::format("filter.date.year", &[("year", &year)]))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(move |view, _event, _window, cx| {
+                            view.filter_command(FilterCommand::Date(year, None), cx)
+                        })),
+                );
+                for month in months {
+                    let month = *month;
+                    date_rows.push(
+                        div()
+                            .id(("filter-month", (year * 100 + month) as usize))
+                            .pl_6()
+                            .pr_3()
+                            .py_0p5()
+                            .cursor_pointer()
+                            .hover(|item| item.bg(palette::hovered()))
+                            .child(i18n::format("filter.date.month", &[("month", &month)]))
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |view, _event, _window, cx| {
+                                view.filter_command(FilterCommand::Date(year, Some(month)), cx)
+                            })),
+                    );
+                }
+            }
             let action = |id: &'static str, label: &'static str, command: FilterCommand| {
                 div()
                     .id(id)
@@ -4603,6 +4650,16 @@ impl DocView {
                     "filter.custom.menu",
                     FilterCommand::Custom,
                 ))
+                .when(!date_rows.is_empty(), |list| {
+                    list.child(
+                        div()
+                            .px_3()
+                            .pt_1()
+                            .text_color(palette::text_dim())
+                            .child(i18n::text("filter.date.heading")),
+                    )
+                    .children(date_rows)
+                })
                 .child(div().my_1().h(px(1.0)).bg(palette::border()))
                 .child(
                     div()
