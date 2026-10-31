@@ -2254,7 +2254,7 @@ impl<B: Backend> Workbook<B> {
             .cloned()
     }
 
-    fn filter_target(button: &FilterButton) -> AutoFilterTarget {
+    pub(crate) fn filter_target(button: &FilterButton) -> AutoFilterTarget {
         match &button.target {
             FilterButtonTarget::Worksheet => AutoFilterTarget::Worksheet,
             FilterButtonTarget::Table { name } => AutoFilterTarget::Table { name: name.clone() },
@@ -2339,7 +2339,7 @@ impl<B: Backend> Workbook<B> {
         self.restructured()
     }
 
-    fn change_filter(&mut self, change: &AutoFilterChange) -> Result<bool, String> {
+    pub(crate) fn change_filter(&mut self, change: &AutoFilterChange) -> Result<bool, String> {
         let name = self.sheet_name();
         self.book
             .change_auto_filter(&name, change)
