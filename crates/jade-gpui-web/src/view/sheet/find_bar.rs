@@ -1,6 +1,7 @@
 //! Find and Replace (⌘F, and Ctrl+H with the Replace field): a bar over
 //! the sheet's top right with what to find and what to replace it with,
-//! Find Next and Previous, Replace and Replace All, and Excel's options —
+//! Find Next and Previous, Find All with its list, Replace and Replace All,
+//! and Excel's options —
 //! Match case, Match entire cell contents, Within: Workbook. The same bar
 //! as the native app's, over `jade-office-model`'s `find`.
 
@@ -13,6 +14,10 @@ use super::*;
 pub(super) enum FindCommand {
     /// Find Next, or Previous (true).
     Next(bool),
+    /// Find All: the matches listed under the bar.
+    FindAll,
+    /// A row of Find All's list: its cell selected.
+    Go(usize),
     Replace,
     ReplaceAll,
     MatchCase,
@@ -49,6 +54,8 @@ impl DocView {
         };
         match command {
             FindCommand::Next(back) => return self.find_next(back, cx),
+            FindCommand::FindAll => return self.find_all(cx),
+            FindCommand::Go(index) => return self.go_to_found(index, cx),
             FindCommand::Replace => return self.replace_one(cx),
             FindCommand::ReplaceAll => return self.replace_all(cx),
             FindCommand::MatchCase => bar.options.match_case = !bar.options.match_case,
@@ -88,6 +95,57 @@ impl DocView {
             }
             None => self.status = i18n::text("sheet.not_found").into(),
         }
+        cx.notify();
+    }
+
+    /// Find All: every match listed under the bar, and how many in the
+    /// status bar.
+    fn find_all(&mut self, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some(bar) = sheet.finding.as_ref() else {
+            return;
+        };
+        let found = sheet.book.found(&bar.find.text, bar.options());
+        let status: SharedString = if found.is_empty() {
+            i18n::text("sheet.not_found").into()
+        } else {
+            i18n::format(
+                "sheet.found_cells",
+                &[("n", &found.len() as &dyn std::fmt::Display)],
+            )
+            .into()
+        };
+        if let Some(bar) = sheet.finding.as_mut() {
+            bar.found = Some(found);
+        }
+        self.status = status;
+        cx.notify();
+    }
+
+    /// A row of Find All's list clicked: its cell selected, on its sheet.
+    fn go_to_found(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some(found) = sheet
+            .finding
+            .as_ref()
+            .and_then(|bar| bar.found.as_ref()?.get(index))
+        else {
+            return;
+        };
+        let (index, cell) = (found.sheet, found.cell);
+        if index != sheet.book.sheet_index() {
+            // Another sheet's tab keeps the bar open.
+            let finding = sheet.finding.take();
+            self.select_sheet(index, cx);
+            if let Some(sheet) = self.sheet_mut() {
+                sheet.finding = finding;
+            }
+        }
+        self.select_cell(cell, false, cx);
         cx.notify();
     }
 
@@ -179,7 +237,9 @@ impl DocView {
 
     /// The bar, while it is open.
     pub(super) fn sheet_find_bar(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
-        let bar = self.sheet_ref()?.finding.as_ref()?;
+        let sheet = self.sheet_ref()?;
+        let bar = sheet.finding.as_ref()?;
+        let active = sheet.selection.active;
         let button = |id: &'static str, on: bool, command: FindCommand| {
             div()
                 .id(id)
@@ -316,6 +376,10 @@ impl DocView {
                             )
                         })
                         .child(
+                            button("find-all", false, FindCommand::FindAll)
+                                .child(i18n::text("sheet.find_all")),
+                        )
+                        .child(
                             button("find-previous", false, FindCommand::Next(true))
                                 .child(i18n::text("sheet.find_previous")),
                         )
@@ -324,7 +388,64 @@ impl DocView {
                                 .child(i18n::text("sheet.find_next")),
                         )
                         .child(button("find-close", false, FindCommand::Close).child("✕")),
-                ),
+                )
+                .when_some(bar.found.as_ref(), |panel, found| {
+                    panel.child(found_list(found, active, cx))
+                }),
         )
     }
+}
+
+/// Find All's list: a row per match — sheet, cell, value, formula — the
+/// active cell's marked; a click selects it.
+fn found_list(
+    found: &[jade_web::find::Found],
+    active: CellRef,
+    cx: &mut Context<DocView>,
+) -> gpui::Stateful<gpui::Div> {
+    let mut list = div()
+        .id("find-all-list")
+        .max_h(px(180.0))
+        .overflow_y_scroll()
+        .flex()
+        .flex_col()
+        .border_t_1()
+        .border_color(palette::border());
+    for (index, row) in found.iter().enumerate() {
+        let cell = |text: String, width: f32| {
+            div()
+                .w(px(width))
+                .flex_none()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(text)
+        };
+        list = list.child(
+            div()
+                .id(("find-all-row", index))
+                .flex()
+                .gap_2()
+                .px_1()
+                .cursor_pointer()
+                .when(row.cell == active, |row| row.bg(palette::selected()))
+                .hover(|row| row.bg(palette::hovered()))
+                .child(cell(row.sheet_name.clone(), 64.0))
+                .child(cell(jade_web::sheet::reference_text(row.cell), 48.0))
+                .child(cell(row.value.clone(), 110.0))
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_color(palette::text_dim())
+                        .child(row.formula.clone()),
+                )
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, window, cx| {
+                    window.focus(&view.focus, cx);
+                    view.sheet_find_command(FindCommand::Go(index), cx);
+                })),
+        );
+    }
+    list
 }
