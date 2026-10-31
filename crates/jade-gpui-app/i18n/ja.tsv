@@ -3691,3 +3691,6 @@ text_columns.breaks	文字をクリックするとその前に区切り線を入
 sheet.menu.clear_formats	書式のクリア
 sheet.menu.clear_all	すべてクリア
 sheet.menu.tab_color	シート見出しの色
+sheet.filter.top	トップテン
+sheet.filter.bottom	ボトムテン
+sheet.filter.reapply	再適用
