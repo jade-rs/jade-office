@@ -27,6 +27,7 @@ pub mod duplicates;
 pub mod editable_ranges;
 pub mod find;
 pub mod format_cells;
+pub mod formula_complete;
 pub mod grid;
 pub mod links;
 pub mod names;
