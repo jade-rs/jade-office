@@ -455,6 +455,8 @@ enum MenuCommand {
     SortDescending,
     MergeCenter,
     InsertSheet,
+    /// Move or Copy ▸ Create a copy of the sheet at this index.
+    CopySheet(usize),
     ProtectWorkbook,
     ProtectSheet(usize),
     EditRanges(usize),
@@ -1347,6 +1349,7 @@ impl WorkbookView {
             && matches!(
                 command,
                 MenuCommand::InsertSheet
+                    | MenuCommand::CopySheet(_)
                     | MenuCommand::RenameSheet(_)
                     | MenuCommand::DeleteSheet(_)
                     | MenuCommand::MoveSheet(_, _)
@@ -1457,6 +1460,12 @@ impl WorkbookView {
             }
             MenuCommand::InsertSheet => {
                 let result = self.book.add_sheet().map(|_| true);
+                self.selection = Selection::default();
+                self.scroll.set_offset(point(px(0.0), px(0.0)));
+                result
+            }
+            MenuCommand::CopySheet(index) => {
+                let result = self.book.copy_sheet(index).map(|_| true);
                 self.selection = Selection::default();
                 self.scroll.set_offset(point(px(0.0), px(0.0)));
                 result
@@ -3190,6 +3199,7 @@ impl WorkbookView {
                     (MenuCommand::ProtectSheet(index), "protection.sheet_menu"),
                     (MenuCommand::EditRanges(index), "protection.ranges_menu"),
                     (MenuCommand::RenameSheet(index), "sheet.menu.rename_sheet"),
+                    (MenuCommand::CopySheet(index), "sheet.menu.copy_sheet"),
                     (MenuCommand::DeleteSheet(index), "sheet.menu.delete_sheet"),
                     (MenuCommand::HideSheet(index), "sheet.menu.hide_sheet"),
                 ];
@@ -5228,6 +5238,22 @@ mod tests {
                 .is_some_and(|menu| menu.open == Some(MenuGroup::Clear)));
             view.menu_command(MenuCommand::OpenGroup(MenuGroup::Clear), false, cx);
             assert!(view.menu.as_ref().is_some_and(|menu| menu.open.is_none()));
+        });
+    }
+
+    /// Copy Sheet from a tab's menu puts the copy after it and shows it.
+    #[gpui::test]
+    fn copy_sheet_from_the_tab_menu(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.menu_command(MenuCommand::InsertSheet, false, cx);
+            let index = view.book.sheet_index();
+            view.book.set_cell(at(2, 2), "on the copy").unwrap();
+            let name = view.book.sheet_names()[index].clone();
+            view.menu_command(MenuCommand::CopySheet(index), false, cx);
+            assert_eq!(view.book.sheet_index(), index + 1);
+            assert_eq!(view.book.sheet_names()[index + 1], format!("{name} (2)"));
+            assert_eq!(view.book.display_text(at(2, 2)), "on the copy");
         });
     }
 
