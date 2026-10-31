@@ -47,8 +47,8 @@ use jade_office_model::protected_edits::{attempt, ProtectedEdit};
 use jade_office_model::protection::ProtectionDialog;
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
-    CellFormat, CellRange, CellRef, FilterButton, FontToggle, HorizontalAlignment, Link, Overlay,
-    ResizeGesture, SheetVisibility, Workbook, MAX_COLUMN, MAX_ROW,
+    CellFormat, CellRange, CellRef, FilterButton, FontToggle, Freeze, HorizontalAlignment, Link,
+    Overlay, ResizeGesture, SheetVisibility, Workbook, MAX_COLUMN, MAX_ROW,
 };
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::tables::TableDialog;
@@ -335,6 +335,9 @@ enum MenuCommand {
     /// The selected whole rows or columns.
     Hide,
     Unhide,
+    /// The rows above and the columns left of the active cell.
+    FreezePanes,
+    UnfreezePanes,
 }
 
 /// What a painted image was painted for. A frame that matches it needs no new
@@ -1257,6 +1260,8 @@ impl WorkbookView {
                     self.book.unhide(axis, first, last)
                 }
             }
+            MenuCommand::FreezePanes => self.book.freeze_panes(Freeze::Panes(selection.active)),
+            MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
         };
         // What was copied moved or went with the deleted cells.
         if matches!(
@@ -2810,6 +2815,11 @@ impl WorkbookView {
                 } else {
                     items.push((MenuCommand::EditNote, "sheet.menu.insert_note"));
                 }
+                items.push(if self.book.frozen_panes().is_some() {
+                    (MenuCommand::UnfreezePanes, "sheet.menu.unfreeze_panes")
+                } else {
+                    (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
+                });
                 items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                 items.push((MenuCommand::CellLocked, "protection.cell_locked"));
                 items.push((MenuCommand::CellHidden, "protection.cell_hidden"));
