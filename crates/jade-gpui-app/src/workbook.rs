@@ -401,6 +401,9 @@ pub struct WorkbookView {
     renaming: Option<(usize, TextEdit)>,
     /// The name box being typed into: a cell or range to go to.
     naming: Option<TextEdit>,
+    /// The name box was opened by Go To (F5, ⌃G): what is typed is only
+    /// gone to, never defined as a name.
+    going_to: bool,
     /// Find and Replace (⌘F, ⌃H): what is typed into it, and its options.
     finding: Option<FindBar>,
     /// A note being written on a cell.
@@ -1808,6 +1811,7 @@ impl WorkbookView {
             "enter" => self.advance_cell(false, shift, cx),
             "tab" => self.advance_cell(true, shift, cx),
             "f2" => self.begin_edit(None, true, cx),
+            "f5" => self.open_go_to(cx),
             // Calculate Now, as in Excel.
             "f9" => {
                 let result = self.book.calculate_now();
@@ -1925,6 +1929,8 @@ impl WorkbookView {
             "k" => self.open_link_dialog(cx),
             // ⌃H, as Excel for Mac: Find and Replace (⌘H hides the app).
             "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
+            // ⌃G, as F5: Go To.
+            "g" if modifiers.control && !modifiers.platform => self.open_go_to(cx),
             "end" => {
                 let end = self.book.used_end();
                 self.select_cell(end, shift, cx);
@@ -2023,6 +2029,18 @@ impl WorkbookView {
     }
 
     /// Ends a tab rename or a name-box entry, taking it or not.
+    /// Go To (F5, ⌃G): the name box opened on the active cell, for a cell,
+    /// range or name to go to; one that does not exist is said so.
+    fn open_go_to(&mut self, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        self.menu = None;
+        self.naming = Some(TextEdit::selected(reference_text(self.active())));
+        self.going_to = true;
+        cx.notify();
+    }
+
     fn finish_naming(&mut self, take: bool, cx: &mut Context<Self>) {
         if let Some((index, text)) = self.renaming.take() {
             let name = text.text.trim().to_string();
@@ -2038,6 +2056,7 @@ impl WorkbookView {
         } else if self.finding.take().is_some() {
             // Escape or Tab closes the find bar where the search got to.
         } else if let Some(text) = self.naming.take() {
+            let going_to = std::mem::take(&mut self.going_to);
             if take {
                 match self.book.resolve_reference(&text.text) {
                     Some((sheet, range)) => {
@@ -2053,6 +2072,7 @@ impl WorkbookView {
                         self.tab_start = None;
                         self.reveal(range.start);
                     }
+                    None if going_to => self.status = i18n::text("sheet.no_reference").into(),
                     None => {
                         let result = self
                             .book
@@ -2793,6 +2813,7 @@ impl WorkbookView {
                         }
                         if view.naming.is_none() {
                             view.naming = Some(TextEdit::selected(reference_text(view.active())));
+                            view.going_to = false;
                         }
                         cx.notify();
                     })),
@@ -4377,6 +4398,7 @@ impl WorkbookView {
             tab_start: None,
             renaming: None,
             naming: None,
+            going_to: false,
             finding: None,
             noting: None,
             asking: None,
@@ -4657,6 +4679,29 @@ mod tests {
             assert!(view.edit.is_none());
             view.step_history(true, cx);
             assert_eq!(view.book.edit_text(at(7, 1)), "");
+        });
+    }
+
+    /// F5 opens Go To in the name box: a reference typed there is gone
+    /// to, and one that does not exist is said so, never defined.
+    #[gpui::test]
+    fn f5_goes_to_a_reference_and_defines_nothing(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("f5");
+        view.read_with(cx, |view, _| {
+            assert!(view.going_to && view.naming.is_some())
+        });
+        cx.simulate_input("D9");
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, cx| {
+            assert_eq!(view.active(), at(3, 8));
+            let names = view.book.defined_names().len();
+            view.open_go_to(cx);
+            view.naming = Some(TextEdit::new("NoSuchName".into()));
+            view.finish_naming(true, cx);
+            assert_eq!(view.book.defined_names().len(), names);
+            assert_eq!(view.status.as_ref(), i18n::text("sheet.no_reference"));
+            assert_eq!(view.active(), at(3, 8));
         });
     }
 
