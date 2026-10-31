@@ -3738,3 +3738,5 @@ sheet.menu.group_data	並べ替え・データ・アウトライン
 sheet.menu.group_pivot_table	ピボットテーブルとテーブル
 sheet.menu.group_links_validation	リンクと入力規則
 sheet.menu.group_protection	保護
+filter.custom.and	AND
+filter.custom.or	OR

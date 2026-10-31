@@ -585,7 +585,7 @@ impl WorkbookView {
             return Some(dialog.field_mut());
         }
         if let Some(dialog) = self.custom_filter.as_mut() {
-            return Some(&mut dialog.value);
+            return Some(dialog.field_mut());
         }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
@@ -628,7 +628,7 @@ impl WorkbookView {
             return Some(dialog.field());
         }
         if let Some(dialog) = self.custom_filter.as_ref() {
-            return Some(&dialog.value);
+            return Some(dialog.field());
         }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);
@@ -5649,8 +5649,8 @@ mod tests {
         view.read_with(cx, |view, _| assert!(filter_button(view).is_none()));
     }
 
-    /// Custom Filter: what is typed goes into its value, not a cell, and
-    /// Enter shows only the rows that pass.
+    /// Custom Filter: what is typed goes into its values, not a cell, Tab
+    /// goes between them, and Enter shows only the rows that pass.
     #[gpui::test]
     fn the_custom_filter_dialog_filters_by_what_is_typed(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_view(cx);
@@ -5680,6 +5680,7 @@ mod tests {
             ));
             view.custom_filter_action(
                 custom_filter::CustomFilterAction::Test(
+                    false,
                     jade_office_model::custom_filter::FilterTest::BeginsWith,
                 ),
                 cx,
@@ -5690,11 +5691,25 @@ mod tests {
             assert_eq!(view.custom_filter.as_ref().unwrap().value.text, "ap");
             assert!(view.edit.is_none(), "typing goes into the dialog");
         });
+        // Tab types into the second value; Or keeps a row either passes.
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("ban");
+        view.update(cx, |view, cx| {
+            assert_eq!(view.custom_filter.as_ref().unwrap().second.text, "ban");
+            view.custom_filter_action(custom_filter::CustomFilterAction::And(false), cx);
+            view.custom_filter_action(
+                custom_filter::CustomFilterAction::Test(
+                    true,
+                    jade_office_model::custom_filter::FilterTest::BeginsWith,
+                ),
+                cx,
+            );
+        });
         cx.simulate_keystrokes("enter");
         view.read_with(cx, |view, _| {
             assert!(view.custom_filter.is_none());
-            // banana's row is hidden: down from apple lands on apricot.
-            assert_eq!(view.book.step(at(20, 100), Direction::Down), at(20, 102));
+            // apple, banana (Or) and apricot all show.
+            assert_eq!(view.book.step(at(20, 100), Direction::Down), at(20, 101));
         });
     }
 
