@@ -39,6 +39,7 @@ mod duplicates;
 mod find_bar;
 mod insert_function;
 mod links;
+mod more_colors;
 mod page_setup;
 mod paste_special;
 mod pivots;
@@ -124,6 +125,7 @@ pub(super) struct Sheet {
     pub(super) custom_filter: Option<jade_web::custom_filter::CustomFilterDialog>,
     pub(super) insert_function: Option<jade_web::insert_function::InsertFunctionDialog>,
     pub(super) top_ten: Option<jade_web::top_ten::TopTenDialog>,
+    pub(super) more_colors: Option<jade_web::more_colors::MoreColorsDialog>,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
@@ -643,6 +645,8 @@ enum Tool {
     /// A theme colour from the gallery, by its place, for the fill (true)
     /// or the font.
     ThemeColor(bool, usize),
+    /// More Colors… for the fill (true) or the font.
+    MoreColors(bool),
     /// Top, Middle or Bottom Align.
     VAlign(VerticalAlignment),
     /// Increase Indent (true) or Decrease.
@@ -785,6 +789,7 @@ impl Sheet {
             custom_filter: None,
             insert_function: None,
             top_ten: None,
+            more_colors: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -822,6 +827,9 @@ impl Sheet {
         }
         if let Some(dialog) = self.validation_dialog.as_mut() {
             return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.more_colors.as_mut() {
+            return Some(&mut dialog.code);
         }
         if let Some(dialog) = self.insert_function.as_mut() {
             return Some(&mut dialog.search);
@@ -871,6 +879,9 @@ impl Sheet {
         }
         if let Some(dialog) = self.validation_dialog.as_ref() {
             return Some(dialog.field());
+        }
+        if let Some(dialog) = self.more_colors.as_ref() {
+            return Some(&dialog.code);
         }
         if let Some(dialog) = self.insert_function.as_ref() {
             return Some(&dialog.search);
@@ -1215,6 +1226,7 @@ impl DocView {
             Tool::Decimals(more) => sheet.book.decimals(range, active, more),
             Tool::FontSize(larger) => sheet.book.grow_font(range, active, larger),
             Tool::Fill(color) => sheet.book.fill_color(range, color),
+            Tool::MoreColors(fill) => return self.open_more_colors(fill, cx),
             Tool::ThemeColor(fill, index) => {
                 let Some(color) = sheet.book.theme_palette().get(index).cloned() else {
                     return;
@@ -1648,6 +1660,11 @@ impl DocView {
                             .gap_1()
                             .children(swatches),
                     )
+                    .child(item(
+                        "more-colors",
+                        "sheet.tool.more_colors",
+                        Tool::MoreColors(fill),
+                    ))
                     .when(popup == Popup::Fill, |body| {
                         body.child(item("no-fill", "sheet.tool.no_fill", Tool::Fill(None)))
                     })
@@ -1827,6 +1844,7 @@ impl DocView {
             || sheet.custom_filter.is_some()
             || sheet.insert_function.is_some()
             || sheet.top_ten.is_some()
+            || sheet.more_colors.is_some()
             || sheet.duplicates_dialog.is_some()
         {
             return false;
@@ -1913,6 +1931,7 @@ impl DocView {
                 || s.custom_filter.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.more_colors.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -2141,6 +2160,10 @@ impl DocView {
                 return true;
             }
             sheet.choices = None;
+        }
+        // More Colors' dialog has the keys while it is open.
+        if sheet.more_colors.is_some() {
+            return self.more_colors_key(key, modifiers, cx);
         }
         // Top 10's dialog has the keys while it is open.
         if sheet.top_ten.is_some() {
@@ -2718,6 +2741,7 @@ impl DocView {
                 || s.custom_filter.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.more_colors.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -3010,6 +3034,7 @@ impl DocView {
                 || s.custom_filter.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.more_colors.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -3751,6 +3776,7 @@ impl DocView {
         let custom_filter_panel = self.custom_filter_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
+        let more_colors_panel = self.more_colors_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -4682,6 +4708,7 @@ impl DocView {
                     .children(custom_filter_panel)
                     .children(insert_function_panel)
                     .children(top_ten_panel)
+                    .children(more_colors_panel)
                     .children(duplicates_panel)
                     .children(protection_panel)
                     .children(validation_panel)
