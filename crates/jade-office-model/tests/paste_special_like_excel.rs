@@ -252,3 +252,39 @@ fn operations_combine_the_copied_numbers_with_those_pasted_on() {
         .unwrap();
     assert_eq!(book.display_text(at(22, 50)), "#DIV/0!");
 }
+
+/// Paste Link writes formulas reading the copied cells: absolute for one
+/// cell, relative for several, with the sheet's name from another sheet.
+#[test]
+fn paste_link_writes_formulas_reading_the_copied_cells() {
+    let mut book = book();
+    book.set_cell(at(20, 60), "7").unwrap();
+    book.set_cell(at(21, 60), "8").unwrap();
+    book.copy(span(at(20, 60), at(20, 60)), false);
+    assert_eq!(
+        book.paste_link(at(23, 60)).unwrap(),
+        Some(span(at(23, 60), at(23, 60)))
+    );
+    assert_eq!(book.edit_text(at(23, 60)), "=$U$61");
+    assert_eq!(book.display_text(at(23, 60)), "7");
+    book.copy(span(at(20, 60), at(21, 60)), false);
+    book.paste_link(at(23, 62)).unwrap();
+    assert_eq!(book.edit_text(at(24, 62)), "=V61");
+    // The link follows the source.
+    book.set_cell(at(21, 60), "80").unwrap();
+    assert_eq!(book.display_text(at(24, 62)), "80");
+    // From another sheet, the sheet's name goes in front.
+    let here = book.sheet_index();
+    let name = book.sheet_names()[here].clone();
+    book.copy(span(at(20, 60), at(20, 60)), false);
+    let other = book.add_sheet().unwrap();
+    book.select_sheet(other).unwrap();
+    book.paste_link(at(0, 0)).unwrap();
+    assert!(book.edit_text(at(0, 0)).ends_with("!$U$61"));
+    assert!(book.edit_text(at(0, 0)).contains(&name));
+    assert_eq!(book.display_text(at(0, 0)), "7");
+    // Not after a cut.
+    book.select_sheet(here).unwrap();
+    book.copy(span(at(20, 60), at(20, 60)), true);
+    assert_eq!(book.paste_link(at(25, 60)).unwrap(), None);
+}

@@ -268,6 +268,56 @@ impl<B: Backend> Workbook<B> {
         Ok(Some(landed))
     }
 
+    /// Paste Link at `at`: a formula in each cell pasted on that reads the
+    /// copied cell — `=$B$2` for one cell, `=B2` and on for several, with the
+    /// sheet's name in front from another sheet — as Excel's button pastes.
+    /// Not after a cut, nor from elsewhere. Returns the range pasted on.
+    pub fn paste_link(&mut self, at: CellRef) -> Result<Option<CellRange>, String> {
+        let Some((sheet, range, false)) = self.copied_cells() else {
+            return Ok(None);
+        };
+        let prefix = if sheet == self.sheet_index() {
+            String::new()
+        } else {
+            let names = self.sheet_names();
+            format!("{}!", jade_xlsx_reader::quote_sheet_name(&names[sheet]))
+        };
+        let single = range.start == range.end;
+        let (rows, columns) = (
+            range.end.row - range.start.row,
+            range.end.column - range.start.column,
+        );
+        let mut writes: Vec<(String, CellInput)> = Vec::new();
+        for down in 0..=rows {
+            for across in 0..=columns {
+                let from = CellRef::new(range.start.column + across, range.start.row + down);
+                let to = CellRef::new(at.column + across, at.row + down);
+                let reference = if single {
+                    format!(
+                        "${}${}",
+                        crate::sheet::column_label(from.column),
+                        from.row + 1
+                    )
+                } else {
+                    reference_text(from)
+                };
+                writes.push((
+                    reference_text(to),
+                    CellInput::Formula(format!("{prefix}{reference}")),
+                ));
+            }
+        }
+        let name = self.sheet_name();
+        self.engine_mut()
+            .set_cells(&name, &writes)
+            .map_err(|error| error.to_string())?;
+        self.wrote(1)?;
+        Ok(Some(CellRange {
+            start: at,
+            end: CellRef::new(at.column + columns, at.row + rows),
+        }))
+    }
+
     /// The copied cells as they are now, row by row, each formula moved to
     /// where it lands from `at`, turned when transposed.
     fn copied_grid(
