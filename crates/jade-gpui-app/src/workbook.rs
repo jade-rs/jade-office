@@ -74,6 +74,7 @@ mod duplicates;
 mod find_bar;
 mod insert_function;
 mod links;
+mod more_colors;
 mod page_setup;
 mod paste_special;
 mod pivots;
@@ -396,6 +397,8 @@ enum Tool {
     /// A theme colour from the gallery, by its place, for the fill (true)
     /// or the font.
     ThemeColor(bool, usize),
+    /// More Colors… for the fill (true) or the font.
+    MoreColors(bool),
     /// Top, Middle or Bottom Align.
     VAlign(VerticalAlignment),
     /// Increase Indent (true) or Decrease.
@@ -563,6 +566,7 @@ pub struct WorkbookView {
     custom_filter: Option<jade_office_model::custom_filter::CustomFilterDialog>,
     insert_function: Option<jade_office_model::insert_function::InsertFunctionDialog>,
     top_ten: Option<jade_office_model::top_ten::TopTenDialog>,
+    more_colors: Option<jade_office_model::more_colors::MoreColorsDialog>,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -635,6 +639,9 @@ impl WorkbookView {
         if let Some(dialog) = self.validation_dialog.as_mut() {
             return Some(dialog.field_mut());
         }
+        if let Some(dialog) = self.more_colors.as_mut() {
+            return Some(&mut dialog.code);
+        }
         if let Some(dialog) = self.insert_function.as_mut() {
             return Some(&mut dialog.search);
         }
@@ -680,6 +687,9 @@ impl WorkbookView {
         }
         if let Some(dialog) = self.validation_dialog.as_ref() {
             return Some(dialog.field());
+        }
+        if let Some(dialog) = self.more_colors.as_ref() {
+            return Some(&dialog.code);
         }
         if let Some(dialog) = self.insert_function.as_ref() {
             return Some(&dialog.search);
@@ -773,6 +783,7 @@ impl WorkbookView {
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1033,6 +1044,7 @@ impl WorkbookView {
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
             return false;
@@ -1128,6 +1140,7 @@ impl WorkbookView {
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1273,6 +1286,7 @@ impl WorkbookView {
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1673,6 +1687,7 @@ impl WorkbookView {
             Tool::Decimals(more) => self.book.decimals(range, active, more),
             Tool::FontSize(larger) => self.book.grow_font(range, active, larger),
             Tool::Fill(color) => self.book.fill_color(range, color),
+            Tool::MoreColors(fill) => return self.open_more_colors(fill, cx),
             Tool::ThemeColor(fill, index) => {
                 let Some(color) = self.book.theme_palette().get(index).cloned() else {
                     return;
@@ -1879,6 +1894,10 @@ impl WorkbookView {
             return true;
         }
 
+        // More Colors' dialog has the keys while it is open.
+        if self.more_colors.is_some() {
+            return self.more_colors_key(key, modifiers, cx);
+        }
         // Top 10's dialog has the keys while it is open.
         if self.top_ten.is_some() {
             return self.top_ten_key(key, cx);
@@ -2356,6 +2375,7 @@ impl WorkbookView {
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -4072,6 +4092,11 @@ impl WorkbookView {
                             .gap_1()
                             .children(swatches),
                     )
+                    .child(item(
+                        "more-colors",
+                        "sheet.tool.more_colors",
+                        Tool::MoreColors(fill),
+                    ))
                     .when(popup == Popup::Fill, |body| {
                         body.child(item("no-fill", "sheet.tool.no_fill", Tool::Fill(None)))
                     })
@@ -4646,6 +4671,7 @@ impl Render for WorkbookView {
         let custom_filter_panel = self.custom_filter_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
+        let more_colors_panel = self.more_colors_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -4808,6 +4834,7 @@ impl Render for WorkbookView {
             .children(custom_filter_panel)
             .children(insert_function_panel)
             .children(top_ten_panel)
+            .children(more_colors_panel)
             .children(duplicates_panel)
             .children(protection_panel)
             .children(validation_panel)
@@ -4858,6 +4885,7 @@ impl WorkbookView {
             custom_filter: None,
             insert_function: None,
             top_ten: None,
+            more_colors: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -6025,6 +6053,31 @@ mod tests {
             assert_eq!(
                 view.book.format_at(at(10, 30)).font_name.as_deref(),
                 Some("Arial")
+            );
+        });
+    }
+
+    /// More Colors… takes a typed colour code; one that is not a colour
+    /// keeps the dialog open.
+    #[gpui::test]
+    fn more_colors_takes_a_typed_code(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::cell(at(10, 30));
+            view.tool(Tool::MoreColors(true), cx);
+            assert!(view.more_colors.is_some());
+        });
+        cx.simulate_input("blue");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| assert!(view.more_colors.is_some()));
+        cx.simulate_keystrokes("backspace backspace backspace backspace");
+        cx.simulate_input("#36c");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.more_colors.is_none());
+            assert_eq!(
+                view.book.format_at(at(10, 30)).fill_color.as_deref(),
+                Some("3366CC")
             );
         });
     }
