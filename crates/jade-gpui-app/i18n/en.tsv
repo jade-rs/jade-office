@@ -3691,8 +3691,6 @@ text_columns.breaks	Click a character to put a break before it, or click a break
 sheet.menu.clear_formats	Clear Formats
 sheet.menu.clear_all	Clear All
 sheet.menu.tab_color	Tab Color
-sheet.filter.top	Top 10
-sheet.filter.bottom	Bottom 10
 sheet.filter.reapply	Reapply
 sheet.paste_special.operation	Operation
 sheet.paste_special.op_none	None
@@ -3744,3 +3742,9 @@ insert_function.menu	Insert Function…
 insert_function.dialog	Insert Function
 insert_function.search	Search for a function
 sheet.menu.show_formulas	Show Formulas (Ctrl+`)
+sheet.filter.top_ten	Top 10…
+filter.top_ten.dialog	Top 10 AutoFilter: Show
+filter.top_ten.top	Top
+filter.top_ten.bottom	Bottom
+filter.top_ten.items	Items
+filter.top_ten.percent	Percent

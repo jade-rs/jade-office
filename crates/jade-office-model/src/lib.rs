@@ -50,6 +50,7 @@ pub mod subtotal;
 pub mod tables;
 pub mod text;
 pub mod text_columns;
+pub mod top_ten;
 pub mod typing;
 pub mod validation;
 pub mod word;

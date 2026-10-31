@@ -1211,6 +1211,7 @@ impl DocView {
                     || sheet.page_setup_dialog.is_some()
                     || sheet.custom_filter.is_some()
                     || sheet.insert_function.is_some()
+                    || sheet.top_ten.is_some()
                     || sheet.duplicates_dialog.is_some()
                 {
                     return;
