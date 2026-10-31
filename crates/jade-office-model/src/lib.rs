@@ -23,6 +23,7 @@ pub mod clipboard;
 pub mod conditional_formatting;
 pub mod csv;
 pub mod deck;
+pub mod duplicates;
 pub mod editable_ranges;
 pub mod find;
 pub mod format_cells;

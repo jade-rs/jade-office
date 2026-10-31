@@ -261,6 +261,9 @@ sheet.menu.show_detail	Show Detail
 sheet.menu.auto_outline	Auto Outline
 sheet.menu.clear_outline	Clear Outline
 sheet.menu.subtotal	Subtotal
+sheet.menu.remove_duplicates	Remove Duplicates
+sheet.duplicates_removed	{removed} duplicate values found and removed; {remaining} unique values remain.
+sheet.duplicates_none	No duplicate values found.
 subtotal.dialog	Subtotal
 subtotal.by	At each change in
 subtotal.function	Use function
