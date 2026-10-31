@@ -2431,6 +2431,17 @@ impl<B: Backend> Workbook<B> {
         )
     }
 
+    /// The toolbar's font box: the selection's font family.
+    pub fn set_font_name(&mut self, range: CellRange, name: &str) -> Result<bool, String> {
+        self.format(
+            range,
+            &FormatChange {
+                font_name: Some(name.to_string()),
+                ..Default::default()
+            },
+        )
+    }
+
     /// Top, Middle or Bottom Align on the selection — or, when the active
     /// cell already has it, back to Excel's Bottom.
     pub fn valign(
@@ -3790,6 +3801,25 @@ fn layout_options(
     }
     .with_normal_font_metrics(&workbook.styles)
 }
+
+/// The families the toolbar's font box lists: Excel's for Japanese, then
+/// the common Latin ones.
+pub const SHEET_FONTS: [&str; 14] = [
+    "游ゴシック",
+    "游明朝",
+    "メイリオ",
+    "ＭＳ Ｐゴシック",
+    "ＭＳ ゴシック",
+    "ＭＳ 明朝",
+    "Aptos",
+    "Calibri",
+    "Arial",
+    "Century",
+    "Times New Roman",
+    "Courier New",
+    "Georgia",
+    "Verdana",
+];
 
 /// `B3:B3` for a single cell too, as the engine's range arguments take.
 fn range_text_full(range: CellRange) -> String {
