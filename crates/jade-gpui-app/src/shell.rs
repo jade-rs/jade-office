@@ -35,8 +35,9 @@ impl Kind {
             "doc" | "dot" | "wbk" | "rtf" | "txt" | "odt" | "fodt" | "htm" | "html" | "pdf" => {
                 Some(Kind::Document)
             }
-            // A CSV opens as a workbook of one sheet, as in Excel.
-            "xlsx" | "xlsm" | "xltx" | "xltm" | "csv" => Some(Kind::Workbook),
+            // A CSV (or tab-separated .tsv) opens as a workbook of one sheet,
+            // as in Excel.
+            "xlsx" | "xlsm" | "xltx" | "xltm" | "csv" | "tsv" => Some(Kind::Workbook),
             "pptx" | "pptm" | "potx" | "potm" | "ppsx" | "ppsm" => Some(Kind::Deck),
             _ => None,
         }
