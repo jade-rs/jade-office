@@ -1,5 +1,6 @@
 //! Excel's Paste Special (⌘⌃V, Ctrl+Alt+V): the copied cells pasted as
-//! All, Formulas, Values or Formats, with Skip blanks and Transpose.
+//! All, Formulas, Values or Formats, with an Operation, Skip blanks and
+//! Transpose.
 //!
 //! As in Excel, what pastes is what the copied cells hold now, not when they
 //! were copied, and a cut has no Paste Special. Text copied from elsewhere
@@ -15,6 +16,11 @@
 //! Transpose turns the block: the copied rows become columns, and formulas
 //! turn their references with it (`transpose_formula`). Skip blanks leaves
 //! the cells under an empty copied cell as they are. One write, one undo.
+//!
+//! An operation — Add, Subtract, Multiply, Divide — combines each copied
+//! number with the one pasted on rather than replacing it, as Excel's do: a
+//! blank counts as 0, a formula on either side makes the result a formula
+//! (`=(B2*2)+5`), copied text pastes as it is, and text pasted on stays.
 
 use jade_xlsx_headless_api::CellInput;
 use jade_xlsx_headless_editor::formula_text;
@@ -53,10 +59,94 @@ impl PasteWhat {
     }
 }
 
+/// Paste Special's Operation: how a copied number meets the one pasted on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PasteOperation {
+    #[default]
+    None,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
+impl PasteOperation {
+    /// The dialog's choices, in Excel's order.
+    pub const ALL: [PasteOperation; 5] = [
+        PasteOperation::None,
+        PasteOperation::Add,
+        PasteOperation::Subtract,
+        PasteOperation::Multiply,
+        PasteOperation::Divide,
+    ];
+
+    /// The i18n key of its name.
+    pub fn label(self) -> &'static str {
+        match self {
+            PasteOperation::None => "sheet.paste_special.op_none",
+            PasteOperation::Add => "sheet.paste_special.op_add",
+            PasteOperation::Subtract => "sheet.paste_special.op_subtract",
+            PasteOperation::Multiply => "sheet.paste_special.op_multiply",
+            PasteOperation::Divide => "sheet.paste_special.op_divide",
+        }
+    }
+
+    fn sign(self) -> &'static str {
+        match self {
+            PasteOperation::None => "",
+            PasteOperation::Add => "+",
+            PasteOperation::Subtract => "-",
+            PasteOperation::Multiply => "*",
+            PasteOperation::Divide => "/",
+        }
+    }
+
+    /// What the cell pasted on (`under`) becomes with `copied` combined
+    /// into it.
+    fn combine(self, under: CellInput, copied: CellInput) -> CellInput {
+        let operand = |input: &CellInput| match input {
+            CellInput::Number(number) => Some(number.to_string()),
+            CellInput::Blank => Some("0".to_string()),
+            CellInput::Formula(formula) => Some(format!("({formula})")),
+            _ => None,
+        };
+        // Copied text (or a truth value) pastes as it is.
+        let Some(right) = operand(&copied) else {
+            return copied;
+        };
+        // Text pasted on stays.
+        let Some(left) = operand(&under) else {
+            return under;
+        };
+        let number = |input: &CellInput| match input {
+            CellInput::Number(number) => Some(*number),
+            CellInput::Blank => Some(0.0),
+            _ => None,
+        };
+        if let (Some(a), Some(b)) = (number(&under), number(&copied)) {
+            let result = match self {
+                PasteOperation::None => b,
+                PasteOperation::Add => a + b,
+                PasteOperation::Subtract => a - b,
+                PasteOperation::Multiply => a * b,
+                // ÷0 is Excel's #DIV/0!, which a formula gives.
+                PasteOperation::Divide if b == 0.0 => {
+                    return CellInput::Formula(format!("{left}/0"));
+                }
+                PasteOperation::Divide => a / b,
+            };
+            return CellInput::Number(result);
+        }
+        CellInput::Formula(format!("{left}{}{right}", self.sign()))
+    }
+}
+
 /// The Paste Special dialog's choices, which is also its state while open.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PasteSpecial {
     pub what: PasteWhat,
+    /// Operation: None replaces what is pasted on, as a paste does.
+    pub operation: PasteOperation,
     pub skip_blanks: bool,
     pub transpose: bool,
 }
@@ -153,6 +243,16 @@ impl<B: Backend> Workbook<B> {
                         Some(style) => (self.input_at(to), Some(style)),
                         None => continue,
                     },
+                };
+                let write = if special.operation == PasteOperation::None
+                    || special.what == PasteWhat::Formats
+                {
+                    write
+                } else {
+                    (
+                        special.operation.combine(self.input_at(to), write.0),
+                        write.1,
+                    )
                 };
                 writes.push((reference_text(to), write.0, write.1));
             }
