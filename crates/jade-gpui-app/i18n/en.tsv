@@ -3667,3 +3667,13 @@ pivot.new_sheet	New worksheet
 pivot.new_sheet_name	New worksheet name
 pivot.create_hint	Creates an initial summary. You can change its fields, values and style next.
 pivot.hidden_destination	Choose a visible worksheet for the report.
+sheet.menu.sort_dialog	Sort…
+sort.dialog	Sort
+sort.sort_by	Sort by
+sort.then_by	Then by
+sort.ascending	A to Z
+sort.descending	Z to A
+sort.add_level	Add Level
+sort.remove_level	Delete Level
+sort.header	My data has headers
+sort.case	Case sensitive

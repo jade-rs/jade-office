@@ -38,6 +38,7 @@ mod paste_special;
 mod pivots;
 mod protection;
 mod save_as;
+mod sort;
 mod subtotal;
 mod tables;
 mod text_columns;
@@ -108,6 +109,7 @@ pub(super) struct Sheet {
     pub(super) link_dialog: Option<LinkDialog>,
     pub(super) subtotal_dialog: Option<jade_web::subtotal::SubtotalDialog>,
     pub(super) text_columns_dialog: Option<jade_web::text_columns::TextColumnsDialog>,
+    pub(super) sort_dialog: Option<jade_web::sort_dialog::SortDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
     pub(super) pivot_dialog: Option<PivotPanel>,
@@ -589,6 +591,7 @@ enum MenuCommand {
     Subtotal,
     RemoveDuplicates,
     TextToColumns,
+    SortDialog,
     ManualCalculation(bool),
     CalculateNow,
     DeleteSheet(usize),
@@ -629,6 +632,7 @@ impl Sheet {
             link_dialog: None,
             subtotal_dialog: None,
             text_columns_dialog: None,
+            sort_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -1528,6 +1532,7 @@ impl DocView {
             || sheet.pivot_dialog.is_some()
             || sheet.subtotal_dialog.is_some()
             || sheet.text_columns_dialog.is_some()
+            || sheet.sort_dialog.is_some()
         {
             return false;
         }
@@ -1606,6 +1611,7 @@ impl DocView {
                 || s.pivot_dialog.is_some()
                 || s.subtotal_dialog.is_some()
                 || s.text_columns_dialog.is_some()
+                || s.sort_dialog.is_some()
         }) {
             return;
         }
@@ -1806,6 +1812,9 @@ impl DocView {
             return true;
         }
         if self.text_columns_key(key, cx) {
+            return true;
+        }
+        if self.sort_key(key, cx) {
             return true;
         }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
@@ -2339,6 +2348,7 @@ impl DocView {
                 || s.pivot_dialog.is_some()
                 || s.subtotal_dialog.is_some()
                 || s.text_columns_dialog.is_some()
+                || s.sort_dialog.is_some()
         }) {
             return;
         }
@@ -2534,6 +2544,7 @@ impl DocView {
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::RemoveDuplicates => return self.remove_sheet_duplicates(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
+            MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::ManualCalculation(manual) => sheet.book.set_manual_calculation(manual),
             MenuCommand::CalculateNow => sheet.book.calculate_now(),
             MenuCommand::AutoOutline => sheet.book.auto_outline(),
@@ -2605,6 +2616,7 @@ impl DocView {
                 || s.pivot_dialog.is_some()
                 || s.subtotal_dialog.is_some()
                 || s.text_columns_dialog.is_some()
+                || s.sort_dialog.is_some()
         }) {
             return;
         }
@@ -3339,6 +3351,7 @@ impl DocView {
         let link_panel = self.link_panel(cx);
         let subtotal_panel = self.subtotal_panel(cx);
         let text_columns_panel = self.text_columns_panel(cx);
+        let sort_panel = self.sort_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -3662,6 +3675,7 @@ impl DocView {
                         ));
                     }
                     let selected = sheet.selection.range();
+                    items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                     if selected.start.column == selected.end.column {
                         items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                     }
@@ -4182,6 +4196,7 @@ impl DocView {
                     .children(link_panel)
                     .children(subtotal_panel)
                     .children(text_columns_panel)
+                    .children(sort_panel)
                     .children(protection_panel)
                     .children(validation_panel)
                     .children(validation_alert)

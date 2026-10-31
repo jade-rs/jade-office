@@ -2106,9 +2106,48 @@ impl<B: Backend> Workbook<B> {
         self.restructured()
     }
 
+    /// Data ▸ Sort with the Sort dialog's levels: `keys` are columns of the
+    /// sheet, the first the one sorted by first, each ascending or
+    /// descending; `header` leaves the first row where it is. One undo step;
+    /// `false` when no row moved.
+    pub fn sort_by(
+        &mut self,
+        range: CellRange,
+        header: bool,
+        keys: &[(u32, bool)],
+        case_sensitive: bool,
+    ) -> Result<bool, String> {
+        if keys.is_empty() || range.end.row <= range.start.row + u32::from(header) {
+            return Ok(false);
+        }
+        let request = jade_xlsx_headless_api::SortRequest {
+            reference: range_text_full(range),
+            header,
+            case_sensitive,
+            locale: None,
+            phonetic: None,
+            keys: keys
+                .iter()
+                .map(|&(column, descending)| jade_xlsx_headless_api::SortKey {
+                    column: column.clamp(range.start.column, range.end.column) - range.start.column,
+                    descending,
+                })
+                .collect(),
+        };
+        let name = self.sheet_name();
+        let summary = self
+            .book
+            .sort_range(&name, &request)
+            .map_err(|error| error.to_string())?;
+        if summary.moved_rows == 0 {
+            return Ok(false);
+        }
+        self.restructured()
+    }
+
     /// Whether the range's first row is a header: all text over a row that
     /// holds something other than text.
-    fn looks_like_header(&self, range: CellRange) -> bool {
+    pub(crate) fn looks_like_header(&self, range: CellRange) -> bool {
         let first = CellRange {
             start: range.start,
             end: CellRef::new(range.end.column, range.start.row),
