@@ -2696,6 +2696,36 @@ impl<B: Backend> Workbook<B> {
         Ok(changed)
     }
 
+    /// A click at viewport point `(x, y)` (headers included) on the outline
+    /// gutter: a level button shows the outline down to its level, a group's
+    /// box collapses or expands it. `None` when the point is not on one, so
+    /// the click selects as usual.
+    pub fn outline_click(
+        &mut self,
+        x: f64,
+        y: f64,
+        scroll: (f64, f64),
+    ) -> Option<Result<bool, String>> {
+        use jade_xlsx_layout::outline_gutter::OutlineTarget;
+        let (axis, index, change) = match self.layout.outline_hit(x, y, scroll)? {
+            OutlineTarget::Level { axis, level } => (axis, 0, OutlineChange::ShowLevel(level)),
+            OutlineTarget::Toggle {
+                axis,
+                summary,
+                collapsed,
+            } => (
+                axis,
+                summary,
+                if collapsed {
+                    OutlineChange::ShowDetail
+                } else {
+                    OutlineChange::HideDetail
+                },
+            ),
+        };
+        Some(self.outline(axis, index, index, change))
+    }
+
     /// Whether the sheet has rows (or columns) grouped, so that Hide and
     /// Show Detail have something to act on.
     pub fn has_outline(&self, axis: Axis) -> bool {

@@ -2007,6 +2007,13 @@ impl WorkbookView {
             return;
         };
         let scroll = self.sheet_scroll();
+        // The outline gutter's level buttons and boxes collapse and expand.
+        if self.edit.is_none() {
+            if let Some(result) = self.book.outline_click(x, y, scroll) {
+                self.sheets_changed(result, cx);
+                return;
+            }
+        }
         let hit = self.book.hit(x, y, scroll);
 
         // While a formula can take a reference, a click points at the cell

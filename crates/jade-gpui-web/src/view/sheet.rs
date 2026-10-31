@@ -2490,6 +2490,19 @@ impl DocView {
             return;
         };
         let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        // The outline gutter's level buttons and boxes collapse and expand.
+        let clicked = if sheet.edit.is_none() {
+            sheet.book.outline_click(x, y, scroll)
+        } else {
+            None
+        };
+        if let Some(result) = clicked {
+            self.sheets_changed(result, cx);
+            return;
+        }
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
         let hit = sheet.book.hit(x, y, scroll);
 
         // While a formula can take a reference, a click points at the cell.
