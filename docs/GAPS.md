@@ -37,7 +37,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | | Paste Special: operations (Add, Multiply…), column widths, Paste Link; Paste Options after a paste | Medium | partly |
 | | CSV: other delimiters and encodings (Text Import Wizard), leading zeros kept as text | Medium | — |
 | Done in both shells (2026-10-31) | Format Painter: a brush on the sheet tool strip and 書式のコピー/貼り付け on the right-click menu, the next selection taking the formats; a double-click on the brush keeps painting until Escape | Medium | yes (`copy_format`) |
-| | Clear Formats / Clear All | Medium | partly |
+| Partial (2026-11-01) | Clear Formats (書式のクリア) and Clear All (すべてクリア) on the right-click menu in both shells, each one undo step; notes and row/column defaults are left by both | Medium | yes (`clear_formats`) |
 | | Font family, vertical alignment, indent controls; custom/theme colours | Medium | yes for most |
 | Partial (2026-11-01) | Sort dialog (並べ替え… on the right-click menu in both shells: the selection or the list round the active cell, a header row guessed as Excel does and shown by name, any number of levels each with its column and A to Z / Z to A, case sensitivity, one undo step); left-to-right sorting and sorting by color remain | Medium | yes (`SortRequest`) |
 | | Filter: custom, dates, top N, reapply (only ticked values today) | Medium | yes (`AutoFilterChange`) |

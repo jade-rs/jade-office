@@ -3688,3 +3688,5 @@ sheet.look_in_values	Values
 text_columns.delimited	Delimited
 text_columns.fixed_width	Fixed width
 text_columns.breaks	Click a character to put a break before it, or click a break to take it away
+sheet.menu.clear_formats	Clear Formats
+sheet.menu.clear_all	Clear All
