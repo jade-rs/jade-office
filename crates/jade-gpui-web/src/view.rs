@@ -1209,6 +1209,7 @@ impl DocView {
                     || sheet.text_columns_dialog.is_some()
                     || sheet.sort_dialog.is_some()
                     || sheet.page_setup_dialog.is_some()
+                    || sheet.custom_filter.is_some()
                     || sheet.duplicates_dialog.is_some()
                 {
                     return;

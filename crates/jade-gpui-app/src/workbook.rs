@@ -67,6 +67,7 @@ use crate::editor::{self, Editor};
 
 mod charts;
 mod conditional;
+mod custom_filter;
 mod duplicates;
 mod find_bar;
 mod links;
@@ -329,6 +330,8 @@ enum FilterCommand {
     /// Top 10 (true) or Bottom 10.
     Top(bool),
     Reapply,
+    /// Custom Filter…: its dialog.
+    Custom,
 }
 
 /// A toolbar button's dropdown.
@@ -502,6 +505,7 @@ pub struct WorkbookView {
     text_columns_dialog: Option<jade_office_model::text_columns::TextColumnsDialog>,
     sort_dialog: Option<jade_office_model::sort_dialog::SortDialog>,
     page_setup_dialog: Option<jade_office_model::page_setup_dialog::PageSetupDialog>,
+    custom_filter: Option<jade_office_model::custom_filter::CustomFilterDialog>,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -574,6 +578,9 @@ impl WorkbookView {
         if let Some(dialog) = self.validation_dialog.as_mut() {
             return Some(dialog.field_mut());
         }
+        if let Some(dialog) = self.custom_filter.as_mut() {
+            return Some(&mut dialog.value);
+        }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
         }
@@ -613,6 +620,9 @@ impl WorkbookView {
         }
         if let Some(dialog) = self.validation_dialog.as_ref() {
             return Some(dialog.field());
+        }
+        if let Some(dialog) = self.custom_filter.as_ref() {
+            return Some(&dialog.value);
         }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);
@@ -697,6 +707,7 @@ impl WorkbookView {
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
+            || self.custom_filter.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -954,6 +965,7 @@ impl WorkbookView {
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
+            || self.custom_filter.is_some()
             || self.duplicates_dialog.is_some()
         {
             return false;
@@ -1046,6 +1058,7 @@ impl WorkbookView {
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
+            || self.custom_filter.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1188,6 +1201,7 @@ impl WorkbookView {
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
+            || self.custom_filter.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1537,6 +1551,7 @@ impl WorkbookView {
                     self.after_write(result, cx);
                 }
             }
+            FilterCommand::Custom => self.open_custom_filter(cx),
             FilterCommand::Reapply => {
                 if let Some(panel) = self.filter.take() {
                     let result = self.book.reapply_filter(&panel.button);
@@ -1771,6 +1786,10 @@ impl WorkbookView {
             return true;
         }
 
+        // A custom filter's dialog has the keys while it is open.
+        if self.custom_filter.is_some() {
+            return self.custom_filter_key(key, modifiers, cx);
+        }
         // A chart's text dialog has the keys while it is open.
         if self.chart_asking.is_some() {
             return self.chart_key(key, modifiers, cx);
@@ -2225,6 +2244,7 @@ impl WorkbookView {
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
+            || self.custom_filter.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -3995,6 +4015,11 @@ impl WorkbookView {
                     "sheet.filter.reapply",
                     FilterCommand::Reapply,
                 ))
+                .child(action(
+                    "filter-custom",
+                    "filter.custom.menu",
+                    FilterCommand::Custom,
+                ))
                 .child(div().my_1().h(px(1.0)).bg(theme::border()))
                 .child(
                     div()
@@ -4401,6 +4426,7 @@ impl Render for WorkbookView {
         let text_columns_panel = self.text_columns_panel(cx);
         let sort_panel = self.sort_panel(cx);
         let page_setup_panel = self.page_setup_panel(cx);
+        let custom_filter_panel = self.custom_filter_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -4560,6 +4586,7 @@ impl Render for WorkbookView {
             .children(text_columns_panel)
             .children(sort_panel)
             .children(page_setup_panel)
+            .children(custom_filter_panel)
             .children(duplicates_panel)
             .children(protection_panel)
             .children(validation_panel)
@@ -4607,6 +4634,7 @@ impl WorkbookView {
             text_columns_dialog: None,
             sort_dialog: None,
             page_setup_dialog: None,
+            custom_filter: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -5547,6 +5575,55 @@ mod tests {
         });
         cx.simulate_keystrokes("cmd-shift-f");
         view.read_with(cx, |view, _| assert!(filter_button(view).is_none()));
+    }
+
+    /// Custom Filter: what is typed goes into its value, not a cell, and
+    /// Enter shows only the rows that pass.
+    #[gpui::test]
+    fn the_custom_filter_dialog_filters_by_what_is_typed(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let header = at(20, 99);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(header, "Item").unwrap();
+            for (offset, item) in ["apple", "banana", "apricot"].iter().enumerate() {
+                view.book
+                    .set_cell(at(20, 100 + offset as u32), item)
+                    .unwrap();
+            }
+            let range = span(header, at(20, 102));
+            view.book.toggle_filter(range).unwrap();
+            let cell = view.cell_bounds(header).unwrap();
+            let y = cell.center().y;
+            let mut x = cell.origin.x + cell.size.width - px(1.0);
+            let button = loop {
+                let (left, top) = view.grid_point(gpui::point(x, y)).unwrap();
+                if let Some(button) = view.book.filter_button_at(left, top, view.sheet_scroll()) {
+                    break button;
+                }
+                x -= px(1.0);
+                assert!(x > cell.origin.x, "a filter button on the header");
+            };
+            view.custom_filter = Some(jade_office_model::custom_filter::CustomFilterDialog::new(
+                button,
+            ));
+            view.custom_filter_action(
+                custom_filter::CustomFilterAction::Test(
+                    jade_office_model::custom_filter::FilterTest::BeginsWith,
+                ),
+                cx,
+            );
+        });
+        cx.simulate_input("ap");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.custom_filter.as_ref().unwrap().value.text, "ap");
+            assert!(view.edit.is_none(), "typing goes into the dialog");
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.custom_filter.is_none());
+            // banana's row is hidden: down from apple lands on apricot.
+            assert_eq!(view.book.step(at(20, 100), Direction::Down), at(20, 102));
+        });
     }
 
     /// The toolbar's Center, All Borders and Increase Decimal change the

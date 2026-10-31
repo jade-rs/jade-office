@@ -3720,3 +3720,15 @@ page_setup.margins	余白
 page_setup.margins.normal	標準
 page_setup.margins.wide	広い
 page_setup.margins.narrow	狭い
+filter.custom.menu	ユーザー設定フィルター…
+filter.custom.dialog	オートフィルター オプション: 抽出条件の指定
+filter.custom.equals	と等しい
+filter.custom.not_equals	と等しくない
+filter.custom.greater	より大きい
+filter.custom.greater_or_equal	以上
+filter.custom.less	より小さい
+filter.custom.less_or_equal	以下
+filter.custom.begins_with	で始まる
+filter.custom.ends_with	で終わる
+filter.custom.contains	を含む
+filter.custom.not_contains	を含まない
