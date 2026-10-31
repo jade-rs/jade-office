@@ -54,6 +54,7 @@ jade-pptx-render = { path = "../../jade-core/crates/jade-pptx-render" }
 jade-pptx-writer = { path = "../../jade-core/crates/jade-pptx-writer" }
 jade-xlsx-headless-api = { path = "../../jade-core/crates/jade-xlsx-headless-api" }
 jade-xlsx-calc = { path = "../../jade-core/crates/jade-xlsx-calc" }
+ironcalc_base = { package = "jade-xlsx-calc-engine", path = "../../jade-core/third_party/ironcalc-base" }
 jade-xlsx-headless-editor = { path = "../../jade-core/crates/jade-xlsx-headless-editor" }
 jade-xlsx-layout = { path = "../../jade-core/crates/jade-xlsx-layout" }
 jade-xlsx-reader = { path = "../../jade-core/crates/jade-xlsx-reader" }
