@@ -3614,17 +3614,19 @@ mod tests {
     #[test]
     fn fills_move_formulas_and_undo_as_one() {
         let mut book = open("grid-operations-workbook.xlsx");
-        assert!(book.set_cell(at(3, 1), "=B2+C2").unwrap());
-        assert!(book.fill_down(span(at(3, 1), at(3, 3))).unwrap());
-        assert_eq!(book.edit_text(at(3, 3)), "=B4+C4");
-        assert_eq!(book.display_text(at(3, 3)), "90");
+        // F is outside the table A1:D4, so nothing fills it but ⌘D.
+        assert!(book.set_cell(at(5, 1), "=B2+C2").unwrap());
+        assert_eq!(book.edit_text(at(5, 3)), "");
+        assert!(book.fill_down(span(at(5, 1), at(5, 3))).unwrap());
+        assert_eq!(book.edit_text(at(5, 3)), "=B4+C4");
+        assert_eq!(book.display_text(at(5, 3)), "90");
         assert!(book.undo().unwrap());
-        assert_eq!(book.edit_text(at(3, 3)), "");
-        assert_eq!(book.edit_text(at(3, 1)), "=B2+C2", "the typed cell stays");
+        assert_eq!(book.edit_text(at(5, 3)), "");
+        assert_eq!(book.edit_text(at(5, 1)), "=B2+C2", "the typed cell stays");
 
         // A single cell takes the one above.
-        assert!(book.fill_down(span(at(3, 2), at(3, 2))).unwrap());
-        assert_eq!(book.edit_text(at(3, 2)), "=B3+C3");
+        assert!(book.fill_down(span(at(5, 2), at(5, 2))).unwrap());
+        assert_eq!(book.edit_text(at(5, 2)), "=B3+C3");
 
         assert!(book.fill_right(span(at(1, 1), at(4, 1))).unwrap());
         assert_eq!(book.display_text(at(4, 1)), "10");
@@ -3643,6 +3645,19 @@ mod tests {
         assert_eq!(target, span(at(1, 1), at(1, 5)));
         assert!(book.fill_series(source, target).unwrap());
         assert_eq!(book.display_text(at(1, 5)), "50");
+    }
+
+    /// A formula typed into a column of a table fills the column, as
+    /// Excel's calculated columns do, and the typing undoes as one.
+    #[test]
+    fn a_formula_typed_into_a_table_column_fills_it() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        assert!(book.set_cell(at(3, 1), "=B2+C2").unwrap());
+        assert_eq!(book.edit_text(at(3, 3)), "=B4+C4");
+        assert_eq!(book.display_text(at(3, 3)), "90");
+        assert!(book.undo().unwrap());
+        assert_eq!(book.edit_text(at(3, 1)), "");
+        assert_eq!(book.edit_text(at(3, 3)), "");
     }
 
     /// A copy pasted in the same workbook moves its formulas and is tiled
