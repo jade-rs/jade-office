@@ -70,6 +70,7 @@ mod conditional;
 mod duplicates;
 mod find_bar;
 mod links;
+mod page_setup;
 mod paste_special;
 mod pivots;
 mod protection;
@@ -435,6 +436,7 @@ enum MenuCommand {
     /// Data ▸ Text to Columns on the selection's column.
     TextToColumns,
     SortDialog,
+    PageSetup,
     /// Formulas ▸ Calculation Options: manual (true) or automatic.
     ManualCalculation(bool),
     /// Formulas ▸ Calculate Now.
@@ -499,6 +501,7 @@ pub struct WorkbookView {
     subtotal_dialog: Option<jade_office_model::subtotal::SubtotalDialog>,
     text_columns_dialog: Option<jade_office_model::text_columns::TextColumnsDialog>,
     sort_dialog: Option<jade_office_model::sort_dialog::SortDialog>,
+    page_setup_dialog: Option<jade_office_model::page_setup_dialog::PageSetupDialog>,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -693,6 +696,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.page_setup_dialog.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -949,6 +953,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.page_setup_dialog.is_some()
             || self.duplicates_dialog.is_some()
         {
             return false;
@@ -1040,6 +1045,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.page_setup_dialog.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1181,6 +1187,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.page_setup_dialog.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1403,6 +1410,7 @@ impl WorkbookView {
             MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
+            MenuCommand::PageSetup => return self.open_page_setup_dialog(cx),
             MenuCommand::ManualCalculation(manual) => self.book.set_manual_calculation(manual),
             MenuCommand::CalculateNow => self.book.calculate_now(),
             MenuCommand::AutoOutline => self.book.auto_outline(),
@@ -1724,6 +1732,9 @@ impl WorkbookView {
             return true;
         }
         if self.sort_key(key, cx) {
+            return true;
+        }
+        if self.page_setup_key(key, cx) {
             return true;
         }
         if self.duplicates_key(key, cx) {
@@ -2213,6 +2224,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.page_setup_dialog.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -3198,6 +3210,7 @@ impl WorkbookView {
                     (MenuCommand::RemoveLinks, "link.remove"),
                     (MenuCommand::Validation, "validation.dialog"),
                     (MenuCommand::ClearValidation, "validation.clear_selection"),
+                    (MenuCommand::PageSetup, "page_setup.menu"),
                 ]);
                 items
             }
@@ -4387,6 +4400,7 @@ impl Render for WorkbookView {
         let subtotal_panel = self.subtotal_panel(cx);
         let text_columns_panel = self.text_columns_panel(cx);
         let sort_panel = self.sort_panel(cx);
+        let page_setup_panel = self.page_setup_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -4545,6 +4559,7 @@ impl Render for WorkbookView {
             .children(subtotal_panel)
             .children(text_columns_panel)
             .children(sort_panel)
+            .children(page_setup_panel)
             .children(duplicates_panel)
             .children(protection_panel)
             .children(validation_panel)
@@ -4591,6 +4606,7 @@ impl WorkbookView {
             subtotal_dialog: None,
             text_columns_dialog: None,
             sort_dialog: None,
+            page_setup_dialog: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -5893,6 +5909,29 @@ mod tests {
             assert_eq!(view.book.display_text(at(10, 40)), "0.5");
             view.menu_command(MenuCommand::ClearAll, false, cx);
             assert_eq!(view.book.display_text(at(10, 40)), "");
+        });
+    }
+
+    /// Page Setup from the menu writes the orientation and fit picked to the
+    /// sheet; Cancel leaves it as it was.
+    #[gpui::test]
+    fn the_page_setup_dialog_writes_to_the_sheet(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.menu_command(MenuCommand::PageSetup, false, cx);
+            view.page_setup_action(page_setup::PageSetupAction::Landscape(true), cx);
+            view.page_setup_action(page_setup::PageSetupAction::Cancel, cx);
+            assert!(view.page_setup_dialog.is_none());
+            let landscape = |view: &WorkbookView| {
+                jade_office_model::page_setup_dialog::PageSetupDialog::open(&view.book).landscape()
+            };
+            assert!(!landscape(view));
+            view.menu_command(MenuCommand::PageSetup, false, cx);
+            view.page_setup_action(page_setup::PageSetupAction::Landscape(true), cx);
+            view.page_setup_action(page_setup::PageSetupAction::Fit(0), cx);
+            view.page_setup_action(page_setup::PageSetupAction::Take, cx);
+            assert!(landscape(view));
+            assert_eq!(view.book.page_setup().fit_to(), Some((1, 1)));
         });
     }
 
