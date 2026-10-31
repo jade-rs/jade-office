@@ -38,6 +38,7 @@ use gpui::{
 use jade_office_model::csv;
 use jade_office_model::find::FindBar;
 use jade_office_model::formula_complete;
+use jade_office_model::formula_tips;
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::links::LinkDialog;
 use jade_office_model::number_formats::NUMBER_FORMATS;
@@ -242,6 +243,37 @@ fn completion_list(
                             cx.notify();
                         }),
                     )
+            })),
+    )
+}
+
+/// The argument tip under the cell being typed into, its current argument
+/// in bold — while AutoComplete's list is not showing there.
+fn formula_tip(edit: &CellEdit, below: Pixels) -> Option<gpui::Div> {
+    if formula_complete::completion(&edit.text.text, edit.text.caret).is_some() {
+        return None;
+    }
+    let tip = formula_tips::argument_tip(&edit.text.text, edit.text.caret)?;
+    Some(
+        div()
+            .absolute()
+            .left(px(-2.0))
+            .top(below)
+            .px_2()
+            .py_0p5()
+            .flex()
+            .whitespace_nowrap()
+            .rounded_sm()
+            .border_1()
+            .border_color(theme::border())
+            .bg(theme::panel())
+            .shadow_md()
+            .text_xs()
+            .text_color(theme::text())
+            .children(tip.pieces().into_iter().map(|(piece, current)| {
+                div()
+                    .when(current, |piece| piece.font_weight(gpui::FontWeight::BOLD))
+                    .child(piece)
             })),
     )
 }
@@ -3046,6 +3078,7 @@ impl WorkbookView {
                 .cursor_text()
                 .child(caret_line(&edit.text, gpui::black(), true))
                 .children(completion_list(edit, cell.size.height, cx))
+                .children(formula_tip(edit, cell.size.height))
                 // A click in the cell being typed into stays in it, in Edit
                 // mode, rather than landing on the grid under it.
                 .on_mouse_down(
@@ -5033,6 +5066,10 @@ mod tests {
         view.read_with(cx, |view, _| {
             let edit = view.edit.as_ref().expect("still typing");
             assert_eq!(edit.text.text, format!("={second}("));
+            // Its arguments show, the first one current.
+            let tip = formula_tips::argument_tip(&edit.text.text, edit.text.caret)
+                .expect("the argument tip shows");
+            assert_eq!((tip.name, tip.current), (second, 0));
         });
         cx.simulate_input("4)");
         cx.simulate_keystrokes("escape");
