@@ -545,6 +545,9 @@ enum FilterCommand {
     Cancel,
     Sort(bool),
     Clear,
+    /// Top 10 (true) or Bottom 10.
+    Top(bool),
+    Reapply,
 }
 
 #[derive(Clone, Copy)]
@@ -1014,6 +1017,18 @@ impl DocView {
             FilterCommand::Clear => {
                 if let Some(panel) = sheet.filter.take() {
                     let result = sheet.book.clear_filter(&panel.button);
+                    self.edited(result, cx);
+                }
+            }
+            FilterCommand::Top(top) => {
+                if let Some(panel) = sheet.filter.take() {
+                    let result = sheet.book.filter_top(&panel.button, 10, top);
+                    self.edited(result, cx);
+                }
+            }
+            FilterCommand::Reapply => {
+                if let Some(panel) = sheet.filter.take() {
+                    let result = sheet.book.reapply_filter(&panel.button);
                     self.edited(result, cx);
                 }
             }
@@ -4060,6 +4075,21 @@ impl DocView {
                     "filter-clear",
                     "sheet.filter.clear",
                     FilterCommand::Clear,
+                ))
+                .child(action(
+                    "filter-top",
+                    "sheet.filter.top",
+                    FilterCommand::Top(true),
+                ))
+                .child(action(
+                    "filter-bottom",
+                    "sheet.filter.bottom",
+                    FilterCommand::Top(false),
+                ))
+                .child(action(
+                    "filter-reapply",
+                    "sheet.filter.reapply",
+                    FilterCommand::Reapply,
                 ))
                 .child(div().my_1().h(px(1.0)).bg(palette::border()))
                 .child(

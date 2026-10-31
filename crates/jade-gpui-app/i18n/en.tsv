@@ -3691,3 +3691,6 @@ text_columns.breaks	Click a character to put a break before it, or click a break
 sheet.menu.clear_formats	Clear Formats
 sheet.menu.clear_all	Clear All
 sheet.menu.tab_color	Tab Color
+sheet.filter.top	Top 10
+sheet.filter.bottom	Bottom 10
+sheet.filter.reapply	Reapply

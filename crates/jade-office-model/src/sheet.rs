@@ -2291,6 +2291,34 @@ impl<B: Backend> Workbook<B> {
         self.change_filter(&change)
     }
 
+    /// Top 10 (or, `top` false, Bottom 10): only the rows whose number in
+    /// the button's column is among the `count` largest (or smallest).
+    pub fn filter_top(
+        &mut self,
+        button: &FilterButton,
+        count: u32,
+        top: bool,
+    ) -> Result<bool, String> {
+        let change = AutoFilterChange::Rank {
+            target: Self::filter_target(button),
+            reference: None,
+            column: button.column,
+            value: count,
+            top,
+            percent: false,
+        };
+        self.change_filter(&change)
+    }
+
+    /// Reapply: the button's filter run again over the data as it is now,
+    /// as Data ▸ Reapply does after the values changed.
+    pub fn reapply_filter(&mut self, button: &FilterButton) -> Result<bool, String> {
+        let change = AutoFilterChange::Reapply {
+            target: Self::filter_target(button),
+        };
+        self.change_filter(&change)
+    }
+
     /// Takes the button's column out of the filter.
     pub fn clear_filter(&mut self, button: &FilterButton) -> Result<bool, String> {
         let change = AutoFilterChange::Clear {
