@@ -3740,3 +3740,6 @@ sheet.menu.group_links_validation	リンクと入力規則
 sheet.menu.group_protection	保護
 filter.custom.and	AND
 filter.custom.or	OR
+insert_function.menu	関数の挿入…
+insert_function.dialog	関数の挿入
+insert_function.search	関数の検索
