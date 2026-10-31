@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
-use jade_office_model::csv::{decode, is_csv, sheet_name};
+use jade_office_model::csv::{decode, is_csv, separator, sheet_name};
 use jade_office_model::sheet::{CellRef, Workbook};
 use jade_office_model::tiny::TinySkiaBackend;
 
@@ -138,4 +138,39 @@ fn names_and_extensions() {
     assert_eq!(sheet_name("a[1]:b?.csv"), "a1b");
     assert_eq!(sheet_name(".csv"), "Sheet1");
     assert_eq!(sheet_name(&format!("{}.csv", "x".repeat(40))).len(), 31);
+}
+
+/// A `.tsv` splits at tabs, a European CSV at its semicolons, and UTF-16
+/// *Unicode Text* reads by its BOM; a `.tsv` saves tab-separated.
+#[test]
+fn tabs_semicolons_and_utf16_read_as_excel_reads_them() {
+    assert_eq!(separator("a.tsv", "x,y\tz"), '\t');
+    assert_eq!(separator("a.csv", "x;y;\"1,5\"\n1,2"), ';');
+    assert_eq!(separator("a.csv", "x;y,z"), ',');
+    assert_eq!(separator("a.csv", "x\ty"), '\t');
+    assert_eq!(separator("a.csv", "\"a,b\";c"), ';');
+    assert!(is_csv("list.TSV"));
+
+    let book = Workbook::open_csv(
+        "eu.csv",
+        "Name;Price\r\nTee;12\r\n".as_bytes(),
+        "UTC",
+        backend(),
+    )
+    .unwrap();
+    assert_eq!(book.display_text(at(1, 1)), "12");
+
+    let mut utf16 = vec![0xFF, 0xFE];
+    for unit in "品名\t数量\r\nりんご\t3\r\n".encode_utf16() {
+        utf16.extend(unit.to_le_bytes());
+    }
+    assert_eq!(decode(&utf16), "品名\t数量\r\nりんご\t3\r\n");
+    let mut book = Workbook::open_csv("fruit.tsv", &utf16, "UTC", backend()).unwrap();
+    assert_eq!(book.display_text(at(0, 1)), "りんご");
+    assert_eq!(book.display_text(at(1, 1)), "3");
+    let saved = book.save_bytes_as("fruit.tsv").unwrap();
+    assert_eq!(
+        String::from_utf8(saved).unwrap(),
+        "\u{feff}品名\t数量\r\nりんご\t3\r\n"
+    );
 }
