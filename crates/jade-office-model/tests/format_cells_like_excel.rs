@@ -115,3 +115,52 @@ fn the_dialog_applies_only_what_was_changed() {
     assert!(book.undo().unwrap());
     assert_eq!(book.display_text(at), "1234.5");
 }
+
+/// The Alignment tab's indent, orientation and Shrink to fit, as Excel's:
+/// an indent left-aligns General text, degrees below the horizon are
+/// written 91–180, vertical text is 255, and wrapped text cannot shrink.
+#[test]
+fn the_alignment_tab_indents_turns_and_shrinks() {
+    use jade_office_model::format_cells::{rotation_degrees, text_rotation, VERTICAL_TEXT};
+    use jade_xlsx_reader::HorizontalAlignment;
+
+    for (degrees, rotation) in [(0, 0), (45, 45), (90, 90), (-45, 135), (-90, 180)] {
+        assert_eq!(text_rotation(degrees), rotation, "{degrees}");
+        assert_eq!(rotation_degrees(rotation), degrees, "{rotation}");
+    }
+    assert_eq!(text_rotation(VERTICAL_TEXT), 255);
+
+    let mut book = book();
+    let at = CellRef::new(5, 21);
+    book.set_cell(at, "見出し").unwrap();
+    let mut dialog = FormatCellsDialog::open(book.format_at(at));
+    assert_eq!(
+        (dialog.indent, dialog.rotation, dialog.shrink),
+        (0, 0, false)
+    );
+    dialog.indent = 2;
+    dialog.rotation = -30;
+    dialog.shrink = true;
+    let change = dialog.change();
+    assert_eq!(change.indent, Some(2));
+    assert_eq!(change.text_rotation, Some(120));
+    assert_eq!(change.shrink_to_fit, Some(true));
+    let range = jade_office_model::sheet::CellRange { start: at, end: at };
+    assert!(book.format(range, &change).unwrap());
+    let look = book.format_at(at);
+    assert_eq!(look.horizontal, Some(HorizontalAlignment::Left));
+    assert_eq!((look.indent, look.text_rotation), (Some(2), Some(120)));
+    let mut again = FormatCellsDialog::open(look);
+    assert_eq!((again.indent, again.rotation, again.shrink), (2, -30, true));
+
+    // Wrapping drops Shrink to fit; centring drops the indent.
+    again.wrap = true;
+    again.horizontal = HorizontalAlignment::Center;
+    let change = again.change();
+    assert_eq!(change.shrink_to_fit, Some(false));
+    assert_eq!(change.indent, Some(0));
+    assert!(book.format(range, &change).unwrap());
+    let look = book.format_at(at);
+    assert_eq!((look.indent, look.shrink_to_fit), (Some(0), Some(false)));
+    assert_eq!(look.wrap_text, Some(true));
+}

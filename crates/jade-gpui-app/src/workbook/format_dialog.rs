@@ -4,6 +4,7 @@
 //! undoable step; Escape or Cancel leaves the cells as they were.
 
 use gpui::{div, prelude::*, px, Context, MouseButton, SharedString};
+use jade_office_model::format_cells;
 use jade_office_model::format_cells::{
     FormatCellsDialog, Negative, NumberCategory, Tab, CURRENCY_SYMBOLS,
 };
@@ -390,11 +391,28 @@ impl WorkbookView {
             (HorizontalAlignment::Left, "format.align.left"),
             (HorizontalAlignment::Center, "format.align.center"),
             (HorizontalAlignment::Right, "format.align.right"),
+            (HorizontalAlignment::Fill, "format.align.fill"),
+            (HorizontalAlignment::Justify, "format.align.justify"),
+            (
+                HorizontalAlignment::CenterContinuous,
+                "format.align.center_across",
+            ),
+            (HorizontalAlignment::Distributed, "format.align.distributed"),
         ];
         let vertical = [
             (VerticalAlignment::Top, "format.align.top"),
             (VerticalAlignment::Center, "format.align.middle"),
             (VerticalAlignment::Bottom, "format.align.bottom"),
+            (VerticalAlignment::Justify, "format.align.justify"),
+            (VerticalAlignment::Distributed, "format.align.distributed"),
+        ];
+        let rotations: [(i16, &str); 6] = [
+            (90, "90°"),
+            (45, "45°"),
+            (0, "0°"),
+            (-45, "-45°"),
+            (-90, "-90°"),
+            (format_cells::VERTICAL_TEXT, ""),
         ];
         div()
             .flex()
@@ -439,6 +457,73 @@ impl WorkbookView {
                         view.edit_format(cx, |dialog| dialog.wrap = !dialog.wrap)
                     })),
                 ),
+            )
+            .child(
+                row("format.shrink").child(
+                    chip(
+                        "format-shrink",
+                        if dialog.shrink && !dialog.wrap {
+                            "✓"
+                        } else {
+                            " "
+                        },
+                        dialog.shrink && !dialog.wrap,
+                    )
+                    .on_click(cx.listener(|view, _, _, cx| {
+                        view.edit_format(cx, |dialog| {
+                            if !dialog.wrap {
+                                dialog.shrink = !dialog.shrink
+                            }
+                        })
+                    })),
+                ),
+            )
+            .child(
+                row("format.indent")
+                    .child(chip("format-indent-less", "−", false).on_click(cx.listener(
+                        |view, _, _, cx| {
+                            view.edit_format(cx, |dialog| {
+                                dialog.indent = dialog.indent.saturating_sub(1)
+                            })
+                        },
+                    )))
+                    .child(chip("format-indent", dialog.indent.to_string(), true))
+                    .child(chip("format-indent-more", "+", false).on_click(cx.listener(
+                        |view, _, _, cx| {
+                            view.edit_format(cx, |dialog| {
+                                dialog.indent = (dialog.indent + 1).min(format_cells::MAX_INDENT);
+                                if matches!(
+                                    dialog.horizontal,
+                                    HorizontalAlignment::General
+                                        | HorizontalAlignment::Center
+                                        | HorizontalAlignment::Fill
+                                        | HorizontalAlignment::Justify
+                                        | HorizontalAlignment::CenterContinuous
+                                ) {
+                                    dialog.horizontal = HorizontalAlignment::Left;
+                                }
+                            })
+                        },
+                    ))),
+            )
+            .child(
+                row("format.orientation").children(rotations.into_iter().enumerate().map(
+                    |(index, (degrees, label))| {
+                        let label = if degrees == format_cells::VERTICAL_TEXT {
+                            i18n::text("format.orientation.vertical")
+                        } else {
+                            label
+                        };
+                        chip(
+                            ("format-rotation", index),
+                            label,
+                            dialog.rotation == degrees,
+                        )
+                        .on_click(cx.listener(move |view, _, _, cx| {
+                            view.edit_format(cx, |dialog| dialog.rotation = degrees)
+                        }))
+                    },
+                )),
             )
     }
 

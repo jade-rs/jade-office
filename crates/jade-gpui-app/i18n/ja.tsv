@@ -252,6 +252,8 @@ sheet.menu.edit_note	メモの編集
 sheet.menu.delete_note	メモの削除
 sheet.menu.hide	非表示
 sheet.menu.unhide	再表示
+sheet.menu.freeze_panes	ウィンドウ枠の固定
+sheet.menu.unfreeze_panes	ウィンドウ枠固定の解除
 sheet.menu.move_left	左へ移動
 sheet.menu.move_right	右へ移動
 sheet.validation_refused	この値は、このセルに定義されているデータ入力規則の制限を満たしていません。
@@ -647,6 +649,14 @@ format.align.right	右詰め
 format.align.top	上詰め
 format.align.middle	中央揃え
 format.align.bottom	下詰め
+format.shrink	縮小して全体を表示する
+format.indent	インデント
+format.orientation	方向
+format.orientation.vertical	縦書き
+format.align.fill	繰り返し
+format.align.justify	両端揃え
+format.align.center_across	選択範囲内で中央
+format.align.distributed	均等割り付け
 format.font	フォント名
 format.size	サイズ
 format.style	スタイル

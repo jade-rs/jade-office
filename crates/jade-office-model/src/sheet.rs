@@ -23,6 +23,7 @@ use crate::grid::{self, Direction, Hit, Selection};
 use crate::{clipboard, typing};
 pub use jade_xlsx_headless_api::{AutoFilterOption, AutoFilterOptions, BorderLine, BorderStyle};
 pub use jade_xlsx_headless_editor::FormatChange as CellFormat;
+use jade_xlsx_headless_editor::Frozen;
 pub use jade_xlsx_layout::filter_button::{FilterButton, FilterButtonTarget};
 pub use jade_xlsx_layout::resize::{ResizeGesture, ResizeHit};
 pub use jade_xlsx_layout::{column_label, HeaderMetrics};
@@ -35,6 +36,16 @@ pub use jade_xlsx_reader::{HorizontalAlignment, VerticalAlignment};
 use jade_xlsx_render::{render_grid, GridSelection, PainterMeasure, RenderOptions};
 
 use crate::Backend;
+
+/// What View ▸ Freeze Panes keeps in place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Freeze {
+    /// The rows above and the columns left of this cell.
+    Panes(CellRef),
+    TopRow,
+    FirstColumn,
+    Unfreeze,
+}
 
 /// The grid drawn past the last used cell; it grows as the selection moves.
 const MIN_COLUMNS: u32 = 12;
@@ -2619,6 +2630,45 @@ impl<B: Backend> Workbook<B> {
         Ok(index)
     }
 
+    /// The columns and rows the selected sheet keeps in place, if frozen.
+    pub fn frozen_panes(&self) -> Option<(u32, u32)> {
+        self.book.workbook().sheets[self.index]
+            .freeze_pane
+            .as_ref()
+            .map(|pane| (pane.frozen_columns, pane.frozen_rows))
+            .filter(|&(columns, rows)| columns > 0 || rows > 0)
+    }
+
+    /// View ▸ Freeze Panes, as Excel's menu does it: the rows above and the
+    /// columns left of a cell, the top row, the first column, or none. One
+    /// undo step; `false` when the sheet already is so (or A1 freezes
+    /// nothing).
+    pub fn freeze_panes(&mut self, freeze: Freeze) -> Result<bool, String> {
+        let frozen = match freeze {
+            Freeze::Panes(at) => Some((at.column, at.row)),
+            Freeze::TopRow => Some((0, 1)),
+            Freeze::FirstColumn => Some((1, 0)),
+            Freeze::Unfreeze => None,
+        }
+        .filter(|&(columns, rows)| columns > 0 || rows > 0);
+        if self.frozen_panes() == frozen || (frozen.is_none() && freeze != Freeze::Unfreeze) {
+            return Ok(false);
+        }
+        let name = self.sheet_name();
+        self.book
+            .set_freeze_panes(
+                &name,
+                frozen.map(|(columns, rows)| Frozen {
+                    columns,
+                    rows,
+                    top_left: None,
+                }),
+            )
+            .map_err(|error| error.to_string())?;
+        self.wrote(1)?;
+        Ok(true)
+    }
+
     pub fn rename_sheet(&mut self, index: usize, name: &str) -> Result<bool, String> {
         let old = self
             .sheet_names()
@@ -3102,28 +3152,52 @@ fn layout_changes(old: &SheetLayout, new: &SheetLayout) -> Option<Vec<Rect>> {
             height: BEYOND,
         });
     }
-    fn by_reference(layout: &SheetLayout) -> BTreeMap<CellRef, &jade_xlsx_layout::PlacedCell> {
-        layout
-            .cells
-            .iter()
-            .map(|cell| (cell.reference, cell))
-            .collect()
-    }
-    let (before, after) = (by_reference(old), by_reference(new));
     let mut mark = |cell: &jade_xlsx_layout::PlacedCell| {
         changes.push(grown(cell.rect));
         if let Some(clip) = cell.text_clip {
             changes.push(grown(clip));
         }
     };
-    for (reference, cell) in &before {
-        if after.get(reference) != Some(cell) {
+    // An edit that adds or removes no cell leaves both layouts listing the
+    // same cells in the same order: compare them pair by pair, without
+    // indexing two copies of the sheet.
+    let same_cells = old.cells.len() == new.cells.len()
+        && old
+            .cells
+            .iter()
+            .zip(&new.cells)
+            .all(|(old, new)| old.reference == new.reference);
+    if same_cells {
+        let pairs = || {
+            old.cells
+                .iter()
+                .zip(&new.cells)
+                .filter(|(old, new)| old != new)
+        };
+        for (cell, _) in pairs() {
             mark(cell);
         }
-    }
-    for (reference, cell) in &after {
-        if before.get(reference) != Some(cell) {
+        for (_, cell) in pairs() {
             mark(cell);
+        }
+    } else {
+        fn by_reference(layout: &SheetLayout) -> BTreeMap<CellRef, &jade_xlsx_layout::PlacedCell> {
+            layout
+                .cells
+                .iter()
+                .map(|cell| (cell.reference, cell))
+                .collect()
+        }
+        let (before, after) = (by_reference(old), by_reference(new));
+        for (reference, cell) in &before {
+            if after.get(reference) != Some(cell) {
+                mark(cell);
+            }
+        }
+        for (reference, cell) in &after {
+            if before.get(reference) != Some(cell) {
+                mark(cell);
+            }
         }
     }
     if old.notes != new.notes {

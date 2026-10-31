@@ -2392,6 +2392,7 @@ dependencies = [
  "jade-painter",
  "jade-xlsx-layout",
  "jade-xlsx-reader",
+ "unicode-segmentation",
 ]
 
 [[package]]
