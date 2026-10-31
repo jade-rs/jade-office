@@ -2,7 +2,8 @@
 //! sheet's top right with what to find and what to replace it with, Find
 //! Next and Previous, Find All with its list, Replace and Replace All, and
 //! Excel's options — Match case, Match entire cell contents, Within:
-//! Workbook.
+//! Workbook, Look in: Values. More than one cell selected, it looks only
+//! there.
 
 use gpui::{div, prelude::*, px, Context, Modifiers, MouseButton, SharedString};
 use jade_office_model::find::FindBar;
@@ -24,6 +25,8 @@ pub(super) enum FindCommand {
     MatchCase,
     EntireCell,
     Workbook,
+    /// Look in: Values, rather than formulas.
+    Values,
     /// The Replace field shown or hidden.
     ToggleReplace,
     /// Typing into the Replace field (true) or Find.
@@ -56,6 +59,7 @@ impl WorkbookView {
             FindCommand::MatchCase => bar.options.match_case = !bar.options.match_case,
             FindCommand::EntireCell => bar.options.entire_cell = !bar.options.entire_cell,
             FindCommand::Workbook => bar.options.workbook = !bar.options.workbook,
+            FindCommand::Values => bar.options.values = !bar.options.values,
             FindCommand::ToggleReplace => bar.toggle_replacing(),
             FindCommand::Field(replace) => bar.in_replace = replace && bar.replacing,
             // Where the search got to stays selected.
@@ -70,9 +74,16 @@ impl WorkbookView {
         let Some(bar) = self.finding.as_ref() else {
             return;
         };
-        let (needle, options) = (bar.find.text.clone(), bar.options());
+        let (needle, options) = (bar.find.text.clone(), bar.options_in(self.range()));
         let from = (self.book.sheet_index(), self.selection.active);
         match self.book.find_next(&needle, options, from, back) {
+            // Within the selection, the active cell moves and the selection
+            // stays, as in Excel.
+            Some((_, cell)) if options.within.is_some() => {
+                self.selection.active = cell;
+                self.reveal(cell);
+                self.status = SharedString::from("");
+            }
             Some((index, cell)) => {
                 if index != self.book.sheet_index() {
                     self.select_sheet(index, cx);
@@ -91,7 +102,9 @@ impl WorkbookView {
         let Some(bar) = self.finding.as_ref() else {
             return;
         };
-        let found = self.book.found(&bar.find.text, bar.options());
+        let found = self
+            .book
+            .found(&bar.find.text, bar.options_in(self.range()));
         self.status = if found.is_empty() {
             SharedString::from(i18n::text("sheet.not_found"))
         } else {
@@ -132,7 +145,7 @@ impl WorkbookView {
         let (needle, replacement, options) = (
             bar.find.text.clone(),
             bar.replace.text.clone(),
-            bar.options(),
+            bar.options_in(self.range()),
         );
         let result = self
             .book
@@ -152,7 +165,7 @@ impl WorkbookView {
         let (needle, replacement, options) = (
             bar.find.text.clone(),
             bar.replace.text.clone(),
-            bar.options(),
+            bar.options_in(self.range()),
         );
         match self.book.replace_all(&needle, &replacement, options) {
             Ok(0) => {
@@ -315,7 +328,13 @@ impl WorkbookView {
                         .child(
                             button("find-workbook", options.workbook, FindCommand::Workbook)
                                 .child(i18n::text("sheet.within_workbook")),
-                        ),
+                        )
+                        .when(!bar.replacing, |row| {
+                            row.child(
+                                button("find-values", options.values, FindCommand::Values)
+                                    .child(i18n::text("sheet.look_in_values")),
+                            )
+                        }),
                 )
                 .child(
                     div()

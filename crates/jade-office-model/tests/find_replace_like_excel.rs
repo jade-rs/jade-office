@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
 use jade_office_model::find::{replaced, FindBar, FindOptions, Found};
-use jade_office_model::sheet::{protected_refusal, CellRef, Workbook};
+use jade_office_model::sheet::{protected_refusal, span, CellRef, Workbook};
 use jade_office_model::tiny::TinySkiaBackend;
 
 fn open(name: &str) -> Workbook<TinySkiaBackend> {
@@ -273,4 +273,51 @@ fn find_all_lists_the_sheet_cell_value_and_formula() {
     assert_eq!(found[1].value, "apple pie");
     assert_eq!(found[1].formula, "");
     assert_eq!(found[1].sheet_name, name);
+}
+
+/// With more than one cell selected Find and Replace All look only there;
+/// one cell selected, the whole sheet.
+#[test]
+fn a_selection_of_several_cells_is_where_find_and_replace_look() {
+    let mut book = fruit();
+    let mut bar = FindBar::new(false);
+    bar.find.text = "apple".into();
+    let options = bar.options_in(span(at(10, 1), at(10, 3)));
+    let cells: Vec<CellRef> = book
+        .find_all("apple", options)
+        .into_iter()
+        .map(|(_, cell)| cell)
+        .collect();
+    assert_eq!(cells, vec![at(10, 1), at(10, 2)]);
+    let whole = bar.options_in(span(at(0, 0), at(0, 0)));
+    assert_eq!(book.find_all("apple", whole).len(), 3);
+    // Within: Workbook ignores the selection.
+    bar.options.workbook = true;
+    assert_eq!(bar.options_in(span(at(10, 1), at(10, 3))).within, None);
+    bar.options.workbook = false;
+    assert_eq!(book.replace_all("apple", "pear", options).unwrap(), 2);
+    assert_eq!(book.display_text(at(10, 0)), "Apple");
+    assert_eq!(book.display_text(at(10, 1)), "pear pie");
+}
+
+/// Look in: Values finds by what a cell shows: 200, not the formula's K4.
+#[test]
+fn look_in_values_finds_by_what_cells_show() {
+    let book = fruit();
+    let mut bar = FindBar::new(false);
+    bar.options.values = true;
+    let options = bar.options();
+    let cells = |needle| {
+        book.find_all(needle, options)
+            .into_iter()
+            .map(|(_, cell)| cell)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(cells("200"), vec![at(10, 4)]);
+    assert!(cells("K4").is_empty());
+    let formulas = FindBar::new(false).options();
+    assert_eq!(book.find_all("K4", formulas).len(), 1);
+    // The Replace tab looks in formulas whatever Look in says.
+    bar.replacing = true;
+    assert!(!bar.options().values);
 }

@@ -7,12 +7,14 @@
 //! found by the date it reads as. Replace works on what the formula bar
 //! shows — the formula with its `=`, or the value as typed — and writes
 //! the result back as if typed, so replacing `1` with `2` in 100 gives the
-//! number 200. Replace All is one write and one undo.
+//! number 200. Replace All is one write and one undo. With more than one
+//! cell selected, all of them look only within the selection, as Excel's
+//! do; Look in: Values finds by what cells show alone.
 //!
 //! [`FindBar`] is the bar both shells show: its two fields and options.
 
 use jade_xlsx_headless_api::CellInput;
-use jade_xlsx_reader::{CellRef, SheetVisibility};
+use jade_xlsx_reader::{CellRange, CellRef, SheetVisibility};
 
 use crate::sheet::{reference_text, Workbook};
 use crate::text::TextEdit;
@@ -31,6 +33,12 @@ pub struct FindOptions {
     /// what it shows — which is where Replace looks, and so Find Next too
     /// while the Replace field shows.
     pub formulas: bool,
+    /// Look in: Values — what cells show, not their formulas. Find only;
+    /// Replace always looks in formulas.
+    pub values: bool,
+    /// The selection, when it is more than one cell on this sheet: Find
+    /// and Replace look nowhere else.
+    pub within: Option<CellRange>,
 }
 
 /// The find bar: what is typed to find and to replace with, which field
@@ -94,7 +102,18 @@ impl FindBar {
     pub fn options(&self) -> FindOptions {
         FindOptions {
             formulas: self.replacing,
+            values: self.options.values && !self.replacing,
             ..self.options
+        }
+    }
+
+    /// [`Self::options`] with the selection: more than one cell selected,
+    /// and Within: Sheet, Find looks only there.
+    pub fn options_in(&self, selection: CellRange) -> FindOptions {
+        let options = self.options();
+        FindOptions {
+            within: (selection.start != selection.end && !options.workbook).then_some(selection),
+            ..options
         }
     }
 
@@ -186,6 +205,19 @@ impl<B: Backend> Workbook<B> {
             .filter(|hit| sheets[hit.sheet_index].visibility == SheetVisibility::Visible)
             .filter_map(|hit| {
                 let cell = CellRef::parse(&hit.reference).ok()?;
+                if let Some(range) = options.within {
+                    let inside = hit.sheet_index == here
+                        && (range.start.row..=range.end.row).contains(&cell.row)
+                        && (range.start.column..=range.end.column).contains(&cell.column);
+                    if !inside {
+                        return None;
+                    }
+                }
+                if options.values && !options.formulas {
+                    return replaced(&hit.display, needle, needle, options)
+                        .is_some()
+                        .then_some((hit.sheet_index, cell));
+                }
                 // What the formula bar shows: the formula, or the value as
                 // typed (`1000` for a 1,000.00).
                 let typed = self.edit_text_on(hit.sheet_index, cell);
