@@ -48,6 +48,7 @@ fn each_run_gets_a_total_and_the_list_a_grand_total_in_an_outline() {
         label: "{} 集計".into(),
         grand_label: "総計".into(),
         replace: true,
+        page_breaks: false,
     };
     assert!(book
         .subtotal(span(CellRef::new(7, 29), CellRef::new(8, 34)), &subtotals)
@@ -122,4 +123,49 @@ fn the_dialog_opens_on_the_list_with_excels_defaults() {
     // Nothing ticked: nothing to apply.
     dialog.columns = vec![false; 3];
     assert!(dialog.subtotals(String::new(), String::new()).is_none());
+}
+
+#[test]
+fn page_breaks_go_after_each_group_but_the_last() {
+    let mut book = book();
+    for (offset, (branch, sales)) in [
+        ("支店", "売上"),
+        ("東京", "10"),
+        ("東京", "20"),
+        ("大阪", "1"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let row = 29 + offset as u32;
+        book.set_cell(CellRef::new(7, row), branch).unwrap();
+        book.set_cell(CellRef::new(8, row), sales).unwrap();
+    }
+    let subtotals = Subtotals {
+        by: 7,
+        function: SubtotalFunction::Sum,
+        columns: vec![8],
+        label: "{} 集計".into(),
+        grand_label: "総計".into(),
+        replace: true,
+        page_breaks: true,
+    };
+    assert!(book
+        .subtotal(span(CellRef::new(7, 29), CellRef::new(8, 32)), &subtotals)
+        .unwrap());
+    // 東京's total is row 33 (index 32); the break sits above index 33.
+    let saved = book.save_bytes().unwrap();
+    let sheet = &jade_xlsx_reader::read_xlsx(&saved).unwrap().sheets[0];
+    let breaks: Vec<(u32, bool)> = sheet
+        .row_breaks
+        .iter()
+        .map(|brk| (brk.before, brk.manual))
+        .collect();
+    assert_eq!(breaks, [(33, true)]);
+    // Undone with the rest.
+    assert!(book.undo().unwrap());
+    let saved = book.save_bytes().unwrap();
+    assert!(jade_xlsx_reader::read_xlsx(&saved).unwrap().sheets[0]
+        .row_breaks
+        .is_empty());
 }

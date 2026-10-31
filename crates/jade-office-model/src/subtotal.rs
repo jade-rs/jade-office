@@ -62,6 +62,9 @@ pub struct Subtotals {
     /// Replace current subtotals: the rows an earlier Subtotal added to the
     /// list, and its outline, taken out first.
     pub replace: bool,
+    /// Page break between groups: a manual page break after each group's
+    /// total row but the last, so each prints on its own pages.
+    pub page_breaks: bool,
 }
 
 impl<B: Backend> Workbook<B> {
@@ -167,9 +170,35 @@ impl<B: Backend> Workbook<B> {
             steps += 1;
             // Everything above the grand total, then each group above its
             // total: three levels, the detail deepest.
-            for (top, bottom) in std::iter::once((first, grand - 1)).chain(details) {
+            for (top, bottom) in std::iter::once((first, grand - 1)).chain(details.iter().copied())
+            {
                 if engine
                     .outline(&name, Axis::Rows, top, bottom, OutlineChange::Group)
+                    .map_err(|error| error.to_string())?
+                {
+                    steps += 1;
+                }
+            }
+            if subtotals.page_breaks {
+                // The sheet's own breaks outside the list stay; inside it,
+                // one after each group's total but the last.
+                let index = book.sheet_index();
+                let mut breaks: std::collections::BTreeSet<u32> = book.engine().workbook().sheets
+                    [index]
+                    .row_breaks
+                    .iter()
+                    .filter(|brk| brk.manual && !(first..=grand).contains(&brk.before))
+                    .map(|brk| brk.before)
+                    .collect();
+                breaks.extend(
+                    details
+                        .iter()
+                        .take(details.len().saturating_sub(1))
+                        .map(|(_, end)| end + 2),
+                );
+                if book
+                    .engine_mut()
+                    .set_manual_breaks(&name, Axis::Rows, &breaks)
                     .map_err(|error| error.to_string())?
                 {
                     steps += 1;
@@ -231,6 +260,8 @@ pub struct SubtotalDialog {
     pub columns: Vec<bool>,
     /// Replace current subtotals, ticked as in Excel.
     pub replace: bool,
+    /// Page break between groups, left unticked as in Excel.
+    pub page_breaks: bool,
 }
 
 impl SubtotalDialog {
@@ -264,6 +295,7 @@ impl SubtotalDialog {
             function: SubtotalFunction::Sum,
             columns,
             replace: true,
+            page_breaks: false,
         }
     }
 
@@ -284,6 +316,7 @@ impl SubtotalDialog {
             label,
             grand_label,
             replace: self.replace,
+            page_breaks: self.page_breaks,
         })
     }
 }
