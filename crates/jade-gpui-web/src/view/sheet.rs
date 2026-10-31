@@ -27,7 +27,7 @@ use jade_web::number_formats::NUMBER_FORMATS;
 use jade_web::sheet::{
     column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
     CellRange, FilterButton, FontToggle, Freeze, HorizontalAlignment, Link, OutlineChange, Overlay,
-    ResizeGesture, SheetVisibility, MAX_COLUMN, MAX_ROW,
+    ResizeGesture, SheetVisibility, VerticalAlignment, MAX_COLUMN, MAX_ROW,
 };
 
 use super::*;
@@ -636,6 +636,10 @@ enum Popup {
 enum Tool {
     Font(FontToggle),
     Align(HorizontalAlignment),
+    /// Top, Middle or Bottom Align.
+    VAlign(VerticalAlignment),
+    /// Increase Indent (true) or Decrease.
+    Indent(bool),
     Wrap,
     Merge,
     Currency,
@@ -1190,6 +1194,8 @@ impl DocView {
         let result = match tool {
             Tool::Font(style) => sheet.book.toggle(range, active, style),
             Tool::Align(horizontal) => sheet.book.align(range, active, horizontal),
+            Tool::VAlign(vertical) => sheet.book.valign(range, active, vertical),
+            Tool::Indent(more) => sheet.book.indent(range, active, more),
             Tool::Wrap => sheet.book.toggle_wrap(range, active),
             Tool::Merge => return self.sheet_menu_command(MenuCommand::MergeCenter, false, cx),
             Tool::Currency => {
@@ -1369,6 +1375,38 @@ impl DocView {
                     Tool::Align(HorizontalAlignment::Right),
                 )
                 .child(icon("icons/align-right.svg")),
+            )
+            .child(
+                button(
+                    "tool-top",
+                    look.vertical == Some(VerticalAlignment::Top),
+                    Tool::VAlign(VerticalAlignment::Top),
+                )
+                .child(icon("icons/align-top.svg")),
+            )
+            .child(
+                button(
+                    "tool-middle",
+                    look.vertical == Some(VerticalAlignment::Center),
+                    Tool::VAlign(VerticalAlignment::Center),
+                )
+                .child(icon("icons/align-middle.svg")),
+            )
+            .child(
+                button(
+                    "tool-bottom",
+                    look.vertical == Some(VerticalAlignment::Bottom),
+                    Tool::VAlign(VerticalAlignment::Bottom),
+                )
+                .child(icon("icons/align-bottom.svg")),
+            )
+            .child(
+                button("tool-indent-less", false, Tool::Indent(false))
+                    .child(icon("icons/indent-decrease.svg")),
+            )
+            .child(
+                button("tool-indent-more", false, Tool::Indent(true))
+                    .child(icon("icons/indent-increase.svg")),
             )
             .child(
                 button("tool-wrap", look.wrap_text == Some(true), Tool::Wrap)

@@ -1101,10 +1101,13 @@ impl gpui::AssetSource for Assets {
         let bytes = icons!(
             "a-arrow-down",
             "a-arrow-up",
+            "align-bottom",
             "align-center",
             "align-justify",
             "align-left",
+            "align-middle",
             "align-right",
+            "align-top",
             "arrow-down-to-line",
             "arrow-left-to-line",
             "arrow-right-to-line",

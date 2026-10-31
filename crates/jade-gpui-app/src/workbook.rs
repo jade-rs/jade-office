@@ -50,7 +50,8 @@ use jade_office_model::protection::ProtectionDialog;
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
     CellFormat, CellRange, CellRef, FilterButton, FontToggle, Freeze, HorizontalAlignment, Link,
-    OutlineChange, Overlay, ResizeGesture, SheetVisibility, Workbook, MAX_COLUMN, MAX_ROW,
+    OutlineChange, Overlay, ResizeGesture, SheetVisibility, VerticalAlignment, Workbook,
+    MAX_COLUMN, MAX_ROW,
 };
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::tables::TableDialog;
@@ -388,6 +389,10 @@ enum Popup {
 enum Tool {
     Font(FontToggle),
     Align(HorizontalAlignment),
+    /// Top, Middle or Bottom Align.
+    VAlign(VerticalAlignment),
+    /// Increase Indent (true) or Decrease.
+    Indent(bool),
     Wrap,
     Merge,
     Currency,
@@ -1647,6 +1652,8 @@ impl WorkbookView {
         let result = match tool {
             Tool::Font(style) => self.book.toggle(range, active, style),
             Tool::Align(horizontal) => self.book.align(range, active, horizontal),
+            Tool::VAlign(vertical) => self.book.valign(range, active, vertical),
+            Tool::Indent(more) => self.book.indent(range, active, more),
             Tool::Wrap => self.book.toggle_wrap(range, active),
             Tool::Merge => return self.menu_command(MenuCommand::MergeCenter, false, cx),
             Tool::Currency => {
@@ -3702,6 +3709,38 @@ impl WorkbookView {
                     Tool::Align(HorizontalAlignment::Right),
                 )
                 .child(icon("icons/align-right.svg")),
+            )
+            .child(
+                button(
+                    "tool-top",
+                    look.vertical == Some(VerticalAlignment::Top),
+                    Tool::VAlign(VerticalAlignment::Top),
+                )
+                .child(icon("icons/align-top.svg")),
+            )
+            .child(
+                button(
+                    "tool-middle",
+                    look.vertical == Some(VerticalAlignment::Center),
+                    Tool::VAlign(VerticalAlignment::Center),
+                )
+                .child(icon("icons/align-middle.svg")),
+            )
+            .child(
+                button(
+                    "tool-bottom",
+                    look.vertical == Some(VerticalAlignment::Bottom),
+                    Tool::VAlign(VerticalAlignment::Bottom),
+                )
+                .child(icon("icons/align-bottom.svg")),
+            )
+            .child(
+                button("tool-indent-less", false, Tool::Indent(false))
+                    .child(icon("icons/indent-decrease.svg")),
+            )
+            .child(
+                button("tool-indent-more", false, Tool::Indent(true))
+                    .child(icon("icons/indent-increase.svg")),
             )
             .child(
                 button("tool-wrap", look.wrap_text == Some(true), Tool::Wrap)
@@ -5881,6 +5920,28 @@ mod tests {
             assert!(view.top_ten.is_none());
             // Only 70's row shows: down from the header lands on it.
             assert_eq!(view.book.step(header, Direction::Down), at(20, 102));
+        });
+    }
+
+    /// The toolbar's Top Align and Increase Indent change the selected
+    /// cell's format; pressed again, Top Align goes back to Bottom.
+    #[gpui::test]
+    fn toolbar_vertical_alignment_and_indent(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::cell(at(10, 30));
+            view.tool(Tool::VAlign(VerticalAlignment::Top), cx);
+            assert_eq!(
+                view.book.format_at(at(10, 30)).vertical,
+                Some(VerticalAlignment::Top)
+            );
+            view.tool(Tool::Indent(true), cx);
+            assert_eq!(view.book.format_at(at(10, 30)).indent, Some(1));
+            view.tool(Tool::VAlign(VerticalAlignment::Top), cx);
+            assert_eq!(
+                view.book.format_at(at(10, 30)).vertical,
+                Some(VerticalAlignment::Bottom)
+            );
         });
     }
 
