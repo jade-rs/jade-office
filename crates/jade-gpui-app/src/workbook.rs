@@ -254,6 +254,9 @@ enum FilterCommand {
     Cancel,
     Sort(bool),
     Clear,
+    /// Top 10 (true) or Bottom 10.
+    Top(bool),
+    Reapply,
 }
 
 /// A toolbar button's dropdown.
@@ -1443,6 +1446,18 @@ impl WorkbookView {
             FilterCommand::Clear => {
                 if let Some(panel) = self.filter.take() {
                     let result = self.book.clear_filter(&panel.button);
+                    self.after_write(result, cx);
+                }
+            }
+            FilterCommand::Top(top) => {
+                if let Some(panel) = self.filter.take() {
+                    let result = self.book.filter_top(&panel.button, 10, top);
+                    self.after_write(result, cx);
+                }
+            }
+            FilterCommand::Reapply => {
+                if let Some(panel) = self.filter.take() {
+                    let result = self.book.reapply_filter(&panel.button);
                     self.after_write(result, cx);
                 }
             }
@@ -3853,6 +3868,21 @@ impl WorkbookView {
                     "filter-clear",
                     "sheet.filter.clear",
                     FilterCommand::Clear,
+                ))
+                .child(action(
+                    "filter-top",
+                    "sheet.filter.top",
+                    FilterCommand::Top(true),
+                ))
+                .child(action(
+                    "filter-bottom",
+                    "sheet.filter.bottom",
+                    FilterCommand::Top(false),
+                ))
+                .child(action(
+                    "filter-reapply",
+                    "sheet.filter.reapply",
+                    FilterCommand::Reapply,
                 ))
                 .child(div().my_1().h(px(1.0)).bg(theme::border()))
                 .child(
