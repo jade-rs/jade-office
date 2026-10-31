@@ -714,6 +714,8 @@ enum MenuCommand {
     SortDescending,
     MergeCenter,
     InsertSheet,
+    /// Move or Copy ▸ Create a copy of the sheet at this index.
+    CopySheet(usize),
     ProtectWorkbook,
     ProtectSheet(usize),
     EditRanges(usize),
@@ -2800,6 +2802,7 @@ impl DocView {
             && matches!(
                 command,
                 MenuCommand::InsertSheet
+                    | MenuCommand::CopySheet(_)
                     | MenuCommand::RenameSheet(_)
                     | MenuCommand::DeleteSheet(_)
                     | MenuCommand::MoveSheet(_, _)
@@ -2914,6 +2917,12 @@ impl DocView {
             }
             MenuCommand::InsertSheet => {
                 let result = sheet.book.add_sheet().map(|_| true);
+                sheet.selection = Selection::default();
+                sheet.scroll.set_offset(point(px(0.0), px(0.0)));
+                result
+            }
+            MenuCommand::CopySheet(index) => {
+                let result = sheet.book.copy_sheet(index).map(|_| true);
                 sheet.selection = Selection::default();
                 sheet.scroll.set_offset(point(px(0.0), px(0.0)));
                 result
@@ -3971,6 +3980,7 @@ impl DocView {
                         (MenuCommand::ProtectSheet(index), "protection.sheet_menu"),
                         (MenuCommand::EditRanges(index), "protection.ranges_menu"),
                         (MenuCommand::RenameSheet(index), "sheet.menu.rename_sheet"),
+                        (MenuCommand::CopySheet(index), "sheet.menu.copy_sheet"),
                         (MenuCommand::DeleteSheet(index), "sheet.menu.delete_sheet"),
                         (MenuCommand::HideSheet(index), "sheet.menu.hide_sheet"),
                     ];

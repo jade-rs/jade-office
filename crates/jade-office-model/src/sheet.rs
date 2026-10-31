@@ -2928,6 +2928,34 @@ impl<B: Backend> Workbook<B> {
         Ok(index)
     }
 
+    /// Move or Copy ▸ Create a copy: the sheet at `index` copied right after
+    /// it, named as Excel names a copy (`Sheet1 (2)`), and shown. Returns the
+    /// copy's index.
+    pub fn copy_sheet(&mut self, index: usize) -> Result<usize, String> {
+        let names = self.sheet_names();
+        let source = names
+            .get(index)
+            .cloned()
+            .ok_or_else(|| format!("no sheet at index {index}"))?;
+        let name = (2..)
+            .map(|n| {
+                let suffix = format!(" ({n})");
+                // A sheet name is at most 31 characters, the suffix kept.
+                let room = 31usize.saturating_sub(suffix.chars().count());
+                format!("{}{suffix}", source.chars().take(room).collect::<String>())
+            })
+            .find(|name| !names.iter().any(|taken| taken.eq_ignore_ascii_case(name)))
+            .unwrap_or_default();
+        let copy = self
+            .book
+            .copy_sheet(&source, &name)
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.dirty = true;
+        self.select_sheet(copy)?;
+        Ok(copy)
+    }
+
     /// The columns and rows the selected sheet keeps in place, if frozen.
     pub fn frozen_panes(&self) -> Option<(u32, u32)> {
         self.book.workbook().sheets[self.index]
