@@ -393,6 +393,9 @@ enum Tool {
     Align(HorizontalAlignment),
     /// The font box: a family for the selection.
     FontName(&'static str),
+    /// A theme colour from the gallery, by its place, for the fill (true)
+    /// or the font.
+    ThemeColor(bool, usize),
     /// Top, Middle or Bottom Align.
     VAlign(VerticalAlignment),
     /// Increase Indent (true) or Decrease.
@@ -1670,6 +1673,16 @@ impl WorkbookView {
             Tool::Decimals(more) => self.book.decimals(range, active, more),
             Tool::FontSize(larger) => self.book.grow_font(range, active, larger),
             Tool::Fill(color) => self.book.fill_color(range, color),
+            Tool::ThemeColor(fill, index) => {
+                let Some(color) = self.book.theme_palette().get(index).cloned() else {
+                    return;
+                };
+                if fill {
+                    self.book.fill_color(range, Some(&color))
+                } else {
+                    self.book.font_color(range, &color)
+                }
+            }
             Tool::FontColor(color) => self.book.font_color(range, color),
             Tool::Borders(borders) => self.book.borders(range, borders),
             Tool::Filter => self.book.toggle_filter(range),
@@ -3997,6 +4010,26 @@ impl WorkbookView {
                     }))
             }
             Popup::Fill | Popup::Font => {
+                let fill = popup == Popup::Fill;
+                let theme_swatches = self
+                    .book
+                    .theme_palette()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, color)| {
+                        div()
+                            .id(("theme-swatch", index))
+                            .size(px(16.0))
+                            .border_1()
+                            .border_color(theme::border())
+                            .bg(gpui::rgb(u32::from_str_radix(&color, 16).unwrap_or(0)))
+                            .cursor_pointer()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |view, _event, _window, cx| {
+                                view.tool(Tool::ThemeColor(fill, index), cx)
+                            }))
+                    })
+                    .collect::<Vec<_>>();
                 let swatches = STANDARD_COLORS.iter().enumerate().map(|(index, color)| {
                     swatch(
                         index,
@@ -4013,6 +4046,24 @@ impl WorkbookView {
                     .flex_col()
                     .gap_1()
                     .p_2()
+                    .child(
+                        div()
+                            .text_color(theme::text_dim())
+                            .child(i18n::text("sheet.tool.theme_colors")),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .w(px(180.0))
+                            .gap(px(2.0))
+                            .children(theme_swatches),
+                    )
+                    .child(
+                        div()
+                            .text_color(theme::text_dim())
+                            .child(i18n::text("sheet.tool.standard_colors")),
+                    )
                     .child(
                         div()
                             .flex()
@@ -5975,6 +6026,23 @@ mod tests {
                 view.book.format_at(at(10, 30)).font_name.as_deref(),
                 Some("Arial")
             );
+        });
+    }
+
+    /// A theme colour from the fill or font colour gallery goes on the
+    /// selection as the colour it shows.
+    #[gpui::test]
+    fn theme_colours_fill_and_colour_the_selection(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::cell(at(10, 30));
+            let palette = view.book.theme_palette();
+            view.tool(Tool::ThemeColor(true, 4), cx);
+            let look = view.book.format_at(at(10, 30));
+            assert_eq!(look.fill_color.as_deref(), Some(palette[4].as_str()));
+            view.tool(Tool::ThemeColor(false, 15), cx);
+            let look = view.book.format_at(at(10, 30));
+            assert_eq!(look.font_color.as_deref(), Some(palette[15].as_str()));
         });
     }
 
