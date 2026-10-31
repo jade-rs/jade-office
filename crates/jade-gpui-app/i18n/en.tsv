@@ -3752,3 +3752,6 @@ sheet.paste_special.link	Paste Link
 sheet.paste_special.column_widths	Column widths
 sheet.tool.theme_colors	Theme Colors
 sheet.tool.standard_colors	Standard Colors
+sheet.tool.more_colors	More Colors…
+sheet.tool.more_colors_dialog	Colors
+sheet.tool.more_colors_code	Color code (RRGGBB)
