@@ -333,6 +333,8 @@ enum MenuCommand {
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
+    /// Tab Color: an `RRGGBB` for the sheet's tab, or none.
+    TabColor(usize, Option<&'static str>),
     /// A sheet tab from one place to another.
     MoveSheet(usize, usize),
     /// New Note, or Edit Note on a cell that has one.
@@ -1159,6 +1161,7 @@ impl WorkbookView {
                     | MenuCommand::MoveSheet(_, _)
                     | MenuCommand::HideSheet(_)
                     | MenuCommand::UnhideSheet(_)
+                    | MenuCommand::TabColor(_, _)
             )
         {
             self.status = i18n::text("sheet.workbook_protected").into();
@@ -1290,6 +1293,7 @@ impl WorkbookView {
             MenuCommand::UnhideSheet(index) => self
                 .book
                 .set_sheet_visibility(index, SheetVisibility::Visible),
+            MenuCommand::TabColor(index, color) => self.book.set_tab_color(index, color),
             MenuCommand::MoveSheet(index, to) => {
                 let result = self.book.move_sheet(index, to);
                 self.selection = Selection::default();
@@ -3086,7 +3090,8 @@ impl WorkbookView {
             }
         };
         let max_height = (self.viewport.1 - 16.).max(80.);
-        let height = (items.len() as f32 * 26. + 8.).min(max_height);
+        let swatch_rows = if menu.tab.is_some() { 3. } else { 0. };
+        let height = ((items.len() as f32 + swatch_rows) * 26. + 8.).min(max_height);
         let top = menu.at.1.clamp(0., (self.viewport.1 - height).max(0.));
         Some(
             div()
@@ -3132,7 +3137,54 @@ impl WorkbookView {
                                     view.menu_command(command, false, cx);
                                 }))
                         }),
-                ),
+                )
+                .when_some(menu.tab, |list, tab| {
+                    // Tab Color: Excel's standard colours, and No Color.
+                    let swatch = |id: usize, color: Option<&'static str>| {
+                        div()
+                            .id(("tab-color", id))
+                            .size(px(16.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(theme::border())
+                            .cursor_pointer()
+                            .when_some(color, |swatch, color| {
+                                swatch.bg(gpui::rgb(u32::from_str_radix(color, 16).unwrap_or(0)))
+                            })
+                            .when(color.is_none(), |swatch| swatch.child("╱"))
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |view, _event, window, cx| {
+                                window.focus(&view.focus);
+                                view.menu_command(MenuCommand::TabColor(tab, color), false, cx);
+                            }))
+                    };
+                    list.child(
+                        div()
+                            .px_3()
+                            .pt_1()
+                            .text_color(theme::text_dim())
+                            .child(i18n::text("sheet.menu.tab_color")),
+                    )
+                    .child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .w(px(180.0))
+                            .flex()
+                            .flex_wrap()
+                            .gap_1()
+                            .children(
+                                STANDARD_COLORS
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(id, color)| swatch(id, Some(color))),
+                            )
+                            .child(swatch(STANDARD_COLORS.len(), None)),
+                    )
+                }),
         )
     }
 
@@ -4702,6 +4754,20 @@ mod tests {
             assert_eq!(view.book.defined_names().len(), names);
             assert_eq!(view.status.as_ref(), i18n::text("sheet.no_reference"));
             assert_eq!(view.active(), at(3, 8));
+        });
+    }
+
+    /// Tab Color from the tab's menu colours the tab; No Color takes it
+    /// away again.
+    #[gpui::test]
+    fn tab_color_from_the_tab_menu(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            let index = view.book.sheet_index();
+            view.menu_command(MenuCommand::TabColor(index, Some("FF0000")), false, cx);
+            assert_eq!(view.book.tab_color(index), Some([0xFF, 0, 0]));
+            view.menu_command(MenuCommand::TabColor(index, None), false, cx);
+            assert_eq!(view.book.tab_color(index), None);
         });
     }
 

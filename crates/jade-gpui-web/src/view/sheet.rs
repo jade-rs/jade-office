@@ -604,6 +604,8 @@ enum MenuCommand {
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
+    /// Tab Color: an `RRGGBB` for the sheet's tab, or none.
+    TabColor(usize, Option<&'static str>),
 }
 
 impl Sheet {
@@ -2432,6 +2434,7 @@ impl DocView {
                     | MenuCommand::MoveSheet(_, _)
                     | MenuCommand::HideSheet(_)
                     | MenuCommand::UnhideSheet(_)
+                    | MenuCommand::TabColor(_, _)
             )
         {
             self.status = i18n::text("sheet.workbook_protected").into();
@@ -2617,6 +2620,7 @@ impl DocView {
             MenuCommand::UnhideSheet(index) => sheet
                 .book
                 .set_sheet_visibility(index, SheetVisibility::Visible),
+            MenuCommand::TabColor(index, color) => sheet.book.set_tab_color(index, color),
         };
         // Rows or columns gone from under a copy let go of it, as in Excel.
         if matches!(
@@ -3754,7 +3758,8 @@ impl DocView {
                 }
             };
             let max_height = (sheet.viewport.1 - 16.).max(80.);
-            let height = (items.len() as f32 * 26. + 8.).min(max_height);
+            let swatch_rows = if menu.tab.is_some() { 3. } else { 0. };
+            let height = ((items.len() as f32 + swatch_rows) * 26. + 8.).min(max_height);
             let top = menu.at.1.clamp(0., (sheet.viewport.1 - height).max(0.));
             div()
                 .id("sheet-context-menu")
@@ -3799,6 +3804,57 @@ impl DocView {
                                 }))
                         }),
                 )
+                .when_some(menu.tab, |list, tab| {
+                    // Tab Color: Excel's standard colours, and No Color.
+                    let swatch = |id: usize, color: Option<&'static str>| {
+                        div()
+                            .id(("tab-color", id))
+                            .size(px(16.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(palette::border())
+                            .cursor_pointer()
+                            .when_some(color, |swatch, color| {
+                                swatch.bg(gpui::rgb(u32::from_str_radix(color, 16).unwrap_or(0)))
+                            })
+                            .when(color.is_none(), |swatch| swatch.child("╱"))
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |view, _event, window, cx| {
+                                window.focus(&view.focus, cx);
+                                view.sheet_menu_command(
+                                    MenuCommand::TabColor(tab, color),
+                                    false,
+                                    cx,
+                                );
+                            }))
+                    };
+                    list.child(
+                        div()
+                            .px_3()
+                            .pt_1()
+                            .text_color(palette::text_dim())
+                            .child(i18n::text("sheet.menu.tab_color")),
+                    )
+                    .child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .w(px(180.0))
+                            .flex()
+                            .flex_wrap()
+                            .gap_1()
+                            .children(
+                                STANDARD_COLORS
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(id, color)| swatch(id, Some(color))),
+                            )
+                            .child(swatch(STANDARD_COLORS.len(), None)),
+                    )
+                })
         });
 
         let note = sheet.note.and_then(|(cell, (x, y))| {
