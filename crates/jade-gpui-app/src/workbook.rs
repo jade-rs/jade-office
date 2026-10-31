@@ -71,6 +71,7 @@ mod links;
 mod paste_special;
 mod pivots;
 mod protection;
+mod sort;
 mod subtotal;
 mod tables;
 mod text_columns;
@@ -354,6 +355,7 @@ enum MenuCommand {
     RemoveDuplicates,
     /// Data ▸ Text to Columns on the selection's column.
     TextToColumns,
+    SortDialog,
     /// Formulas ▸ Calculation Options: manual (true) or automatic.
     ManualCalculation(bool),
     /// Formulas ▸ Calculate Now.
@@ -414,6 +416,7 @@ pub struct WorkbookView {
     link_dialog: Option<LinkDialog>,
     subtotal_dialog: Option<jade_office_model::subtotal::SubtotalDialog>,
     text_columns_dialog: Option<jade_office_model::text_columns::TextColumnsDialog>,
+    sort_dialog: Option<jade_office_model::sort_dialog::SortDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
     pivot_dialog: Option<PivotPanel>,
@@ -606,6 +609,7 @@ impl WorkbookView {
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
+            || self.sort_dialog.is_some()
         {
             return;
         }
@@ -858,6 +862,7 @@ impl WorkbookView {
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
+            || self.sort_dialog.is_some()
         {
             return false;
         }
@@ -946,6 +951,7 @@ impl WorkbookView {
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
+            || self.sort_dialog.is_some()
         {
             return;
         }
@@ -1085,6 +1091,7 @@ impl WorkbookView {
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
+            || self.sort_dialog.is_some()
         {
             return;
         }
@@ -1301,6 +1308,7 @@ impl WorkbookView {
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::RemoveDuplicates => return self.remove_duplicates(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
+            MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::ManualCalculation(manual) => self.book.set_manual_calculation(manual),
             MenuCommand::CalculateNow => self.book.calculate_now(),
             MenuCommand::AutoOutline => self.book.auto_outline(),
@@ -1607,6 +1615,9 @@ impl WorkbookView {
             return true;
         }
         if self.text_columns_key(key, cx) {
+            return true;
+        }
+        if self.sort_key(key, cx) {
             return true;
         }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
@@ -2052,6 +2063,7 @@ impl WorkbookView {
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
+            || self.sort_dialog.is_some()
         {
             return;
         }
@@ -2996,6 +3008,7 @@ impl WorkbookView {
                         "sheet.menu.remove_duplicates",
                     ));
                 }
+                items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                 if self.range().start.column == self.range().end.column {
                     items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                 }
@@ -4159,6 +4172,7 @@ impl Render for WorkbookView {
         let link_panel = self.link_panel(cx);
         let subtotal_panel = self.subtotal_panel(cx);
         let text_columns_panel = self.text_columns_panel(cx);
+        let sort_panel = self.sort_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -4315,6 +4329,7 @@ impl Render for WorkbookView {
             .children(link_panel)
             .children(subtotal_panel)
             .children(text_columns_panel)
+            .children(sort_panel)
             .children(protection_panel)
             .children(validation_panel)
             .children(validation_alert)
@@ -4358,6 +4373,7 @@ impl WorkbookView {
             link_dialog: None,
             subtotal_dialog: None,
             text_columns_dialog: None,
+            sort_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -5505,6 +5521,39 @@ mod tests {
             assert!(view.text_columns_dialog.is_none());
             assert_eq!(view.book.display_text(at(7, 29)), "東京");
             assert_eq!(view.book.display_text(at(8, 30)), "20");
+        });
+    }
+
+    /// The Sort dialog sorts the selection by the column and order picked,
+    /// the header row staying on top, and closes.
+    #[gpui::test]
+    fn the_sort_dialog_sorts_by_the_order_picked(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(7, 29), "Name").unwrap();
+            view.book.set_cell(at(8, 29), "Sales").unwrap();
+            for (row, (name, sales)) in [("A", "10"), ("B", "30"), ("C", "20")].iter().enumerate() {
+                view.book.set_cell(at(7, 30 + row as u32), name).unwrap();
+                view.book.set_cell(at(8, 30 + row as u32), sales).unwrap();
+            }
+            view.selection = Selection::cell(at(7, 29));
+            view.selection.focus = at(8, 32);
+            view.open_sort_dialog(cx);
+            assert!(view
+                .sort_dialog
+                .as_ref()
+                .is_some_and(|dialog| dialog.header));
+            view.sort_action(sort::SortAction::Column(0, 1), cx);
+            view.sort_action(sort::SortAction::Order(0, true), cx);
+            view.sort_action(sort::SortAction::Take, cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.sort_dialog.is_none());
+            assert_eq!(view.book.display_text(at(7, 29)), "Name");
+            let names: Vec<String> = (30..=32)
+                .map(|row| view.book.display_text(at(7, row)))
+                .collect();
+            assert_eq!(names, ["B", "C", "A"]);
         });
     }
 

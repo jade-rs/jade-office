@@ -3667,3 +3667,13 @@ pivot.new_sheet	新しいワークシート
 pivot.new_sheet_name	新しいシート名
 pivot.create_hint	最初の集計を作成します。続けてフィールド・集計方法・スタイルを変更できます。
 pivot.hidden_destination	配置先には表示中のワークシートを指定してください。
+sheet.menu.sort_dialog	並べ替え…
+sort.dialog	並べ替え
+sort.sort_by	最優先されるキー
+sort.then_by	次に優先されるキー
+sort.ascending	昇順
+sort.descending	降順
+sort.add_level	レベルの追加
+sort.remove_level	レベルの削除
+sort.header	先頭行をデータの見出しとして使用する
+sort.case	大文字と小文字を区別する
