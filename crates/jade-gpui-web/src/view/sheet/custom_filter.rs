@@ -29,9 +29,25 @@ impl DocView {
             return;
         };
         match action {
-            CustomFilterAction::Test(test) => {
+            CustomFilterAction::Test(second, test) => {
                 if let Some(dialog) = sheet.custom_filter.as_mut() {
-                    dialog.test = test;
+                    if second {
+                        dialog.second_test = test;
+                    } else {
+                        dialog.test = test;
+                    }
+                }
+                cx.notify();
+            }
+            CustomFilterAction::And(and) => {
+                if let Some(dialog) = sheet.custom_filter.as_mut() {
+                    dialog.and = and;
+                }
+                cx.notify();
+            }
+            CustomFilterAction::Field(second) => {
+                if let Some(dialog) = sheet.custom_filter.as_mut() {
+                    dialog.in_second = second;
                 }
                 cx.notify();
             }
@@ -39,10 +55,7 @@ impl DocView {
                 let Some(dialog) = sheet.custom_filter.take() else {
                     return;
                 };
-                let result =
-                    sheet
-                        .book
-                        .filter_custom(&dialog.button, dialog.test, &dialog.value.text);
+                let result = dialog.apply(&mut sheet.book);
                 self.edited(result, cx);
             }
             CustomFilterAction::Cancel => {

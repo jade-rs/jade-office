@@ -772,7 +772,7 @@ impl Sheet {
             return Some(dialog.field_mut());
         }
         if let Some(dialog) = self.custom_filter.as_mut() {
-            return Some(&mut dialog.value);
+            return Some(dialog.field_mut());
         }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
@@ -818,7 +818,7 @@ impl Sheet {
             return Some(dialog.field());
         }
         if let Some(dialog) = self.custom_filter.as_ref() {
-            return Some(&dialog.value);
+            return Some(dialog.field());
         }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);
