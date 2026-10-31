@@ -42,7 +42,7 @@ use jade_office_model::formula_tips;
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::links::LinkDialog;
 use jade_office_model::number_formats::NUMBER_FORMATS;
-use jade_office_model::paste_special::PasteSpecial;
+use jade_office_model::paste_special::{PasteOption, PasteSpecial};
 use jade_office_model::pivots::PivotPanel;
 use jade_office_model::print;
 use jade_office_model::protected_edits::{attempt, ProtectedEdit};
@@ -569,6 +569,9 @@ pub struct WorkbookView {
     insert_function: Option<jade_office_model::insert_function::InsertFunctionDialog>,
     top_ten: Option<jade_office_model::top_ten::TopTenDialog>,
     more_colors: Option<jade_office_model::more_colors::MoreColorsDialog>,
+    /// The Paste Options button after a paste from this workbook's copy:
+    /// the range pasted on, and whether its menu is open.
+    paste_options: Option<(CellRange, bool)>,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -1304,6 +1307,13 @@ impl WorkbookView {
             ProtectedEdit::Paste { target, text },
         )
         .map(|outcome| outcome.selection);
+        // A paste of this workbook's copy offers Paste Options.
+        let options = result
+            .as_ref()
+            .ok()
+            .copied()
+            .flatten()
+            .filter(|_| self.book.can_paste_special(None) && self.book.copied().is_some());
         if let Ok(Some(filled)) = &result {
             let active = self.selection.active;
             self.selection = Selection {
@@ -1317,6 +1327,96 @@ impl WorkbookView {
             };
         }
         self.sheets_changed(result.map(|filled| filled.is_some()), cx);
+        self.paste_options = options.map(|filled| (filled, false));
+    }
+
+    /// A Paste Options choice: the paste just made taken back and pasted
+    /// again as chosen, the menu closed.
+    fn paste_option(&mut self, option: PasteOption, cx: &mut Context<Self>) {
+        let Some((range, _)) = self.paste_options else {
+            return;
+        };
+        let result = self.book.repaste(range.start, option);
+        let landed = result.as_ref().ok().copied().flatten().unwrap_or(range);
+        self.selection = Selection {
+            active: landed.start,
+            anchor: landed.start,
+            focus: landed.end,
+        };
+        self.after_write(result.map(|landed| landed.is_some()), cx);
+        self.paste_options = Some((landed, false));
+        cx.notify();
+    }
+
+    /// The Paste Options button at the pasted range's corner, with its menu
+    /// when open — while that range stays selected.
+    fn paste_options_button(
+        &self,
+        grid: Bounds<Pixels>,
+        cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement> {
+        let (range, open) = self.paste_options?;
+        if self.range() != range || self.edit.is_some() || self.book.copied().is_none() {
+            return None;
+        }
+        let corner = self.cell_bounds(range.end)?;
+        Some(
+            div()
+                .absolute()
+                .left(corner.origin.x - grid.origin.x + corner.size.width + px(2.0))
+                .top(corner.origin.y - grid.origin.y + corner.size.height + px(2.0))
+                .text_xs()
+                .text_color(theme::text())
+                .child(
+                    div()
+                        .id("paste-options")
+                        .px_1()
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(theme::border())
+                        .bg(theme::panel())
+                        .cursor_pointer()
+                        .child(i18n::text("sheet.paste_options.button"))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(|view, _event, window, cx| {
+                            window.focus(&view.focus);
+                            if let Some((_, open)) = view.paste_options.as_mut() {
+                                *open = !*open;
+                            }
+                            cx.notify();
+                        })),
+                )
+                .when(open, |button| {
+                    button.child(
+                        div()
+                            .mt_0p5()
+                            .py_1()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(theme::border())
+                            .bg(theme::panel())
+                            .shadow_lg()
+                            .occlude()
+                            .children(PasteOption::ALL.into_iter().map(|option| {
+                                div()
+                                    .id(option.label())
+                                    .px_3()
+                                    .py_0p5()
+                                    .whitespace_nowrap()
+                                    .cursor_pointer()
+                                    .hover(|row| row.bg(theme::hovered()))
+                                    .child(i18n::text(option.label()))
+                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation()
+                                    })
+                                    .on_click(cx.listener(move |view, _event, window, cx| {
+                                        window.focus(&view.focus);
+                                        view.paste_option(option, cx);
+                                    }))
+                            })),
+                    )
+                }),
+        )
     }
 
     // ---- commands ----------------------------------------------------------
@@ -4616,6 +4716,10 @@ impl Render for WorkbookView {
             .grid_bounds
             .get()
             .and_then(|grid| self.cell_editor(grid, cx));
+        let paste_options = self
+            .grid_bounds
+            .get()
+            .and_then(|grid| self.paste_options_button(grid, cx));
         let menu = self.context_menu(cx);
         let format_dialog = self.format_dialog_element(cx);
         let note = self.note.and_then(|(cell, (x, y))| {
@@ -4761,6 +4865,7 @@ impl Render for WorkbookView {
                             .child(div().w(px(sheet_width)).h(px(sheet_height)).flex_none()),
                     )
                     .children(editor)
+                    .children(paste_options)
                     .children(self.object_frame())
                     .children(note)
                     .children(note_editor)
@@ -4896,6 +5001,7 @@ impl WorkbookView {
             insert_function: None,
             top_ten: None,
             more_colors: None,
+            paste_options: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -5332,6 +5438,27 @@ mod tests {
         view.read_with(cx, |view, _| assert!(view.book.show_formulas()));
         cx.simulate_keystrokes("ctrl-`");
         view.read_with(cx, |view, _| assert!(!view.book.show_formulas()));
+    }
+
+    /// A paste of this workbook's copy offers Paste Options; Values pastes
+    /// the copy again as its values.
+    #[gpui::test]
+    fn paste_options_after_a_paste(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(20, 70), "2").unwrap();
+            view.book.set_cell(at(20, 71), "=U71*10").unwrap();
+            view.book.copy(span(at(20, 70), at(20, 71)), false);
+            view.selection = Selection::cell(at(23, 70));
+            view.sheet_paste(None, cx);
+            assert_eq!(view.book.edit_text(at(23, 71)), "=X71*10");
+            assert!(view
+                .paste_options
+                .is_some_and(|(range, open)| { range == span(at(23, 70), at(23, 71)) && !open }));
+            view.paste_option(PasteOption::Values, cx);
+            assert_eq!(view.book.edit_text(at(23, 71)), "20");
+            assert!(view.paste_options.is_some());
+        });
     }
 
     /// Paste Special's Paste Link pastes formulas reading what was copied,

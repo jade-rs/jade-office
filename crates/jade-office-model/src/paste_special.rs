@@ -174,6 +174,51 @@ impl PasteSpecial {
     }
 }
 
+/// The Paste Options button's choices after a paste, in Excel's order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PasteOption {
+    KeepSource,
+    Values,
+    Formulas,
+    Formats,
+    Transpose,
+}
+
+impl PasteOption {
+    pub const ALL: [PasteOption; 5] = [
+        PasteOption::KeepSource,
+        PasteOption::Values,
+        PasteOption::Formulas,
+        PasteOption::Formats,
+        PasteOption::Transpose,
+    ];
+
+    /// The i18n key of its name.
+    pub fn label(self) -> &'static str {
+        match self {
+            PasteOption::KeepSource => "sheet.paste_options.keep_source",
+            PasteOption::Values => "sheet.paste_options.values",
+            PasteOption::Formulas => "sheet.paste_options.formulas",
+            PasteOption::Formats => "sheet.paste_options.formats",
+            PasteOption::Transpose => "sheet.paste_options.transpose",
+        }
+    }
+
+    fn special(self) -> PasteSpecial {
+        let what = match self {
+            PasteOption::Values => PasteWhat::Values,
+            PasteOption::Formulas => PasteWhat::Formulas,
+            PasteOption::Formats => PasteWhat::Formats,
+            PasteOption::KeepSource | PasteOption::Transpose => PasteWhat::All,
+        };
+        PasteSpecial {
+            what,
+            transpose: self == PasteOption::Transpose,
+            ..PasteSpecial::default()
+        }
+    }
+}
+
 /// One copied cell: what it holds, its formula moved for where it lands,
 /// and its format.
 struct Copied {
@@ -312,6 +357,27 @@ impl<B: Backend> Workbook<B> {
                 at.row + (range.end.row - range.start.row),
             ),
         }))
+    }
+
+    /// A Paste Options choice after the paste at `at` just made from this
+    /// workbook's copy: that paste taken back and the copy pasted again as
+    /// chosen, as one step. Keep Source Formatting is the paste as it was.
+    /// Returns the range pasted on.
+    pub fn repaste(
+        &mut self,
+        at: CellRef,
+        option: PasteOption,
+    ) -> Result<Option<CellRange>, String> {
+        if option == PasteOption::KeepSource {
+            return Ok(None);
+        }
+        if !matches!(self.copied_cells(), Some((_, _, false))) {
+            return Ok(None);
+        }
+        if !self.undo()? {
+            return Ok(None);
+        }
+        self.paste_special(at, None, option.special())
     }
 
     /// Paste Link at `at`: a formula in each cell pasted on that reads the

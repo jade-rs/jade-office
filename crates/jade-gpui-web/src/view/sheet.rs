@@ -56,7 +56,7 @@ use conditional::Conditional;
 use jade_web::charts::{ChartAsk, Handle};
 use jade_web::conditional_formatting::RuleAsk;
 use jade_web::find::FindBar;
-use jade_web::paste_special::PasteSpecial;
+use jade_web::paste_special::{PasteOption, PasteSpecial};
 use jade_web::validation::{PendingValidation, ValidationDialog};
 
 /// How far past the grid's edge the pointer has to be for a drag to scroll
@@ -126,6 +126,9 @@ pub(super) struct Sheet {
     pub(super) insert_function: Option<jade_web::insert_function::InsertFunctionDialog>,
     pub(super) top_ten: Option<jade_web::top_ten::TopTenDialog>,
     pub(super) more_colors: Option<jade_web::more_colors::MoreColorsDialog>,
+    /// The Paste Options button after a paste from this workbook's copy:
+    /// the range pasted on, and whether its menu is open.
+    pub(super) paste_options: Option<(CellRange, bool)>,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
@@ -792,6 +795,7 @@ impl Sheet {
             insert_function: None,
             top_ten: None,
             more_colors: None,
+            paste_options: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -2765,6 +2769,13 @@ impl DocView {
             ProtectedEdit::Paste { target, text },
         )
         .map(|outcome| outcome.selection);
+        // A paste of this workbook's copy offers Paste Options.
+        let options = result
+            .as_ref()
+            .ok()
+            .copied()
+            .flatten()
+            .filter(|_| sheet.book.can_paste_special(None) && sheet.book.copied().is_some());
         if let Ok(Some(filled)) = &result {
             let active = sheet.selection.active;
             sheet.selection = Selection {
@@ -2778,6 +2789,32 @@ impl DocView {
             };
         }
         self.sheets_changed(result.map(|filled| filled.is_some()), cx);
+        if let Some(sheet) = self.sheet_mut() {
+            sheet.paste_options = options.map(|filled| (filled, false));
+        }
+    }
+
+    /// A Paste Options choice: the paste just made taken back and pasted
+    /// again as chosen, the menu closed.
+    fn paste_option(&mut self, option: PasteOption, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some((range, _)) = sheet.paste_options else {
+            return;
+        };
+        let result = sheet.book.repaste(range.start, option);
+        let landed = result.as_ref().ok().copied().flatten().unwrap_or(range);
+        sheet.selection = Selection {
+            active: landed.start,
+            anchor: landed.start,
+            focus: landed.end,
+        };
+        self.edited(result.map(|landed| landed.is_some()), cx);
+        if let Some(sheet) = self.sheet_mut() {
+            sheet.paste_options = Some((landed, false));
+        }
+        cx.notify();
     }
 
     fn sheet_menu_command(
@@ -3829,6 +3866,82 @@ impl DocView {
         };
 
         // The editor over the active cell, white like the cell under it.
+        // The Paste Options button at the pasted range's corner, with its
+        // menu when open — while that range stays selected.
+        let paste_options = sheet
+            .paste_options
+            .filter(|(range, _)| {
+                sheet.selection.range() == *range
+                    && sheet.edit.is_none()
+                    && sheet.book.copied().is_some()
+            })
+            .and_then(|(range, open)| {
+                let (x, y, w, h) = sheet
+                    .book
+                    .cell_rect(range.end, (f64::from(at.0 / zoom), f64::from(at.1 / zoom)))?;
+                Some(
+                    div()
+                        .absolute()
+                        .left(px((x + w) as f32 * zoom + 2.0))
+                        .top(px((y + h) as f32 * zoom + 2.0))
+                        .text_xs()
+                        .text_color(palette::text())
+                        .child(
+                            div()
+                                .id("paste-options")
+                                .px_1()
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(palette::border())
+                                .bg(palette::panel())
+                                .cursor_pointer()
+                                .child(i18n::text("sheet.paste_options.button"))
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .on_click(cx.listener(|view, _event, window, cx| {
+                                    window.focus(&view.focus, cx);
+                                    if let Some((_, open)) = view
+                                        .sheet_mut()
+                                        .and_then(|sheet| sheet.paste_options.as_mut())
+                                    {
+                                        *open = !*open;
+                                    }
+                                    cx.notify();
+                                })),
+                        )
+                        .when(open, |button| {
+                            button.child(
+                                div()
+                                    .mt_0p5()
+                                    .py_1()
+                                    .rounded_md()
+                                    .border_1()
+                                    .border_color(palette::border())
+                                    .bg(palette::panel())
+                                    .shadow_lg()
+                                    .occlude()
+                                    .children(PasteOption::ALL.into_iter().map(|option| {
+                                        div()
+                                            .id(option.label())
+                                            .px_3()
+                                            .py_0p5()
+                                            .whitespace_nowrap()
+                                            .cursor_pointer()
+                                            .hover(|row| row.bg(palette::hovered()))
+                                            .child(i18n::text(option.label()))
+                                            .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                                cx.stop_propagation()
+                                            })
+                                            .on_click(cx.listener(
+                                                move |view, _event, window, cx| {
+                                                    window.focus(&view.focus, cx);
+                                                    view.paste_option(option, cx);
+                                                },
+                                            ))
+                                    })),
+                            )
+                        }),
+                )
+            });
         let cell_editor = sheet.edit.as_ref().and_then(|edit| {
             let (x, y, w, h) = sheet
                 .book
@@ -4696,6 +4809,7 @@ impl DocView {
                             ),
                     )
                     .children(cell_editor)
+                    .children(paste_options)
                     .children(note)
                     .children(note_editor)
                     .children(list_button)
