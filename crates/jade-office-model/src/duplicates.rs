@@ -6,7 +6,7 @@
 use jade_xlsx_headless_api::CellKind;
 use jade_xlsx_reader::{Axis, CellRange, CellRef};
 
-use crate::sheet::{reference_text, span, Workbook};
+use crate::sheet::{column_label, reference_text, span, Workbook};
 use crate::Backend;
 
 /// What Remove Duplicates did: the rows taken out and those that remain,
@@ -122,5 +122,71 @@ impl<B: Backend> Workbook<B> {
                 cell.text.unwrap_or_default().to_lowercase()
             ),
         }
+    }
+}
+
+/// The Remove Duplicates dialog: the list, whether its first row is a
+/// header, and the columns compared — every one to start with, as Excel
+/// opens it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DuplicatesDialog {
+    pub range: CellRange,
+    /// My data has headers.
+    pub header: bool,
+    /// Whether each column of the list, from its first, is compared.
+    pub compared: Vec<bool>,
+    /// The first row's texts, the names of the columns when it is a header.
+    headers: Vec<String>,
+}
+
+impl DuplicatesDialog {
+    /// Opened on the selection, or on the list round the active cell when
+    /// only one cell is selected.
+    pub fn open<B: Backend>(book: &Workbook<B>, selected: CellRange, at: CellRef) -> Self {
+        let range = if selected.start == selected.end {
+            book.current_region(at).unwrap_or(selected)
+        } else {
+            selected
+        };
+        let headers: Vec<String> = (range.start.column..=range.end.column)
+            .map(|column| book.display_text(CellRef::new(column, range.start.row)))
+            .collect();
+        Self {
+            range,
+            header: book.looks_like_headers(range),
+            compared: vec![true; headers.len()],
+            headers,
+        }
+    }
+
+    /// The columns' names as the dialog lists them: the header row's when
+    /// the list has one, else `Column A` and so on.
+    pub fn column_names(&self, column_word: &str) -> Vec<String> {
+        (0..self.headers.len())
+            .map(
+                |index| match self.headers.get(index).filter(|_| self.header) {
+                    Some(name) if !name.is_empty() => name.clone(),
+                    _ => format!(
+                        "{column_word} {}",
+                        column_label(self.range.start.column + index as u32)
+                    ),
+                },
+            )
+            .collect()
+    }
+
+    /// Select All, or Unselect All.
+    pub fn select_all(&mut self, on: bool) {
+        self.compared.iter_mut().for_each(|compared| *compared = on);
+    }
+
+    /// The sheet columns compared.
+    pub fn columns(&self) -> Vec<u32> {
+        self.compared
+            .iter()
+            .enumerate()
+            .filter(|(_, compared)| **compared)
+            .map(|(index, _)| self.range.start.column + index as u32)
+            .collect()
     }
 }

@@ -66,6 +66,7 @@ use crate::editor::{self, Editor};
 
 mod charts;
 mod conditional;
+mod duplicates;
 mod find_bar;
 mod links;
 mod paste_special;
@@ -417,6 +418,7 @@ pub struct WorkbookView {
     subtotal_dialog: Option<jade_office_model::subtotal::SubtotalDialog>,
     text_columns_dialog: Option<jade_office_model::text_columns::TextColumnsDialog>,
     sort_dialog: Option<jade_office_model::sort_dialog::SortDialog>,
+    duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
     pivot_dialog: Option<PivotPanel>,
@@ -610,6 +612,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.duplicates_dialog.is_some()
         {
             return;
         }
@@ -863,6 +866,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.duplicates_dialog.is_some()
         {
             return false;
         }
@@ -952,6 +956,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.duplicates_dialog.is_some()
         {
             return;
         }
@@ -1092,6 +1097,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.duplicates_dialog.is_some()
         {
             return;
         }
@@ -1306,7 +1312,7 @@ impl WorkbookView {
             MenuCommand::FreezePanes => self.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
-            MenuCommand::RemoveDuplicates => return self.remove_duplicates(cx),
+            MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::ManualCalculation(manual) => self.book.set_manual_calculation(manual),
@@ -1618,6 +1624,9 @@ impl WorkbookView {
             return true;
         }
         if self.sort_key(key, cx) {
+            return true;
+        }
+        if self.duplicates_key(key, cx) {
             return true;
         }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
@@ -2064,6 +2073,7 @@ impl WorkbookView {
             || self.subtotal_dialog.is_some()
             || self.text_columns_dialog.is_some()
             || self.sort_dialog.is_some()
+            || self.duplicates_dialog.is_some()
         {
             return;
         }
@@ -2534,20 +2544,17 @@ impl WorkbookView {
         }
     }
 
-    /// Data ▸ Remove Duplicates over the selection — or, with one cell
-    /// selected, the list round it — every column compared, the first row a
-    /// header when it reads as one, and Excel's count in the status bar.
-    fn remove_duplicates(&mut self, cx: &mut Context<Self>) {
-        let range = if self.selection.is_cell() {
-            self.book
-                .current_region(self.active())
-                .unwrap_or_else(|| self.range())
-        } else {
-            self.range()
-        };
-        let columns: Vec<u32> = (range.start.column..=range.end.column).collect();
-        let headers = self.book.looks_like_headers(range);
-        match self.book.remove_duplicates(range, &columns, headers) {
+    /// Data ▸ Remove Duplicates over `range`, comparing `columns`, its
+    /// first row a header when `headers`, and Excel's count in the status
+    /// bar.
+    fn remove_duplicates(
+        &mut self,
+        range: CellRange,
+        columns: &[u32],
+        headers: bool,
+        cx: &mut Context<Self>,
+    ) {
+        match self.book.remove_duplicates(range, columns, headers) {
             Ok(outcome) => {
                 self.after_write(Ok(outcome.removed > 0), cx);
                 self.status = if outcome.removed == 0 {
@@ -4173,6 +4180,7 @@ impl Render for WorkbookView {
         let subtotal_panel = self.subtotal_panel(cx);
         let text_columns_panel = self.text_columns_panel(cx);
         let sort_panel = self.sort_panel(cx);
+        let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -4330,6 +4338,7 @@ impl Render for WorkbookView {
             .children(subtotal_panel)
             .children(text_columns_panel)
             .children(sort_panel)
+            .children(duplicates_panel)
             .children(protection_panel)
             .children(validation_panel)
             .children(validation_alert)
@@ -4374,6 +4383,7 @@ impl WorkbookView {
             subtotal_dialog: None,
             text_columns_dialog: None,
             sort_dialog: None,
+            duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -5554,6 +5564,45 @@ mod tests {
                 .map(|row| view.book.display_text(at(7, row)))
                 .collect();
             assert_eq!(names, ["B", "C", "A"]);
+        });
+    }
+
+    /// Remove Duplicates opens a dialog on the list, every column ticked;
+    /// with one column left ticked it takes out the rows repeating it, and
+    /// OK with none ticked keeps the dialog open.
+    #[gpui::test]
+    fn the_duplicates_dialog_compares_the_columns_ticked(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            for (row, (branch, sales)) in [
+                ("Branch", "Sales"),
+                ("Tokyo", "10"),
+                ("Yokohama", "10"),
+                ("Osaka", "20"),
+            ]
+            .iter()
+            .enumerate()
+            {
+                view.book.set_cell(at(7, 29 + row as u32), branch).unwrap();
+                view.book.set_cell(at(8, 29 + row as u32), sales).unwrap();
+            }
+            view.selection = Selection::cell(at(7, 30));
+            view.menu_command(MenuCommand::RemoveDuplicates, false, cx);
+            let dialog = view.duplicates_dialog.as_ref().unwrap();
+            assert!(dialog.header);
+            assert_eq!(dialog.compared, [true, true]);
+            view.duplicates_action(duplicates::DuplicatesAction::SelectAll(false), cx);
+            view.duplicates_action(duplicates::DuplicatesAction::Take, cx);
+            assert!(view.duplicates_dialog.is_some());
+            view.duplicates_action(duplicates::DuplicatesAction::Column(1), cx);
+            view.duplicates_action(duplicates::DuplicatesAction::Take, cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.duplicates_dialog.is_none());
+            let branches: Vec<String> = (29..=32)
+                .map(|row| view.book.display_text(at(7, row)))
+                .collect();
+            assert_eq!(branches, ["Branch", "Tokyo", "Osaka", ""]);
         });
     }
 

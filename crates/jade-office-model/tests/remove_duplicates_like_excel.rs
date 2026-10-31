@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
-use jade_office_model::duplicates::Deduplicated;
+use jade_office_model::duplicates::{Deduplicated, DuplicatesDialog};
 use jade_office_model::sheet::{span, CellRef, Workbook};
 use jade_office_model::tiny::TinySkiaBackend;
 
@@ -90,4 +90,48 @@ fn a_text_header_over_other_values_reads_as_a_header() {
     assert!(book.looks_like_headers(span(CellRef::new(7, 29), CellRef::new(7, 30))));
     book.set_cell(CellRef::new(7, 30), "ten").unwrap();
     assert!(!book.looks_like_headers(span(CellRef::new(7, 29), CellRef::new(7, 30))));
+}
+
+/// The dialog opens on the list round the active cell, every column ticked
+/// and named by its header; comparing one column takes out the rows that
+/// repeat it alone.
+#[test]
+fn the_dialog_compares_only_the_columns_ticked() {
+    let mut book = book();
+    let rows = [
+        ("Branch", "Sales"),
+        ("Tokyo", "10"),
+        ("Yokohama", "10"),
+        ("Osaka", "20"),
+    ];
+    for (offset, (branch, region)) in rows.into_iter().enumerate() {
+        let row = 29 + offset as u32;
+        book.set_cell(CellRef::new(7, row), branch).unwrap();
+        book.set_cell(CellRef::new(8, row), region).unwrap();
+    }
+    let at = CellRef::new(7, 30);
+    let mut dialog = DuplicatesDialog::open(&book, span(at, at), at);
+    assert_eq!(dialog.range, span(CellRef::new(7, 29), CellRef::new(8, 32)));
+    assert!(dialog.header);
+    assert_eq!(dialog.column_names("Column"), ["Branch", "Sales"]);
+    assert_eq!(dialog.columns(), [7, 8]);
+    dialog.header = false;
+    assert_eq!(dialog.column_names("Column"), ["Column H", "Column I"]);
+    dialog.header = true;
+    dialog.select_all(false);
+    assert!(dialog.columns().is_empty());
+    dialog.compared[1] = true;
+    assert_eq!(dialog.columns(), [8]);
+
+    let outcome = book
+        .remove_duplicates(dialog.range, &dialog.columns(), dialog.header)
+        .unwrap();
+    assert_eq!(
+        outcome,
+        Deduplicated {
+            removed: 1,
+            remaining: 2
+        }
+    );
+    assert_eq!(book.display_text(CellRef::new(7, 31)), "Osaka");
 }
