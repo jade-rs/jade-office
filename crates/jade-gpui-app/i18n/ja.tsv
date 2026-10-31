@@ -3756,3 +3756,9 @@ sheet.tool.more_colors	その他の色…
 sheet.tool.more_colors_dialog	色の設定
 sheet.tool.more_colors_code	カラーコード (RRGGBB)
 sheet.menu.copy_sheet	シートのコピー
+sheet.paste_options.button	(Ctrl)
+sheet.paste_options.keep_source	元の書式を保持
+sheet.paste_options.values	値
+sheet.paste_options.formulas	数式
+sheet.paste_options.formats	書式設定
+sheet.paste_options.transpose	行/列の入れ替え
