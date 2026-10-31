@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
-use jade_office_model::find::{replaced, FindBar, FindOptions};
+use jade_office_model::find::{replaced, FindBar, FindOptions, Found};
 use jade_office_model::sheet::{protected_refusal, CellRef, Workbook};
 use jade_office_model::tiny::TinySkiaBackend;
 
@@ -248,4 +248,29 @@ fn the_bar_types_into_find_or_replace() {
     assert_eq!(bar.field().text, "apple");
     let replacing = FindBar::new(true);
     assert!(replacing.replacing && !replacing.in_replace);
+}
+
+/// Find All lists every match with its sheet, cell, what it shows and its
+/// formula, as Excel's list does.
+#[test]
+fn find_all_lists_the_sheet_cell_value_and_formula() {
+    let book = fruit();
+    let sheet = book.sheet_index();
+    let name = book.sheet_names()[sheet].clone();
+    let found = book.found("200", FindOptions::default());
+    assert_eq!(
+        found,
+        vec![Found {
+            sheet,
+            sheet_name: name.clone(),
+            cell: at(10, 4),
+            value: "200".into(),
+            formula: "=K4*2".into(),
+        }]
+    );
+    let found = book.found("apple", FindOptions::default());
+    assert_eq!(found.len(), 3);
+    assert_eq!(found[1].value, "apple pie");
+    assert_eq!(found[1].formula, "");
+    assert_eq!(found[1].sheet_name, name);
 }

@@ -3682,3 +3682,5 @@ duplicates.columns	To delete duplicate values, select one or more columns that c
 duplicates.column	Column
 duplicates.select_all	Select All
 duplicates.unselect_all	Unselect All
+sheet.find_all	Find All
+sheet.found_cells	{n} cell(s) found
