@@ -5,6 +5,7 @@ pub(super) enum SubtotalAction {
     Function(usize),
     Column(usize),
     Replace,
+    PageBreaks,
     Take,
     Cancel,
 }
@@ -78,13 +79,27 @@ impl View {
             .child(functions)
             .child(section("subtotal.columns"))
             .child(columns)
-            .child(div().mt_3().flex().child(self.subtotal_chip(
-                "subtotal-replace",
-                i18n::text("subtotal.replace").into(),
-                dialog.replace,
-                SubtotalAction::Replace,
-                cx,
-            )))
+            .child(
+                div()
+                    .mt_3()
+                    .flex()
+                    .flex_wrap()
+                    .gap_1()
+                    .child(self.subtotal_chip(
+                        "subtotal-replace",
+                        i18n::text("subtotal.replace").into(),
+                        dialog.replace,
+                        SubtotalAction::Replace,
+                        cx,
+                    ))
+                    .child(self.subtotal_chip(
+                        "subtotal-page-breaks",
+                        i18n::text("subtotal.page_breaks").into(),
+                        dialog.page_breaks,
+                        SubtotalAction::PageBreaks,
+                        cx,
+                    )),
+            )
             .child(
                 div()
                     .mt_4()
@@ -148,6 +163,7 @@ fn change_subtotal_dialog(dialog: &mut SubtotalDialog, action: SubtotalAction) {
             }
         }
         SubtotalAction::Replace => dialog.replace = !dialog.replace,
+        SubtotalAction::PageBreaks => dialog.page_breaks = !dialog.page_breaks,
         SubtotalAction::Take | SubtotalAction::Cancel => {}
     }
 }

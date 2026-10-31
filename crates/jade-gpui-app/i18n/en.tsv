@@ -266,6 +266,7 @@ subtotal.by	At each change in
 subtotal.function	Use function
 subtotal.columns	Add subtotal to
 subtotal.replace	Replace current subtotals
+subtotal.page_breaks	Page break between groups
 subtotal.fn.sum	Sum
 subtotal.row.sum	{} Total
 subtotal.grand.sum	Grand Total
