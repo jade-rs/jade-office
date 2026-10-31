@@ -1204,6 +1204,7 @@ impl DocView {
                     || sheet.protection_dialog.is_some()
                     || sheet.table_dialog.is_some()
                     || sheet.pivot_dialog.is_some()
+                    || sheet.subtotal_dialog.is_some()
                 {
                     return;
                 }

@@ -300,6 +300,9 @@ impl<B: Backend> Workbook<B> {
     }
 
     fn relayout(&mut self) -> Result<(), String> {
+        if self.relayout_typed() {
+            return Ok(());
+        }
         let layout = lay_out(&self.book, self.index, self.extent, &self.measure)?;
         let changed = layout_changes(&self.layout, &layout);
         if let (Some(changes), Some(changed)) = (&mut self.changes, changed) {
@@ -310,6 +313,48 @@ impl<B: Backend> Workbook<B> {
         self.layout = layout;
         self.revision += 1;
         Ok(())
+    }
+
+    /// After typing, only the rows of the cells it changed — the values typed
+    /// and the formulas they recalculated — laid out again, when the layout
+    /// can take them so; `false` for a full layout.
+    fn relayout_typed(&mut self) -> bool {
+        let Some(changed) = self.book.take_typed_changes() else {
+            return false;
+        };
+        let rows: std::collections::BTreeSet<u32> = changed
+            .iter()
+            .filter(|(sheet, _)| *sheet == self.index)
+            .map(|(_, at)| at.row)
+            .collect();
+        let options = layout_options(&self.book, self.extent, &self.measure);
+        if !jade_xlsx_layout::relayout_rows(
+            &mut self.layout,
+            self.book.workbook(),
+            self.index,
+            &options,
+            &rows,
+        ) {
+            return false;
+        }
+        debug_assert_eq!(
+            Ok(&self.layout),
+            lay_out(&self.book, self.index, self.extent, &self.measure).as_ref(),
+            "the rows laid out again are what a full layout gives"
+        );
+        if let Some(changes) = &mut self.changes {
+            let width = self.layout.content_width;
+            changes.extend(rows.iter().filter_map(|row| {
+                self.layout.row(*row).map(|entry| Rect {
+                    x: 0.0,
+                    y: entry.offset,
+                    width,
+                    height: entry.size,
+                })
+            }));
+        }
+        self.revision += 1;
+        true
     }
 
     /// Where the sheet may paint differently since the last call, in sheet px
@@ -2696,6 +2741,79 @@ impl<B: Backend> Workbook<B> {
         Ok(changed)
     }
 
+    /// Home ▸ Format Painter: `target` takes the formats of `source`, tiled
+    /// when it is larger and stamped in the source's shape from a single
+    /// cell; values stay. One undo step.
+    pub fn copy_format(&mut self, source: CellRange, target: CellRange) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let summary = self
+            .book
+            .copy_format(&name, &range_text_full(source), &range_text_full(target))
+            .map_err(|error| error.to_string())?;
+        if summary.cells.is_empty() {
+            return Ok(false);
+        }
+        self.wrote(1)?;
+        Ok(true)
+    }
+
+    /// A click at viewport point `(x, y)` (headers included) on the outline
+    /// gutter: a level button shows the outline down to its level, a group's
+    /// box collapses or expands it. `None` when the point is not on one, so
+    /// the click selects as usual.
+    pub fn outline_click(
+        &mut self,
+        x: f64,
+        y: f64,
+        scroll: (f64, f64),
+    ) -> Option<Result<bool, String>> {
+        use jade_xlsx_layout::outline_gutter::OutlineTarget;
+        let (axis, index, change) = match self.layout.outline_hit(x, y, scroll)? {
+            OutlineTarget::Level { axis, level } => (axis, 0, OutlineChange::ShowLevel(level)),
+            OutlineTarget::Toggle {
+                axis,
+                summary,
+                collapsed,
+            } => (
+                axis,
+                summary,
+                if collapsed {
+                    OutlineChange::ShowDetail
+                } else {
+                    OutlineChange::HideDetail
+                },
+            ),
+        };
+        Some(self.outline(axis, index, index, change))
+    }
+
+    /// Data ▸ Group ▸ Auto Outline: rows and columns grouped under the
+    /// formulas summing them, replacing the sheet's outline. One undo step.
+    pub fn auto_outline(&mut self) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let changed = self
+            .book
+            .auto_outline(&name)
+            .map_err(|error| error.to_string())?;
+        if changed {
+            self.wrote(1)?;
+        }
+        Ok(changed)
+    }
+
+    /// Data ▸ Ungroup ▸ Clear Outline on rows or columns. One undo step.
+    pub fn clear_outline(&mut self, axis: Axis) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let changed = self
+            .book
+            .clear_outline(&name, axis)
+            .map_err(|error| error.to_string())?;
+        if changed {
+            self.wrote(1)?;
+        }
+        Ok(changed)
+    }
+
     /// Whether the sheet has rows (or columns) grouped, so that Hide and
     /// Show Detail have something to act on.
     pub fn has_outline(&self, axis: Axis) -> bool {
@@ -3415,21 +3533,30 @@ fn lay_out(
     extent: (u32, u32),
     measure: &Rc<dyn jade_xlsx_layout::TextMeasure>,
 ) -> Result<SheetLayout, String> {
-    let workbook = book.workbook();
     layout_workbook_sheet(
-        workbook,
+        book.workbook(),
         index,
-        &LayoutOptions {
-            min_column_count: extent.0,
-            min_row_count: extent.1,
-            date_system: workbook.date_system,
-            time_zone: Some(book.calculation_time_zone().to_string()),
-            measure: Rc::clone(measure),
-            ..LayoutOptions::default()
-        }
-        .with_normal_font_metrics(&workbook.styles),
+        &layout_options(book, extent, measure),
     )
     .ok_or_else(|| "the sheet does not exist".to_string())
+}
+
+/// What every layout of the sheet is made with.
+fn layout_options(
+    book: &HeadlessWorkbook,
+    extent: (u32, u32),
+    measure: &Rc<dyn jade_xlsx_layout::TextMeasure>,
+) -> LayoutOptions {
+    let workbook = book.workbook();
+    LayoutOptions {
+        min_column_count: extent.0,
+        min_row_count: extent.1,
+        date_system: workbook.date_system,
+        time_zone: Some(book.calculation_time_zone().to_string()),
+        measure: Rc::clone(measure),
+        ..LayoutOptions::default()
+    }
+    .with_normal_font_metrics(&workbook.styles)
 }
 
 /// `B3:B3` for a single cell too, as the engine's range arguments take.

@@ -258,6 +258,48 @@ sheet.menu.group	Group
 sheet.menu.ungroup	Ungroup
 sheet.menu.hide_detail	Hide Detail
 sheet.menu.show_detail	Show Detail
+sheet.menu.auto_outline	Auto Outline
+sheet.menu.clear_outline	Clear Outline
+sheet.menu.subtotal	Subtotal
+subtotal.dialog	Subtotal
+subtotal.by	At each change in
+subtotal.function	Use function
+subtotal.columns	Add subtotal to
+subtotal.replace	Replace current subtotals
+subtotal.fn.sum	Sum
+subtotal.row.sum	{} Total
+subtotal.grand.sum	Grand Total
+subtotal.fn.count	Count
+subtotal.row.count	{} Count
+subtotal.grand.count	Grand Count
+subtotal.fn.average	Average
+subtotal.row.average	{} Average
+subtotal.grand.average	Grand Average
+subtotal.fn.max	Max
+subtotal.row.max	{} Max
+subtotal.grand.max	Grand Max
+subtotal.fn.min	Min
+subtotal.row.min	{} Min
+subtotal.grand.min	Grand Min
+subtotal.fn.product	Product
+subtotal.row.product	{} Product
+subtotal.grand.product	Grand Product
+subtotal.fn.count_numbers	Count Numbers
+subtotal.row.count_numbers	{} Count
+subtotal.grand.count_numbers	Grand Count
+subtotal.fn.stdev	StdDev
+subtotal.row.stdev	{} StdDev
+subtotal.grand.stdev	Grand StdDev
+subtotal.fn.stdevp	StdDevp
+subtotal.row.stdevp	{} StdDevp
+subtotal.grand.stdevp	Grand StdDevp
+subtotal.fn.var	Var
+subtotal.row.var	{} Var
+subtotal.grand.var	Grand Var
+subtotal.fn.varp	Varp
+subtotal.row.varp	{} Varp
+subtotal.grand.varp	Grand Varp
+sheet.menu.format_painter	Format Painter
 sheet.menu.move_left	Move Left
 sheet.menu.move_right	Move Right
 sheet.validation_refused	This value doesn't match the data validation restrictions defined for this cell.

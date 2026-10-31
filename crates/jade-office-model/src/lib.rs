@@ -39,6 +39,7 @@ pub mod protection;
 pub use sheet::protected_edits;
 pub mod sheet;
 pub mod sheet_properties;
+pub mod subtotal;
 pub mod tables;
 pub mod text;
 pub mod typing;
