@@ -21,9 +21,25 @@ impl WorkbookView {
         cx: &mut Context<Self>,
     ) {
         match action {
-            CustomFilterAction::Test(test) => {
+            CustomFilterAction::Test(second, test) => {
                 if let Some(dialog) = self.custom_filter.as_mut() {
-                    dialog.test = test;
+                    if second {
+                        dialog.second_test = test;
+                    } else {
+                        dialog.test = test;
+                    }
+                }
+                cx.notify();
+            }
+            CustomFilterAction::And(and) => {
+                if let Some(dialog) = self.custom_filter.as_mut() {
+                    dialog.and = and;
+                }
+                cx.notify();
+            }
+            CustomFilterAction::Field(second) => {
+                if let Some(dialog) = self.custom_filter.as_mut() {
+                    dialog.in_second = second;
                 }
                 cx.notify();
             }
@@ -31,9 +47,7 @@ impl WorkbookView {
                 let Some(dialog) = self.custom_filter.take() else {
                     return;
                 };
-                let result =
-                    self.book
-                        .filter_custom(&dialog.button, dialog.test, &dialog.value.text);
+                let result = dialog.apply(&mut self.book);
                 self.after_write(result, cx);
             }
             CustomFilterAction::Cancel => {
