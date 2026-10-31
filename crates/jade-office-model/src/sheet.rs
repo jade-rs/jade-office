@@ -2742,6 +2742,33 @@ impl<B: Backend> Workbook<B> {
         Some(self.outline(axis, index, index, change))
     }
 
+    /// Data ▸ Group ▸ Auto Outline: rows and columns grouped under the
+    /// formulas summing them, replacing the sheet's outline. One undo step.
+    pub fn auto_outline(&mut self) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let changed = self
+            .book
+            .auto_outline(&name)
+            .map_err(|error| error.to_string())?;
+        if changed {
+            self.wrote(1)?;
+        }
+        Ok(changed)
+    }
+
+    /// Data ▸ Ungroup ▸ Clear Outline on rows or columns. One undo step.
+    pub fn clear_outline(&mut self, axis: Axis) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let changed = self
+            .book
+            .clear_outline(&name, axis)
+            .map_err(|error| error.to_string())?;
+        if changed {
+            self.wrote(1)?;
+        }
+        Ok(changed)
+    }
+
     /// Whether the sheet has rows (or columns) grouped, so that Hide and
     /// Show Detail have something to act on.
     pub fn has_outline(&self, axis: Axis) -> bool {

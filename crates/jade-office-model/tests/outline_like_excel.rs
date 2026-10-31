@@ -128,3 +128,18 @@ fn the_gutter_buttons_collapse_and_expand_on_a_click() {
         None
     );
 }
+
+#[test]
+fn auto_outline_groups_under_summary_formulas_and_clears() {
+    let mut book = book();
+    for row in 20..=22 {
+        book.set_cell(CellRef::new(7, row), "1").unwrap();
+    }
+    book.set_cell(CellRef::new(7, 23), "=SUM(H21:H23)").unwrap();
+    assert!(book.auto_outline().unwrap());
+    assert!(book.has_outline(Axis::Rows));
+    assert!(book.clear_outline(Axis::Rows).unwrap());
+    assert!(!book.has_outline(Axis::Rows));
+    assert!(book.undo().unwrap());
+    assert!(book.has_outline(Axis::Rows));
+}
