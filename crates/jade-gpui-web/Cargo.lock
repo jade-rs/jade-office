@@ -2172,6 +2172,7 @@ dependencies = [
  "jade-selection",
  "jade-tiny-skia-painter",
  "jade-xlsx-calc",
+ "jade-xlsx-calc-engine",
  "jade-xlsx-headless-api",
  "jade-xlsx-headless-editor",
  "jade-xlsx-layout",

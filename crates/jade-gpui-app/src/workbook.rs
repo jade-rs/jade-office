@@ -37,6 +37,7 @@ use gpui::{
 };
 use jade_office_model::csv;
 use jade_office_model::find::FindBar;
+use jade_office_model::formula_complete;
 use jade_office_model::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_office_model::links::LinkDialog;
 use jade_office_model::number_formats::NUMBER_FORMATS;
@@ -171,6 +172,76 @@ struct CellEdit {
     /// A reference the arrow keys or the mouse are pointing at, as a byte
     /// range of the text and the cells it names.
     point: Option<Pointing>,
+    /// The function AutoComplete's list has picked with the arrows, as the
+    /// word's start, the caret and the name's place: typing on starts
+    /// again from the first.
+    suggested: Option<(usize, usize, usize)>,
+}
+
+/// The name AutoComplete's list has picked: the one the arrows moved to
+/// while the word stays as it was, else the first.
+fn picked(edit: &CellEdit, list: &formula_complete::Completion) -> usize {
+    match edit.suggested {
+        Some((start, caret, at)) if start == list.start && caret == edit.text.caret => {
+            at.min(list.names.len() - 1)
+        }
+        _ => 0,
+    }
+}
+
+/// Function AutoComplete's list under the cell being typed into, the name
+/// picked marked; a click puts one in.
+fn completion_list(
+    edit: &CellEdit,
+    below: Pixels,
+    cx: &mut Context<WorkbookView>,
+) -> Option<gpui::Div> {
+    let list = formula_complete::completion(&edit.text.text, edit.text.caret)?;
+    let chosen = picked(edit, &list);
+    let start = list.start;
+    Some(
+        div()
+            .absolute()
+            .left(px(-2.0))
+            .top(below)
+            .min_w(px(160.0))
+            .py_1()
+            .rounded_sm()
+            .border_1()
+            .border_color(theme::border())
+            .bg(theme::panel())
+            .shadow_md()
+            .text_xs()
+            .text_color(theme::text())
+            .children(list.names.iter().enumerate().map(|(index, name)| {
+                let name: &'static str = name;
+                div()
+                    .id(("formula-complete", index))
+                    .px_2()
+                    .cursor_pointer()
+                    .when(index == chosen, |row| row.bg(theme::selected()))
+                    .hover(|row| row.bg(theme::hovered()))
+                    .child(name)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |view, _event, window, cx| {
+                            window.focus(&view.focus);
+                            if let Some(edit) = view.edit.as_mut() {
+                                if let Some(list) =
+                                    formula_complete::completion(&edit.text.text, edit.text.caret)
+                                        .filter(|list| list.start == start)
+                                {
+                                    formula_complete::accept(&mut edit.text, &list, name);
+                                    edit.point = None;
+                                    edit.suggested = None;
+                                }
+                            }
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+            })),
+    )
 }
 
 #[derive(Clone)]
@@ -778,6 +849,7 @@ impl WorkbookView {
             text,
             in_place: false,
             point,
+            suggested: None,
         });
         self.reveal(self.active());
         cx.notify();
@@ -858,6 +930,7 @@ impl WorkbookView {
             text: TextEdit::new(text),
             in_place,
             point: None,
+            suggested: None,
         });
         self.reveal(self.active());
         cx.notify();
@@ -911,6 +984,7 @@ impl WorkbookView {
         if refused {
             self.edit = Some(CellEdit {
                 point: None,
+                suggested: None,
                 ..edit
             });
         } else if matches!(result, Ok(true)) {
@@ -1722,7 +1796,30 @@ impl WorkbookView {
             if edit.text.marked.is_some() {
                 return false;
             }
+            let completion = formula_complete::completion(&edit.text.text, edit.text.caret);
             match key {
+                // Function AutoComplete: Tab puts the name picked in, the
+                // arrows move through the list.
+                "tab" if !shift && completion.is_some() => {
+                    if let Some(list) = completion {
+                        let name = list.names[picked(edit, &list)];
+                        formula_complete::accept(&mut edit.text, &list, name);
+                        edit.point = None;
+                        edit.suggested = None;
+                    }
+                }
+                "up" | "down" if completion.is_some() => {
+                    if let Some(list) = completion {
+                        let count = list.names.len();
+                        let at = picked(edit, &list);
+                        let at = if key == "down" {
+                            (at + 1) % count
+                        } else {
+                            (at + count - 1) % count
+                        };
+                        edit.suggested = Some((list.start, edit.text.caret, at));
+                    }
+                }
                 // A line break in the cell: ⌥Enter, as Excel for Mac.
                 "enter" if modifiers.alt => {
                     edit.text.insert("\n");
@@ -2900,6 +2997,7 @@ impl WorkbookView {
                 .text_size(px(14.0 * zoom))
                 .cursor_text()
                 .child(caret_line(&edit.text, gpui::black(), true))
+                .children(completion_list(edit, cell.size.height, cx))
                 // A click in the cell being typed into stays in it, in Edit
                 // mode, rather than landing on the grid under it.
                 .on_mouse_down(
@@ -4799,6 +4897,30 @@ mod tests {
             view.menu_command(MenuCommand::TabColor(index, None), false, cx);
             assert_eq!(view.book.tab_color(index), None);
         });
+    }
+
+    /// Typing a formula lists the functions the word starts; Down picks the
+    /// next and Tab puts it in with its parenthesis, leaving the cell open.
+    #[gpui::test]
+    fn function_autocomplete_puts_the_name_picked_in(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("right right down down down down down down");
+        cx.simulate_input("=SU");
+        let second = view.read_with(cx, |view, _| {
+            let edit = view.edit.as_ref().expect("typing into the cell");
+            let list = formula_complete::completion(&edit.text.text, edit.text.caret)
+                .expect("the list shows");
+            assert_eq!(list.names[0], "SUBSTITUTE");
+            list.names[1]
+        });
+        cx.simulate_keystrokes("down tab");
+        view.read_with(cx, |view, _| {
+            let edit = view.edit.as_ref().expect("still typing");
+            assert_eq!(edit.text.text, format!("={second}("));
+        });
+        cx.simulate_input("4)");
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| assert!(view.edit.is_none()));
     }
 
     #[gpui::test]
