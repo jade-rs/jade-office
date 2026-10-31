@@ -89,6 +89,9 @@ pub(super) struct Sheet {
     pub renaming: Option<(usize, TextEdit)>,
     /// The name box being typed into: a cell or range to go to.
     pub naming: Option<TextEdit>,
+    /// The name box was opened by Go To (F5, Ctrl+G): what is typed is
+    /// only gone to, never defined as a name.
+    pub going_to: bool,
     /// Find and Replace (⌘F, Ctrl+H): what is typed into it, and its
     /// options.
     pub finding: Option<FindBar>,
@@ -601,6 +604,8 @@ enum MenuCommand {
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
+    /// Tab Color: an `RRGGBB` for the sheet's tab, or none.
+    TabColor(usize, Option<&'static str>),
 }
 
 impl Sheet {
@@ -624,6 +629,7 @@ impl Sheet {
             tab_start: None,
             renaming: None,
             naming: None,
+            going_to: false,
             finding: None,
             noting: None,
             saving_as: None,
@@ -2039,6 +2045,7 @@ impl DocView {
             "enter" => self.advance_cell(false, shift, cx),
             "tab" => self.advance_cell(true, shift, cx),
             "f2" => self.begin_cell_edit(None, true, cx),
+            "f5" => self.open_go_to(cx),
             // Calculate Now, as in Excel.
             "f9" => {
                 let result = sheet.book.calculate_now();
@@ -2140,6 +2147,8 @@ impl DocView {
             "p" => self.print_sheet(cx),
             // Ctrl+H, as Excel: Find and Replace.
             "h" if modifiers.control && !modifiers.platform => self.open_sheet_find(true, cx),
+            // Ctrl+G, as F5: Go To.
+            "g" if modifiers.control && !modifiers.platform => self.open_go_to(cx),
             "x" if !shift => self.sheet_copy(true, cx),
             // ⌃⌘V (Ctrl+Alt+V elsewhere): Paste Special.
             "v" if modifiers.control && (modifiers.platform || modifiers.alt) => {
@@ -2256,6 +2265,20 @@ impl DocView {
     }
 
     /// Ends a tab rename or a name-box entry, taking it or not.
+    /// Go To (F5, Ctrl+G): the name box opened on the active cell, for a
+    /// cell, range or name to go to; one that does not exist is said so.
+    fn open_go_to(&mut self, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        if let Some(sheet) = self.sheet_mut() {
+            sheet.menu = None;
+            sheet.naming = Some(TextEdit::selected(reference_text(sheet.selection.active)));
+            sheet.going_to = true;
+        }
+        cx.notify();
+    }
+
     fn finish_naming(&mut self, take: bool, cx: &mut Context<Self>) {
         let Some(sheet) = self.sheet_mut() else {
             return;
@@ -2274,6 +2297,7 @@ impl DocView {
         } else if sheet.finding.take().is_some() {
             // Escape or Tab closes the find bar where the search got to.
         } else if let Some(text) = sheet.naming.take() {
+            let going_to = std::mem::take(&mut sheet.going_to);
             if take {
                 match sheet.book.resolve_reference(&text.text) {
                     Some((index, range)) => {
@@ -2291,6 +2315,7 @@ impl DocView {
                         }
                         self.reveal_cell(range.start);
                     }
+                    None if going_to => self.status = i18n::text("sheet.no_reference").into(),
                     None => {
                         let result = sheet
                             .book
@@ -2409,6 +2434,7 @@ impl DocView {
                     | MenuCommand::MoveSheet(_, _)
                     | MenuCommand::HideSheet(_)
                     | MenuCommand::UnhideSheet(_)
+                    | MenuCommand::TabColor(_, _)
             )
         {
             self.status = i18n::text("sheet.workbook_protected").into();
@@ -2594,6 +2620,7 @@ impl DocView {
             MenuCommand::UnhideSheet(index) => sheet
                 .book
                 .set_sheet_visibility(index, SheetVisibility::Visible),
+            MenuCommand::TabColor(index, color) => sheet.book.set_tab_color(index, color),
         };
         // Rows or columns gone from under a copy let go of it, as in Excel.
         if matches!(
@@ -3731,7 +3758,8 @@ impl DocView {
                 }
             };
             let max_height = (sheet.viewport.1 - 16.).max(80.);
-            let height = (items.len() as f32 * 26. + 8.).min(max_height);
+            let swatch_rows = if menu.tab.is_some() { 3. } else { 0. };
+            let height = ((items.len() as f32 + swatch_rows) * 26. + 8.).min(max_height);
             let top = menu.at.1.clamp(0., (sheet.viewport.1 - height).max(0.));
             div()
                 .id("sheet-context-menu")
@@ -3776,6 +3804,57 @@ impl DocView {
                                 }))
                         }),
                 )
+                .when_some(menu.tab, |list, tab| {
+                    // Tab Color: Excel's standard colours, and No Color.
+                    let swatch = |id: usize, color: Option<&'static str>| {
+                        div()
+                            .id(("tab-color", id))
+                            .size(px(16.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(palette::border())
+                            .cursor_pointer()
+                            .when_some(color, |swatch, color| {
+                                swatch.bg(gpui::rgb(u32::from_str_radix(color, 16).unwrap_or(0)))
+                            })
+                            .when(color.is_none(), |swatch| swatch.child("╱"))
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |view, _event, window, cx| {
+                                window.focus(&view.focus, cx);
+                                view.sheet_menu_command(
+                                    MenuCommand::TabColor(tab, color),
+                                    false,
+                                    cx,
+                                );
+                            }))
+                    };
+                    list.child(
+                        div()
+                            .px_3()
+                            .pt_1()
+                            .text_color(palette::text_dim())
+                            .child(i18n::text("sheet.menu.tab_color")),
+                    )
+                    .child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .w(px(180.0))
+                            .flex()
+                            .flex_wrap()
+                            .gap_1()
+                            .children(
+                                STANDARD_COLORS
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(id, color)| swatch(id, Some(color))),
+                            )
+                            .child(swatch(STANDARD_COLORS.len(), None)),
+                    )
+                })
         });
 
         let note = sheet.note.and_then(|(cell, (x, y))| {
@@ -4101,6 +4180,7 @@ impl DocView {
                                         sheet.naming = Some(TextEdit::selected(reference_text(
                                             sheet.selection.active,
                                         )));
+                                        sheet.going_to = false;
                                     }
                                 }
                                 cx.notify();
