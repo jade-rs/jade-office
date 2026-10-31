@@ -127,6 +127,8 @@ pub(super) struct Sheet {
     pending_link: Option<(CellRef, Link)>,
     /// Format Painter: the cells whose formats the next selection takes.
     format_source: Option<CellRange>,
+    /// Whether the painter stays on until Escape (a double-click on it).
+    format_sticky: bool,
 }
 
 /// A cell being typed into.
@@ -630,6 +632,7 @@ impl Sheet {
             hover: Hover::Cells,
             pending_link: None,
             format_source: None,
+            format_sticky: false,
         }
     }
 
@@ -1101,6 +1104,32 @@ impl DocView {
             .bg(palette::panel())
             .border_b_1()
             .border_color(palette::border())
+            .child(
+                div()
+                    .id("tool-format-painter")
+                    .min_w(px(24.0))
+                    .h(px(24.0))
+                    .px_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .when(sheet.format_source.is_some(), |button| {
+                        button.bg(palette::selected())
+                    })
+                    .hover(|button| button.bg(palette::hovered()))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    // A double-click keeps painting until Escape, as Excel's
+                    // brush does.
+                    .on_click(
+                        cx.listener(move |view, event: &gpui::ClickEvent, window, cx| {
+                            window.focus(&view.focus, cx);
+                            view.pick_up_sheet_format(event.click_count() >= 2, cx);
+                        }),
+                    )
+                    .child(icon("icons/paintbrush.svg")),
+            )
             .child(
                 button(
                     "tool-bold",
@@ -1588,6 +1617,23 @@ impl DocView {
 
     /// After a write that may have changed the sheets: their names again,
     /// and the selection kept on the sheet.
+    /// The Format Painter: the selection's formats picked up for the next
+    /// selection, or for every one until Escape when `sticky`; a click while
+    /// it is on puts it down.
+    fn pick_up_sheet_format(&mut self, sticky: bool, cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        if sheet.format_source.is_some() && !sticky {
+            sheet.format_source = None;
+            sheet.format_sticky = false;
+        } else {
+            sheet.format_source = Some(sheet.selection.range());
+            sheet.format_sticky = sticky;
+        }
+        cx.notify();
+    }
+
     pub(super) fn sheets_changed(&mut self, result: Result<bool, String>, cx: &mut Context<Self>) {
         if let Some(sheet) = self.sheet_mut() {
             sheet.names = sheet
@@ -1936,6 +1982,7 @@ impl DocView {
             "escape" => {
                 sheet.book.forget_copy();
                 sheet.format_source = None;
+                sheet.format_sticky = false;
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
@@ -2334,11 +2381,7 @@ impl DocView {
                 )
             }
             MenuCommand::FormatCells => return self.open_format_dialog(cx),
-            MenuCommand::FormatPainter => {
-                sheet.format_source = Some(range);
-                cx.notify();
-                return;
-            }
+            MenuCommand::FormatPainter => return self.pick_up_sheet_format(false, cx),
             MenuCommand::Validation => return self.open_validation(cx),
             MenuCommand::Table => return self.open_sheet_table_dialog(cx),
             MenuCommand::EditPivot => return self.open_pivot_dialog(cx),
@@ -3001,7 +3044,10 @@ impl DocView {
             }
             SheetDrag::Select(_) => {
                 // The Format Painter's formats land on what was just selected.
-                if let Some(source) = sheet.format_source.take() {
+                if let Some(source) = sheet.format_source {
+                    if !sheet.format_sticky {
+                        sheet.format_source = None;
+                    }
                     let target = sheet.selection.range();
                     let result = sheet.book.copy_format(source, target);
                     self.edited(result, cx);

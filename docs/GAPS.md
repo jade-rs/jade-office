@@ -36,7 +36,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | | Find All (the matches listed); Look in Values or Notes; within the selection | Medium | yes (`find`) |
 | | Paste Special: operations (Add, Multiply…), column widths, Paste Link; Paste Options after a paste | Medium | partly |
 | | CSV: other delimiters and encodings (Text Import Wizard), leading zeros kept as text | Medium | — |
-| Done in both shells (2026-10-31) | Format Painter: 書式のコピー/貼り付け on the right-click menu, the next selection taking the formats (Escape lets go); the double-click that keeps painting is not there | Medium | yes (`copy_format`) |
+| Done in both shells (2026-10-31) | Format Painter: a brush on the sheet tool strip and 書式のコピー/貼り付け on the right-click menu, the next selection taking the formats; a double-click on the brush keeps painting until Escape | Medium | yes (`copy_format`) |
 | | Clear Formats / Clear All | Medium | partly |
 | | Font family, vertical alignment, indent controls; custom/theme colours | Medium | yes for most |
 | | Sort dialog: several keys, case, left to right | Medium | yes (`SortRequest`) |
