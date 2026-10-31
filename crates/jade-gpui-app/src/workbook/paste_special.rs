@@ -1,10 +1,10 @@
 //! Paste Special (⌃⌘V, or the right-click menu): a dialog choosing All,
-//! Formulas, Values or Formats, with Skip blanks and Transpose, over
-//! `jade-office-model`'s `paste_special`.
+//! Formulas, Values or Formats, an Operation, and Skip blanks and
+//! Transpose, over `jade-office-model`'s `paste_special`.
 
 use gpui::{div, prelude::*, px, Context, Modifiers, MouseButton};
 use jade_office_model::grid::Selection;
-use jade_office_model::paste_special::{PasteSpecial, PasteWhat};
+use jade_office_model::paste_special::{PasteOperation, PasteSpecial, PasteWhat};
 
 use super::conditional::centred;
 use super::WorkbookView;
@@ -102,6 +102,35 @@ impl WorkbookView {
                     cx.notify();
                 }))
         };
+        let operation = |operation: PasteOperation| {
+            let chosen = special.operation == operation;
+            div()
+                .id(operation.label())
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .py_0p5()
+                .rounded_sm()
+                .cursor_pointer()
+                .hover(|row| row.bg(theme::hovered()))
+                .child(
+                    div()
+                        .size(px(10.0))
+                        .rounded_full()
+                        .border_1()
+                        .border_color(theme::text_dim())
+                        .when(chosen, |dot| dot.bg(theme::accent())),
+                )
+                .child(i18n::text(operation.label()))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, _window, cx| {
+                    if let Some(special) = view.pasting.as_mut() {
+                        special.operation = operation;
+                    }
+                    cx.notify();
+                }))
+        };
         let tick =
             |id: &'static str, label: &'static str, on: bool, flip: fn(&mut PasteSpecial)| {
                 div()
@@ -146,6 +175,17 @@ impl WorkbookView {
                         .flex()
                         .flex_col()
                         .children(PasteWhat::ALL.into_iter().map(choice)),
+                )
+                .child(
+                    div()
+                        .text_color(theme::text_dim())
+                        .child(i18n::text("sheet.paste_special.operation")),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .children(PasteOperation::ALL.into_iter().map(operation)),
                 )
                 .child(
                     div()

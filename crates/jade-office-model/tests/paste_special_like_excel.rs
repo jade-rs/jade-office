@@ -206,3 +206,49 @@ fn the_dialog_moves_between_its_choices_with_the_arrows() {
         }
     }
 }
+
+/// Paste Special ▸ Values with Add, Multiply and Divide combines each
+/// copied number with the one pasted on: a blank counts as 0, a formula
+/// pasted on becomes one with the number, and text pasted on stays.
+#[test]
+fn operations_combine_the_copied_numbers_with_those_pasted_on() {
+    use jade_office_model::paste_special::PasteOperation;
+    let mut book = book();
+    book.set_cell(at(20, 50), "5").unwrap();
+    book.set_cell(at(20, 51), "5").unwrap();
+    book.set_cell(at(20, 52), "5").unwrap();
+    book.set_cell(at(20, 53), "5").unwrap();
+    book.set_cell(at(22, 50), "10").unwrap();
+    book.set_cell(at(22, 51), "=W51*2").unwrap();
+    book.set_cell(at(22, 52), "text").unwrap();
+    // W54 is blank.
+    let with = |operation| PasteSpecial {
+        what: PasteWhat::Values,
+        operation,
+        ..PasteSpecial::default()
+    };
+    book.copy(span(at(20, 50), at(20, 53)), false);
+    book.paste_special(at(22, 50), None, with(PasteOperation::Add))
+        .unwrap();
+    assert_eq!(book.display_text(at(22, 50)), "15");
+    assert_eq!(book.edit_text(at(22, 51)), "=(W51*2)+5");
+    assert_eq!(book.display_text(at(22, 52)), "text");
+    assert_eq!(book.display_text(at(22, 53)), "5");
+    // One undo takes it all back.
+    assert!(book.undo().unwrap());
+    assert_eq!(book.display_text(at(22, 50)), "10");
+    assert_eq!(book.edit_text(at(22, 51)), "=W51*2");
+
+    book.copy(span(at(20, 50), at(20, 50)), false);
+    book.paste_special(at(22, 50), None, with(PasteOperation::Multiply))
+        .unwrap();
+    assert_eq!(book.display_text(at(22, 50)), "50");
+    book.paste_special(at(22, 50), None, with(PasteOperation::Divide))
+        .unwrap();
+    assert_eq!(book.display_text(at(22, 50)), "10");
+    book.set_cell(at(20, 50), "0").unwrap();
+    book.copy(span(at(20, 50), at(20, 50)), false);
+    book.paste_special(at(22, 50), None, with(PasteOperation::Divide))
+        .unwrap();
+    assert_eq!(book.display_text(at(22, 50)), "#DIV/0!");
+}
