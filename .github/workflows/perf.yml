@@ -21,7 +21,7 @@ permissions:
   pull-requests: write
 
 env:
-  FIXTURES: contract.docx char-effects.docx charts-workbook.xlsx sample-deck.pptx
+  FIXTURES: contract.docx char-effects.docx image-inline.docx charts-workbook.xlsx sample-deck.pptx
   CARGO_INCREMENTAL: '0'
 
 jobs:
