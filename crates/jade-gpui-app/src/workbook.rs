@@ -5393,6 +5393,31 @@ mod tests {
         });
     }
 
+    /// With several cells selected, Find Next looks only there and moves
+    /// the active cell through them, the selection staying.
+    #[gpui::test]
+    fn find_next_within_a_selection_keeps_it(cx: &mut gpui::TestAppContext) {
+        use find_bar::FindCommand;
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, _| {
+            for row in 40..44 {
+                view.book.set_cell(at(7, row), "needle").unwrap();
+            }
+            view.selection = Selection::cell(at(7, 41));
+            view.selection.extend_to(at(7, 42));
+        });
+        cx.simulate_keystrokes("cmd-f");
+        cx.simulate_input("needle");
+        view.update(cx, |view, cx| {
+            let range = view.range();
+            view.find_command(FindCommand::Next(false), cx);
+            assert_eq!(view.active(), at(7, 42));
+            view.find_command(FindCommand::Next(false), cx);
+            assert_eq!(view.active(), at(7, 41), "round within the selection");
+            assert_eq!(view.range(), range, "the selection stays");
+        });
+    }
+
     /// Conditional Formatting ▸ Greater Than asks for its value in a
     /// dialog filled in from the selection: what is typed goes there, not
     /// into a cell, and Enter adds the rule. A data bar applies at once;

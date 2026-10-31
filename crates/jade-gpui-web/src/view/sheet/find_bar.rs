@@ -1,9 +1,10 @@
 //! Find and Replace (⌘F, and Ctrl+H with the Replace field): a bar over
 //! the sheet's top right with what to find and what to replace it with,
 //! Find Next and Previous, Find All with its list, Replace and Replace All,
-//! and Excel's options —
-//! Match case, Match entire cell contents, Within: Workbook. The same bar
-//! as the native app's, over `jade-office-model`'s `find`.
+//! and Excel's options — Match case, Match entire cell contents, Within:
+//! Workbook, Look in: Values. More than one cell selected, it looks only
+//! there. The same bar as the native app's, over `jade-office-model`'s
+//! `find`.
 
 use jade_web::find::FindBar;
 
@@ -23,6 +24,8 @@ pub(super) enum FindCommand {
     MatchCase,
     EntireCell,
     Workbook,
+    /// Look in: Values, rather than formulas.
+    Values,
     /// The Replace field shown or hidden.
     ToggleReplace,
     /// Typing into the Replace field (true) or Find.
@@ -61,6 +64,7 @@ impl DocView {
             FindCommand::MatchCase => bar.options.match_case = !bar.options.match_case,
             FindCommand::EntireCell => bar.options.entire_cell = !bar.options.entire_cell,
             FindCommand::Workbook => bar.options.workbook = !bar.options.workbook,
+            FindCommand::Values => bar.options.values = !bar.options.values,
             FindCommand::ToggleReplace => bar.toggle_replacing(),
             FindCommand::Field(replace) => bar.in_replace = replace && bar.replacing,
             // Where the search got to stays selected.
@@ -78,9 +82,19 @@ impl DocView {
         let Some(bar) = sheet.finding.as_ref() else {
             return;
         };
-        let (needle, options) = (bar.find.text.clone(), bar.options());
+        let (needle, options) = (
+            bar.find.text.clone(),
+            bar.options_in(sheet.selection.range()),
+        );
         let from = (sheet.book.sheet_index(), sheet.selection.active);
         match sheet.book.find_next(&needle, options, from, back) {
+            // Within the selection, the active cell moves and the selection
+            // stays, as in Excel.
+            Some((_, cell)) if options.within.is_some() => {
+                sheet.selection.active = cell;
+                self.reveal_cell(cell);
+                self.status = SharedString::default();
+            }
             Some((index, cell)) => {
                 if index != sheet.book.sheet_index() {
                     // Another sheet's tab keeps the bar open.
@@ -107,7 +121,9 @@ impl DocView {
         let Some(bar) = sheet.finding.as_ref() else {
             return;
         };
-        let found = sheet.book.found(&bar.find.text, bar.options());
+        let found = sheet
+            .book
+            .found(&bar.find.text, bar.options_in(sheet.selection.range()));
         let status: SharedString = if found.is_empty() {
             i18n::text("sheet.not_found").into()
         } else {
@@ -161,7 +177,7 @@ impl DocView {
         let (needle, replacement, options) = (
             bar.find.text.clone(),
             bar.replace.text.clone(),
-            bar.options(),
+            bar.options_in(sheet.selection.range()),
         );
         let active = sheet.selection.active;
         let result = sheet
@@ -185,7 +201,7 @@ impl DocView {
         let (needle, replacement, options) = (
             bar.find.text.clone(),
             bar.replace.text.clone(),
-            bar.options(),
+            bar.options_in(sheet.selection.range()),
         );
         match sheet.book.replace_all(&needle, &replacement, options) {
             Ok(0) => {
@@ -349,7 +365,13 @@ impl DocView {
                         .child(
                             button("find-workbook", options.workbook, FindCommand::Workbook)
                                 .child(i18n::text("sheet.within_workbook")),
-                        ),
+                        )
+                        .when(!bar.replacing, |row| {
+                            row.child(
+                                button("find-values", options.values, FindCommand::Values)
+                                    .child(i18n::text("sheet.look_in_values")),
+                            )
+                        }),
                 )
                 .child(
                     div()

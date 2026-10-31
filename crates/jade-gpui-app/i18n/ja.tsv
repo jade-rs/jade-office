@@ -3684,3 +3684,4 @@ duplicates.select_all	すべて選択
 duplicates.unselect_all	すべて選択解除
 sheet.find_all	すべて検索
 sheet.found_cells	{n} セルが見つかりました
+sheet.look_in_values	値
