@@ -3685,3 +3685,6 @@ duplicates.unselect_all	Unselect All
 sheet.find_all	Find All
 sheet.found_cells	{n} cell(s) found
 sheet.look_in_values	Values
+text_columns.delimited	Delimited
+text_columns.fixed_width	Fixed width
+text_columns.breaks	Click a character to put a break before it, or click a break to take it away
