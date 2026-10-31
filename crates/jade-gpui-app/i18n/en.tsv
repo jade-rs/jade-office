@@ -262,6 +262,15 @@ sheet.menu.auto_outline	Auto Outline
 sheet.menu.clear_outline	Clear Outline
 sheet.menu.subtotal	Subtotal
 sheet.menu.remove_duplicates	Remove Duplicates
+sheet.menu.text_to_columns	Text to Columns
+text_columns.dialog	Text to Columns
+text_columns.delimiters	Delimiters
+text_columns.tab	Tab
+text_columns.semicolon	Semicolon
+text_columns.comma	Comma
+text_columns.space	Space
+text_columns.consecutive	Treat consecutive delimiters as one
+text_columns.preview	Data preview
 sheet.duplicates_removed	{removed} duplicate values found and removed; {remaining} unique values remain.
 sheet.duplicates_none	No duplicate values found.
 subtotal.dialog	Subtotal

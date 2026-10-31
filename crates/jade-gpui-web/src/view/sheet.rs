@@ -40,6 +40,7 @@ mod protection;
 mod save_as;
 mod subtotal;
 mod tables;
+mod text_columns;
 mod validation;
 use charts::ChartTool;
 use conditional::Conditional;
@@ -106,6 +107,7 @@ pub(super) struct Sheet {
     pub(super) validation_dialog: Option<ValidationDialog>,
     pub(super) link_dialog: Option<LinkDialog>,
     pub(super) subtotal_dialog: Option<jade_web::subtotal::SubtotalDialog>,
+    pub(super) text_columns_dialog: Option<jade_web::text_columns::TextColumnsDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
     pub(super) pivot_dialog: Option<PivotPanel>,
@@ -586,6 +588,7 @@ enum MenuCommand {
     ClearOutline,
     Subtotal,
     RemoveDuplicates,
+    TextToColumns,
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -623,6 +626,7 @@ impl Sheet {
             validation_dialog: None,
             link_dialog: None,
             subtotal_dialog: None,
+            text_columns_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -1521,6 +1525,7 @@ impl DocView {
             || sheet.table_dialog.is_some()
             || sheet.pivot_dialog.is_some()
             || sheet.subtotal_dialog.is_some()
+            || sheet.text_columns_dialog.is_some()
         {
             return false;
         }
@@ -1598,6 +1603,7 @@ impl DocView {
                 || s.table_dialog.is_some()
                 || s.pivot_dialog.is_some()
                 || s.subtotal_dialog.is_some()
+                || s.text_columns_dialog.is_some()
         }) {
             return;
         }
@@ -1795,6 +1801,9 @@ impl DocView {
             return true;
         }
         if self.subtotal_key(key, cx) {
+            return true;
+        }
+        if self.text_columns_key(key, cx) {
             return true;
         }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
@@ -2322,6 +2331,7 @@ impl DocView {
                 || s.table_dialog.is_some()
                 || s.pivot_dialog.is_some()
                 || s.subtotal_dialog.is_some()
+                || s.text_columns_dialog.is_some()
         }) {
             return;
         }
@@ -2516,6 +2526,7 @@ impl DocView {
             MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::RemoveDuplicates => return self.remove_sheet_duplicates(cx),
+            MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::AutoOutline => sheet.book.auto_outline(),
             MenuCommand::ClearOutline => {
                 sheet.book.clear_outline(if selection.is_whole_columns() {
@@ -2584,6 +2595,7 @@ impl DocView {
                 || s.table_dialog.is_some()
                 || s.pivot_dialog.is_some()
                 || s.subtotal_dialog.is_some()
+                || s.text_columns_dialog.is_some()
         }) {
             return;
         }
@@ -3317,6 +3329,7 @@ impl DocView {
         let pivot_panel = self.pivot_panel(cx);
         let link_panel = self.link_panel(cx);
         let subtotal_panel = self.subtotal_panel(cx);
+        let text_columns_panel = self.text_columns_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -3638,6 +3651,10 @@ impl DocView {
                             MenuCommand::RemoveDuplicates,
                             "sheet.menu.remove_duplicates",
                         ));
+                    }
+                    let selected = sheet.selection.range();
+                    if selected.start.column == selected.end.column {
+                        items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                     }
                     items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
@@ -4143,6 +4160,7 @@ impl DocView {
                     .children(pivot_panel)
                     .children(link_panel)
                     .children(subtotal_panel)
+                    .children(text_columns_panel)
                     .children(protection_panel)
                     .children(validation_panel)
                     .children(validation_alert)
