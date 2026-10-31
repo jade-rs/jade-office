@@ -3743,3 +3743,4 @@ filter.custom.or	Or
 insert_function.menu	Insert Function…
 insert_function.dialog	Insert Function
 insert_function.search	Search for a function
+sheet.menu.show_formulas	Show Formulas (Ctrl+`)

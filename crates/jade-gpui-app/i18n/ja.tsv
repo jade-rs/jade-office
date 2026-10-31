@@ -3743,3 +3743,4 @@ filter.custom.or	OR
 insert_function.menu	関数の挿入…
 insert_function.dialog	関数の挿入
 insert_function.search	関数の検索
+sheet.menu.show_formulas	数式の表示 (Ctrl+`)

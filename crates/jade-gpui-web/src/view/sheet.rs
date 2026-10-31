@@ -729,6 +729,8 @@ enum MenuCommand {
     /// A header of the grid's menu opened or closed in place.
     OpenGroup(MenuGroup),
     InsertFunction,
+    /// Formulas ▸ Show Formulas, on or off.
+    ShowFormulas,
 }
 
 impl Sheet {
@@ -2347,6 +2349,10 @@ impl DocView {
             "h" if modifiers.control && !modifiers.platform => self.open_sheet_find(true, cx),
             // Ctrl+G, as F5: Go To.
             "g" if modifiers.control && !modifiers.platform => self.open_go_to(cx),
+            // Ctrl+`: Show Formulas, on or off.
+            "`" if modifiers.control && !modifiers.platform => {
+                self.sheet_menu_command(MenuCommand::ShowFormulas, true, cx)
+            }
             "x" if !shift => self.sheet_copy(true, cx),
             // ⌃⌘V (Ctrl+Alt+V elsewhere): Paste Special.
             "v" if modifiers.control && (modifiers.platform || modifiers.alt) => {
@@ -2833,6 +2839,10 @@ impl DocView {
             MenuCommand::TabColor(index, color) => sheet.book.set_tab_color(index, color),
             MenuCommand::OpenGroup(_) => return,
             MenuCommand::InsertFunction => return self.open_insert_function(cx),
+            MenuCommand::ShowFormulas => {
+                let on = !sheet.book.show_formulas();
+                sheet.book.set_show_formulas(on)
+            }
         };
         // Rows or columns gone from under a copy let go of it, as in Excel.
         if matches!(
@@ -3937,6 +3947,7 @@ impl DocView {
                     }
                     let selected = sheet.selection.range();
                     items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
+                    items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
                     if selected.start.column == selected.end.column {
                         items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                     }
