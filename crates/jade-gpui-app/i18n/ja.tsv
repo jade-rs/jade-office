@@ -3691,8 +3691,6 @@ text_columns.breaks	文字をクリックするとその前に区切り線を入
 sheet.menu.clear_formats	書式のクリア
 sheet.menu.clear_all	すべてクリア
 sheet.menu.tab_color	シート見出しの色
-sheet.filter.top	トップテン
-sheet.filter.bottom	ボトムテン
 sheet.filter.reapply	再適用
 sheet.paste_special.operation	演算
 sheet.paste_special.op_none	しない
@@ -3744,3 +3742,9 @@ insert_function.menu	関数の挿入…
 insert_function.dialog	関数の挿入
 insert_function.search	関数の検索
 sheet.menu.show_formulas	数式の表示 (Ctrl+`)
+sheet.filter.top_ten	トップテン…
+filter.top_ten.dialog	トップテン オートフィルター: 表示
+filter.top_ten.top	上位
+filter.top_ten.bottom	下位
+filter.top_ten.items	項目
+filter.top_ten.percent	パーセント
