@@ -3533,8 +3533,12 @@ fn lay_out(
     extent: (u32, u32),
     measure: &Rc<dyn jade_xlsx_layout::TextMeasure>,
 ) -> Result<SheetLayout, String> {
-    layout_workbook_sheet(book.workbook(), index, &layout_options(book, extent, measure))
-        .ok_or_else(|| "the sheet does not exist".to_string())
+    layout_workbook_sheet(
+        book.workbook(),
+        index,
+        &layout_options(book, extent, measure),
+    )
+    .ok_or_else(|| "the sheet does not exist".to_string())
 }
 
 /// What every layout of the sheet is made with.
