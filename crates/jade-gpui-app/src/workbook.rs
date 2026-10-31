@@ -454,6 +454,8 @@ enum MenuCommand {
     SortAscending,
     SortDescending,
     MergeCenter,
+    /// Merge Across: each selected row merged on its own.
+    MergeAcross,
     InsertSheet,
     /// Move or Copy ▸ Create a copy of the sheet at this index.
     CopySheet(usize),
@@ -1550,6 +1552,7 @@ impl WorkbookView {
             MenuCommand::SortDescending => self.book.sort(range, selection.active, true),
             // Merge & Center takes in every merged cell the range touches,
             // and the merge stays selected.
+            MenuCommand::MergeAcross => self.book.merge_across(range),
             MenuCommand::MergeCenter => {
                 let range = self.book.with_merges(range);
                 let result = self.book.merge_and_center(range);
@@ -3340,6 +3343,7 @@ impl WorkbookView {
                     (MenuCommand::SortAscending, "sheet.menu.sort_ascending"),
                     (MenuCommand::SortDescending, "sheet.menu.sort_descending"),
                     (MenuCommand::MergeCenter, "sheet.menu.merge_center"),
+                    (MenuCommand::MergeAcross, "sheet.menu.merge_across"),
                 ]);
                 if !self.selection.is_whole_columns() {
                     items.extend([
@@ -6249,6 +6253,26 @@ mod tests {
             view.tool(Tool::ThemeColor(false, 15), cx);
             let look = view.book.format_at(at(10, 30));
             assert_eq!(look.font_color.as_deref(), Some(palette[15].as_str()));
+        });
+    }
+
+    /// Merge Across from the menu merges each selected row on its own.
+    #[gpui::test]
+    fn merge_across_from_the_menu(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(10, 31), "kept").unwrap();
+            view.selection = Selection::range_from(at(10, 30), at(12, 31));
+            view.menu_command(MenuCommand::MergeAcross, false, cx);
+            assert_eq!(
+                view.book.with_merges(span(at(11, 31), at(11, 31))),
+                span(at(10, 31), at(12, 31))
+            );
+            assert_eq!(
+                view.book.with_merges(span(at(11, 30), at(11, 30))),
+                span(at(10, 30), at(12, 30))
+            );
+            assert_eq!(view.book.display_text(at(10, 31)), "kept");
         });
     }
 

@@ -79,3 +79,33 @@ fn the_colour_gallery_has_the_theme_and_its_shades() {
     assert!(red(&palette[10 + accent]) > red(&palette[20 + accent]));
     assert!(red(&palette[accent]) > red(&palette[40 + accent]));
 }
+
+#[test]
+fn merge_across_merges_each_row_on_its_own() {
+    let mut book = book();
+    for row in 30..33 {
+        book.set_cell(CellRef::new(10, row), &format!("row {row}"))
+            .unwrap();
+    }
+    let range = span(CellRef::new(10, 30), CellRef::new(12, 32));
+    assert!(book.merge_across(range).unwrap());
+    let saved = jade_xlsx_reader::read_xlsx(&book.save_bytes().unwrap()).unwrap();
+    let merges = &saved.sheets[book.sheet_index()].merges;
+    for row in 30..33 {
+        assert!(merges.iter().any(
+            |merge| merge.start == CellRef::new(10, row) && merge.end == CellRef::new(12, row)
+        ));
+    }
+    assert_eq!(book.display_text(CellRef::new(10, 31)), "row 31");
+    // One undo takes all three away.
+    assert!(book.undo().unwrap());
+    let saved = jade_xlsx_reader::read_xlsx(&book.save_bytes().unwrap()).unwrap();
+    assert!(saved.sheets[book.sheet_index()]
+        .merges
+        .iter()
+        .all(|merge| merge.start.row < 30 || merge.start.row > 32));
+    // One column: nothing to merge.
+    assert!(!book
+        .merge_across(span(CellRef::new(10, 30), CellRef::new(10, 32)))
+        .unwrap());
+}
