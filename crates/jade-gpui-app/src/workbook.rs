@@ -5153,6 +5153,23 @@ mod tests {
         view.read_with(cx, |view, _| assert!(!view.book.show_formulas()));
     }
 
+    /// Paste Special's Paste Link pastes formulas reading what was copied,
+    /// and selects where they landed.
+    #[gpui::test]
+    fn paste_link_from_the_paste_special_dialog(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(20, 60), "7").unwrap();
+            view.book.copy(span(at(20, 60), at(20, 60)), false);
+            view.selection = Selection::cell(at(22, 60));
+            view.open_paste_special(cx);
+            view.take_paste_link(cx);
+            assert!(view.pasting.is_none());
+            assert_eq!(view.book.edit_text(at(22, 60)), "=$U$61");
+            assert_eq!(view.range(), span(at(22, 60), at(22, 60)));
+        });
+    }
+
     #[gpui::test]
     fn names_and_tab_commands_work_through_the_view(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_view(cx);
