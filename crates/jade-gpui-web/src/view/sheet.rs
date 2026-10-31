@@ -12,6 +12,7 @@
 //! runs; this is the gpui around it.
 
 use jade_web::formula_complete;
+use jade_web::formula_tips;
 use jade_web::links::LinkDialog;
 use jade_web::pivots::PivotPanel;
 use jade_web::protected_edits::{attempt, ProtectedEdit};
@@ -222,6 +223,37 @@ fn completion_list(edit: &CellEdit, below: Pixels, cx: &mut Context<DocView>) ->
                             cx.notify();
                         }),
                     )
+            })),
+    )
+}
+
+/// The argument tip under the cell being typed into, its current argument
+/// in bold — while AutoComplete's list is not showing there.
+fn formula_tip(edit: &CellEdit, below: Pixels) -> Option<gpui::Div> {
+    if formula_complete::completion(&edit.text.text, edit.text.caret).is_some() {
+        return None;
+    }
+    let tip = formula_tips::argument_tip(&edit.text.text, edit.text.caret)?;
+    Some(
+        div()
+            .absolute()
+            .left(px(-2.0))
+            .top(below)
+            .px_2()
+            .py_0p5()
+            .flex()
+            .whitespace_nowrap()
+            .rounded_sm()
+            .border_1()
+            .border_color(palette::border())
+            .bg(palette::panel())
+            .shadow_md()
+            .text_xs()
+            .text_color(palette::text())
+            .children(tip.pieces().into_iter().map(|(piece, current)| {
+                div()
+                    .when(current, |piece| piece.font_weight(gpui::FontWeight::BOLD))
+                    .child(piece)
             })),
     )
 }
@@ -3615,7 +3647,8 @@ impl DocView {
                     .text_color(gpui::black())
                     .text_size(px(14.0 * zoom))
                     .child(caret_line(&edit.text, gpui::black(), true))
-                    .children(completion_list(edit, px(h as f32 * zoom), cx)),
+                    .children(completion_list(edit, px(h as f32 * zoom), cx))
+                    .children(formula_tip(edit, px(h as f32 * zoom))),
             )
         });
 
