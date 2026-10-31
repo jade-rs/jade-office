@@ -24,8 +24,8 @@ use jade_web::grid::{self, Direction, DragKind, Hit, Selection};
 use jade_web::number_formats::NUMBER_FORMATS;
 use jade_web::sheet::{
     column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
-    CellRange, FilterButton, FontToggle, Freeze, HorizontalAlignment, Link, Overlay, ResizeGesture,
-    SheetVisibility, MAX_COLUMN, MAX_ROW,
+    CellRange, FilterButton, FontToggle, Freeze, HorizontalAlignment, Link, OutlineChange, Overlay,
+    ResizeGesture, SheetVisibility, MAX_COLUMN, MAX_ROW,
 };
 
 use super::*;
@@ -574,6 +574,7 @@ enum MenuCommand {
     Unhide,
     FreezePanes,
     UnfreezePanes,
+    Outline(OutlineChange),
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -2408,6 +2409,14 @@ impl DocView {
             }
             MenuCommand::FreezePanes => sheet.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
+            MenuCommand::Outline(change) => {
+                let (axis, first, last) = if selection.is_whole_columns() {
+                    (Axis::Columns, range.start.column, range.end.column)
+                } else {
+                    (Axis::Rows, range.start.row, range.end.row)
+                };
+                sheet.book.outline(axis, first, last, change)
+            }
             MenuCommand::RenameSheet(index) => {
                 let name = sheet.names.get(index).map(|name| name.to_string());
                 sheet.renaming = name.map(|name| (index, TextEdit::selected(name)));
@@ -3434,6 +3443,33 @@ impl DocView {
                             (MenuCommand::Hide, "sheet.menu.hide"),
                             (MenuCommand::Unhide, "sheet.menu.unhide"),
                         ]);
+                        let axis = if sheet.selection.is_whole_columns() {
+                            Axis::Columns
+                        } else {
+                            Axis::Rows
+                        };
+                        items.extend([
+                            (
+                                MenuCommand::Outline(OutlineChange::Group),
+                                "sheet.menu.group",
+                            ),
+                            (
+                                MenuCommand::Outline(OutlineChange::Ungroup),
+                                "sheet.menu.ungroup",
+                            ),
+                        ]);
+                        if sheet.book.has_outline(axis) {
+                            items.extend([
+                                (
+                                    MenuCommand::Outline(OutlineChange::HideDetail),
+                                    "sheet.menu.hide_detail",
+                                ),
+                                (
+                                    MenuCommand::Outline(OutlineChange::ShowDetail),
+                                    "sheet.menu.show_detail",
+                                ),
+                            ]);
+                        }
                     }
                     if sheet.book.note(sheet.selection.active).is_some() {
                         items.extend([

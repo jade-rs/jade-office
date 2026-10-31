@@ -24,6 +24,7 @@ use crate::{clipboard, typing};
 pub use jade_xlsx_headless_api::{AutoFilterOption, AutoFilterOptions, BorderLine, BorderStyle};
 pub use jade_xlsx_headless_editor::FormatChange as CellFormat;
 use jade_xlsx_headless_editor::Frozen;
+pub use jade_xlsx_headless_editor::OutlineChange;
 pub use jade_xlsx_layout::filter_button::{FilterButton, FilterButtonTarget};
 pub use jade_xlsx_layout::resize::{ResizeGesture, ResizeHit};
 pub use jade_xlsx_layout::{column_label, HeaderMetrics};
@@ -182,6 +183,9 @@ pub struct Workbook<B: Backend> {
     /// The same for pieces of the sheet painted on their own — tiles of
     /// cells, the header bands — by their size.
     pieces: RefCell<Vec<(B::Painter, u32, u32)>>,
+    /// Measures text for layout, kept for the workbook's life so a sheet
+    /// laid out again after an edit reuses the widths it measured before.
+    measure: Rc<dyn jade_xlsx_layout::TextMeasure>,
 }
 
 impl<B: Backend> Workbook<B> {
@@ -208,7 +212,8 @@ impl<B: Backend> Workbook<B> {
             .filter(visible)
             .or_else(|| (0..workbook.sheets.len()).find(visible))
             .unwrap_or(0);
-        let layout = lay_out(&book, index, (MIN_COLUMNS, MIN_ROWS), &backend)?;
+        let measure = measurer(&backend)?;
+        let layout = lay_out(&book, index, (MIN_COLUMNS, MIN_ROWS), &measure)?;
         Ok(Self {
             identity: std::sync::Arc::new(()),
             book,
@@ -225,6 +230,7 @@ impl<B: Backend> Workbook<B> {
             pieces: RefCell::new(Vec::new()),
             revision: 0,
             changes: None,
+            measure,
         })
     }
 
@@ -294,7 +300,7 @@ impl<B: Backend> Workbook<B> {
     }
 
     fn relayout(&mut self) -> Result<(), String> {
-        let layout = lay_out(&self.book, self.index, self.extent, &self.backend)?;
+        let layout = lay_out(&self.book, self.index, self.extent, &self.measure)?;
         let changed = layout_changes(&self.layout, &layout);
         if let (Some(changes), Some(changed)) = (&mut self.changes, changed) {
             changes.extend(changed);
@@ -1432,7 +1438,7 @@ impl<B: Backend> Workbook<B> {
             &self.book,
             self.index,
             (end.column + 1, end.row + 1),
-            &self.backend,
+            &self.measure,
         )
     }
 
@@ -2669,6 +2675,37 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    /// Data ▸ Group, Ungroup, Hide Detail or Show Detail on the rows or
+    /// columns `first..=last`. One undo step; `false` when it changes
+    /// nothing — ungrouping what is not grouped, the detail of no group.
+    pub fn outline(
+        &mut self,
+        axis: Axis,
+        first: u32,
+        last: u32,
+        change: OutlineChange,
+    ) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let changed = self
+            .book
+            .outline(&name, axis, first, last, change)
+            .map_err(|error| error.to_string())?;
+        if changed {
+            self.wrote(1)?;
+        }
+        Ok(changed)
+    }
+
+    /// Whether the sheet has rows (or columns) grouped, so that Hide and
+    /// Show Detail have something to act on.
+    pub fn has_outline(&self, axis: Axis) -> bool {
+        let outline = &self.book.workbook().sheets[self.index].outline;
+        match axis {
+            Axis::Rows => !outline.row_levels.is_empty(),
+            Axis::Columns => !outline.column_levels.is_empty(),
+        }
+    }
+
     pub fn rename_sheet(&mut self, index: usize, name: &str) -> Result<bool, String> {
         let old = self
             .sheet_names()
@@ -2710,15 +2747,11 @@ impl<B: Backend> Workbook<B> {
 
     pub(crate) fn layout_options(&self) -> LayoutOptions {
         let workbook = self.book.workbook();
-        let measure: Rc<dyn jade_xlsx_layout::TextMeasure> = match self.backend.surface(1, 1) {
-            Some(surface) => Rc::new(PainterMeasure::new(surface)),
-            None => LayoutOptions::default().measure,
-        };
         LayoutOptions {
             min_column_count: self.extent.0,
             min_row_count: self.extent.1,
             date_system: workbook.date_system,
-            measure,
+            measure: Rc::clone(&self.measure),
             ..LayoutOptions::default()
         }
         .with_normal_font_metrics(&workbook.styles)
@@ -3368,16 +3401,21 @@ pub struct Overlay {
     pub resize: Option<jade_xlsx_layout::resize::ResizeGesture>,
 }
 
-fn lay_out<B: Backend>(
-    book: &HeadlessWorkbook,
-    index: usize,
-    extent: (u32, u32),
-    backend: &B,
-) -> Result<SheetLayout, String> {
-    let workbook = book.workbook();
+/// The backend's text measure, for every layout of one workbook.
+fn measurer<B: Backend>(backend: &B) -> Result<Rc<dyn jade_xlsx_layout::TextMeasure>, String> {
     let measuring = backend
         .surface(1, 1)
         .ok_or_else(|| "cannot create a measuring surface".to_string())?;
+    Ok(Rc::new(PainterMeasure::new(measuring)))
+}
+
+fn lay_out(
+    book: &HeadlessWorkbook,
+    index: usize,
+    extent: (u32, u32),
+    measure: &Rc<dyn jade_xlsx_layout::TextMeasure>,
+) -> Result<SheetLayout, String> {
+    let workbook = book.workbook();
     layout_workbook_sheet(
         workbook,
         index,
@@ -3386,7 +3424,7 @@ fn lay_out<B: Backend>(
             min_row_count: extent.1,
             date_system: workbook.date_system,
             time_zone: Some(book.calculation_time_zone().to_string()),
-            measure: Rc::new(PainterMeasure::new(measuring)),
+            measure: Rc::clone(measure),
             ..LayoutOptions::default()
         }
         .with_normal_font_metrics(&workbook.styles),
