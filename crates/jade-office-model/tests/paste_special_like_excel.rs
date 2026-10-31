@@ -187,7 +187,9 @@ fn the_dialog_moves_between_its_choices_with_the_arrows() {
     assert_eq!(dialog.what, PasteWhat::Values);
     dialog.key("down");
     dialog.key("down");
-    assert_eq!(dialog.what, PasteWhat::Formats, "stops at the last");
+    dialog.key("down");
+    assert_eq!(dialog.what, PasteWhat::ColumnWidths, "stops at the last");
+    dialog.key("up");
     dialog.key("up");
     assert_eq!(dialog.what, PasteWhat::Values);
     assert!(!dialog.key("x"));
@@ -287,4 +289,34 @@ fn paste_link_writes_formulas_reading_the_copied_cells() {
     book.select_sheet(here).unwrap();
     book.copy(span(at(20, 60), at(20, 60)), true);
     assert_eq!(book.paste_link(at(25, 60)).unwrap(), None);
+}
+
+/// Paste Special ▸ Column widths: the copied columns' widths, nothing else.
+#[test]
+fn column_widths_paste_only_the_widths() {
+    use jade_xlsx_reader::Axis;
+    let mut book = book();
+    book.set_cell(at(20, 60), "wide").unwrap();
+    book.resize(Axis::Columns, 20, 20, 200.0).unwrap();
+    book.copy(span(at(20, 60), at(20, 60)), false);
+    let special = PasteSpecial {
+        what: PasteWhat::ColumnWidths,
+        ..PasteSpecial::default()
+    };
+    book.paste_special(at(23, 60), None, special).unwrap();
+    assert_eq!(book.display_text(at(23, 60)), "", "no value pasted");
+    let width = |book: &mut Workbook<TinySkiaBackend>, column: u32| {
+        let saved = jade_xlsx_reader::read_xlsx(&book.save_bytes().unwrap()).unwrap();
+        let sheet = &saved.sheets[book.sheet_index()];
+        sheet
+            .columns
+            .iter()
+            .find(|span| span.first <= column && column <= span.last)
+            .and_then(|span| span.width_chars)
+    };
+    let source = width(&mut book, 20);
+    assert!(source.is_some());
+    assert_eq!(width(&mut book, 23), source);
+    assert!(book.undo().unwrap());
+    assert_ne!(width(&mut book, 23), source);
 }
