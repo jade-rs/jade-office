@@ -66,3 +66,16 @@ fn the_font_box_sets_the_family() {
     assert!(book.undo().unwrap());
     assert_ne!(book.format_at(at).font_name.as_deref(), Some("メイリオ"));
 }
+
+#[test]
+fn the_colour_gallery_has_the_theme_and_its_shades() {
+    let book = book();
+    let palette = book.theme_palette();
+    assert_eq!(palette.len(), 60);
+    assert!(palette.iter().all(|color| color.len() == 6));
+    // Under each theme colour, its lighter shades get lighter.
+    let red = |hex: &str| u8::from_str_radix(&hex[..2], 16).unwrap();
+    let accent = 4;
+    assert!(red(&palette[10 + accent]) > red(&palette[20 + accent]));
+    assert!(red(&palette[accent]) > red(&palette[40 + accent]));
+}
