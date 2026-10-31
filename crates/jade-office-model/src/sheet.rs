@@ -300,6 +300,9 @@ impl<B: Backend> Workbook<B> {
     }
 
     fn relayout(&mut self) -> Result<(), String> {
+        if self.relayout_typed() {
+            return Ok(());
+        }
         let layout = lay_out(&self.book, self.index, self.extent, &self.measure)?;
         let changed = layout_changes(&self.layout, &layout);
         if let (Some(changes), Some(changed)) = (&mut self.changes, changed) {
@@ -310,6 +313,48 @@ impl<B: Backend> Workbook<B> {
         self.layout = layout;
         self.revision += 1;
         Ok(())
+    }
+
+    /// After typing, only the rows of the cells it changed — the values typed
+    /// and the formulas they recalculated — laid out again, when the layout
+    /// can take them so; `false` for a full layout.
+    fn relayout_typed(&mut self) -> bool {
+        let Some(changed) = self.book.take_typed_changes() else {
+            return false;
+        };
+        let rows: std::collections::BTreeSet<u32> = changed
+            .iter()
+            .filter(|(sheet, _)| *sheet == self.index)
+            .map(|(_, at)| at.row)
+            .collect();
+        let options = layout_options(&self.book, self.extent, &self.measure);
+        if !jade_xlsx_layout::relayout_rows(
+            &mut self.layout,
+            self.book.workbook(),
+            self.index,
+            &options,
+            &rows,
+        ) {
+            return false;
+        }
+        debug_assert_eq!(
+            Ok(&self.layout),
+            lay_out(&self.book, self.index, self.extent, &self.measure).as_ref(),
+            "the rows laid out again are what a full layout gives"
+        );
+        if let Some(changes) = &mut self.changes {
+            let width = self.layout.content_width;
+            changes.extend(rows.iter().filter_map(|row| {
+                self.layout.row(*row).map(|entry| Rect {
+                    x: 0.0,
+                    y: entry.offset,
+                    width,
+                    height: entry.size,
+                })
+            }));
+        }
+        self.revision += 1;
+        true
     }
 
     /// Where the sheet may paint differently since the last call, in sheet px
@@ -3488,21 +3533,26 @@ fn lay_out(
     extent: (u32, u32),
     measure: &Rc<dyn jade_xlsx_layout::TextMeasure>,
 ) -> Result<SheetLayout, String> {
+    layout_workbook_sheet(book.workbook(), index, &layout_options(book, extent, measure))
+        .ok_or_else(|| "the sheet does not exist".to_string())
+}
+
+/// What every layout of the sheet is made with.
+fn layout_options(
+    book: &HeadlessWorkbook,
+    extent: (u32, u32),
+    measure: &Rc<dyn jade_xlsx_layout::TextMeasure>,
+) -> LayoutOptions {
     let workbook = book.workbook();
-    layout_workbook_sheet(
-        workbook,
-        index,
-        &LayoutOptions {
-            min_column_count: extent.0,
-            min_row_count: extent.1,
-            date_system: workbook.date_system,
-            time_zone: Some(book.calculation_time_zone().to_string()),
-            measure: Rc::clone(measure),
-            ..LayoutOptions::default()
-        }
-        .with_normal_font_metrics(&workbook.styles),
-    )
-    .ok_or_else(|| "the sheet does not exist".to_string())
+    LayoutOptions {
+        min_column_count: extent.0,
+        min_row_count: extent.1,
+        date_system: workbook.date_system,
+        time_zone: Some(book.calculation_time_zone().to_string()),
+        measure: Rc::clone(measure),
+        ..LayoutOptions::default()
+    }
+    .with_normal_font_metrics(&workbook.styles)
 }
 
 /// `B3:B3` for a single cell too, as the engine's range arguments take.
