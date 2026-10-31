@@ -15,8 +15,9 @@ use std::sync::Arc;
 pub use jade_office_model::tiny::TinySkiaBackend;
 pub use jade_office_model::{
     charts, conditional_formatting, csv, deck, duplicates, editable_ranges, find, format_cells,
-    formula_complete, grid, links, number_formats, paste_special, pivots, print, protected_edits,
-    protection, sheet, sort_dialog, subtotal, tables, text, text_columns, typing, validation, word,
+    formula_complete, grid, links, number_formats, page_setup_dialog, paste_special, pivots, print,
+    protected_edits, protection, sheet, sort_dialog, subtotal, tables, text, text_columns, typing,
+    validation, word,
 };
 
 pub mod document;
