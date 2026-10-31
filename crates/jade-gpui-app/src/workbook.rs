@@ -48,7 +48,7 @@ use jade_office_model::protection::ProtectionDialog;
 use jade_office_model::sheet::{
     column_label, format_number, range_text, reference_text, span, AutoFilterOption, Axis, Borders,
     CellFormat, CellRange, CellRef, FilterButton, FontToggle, Freeze, HorizontalAlignment, Link,
-    Overlay, ResizeGesture, SheetVisibility, Workbook, MAX_COLUMN, MAX_ROW,
+    OutlineChange, Overlay, ResizeGesture, SheetVisibility, Workbook, MAX_COLUMN, MAX_ROW,
 };
 use jade_office_model::skia::SkiaBackend;
 use jade_office_model::tables::TableDialog;
@@ -338,6 +338,8 @@ enum MenuCommand {
     /// The rows above and the columns left of the active cell.
     FreezePanes,
     UnfreezePanes,
+    /// Data ▸ Group and Outline on the selected whole rows or columns.
+    Outline(OutlineChange),
 }
 
 /// What a painted image was painted for. A frame that matches it needs no new
@@ -1262,6 +1264,14 @@ impl WorkbookView {
             }
             MenuCommand::FreezePanes => self.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
+            MenuCommand::Outline(change) => {
+                let (axis, first, last) = if selection.is_whole_columns() {
+                    (Axis::Columns, range.start.column, range.end.column)
+                } else {
+                    (Axis::Rows, range.start.row, range.end.row)
+                };
+                self.book.outline(axis, first, last, change)
+            }
         };
         // What was copied moved or went with the deleted cells.
         if matches!(
@@ -2806,6 +2816,33 @@ impl WorkbookView {
                         (MenuCommand::Hide, "sheet.menu.hide"),
                         (MenuCommand::Unhide, "sheet.menu.unhide"),
                     ]);
+                    let axis = if self.selection.is_whole_columns() {
+                        Axis::Columns
+                    } else {
+                        Axis::Rows
+                    };
+                    items.extend([
+                        (
+                            MenuCommand::Outline(OutlineChange::Group),
+                            "sheet.menu.group",
+                        ),
+                        (
+                            MenuCommand::Outline(OutlineChange::Ungroup),
+                            "sheet.menu.ungroup",
+                        ),
+                    ]);
+                    if self.book.has_outline(axis) {
+                        items.extend([
+                            (
+                                MenuCommand::Outline(OutlineChange::HideDetail),
+                                "sheet.menu.hide_detail",
+                            ),
+                            (
+                                MenuCommand::Outline(OutlineChange::ShowDetail),
+                                "sheet.menu.show_detail",
+                            ),
+                        ]);
+                    }
                 }
                 if self.book.note(self.active()).is_some() {
                     items.extend([
