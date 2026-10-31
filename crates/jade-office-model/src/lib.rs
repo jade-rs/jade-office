@@ -22,6 +22,7 @@ pub mod charts;
 pub mod clipboard;
 pub mod conditional_formatting;
 pub mod csv;
+pub mod custom_filter;
 pub mod deck;
 pub mod duplicates;
 pub mod editable_ranges;

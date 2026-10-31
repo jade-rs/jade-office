@@ -3720,3 +3720,15 @@ page_setup.margins	Margins
 page_setup.margins.normal	Normal
 page_setup.margins.wide	Wide
 page_setup.margins.narrow	Narrow
+filter.custom.menu	Custom Filter…
+filter.custom.dialog	Custom AutoFilter: show rows where
+filter.custom.equals	equals
+filter.custom.not_equals	does not equal
+filter.custom.greater	is greater than
+filter.custom.greater_or_equal	is greater than or equal to
+filter.custom.less	is less than
+filter.custom.less_or_equal	is less than or equal to
+filter.custom.begins_with	begins with
+filter.custom.ends_with	ends with
+filter.custom.contains	contains
+filter.custom.not_contains	does not contain

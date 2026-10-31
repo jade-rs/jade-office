@@ -33,6 +33,7 @@ use super::*;
 
 mod charts;
 mod conditional;
+mod custom_filter;
 mod duplicates;
 mod find_bar;
 mod links;
@@ -117,6 +118,7 @@ pub(super) struct Sheet {
     pub(super) text_columns_dialog: Option<jade_web::text_columns::TextColumnsDialog>,
     pub(super) sort_dialog: Option<jade_web::sort_dialog::SortDialog>,
     pub(super) page_setup_dialog: Option<jade_web::page_setup_dialog::PageSetupDialog>,
+    pub(super) custom_filter: Option<jade_web::custom_filter::CustomFilterDialog>,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
@@ -619,6 +621,8 @@ enum FilterCommand {
     /// Top 10 (true) or Bottom 10.
     Top(bool),
     Reapply,
+    /// Custom Filter…: its dialog.
+    Custom,
 }
 
 #[derive(Clone, Copy)]
@@ -719,6 +723,7 @@ impl Sheet {
             text_columns_dialog: None,
             sort_dialog: None,
             page_setup_dialog: None,
+            custom_filter: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -756,6 +761,9 @@ impl Sheet {
         }
         if let Some(dialog) = self.validation_dialog.as_mut() {
             return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.custom_filter.as_mut() {
+            return Some(&mut dialog.value);
         }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
@@ -799,6 +807,9 @@ impl Sheet {
         }
         if let Some(dialog) = self.validation_dialog.as_ref() {
             return Some(dialog.field());
+        }
+        if let Some(dialog) = self.custom_filter.as_ref() {
+            return Some(&dialog.value);
         }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);
@@ -1099,6 +1110,7 @@ impl DocView {
                     self.edited(result, cx);
                 }
             }
+            FilterCommand::Custom => self.open_custom_filter(cx),
             FilterCommand::Reapply => {
                 if let Some(panel) = sheet.filter.take() {
                     let result = sheet.book.reapply_filter(&panel.button);
@@ -1634,6 +1646,7 @@ impl DocView {
             || sheet.text_columns_dialog.is_some()
             || sheet.sort_dialog.is_some()
             || sheet.page_setup_dialog.is_some()
+            || sheet.custom_filter.is_some()
             || sheet.duplicates_dialog.is_some()
         {
             return false;
@@ -1717,6 +1730,7 @@ impl DocView {
                 || s.text_columns_dialog.is_some()
                 || s.sort_dialog.is_some()
                 || s.page_setup_dialog.is_some()
+                || s.custom_filter.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -1945,6 +1959,10 @@ impl DocView {
                 return true;
             }
             sheet.choices = None;
+        }
+        // A custom filter's dialog has the keys while it is open.
+        if sheet.custom_filter.is_some() {
+            return self.custom_filter_key(key, modifiers, cx);
         }
         // A chart's text dialog has the keys while it is open.
         if sheet.chart_asking.is_some() {
@@ -2499,6 +2517,7 @@ impl DocView {
                 || s.text_columns_dialog.is_some()
                 || s.sort_dialog.is_some()
                 || s.page_setup_dialog.is_some()
+                || s.custom_filter.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -2774,6 +2793,7 @@ impl DocView {
                 || s.text_columns_dialog.is_some()
                 || s.sort_dialog.is_some()
                 || s.page_setup_dialog.is_some()
+                || s.custom_filter.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -3511,6 +3531,7 @@ impl DocView {
         let text_columns_panel = self.text_columns_panel(cx);
         let sort_panel = self.sort_panel(cx);
         let page_setup_panel = self.page_setup_panel(cx);
+        let custom_filter_panel = self.custom_filter_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -4201,6 +4222,11 @@ impl DocView {
                     "sheet.filter.reapply",
                     FilterCommand::Reapply,
                 ))
+                .child(action(
+                    "filter-custom",
+                    "filter.custom.menu",
+                    FilterCommand::Custom,
+                ))
                 .child(div().my_1().h(px(1.0)).bg(palette::border()))
                 .child(
                     div()
@@ -4430,6 +4456,7 @@ impl DocView {
                     .children(text_columns_panel)
                     .children(sort_panel)
                     .children(page_setup_panel)
+                    .children(custom_filter_panel)
                     .children(duplicates_panel)
                     .children(protection_panel)
                     .children(validation_panel)
