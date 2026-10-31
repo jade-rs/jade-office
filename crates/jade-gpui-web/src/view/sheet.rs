@@ -27,7 +27,7 @@ use jade_web::number_formats::NUMBER_FORMATS;
 use jade_web::sheet::{
     column_label, range_text, reference_text, span, AutoFilterOption, Axis, Borders, CellFormat,
     CellRange, FilterButton, FontToggle, Freeze, HorizontalAlignment, Link, OutlineChange, Overlay,
-    ResizeGesture, SheetVisibility, VerticalAlignment, MAX_COLUMN, MAX_ROW,
+    ResizeGesture, SheetVisibility, VerticalAlignment, MAX_COLUMN, MAX_ROW, SHEET_FONTS,
 };
 
 use super::*;
@@ -624,6 +624,8 @@ impl SheetTiles {
 #[derive(Clone, Copy, PartialEq)]
 enum Popup {
     NumberFormat,
+    /// The font box's families.
+    FontName,
     Fill,
     Font,
     Borders,
@@ -636,6 +638,8 @@ enum Popup {
 enum Tool {
     Font(FontToggle),
     Align(HorizontalAlignment),
+    /// The font box: a family for the selection.
+    FontName(&'static str),
     /// Top, Middle or Bottom Align.
     VAlign(VerticalAlignment),
     /// Increase Indent (true) or Decrease.
@@ -1194,6 +1198,7 @@ impl DocView {
         let result = match tool {
             Tool::Font(style) => sheet.book.toggle(range, active, style),
             Tool::Align(horizontal) => sheet.book.align(range, active, horizontal),
+            Tool::FontName(name) => sheet.book.set_font_name(range, name),
             Tool::VAlign(vertical) => sheet.book.valign(range, active, vertical),
             Tool::Indent(more) => sheet.book.indent(range, active, more),
             Tool::Wrap => sheet.book.toggle_wrap(range, active),
@@ -1312,6 +1317,20 @@ impl DocView {
                     )
                     .child(icon("icons/paintbrush.svg")),
             )
+            .child(hang(
+                Popup::FontName,
+                // Named for the active cell's font, as Excel's box is.
+                button(
+                    "tool-font-name",
+                    popup == Some(Popup::FontName),
+                    Tool::Open(Popup::FontName),
+                )
+                .gap_1()
+                .min_w(px(96.0))
+                .justify_between()
+                .child(look.font_name.clone().unwrap_or_default())
+                .child(icon("icons/chevron-down.svg").size_3()),
+            ))
             .child(
                 button(
                     "tool-bold",
@@ -1534,6 +1553,24 @@ impl DocView {
                 .on_click(cx.listener(move |view, _event, _window, cx| view.tool(tool, cx)))
         };
         let body = match popup {
+            Popup::FontName => {
+                div()
+                    .py_1()
+                    .children(SHEET_FONTS.iter().enumerate().map(|(index, name)| {
+                        let name: &'static str = name;
+                        div()
+                            .id(("font-name", index))
+                            .px_3()
+                            .py_1()
+                            .cursor_pointer()
+                            .hover(|item| item.bg(palette::hovered()))
+                            .child(name)
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |view, _event, _window, cx| {
+                                view.tool(Tool::FontName(name), cx)
+                            }))
+                    }))
+            }
             Popup::Fill | Popup::Font => {
                 let swatches = STANDARD_COLORS.iter().enumerate().map(|(index, color)| {
                     swatch(
