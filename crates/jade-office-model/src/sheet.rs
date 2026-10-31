@@ -2586,6 +2586,47 @@ impl<B: Backend> Workbook<B> {
         )
     }
 
+    /// The colour gallery's theme colours, as Excel lays them out: the
+    /// theme's ten (Background 1, Text 1, Background 2, Text 2, Accents 1–6)
+    /// across, then each lighter by 80, 60 and 40 % and darker by 25 and
+    /// 50 %, row by row, as `RRGGBB`. The Office theme's when the workbook
+    /// has none.
+    pub fn theme_palette(&self) -> Vec<String> {
+        const OFFICE: [[u8; 3]; 10] = [
+            [0xFF, 0xFF, 0xFF],
+            [0x00, 0x00, 0x00],
+            [0xE7, 0xE6, 0xE6],
+            [0x44, 0x54, 0x6A],
+            [0x44, 0x72, 0xC4],
+            [0xED, 0x7D, 0x31],
+            [0xA5, 0xA5, 0xA5],
+            [0xFF, 0xC0, 0x00],
+            [0x5B, 0x9B, 0xD5],
+            [0x70, 0xAD, 0x47],
+        ];
+        let theme = &self.book.workbook().styles.theme_colors;
+        let base: Vec<[u8; 3]> = (0..10)
+            .map(|index| theme.get(index).copied().flatten().unwrap_or(OFFICE[index]))
+            .collect();
+        let hex = |[r, g, b]: [u8; 3]| format!("{r:02X}{g:02X}{b:02X}");
+        let lighter = |color: [u8; 3], by: f32| {
+            color.map(|channel| {
+                (f32::from(channel) + (255.0 - f32::from(channel)) * by).round() as u8
+            })
+        };
+        let darker = |color: [u8; 3], by: f32| {
+            color.map(|channel| (f32::from(channel) * (1.0 - by)).round() as u8)
+        };
+        let mut palette: Vec<String> = base.iter().copied().map(hex).collect();
+        for by in [0.8, 0.6, 0.4] {
+            palette.extend(base.iter().map(|color| hex(lighter(*color, by))));
+        }
+        for by in [0.25, 0.5] {
+            palette.extend(base.iter().map(|color| hex(darker(*color, by))));
+        }
+        palette
+    }
+
     /// The font colour (`RRGGBB`).
     pub fn font_color(&mut self, range: CellRange, color: &str) -> Result<bool, String> {
         self.format(
