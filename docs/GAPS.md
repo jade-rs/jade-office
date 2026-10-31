@@ -60,7 +60,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | Partial (2026-10-23) | Excel tables: create/resize/style/totals/calculated columns/entry expansion/conversion added; 990 checks in the six selected implementation crates and both shell builds passed; explicit ownership, preserving namespace-aware table shifts and header insertion added; dialog runtime, broader extension cases and custom styles remain | Low–Medium | see [table authoring](xlsx/tables.md) and [verification](xlsx/verification.md) |
 | Partial (2026-10-23) | Page setup: margins, orientation, paper, scaling, print area/titles can be written through engine/model; Page Setup dialog and break controls remain | Medium | yes — see `docs/xlsx/ibis-parity.md` |
 | | Insert pictures and shapes | Low–Medium | no |
-| | Calculation mode and F9 | Low | yes |
+| Done in both shells (2026-10-31) | Calculation mode and F9: 計算方法: 手動 / 自動 on the right-click menu (saved with the workbook, automatic recalculating at once) and 再計算実行 / F9 | Low | yes |
 | | Threaded comments, multi-sheet selection, Merge Across, split view, cell styles gallery | Low | no |
 
 ## Word

@@ -263,6 +263,9 @@ sheet.menu.clear_outline	Clear Outline
 sheet.menu.subtotal	Subtotal
 sheet.menu.remove_duplicates	Remove Duplicates
 sheet.menu.text_to_columns	Text to Columns
+sheet.menu.calculate_now	Calculate Now (F9)
+sheet.menu.manual_calculation	Calculation: Manual
+sheet.menu.automatic_calculation	Calculation: Automatic
 text_columns.dialog	Text to Columns
 text_columns.delimiters	Delimiters
 text_columns.tab	Tab
