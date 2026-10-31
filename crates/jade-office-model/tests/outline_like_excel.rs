@@ -88,3 +88,43 @@ fn grouped_columns_hide_their_detail_too() {
         .unwrap());
     assert!(!book.has_outline(Axis::Columns));
 }
+
+#[test]
+fn the_gutter_buttons_collapse_and_expand_on_a_click() {
+    use jade_xlsx_layout::outline_gutter::lane_center;
+    let mut book = book();
+    let before = book.header_metrics();
+    book.outline(Axis::Rows, 2, 4, OutlineChange::Group)
+        .unwrap();
+    let metrics = book.header_metrics();
+    // The gutter widens the row band.
+    assert!(metrics.row_width > before.row_width);
+    let none = (0.0, 0.0);
+
+    // Level 1 collapses the group: down from row 2 lands on row 6.
+    let letters = (metrics.outline_height + metrics.column_height) / 2.0;
+    assert_eq!(
+        book.outline_click(lane_center(1), letters, none),
+        Some(Ok(true))
+    );
+    assert_eq!(
+        book.step(CellRef::new(0, 1), Direction::Down),
+        CellRef::new(0, 5)
+    );
+
+    // Row 6's box is a + now; a click shows the rows again.
+    let (_, top, _, height) = book.cell_rect(CellRef::new(0, 5), none).unwrap();
+    assert_eq!(
+        book.outline_click(lane_center(1), top + height / 2.0, none),
+        Some(Ok(true))
+    );
+    assert_eq!(
+        book.step(CellRef::new(0, 1), Direction::Down),
+        CellRef::new(0, 2)
+    );
+    // A click on a row number is no gutter click.
+    assert_eq!(
+        book.outline_click(metrics.row_width - 2.0, metrics.column_height + 4.0, none),
+        None
+    );
+}
