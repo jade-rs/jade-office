@@ -3688,3 +3688,5 @@ sheet.look_in_values	値
 text_columns.delimited	カンマやタブなどの区切り文字
 text_columns.fixed_width	固定長
 text_columns.breaks	文字をクリックするとその前に区切り線を入れ、区切り線をクリックすると消します
+sheet.menu.clear_formats	書式のクリア
+sheet.menu.clear_all	すべてクリア

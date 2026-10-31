@@ -1694,6 +1694,62 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    /// Clear ▸ Clear Formats: the cells of `range` back to the default
+    /// format, their values kept. One undo step; `false` when none wore a
+    /// format of its own.
+    pub fn clear_formats(&mut self, range: CellRange) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let changed = self
+            .book
+            .clear_formats(&name, &range_text_full(range))
+            .map_err(|error| error.to_string())?;
+        if changed == 0 {
+            return Ok(false);
+        }
+        self.wrote(1)?;
+        Ok(true)
+    }
+
+    /// Clear ▸ Clear All: the cells of `range` emptied, back to the default
+    /// format, and their hyperlinks gone. One undo step.
+    pub fn clear_all(&mut self, range: CellRange) -> Result<bool, String> {
+        let name = self.sheet_name();
+        let values: Vec<(String, CellInput)> = self
+            .cells_in(range)
+            .filter(|cell| cell.formula.is_some() || !matches!(cell.value, CellValue::Empty))
+            .map(|cell| (reference_text(cell.reference), CellInput::Blank))
+            .collect();
+        self.atomic_edit(|book| {
+            let mut steps = 0;
+            if !values.is_empty() {
+                book.book
+                    .set_cells(&name, &values)
+                    .map_err(|error| error.to_string())?;
+                steps += 1;
+            }
+            if book
+                .book
+                .clear_formats(&name, &range_text_full(range))
+                .map_err(|error| error.to_string())?
+                > 0
+            {
+                steps += 1;
+            }
+            if book
+                .book
+                .clear_hyperlinks(&name, &[range])
+                .map_err(|error| error.to_string())?
+            {
+                steps += 1;
+            }
+            if steps == 0 {
+                return Ok(false);
+            }
+            book.wrote(steps)?;
+            Ok(true)
+        })
+    }
+
     // ---- formats -------------------------------------------------------
 
     /// Changes how `range` looks — one write, one undo.
