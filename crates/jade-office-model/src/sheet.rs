@@ -2431,6 +2431,66 @@ impl<B: Backend> Workbook<B> {
         )
     }
 
+    /// Top, Middle or Bottom Align on the selection — or, when the active
+    /// cell already has it, back to Excel's Bottom.
+    pub fn valign(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        vertical: VerticalAlignment,
+    ) -> Result<bool, String> {
+        let now = self.format_at(active).vertical;
+        let vertical = if now == Some(vertical) {
+            VerticalAlignment::Bottom
+        } else {
+            vertical
+        };
+        self.format(
+            range,
+            &FormatChange {
+                vertical: Some(vertical),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Increase Indent (or, `more` false, Decrease) by one, from the active
+    /// cell's, up to the Format Cells dialog's deepest. Text that is not
+    /// left, right or distributed goes left to take it, as in Excel.
+    pub fn indent(
+        &mut self,
+        range: CellRange,
+        active: CellRef,
+        more: bool,
+    ) -> Result<bool, String> {
+        let look = self.format_at(active);
+        let now = look.indent.unwrap_or(0);
+        let next = if more {
+            (now + 1).min(crate::format_cells::MAX_INDENT)
+        } else {
+            now.saturating_sub(1)
+        };
+        if next == now {
+            return Ok(false);
+        }
+        let keeps = matches!(
+            look.horizontal,
+            Some(
+                HorizontalAlignment::Left
+                    | HorizontalAlignment::Right
+                    | HorizontalAlignment::Distributed
+            )
+        );
+        self.format(
+            range,
+            &FormatChange {
+                indent: Some(next),
+                horizontal: (!keeps).then_some(HorizontalAlignment::Left),
+                ..Default::default()
+            },
+        )
+    }
+
     /// Wrap Text, on or off as the active cell decides.
     pub fn toggle_wrap(&mut self, range: CellRange, active: CellRef) -> Result<bool, String> {
         let wrap = !self.format_at(active).wrap_text.unwrap_or(false);
