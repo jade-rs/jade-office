@@ -39,7 +39,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | Done in both shells (2026-10-31) | Format Painter: a brush on the sheet tool strip and 書式のコピー/貼り付け on the right-click menu, the next selection taking the formats; a double-click on the brush keeps painting until Escape | Medium | yes (`copy_format`) |
 | | Clear Formats / Clear All | Medium | partly |
 | | Font family, vertical alignment, indent controls; custom/theme colours | Medium | yes for most |
-| | Sort dialog: several keys, case, left to right | Medium | yes (`SortRequest`) |
+| Partial (2026-11-01) | Sort dialog (並べ替え… on the right-click menu in both shells: the selection or the list round the active cell, a header row guessed as Excel does and shown by name, any number of levels each with its column and A to Z / Z to A, case sensitivity, one undo step); left-to-right sorting and sorting by color remain | Medium | yes (`SortRequest`) |
 | | Filter: custom, dates, top N, reapply (only ticked values today) | Medium | yes (`AutoFilterChange`) |
 | Partial (2026-10-23) | Data validation: invalid-data circles, validation-only paste, general MCE, advanced coercion and Office oracle coverage | Medium | standard/x14/quoted-list reader and preserving edits, source alternatives, formula bounds and alert choices implemented; see [validation](xlsx/validation.md) |
 | Partial (2026-10-23) | Named ranges: scope-aware create/update/delete and calculation; name-box definition/navigation in both shells; Name Manager dialog remains | Medium | yes — see `docs/xlsx/ibis-parity.md` |

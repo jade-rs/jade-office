@@ -97,26 +97,10 @@ impl<B: Backend> Workbook<B> {
         })
     }
 
-    /// Whether the range's first row reads as a header: all text, over a row
-    /// that is not — Excel's guess for My data has headers.
+    /// Whether the range's first row reads as a header — all text, over a
+    /// row that is not — Excel's guess for My data has headers.
     pub fn looks_like_headers(&self, range: CellRange) -> bool {
-        if range.end.row <= range.start.row {
-            return false;
-        }
-        let kind = |row: u32, column: u32| {
-            let name = self.sheet_name();
-            self.engine()
-                .cell(&name, &reference_text(CellRef::new(column, row)))
-                .map(|cell| cell.kind)
-                .unwrap_or(CellKind::Empty)
-        };
-        let columns = range.start.column..=range.end.column;
-        columns
-            .clone()
-            .all(|column| kind(range.start.row, column) == CellKind::Text)
-            && columns
-                .clone()
-                .any(|column| !matches!(kind(range.start.row + 1, column), CellKind::Text))
+        self.looks_like_header(range)
     }
 
     /// A cell's value as Remove Duplicates compares it.
