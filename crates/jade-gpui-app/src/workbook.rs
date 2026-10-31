@@ -73,6 +73,7 @@ mod pivots;
 mod protection;
 mod subtotal;
 mod tables;
+mod text_columns;
 mod validation;
 use crate::{
     byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Print, Redo, Save,
@@ -351,6 +352,8 @@ enum MenuCommand {
     Subtotal,
     /// Data ▸ Remove Duplicates over the selection or the list round it.
     RemoveDuplicates,
+    /// Data ▸ Text to Columns on the selection's column.
+    TextToColumns,
 }
 
 /// What a painted image was painted for. A frame that matches it needs no new
@@ -406,6 +409,7 @@ pub struct WorkbookView {
     validation_dialog: Option<ValidationDialog>,
     link_dialog: Option<LinkDialog>,
     subtotal_dialog: Option<jade_office_model::subtotal::SubtotalDialog>,
+    text_columns_dialog: Option<jade_office_model::text_columns::TextColumnsDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
     pivot_dialog: Option<PivotPanel>,
@@ -597,6 +601,7 @@ impl WorkbookView {
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
+            || self.text_columns_dialog.is_some()
         {
             return;
         }
@@ -848,6 +853,7 @@ impl WorkbookView {
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
+            || self.text_columns_dialog.is_some()
         {
             return false;
         }
@@ -935,6 +941,7 @@ impl WorkbookView {
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
+            || self.text_columns_dialog.is_some()
         {
             return;
         }
@@ -1073,6 +1080,7 @@ impl WorkbookView {
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
+            || self.text_columns_dialog.is_some()
         {
             return;
         }
@@ -1288,6 +1296,7 @@ impl WorkbookView {
             MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::RemoveDuplicates => return self.remove_duplicates(cx),
+            MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::AutoOutline => self.book.auto_outline(),
             MenuCommand::ClearOutline => self.book.clear_outline(if selection.is_whole_columns() {
                 Axis::Columns
@@ -1589,6 +1598,9 @@ impl WorkbookView {
             return true;
         }
         if self.subtotal_key(key, cx) {
+            return true;
+        }
+        if self.text_columns_key(key, cx) {
             return true;
         }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
@@ -2028,6 +2040,7 @@ impl WorkbookView {
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
             || self.subtotal_dialog.is_some()
+            || self.text_columns_dialog.is_some()
         {
             return;
         }
@@ -2971,6 +2984,9 @@ impl WorkbookView {
                         MenuCommand::RemoveDuplicates,
                         "sheet.menu.remove_duplicates",
                     ));
+                }
+                if self.range().start.column == self.range().end.column {
+                    items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                 }
                 items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                 items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
@@ -4119,6 +4135,7 @@ impl Render for WorkbookView {
         let pivot_panel = self.pivot_panel(cx);
         let link_panel = self.link_panel(cx);
         let subtotal_panel = self.subtotal_panel(cx);
+        let text_columns_panel = self.text_columns_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -4274,6 +4291,7 @@ impl Render for WorkbookView {
             .children(pivot_panel)
             .children(link_panel)
             .children(subtotal_panel)
+            .children(text_columns_panel)
             .children(protection_panel)
             .children(validation_panel)
             .children(validation_alert)
@@ -4316,6 +4334,7 @@ impl WorkbookView {
             validation_dialog: None,
             link_dialog: None,
             subtotal_dialog: None,
+            text_columns_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -5442,6 +5461,28 @@ mod tests {
             view.menu_command(MenuCommand::DeleteNote, false, cx)
         });
         view.read_with(cx, |view, _| assert!(view.book.note(at(1, 1)).is_none()));
+    }
+
+    /// Text to Columns splits the selected column at the delimiter ticked
+    /// and closes.
+    #[gpui::test]
+    fn the_text_to_columns_dialog_splits_at_the_delimiter_ticked(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(7, 29), "東京,10").unwrap();
+            view.book.set_cell(at(7, 30), "大阪,20").unwrap();
+            view.selection = Selection::cell(at(7, 29));
+            view.selection.focus = at(7, 30);
+            view.open_text_columns_dialog(cx);
+            assert!(view.text_columns_dialog.is_some());
+            view.text_columns_action(text_columns::TextColumnsAction::Comma, cx);
+            view.text_columns_action(text_columns::TextColumnsAction::Take, cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.text_columns_dialog.is_none());
+            assert_eq!(view.book.display_text(at(7, 29)), "東京");
+            assert_eq!(view.book.display_text(at(8, 30)), "20");
+        });
     }
 
     /// The Subtotal dialog totals the runs of the column it is told, with

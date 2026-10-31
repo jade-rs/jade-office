@@ -262,6 +262,15 @@ sheet.menu.auto_outline	アウトラインの自動作成
 sheet.menu.clear_outline	アウトラインのクリア
 sheet.menu.subtotal	小計
 sheet.menu.remove_duplicates	重複の削除
+sheet.menu.text_to_columns	区切り位置
+text_columns.dialog	区切り位置指定ウィザード
+text_columns.delimiters	区切り文字
+text_columns.tab	タブ
+text_columns.semicolon	セミコロン
+text_columns.comma	カンマ
+text_columns.space	スペース
+text_columns.consecutive	連続した区切り文字は 1 文字として扱う
+text_columns.preview	データのプレビュー
 sheet.duplicates_removed	{removed} 個の重複する値が見つかり、削除されました。{remaining} 個の一意の値が残っています。
 sheet.duplicates_none	重複する値は見つかりませんでした。
 subtotal.dialog	集計の設定
