@@ -41,6 +41,23 @@ impl WorkbookView {
         self.after_write(result.map(|landed| landed.is_some()), cx);
     }
 
+    /// Paste Link: formulas reading the copied cells, the pasted range
+    /// selected.
+    pub(super) fn take_paste_link(&mut self, cx: &mut Context<Self>) {
+        if self.pasting.take().is_none() {
+            return;
+        }
+        let result = self.book.paste_link(self.range().start);
+        if let Ok(Some(landed)) = &result {
+            self.selection = Selection {
+                active: landed.start,
+                anchor: landed.start,
+                focus: landed.end,
+            };
+        }
+        self.after_write(result.map(|landed| landed.is_some()), cx);
+    }
+
     /// Keys while the dialog is open: arrows choose, Return pastes, Escape
     /// leaves.
     pub(super) fn paste_special_key(
@@ -212,6 +229,13 @@ impl WorkbookView {
                         .flex()
                         .justify_end()
                         .gap_2()
+                        .child(self.dialog_button(
+                            "paste-link",
+                            "sheet.paste_special.link",
+                            false,
+                            cx,
+                            |view, cx| view.take_paste_link(cx),
+                        ))
                         .child(self.dialog_button(
                             "paste-cancel",
                             "sheet.paste_special.cancel",
