@@ -61,6 +61,27 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    /// Formulas ▸ Show Formulas: whether the active sheet's cells show
+    /// their formulas rather than what they work out to.
+    pub fn show_formulas(&self) -> bool {
+        self.engine().workbook().sheets[self.sheet_index()].show_formulas
+    }
+
+    /// Show Formulas on the active sheet turned on or off (⌃`). One undo
+    /// step; `false` when it already was.
+    pub fn set_show_formulas(&mut self, on: bool) -> Result<bool, String> {
+        let name = self.sheet_name();
+        if !self
+            .engine_mut()
+            .set_show_formulas(&name, on)
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(false);
+        }
+        self.wrote(1)?;
+        Ok(true)
+    }
+
     pub fn page_setup(&self) -> &PageSetup {
         &self.engine().workbook().sheets[self.sheet_index()].page_setup
     }

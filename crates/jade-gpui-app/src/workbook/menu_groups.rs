@@ -39,6 +39,7 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         C::SortAscending
         | C::SortDescending
         | C::SortDialog
+        | C::ShowFormulas
         | C::Subtotal
         | C::RemoveDuplicates
         | C::TextToColumns

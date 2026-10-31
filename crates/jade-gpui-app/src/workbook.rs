@@ -453,6 +453,8 @@ enum MenuCommand {
     /// A header of the grid's menu opened or closed in place.
     OpenGroup(MenuGroup),
     InsertFunction,
+    /// Formulas ▸ Show Formulas, on or off.
+    ShowFormulas,
     /// A sheet tab from one place to another.
     MoveSheet(usize, usize),
     /// New Note, or Edit Note on a cell that has one.
@@ -1453,6 +1455,10 @@ impl WorkbookView {
             MenuCommand::TabColor(index, color) => self.book.set_tab_color(index, color),
             MenuCommand::OpenGroup(_) => return,
             MenuCommand::InsertFunction => return self.open_insert_function(cx),
+            MenuCommand::ShowFormulas => {
+                let on = !self.book.show_formulas();
+                self.book.set_show_formulas(on)
+            }
             MenuCommand::MoveSheet(index, to) => {
                 let result = self.book.move_sheet(index, to);
                 self.selection = Selection::default();
@@ -2146,6 +2152,10 @@ impl WorkbookView {
             "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
             // ⌃G, as F5: Go To.
             "g" if modifiers.control && !modifiers.platform => self.open_go_to(cx),
+            // ⌃`: Show Formulas, on or off.
+            "`" if modifiers.control && !modifiers.platform => {
+                self.menu_command(MenuCommand::ShowFormulas, true, cx)
+            }
             "end" => {
                 let end = self.book.used_end();
                 self.select_cell(end, shift, cx);
@@ -3264,6 +3274,7 @@ impl WorkbookView {
                     ));
                 }
                 items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
+                items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
                 if self.range().start.column == self.range().end.column {
                     items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                 }
@@ -5126,6 +5137,16 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert_eq!(view.edit.as_ref().unwrap().text.text, "=1+ROUNDUP(");
         });
+    }
+
+    /// ⌃` turns Show Formulas on and off.
+    #[gpui::test]
+    fn control_backtick_shows_formulas(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("ctrl-`");
+        view.read_with(cx, |view, _| assert!(view.book.show_formulas()));
+        cx.simulate_keystrokes("ctrl-`");
+        view.read_with(cx, |view, _| assert!(!view.book.show_formulas()));
     }
 
     #[gpui::test]
