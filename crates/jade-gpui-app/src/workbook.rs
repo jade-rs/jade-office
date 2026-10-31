@@ -71,6 +71,7 @@ mod conditional;
 mod custom_filter;
 mod duplicates;
 mod find_bar;
+mod insert_function;
 mod links;
 mod page_setup;
 mod paste_special;
@@ -451,6 +452,7 @@ enum MenuCommand {
     TabColor(usize, Option<&'static str>),
     /// A header of the grid's menu opened or closed in place.
     OpenGroup(MenuGroup),
+    InsertFunction,
     /// A sheet tab from one place to another.
     MoveSheet(usize, usize),
     /// New Note, or Edit Note on a cell that has one.
@@ -544,6 +546,7 @@ pub struct WorkbookView {
     sort_dialog: Option<jade_office_model::sort_dialog::SortDialog>,
     page_setup_dialog: Option<jade_office_model::page_setup_dialog::PageSetupDialog>,
     custom_filter: Option<jade_office_model::custom_filter::CustomFilterDialog>,
+    insert_function: Option<jade_office_model::insert_function::InsertFunctionDialog>,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -616,6 +619,9 @@ impl WorkbookView {
         if let Some(dialog) = self.validation_dialog.as_mut() {
             return Some(dialog.field_mut());
         }
+        if let Some(dialog) = self.insert_function.as_mut() {
+            return Some(&mut dialog.search);
+        }
         if let Some(dialog) = self.custom_filter.as_mut() {
             return Some(dialog.field_mut());
         }
@@ -658,6 +664,9 @@ impl WorkbookView {
         }
         if let Some(dialog) = self.validation_dialog.as_ref() {
             return Some(dialog.field());
+        }
+        if let Some(dialog) = self.insert_function.as_ref() {
+            return Some(&dialog.search);
         }
         if let Some(dialog) = self.custom_filter.as_ref() {
             return Some(dialog.field());
@@ -746,6 +755,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.insert_function.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1004,6 +1014,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.insert_function.is_some()
             || self.duplicates_dialog.is_some()
         {
             return false;
@@ -1097,6 +1108,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.insert_function.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1240,6 +1252,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.insert_function.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1439,6 +1452,7 @@ impl WorkbookView {
                 .set_sheet_visibility(index, SheetVisibility::Visible),
             MenuCommand::TabColor(index, color) => self.book.set_tab_color(index, color),
             MenuCommand::OpenGroup(_) => return,
+            MenuCommand::InsertFunction => return self.open_insert_function(cx),
             MenuCommand::MoveSheet(index, to) => {
                 let result = self.book.move_sheet(index, to);
                 self.selection = Selection::default();
@@ -1833,6 +1847,10 @@ impl WorkbookView {
             return true;
         }
 
+        // Insert Function's dialog has the keys while it is open.
+        if self.insert_function.is_some() {
+            return self.insert_function_key(key, modifiers, cx);
+        }
         // A custom filter's dialog has the keys while it is open.
         if self.custom_filter.is_some() {
             return self.custom_filter_key(key, modifiers, cx);
@@ -1897,6 +1915,8 @@ impl WorkbookView {
                         edit.suggested = Some((list.start, edit.text.caret, at));
                     }
                 }
+                // Shift+F3: Insert Function, at the caret of the formula.
+                "f3" if shift => self.open_insert_function(cx),
                 // A line break in the cell: ⌥Enter, as Excel for Mac.
                 "enter" if modifiers.alt => {
                     edit.text.insert("\n");
@@ -2004,6 +2024,8 @@ impl WorkbookView {
             "enter" => self.advance_cell(false, shift, cx),
             "tab" => self.advance_cell(true, shift, cx),
             "f2" => self.begin_edit(None, true, cx),
+            // Shift+F3: Insert Function.
+            "f3" if shift => self.open_insert_function(cx),
             "f5" => self.open_go_to(cx),
             // Calculate Now, as in Excel.
             "f9" => {
@@ -2292,6 +2314,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.insert_function.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -3256,6 +3279,7 @@ impl WorkbookView {
                         "sheet.menu.manual_calculation",
                     ));
                 }
+                items.push((MenuCommand::InsertFunction, "insert_function.menu"));
                 items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                 items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                 items.push((MenuCommand::CellLocked, "protection.cell_locked"));
@@ -4481,6 +4505,7 @@ impl Render for WorkbookView {
         let sort_panel = self.sort_panel(cx);
         let page_setup_panel = self.page_setup_panel(cx);
         let custom_filter_panel = self.custom_filter_panel(cx);
+        let insert_function_panel = self.insert_function_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -4641,6 +4666,7 @@ impl Render for WorkbookView {
             .children(sort_panel)
             .children(page_setup_panel)
             .children(custom_filter_panel)
+            .children(insert_function_panel)
             .children(duplicates_panel)
             .children(protection_panel)
             .children(validation_panel)
@@ -4689,6 +4715,7 @@ impl WorkbookView {
             sort_dialog: None,
             page_setup_dialog: None,
             custom_filter: None,
+            insert_function: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -5074,6 +5101,31 @@ mod tests {
         cx.simulate_input("4)");
         cx.simulate_keystrokes("escape");
         view.read_with(cx, |view, _| assert!(view.edit.is_none()));
+    }
+
+    /// Shift+F3 opens Insert Function: what is typed searches, Enter starts
+    /// the formula with the function picked — or, mid-formula, puts it in
+    /// at the caret.
+    #[gpui::test]
+    fn insert_function_starts_a_formula_or_goes_in_at_the_caret(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("right right right down down down down down down");
+        cx.simulate_keystrokes("shift-f3");
+        view.read_with(cx, |view, _| assert!(view.insert_function.is_some()));
+        cx.simulate_input("vlook");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.insert_function.is_none());
+            assert_eq!(view.edit.as_ref().unwrap().text.text, "=VLOOKUP(");
+        });
+        cx.simulate_keystrokes("escape");
+        cx.simulate_input("=1+");
+        cx.simulate_keystrokes("shift-f3");
+        cx.simulate_input("roundu");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.edit.as_ref().unwrap().text.text, "=1+ROUNDUP(");
+        });
     }
 
     #[gpui::test]
