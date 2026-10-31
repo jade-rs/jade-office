@@ -3732,3 +3732,9 @@ filter.custom.begins_with	begins with
 filter.custom.ends_with	ends with
 filter.custom.contains	contains
 filter.custom.not_contains	does not contain
+sheet.menu.group_clear	Clear
+sheet.menu.group_insert_delete	Insert and Delete
+sheet.menu.group_data	Sort, Data and Outline
+sheet.menu.group_pivot_table	PivotTable and Table
+sheet.menu.group_links_validation	Links and Data Validation
+sheet.menu.group_protection	Protection
