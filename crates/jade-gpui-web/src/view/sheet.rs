@@ -37,6 +37,7 @@ mod conditional;
 mod custom_filter;
 mod duplicates;
 mod find_bar;
+mod insert_function;
 mod links;
 mod page_setup;
 mod paste_special;
@@ -120,6 +121,7 @@ pub(super) struct Sheet {
     pub(super) sort_dialog: Option<jade_web::sort_dialog::SortDialog>,
     pub(super) page_setup_dialog: Option<jade_web::page_setup_dialog::PageSetupDialog>,
     pub(super) custom_filter: Option<jade_web::custom_filter::CustomFilterDialog>,
+    pub(super) insert_function: Option<jade_web::insert_function::InsertFunctionDialog>,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
@@ -726,6 +728,7 @@ enum MenuCommand {
     TabColor(usize, Option<&'static str>),
     /// A header of the grid's menu opened or closed in place.
     OpenGroup(MenuGroup),
+    InsertFunction,
 }
 
 impl Sheet {
@@ -765,6 +768,7 @@ impl Sheet {
             sort_dialog: None,
             page_setup_dialog: None,
             custom_filter: None,
+            insert_function: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -802,6 +806,9 @@ impl Sheet {
         }
         if let Some(dialog) = self.validation_dialog.as_mut() {
             return Some(dialog.field_mut());
+        }
+        if let Some(dialog) = self.insert_function.as_mut() {
+            return Some(&mut dialog.search);
         }
         if let Some(dialog) = self.custom_filter.as_mut() {
             return Some(dialog.field_mut());
@@ -848,6 +855,9 @@ impl Sheet {
         }
         if let Some(dialog) = self.validation_dialog.as_ref() {
             return Some(dialog.field());
+        }
+        if let Some(dialog) = self.insert_function.as_ref() {
+            return Some(&dialog.search);
         }
         if let Some(dialog) = self.custom_filter.as_ref() {
             return Some(dialog.field());
@@ -1688,6 +1698,7 @@ impl DocView {
             || sheet.sort_dialog.is_some()
             || sheet.page_setup_dialog.is_some()
             || sheet.custom_filter.is_some()
+            || sheet.insert_function.is_some()
             || sheet.duplicates_dialog.is_some()
         {
             return false;
@@ -1772,6 +1783,7 @@ impl DocView {
                 || s.sort_dialog.is_some()
                 || s.page_setup_dialog.is_some()
                 || s.custom_filter.is_some()
+                || s.insert_function.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -2001,6 +2013,10 @@ impl DocView {
             }
             sheet.choices = None;
         }
+        // Insert Function's dialog has the keys while it is open.
+        if sheet.insert_function.is_some() {
+            return self.insert_function_key(key, modifiers, cx);
+        }
         // A custom filter's dialog has the keys while it is open.
         if sheet.custom_filter.is_some() {
             return self.custom_filter_key(key, modifiers, cx);
@@ -2080,6 +2096,8 @@ impl DocView {
                         edit.suggested = Some((list.start, edit.text.caret, at));
                     }
                 }
+                // Shift+F3: Insert Function, at the caret of the formula.
+                "f3" if shift => self.open_insert_function(cx),
                 // A line break in the cell: ⌥Enter (Alt+Enter elsewhere).
                 "enter" if modifiers.alt => {
                     edit.text.insert("\n");
@@ -2223,6 +2241,8 @@ impl DocView {
             "enter" => self.advance_cell(false, shift, cx),
             "tab" => self.advance_cell(true, shift, cx),
             "f2" => self.begin_cell_edit(None, true, cx),
+            // Shift+F3: Insert Function.
+            "f3" if shift => self.open_insert_function(cx),
             "f5" => self.open_go_to(cx),
             // Calculate Now, as in Excel.
             "f9" => {
@@ -2559,6 +2579,7 @@ impl DocView {
                 || s.sort_dialog.is_some()
                 || s.page_setup_dialog.is_some()
                 || s.custom_filter.is_some()
+                || s.insert_function.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -2811,6 +2832,7 @@ impl DocView {
                 .set_sheet_visibility(index, SheetVisibility::Visible),
             MenuCommand::TabColor(index, color) => sheet.book.set_tab_color(index, color),
             MenuCommand::OpenGroup(_) => return,
+            MenuCommand::InsertFunction => return self.open_insert_function(cx),
         };
         // Rows or columns gone from under a copy let go of it, as in Excel.
         if matches!(
@@ -2844,6 +2866,7 @@ impl DocView {
                 || s.sort_dialog.is_some()
                 || s.page_setup_dialog.is_some()
                 || s.custom_filter.is_some()
+                || s.insert_function.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -3583,6 +3606,7 @@ impl DocView {
         let sort_panel = self.sort_panel(cx);
         let page_setup_panel = self.page_setup_panel(cx);
         let custom_filter_panel = self.custom_filter_panel(cx);
+        let insert_function_panel = self.insert_function_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -3928,6 +3952,7 @@ impl DocView {
                             "sheet.menu.manual_calculation",
                         ));
                     }
+                    items.push((MenuCommand::InsertFunction, "insert_function.menu"));
                     items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                     items.push((MenuCommand::CellLocked, "protection.cell_locked"));
@@ -4515,6 +4540,7 @@ impl DocView {
                     .children(sort_panel)
                     .children(page_setup_panel)
                     .children(custom_filter_panel)
+                    .children(insert_function_panel)
                     .children(duplicates_panel)
                     .children(protection_panel)
                     .children(validation_panel)
