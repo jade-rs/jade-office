@@ -320,3 +320,28 @@ fn column_widths_paste_only_the_widths() {
     assert!(book.undo().unwrap());
     assert_ne!(width(&mut book, 23), source);
 }
+
+/// Paste Options after a paste: Values takes the paste back and pastes
+/// the copy's values instead, one undo step for the lot.
+#[test]
+fn paste_options_paste_again_as_chosen() {
+    use jade_office_model::paste_special::PasteOption;
+    let mut book = book();
+    book.set_cell(at(20, 70), "2").unwrap();
+    book.set_cell(at(21, 70), "=U71*10").unwrap();
+    book.copy(span(at(20, 70), at(21, 70)), false);
+    let text = book.copied_text().unwrap();
+    book.paste(at(23, 70), &text).unwrap();
+    assert_eq!(book.edit_text(at(24, 70)), "=X71*10");
+    let landed = book.repaste(at(23, 70), PasteOption::Values).unwrap();
+    assert_eq!(landed, Some(span(at(23, 70), at(24, 70))));
+    assert_eq!(book.edit_text(at(24, 70)), "20");
+    // One undo takes it all away.
+    assert!(book.undo().unwrap());
+    assert_eq!(book.display_text(at(24, 70)), "");
+    // Keep Source Formatting is the paste as it was.
+    assert_eq!(
+        book.repaste(at(23, 70), PasteOption::KeepSource).unwrap(),
+        None
+    );
+}
