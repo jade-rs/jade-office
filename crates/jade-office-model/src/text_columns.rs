@@ -1,6 +1,7 @@
-//! Data ▸ Text to Columns, delimited: the text of one column split at the
-//! delimiters chosen into the columns from it rightward, each piece taken as
-//! typing would take it — `1,234` a number, `2026/1/5` a date.
+//! Data ▸ Text to Columns: the text of one column split at the delimiters
+//! chosen — or, fixed width, at break positions — into the columns from it
+//! rightward, each piece taken as typing would take it — `1,234` a number,
+//! `2026/1/5` a date.
 
 use jade_xlsx_headless_api::{CellInput, CellKind};
 use jade_xlsx_reader::{CellRange, CellRef};
@@ -20,6 +21,9 @@ pub struct TextToColumns {
     /// The text qualifier: delimiters inside a pair of these are text, and
     /// a doubled one stands for itself. `"` by default, as in Excel.
     pub qualifier: Option<char>,
+    /// Fixed width: the character positions a field starts at, past the
+    /// first, in order. The delimiters do not count then.
+    pub fixed_width: Option<Vec<usize>>,
 }
 
 impl Default for TextToColumns {
@@ -32,6 +36,7 @@ impl Default for TextToColumns {
             space: false,
             consecutive: false,
             qualifier: Some('"'),
+            fixed_width: None,
         }
     }
 }
@@ -46,6 +51,9 @@ impl TextToColumns {
 
     /// `text` in pieces at the delimiters, as the wizard's preview shows it.
     pub fn split(&self, text: &str) -> Vec<String> {
+        if let Some(breaks) = &self.fixed_width {
+            return split_fixed(text, breaks);
+        }
         let mut pieces = vec![String::new()];
         let mut quoted = false;
         let mut chars = text.chars().peekable();
@@ -74,6 +82,40 @@ impl TextToColumns {
         }
         pieces
     }
+}
+
+/// `text` cut at the character positions `breaks`, each piece without
+/// the spaces round it, as Excel takes fixed-width fields. A line ending
+/// before a break has no piece past it.
+fn split_fixed(text: &str, breaks: &[usize]) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut pieces = Vec::new();
+    let mut start = 0;
+    for &end in breaks.iter().chain(std::iter::once(&usize::MAX)) {
+        if start >= chars.len() && !pieces.is_empty() {
+            break;
+        }
+        let end = end.min(chars.len());
+        let piece: String = chars[start.min(end)..end].iter().collect();
+        pieces.push(piece.trim_matches(' ').to_string());
+        start = end;
+    }
+    pieces
+}
+
+/// Where the wizard first puts fixed-width breaks: before each column of
+/// characters that starts a field on some line, after a column that is a
+/// space (or past the end) on every line.
+pub fn guess_breaks(lines: &[String]) -> Vec<usize> {
+    let lines: Vec<Vec<char>> = lines.iter().map(|line| line.chars().collect()).collect();
+    let width = lines.iter().map(Vec::len).max().unwrap_or(0);
+    let blank = |line: &Vec<char>, at: usize| line.get(at).is_none_or(|c| *c == ' ');
+    (1..width)
+        .filter(|&at| {
+            lines.iter().all(|line| blank(line, at - 1))
+                && lines.iter().any(|line| !blank(line, at))
+        })
+        .collect()
 }
 
 impl<B: Backend> Workbook<B> {
@@ -158,6 +200,38 @@ impl TextColumnsDialog {
             split: TextToColumns::default(),
             sample,
         }
+    }
+
+    /// Fixed width, with the breaks guessed from the sample as the wizard's
+    /// second step shows them; or, `false`, delimited again.
+    pub fn set_fixed_width(&mut self, on: bool) {
+        self.split.fixed_width = on.then(|| guess_breaks(&self.sample));
+    }
+
+    /// A click on the ruler: a break before character `at` put in, or taken
+    /// away when there is one.
+    pub fn toggle_break(&mut self, at: usize) {
+        let Some(breaks) = self.split.fixed_width.as_mut() else {
+            return;
+        };
+        if at == 0 {
+            return;
+        }
+        match breaks.binary_search(&at) {
+            Ok(index) => {
+                breaks.remove(index);
+            }
+            Err(index) => breaks.insert(index, at),
+        }
+    }
+
+    /// The sample's widest line, in characters: how long the ruler is.
+    pub fn sample_width(&self) -> usize {
+        self.sample
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0)
     }
 
     /// The sample as the delimiters chosen would split it.

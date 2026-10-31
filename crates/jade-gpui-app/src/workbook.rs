@@ -5583,6 +5583,28 @@ mod tests {
         });
     }
 
+    /// Fixed width in Text to Columns cuts at the breaks guessed, and a
+    /// click on the ruler takes one away.
+    #[gpui::test]
+    fn the_text_to_columns_dialog_cuts_fixed_width_fields(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(7, 29), "Tokyo   1200  East").unwrap();
+            view.book.set_cell(at(7, 30), "Osaka    800  West").unwrap();
+            view.selection = Selection::cell(at(7, 29));
+            view.open_text_columns_dialog(cx);
+            view.text_columns_action(text_columns::TextColumnsAction::Fixed(true), cx);
+            view.text_columns_action(text_columns::TextColumnsAction::Break(14), cx);
+            let dialog = view.text_columns_dialog.as_ref().unwrap();
+            assert_eq!(dialog.split.fixed_width.as_deref(), Some(&[8][..]));
+            view.text_columns_action(text_columns::TextColumnsAction::Take, cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at(7, 30)), "Osaka");
+            assert_eq!(view.book.display_text(at(8, 30)), "800  West");
+        });
+    }
+
     /// The Sort dialog sorts the selection by the column and order picked,
     /// the header row staying on top, and closes.
     #[gpui::test]
