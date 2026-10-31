@@ -716,6 +716,8 @@ enum MenuCommand {
     SortAscending,
     SortDescending,
     MergeCenter,
+    /// Merge Across: each selected row merged on its own.
+    MergeAcross,
     InsertSheet,
     /// Move or Copy ▸ Create a copy of the sheet at this index.
     CopySheet(usize),
@@ -2944,6 +2946,7 @@ impl DocView {
             .map(|outcome| outcome.changed),
             MenuCommand::SortAscending => sheet.book.sort(range, selection.active, false),
             MenuCommand::SortDescending => sheet.book.sort(range, selection.active, true),
+            MenuCommand::MergeAcross => sheet.book.merge_across(range),
             MenuCommand::MergeCenter => {
                 let range = sheet.book.with_merges(range);
                 let result = sheet.book.merge_and_center(range);
@@ -4134,6 +4137,7 @@ impl DocView {
                         (MenuCommand::SortAscending, "sheet.menu.sort_ascending"),
                         (MenuCommand::SortDescending, "sheet.menu.sort_descending"),
                         (MenuCommand::MergeCenter, "sheet.menu.merge_center"),
+                        (MenuCommand::MergeAcross, "sheet.menu.merge_across"),
                     ]);
                     if !sheet.selection.is_whole_columns() {
                         items.extend([
