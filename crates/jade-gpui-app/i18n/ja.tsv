@@ -254,6 +254,10 @@ sheet.menu.hide	非表示
 sheet.menu.unhide	再表示
 sheet.menu.freeze_panes	ウィンドウ枠の固定
 sheet.menu.unfreeze_panes	ウィンドウ枠固定の解除
+sheet.menu.group	グループ化
+sheet.menu.ungroup	グループ解除
+sheet.menu.hide_detail	詳細データの非表示
+sheet.menu.show_detail	詳細データの表示
 sheet.menu.move_left	左へ移動
 sheet.menu.move_right	右へ移動
 sheet.validation_refused	この値は、このセルに定義されているデータ入力規則の制限を満たしていません。
