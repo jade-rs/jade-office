@@ -33,6 +33,7 @@ pub mod formula_tips;
 pub mod grid;
 pub mod insert_function;
 pub mod links;
+pub mod more_colors;
 pub mod names;
 pub mod number_formats;
 pub mod page_setup_dialog;

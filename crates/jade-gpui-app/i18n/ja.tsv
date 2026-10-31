@@ -3752,3 +3752,6 @@ sheet.paste_special.link	リンク貼り付け
 sheet.paste_special.column_widths	列幅
 sheet.tool.theme_colors	テーマの色
 sheet.tool.standard_colors	標準の色
+sheet.tool.more_colors	その他の色…
+sheet.tool.more_colors_dialog	色の設定
+sheet.tool.more_colors_code	カラーコード (RRGGBB)
