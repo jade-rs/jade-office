@@ -3756,3 +3756,9 @@ sheet.tool.more_colors	More Colors…
 sheet.tool.more_colors_dialog	Colors
 sheet.tool.more_colors_code	Color code (RRGGBB)
 sheet.menu.copy_sheet	Copy Sheet
+sheet.paste_options.button	(Ctrl)
+sheet.paste_options.keep_source	Keep Source Formatting
+sheet.paste_options.values	Values
+sheet.paste_options.formulas	Formulas
+sheet.paste_options.formats	Formatting
+sheet.paste_options.transpose	Transpose
