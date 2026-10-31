@@ -3732,3 +3732,9 @@ filter.custom.begins_with	で始まる
 filter.custom.ends_with	で終わる
 filter.custom.contains	を含む
 filter.custom.not_contains	を含まない
+sheet.menu.group_clear	クリア
+sheet.menu.group_insert_delete	挿入と削除
+sheet.menu.group_data	並べ替え・データ・アウトライン
+sheet.menu.group_pivot_table	ピボットテーブルとテーブル
+sheet.menu.group_links_validation	リンクと入力規則
+sheet.menu.group_protection	保護

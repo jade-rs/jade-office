@@ -307,7 +307,11 @@ struct SheetMenu {
     at: (f32, f32),
     /// Opened on a sheet tab: its index.
     tab: Option<usize>,
+    /// The header of the grid's menu open in place, if any.
+    open: Option<MenuGroup>,
 }
+
+include!("workbook/menu_groups.rs");
 
 /// The dropdown a filter button opens: sorts, a clear, and the column's
 /// values to tick, as Excel's AutoFilter menu.
@@ -413,6 +417,8 @@ enum MenuCommand {
     UnhideSheet(usize),
     /// Tab Color: an `RRGGBB` for the sheet's tab, or none.
     TabColor(usize, Option<&'static str>),
+    /// A header of the grid's menu opened or closed in place.
+    OpenGroup(MenuGroup),
     /// A sheet tab from one place to another.
     MoveSheet(usize, usize),
     /// New Note, or Edit Note on a cell that has one.
@@ -1249,6 +1255,14 @@ impl WorkbookView {
     }
 
     fn menu_command(&mut self, command: MenuCommand, from_keys: bool, cx: &mut Context<Self>) {
+        // A header opens (or closes) in place; the menu stays.
+        if let MenuCommand::OpenGroup(group) = command {
+            if let Some(menu) = self.menu.as_mut() {
+                menu.open = (menu.open != Some(group)).then_some(group);
+            }
+            cx.notify();
+            return;
+        }
         self.menu = None;
         if self.book.structure_protected()
             && matches!(
@@ -1392,6 +1406,7 @@ impl WorkbookView {
                 .book
                 .set_sheet_visibility(index, SheetVisibility::Visible),
             MenuCommand::TabColor(index, color) => self.book.set_tab_color(index, color),
+            MenuCommand::OpenGroup(_) => return,
             MenuCommand::MoveSheet(index, to) => {
                 let result = self.book.move_sheet(index, to);
                 self.selection = Selection::default();
@@ -2442,6 +2457,7 @@ impl WorkbookView {
         self.menu = Some(SheetMenu {
             at: ((x * zoom) as f32, (y * zoom) as f32),
             tab: None,
+            open: None,
         });
         cx.notify();
     }
@@ -3235,9 +3251,10 @@ impl WorkbookView {
                 items
             }
         };
+        let rows = grouped_menu(items, menu.open);
         let max_height = (self.viewport.1 - 16.).max(80.);
         let swatch_rows = if menu.tab.is_some() { 3. } else { 0. };
-        let height = ((items.len() as f32 + swatch_rows) * 26. + 8.).min(max_height);
+        let height = ((rows.len() as f32 + swatch_rows) * 26. + 8.).min(max_height);
         let top = menu.at.1.clamp(0., (self.viewport.1 - height).max(0.));
         Some(
             div()
@@ -3258,32 +3275,35 @@ impl WorkbookView {
                 .text_xs()
                 .text_color(theme::text())
                 .occlude()
-                .children(
-                    items
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, (command, label))| {
-                            let label: SharedString = match command {
-                                MenuCommand::UnhideSheet(sheet) => {
-                                    format!("{}: {}", i18n::text(label), self.sheet_names[sheet])
-                                        .into()
-                                }
-                                _ => i18n::text(label).into(),
-                            };
-                            div()
-                                .id(("sheet-menu-item", index))
-                                .px_3()
-                                .py_1()
-                                .cursor_pointer()
-                                .hover(|item| item.bg(theme::hovered()))
-                                .child(label)
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .on_click(cx.listener(move |view, _event, window, cx| {
-                                    window.focus(&view.focus);
-                                    view.menu_command(command, false, cx);
-                                }))
-                        }),
-                )
+                .children(rows.into_iter().enumerate().map(
+                    |(index, (command, label, indented))| {
+                        let label: SharedString = match command {
+                            MenuCommand::OpenGroup(group) => format!(
+                                "{} {}",
+                                i18n::text(label),
+                                if menu.open == Some(group) { "−" } else { "+" }
+                            )
+                            .into(),
+                            MenuCommand::UnhideSheet(sheet) => {
+                                format!("{}: {}", i18n::text(label), self.sheet_names[sheet]).into()
+                            }
+                            _ => i18n::text(label).into(),
+                        };
+                        div()
+                            .id(("sheet-menu-item", index))
+                            .px_3()
+                            .when(indented, |item| item.pl_6())
+                            .py_1()
+                            .cursor_pointer()
+                            .hover(|item| item.bg(theme::hovered()))
+                            .child(label)
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(move |view, _event, window, cx| {
+                                window.focus(&view.focus);
+                                view.menu_command(command, false, cx);
+                            }))
+                    },
+                ))
                 .when_some(menu.tab, |list, tab| {
                     // Tab Color: Excel's standard colours, and No Color.
                     let swatch = |id: usize, color: Option<&'static str>| {
@@ -3428,6 +3448,7 @@ impl WorkbookView {
                                     f32::from(event.position.y - origin.y) - 100.0,
                                 ),
                                 tab: Some(index),
+                                open: None,
                             });
                             cx.notify();
                         }),
@@ -4926,6 +4947,57 @@ mod tests {
             assert_eq!(view.book.defined_names().len(), names);
             assert_eq!(view.status.as_ref(), i18n::text("sheet.no_reference"));
             assert_eq!(view.active(), at(3, 8));
+        });
+    }
+
+    /// The grid's menu gathers its less used commands under headers: closed,
+    /// only the header shows; opened, its commands follow it, and the menu
+    /// stays open.
+    #[gpui::test]
+    fn the_grid_menu_opens_its_groups_in_place(cx: &mut gpui::TestAppContext) {
+        let items = vec![
+            (MenuCommand::Copy, "sheet.menu.copy"),
+            (MenuCommand::Clear, "sheet.menu.clear"),
+            (MenuCommand::ClearFormats, "sheet.menu.clear_formats"),
+            (MenuCommand::Table, "table.menu"),
+            (MenuCommand::PageSetup, "page_setup.menu"),
+        ];
+        let labels = |open| {
+            grouped_menu(items.clone(), open)
+                .into_iter()
+                .map(|(_, label, indented)| (label, indented))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            labels(None),
+            [
+                ("sheet.menu.copy", false),
+                ("sheet.menu.group_clear", false),
+                // A group of one is just its command.
+                ("table.menu", false),
+                ("page_setup.menu", false),
+            ]
+        );
+        assert_eq!(
+            labels(Some(MenuGroup::Clear))[2],
+            ("sheet.menu.clear", true)
+        );
+        assert_eq!(labels(Some(MenuGroup::Clear)).len(), 6);
+
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.menu = Some(SheetMenu {
+                at: (10.0, 10.0),
+                tab: None,
+                open: None,
+            });
+            view.menu_command(MenuCommand::OpenGroup(MenuGroup::Clear), false, cx);
+            assert!(view
+                .menu
+                .as_ref()
+                .is_some_and(|menu| menu.open == Some(MenuGroup::Clear)));
+            view.menu_command(MenuCommand::OpenGroup(MenuGroup::Clear), false, cx);
+            assert!(view.menu.as_ref().is_some_and(|menu| menu.open.is_none()));
         });
     }
 
