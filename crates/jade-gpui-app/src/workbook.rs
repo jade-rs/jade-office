@@ -413,6 +413,9 @@ pub struct WorkbookView {
     pending_link: Option<(CellRef, Link)>,
     /// Format Painter: the cells whose formats the next selection takes.
     format_source: Option<CellRange>,
+    /// Whether the painter stays on for selection after selection (a
+    /// double-click on its button) until Escape.
+    format_sticky: bool,
     menu: Option<SheetMenu>,
     /// The Format Cells dialog (⌘1), while it is open.
     format_dialog: Option<jade_office_model::format_cells::FormatCellsDialog>,
@@ -1168,11 +1171,7 @@ impl WorkbookView {
                 )
             }
             MenuCommand::FormatCells => return self.open_format_dialog(cx),
-            MenuCommand::FormatPainter => {
-                self.format_source = Some(range);
-                cx.notify();
-                return;
-            }
+            MenuCommand::FormatPainter => return self.pick_up_format(false, cx),
             MenuCommand::Validation => return self.open_validation(cx),
             MenuCommand::Table => return self.open_table_dialog(cx),
             MenuCommand::EditPivot => return self.open_pivot_dialog(cx),
@@ -1780,6 +1779,7 @@ impl WorkbookView {
             "escape" => {
                 self.book.forget_copy();
                 self.format_source = None;
+                self.format_sticky = false;
                 cx.notify();
             }
             "=" if modifiers.alt => self.autosum(cx),
@@ -2437,7 +2437,10 @@ impl WorkbookView {
             // follows it.
             SheetDrag::Select(_) => {
                 // The Format Painter's formats land on what was just selected.
-                if let Some(source) = self.format_source.take() {
+                if let Some(source) = self.format_source {
+                    if !self.format_sticky {
+                        self.format_source = None;
+                    }
                     let result = self.book.copy_format(source, self.range());
                     self.after_write(result, cx);
                     return;
@@ -2491,6 +2494,20 @@ impl WorkbookView {
             } => self.object_drop(id, bounds, now, cx),
             SheetDrag::Point => cx.notify(),
         }
+    }
+
+    /// The Format Painter: the selection's formats picked up for the next
+    /// selection, or for every one until Escape when `sticky`; a click while
+    /// it is on puts it down.
+    fn pick_up_format(&mut self, sticky: bool, cx: &mut Context<Self>) {
+        if self.format_source.is_some() && !sticky {
+            self.format_source = None;
+            self.format_sticky = false;
+        } else {
+            self.format_source = Some(self.range());
+            self.format_sticky = sticky;
+        }
+        cx.notify();
     }
 
     /// Follows a hyperlink: a web address opens in the browser, a place in
@@ -3179,6 +3196,30 @@ impl WorkbookView {
             .bg(theme::panel())
             .border_b_1()
             .border_color(theme::border())
+            .child(
+                div()
+                    .id("tool-format-painter")
+                    .min_w(px(24.0))
+                    .h(px(24.0))
+                    .px_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .when(self.format_source.is_some(), |button| {
+                        button.bg(theme::selected())
+                    })
+                    .hover(|button| button.bg(theme::hovered()))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    // A double-click keeps painting until Escape, as Excel's
+                    // brush does.
+                    .on_click(cx.listener(move |view, event: &ClickEvent, window, cx| {
+                        window.focus(&view.focus);
+                        view.pick_up_format(event.click_count() >= 2, cx);
+                    }))
+                    .child(icon("icons/paintbrush.svg")),
+            )
             .child(
                 button(
                     "tool-bold",
@@ -4239,6 +4280,7 @@ impl WorkbookView {
             choices: None,
             pending_link: None,
             format_source: None,
+            format_sticky: false,
             menu: None,
             format_dialog: None,
             filter: None,
@@ -5357,6 +5399,39 @@ mod tests {
             view.menu_command(MenuCommand::DeleteNote, false, cx)
         });
         view.read_with(cx, |view, _| assert!(view.book.note(at(1, 1)).is_none()));
+    }
+
+    /// A double-click on the brush keeps painting: each selection after it
+    /// takes the formats, until Escape puts the brush down.
+    #[gpui::test]
+    fn a_double_clicked_format_painter_paints_until_escape(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let select = |view: &mut WorkbookView, at: CellRef, cx: &mut Context<WorkbookView>| {
+            view.selection = Selection::cell(at);
+            view.drag = Some(SheetDrag::Select(DragKind::Cells));
+            view.drag_end(cx);
+        };
+        view.update(cx, |view, cx| {
+            let source = at(6, 1);
+            view.selection = Selection::cell(source);
+            view.book
+                .toggle(span(source, source), source, FontToggle::Bold)
+                .unwrap();
+            view.pick_up_format(true, cx);
+            select(view, at(7, 1), cx);
+            select(view, at(7, 3), cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.format_at(at(7, 1)).bold, Some(true));
+            assert_eq!(view.book.format_at(at(7, 3)).bold, Some(true));
+            assert!(view.format_source.is_some());
+        });
+        cx.simulate_keystrokes("escape");
+        view.update(cx, |view, cx| select(view, at(7, 5), cx));
+        view.read_with(cx, |view, _| {
+            assert!(view.format_source.is_none());
+            assert_ne!(view.book.format_at(at(7, 5)).bold, Some(true));
+        });
     }
 
     /// Hide on a selected whole row takes it out of view — the arrows step
