@@ -12,6 +12,8 @@
 //! - Values: what the cells show as values — a formula's result, not the
 //!   formula — keeping the formats pasted on.
 //! - Formats: the formats only; the values pasted on stay.
+//! - Column widths: the copied columns' widths given to the columns pasted
+//!   on, and nothing else.
 //!
 //! Transpose turns the block: the copied rows become columns, and formulas
 //! turn their references with it (`transpose_formula`). Skip blanks leaves
@@ -37,15 +39,17 @@ pub enum PasteWhat {
     Formulas,
     Values,
     Formats,
+    ColumnWidths,
 }
 
 impl PasteWhat {
     /// The dialog's choices, in Excel's order.
-    pub const ALL: [PasteWhat; 4] = [
+    pub const ALL: [PasteWhat; 5] = [
         PasteWhat::All,
         PasteWhat::Formulas,
         PasteWhat::Values,
         PasteWhat::Formats,
+        PasteWhat::ColumnWidths,
     ];
 
     /// The i18n key of its name.
@@ -55,6 +59,7 @@ impl PasteWhat {
             PasteWhat::Formulas => "sheet.paste_special.formulas",
             PasteWhat::Values => "sheet.paste_special.values",
             PasteWhat::Formats => "sheet.paste_special.formats",
+            PasteWhat::ColumnWidths => "sheet.paste_special.column_widths",
         }
     }
 }
@@ -198,6 +203,9 @@ impl<B: Backend> Workbook<B> {
         text: Option<&str>,
         special: PasteSpecial,
     ) -> Result<Option<CellRange>, String> {
+        if special.what == PasteWhat::ColumnWidths {
+            return self.paste_column_widths(at);
+        }
         let grid = match self.copied_cells() {
             Some((_, _, true)) => return Ok(None),
             Some((sheet, range, false)) => self.copied_grid(sheet, range, at, special.transpose),
@@ -243,6 +251,7 @@ impl<B: Backend> Workbook<B> {
                         Some(style) => (self.input_at(to), Some(style)),
                         None => continue,
                     },
+                    PasteWhat::ColumnWidths => continue,
                 };
                 let write = if special.operation == PasteOperation::None
                     || special.what == PasteWhat::Formats
@@ -266,6 +275,43 @@ impl<B: Backend> Workbook<B> {
             .map_err(|error| error.to_string())?;
         self.wrote(1)?;
         Ok(Some(landed))
+    }
+
+    /// Column widths at `at`: each copied column's width given to the
+    /// column it lands on, a column of the sheet's standard width giving
+    /// that. Returns the columns pasted on, the copied rows' height.
+    fn paste_column_widths(&mut self, at: CellRef) -> Result<Option<CellRange>, String> {
+        let Some((sheet, range, false)) = self.copied_cells() else {
+            return Ok(None);
+        };
+        let Some(source) = self.engine().workbook().sheets.get(sheet) else {
+            return Ok(None);
+        };
+        // Excel's standard 8.43 characters, as files store it.
+        let standard = source.default_column_width_chars.unwrap_or(9.140625);
+        let sizes: std::collections::BTreeMap<u32, f32> = (range.start.column..=range.end.column)
+            .map(|column| {
+                let width = source
+                    .columns
+                    .iter()
+                    .find(|span| span.first <= column && column <= span.last)
+                    .and_then(|span| span.width_chars)
+                    .unwrap_or(standard);
+                (at.column + (column - range.start.column), width)
+            })
+            .collect();
+        let name = self.sheet_name();
+        self.engine_mut()
+            .set_axis_sizes(&name, jade_xlsx_reader::Axis::Columns, &sizes)
+            .map_err(|error| error.to_string())?;
+        self.wrote(1)?;
+        Ok(Some(CellRange {
+            start: at,
+            end: CellRef::new(
+                at.column + (range.end.column - range.start.column),
+                at.row + (range.end.row - range.start.row),
+            ),
+        }))
     }
 
     /// Paste Link at `at`: a formula in each cell pasted on that reads the
