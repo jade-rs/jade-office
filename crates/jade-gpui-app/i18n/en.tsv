@@ -3700,3 +3700,23 @@ sheet.paste_special.op_add	Add
 sheet.paste_special.op_subtract	Subtract
 sheet.paste_special.op_multiply	Multiply
 sheet.paste_special.op_divide	Divide
+page_setup.menu	Page Setup…
+page_setup.dialog	Page Setup
+page_setup.orientation	Orientation
+page_setup.portrait	Portrait
+page_setup.landscape	Landscape
+page_setup.paper	Paper size
+page_setup.paper.a4	A4
+page_setup.paper.a3	A3
+page_setup.paper.b5	B5
+page_setup.paper.b4	B4
+page_setup.paper.letter	Letter
+page_setup.paper.legal	Legal
+page_setup.scaling	Scaling
+page_setup.fit.page	Fit Sheet on One Page
+page_setup.fit.columns	Fit All Columns on One Page
+page_setup.fit.rows	Fit All Rows on One Page
+page_setup.margins	Margins
+page_setup.margins.normal	Normal
+page_setup.margins.wide	Wide
+page_setup.margins.narrow	Narrow

@@ -3700,3 +3700,23 @@ sheet.paste_special.op_add	加算
 sheet.paste_special.op_subtract	減算
 sheet.paste_special.op_multiply	乗算
 sheet.paste_special.op_divide	除算
+page_setup.menu	ページ設定…
+page_setup.dialog	ページ設定
+page_setup.orientation	印刷の向き
+page_setup.portrait	縦
+page_setup.landscape	横
+page_setup.paper	用紙サイズ
+page_setup.paper.a4	A4
+page_setup.paper.a3	A3
+page_setup.paper.b5	B5
+page_setup.paper.b4	B4
+page_setup.paper.letter	レター
+page_setup.paper.legal	リーガル
+page_setup.scaling	拡大縮小印刷
+page_setup.fit.page	シートを 1 ページに印刷
+page_setup.fit.columns	すべての列を 1 ページに印刷
+page_setup.fit.rows	すべての行を 1 ページに印刷
+page_setup.margins	余白
+page_setup.margins.normal	標準
+page_setup.margins.wide	広い
+page_setup.margins.narrow	狭い

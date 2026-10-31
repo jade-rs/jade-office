@@ -36,6 +36,7 @@ mod conditional;
 mod duplicates;
 mod find_bar;
 mod links;
+mod page_setup;
 mod paste_special;
 mod pivots;
 mod protection;
@@ -115,6 +116,7 @@ pub(super) struct Sheet {
     pub(super) subtotal_dialog: Option<jade_web::subtotal::SubtotalDialog>,
     pub(super) text_columns_dialog: Option<jade_web::text_columns::TextColumnsDialog>,
     pub(super) sort_dialog: Option<jade_web::sort_dialog::SortDialog>,
+    pub(super) page_setup_dialog: Option<jade_web::page_setup_dialog::PageSetupDialog>,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
@@ -671,6 +673,7 @@ enum MenuCommand {
     RemoveDuplicates,
     TextToColumns,
     SortDialog,
+    PageSetup,
     ManualCalculation(bool),
     CalculateNow,
     DeleteSheet(usize),
@@ -715,6 +718,7 @@ impl Sheet {
             subtotal_dialog: None,
             text_columns_dialog: None,
             sort_dialog: None,
+            page_setup_dialog: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -1629,6 +1633,7 @@ impl DocView {
             || sheet.subtotal_dialog.is_some()
             || sheet.text_columns_dialog.is_some()
             || sheet.sort_dialog.is_some()
+            || sheet.page_setup_dialog.is_some()
             || sheet.duplicates_dialog.is_some()
         {
             return false;
@@ -1711,6 +1716,7 @@ impl DocView {
                 || s.subtotal_dialog.is_some()
                 || s.text_columns_dialog.is_some()
                 || s.sort_dialog.is_some()
+                || s.page_setup_dialog.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -1910,6 +1916,9 @@ impl DocView {
             return true;
         }
         if self.sort_key(key, cx) {
+            return true;
+        }
+        if self.page_setup_key(key, cx) {
             return true;
         }
         if self.duplicates_key(key, cx) {
@@ -2489,6 +2498,7 @@ impl DocView {
                 || s.subtotal_dialog.is_some()
                 || s.text_columns_dialog.is_some()
                 || s.sort_dialog.is_some()
+                || s.page_setup_dialog.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -2689,6 +2699,7 @@ impl DocView {
             MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
+            MenuCommand::PageSetup => return self.open_page_setup_dialog(cx),
             MenuCommand::ManualCalculation(manual) => sheet.book.set_manual_calculation(manual),
             MenuCommand::CalculateNow => sheet.book.calculate_now(),
             MenuCommand::AutoOutline => sheet.book.auto_outline(),
@@ -2762,6 +2773,7 @@ impl DocView {
                 || s.subtotal_dialog.is_some()
                 || s.text_columns_dialog.is_some()
                 || s.sort_dialog.is_some()
+                || s.page_setup_dialog.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -3498,6 +3510,7 @@ impl DocView {
         let subtotal_panel = self.subtotal_panel(cx);
         let text_columns_panel = self.text_columns_panel(cx);
         let sort_panel = self.sort_panel(cx);
+        let page_setup_panel = self.page_setup_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -3864,6 +3877,7 @@ impl DocView {
                         (MenuCommand::RemoveLinks, "link.remove"),
                         (MenuCommand::Validation, "validation.dialog"),
                         (MenuCommand::ClearValidation, "validation.clear_selection"),
+                        (MenuCommand::PageSetup, "page_setup.menu"),
                     ]);
                     items
                 }
@@ -4415,6 +4429,7 @@ impl DocView {
                     .children(subtotal_panel)
                     .children(text_columns_panel)
                     .children(sort_panel)
+                    .children(page_setup_panel)
                     .children(duplicates_panel)
                     .children(protection_panel)
                     .children(validation_panel)

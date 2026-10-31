@@ -32,6 +32,7 @@ pub mod grid;
 pub mod links;
 pub mod names;
 pub mod number_formats;
+pub mod page_setup_dialog;
 pub mod paste_special;
 #[cfg(feature = "tiny-skia")]
 pub mod pdf;
