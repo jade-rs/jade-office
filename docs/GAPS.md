@@ -61,7 +61,7 @@ under Text shown as General and transposed formulas (jade-rs/jade-core#118,
 | Partial (2026-11-01) | Page setup: margins, orientation, paper, scaling, print area/titles can be written through engine/model; a Page Setup dialog on the right-click menu in both shells (orientation, six papers, a scale or fitting to pages, the Normal/Wide/Narrow margins); custom margins, centring and break controls remain | Medium | yes — see `docs/xlsx/ibis-parity.md` |
 | | Insert pictures and shapes | Low–Medium | no |
 | Done in both shells (2026-10-31) | Calculation mode and F9: 計算方法: 手動 / 自動 on the right-click menu (saved with the workbook, automatic recalculating at once) and 再計算実行 / F9 | Low | yes |
-| | Threaded comments, multi-sheet selection, Merge Across, split view, cell styles gallery | Low | no |
+| Partial (2026-11-01) | Merge Across on the right-click menu in both shells (each selected row merged on its own, one undo step); threaded comments, multi-sheet selection, split view and a cell styles gallery remain | Low | partly |
 
 ## Word
 
