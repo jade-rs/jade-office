@@ -453,10 +453,12 @@ const PICTURE_CACHE_BYTES: usize = 96 * 1024 * 1024;
 /// A picture's key from the caller, and a hash of its bytes.
 type PictureKey = (String, u64);
 
+/// A picture's bytes hashed a word at a time ([`FastHasher`]): it runs over
+/// the whole encoded file at every draw, and SipHash made it a visible part
+/// of a repaint in a page of pictures.
 fn content_hash(bytes: &[u8]) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    bytes.hash(&mut hasher);
+    let mut hasher = FastHasher(bytes.len() as u64);
+    hasher.write(bytes);
     hasher.finish()
 }
 
@@ -2612,6 +2614,16 @@ impl Clip {
 /// Decodes PNG, JPEG, GIF or BMP bytes to a premultiplied pixmap.
 /// Whether `bytes` are an SVG document rather than a raster image.
 fn is_svg(bytes: &[u8]) -> bool {
+    // SVG text starts with `<` after any byte order mark and white space;
+    // a PNG or JPEG's first byte rules it out without the lossy copy below.
+    let first = bytes
+        .strip_prefix(b"\xef\xbb\xbf")
+        .unwrap_or(bytes)
+        .iter()
+        .find(|byte| !byte.is_ascii_whitespace());
+    if first != Some(&b'<') {
+        return false;
+    }
     let head = &bytes[..bytes.len().min(1024)];
     let text = String::from_utf8_lossy(head);
     let text = text.trim_start_matches('\u{feff}').trim_start();
