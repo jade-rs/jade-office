@@ -3,12 +3,16 @@
 //! Opening: a sheet named after the file, each field read as if typed —
 //! `007` the number 7, `2024/1/15` a date shown as one, `=SUM(A1:A2)` a
 //! formula — quoted fields kept whole, line breaks and all. The bytes are
-//! UTF-8 (with or without the BOM Excel's *CSV UTF-8* writes) or, failing
-//! that, Shift_JIS, which a Japanese Excel's *CSV (Comma delimited)* writes.
+//! UTF-8 (with or without the BOM Excel's *CSV UTF-8* writes), UTF-16 with
+//! its BOM (*Unicode Text*) or, failing those, Shift_JIS, which a Japanese
+//! Excel's *CSV (Comma delimited)* writes. A `.tsv` is split at tabs; a
+//! `.csv` at commas — or, when its first line has none, at the semicolons
+//! a European Excel's CSV has, or at tabs.
 //!
 //! Saving: the active sheet only, as its cells show — `1,234.50` as it
-//! reads, quoted — comma-separated with CR LF line ends, every row as wide
-//! as the part of the sheet in use; UTF-8 with a BOM, as *CSV UTF-8*.
+//! reads, quoted — comma-separated (tab-separated for a `.tsv`) with CR LF
+//! line ends, every row as wide as the part of the sheet in use; UTF-8 with
+//! a BOM, as *CSV UTF-8*.
 
 use std::collections::BTreeMap;
 
@@ -23,14 +27,56 @@ const BLANK: &[u8] = include_bytes!("../assets/blank.xlsx");
 
 const BOM: &str = "\u{feff}";
 
-/// Whether `name` is a CSV file's, by its extension.
+/// Whether `name` is a CSV (or tab-separated `.tsv`) file's, by its
+/// extension.
 pub fn is_csv(name: &str) -> bool {
-    name.rsplit_once('.')
-        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("csv"))
+    name.rsplit_once('.').is_some_and(|(_, extension)| {
+        extension.eq_ignore_ascii_case("csv") || extension.eq_ignore_ascii_case("tsv")
+    })
 }
 
-/// CSV bytes as text: UTF-8 (its BOM dropped), else Shift_JIS.
+fn is_tsv(name: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("tsv"))
+}
+
+/// What the file `name` holding `text` is split at: tabs for a `.tsv`;
+/// commas for a `.csv`, unless its first line has none outside quotes and
+/// has semicolons (or tabs) instead.
+pub fn separator(name: &str, text: &str) -> char {
+    if is_tsv(name) {
+        return '\t';
+    }
+    let mut quoted = false;
+    let (mut semicolons, mut tabs) = (0, 0);
+    for c in text.chars() {
+        match c {
+            '"' => quoted = !quoted,
+            ',' if !quoted => return ',',
+            ';' if !quoted => semicolons += 1,
+            '\t' if !quoted => tabs += 1,
+            '\n' | '\r' if !quoted => break,
+            _ => {}
+        }
+    }
+    if semicolons > 0 {
+        ';'
+    } else if tabs > 0 {
+        '\t'
+    } else {
+        ','
+    }
+}
+
+/// CSV bytes as text: UTF-8 (its BOM dropped), UTF-16 with a BOM, else
+/// Shift_JIS.
 pub fn decode(bytes: &[u8]) -> String {
+    if let Some((encoding, _)) = encoding_rs::Encoding::for_bom(bytes) {
+        if encoding != encoding_rs::UTF_8 {
+            let (text, _) = encoding.decode_with_bom_removal(bytes);
+            return text.into_owned();
+        }
+    }
     if let Ok(text) = std::str::from_utf8(bytes) {
         return text.strip_prefix(BOM).unwrap_or(text).to_string();
     }
@@ -70,12 +116,18 @@ impl<B: Backend> Workbook<B> {
     /// Opens CSV `bytes` from the file `name` as a workbook of one sheet,
     /// nothing to undo and nothing unsaved.
     pub fn open_csv(name: &str, bytes: &[u8], time_zone: &str, backend: B) -> Result<Self, String> {
-        let xlsx = csv_to_xlsx(name, &decode(bytes))?;
+        let text = decode(bytes);
+        let xlsx = csv_to_xlsx(name, &text, separator(name, &text))?;
         Self::open(&xlsx, time_zone, backend)
     }
 
     /// The active sheet as CSV text, as Excel saves it.
     pub fn csv_text(&self) -> String {
+        self.separated_text(',')
+    }
+
+    /// The active sheet as text with `separator` between the fields.
+    fn separated_text(&self, separator: char) -> String {
         let mut out = String::new();
         let sheet = &self.engine().workbook().sheets[self.sheet_index()];
         if sheet.rows.iter().all(|row| row.cells.is_empty()) {
@@ -84,9 +136,9 @@ impl<B: Backend> Workbook<B> {
         let end = self.used_end();
         for row in 0..=end.row {
             let fields: Vec<String> = (0..=end.column)
-                .map(|column| csv_field(&self.display_text(CellRef::new(column, row))))
+                .map(|column| csv_field(&self.display_text(CellRef::new(column, row)), separator))
                 .collect();
-            out.push_str(&fields.join(","));
+            out.push_str(&fields.join(&separator.to_string()));
             out.push_str("\r\n");
         }
         out
@@ -99,16 +151,17 @@ impl<B: Backend> Workbook<B> {
         if !is_csv(name) {
             return self.save_bytes();
         }
-        let bytes = format!("{BOM}{}", self.csv_text()).into_bytes();
+        let separator = if is_tsv(name) { '\t' } else { ',' };
+        let bytes = format!("{BOM}{}", self.separated_text(separator)).into_bytes();
         self.mark_saved();
         Ok(bytes)
     }
 }
 
-/// One field as CSV writes it, quoted when it holds a comma, a quote or a
-/// line break.
-fn csv_field(text: &str) -> String {
-    if text.contains([',', '"', '\n', '\r']) {
+/// One field as CSV writes it, quoted when it holds the separator, a quote
+/// or a line break.
+fn csv_field(text: &str, separator: char) -> String {
+    if text.contains([separator, '"', '\n', '\r']) {
         format!("\"{}\"", text.replace('"', "\"\""))
     } else {
         text.to_string()
@@ -118,7 +171,7 @@ fn csv_field(text: &str) -> String {
 /// The CSV's fields typed into a blank workbook's one sheet, named for the
 /// file; the formats the typing implies (a date's, a percentage's) given
 /// column by column.
-fn csv_to_xlsx(name: &str, text: &str) -> Result<Vec<u8>, String> {
+fn csv_to_xlsx(name: &str, text: &str, separator: char) -> Result<Vec<u8>, String> {
     let mut book = HeadlessWorkbook::open_for_editing(BLANK).map_err(|error| error.to_string())?;
     let sheet = sheet_name(name);
     book.rename_sheet("Sheet1", &sheet)
@@ -127,7 +180,10 @@ fn csv_to_xlsx(name: &str, text: &str) -> Result<Vec<u8>, String> {
     let mut values: Vec<(String, CellInput)> = Vec::new();
     // Per column, the rows each format code goes on.
     let mut formats: BTreeMap<(u32, &'static str), Vec<u32>> = BTreeMap::new();
-    for (row, fields) in parse(text).iter().enumerate() {
+    for (row, fields) in clipboard::parse_separated(text, separator)
+        .iter()
+        .enumerate()
+    {
         for (column, field) in fields.iter().enumerate() {
             if field.is_empty() {
                 continue;
