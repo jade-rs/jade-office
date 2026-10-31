@@ -265,6 +265,7 @@ subtotal.dialog	集計の設定
 subtotal.by	グループの基準
 subtotal.function	集計の方法
 subtotal.columns	集計するフィールド
+subtotal.replace	現在の小計と置き換える
 subtotal.fn.sum	合計
 subtotal.row.sum	{} 集計
 subtotal.grand.sum	総計

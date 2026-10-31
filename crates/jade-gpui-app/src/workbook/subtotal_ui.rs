@@ -4,6 +4,7 @@ pub(super) enum SubtotalAction {
     By(usize),
     Function(usize),
     Column(usize),
+    Replace,
     Take,
     Cancel,
 }
@@ -77,6 +78,13 @@ impl View {
             .child(functions)
             .child(section("subtotal.columns"))
             .child(columns)
+            .child(div().mt_3().flex().child(self.subtotal_chip(
+                "subtotal-replace",
+                i18n::text("subtotal.replace").into(),
+                dialog.replace,
+                SubtotalAction::Replace,
+                cx,
+            )))
             .child(
                 div()
                     .mt_4()
@@ -139,6 +147,7 @@ fn change_subtotal_dialog(dialog: &mut SubtotalDialog, action: SubtotalAction) {
                 *ticked = !*ticked;
             }
         }
+        SubtotalAction::Replace => dialog.replace = !dialog.replace,
         SubtotalAction::Take | SubtotalAction::Cancel => {}
     }
 }

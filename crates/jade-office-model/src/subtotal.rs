@@ -59,30 +59,65 @@ pub struct Subtotals {
     pub label: String,
     /// The grand total's label: `Grand Total`, `総計`.
     pub grand_label: String,
+    /// Replace current subtotals: the rows an earlier Subtotal added to the
+    /// list, and its outline, taken out first.
+    pub replace: bool,
 }
 
 impl<B: Backend> Workbook<B> {
     /// Data ▸ Subtotal over `range`, whose first row is the header. One undo
     /// step; `false` when the range has no data row or nothing to total.
     pub fn subtotal(&mut self, range: CellRange, subtotals: &Subtotals) -> Result<bool, String> {
-        let (first, last) = (range.start.row + 1, range.end.row);
+        let (first, mut last) = (range.start.row + 1, range.end.row);
         if last < first || subtotals.columns.is_empty() {
             return Ok(false);
-        }
-        // The runs of one value in the column totalled by, as shown.
-        let mut groups: Vec<(u32, u32, String)> = Vec::new();
-        for row in first..=last {
-            let value = self.display_text(CellRef::new(subtotals.by, row));
-            match groups.last_mut() {
-                Some(group) if group.2 == value => group.1 = row,
-                _ => groups.push((row, row, value)),
-            }
         }
         let name = self.sheet_name();
         let code = subtotals.function.code();
         self.atomic_edit(|book| {
-            let engine = book.engine_mut();
             let mut steps = 0;
+            if subtotals.replace {
+                // What an earlier Subtotal added: rows with a SUBTOTAL in one
+                // of the list's columns, bottom up so the rest keep their
+                // places, then its outline.
+                let added: Vec<u32> = (first..=last)
+                    .filter(|&row| {
+                        (range.start.column..=range.end.column).any(|column| {
+                            book.edit_text(CellRef::new(column, row))
+                                .to_ascii_uppercase()
+                                .starts_with("=SUBTOTAL(")
+                        })
+                    })
+                    .collect();
+                for &row in added.iter().rev() {
+                    book.engine_mut()
+                        .delete_rows(&name, row + 1, 1)
+                        .map_err(|error| error.to_string())?;
+                    steps += 1;
+                }
+                last -= added.len() as u32;
+                if book
+                    .engine_mut()
+                    .clear_outline(&name, Axis::Rows)
+                    .map_err(|error| error.to_string())?
+                {
+                    steps += 1;
+                }
+                if last < first {
+                    book.wrote(steps)?;
+                    return Ok(steps > 0);
+                }
+            }
+            // The runs of one value in the column totalled by, as shown.
+            let mut groups: Vec<(u32, u32, String)> = Vec::new();
+            for row in first..=last {
+                let value = book.display_text(CellRef::new(subtotals.by, row));
+                match groups.last_mut() {
+                    Some(group) if group.2 == value => group.1 = row,
+                    _ => groups.push((row, row, value)),
+                }
+            }
+            let engine = book.engine_mut();
             // Bottom up, so the rows above keep their places: the grand
             // total's row, then each group's (rows are 1-based here).
             engine
@@ -194,6 +229,8 @@ pub struct SubtotalDialog {
     pub function: SubtotalFunction,
     /// Add subtotal to: whether each column gets a formula.
     pub columns: Vec<bool>,
+    /// Replace current subtotals, ticked as in Excel.
+    pub replace: bool,
 }
 
 impl SubtotalDialog {
@@ -226,6 +263,7 @@ impl SubtotalDialog {
             by: 0,
             function: SubtotalFunction::Sum,
             columns,
+            replace: true,
         }
     }
 
@@ -245,6 +283,7 @@ impl SubtotalDialog {
             columns,
             label,
             grand_label,
+            replace: self.replace,
         })
     }
 }
