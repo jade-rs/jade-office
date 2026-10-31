@@ -71,6 +71,7 @@ mod links;
 mod paste_special;
 mod pivots;
 mod protection;
+mod subtotal;
 mod tables;
 mod validation;
 use crate::{
@@ -402,6 +403,7 @@ pub struct WorkbookView {
     pasting: Option<PasteSpecial>,
     validation_dialog: Option<ValidationDialog>,
     link_dialog: Option<LinkDialog>,
+    subtotal_dialog: Option<jade_office_model::subtotal::SubtotalDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
     pivot_dialog: Option<PivotPanel>,
@@ -592,6 +594,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return;
         }
@@ -842,6 +845,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return false;
         }
@@ -928,6 +932,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return;
         }
@@ -1065,6 +1070,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return;
         }
@@ -1278,18 +1284,7 @@ impl WorkbookView {
             }
             MenuCommand::FreezePanes => self.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
-            // Excel's dialog starts with the first column's runs summed in
-            // the last column.
-            MenuCommand::Subtotal => self.book.subtotal(
-                range,
-                &jade_office_model::subtotal::Subtotals {
-                    by: range.start.column,
-                    function: jade_office_model::subtotal::SubtotalFunction::Sum,
-                    columns: vec![range.end.column],
-                    label: i18n::text("sheet.subtotal.label").to_string(),
-                    grand_label: i18n::text("sheet.subtotal.grand").to_string(),
-                },
-            ),
+            MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::AutoOutline => self.book.auto_outline(),
             MenuCommand::ClearOutline => self.book.clear_outline(if selection.is_whole_columns() {
                 Axis::Columns
@@ -1588,6 +1583,9 @@ impl WorkbookView {
             return false;
         }
         if self.link_key(key, shift, command, cx) {
+            return true;
+        }
+        if self.subtotal_key(key, cx) {
             return true;
         }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
@@ -2026,6 +2024,7 @@ impl WorkbookView {
             || self.protection_dialog.is_some()
             || self.table_dialog.is_some()
             || self.pivot_dialog.is_some()
+            || self.subtotal_dialog.is_some()
         {
             return;
         }
@@ -4078,6 +4077,7 @@ impl Render for WorkbookView {
         let table_panel = self.table_panel(cx);
         let pivot_panel = self.pivot_panel(cx);
         let link_panel = self.link_panel(cx);
+        let subtotal_panel = self.subtotal_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -4232,6 +4232,7 @@ impl Render for WorkbookView {
             .children(table_panel)
             .children(pivot_panel)
             .children(link_panel)
+            .children(subtotal_panel)
             .children(protection_panel)
             .children(validation_panel)
             .children(validation_alert)
@@ -4273,6 +4274,7 @@ impl WorkbookView {
             pasting: None,
             validation_dialog: None,
             link_dialog: None,
+            subtotal_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -5399,6 +5401,41 @@ mod tests {
             view.menu_command(MenuCommand::DeleteNote, false, cx)
         });
         view.read_with(cx, |view, _| assert!(view.book.note(at(1, 1)).is_none()));
+    }
+
+    /// The Subtotal dialog totals the runs of the column it is told, with
+    /// the function picked, and closes.
+    #[gpui::test]
+    fn the_subtotal_dialog_totals_with_the_function_picked(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            for (offset, (branch, sales)) in [
+                ("支店", "売上"),
+                ("東京", "10"),
+                ("東京", "20"),
+                ("大阪", "1"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let row = 29 + offset as u32;
+                view.book.set_cell(at(7, row), branch).unwrap();
+                view.book.set_cell(at(8, row), sales).unwrap();
+            }
+            view.selection = Selection::cell(at(7, 29));
+            view.selection.anchor = at(7, 29);
+            view.selection.focus = at(8, 32);
+            view.open_subtotal_dialog(cx);
+            assert!(view.subtotal_dialog.is_some());
+            // Average, the third function.
+            view.subtotal_action(subtotal::SubtotalAction::Function(2), cx);
+            view.subtotal_action(subtotal::SubtotalAction::Take, cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.subtotal_dialog.is_none());
+            assert_eq!(view.book.edit_text(at(8, 32)), "=SUBTOTAL(1,I31:I32)");
+            assert_eq!(view.book.display_text(at(8, 32)), "15");
+        });
     }
 
     /// A double-click on the brush keeps painting: each selection after it

@@ -70,3 +70,38 @@ fn each_run_gets_a_total_and_the_list_a_grand_total_in_an_outline() {
     assert_eq!(book.display_text(CellRef::new(7, 32)), "大阪");
     assert!(!book.has_outline(Axis::Rows));
 }
+
+#[test]
+fn the_dialog_opens_on_the_list_with_excels_defaults() {
+    use jade_office_model::subtotal::SubtotalDialog;
+    let mut book = book();
+    for (offset, (a, b, c)) in [("支店", "", "売上"), ("東京", "x", "10")]
+        .into_iter()
+        .enumerate()
+    {
+        let row = 29 + offset as u32;
+        book.set_cell(CellRef::new(7, row), a).unwrap();
+        book.set_cell(CellRef::new(8, row), b).unwrap();
+        book.set_cell(CellRef::new(9, row), c).unwrap();
+    }
+    // One cell selected: the list round it.
+    let at = CellRef::new(8, 30);
+    let mut dialog = SubtotalDialog::open(&book, span(at, at), at);
+    assert_eq!(dialog.range, span(CellRef::new(7, 29), CellRef::new(9, 30)));
+    // A blank header is named by its column.
+    assert_eq!(dialog.headers, ["支店", "I", "売上"]);
+    assert_eq!((dialog.by, dialog.function), (0, SubtotalFunction::Sum));
+    assert_eq!(dialog.columns, [false, false, true]);
+
+    dialog.function = SubtotalFunction::Average;
+    dialog.columns = vec![false, true, true];
+    let subtotals = dialog
+        .subtotals("{} 平均".into(), "全体の平均".into())
+        .unwrap();
+    assert_eq!(subtotals.by, 7);
+    assert_eq!(subtotals.columns, [8, 9]);
+    assert_eq!(subtotals.function.code(), 1);
+    // Nothing ticked: nothing to apply.
+    dialog.columns = vec![false; 3];
+    assert!(dialog.subtotals(String::new(), String::new()).is_none());
+}

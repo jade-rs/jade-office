@@ -145,3 +145,106 @@ impl<B: Backend> Workbook<B> {
         })
     }
 }
+
+impl SubtotalFunction {
+    /// Every function, in the dialog's order.
+    pub const ALL: [SubtotalFunction; 11] = [
+        SubtotalFunction::Sum,
+        SubtotalFunction::Count,
+        SubtotalFunction::Average,
+        SubtotalFunction::Max,
+        SubtotalFunction::Min,
+        SubtotalFunction::Product,
+        SubtotalFunction::CountNumbers,
+        SubtotalFunction::StdDev,
+        SubtotalFunction::StdDevP,
+        SubtotalFunction::Var,
+        SubtotalFunction::VarP,
+    ];
+
+    /// The function's name in i18n keys: `subtotal.fn.sum`, the dialog's
+    /// label; `subtotal.row.sum`, a group's (`{} Total`); and
+    /// `subtotal.grand.sum`, the grand total's.
+    pub fn key(self) -> &'static str {
+        match self {
+            SubtotalFunction::Sum => "sum",
+            SubtotalFunction::Count => "count",
+            SubtotalFunction::Average => "average",
+            SubtotalFunction::Max => "max",
+            SubtotalFunction::Min => "min",
+            SubtotalFunction::Product => "product",
+            SubtotalFunction::CountNumbers => "count_numbers",
+            SubtotalFunction::StdDev => "stdev",
+            SubtotalFunction::StdDevP => "stdevp",
+            SubtotalFunction::Var => "var",
+            SubtotalFunction::VarP => "varp",
+        }
+    }
+}
+
+/// The Data ▸ Subtotal dialog: the list it works on, named by its header
+/// row, and what it asks.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubtotalDialog {
+    pub range: CellRange,
+    /// The header row's names, one per column of the list.
+    pub headers: Vec<String>,
+    /// At each change in: a column of the list, counted from its first.
+    pub by: usize,
+    pub function: SubtotalFunction,
+    /// Add subtotal to: whether each column gets a formula.
+    pub columns: Vec<bool>,
+}
+
+impl SubtotalDialog {
+    /// Opened on the selection, or on the list round the active cell when
+    /// only one cell is selected, with Excel's defaults: the first column's
+    /// runs, summed, in the last column.
+    pub fn open<B: Backend>(book: &Workbook<B>, selected: CellRange, at: CellRef) -> Self {
+        let range = if selected.start == selected.end {
+            book.current_region(at).unwrap_or(selected)
+        } else {
+            selected
+        };
+        let headers: Vec<String> = (range.start.column..=range.end.column)
+            .map(|column| {
+                let name = book.display_text(CellRef::new(column, range.start.row));
+                if name.is_empty() {
+                    column_label(column)
+                } else {
+                    name
+                }
+            })
+            .collect();
+        let mut columns = vec![false; headers.len()];
+        if let Some(last) = columns.last_mut() {
+            *last = true;
+        }
+        Self {
+            range,
+            headers,
+            by: 0,
+            function: SubtotalFunction::Sum,
+            columns,
+        }
+    }
+
+    /// What OK applies, with the row labels in the user's language; `None`
+    /// when no column is ticked.
+    pub fn subtotals(&self, label: String, grand_label: String) -> Option<Subtotals> {
+        let columns: Vec<u32> = self
+            .columns
+            .iter()
+            .enumerate()
+            .filter(|(_, ticked)| **ticked)
+            .map(|(index, _)| self.range.start.column + index as u32)
+            .collect();
+        (!columns.is_empty()).then(|| Subtotals {
+            by: self.range.start.column + self.by as u32,
+            function: self.function,
+            columns,
+            label,
+            grand_label,
+        })
+    }
+}
