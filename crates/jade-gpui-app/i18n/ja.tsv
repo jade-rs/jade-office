@@ -258,6 +258,11 @@ sheet.menu.group	グループ化
 sheet.menu.ungroup	グループ解除
 sheet.menu.hide_detail	詳細データの非表示
 sheet.menu.show_detail	詳細データの表示
+sheet.menu.auto_outline	アウトラインの自動作成
+sheet.menu.clear_outline	アウトラインのクリア
+sheet.menu.subtotal	小計
+sheet.subtotal.label	{} 集計
+sheet.subtotal.grand	総計
 sheet.menu.format_painter	書式のコピー/貼り付け
 sheet.menu.move_left	左へ移動
 sheet.menu.move_right	右へ移動

@@ -342,6 +342,12 @@ enum MenuCommand {
     Outline(OutlineChange),
     /// The selection's formats picked up for the next selection.
     FormatPainter,
+    /// Data ▸ Group ▸ Auto Outline.
+    AutoOutline,
+    /// Data ▸ Ungroup ▸ Clear Outline on the selected rows' or columns' axis.
+    ClearOutline,
+    /// Data ▸ Subtotal over the selection with the dialog's defaults.
+    Subtotal,
 }
 
 /// What a painted image was painted for. A frame that matches it needs no new
@@ -1273,6 +1279,24 @@ impl WorkbookView {
             }
             MenuCommand::FreezePanes => self.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
+            // Excel's dialog starts with the first column's runs summed in
+            // the last column.
+            MenuCommand::Subtotal => self.book.subtotal(
+                range,
+                &jade_office_model::subtotal::Subtotals {
+                    by: range.start.column,
+                    function: jade_office_model::subtotal::SubtotalFunction::Sum,
+                    columns: vec![range.end.column],
+                    label: i18n::text("sheet.subtotal.label").to_string(),
+                    grand_label: i18n::text("sheet.subtotal.grand").to_string(),
+                },
+            ),
+            MenuCommand::AutoOutline => self.book.auto_outline(),
+            MenuCommand::ClearOutline => self.book.clear_outline(if selection.is_whole_columns() {
+                Axis::Columns
+            } else {
+                Axis::Rows
+            }),
             MenuCommand::Outline(change) => {
                 let (axis, first, last) = if selection.is_whole_columns() {
                     (Axis::Columns, range.start.column, range.end.column)
@@ -2866,6 +2890,10 @@ impl WorkbookView {
                             ),
                         ]);
                     }
+                    items.push((MenuCommand::AutoOutline, "sheet.menu.auto_outline"));
+                    if self.book.has_outline(axis) {
+                        items.push((MenuCommand::ClearOutline, "sheet.menu.clear_outline"));
+                    }
                 }
                 if self.book.note(self.active()).is_some() {
                     items.extend([
@@ -2880,6 +2908,13 @@ impl WorkbookView {
                 } else {
                     (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
                 });
+                if !self.selection.is_whole_rows()
+                    && !self.selection.is_whole_columns()
+                    && self.selection.range().end.row > self.selection.range().start.row
+                    && self.selection.range().end.column > self.selection.range().start.column
+                {
+                    items.push((MenuCommand::Subtotal, "sheet.menu.subtotal"));
+                }
                 items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                 items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                 items.push((MenuCommand::CellLocked, "protection.cell_locked"));

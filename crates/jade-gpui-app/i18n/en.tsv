@@ -258,6 +258,11 @@ sheet.menu.group	Group
 sheet.menu.ungroup	Ungroup
 sheet.menu.hide_detail	Hide Detail
 sheet.menu.show_detail	Show Detail
+sheet.menu.auto_outline	Auto Outline
+sheet.menu.clear_outline	Clear Outline
+sheet.menu.subtotal	Subtotal
+sheet.subtotal.label	{} Total
+sheet.subtotal.grand	Grand Total
 sheet.menu.format_painter	Format Painter
 sheet.menu.move_left	Move Left
 sheet.menu.move_right	Move Right

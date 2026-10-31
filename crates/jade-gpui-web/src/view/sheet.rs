@@ -578,6 +578,9 @@ enum MenuCommand {
     UnfreezePanes,
     Outline(OutlineChange),
     FormatPainter,
+    AutoOutline,
+    ClearOutline,
+    Subtotal,
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -2419,6 +2422,26 @@ impl DocView {
             }
             MenuCommand::FreezePanes => sheet.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
+            // Excel's dialog starts with the first column's runs summed in
+            // the last column.
+            MenuCommand::Subtotal => sheet.book.subtotal(
+                range,
+                &jade_web::subtotal::Subtotals {
+                    by: range.start.column,
+                    function: jade_web::subtotal::SubtotalFunction::Sum,
+                    columns: vec![range.end.column],
+                    label: i18n::text("sheet.subtotal.label").to_string(),
+                    grand_label: i18n::text("sheet.subtotal.grand").to_string(),
+                },
+            ),
+            MenuCommand::AutoOutline => sheet.book.auto_outline(),
+            MenuCommand::ClearOutline => {
+                sheet.book.clear_outline(if selection.is_whole_columns() {
+                    Axis::Columns
+                } else {
+                    Axis::Rows
+                })
+            }
             MenuCommand::Outline(change) => {
                 let (axis, first, last) = if selection.is_whole_columns() {
                     (Axis::Columns, range.start.column, range.end.column)
@@ -3500,6 +3523,10 @@ impl DocView {
                                 ),
                             ]);
                         }
+                        items.push((MenuCommand::AutoOutline, "sheet.menu.auto_outline"));
+                        if sheet.book.has_outline(axis) {
+                            items.push((MenuCommand::ClearOutline, "sheet.menu.clear_outline"));
+                        }
                     }
                     if sheet.book.note(sheet.selection.active).is_some() {
                         items.extend([
@@ -3514,6 +3541,13 @@ impl DocView {
                     } else {
                         (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
                     });
+                    if !sheet.selection.is_whole_rows()
+                        && !sheet.selection.is_whole_columns()
+                        && sheet.selection.range().end.row > sheet.selection.range().start.row
+                        && sheet.selection.range().end.column > sheet.selection.range().start.column
+                    {
+                        items.push((MenuCommand::Subtotal, "sheet.menu.subtotal"));
+                    }
                     items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
                     items.push((MenuCommand::CellLocked, "protection.cell_locked"));
