@@ -48,6 +48,7 @@ mod sort;
 mod subtotal;
 mod tables;
 mod text_columns;
+mod top_ten;
 mod validation;
 use charts::ChartTool;
 use conditional::Conditional;
@@ -122,6 +123,7 @@ pub(super) struct Sheet {
     pub(super) page_setup_dialog: Option<jade_web::page_setup_dialog::PageSetupDialog>,
     pub(super) custom_filter: Option<jade_web::custom_filter::CustomFilterDialog>,
     pub(super) insert_function: Option<jade_web::insert_function::InsertFunctionDialog>,
+    pub(super) top_ten: Option<jade_web::top_ten::TopTenDialog>,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
@@ -659,8 +661,8 @@ enum FilterCommand {
     Cancel,
     Sort(bool),
     Clear,
-    /// Top 10 (true) or Bottom 10.
-    Top(bool),
+    /// トップテン…: its dialog.
+    TopTen,
     Reapply,
     /// Custom Filter…: its dialog.
     Custom,
@@ -771,6 +773,7 @@ impl Sheet {
             page_setup_dialog: None,
             custom_filter: None,
             insert_function: None,
+            top_ten: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -1157,12 +1160,7 @@ impl DocView {
                     self.edited(result, cx);
                 }
             }
-            FilterCommand::Top(top) => {
-                if let Some(panel) = sheet.filter.take() {
-                    let result = sheet.book.filter_top(&panel.button, 10, top);
-                    self.edited(result, cx);
-                }
-            }
+            FilterCommand::TopTen => self.open_top_ten(cx),
             FilterCommand::Custom => self.open_custom_filter(cx),
             FilterCommand::Reapply => {
                 if let Some(panel) = sheet.filter.take() {
@@ -1701,6 +1699,7 @@ impl DocView {
             || sheet.page_setup_dialog.is_some()
             || sheet.custom_filter.is_some()
             || sheet.insert_function.is_some()
+            || sheet.top_ten.is_some()
             || sheet.duplicates_dialog.is_some()
         {
             return false;
@@ -1786,6 +1785,7 @@ impl DocView {
                 || s.page_setup_dialog.is_some()
                 || s.custom_filter.is_some()
                 || s.insert_function.is_some()
+                || s.top_ten.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -2014,6 +2014,10 @@ impl DocView {
                 return true;
             }
             sheet.choices = None;
+        }
+        // Top 10's dialog has the keys while it is open.
+        if sheet.top_ten.is_some() {
+            return self.top_ten_key(key, cx);
         }
         // Insert Function's dialog has the keys while it is open.
         if sheet.insert_function.is_some() {
@@ -2586,6 +2590,7 @@ impl DocView {
                 || s.page_setup_dialog.is_some()
                 || s.custom_filter.is_some()
                 || s.insert_function.is_some()
+                || s.top_ten.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -2877,6 +2882,7 @@ impl DocView {
                 || s.page_setup_dialog.is_some()
                 || s.custom_filter.is_some()
                 || s.insert_function.is_some()
+                || s.top_ten.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
             return;
@@ -3617,6 +3623,7 @@ impl DocView {
         let page_setup_panel = self.page_setup_panel(cx);
         let custom_filter_panel = self.custom_filter_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
+        let top_ten_panel = self.top_ten_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -4303,13 +4310,8 @@ impl DocView {
                 ))
                 .child(action(
                     "filter-top",
-                    "sheet.filter.top",
-                    FilterCommand::Top(true),
-                ))
-                .child(action(
-                    "filter-bottom",
-                    "sheet.filter.bottom",
-                    FilterCommand::Top(false),
+                    "sheet.filter.top_ten",
+                    FilterCommand::TopTen,
                 ))
                 .child(action(
                     "filter-reapply",
@@ -4552,6 +4554,7 @@ impl DocView {
                     .children(page_setup_panel)
                     .children(custom_filter_panel)
                     .children(insert_function_panel)
+                    .children(top_ten_panel)
                     .children(duplicates_panel)
                     .children(protection_panel)
                     .children(validation_panel)

@@ -2299,13 +2299,25 @@ impl<B: Backend> Workbook<B> {
         count: u32,
         top: bool,
     ) -> Result<bool, String> {
+        self.filter_rank(button, count, top, false)
+    }
+
+    /// Top 10's dialog: the `count` largest (or, `top` false, smallest)
+    /// numbers — or, with `percent`, that percentage of them.
+    pub fn filter_rank(
+        &mut self,
+        button: &FilterButton,
+        count: u32,
+        top: bool,
+        percent: bool,
+    ) -> Result<bool, String> {
         let change = AutoFilterChange::Rank {
             target: Self::filter_target(button),
             reference: None,
             column: button.column,
             value: count,
             top,
-            percent: false,
+            percent,
         };
         self.change_filter(&change)
     }

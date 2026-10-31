@@ -81,6 +81,7 @@ mod sort;
 mod subtotal;
 mod tables;
 mod text_columns;
+mod top_ten;
 mod validation;
 use crate::{
     byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Print, Redo, Save,
@@ -364,8 +365,8 @@ enum FilterCommand {
     Cancel,
     Sort(bool),
     Clear,
-    /// Top 10 (true) or Bottom 10.
-    Top(bool),
+    /// トップテン…: its dialog.
+    TopTen,
     Reapply,
     /// Custom Filter…: its dialog.
     Custom,
@@ -549,6 +550,7 @@ pub struct WorkbookView {
     page_setup_dialog: Option<jade_office_model::page_setup_dialog::PageSetupDialog>,
     custom_filter: Option<jade_office_model::custom_filter::CustomFilterDialog>,
     insert_function: Option<jade_office_model::insert_function::InsertFunctionDialog>,
+    top_ten: Option<jade_office_model::top_ten::TopTenDialog>,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -758,6 +760,7 @@ impl WorkbookView {
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
+            || self.top_ten.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1017,6 +1020,7 @@ impl WorkbookView {
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
+            || self.top_ten.is_some()
             || self.duplicates_dialog.is_some()
         {
             return false;
@@ -1111,6 +1115,7 @@ impl WorkbookView {
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
+            || self.top_ten.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1255,6 +1260,7 @@ impl WorkbookView {
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
+            || self.top_ten.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -1612,12 +1618,7 @@ impl WorkbookView {
                     self.after_write(result, cx);
                 }
             }
-            FilterCommand::Top(top) => {
-                if let Some(panel) = self.filter.take() {
-                    let result = self.book.filter_top(&panel.button, 10, top);
-                    self.after_write(result, cx);
-                }
-            }
+            FilterCommand::TopTen => self.open_top_ten(cx),
             FilterCommand::Custom => self.open_custom_filter(cx),
             FilterCommand::Reapply => {
                 if let Some(panel) = self.filter.take() {
@@ -1853,6 +1854,10 @@ impl WorkbookView {
             return true;
         }
 
+        // Top 10's dialog has the keys while it is open.
+        if self.top_ten.is_some() {
+            return self.top_ten_key(key, cx);
+        }
         // Insert Function's dialog has the keys while it is open.
         if self.insert_function.is_some() {
             return self.insert_function_key(key, modifiers, cx);
@@ -2325,6 +2330,7 @@ impl WorkbookView {
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
             || self.insert_function.is_some()
+            || self.top_ten.is_some()
             || self.duplicates_dialog.is_some()
         {
             return;
@@ -4091,13 +4097,8 @@ impl WorkbookView {
                 ))
                 .child(action(
                     "filter-top",
-                    "sheet.filter.top",
-                    FilterCommand::Top(true),
-                ))
-                .child(action(
-                    "filter-bottom",
-                    "sheet.filter.bottom",
-                    FilterCommand::Top(false),
+                    "sheet.filter.top_ten",
+                    FilterCommand::TopTen,
                 ))
                 .child(action(
                     "filter-reapply",
@@ -4517,6 +4518,7 @@ impl Render for WorkbookView {
         let page_setup_panel = self.page_setup_panel(cx);
         let custom_filter_panel = self.custom_filter_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
+        let top_ten_panel = self.top_ten_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -4678,6 +4680,7 @@ impl Render for WorkbookView {
             .children(page_setup_panel)
             .children(custom_filter_panel)
             .children(insert_function_panel)
+            .children(top_ten_panel)
             .children(duplicates_panel)
             .children(protection_panel)
             .children(validation_panel)
@@ -4727,6 +4730,7 @@ impl WorkbookView {
             page_setup_dialog: None,
             custom_filter: None,
             insert_function: None,
+            top_ten: None,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -5820,6 +5824,46 @@ mod tests {
             assert!(view.custom_filter.is_none());
             // apple, banana (Or) and apricot all show.
             assert_eq!(view.book.step(at(20, 100), Direction::Down), at(20, 101));
+        });
+    }
+
+    /// トップテン… opens its dialog: Down lowers the count, Enter shows only
+    /// the rows among the largest that many.
+    #[gpui::test]
+    fn the_top_ten_dialog_filters_the_largest(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let header = at(20, 99);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(header, "Score").unwrap();
+            for (offset, score) in ["40", "10", "70"].iter().enumerate() {
+                view.book
+                    .set_cell(at(20, 100 + offset as u32), score)
+                    .unwrap();
+            }
+            view.book.toggle_filter(span(header, at(20, 102))).unwrap();
+            let cell = view.cell_bounds(header).unwrap();
+            let y = cell.center().y;
+            let mut x = cell.origin.x + cell.size.width - px(1.0);
+            let button = loop {
+                let (left, top) = view.grid_point(gpui::point(x, y)).unwrap();
+                if let Some(button) = view.book.filter_button_at(left, top, view.sheet_scroll()) {
+                    break button;
+                }
+                x -= px(1.0);
+                assert!(x > cell.origin.x, "a filter button on the header");
+            };
+            view.top_ten = Some(jade_office_model::top_ten::TopTenDialog::new(button));
+            cx.notify();
+        });
+        cx.simulate_keystrokes("down down down down down down down down down");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.top_ten.as_ref().unwrap().count, 1)
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.top_ten.is_none());
+            // Only 70's row shows: down from the header lands on it.
+            assert_eq!(view.book.step(header, Direction::Down), at(20, 102));
         });
     }
 
