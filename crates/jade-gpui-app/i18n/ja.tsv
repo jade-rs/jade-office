@@ -261,8 +261,43 @@ sheet.menu.show_detail	詳細データの表示
 sheet.menu.auto_outline	アウトラインの自動作成
 sheet.menu.clear_outline	アウトラインのクリア
 sheet.menu.subtotal	小計
-sheet.subtotal.label	{} 集計
-sheet.subtotal.grand	総計
+subtotal.dialog	集計の設定
+subtotal.by	グループの基準
+subtotal.function	集計の方法
+subtotal.columns	集計するフィールド
+subtotal.fn.sum	合計
+subtotal.row.sum	{} 集計
+subtotal.grand.sum	総計
+subtotal.fn.count	個数
+subtotal.row.count	{} 個数
+subtotal.grand.count	全体の個数
+subtotal.fn.average	平均
+subtotal.row.average	{} 平均
+subtotal.grand.average	全体の平均
+subtotal.fn.max	最大値
+subtotal.row.max	{} 最大
+subtotal.grand.max	全体の最大
+subtotal.fn.min	最小値
+subtotal.row.min	{} 最小
+subtotal.grand.min	全体の最小
+subtotal.fn.product	積
+subtotal.row.product	{} 積
+subtotal.grand.product	全体の積
+subtotal.fn.count_numbers	数値の個数
+subtotal.row.count_numbers	{} 数値の個数
+subtotal.grand.count_numbers	全体の数値の個数
+subtotal.fn.stdev	標本標準偏差
+subtotal.row.stdev	{} 標本標準偏差
+subtotal.grand.stdev	全体の標本標準偏差
+subtotal.fn.stdevp	標準偏差
+subtotal.row.stdevp	{} 標準偏差
+subtotal.grand.stdevp	全体の標準偏差
+subtotal.fn.var	標本分散
+subtotal.row.var	{} 標本分散
+subtotal.grand.var	全体の標本分散
+subtotal.fn.varp	分散
+subtotal.row.varp	{} 分散
+subtotal.grand.varp	全体の分散
 sheet.menu.format_painter	書式のコピー/貼り付け
 sheet.menu.move_left	左へ移動
 sheet.menu.move_right	右へ移動

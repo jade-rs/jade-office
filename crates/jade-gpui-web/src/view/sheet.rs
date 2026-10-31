@@ -38,6 +38,7 @@ mod paste_special;
 mod pivots;
 mod protection;
 mod save_as;
+mod subtotal;
 mod tables;
 mod validation;
 use charts::ChartTool;
@@ -104,6 +105,7 @@ pub(super) struct Sheet {
     pub pasting: Option<PasteSpecial>,
     pub(super) validation_dialog: Option<ValidationDialog>,
     pub(super) link_dialog: Option<LinkDialog>,
+    pub(super) subtotal_dialog: Option<jade_web::subtotal::SubtotalDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
     pub(super) pivot_dialog: Option<PivotPanel>,
@@ -619,6 +621,7 @@ impl Sheet {
             pasting: None,
             validation_dialog: None,
             link_dialog: None,
+            subtotal_dialog: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -1516,6 +1519,7 @@ impl DocView {
             || sheet.protection_dialog.is_some()
             || sheet.table_dialog.is_some()
             || sheet.pivot_dialog.is_some()
+            || sheet.subtotal_dialog.is_some()
         {
             return false;
         }
@@ -1592,6 +1596,7 @@ impl DocView {
                 || s.protection_dialog.is_some()
                 || s.table_dialog.is_some()
                 || s.pivot_dialog.is_some()
+                || s.subtotal_dialog.is_some()
         }) {
             return;
         }
@@ -1747,6 +1752,9 @@ impl DocView {
             return false;
         }
         if self.link_key(key, shift, command, cx) {
+            return true;
+        }
+        if self.subtotal_key(key, cx) {
             return true;
         }
         if self.validation_key(key, shift, command, modifiers.alt, cx) {
@@ -2273,6 +2281,7 @@ impl DocView {
                 || s.protection_dialog.is_some()
                 || s.table_dialog.is_some()
                 || s.pivot_dialog.is_some()
+                || s.subtotal_dialog.is_some()
         }) {
             return;
         }
@@ -2465,18 +2474,7 @@ impl DocView {
             }
             MenuCommand::FreezePanes => sheet.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
-            // Excel's dialog starts with the first column's runs summed in
-            // the last column.
-            MenuCommand::Subtotal => sheet.book.subtotal(
-                range,
-                &jade_web::subtotal::Subtotals {
-                    by: range.start.column,
-                    function: jade_web::subtotal::SubtotalFunction::Sum,
-                    columns: vec![range.end.column],
-                    label: i18n::text("sheet.subtotal.label").to_string(),
-                    grand_label: i18n::text("sheet.subtotal.grand").to_string(),
-                },
-            ),
+            MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::AutoOutline => sheet.book.auto_outline(),
             MenuCommand::ClearOutline => {
                 sheet.book.clear_outline(if selection.is_whole_columns() {
@@ -2544,6 +2542,7 @@ impl DocView {
                 || s.protection_dialog.is_some()
                 || s.table_dialog.is_some()
                 || s.pivot_dialog.is_some()
+                || s.subtotal_dialog.is_some()
         }) {
             return;
         }
@@ -3276,6 +3275,7 @@ impl DocView {
         let table_panel = self.table_panel(cx);
         let pivot_panel = self.pivot_panel(cx);
         let link_panel = self.link_panel(cx);
+        let subtotal_panel = self.subtotal_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
         let validation_alert = self.validation_alert_panel(cx);
@@ -4097,6 +4097,7 @@ impl DocView {
                     .children(table_panel)
                     .children(pivot_panel)
                     .children(link_panel)
+                    .children(subtotal_panel)
                     .children(protection_panel)
                     .children(validation_panel)
                     .children(validation_alert)
