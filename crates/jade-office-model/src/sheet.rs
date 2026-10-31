@@ -1850,6 +1850,33 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    /// Merge Across: each row of `range` merged on its own, as Excel's does
+    /// — down to the last row in use, so a whole column does not merge a
+    /// million empty rows. One undo step; `false` for a single column or
+    /// when a row could not be merged (one overlaps a merge or a table).
+    pub fn merge_across(&mut self, range: CellRange) -> Result<bool, String> {
+        if range.start.column == range.end.column {
+            return Ok(false);
+        }
+        let last = range.end.row.min(self.used_end().row.max(range.start.row));
+        let name = self.sheet_name();
+        self.atomic_edit(|book| {
+            let mut steps = 0;
+            for row in range.start.row..=last {
+                let span = CellRange {
+                    start: CellRef::new(range.start.column, row),
+                    end: CellRef::new(range.end.column, row),
+                };
+                book.book
+                    .merge_cells(&name, &range_text_full(span))
+                    .map_err(|error| error.to_string())?;
+                steps += 1;
+            }
+            book.wrote(steps)?;
+            Ok(steps > 0)
+        })
+    }
+
     /// The drawing object (chart, picture, shape) under a point of the
     /// viewport (sheet px from its top-left, headers included) at
     /// `scroll`: the one on top, as Excel picks it.
