@@ -1,7 +1,8 @@
 //! Find and Replace (⌘F, and ⌃H with the Replace field): a bar over the
 //! sheet's top right with what to find and what to replace it with, Find
-//! Next and Previous, Replace and Replace All, and Excel's options — Match
-//! case, Match entire cell contents, Within: Workbook.
+//! Next and Previous, Find All with its list, Replace and Replace All, and
+//! Excel's options — Match case, Match entire cell contents, Within:
+//! Workbook.
 
 use gpui::{div, prelude::*, px, Context, Modifiers, MouseButton, SharedString};
 use jade_office_model::find::FindBar;
@@ -14,6 +15,10 @@ use crate::{i18n, theme};
 pub(super) enum FindCommand {
     /// Find Next, or Previous (true).
     Next(bool),
+    /// Find All: the matches listed under the bar.
+    FindAll,
+    /// A row of Find All's list: its cell selected.
+    Go(usize),
     Replace,
     ReplaceAll,
     MatchCase,
@@ -44,6 +49,8 @@ impl WorkbookView {
         };
         match command {
             FindCommand::Next(back) => return self.find_next(back, cx),
+            FindCommand::FindAll => return self.find_all(cx),
+            FindCommand::Go(index) => return self.go_to_found(index, cx),
             FindCommand::Replace => return self.replace_one(cx),
             FindCommand::ReplaceAll => return self.replace_all(cx),
             FindCommand::MatchCase => bar.options.match_case = !bar.options.match_case,
@@ -75,6 +82,44 @@ impl WorkbookView {
             }
             None => self.status = SharedString::from(i18n::text("sheet.not_found")),
         }
+        cx.notify();
+    }
+
+    /// Find All: every match listed under the bar, and how many in the
+    /// status bar.
+    fn find_all(&mut self, cx: &mut Context<Self>) {
+        let Some(bar) = self.finding.as_ref() else {
+            return;
+        };
+        let found = self.book.found(&bar.find.text, bar.options());
+        self.status = if found.is_empty() {
+            SharedString::from(i18n::text("sheet.not_found"))
+        } else {
+            SharedString::from(i18n::format(
+                "sheet.found_cells",
+                &[("n", &found.len() as &dyn std::fmt::Display)],
+            ))
+        };
+        if let Some(bar) = self.finding.as_mut() {
+            bar.found = Some(found);
+        }
+        cx.notify();
+    }
+
+    /// A row of Find All's list clicked: its cell selected, on its sheet.
+    fn go_to_found(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(found) = self
+            .finding
+            .as_ref()
+            .and_then(|bar| bar.found.as_ref()?.get(index))
+        else {
+            return;
+        };
+        let (sheet, cell) = (found.sheet, found.cell);
+        if sheet != self.book.sheet_index() {
+            self.select_sheet(sheet, cx);
+        }
+        self.select_cell(cell, false, cx);
         cx.notify();
     }
 
@@ -297,6 +342,10 @@ impl WorkbookView {
                             )
                         })
                         .child(
+                            button("find-all", false, FindCommand::FindAll)
+                                .child(i18n::text("sheet.find_all")),
+                        )
+                        .child(
                             button("find-previous", false, FindCommand::Next(true))
                                 .child(i18n::text("sheet.find_previous")),
                         )
@@ -305,7 +354,67 @@ impl WorkbookView {
                                 .child(i18n::text("sheet.find_next")),
                         )
                         .child(button("find-close", false, FindCommand::Close).child("✕")),
-                ),
+                )
+                .when_some(bar.found.as_ref(), |panel, found| {
+                    panel.child(found_list(found, self.active(), cx))
+                }),
         )
     }
+}
+
+/// Find All's list: a row per match — sheet, cell, value, formula — the
+/// active cell's marked; a click selects it.
+fn found_list(
+    found: &[jade_office_model::find::Found],
+    active: jade_office_model::sheet::CellRef,
+    cx: &mut Context<WorkbookView>,
+) -> gpui::Stateful<gpui::Div> {
+    let mut list = div()
+        .id("find-all-list")
+        .max_h(px(180.0))
+        .overflow_y_scroll()
+        .flex()
+        .flex_col()
+        .border_t_1()
+        .border_color(theme::border());
+    for (index, row) in found.iter().enumerate() {
+        let cell = |text: String, width: f32| {
+            div()
+                .w(px(width))
+                .flex_none()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(text)
+        };
+        list = list.child(
+            div()
+                .id(("find-all-row", index))
+                .flex()
+                .gap_2()
+                .px_1()
+                .cursor_pointer()
+                .when(row.cell == active, |row| row.bg(theme::selected()))
+                .hover(|row| row.bg(theme::hovered()))
+                .child(cell(row.sheet_name.clone(), 64.0))
+                .child(cell(
+                    jade_office_model::sheet::reference_text(row.cell),
+                    48.0,
+                ))
+                .child(cell(row.value.clone(), 110.0))
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_color(theme::text_dim())
+                        .child(row.formula.clone()),
+                )
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(cx.listener(move |view, _event, window, cx| {
+                    window.focus(&view.focus);
+                    view.find_command(FindCommand::Go(index), cx);
+                })),
+        );
+    }
+    list
 }

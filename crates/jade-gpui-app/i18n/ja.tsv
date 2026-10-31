@@ -3682,3 +3682,5 @@ duplicates.columns	重複する値を削除するには、重複が含まれて�
 duplicates.column	列
 duplicates.select_all	すべて選択
 duplicates.unselect_all	すべて選択解除
+sheet.find_all	すべて検索
+sheet.found_cells	{n} セルが見つかりました
