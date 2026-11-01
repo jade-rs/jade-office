@@ -3897,3 +3897,5 @@ sheet.menu.page_break_preview	改ページ プレビュー
 sheet.menu.normal_view	標準ビュー
 sheet.shape.elbow_connector	コネクタ: カギ線
 sheet.shape.curved_connector	コネクタ: 曲線
+sort.left_to_right	列単位で並べ替え
+sort.row_n	行 {n}

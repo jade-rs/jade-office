@@ -12,13 +12,24 @@ pub(super) enum SortAction {
     RemoveLevel(usize),
     Header,
     Case,
+    /// Options ▸ Sort left to right, or top to bottom.
+    LeftToRight,
     Take,
     Cancel,
 }
 impl View {
     pub(super) fn sort_panel(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
         let dialog = self.sort_editor()?;
-        let names = dialog.column_names();
+        // Sorting left to right the levels pick rows, by their numbers.
+        let names: Vec<String> = if dialog.left_to_right {
+            dialog
+                .row_numbers()
+                .into_iter()
+                .map(|row| i18n::format("sort.row_n", &[("n", &row)]))
+                .collect()
+        } else {
+            dialog.column_names()
+        };
         let mut levels = div()
             .id("sort-levels")
             .max_h(px(260.))
@@ -185,18 +196,27 @@ impl View {
                         SortAction::AddLevel,
                         cx,
                     ))
-                    .child(self.sort_chip(
-                        "sort-header",
-                        i18n::text("sort.header").into(),
-                        dialog.header,
-                        SortAction::Header,
-                        cx,
-                    ))
+                    .when(!dialog.left_to_right, |row| {
+                        row.child(self.sort_chip(
+                            "sort-header",
+                            i18n::text("sort.header").into(),
+                            dialog.header,
+                            SortAction::Header,
+                            cx,
+                        ))
+                    })
                     .child(self.sort_chip(
                         "sort-case",
                         i18n::text("sort.case").into(),
                         dialog.case_sensitive,
                         SortAction::Case,
+                        cx,
+                    ))
+                    .child(self.sort_chip(
+                        "sort-left-to-right",
+                        i18n::text("sort.left_to_right").into(),
+                        dialog.left_to_right,
+                        SortAction::LeftToRight,
                         cx,
                     )),
             )
@@ -280,6 +300,7 @@ fn change_sort_dialog(dialog: &mut SortDialog, action: SortAction) {
         SortAction::RemoveLevel(level) => dialog.remove_level(level),
         SortAction::Header => dialog.header = !dialog.header,
         SortAction::Case => dialog.case_sensitive = !dialog.case_sensitive,
+        SortAction::LeftToRight => dialog.set_left_to_right(!dialog.left_to_right),
         SortAction::Take | SortAction::Cancel => {}
     }
 }
