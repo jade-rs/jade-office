@@ -994,6 +994,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "ピボットテーブルのデータを返します。",
     ),
     (
+        "GROUPBY",
+        "Groups values by row fields and aggregates each group.",
+        "行フィールドで値をグループ化し、グループごとに集計します。",
+    ),
+    (
         "GROWTH",
         "Returns values along an exponential trend.",
         "指数トレンドに沿った値を返します。",
