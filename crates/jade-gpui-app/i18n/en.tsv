@@ -3892,3 +3892,6 @@ sort.on_top	On Top
 sort.on_bottom	On Bottom
 sort.no_fill	No Fill
 sort.automatic	Automatic
+page_break.page	Page {n}
+sheet.menu.page_break_preview	Page Break Preview
+sheet.menu.normal_view	Normal View
