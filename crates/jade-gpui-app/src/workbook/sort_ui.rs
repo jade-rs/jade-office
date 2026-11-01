@@ -3,6 +3,11 @@
 pub(super) enum SortAction {
     Column(usize, usize),
     Order(usize, bool),
+    /// Sort On for a level: the values (`None`), or the cell (`false`) or
+    /// font (`true`) colour.
+    On(usize, Option<bool>),
+    /// A level's colour, by its place in the column's colours.
+    Color(usize, usize),
     AddLevel,
     RemoveLevel(usize),
     Header,
@@ -32,19 +37,92 @@ impl View {
                     cx,
                 ));
             }
+            let font = match &level.on {
+                SortOn::Values => None,
+                SortOn::CellColor(_) => Some(false),
+                SortOn::FontColor(_) => Some(true),
+            };
+            let on = div().flex().flex_wrap().gap_1().children(
+                [
+                    (None, "sort.on_values"),
+                    (Some(false), "sort.on_cell_color"),
+                    (Some(true), "sort.on_font_color"),
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(choice, (kind, key))| {
+                    self.sort_chip(
+                        ("sort-on", index * 3 + choice),
+                        i18n::text(key).into(),
+                        font == kind,
+                        SortAction::On(index, kind),
+                        cx,
+                    )
+                }),
+            );
+            let swatches = font.map(|font| {
+                let chosen = match &level.on {
+                    SortOn::CellColor(color) | SortOn::FontColor(color) => color.as_str(),
+                    SortOn::Values => "",
+                };
+                div().flex().flex_wrap().gap_1().children(
+                    dialog.colors(index, font).iter().enumerate().map(|(place, color)| {
+                        let swatch = div()
+                            .id(("sort-color", index * 1000 + place))
+                            .h(px(22.))
+                            .min_w(px(28.))
+                            .px_1()
+                            .rounded_sm()
+                            .border_2()
+                            .border_color(if color == chosen {
+                                theme::accent()
+                            } else {
+                                theme::border()
+                            })
+                            .cursor_pointer()
+                            .text_xs()
+                            .flex()
+                            .items_center()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.sort_action(SortAction::Color(index, place), cx);
+                                    cx.stop_propagation();
+                                }),
+                            );
+                        match u32::from_str_radix(color, 16) {
+                            Ok(rgb) if !color.is_empty() && font => swatch
+                                .bg(theme::window())
+                                .text_color(gpui::rgb(rgb))
+                                .child("Aa"),
+                            Ok(rgb) if !color.is_empty() => swatch.bg(gpui::rgb(rgb)),
+                            _ => swatch.bg(theme::window()).child(i18n::text(if font {
+                                "sort.automatic"
+                            } else {
+                                "sort.no_fill"
+                            })),
+                        }
+                    }),
+                )
+            });
+            let (first, last) = if font.is_some() {
+                ("sort.on_top", "sort.on_bottom")
+            } else {
+                ("sort.ascending", "sort.descending")
+            };
             let mut order = div()
                 .flex()
                 .gap_1()
                 .child(self.sort_chip(
                     ("sort-ascending", index),
-                    i18n::text("sort.ascending").into(),
+                    i18n::text(first).into(),
                     !level.descending,
                     SortAction::Order(index, false),
                     cx,
                 ))
                 .child(self.sort_chip(
                     ("sort-descending", index),
-                    i18n::text("sort.descending").into(),
+                    i18n::text(last).into(),
                     level.descending,
                     SortAction::Order(index, true),
                     cx,
@@ -72,6 +150,8 @@ impl View {
                             })),
                     )
                     .child(columns)
+                    .child(div().mt_1().child(on))
+                    .when_some(swatches, |level, swatches| level.child(div().mt_1().child(swatches)))
                     .child(div().mt_1().child(order)),
             );
         }
@@ -184,6 +264,16 @@ fn change_sort_dialog(dialog: &mut SortDialog, action: SortAction) {
         SortAction::Order(level, descending) => {
             if let Some(level) = dialog.levels.get_mut(level) {
                 level.descending = descending;
+            }
+        }
+        SortAction::On(level, kind) => dialog.sort_on(level, kind),
+        SortAction::Color(level, place) => {
+            let font = dialog
+                .levels
+                .get(level)
+                .is_some_and(|level| matches!(level.on, SortOn::FontColor(_)));
+            if let Some(color) = dialog.colors(level, font).get(place).cloned() {
+                dialog.set_color(level, color);
             }
         }
         SortAction::AddLevel => dialog.add_level(),

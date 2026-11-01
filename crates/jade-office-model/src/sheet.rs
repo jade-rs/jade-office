@@ -2319,6 +2319,7 @@ impl<B: Backend> Workbook<B> {
             keys: vec![jade_xlsx_headless_api::SortKey {
                 column: at.column.clamp(range.start.column, range.end.column) - range.start.column,
                 descending,
+                color: None,
             }],
         };
         let name = self.sheet_name();
@@ -2343,6 +2344,22 @@ impl<B: Backend> Workbook<B> {
         keys: &[(u32, bool)],
         case_sensitive: bool,
     ) -> Result<bool, String> {
+        let keys: Vec<_> = keys
+            .iter()
+            .map(|&(column, descending)| (column, descending, None))
+            .collect();
+        self.sort_by_colors(range, header, &keys, case_sensitive)
+    }
+
+    /// [`Workbook::sort_by`] with keys that may sort on a colour: the cells
+    /// of it on top (or, descending, on bottom).
+    pub fn sort_by_colors(
+        &mut self,
+        range: CellRange,
+        header: bool,
+        keys: &[(u32, bool, Option<jade_xlsx_headless_api::SortColor>)],
+        case_sensitive: bool,
+    ) -> Result<bool, String> {
         if keys.is_empty() || range.end.row <= range.start.row + u32::from(header) {
             return Ok(false);
         }
@@ -2354,10 +2371,14 @@ impl<B: Backend> Workbook<B> {
             phonetic: None,
             keys: keys
                 .iter()
-                .map(|&(column, descending)| jade_xlsx_headless_api::SortKey {
-                    column: column.clamp(range.start.column, range.end.column) - range.start.column,
-                    descending,
-                })
+                .map(
+                    |(column, descending, color)| jade_xlsx_headless_api::SortKey {
+                        column: column.clamp(&range.start.column, &range.end.column)
+                            - range.start.column,
+                        descending: *descending,
+                        color: color.clone(),
+                    },
+                )
                 .collect(),
         };
         let name = self.sheet_name();
@@ -2542,6 +2563,7 @@ impl<B: Backend> Workbook<B> {
             keys: vec![jade_xlsx_headless_api::SortKey {
                 column: button.column,
                 descending,
+                color: None,
             }],
         };
         let name = self.sheet_name();

@@ -1,7 +1,7 @@
 use super::super::DocView;
 use crate::{i18n, palette as theme};
 use gpui::{div, prelude::*, px, Context, MouseButton};
-use jade_web::sort_dialog::SortDialog;
+use jade_web::sort_dialog::{SortDialog, SortOn};
 type View = DocView;
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -34,12 +34,7 @@ impl DocView {
                 let Some(dialog) = s.sort_dialog.take() else {
                     return;
                 };
-                let result = s.book.sort_by(
-                    dialog.range,
-                    dialog.header,
-                    &dialog.keys(),
-                    dialog.case_sensitive,
-                );
+                let result = dialog.apply(&mut s.book);
                 self.edited(result, cx);
             }
             SortAction::Cancel => {
