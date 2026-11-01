@@ -1378,6 +1378,9 @@ impl WorkbookView {
                 continue;
             };
             let to = cell.center() - grid.origin;
+            if self.book.reads_other_sheets(target) {
+                arrows.push(TraceArrow::from_other_sheet(to));
+            }
             for range in self.book.precedents(target) {
                 let (Some(first), Some(last)) =
                     (self.cell_bounds(range.start), self.cell_bounds(range.end))
@@ -1392,6 +1395,7 @@ impl WorkbookView {
                         origin: whole.origin - grid.origin,
                         size: whole.size,
                     }),
+                    other_sheet: false,
                 });
             }
         }
@@ -1408,6 +1412,7 @@ impl WorkbookView {
                     from: cell.center() - grid.origin,
                     to: target.center() - grid.origin,
                     range: None,
+                    other_sheet: false,
                 });
             }
         }
@@ -1665,7 +1670,7 @@ impl WorkbookView {
             MenuCommand::InsertFunction => return self.open_insert_function(cx),
             MenuCommand::TracePrecedents => {
                 let at = selection.active;
-                if self.book.precedents(at).is_empty() {
+                if self.book.precedents(at).is_empty() && !self.book.reads_other_sheets(at) {
                     self.status = i18n::text("sheet.trace.none").into();
                 } else if !self.tracing.contains(&at) {
                     self.tracing.push(at);
@@ -5630,6 +5635,31 @@ mod tests {
             view.menu_command(MenuCommand::TracePrecedents, false, cx);
             assert!(view.tracing.is_empty());
             assert_eq!(view.status.as_ref(), i18n::text("sheet.trace.none"));
+        });
+    }
+
+    /// A formula reading another sheet gets Excel's dashed arrow from a
+    /// worksheet icon, beside the arrows from its own sheet.
+    #[gpui::test]
+    fn trace_precedents_marks_what_comes_from_other_sheets(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            let other = view.book.sheet_names()[0].clone();
+            view.book
+                .set_cell(at(5, 5), &format!("='{other}'!A1+B2"))
+                .unwrap();
+            view.selection = Selection::cell(at(5, 5));
+            view.menu_command(MenuCommand::TracePrecedents, false, cx);
+            let grid = view.grid_bounds.get().expect("the grid was laid out");
+            let arrows = view.trace_arrows(grid);
+            assert_eq!(arrows.len(), 2);
+            assert!(arrows[0].other_sheet && !arrows[1].other_sheet);
+            view.book
+                .set_cell(at(6, 6), &format!("='{other}'!C3"))
+                .unwrap();
+            view.selection = Selection::cell(at(6, 6));
+            view.menu_command(MenuCommand::TracePrecedents, false, cx);
+            assert_eq!(view.tracing, vec![at(5, 5), at(6, 6)]);
         });
     }
 
