@@ -3843,3 +3843,4 @@ shift.cells_left	Shift cells left
 shift.cells_up	Shift cells up
 shift.entire_row	Entire row
 shift.entire_column	Entire column
+sheet.paste_special.validation	Validation
