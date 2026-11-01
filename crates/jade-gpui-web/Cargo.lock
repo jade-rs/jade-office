@@ -1456,8 +1456,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre-web"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aedd55b99dc77e28df8202b0ea868aa5c90fda4aefff539ea21087d7c2ff4bfb"
 dependencies = [
  "anyhow",
  "async-channel",
