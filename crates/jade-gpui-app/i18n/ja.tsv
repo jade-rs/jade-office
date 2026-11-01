@@ -3781,3 +3781,13 @@ page_setup.gridlines	枠線
 sheet.menu.hide_zeros	ゼロ値を表示しない
 sheet.menu.show_zeros	ゼロ値を表示する
 sheet.insert_picture	画像…
+sheet.menu.name_manager	名前の管理…
+name_manager.dialog	名前の管理
+name_manager.name	名前
+name_manager.refers_to	参照範囲
+name_manager.scope	範囲
+name_manager.none	このブックには名前がありません。
+name_manager.workbook	ブック
+name_manager.delete	削除
+name_manager.apply	適用
+name_manager.close	閉じる

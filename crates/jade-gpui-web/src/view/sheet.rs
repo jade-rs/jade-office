@@ -40,6 +40,7 @@ mod find_bar;
 mod insert_function;
 mod links;
 mod more_colors;
+mod name_manager;
 mod page_setup;
 mod paste_special;
 mod pivots;
@@ -123,6 +124,7 @@ pub(super) struct Sheet {
     pub(super) sort_dialog: Option<jade_web::sort_dialog::SortDialog>,
     pub(super) page_setup_dialog: Option<jade_web::page_setup_dialog::PageSetupDialog>,
     pub(super) custom_filter: Option<jade_web::custom_filter::CustomFilterDialog>,
+    pub(super) name_manager: Option<jade_web::name_manager::NameManager>,
     pub(super) insert_function: Option<jade_web::insert_function::InsertFunctionDialog>,
     pub(super) top_ten: Option<jade_web::top_ten::TopTenDialog>,
     pub(super) more_colors: Option<jade_web::more_colors::MoreColorsDialog>,
@@ -767,6 +769,8 @@ enum MenuCommand {
     InsertFunction,
     /// Formulas ▸ Show Formulas, on or off.
     ShowFormulas,
+    /// Formulas ▸ Name Manager.
+    NameManager,
     /// Show a zero in cells that have zero value, on or off.
     ShowZeros,
     /// Formulas ▸ Trace Precedents from the active cell.
@@ -818,6 +822,7 @@ impl Sheet {
             sort_dialog: None,
             page_setup_dialog: None,
             custom_filter: None,
+            name_manager: None,
             insert_function: None,
             top_ten: None,
             more_colors: None,
@@ -871,6 +876,9 @@ impl Sheet {
         if let Some(dialog) = self.custom_filter.as_mut() {
             return Some(dialog.field_mut());
         }
+        if let Some(dialog) = self.name_manager.as_mut() {
+            return Some(&mut dialog.refers_to);
+        }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
         }
@@ -922,6 +930,9 @@ impl Sheet {
         }
         if let Some(dialog) = self.custom_filter.as_ref() {
             return Some(dialog.field());
+        }
+        if let Some(dialog) = self.name_manager.as_ref() {
+            return Some(&dialog.refers_to);
         }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);
@@ -1882,6 +1893,7 @@ impl DocView {
             || sheet.sort_dialog.is_some()
             || sheet.page_setup_dialog.is_some()
             || sheet.custom_filter.is_some()
+            || sheet.name_manager.is_some()
             || sheet.insert_function.is_some()
             || sheet.top_ten.is_some()
             || sheet.more_colors.is_some()
@@ -1969,6 +1981,7 @@ impl DocView {
                 || s.sort_dialog.is_some()
                 || s.page_setup_dialog.is_some()
                 || s.custom_filter.is_some()
+                || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
                 || s.more_colors.is_some()
@@ -2216,6 +2229,10 @@ impl DocView {
         // A custom filter's dialog has the keys while it is open.
         if sheet.custom_filter.is_some() {
             return self.custom_filter_key(key, modifiers, cx);
+        }
+        // So does the Name Manager.
+        if sheet.name_manager.is_some() {
+            return self.name_manager_key(key, modifiers, cx);
         }
         // A chart's text dialog has the keys while it is open.
         if sheet.chart_asking.is_some() {
@@ -2779,6 +2796,7 @@ impl DocView {
                 || s.sort_dialog.is_some()
                 || s.page_setup_dialog.is_some()
                 || s.custom_filter.is_some()
+                || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
                 || s.more_colors.is_some()
@@ -3108,6 +3126,10 @@ impl DocView {
                 let on = !sheet.book.show_formulas();
                 sheet.book.set_show_formulas(on)
             }
+            MenuCommand::NameManager => {
+                self.open_name_manager(cx);
+                return;
+            }
             MenuCommand::ShowZeros => {
                 let on = !sheet.book.show_zeros();
                 sheet.book.set_show_zeros(on)
@@ -3145,6 +3167,7 @@ impl DocView {
                 || s.sort_dialog.is_some()
                 || s.page_setup_dialog.is_some()
                 || s.custom_filter.is_some()
+                || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
                 || s.more_colors.is_some()
@@ -3889,6 +3912,7 @@ impl DocView {
         let sort_panel = self.sort_panel(cx);
         let page_setup_panel = self.page_setup_panel(cx);
         let custom_filter_panel = self.custom_filter_panel(cx);
+        let name_manager_panel = self.name_manager_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
@@ -4367,6 +4391,7 @@ impl DocView {
                     let selected = sheet.selection.range();
                     items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                     items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
+                    items.push((MenuCommand::NameManager, "sheet.menu.name_manager"));
                     items.push((
                         MenuCommand::ShowZeros,
                         if sheet.book.show_zeros() {
@@ -5025,6 +5050,7 @@ impl DocView {
                     .children(sort_panel)
                     .children(page_setup_panel)
                     .children(custom_filter_panel)
+                    .children(name_manager_panel)
                     .children(insert_function_panel)
                     .children(top_ten_panel)
                     .children(more_colors_panel)

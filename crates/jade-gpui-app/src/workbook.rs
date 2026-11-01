@@ -75,6 +75,7 @@ mod find_bar;
 mod insert_function;
 mod links;
 mod more_colors;
+mod name_manager;
 mod page_setup;
 mod paste_special;
 mod pivots;
@@ -480,6 +481,8 @@ enum MenuCommand {
     InsertFunction,
     /// Formulas ▸ Show Formulas, on or off.
     ShowFormulas,
+    /// Formulas ▸ Name Manager.
+    NameManager,
     /// Show a zero in cells that have zero value, on or off.
     ShowZeros,
     /// Formulas ▸ Trace Precedents from the active cell.
@@ -585,6 +588,7 @@ pub struct WorkbookView {
     sort_dialog: Option<jade_office_model::sort_dialog::SortDialog>,
     page_setup_dialog: Option<jade_office_model::page_setup_dialog::PageSetupDialog>,
     custom_filter: Option<jade_office_model::custom_filter::CustomFilterDialog>,
+    name_manager: Option<jade_office_model::name_manager::NameManager>,
     insert_function: Option<jade_office_model::insert_function::InsertFunctionDialog>,
     top_ten: Option<jade_office_model::top_ten::TopTenDialog>,
     more_colors: Option<jade_office_model::more_colors::MoreColorsDialog>,
@@ -676,6 +680,9 @@ impl WorkbookView {
         if let Some(dialog) = self.custom_filter.as_mut() {
             return Some(dialog.field_mut());
         }
+        if let Some(dialog) = self.name_manager.as_mut() {
+            return Some(&mut dialog.refers_to);
+        }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
         }
@@ -724,6 +731,9 @@ impl WorkbookView {
         }
         if let Some(dialog) = self.custom_filter.as_ref() {
             return Some(dialog.field());
+        }
+        if let Some(dialog) = self.name_manager.as_ref() {
+            return Some(&dialog.refers_to);
         }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);
@@ -809,6 +819,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
             || self.more_colors.is_some()
@@ -1070,6 +1081,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
             || self.more_colors.is_some()
@@ -1166,6 +1178,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
             || self.more_colors.is_some()
@@ -1312,6 +1325,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
             || self.more_colors.is_some()
@@ -1701,6 +1715,10 @@ impl WorkbookView {
             MenuCommand::ShowFormulas => {
                 let on = !self.book.show_formulas();
                 self.book.set_show_formulas(on)
+            }
+            MenuCommand::NameManager => {
+                self.open_name_manager(cx);
+                return;
             }
             MenuCommand::ShowZeros => {
                 let on = !self.book.show_zeros();
@@ -2132,6 +2150,9 @@ impl WorkbookView {
         // A custom filter's dialog has the keys while it is open.
         if self.custom_filter.is_some() {
             return self.custom_filter_key(key, modifiers, cx);
+        }
+        if self.name_manager.is_some() {
+            return self.name_manager_key(key, modifiers, cx);
         }
         // A chart's text dialog has the keys while it is open.
         if self.chart_asking.is_some() {
@@ -2596,6 +2617,7 @@ impl WorkbookView {
             || self.sort_dialog.is_some()
             || self.page_setup_dialog.is_some()
             || self.custom_filter.is_some()
+            || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
             || self.more_colors.is_some()
@@ -3559,6 +3581,7 @@ impl WorkbookView {
                 }
                 items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                 items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
+                items.push((MenuCommand::NameManager, "sheet.menu.name_manager"));
                 items.push((
                     MenuCommand::ShowZeros,
                     if self.book.show_zeros() {
@@ -4979,6 +5002,7 @@ impl Render for WorkbookView {
         let sort_panel = self.sort_panel(cx);
         let page_setup_panel = self.page_setup_panel(cx);
         let custom_filter_panel = self.custom_filter_panel(cx);
+        let name_manager_panel = self.name_manager_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
@@ -5144,6 +5168,7 @@ impl Render for WorkbookView {
             .children(sort_panel)
             .children(page_setup_panel)
             .children(custom_filter_panel)
+            .children(name_manager_panel)
             .children(insert_function_panel)
             .children(top_ten_panel)
             .children(more_colors_panel)
@@ -5195,6 +5220,7 @@ impl WorkbookView {
             sort_dialog: None,
             page_setup_dialog: None,
             custom_filter: None,
+            name_manager: None,
             insert_function: None,
             top_ten: None,
             more_colors: None,
@@ -5753,6 +5779,35 @@ mod tests {
             view.insert_picture(b"not a picture", cx);
             assert!(view.status.as_ref().contains("PNG"));
         });
+    }
+
+    /// The Name Manager opens from the menu on the first name, takes a new
+    /// reference typed and kept with Enter, deletes, and closes on Escape.
+    #[gpui::test]
+    fn the_name_manager_edits_and_deletes_names(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book
+                .define_range_name("Totals", jade_office_model::sheet::span(at(1, 1), at(1, 3)))
+                .unwrap();
+            view.menu_command(MenuCommand::NameManager, false, cx);
+            let dialog = view.name_manager.as_ref().expect("open");
+            assert_eq!(dialog.selected, Some(0));
+            assert!(dialog.refers_to.text.ends_with("$B$2:$B$4"));
+        });
+        cx.simulate_keystrokes("backspace 5 enter");
+        view.update(cx, |view, cx| {
+            let names = jade_office_model::name_manager::NameManager::rows(&view.book);
+            assert!(
+                names[0].refers_to.ends_with("$B$2:$B$5"),
+                "{}",
+                names[0].refers_to
+            );
+            view.name_manager_action(name_manager::NameManagerAction::Delete, cx);
+            assert!(jade_office_model::name_manager::NameManager::rows(&view.book).is_empty());
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| assert!(view.name_manager.is_none()));
     }
 
     /// Convert to Number from the menu makes a number stored as text the
