@@ -3816,3 +3816,4 @@ sheet.shape.rectangle	正方形/長方形
 sheet.shape.oval	楕円
 sheet.shape.rounded_rectangle	四角形: 角を丸くする
 sheet.shape.right_arrow	矢印: 右
+filter.date.day	{day}日
