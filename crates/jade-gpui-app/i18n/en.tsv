@@ -3774,3 +3774,7 @@ sheet.menu.convert_to_number	Convert to Number
 sheet.menu.trace_dependents	Trace Dependents
 sheet.trace.no_dependents	No formula on this sheet refers to this cell.
 sheet.menu.ignore_error	Ignore Error
+page_setup.print	Print
+page_setup.center.horizontally	Center Horizontally
+page_setup.center.vertically	Center Vertically
+page_setup.gridlines	Gridlines

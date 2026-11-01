@@ -8,6 +8,7 @@ pub(super) enum PageSetupAction {
     /// One of `FITS`, by its place.
     Fit(usize),
     Margins(MarginPreset),
+    Print(PrintOption),
     Take,
     Cancel,
 }
@@ -90,6 +91,15 @@ impl View {
                 cx,
             )
         }));
+        let options = row().children(PrintOption::ALL.into_iter().map(|option| {
+            self.page_setup_chip(
+                option.label(),
+                i18n::text(option.label()).into(),
+                dialog.print_option(option),
+                PageSetupAction::Print(option),
+                cx,
+            )
+        }));
         let panel = div()
             .w(px(440.))
             .p_4()
@@ -114,6 +124,8 @@ impl View {
             .child(scaling)
             .child(section("page_setup.margins"))
             .child(margins)
+            .child(section("page_setup.print"))
+            .child(options)
             .child(
                 div()
                     .mt_4()
@@ -178,6 +190,7 @@ fn change_page_setup_dialog(dialog: &mut PageSetupDialog, action: PageSetupActio
             }
         }
         PageSetupAction::Margins(preset) => dialog.set_margins(preset),
+        PageSetupAction::Print(option) => dialog.toggle_print_option(option),
         PageSetupAction::Take | PageSetupAction::Cancel => {}
     }
 }

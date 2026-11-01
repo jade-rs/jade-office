@@ -3774,3 +3774,7 @@ sheet.menu.convert_to_number	数値に変換する
 sheet.menu.trace_dependents	参照先のトレース
 sheet.trace.no_dependents	このシートには、このセルを参照する数式がありません。
 sheet.menu.ignore_error	エラーを無視する
+page_setup.print	印刷
+page_setup.center.horizontally	水平方向に中央揃え
+page_setup.center.vertically	垂直方向に中央揃え
+page_setup.gridlines	枠線
