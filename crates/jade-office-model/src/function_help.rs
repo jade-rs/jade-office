@@ -9,14 +9,59 @@ const HELP: &[(&str, &str, &str)] = &[
         "数値の絶対値を返します。",
     ),
     (
+        "ACCRINT",
+        "Returns the accrued interest of a security paying periodic interest.",
+        "定期的に利息が支払われる証券の未収利息を返します。",
+    ),
+    (
+        "ACCRINTM",
+        "Returns the accrued interest of a security paying at maturity.",
+        "満期日に利息が支払われる証券の未収利息を返します。",
+    ),
+    (
         "ACOS",
         "Returns the arccosine of a number, in radians.",
         "数値のアークコサインをラジアンで返します。",
     ),
     (
+        "ACOSH",
+        "Returns the inverse hyperbolic cosine.",
+        "双曲線逆余弦を返します。",
+    ),
+    (
+        "ACOT",
+        "Returns the arccotangent of a number.",
+        "数値のアークコタンジェントを返します。",
+    ),
+    (
+        "ACOTH",
+        "Returns the inverse hyperbolic cotangent.",
+        "双曲線逆余接を返します。",
+    ),
+    (
         "ADDRESS",
         "Returns a cell reference as text.",
         "セル参照を文字列で返します。",
+    ),
+    (
+        "AGGREGATE",
+        "Returns an aggregate, optionally ignoring hidden rows and errors.",
+        "非表示の行やエラーを無視するかどうかを指定して集計値を返します。",
+    ),
+    (
+        "AMORDEGRC",
+        "Returns French accounting depreciation with a coefficient.",
+        "フランスの会計方式による減価償却費を係数付きで返します。",
+    ),
+    (
+        "AMORLINC",
+        "Returns French accounting depreciation for a period.",
+        "フランスの会計方式による期間の減価償却費を返します。",
+    ),
+    (
+        "ANCHORARRAY",
+        "Returns the whole spilled range of a dynamic array.",
+        "動的配列のスピル範囲全体を返します。",
     ),
     (
         "AND",
@@ -49,6 +94,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "数値のアークサインをラジアンで返します。",
     ),
     (
+        "ASINH",
+        "Returns the inverse hyperbolic sine.",
+        "双曲線逆正弦を返します。",
+    ),
+    (
         "ATAN",
         "Returns the arctangent of a number, in radians.",
         "数値のアークタンジェントをラジアンで返します。",
@@ -57,6 +107,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "ATAN2",
         "Returns the arctangent of x and y coordinates.",
         "x 座標と y 座標のアークタンジェントを返します。",
+    ),
+    (
+        "ATANH",
+        "Returns the inverse hyperbolic tangent.",
+        "双曲線逆正接を返します。",
     ),
     (
         "AVEDEV",
@@ -84,9 +139,54 @@ const HELP: &[(&str, &str, &str)] = &[
         "複数の条件に一致するセルの平均値を返します。",
     ),
     (
+        "BAHTTEXT",
+        "Converts a number to Thai text.",
+        "数値をタイ語の文字列に変換します。",
+    ),
+    (
         "BASE",
         "Converts a number to text in another base.",
         "数値を指定した基数の文字列に変換します。",
+    ),
+    (
+        "BESSELI",
+        "Returns the modified Bessel function In(x).",
+        "修正ベッセル関数 In(x) を返します。",
+    ),
+    (
+        "BESSELJ",
+        "Returns the Bessel function Jn(x).",
+        "ベッセル関数 Jn(x) を返します。",
+    ),
+    (
+        "BESSELK",
+        "Returns the modified Bessel function Kn(x).",
+        "修正ベッセル関数 Kn(x) を返します。",
+    ),
+    (
+        "BESSELY",
+        "Returns the Bessel function Yn(x).",
+        "ベッセル関数 Yn(x) を返します。",
+    ),
+    (
+        "BETA.DIST",
+        "Returns the beta distribution.",
+        "ベータ分布の値を返します。",
+    ),
+    (
+        "BETA.INV",
+        "Returns the inverse of the beta distribution.",
+        "ベータ分布の逆関数の値を返します。",
+    ),
+    (
+        "BETADIST",
+        "Returns the cumulative beta distribution.",
+        "累積ベータ分布の値を返します。",
+    ),
+    (
+        "BETAINV",
+        "Returns the inverse of the cumulative beta distribution.",
+        "累積ベータ分布の逆関数の値を返します。",
     ),
     (
         "BIN2DEC",
@@ -94,7 +194,32 @@ const HELP: &[(&str, &str, &str)] = &[
         "2 進数を 10 進数に変換します。",
     ),
     (
+        "BIN2HEX",
+        "Converts a binary number to hexadecimal.",
+        "2 進数を 16 進数に変換します。",
+    ),
+    (
+        "BIN2OCT",
+        "Converts a binary number to octal.",
+        "2 進数を 8 進数に変換します。",
+    ),
+    (
         "BINOM.DIST",
+        "Returns the binomial distribution probability.",
+        "二項分布の確率を返します。",
+    ),
+    (
+        "BINOM.DIST.RANGE",
+        "Returns the probability of a range of successes.",
+        "試行結果の成功数が範囲内に収まる確率を返します。",
+    ),
+    (
+        "BINOM.INV",
+        "Returns the smallest value whose cumulative binomial reaches a criterion.",
+        "累積二項確率が基準値以上になる最小の値を返します。",
+    ),
+    (
+        "BINOMDIST",
         "Returns the binomial distribution probability.",
         "二項分布の確率を返します。",
     ),
@@ -104,9 +229,19 @@ const HELP: &[(&str, &str, &str)] = &[
         "2 つの数値のビット単位の AND を返します。",
     ),
     (
+        "BITLSHIFT",
+        "Shifts a number's bits left.",
+        "数値をビット単位で左にシフトします。",
+    ),
+    (
         "BITOR",
         "Returns the bitwise OR of two numbers.",
         "2 つの数値のビット単位の OR を返します。",
+    ),
+    (
+        "BITRSHIFT",
+        "Shifts a number's bits right.",
+        "数値をビット単位で右にシフトします。",
     ),
     (
         "BITXOR",
@@ -134,6 +269,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "数値を整数または基準値の倍数に切り上げます。",
     ),
     (
+        "CEILING.PRECISE",
+        "Rounds a number up to the nearest multiple, whatever its sign.",
+        "数値を符号にかかわらず基準値の倍数に切り上げます。",
+    ),
+    (
         "CELL",
         "Returns information about a cell's format, place or contents.",
         "セルの書式、位置、内容についての情報を返します。",
@@ -142,6 +282,46 @@ const HELP: &[(&str, &str, &str)] = &[
         "CHAR",
         "Returns the character for a code number.",
         "数値で指定した文字を返します。",
+    ),
+    (
+        "CHIDIST",
+        "Returns the right-tailed chi-squared probability.",
+        "カイ二乗分布の右側確率を返します。",
+    ),
+    (
+        "CHIINV",
+        "Returns the inverse of the right-tailed chi-squared distribution.",
+        "カイ二乗分布の右側確率の逆関数の値を返します。",
+    ),
+    (
+        "CHISQ.DIST",
+        "Returns the chi-squared distribution.",
+        "カイ二乗分布の値を返します。",
+    ),
+    (
+        "CHISQ.DIST.RT",
+        "Returns the right-tailed chi-squared probability.",
+        "カイ二乗分布の右側確率を返します。",
+    ),
+    (
+        "CHISQ.INV",
+        "Returns the inverse of the left-tailed chi-squared distribution.",
+        "カイ二乗分布の左側確率の逆関数の値を返します。",
+    ),
+    (
+        "CHISQ.INV.RT",
+        "Returns the inverse of the right-tailed chi-squared distribution.",
+        "カイ二乗分布の右側確率の逆関数の値を返します。",
+    ),
+    (
+        "CHISQ.TEST",
+        "Returns the chi-squared test of independence.",
+        "カイ二乗検定の確率を返します。",
+    ),
+    (
+        "CHITEST",
+        "Returns the chi-squared test of independence.",
+        "カイ二乗検定の確率を返します。",
     ),
     (
         "CHOOSE",
@@ -184,6 +364,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "組み合わせの数を返します。",
     ),
     (
+        "COMBINA",
+        "Returns the number of combinations with repetitions.",
+        "重複組み合わせの数を返します。",
+    ),
+    (
+        "COMPLEX",
+        "Builds a complex number from real and imaginary parts.",
+        "実部と虚部から複素数を作成します。",
+    ),
+    (
         "CONCAT",
         "Joins a list or range of text strings.",
         "複数の文字列やセル範囲の文字列を結合します。",
@@ -194,9 +384,19 @@ const HELP: &[(&str, &str, &str)] = &[
         "複数の文字列を結合して 1 つの文字列にします。",
     ),
     (
+        "CONFIDENCE",
+        "Returns the confidence interval for a mean (normal).",
+        "正規分布を使って母集団の平均の信頼区間を返します。",
+    ),
+    (
         "CONFIDENCE.NORM",
         "Returns the confidence interval for a mean.",
         "母集団の平均の信頼区間を返します。",
+    ),
+    (
+        "CONFIDENCE.T",
+        "Returns the confidence interval for a mean (Student's t).",
+        "t 分布を使って母集団の平均の信頼区間を返します。",
     ),
     (
         "CONVERT",
@@ -224,6 +424,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "角度のコタンジェントを返します。",
     ),
     (
+        "COTH",
+        "Returns the hyperbolic cotangent.",
+        "双曲線余接を返します。",
+    ),
+    (
         "COUNT",
         "Counts the cells that contain numbers.",
         "数値が含まれるセルの個数を返します。",
@@ -249,6 +454,41 @@ const HELP: &[(&str, &str, &str)] = &[
         "複数の条件に一致するセルの個数を返します。",
     ),
     (
+        "COUPDAYBS",
+        "Returns the days from the coupon period's start to settlement.",
+        "利払期間の開始日から受渡日までの日数を返します。",
+    ),
+    (
+        "COUPDAYS",
+        "Returns the days in the coupon period holding settlement.",
+        "受渡日を含む利払期間の日数を返します。",
+    ),
+    (
+        "COUPDAYSNC",
+        "Returns the days from settlement to the next coupon date.",
+        "受渡日から次の利払日までの日数を返します。",
+    ),
+    (
+        "COUPNCD",
+        "Returns the next coupon date after settlement.",
+        "受渡日後の次の利払日を返します。",
+    ),
+    (
+        "COUPNUM",
+        "Returns the number of coupons between settlement and maturity.",
+        "受渡日と満期日の間の利払回数を返します。",
+    ),
+    (
+        "COUPPCD",
+        "Returns the coupon date before settlement.",
+        "受渡日前の直近の利払日を返します。",
+    ),
+    (
+        "COVAR",
+        "Returns the population covariance.",
+        "母集団の共分散を返します。",
+    ),
+    (
         "COVARIANCE.P",
         "Returns the population covariance.",
         "母集団の共分散を返します。",
@@ -259,9 +499,19 @@ const HELP: &[(&str, &str, &str)] = &[
         "標本の共分散を返します。",
     ),
     (
+        "CRITBINOM",
+        "Returns the smallest value whose cumulative binomial reaches a criterion.",
+        "累積二項確率が基準値以上になる最小の値を返します。",
+    ),
+    (
         "CSC",
         "Returns the cosecant of an angle.",
         "角度のコセカントを返します。",
+    ),
+    (
+        "CSCH",
+        "Returns the hyperbolic cosecant.",
+        "双曲線余割を返します。",
     ),
     (
         "CUMIPMT",
@@ -282,6 +532,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "DATEDIF",
         "Returns the years, months or days between two dates.",
         "2 つの日付の間の年数、月数、日数を返します。",
+    ),
+    (
+        "DATESTRING",
+        "Returns a date as Japanese era text.",
+        "日付を和暦の文字列で返します。",
     ),
     (
         "DATEVALUE",
@@ -312,6 +567,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "DB",
         "Returns fixed-declining-balance depreciation.",
         "定率法による減価償却費を返します。",
+    ),
+    (
+        "DBCS",
+        "Converts half-width characters to full-width.",
+        "半角文字を全角文字に変換します。",
     ),
     (
         "DCOUNT",
@@ -354,6 +614,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "ラジアンを度に変換します。",
     ),
     (
+        "DELTA",
+        "Checks whether two numbers are equal (1 or 0).",
+        "2 つの数値が等しいかどうかを調べます (1 または 0)。",
+    ),
+    (
         "DEVSQ",
         "Returns the sum of squared deviations from the mean.",
         "平均値からの偏差の 2 乗和を返します。",
@@ -362,6 +627,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "DGET",
         "Returns the one database value that meets criteria.",
         "データベースの条件に一致する 1 つの値を返します。",
+    ),
+    (
+        "DISC",
+        "Returns the discount rate of a security.",
+        "証券の割引率を返します。",
     ),
     (
         "DMAX",
@@ -379,14 +649,59 @@ const HELP: &[(&str, &str, &str)] = &[
         "数値を通貨形式の文字列に変換します。",
     ),
     (
+        "DOLLARDE",
+        "Converts a fractional price to a decimal one.",
+        "分数で表された価格を小数に変換します。",
+    ),
+    (
+        "DOLLARFR",
+        "Converts a decimal price to a fractional one.",
+        "小数で表された価格を分数に変換します。",
+    ),
+    (
+        "DPRODUCT",
+        "Multiplies the database values that meet criteria.",
+        "データベースの条件に一致するレコードの値の積を返します。",
+    ),
+    (
         "DROP",
         "Removes rows or columns from the start or end of an array.",
         "配列の先頭または末尾から指定した行や列を除きます。",
     ),
     (
+        "DSTDEV",
+        "Estimates standard deviation from database values that meet criteria.",
+        "データベースの条件に一致するレコードから標準偏差を推定します。",
+    ),
+    (
+        "DSTDEVP",
+        "Returns the standard deviation of database values that meet criteria.",
+        "データベースの条件に一致するレコードの標準偏差を返します。",
+    ),
+    (
         "DSUM",
         "Adds the values in a database column that meet criteria.",
         "データベースの条件に一致するレコードの値を合計します。",
+    ),
+    (
+        "DURATION",
+        "Returns the Macaulay duration of a security.",
+        "証券のマコーレー デュレーションを返します。",
+    ),
+    (
+        "DVAR",
+        "Estimates variance from database values that meet criteria.",
+        "データベースの条件に一致するレコードから分散を推定します。",
+    ),
+    (
+        "DVARP",
+        "Returns the variance of database values that meet criteria.",
+        "データベースの条件に一致するレコードの分散を返します。",
+    ),
+    (
+        "ECMA.CEILING",
+        "Rounds a number up to a multiple, as ECMA-376 defines.",
+        "ECMA-376 の定義に従って数値を倍数に切り上げます。",
     ),
     (
         "EDATE",
@@ -399,9 +714,34 @@ const HELP: &[(&str, &str, &str)] = &[
         "実効年利率を返します。",
     ),
     (
+        "ENCODEURL",
+        "Returns text encoded for a URL.",
+        "文字列を URL 形式にエンコードします。",
+    ),
+    (
         "EOMONTH",
         "Returns the last day of the month a number of months away.",
         "指定した月数だけ離れた月の末日を返します。",
+    ),
+    (
+        "ERF",
+        "Returns the error function.",
+        "誤差関数の値を返します。",
+    ),
+    (
+        "ERF.PRECISE",
+        "Returns the error function.",
+        "誤差関数の値を返します。",
+    ),
+    (
+        "ERFC",
+        "Returns the complementary error function.",
+        "相補誤差関数の値を返します。",
+    ),
+    (
+        "ERFC.PRECISE",
+        "Returns the complementary error function.",
+        "相補誤差関数の値を返します。",
     ),
     (
         "ERROR.TYPE",
@@ -434,6 +774,36 @@ const HELP: &[(&str, &str, &str)] = &[
         "指数分布の値を返します。",
     ),
     (
+        "EXPONDIST",
+        "Returns the exponential distribution.",
+        "指数分布の値を返します。",
+    ),
+    (
+        "F.DIST",
+        "Returns the F distribution.",
+        "F 分布の値を返します。",
+    ),
+    (
+        "F.DIST.RT",
+        "Returns the right-tailed F distribution.",
+        "F 分布の右側確率を返します。",
+    ),
+    (
+        "F.INV",
+        "Returns the inverse of the F distribution.",
+        "F 分布の逆関数の値を返します。",
+    ),
+    (
+        "F.INV.RT",
+        "Returns the inverse of the right-tailed F distribution.",
+        "F 分布の右側確率の逆関数の値を返します。",
+    ),
+    (
+        "F.TEST",
+        "Returns the result of an F-test.",
+        "F 検定の結果を返します。",
+    ),
+    (
         "FACT",
         "Returns the factorial of a number.",
         "数値の階乗を返します。",
@@ -442,6 +812,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "FACTDOUBLE",
         "Returns the double factorial of a number.",
         "数値の二重階乗を返します。",
+    ),
+    (
+        "FALSE",
+        "Returns the logical value FALSE.",
+        "論理値 FALSE を返します。",
+    ),
+    (
+        "FDIST",
+        "Returns the right-tailed F distribution.",
+        "F 分布の右側確率を返します。",
     ),
     (
         "FILTER",
@@ -459,6 +839,21 @@ const HELP: &[(&str, &str, &str)] = &[
         "文字列の中から別の文字列を検索し、バイト単位の位置を返します。",
     ),
     (
+        "FINV",
+        "Returns the inverse of the right-tailed F distribution.",
+        "F 分布の右側確率の逆関数の値を返します。",
+    ),
+    (
+        "FISHER",
+        "Returns the Fisher transformation.",
+        "フィッシャー変換の値を返します。",
+    ),
+    (
+        "FISHERINV",
+        "Returns the inverse of the Fisher transformation.",
+        "フィッシャー変換の逆関数の値を返します。",
+    ),
+    (
         "FIXED",
         "Formats a number as text with a fixed number of decimals.",
         "数値を指定した小数点以下桁数の文字列に変換します。",
@@ -474,9 +869,34 @@ const HELP: &[(&str, &str, &str)] = &[
         "数値を整数または基準値の倍数に切り捨てます。",
     ),
     (
+        "FLOOR.PRECISE",
+        "Rounds a number down to the nearest multiple, whatever its sign.",
+        "数値を符号にかかわらず基準値の倍数に切り捨てます。",
+    ),
+    (
         "FORECAST",
         "Predicts a value along a linear trend.",
         "線形トレンドに沿って値を予測します。",
+    ),
+    (
+        "FORECAST.ETS",
+        "Forecasts a value by exponential smoothing.",
+        "指数平滑法で将来の値を予測します。",
+    ),
+    (
+        "FORECAST.ETS.CONFINT",
+        "Returns the confidence interval of an exponential-smoothing forecast.",
+        "指数平滑法による予測値の信頼区間を返します。",
+    ),
+    (
+        "FORECAST.ETS.SEASONALITY",
+        "Returns the seasonal pattern length exponential smoothing finds.",
+        "指数平滑法で検出した季節パターンの長さを返します。",
+    ),
+    (
+        "FORECAST.ETS.STAT",
+        "Returns a statistic of an exponential-smoothing forecast.",
+        "指数平滑法による予測の統計値を返します。",
     ),
     (
         "FORECAST.LINEAR",
@@ -489,9 +909,64 @@ const HELP: &[(&str, &str, &str)] = &[
         "セルの数式を文字列で返します。",
     ),
     (
+        "FREQUENCY",
+        "Counts how many values fall in each range.",
+        "値が各区間に含まれる個数を返します。",
+    ),
+    (
+        "FTEST",
+        "Returns the result of an F-test.",
+        "F 検定の結果を返します。",
+    ),
+    (
         "FV",
         "Returns the future value of an investment.",
         "投資の将来価値を返します。",
+    ),
+    (
+        "FVSCHEDULE",
+        "Returns the future value after a series of interest rates.",
+        "一連の利率を適用した元金の将来価値を返します。",
+    ),
+    (
+        "GAMMA",
+        "Returns the gamma function value.",
+        "ガンマ関数の値を返します。",
+    ),
+    (
+        "GAMMA.DIST",
+        "Returns the gamma distribution.",
+        "ガンマ分布の値を返します。",
+    ),
+    (
+        "GAMMA.INV",
+        "Returns the inverse of the gamma distribution.",
+        "ガンマ分布の逆関数の値を返します。",
+    ),
+    (
+        "GAMMADIST",
+        "Returns the gamma distribution.",
+        "ガンマ分布の値を返します。",
+    ),
+    (
+        "GAMMAINV",
+        "Returns the inverse of the gamma distribution.",
+        "ガンマ分布の逆関数の値を返します。",
+    ),
+    (
+        "GAMMALN",
+        "Returns the natural logarithm of the gamma function.",
+        "ガンマ関数の自然対数を返します。",
+    ),
+    (
+        "GAMMALN.PRECISE",
+        "Returns the natural logarithm of the gamma function.",
+        "ガンマ関数の自然対数を返します。",
+    ),
+    (
+        "GAUSS",
+        "Returns 0.5 less than the standard normal cumulative distribution.",
+        "標準正規分布の累積値から 0.5 を引いた値を返します。",
     ),
     (
         "GCD",
@@ -502,6 +977,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "GEOMEAN",
         "Returns the geometric mean.",
         "相乗平均を返します。",
+    ),
+    (
+        "GESTEP",
+        "Checks whether a number is at least a threshold (1 or 0).",
+        "数値がしきい値以上かどうかを調べます (1 または 0)。",
     ),
     (
         "GETPIVOTDATA",
@@ -519,9 +999,19 @@ const HELP: &[(&str, &str, &str)] = &[
         "調和平均を返します。",
     ),
     (
+        "HEX2BIN",
+        "Converts a hexadecimal number to binary.",
+        "16 進数を 2 進数に変換します。",
+    ),
+    (
         "HEX2DEC",
         "Converts a hexadecimal number to decimal.",
         "16 進数を 10 進数に変換します。",
+    ),
+    (
+        "HEX2OCT",
+        "Converts a hexadecimal number to octal.",
+        "16 進数を 8 進数に変換します。",
     ),
     (
         "HLOOKUP",
@@ -544,6 +1034,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "ブック内の場所や Web ページへのリンクを作成します。",
     ),
     (
+        "HYPGEOM.DIST",
+        "Returns the hypergeometric distribution.",
+        "超幾何分布の値を返します。",
+    ),
+    (
+        "HYPGEOMDIST",
+        "Returns the hypergeometric distribution.",
+        "超幾何分布の値を返します。",
+    ),
+    (
         "IF",
         "Returns one value if a condition is TRUE and another if FALSE.",
         "条件が TRUE のときと FALSE のときで異なる値を返します。",
@@ -562,6 +1062,131 @@ const HELP: &[(&str, &str, &str)] = &[
         "IFS",
         "Returns the value for the first condition that is TRUE.",
         "最初に TRUE になる条件に対応する値を返します。",
+    ),
+    (
+        "IMABS",
+        "Returns the absolute value of a complex number.",
+        "複素数の絶対値を返します。",
+    ),
+    (
+        "IMAGINARY",
+        "Returns the imaginary part of a complex number.",
+        "複素数の虚部を返します。",
+    ),
+    (
+        "IMARGUMENT",
+        "Returns the argument of a complex number, in radians.",
+        "複素数の偏角をラジアンで返します。",
+    ),
+    (
+        "IMCONJUGATE",
+        "Returns the complex conjugate.",
+        "複素共役を返します。",
+    ),
+    (
+        "IMCOS",
+        "Returns the cosine of a complex number.",
+        "複素数のコサインを返します。",
+    ),
+    (
+        "IMCOSH",
+        "Returns the hyperbolic cosine of a complex number.",
+        "複素数の双曲線余弦を返します。",
+    ),
+    (
+        "IMCOT",
+        "Returns the cotangent of a complex number.",
+        "複素数のコタンジェントを返します。",
+    ),
+    (
+        "IMCSC",
+        "Returns the cosecant of a complex number.",
+        "複素数のコセカントを返します。",
+    ),
+    (
+        "IMCSCH",
+        "Returns the hyperbolic cosecant of a complex number.",
+        "複素数の双曲線余割を返します。",
+    ),
+    (
+        "IMDIV",
+        "Returns the quotient of two complex numbers.",
+        "2 つの複素数の商を返します。",
+    ),
+    (
+        "IMEXP",
+        "Returns the exponential of a complex number.",
+        "複素数の指数関数の値を返します。",
+    ),
+    (
+        "IMLN",
+        "Returns the natural logarithm of a complex number.",
+        "複素数の自然対数を返します。",
+    ),
+    (
+        "IMLOG10",
+        "Returns the base-10 logarithm of a complex number.",
+        "複素数の常用対数を返します。",
+    ),
+    (
+        "IMLOG2",
+        "Returns the base-2 logarithm of a complex number.",
+        "複素数の 2 を底とする対数を返します。",
+    ),
+    (
+        "IMPOWER",
+        "Returns a complex number raised to a power.",
+        "複素数のべき乗を返します。",
+    ),
+    (
+        "IMPRODUCT",
+        "Returns the product of complex numbers.",
+        "複素数の積を返します。",
+    ),
+    (
+        "IMREAL",
+        "Returns the real part of a complex number.",
+        "複素数の実部を返します。",
+    ),
+    (
+        "IMSEC",
+        "Returns the secant of a complex number.",
+        "複素数のセカントを返します。",
+    ),
+    (
+        "IMSECH",
+        "Returns the hyperbolic secant of a complex number.",
+        "複素数の双曲線正割を返します。",
+    ),
+    (
+        "IMSIN",
+        "Returns the sine of a complex number.",
+        "複素数のサインを返します。",
+    ),
+    (
+        "IMSINH",
+        "Returns the hyperbolic sine of a complex number.",
+        "複素数の双曲線正弦を返します。",
+    ),
+    (
+        "IMSQRT",
+        "Returns the square root of a complex number.",
+        "複素数の平方根を返します。",
+    ),
+    (
+        "IMSUB",
+        "Returns the difference of two complex numbers.",
+        "2 つの複素数の差を返します。",
+    ),
+    (
+        "IMSUM",
+        "Returns the sum of complex numbers.",
+        "複素数の和を返します。",
+    ),
+    (
+        "IMTAN",
+        "Returns the tangent of a complex number.",
+        "複素数のタンジェントを返します。",
     ),
     (
         "INDEX",
@@ -587,6 +1212,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "INTERCEPT",
         "Returns where the regression line crosses the y-axis.",
         "回帰直線の切片を返します。",
+    ),
+    (
+        "INTRATE",
+        "Returns the interest rate of a fully invested security.",
+        "全額投資された証券の利率を返します。",
     ),
     (
         "IPMT",
@@ -644,6 +1274,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "値が数値かどうかを調べます。",
     ),
     (
+        "ISO.CEILING",
+        "Rounds a number up to the nearest multiple, whatever its sign.",
+        "数値を符号にかかわらず基準値の倍数に切り上げます。",
+    ),
+    (
         "ISODD",
         "Checks whether a number is odd.",
         "数値が奇数かどうかを調べます。",
@@ -659,6 +1294,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "日付の ISO 週番号を返します。",
     ),
     (
+        "ISPMT",
+        "Returns the interest paid in a period of an even-principal loan.",
+        "元金均等返済のローンで指定期間に支払う利息を返します。",
+    ),
+    (
         "ISREF",
         "Checks whether a value is a reference.",
         "値がセル参照かどうかを調べます。",
@@ -672,6 +1312,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "JIS",
         "Converts half-width letters to full-width.",
         "半角の英数カナ文字を全角に変換します。",
+    ),
+    (
+        "KURT",
+        "Returns the kurtosis of a data set.",
+        "データの尖度を返します。",
     ),
     (
         "LAMBDA",
@@ -714,6 +1359,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "計算結果に名前を付けて、数式の中で使えるようにします。",
     ),
     (
+        "LINEST",
+        "Returns the statistics of a linear trend.",
+        "回帰直線の係数などの統計値を返します。",
+    ),
+    (
         "LN",
         "Returns the natural logarithm of a number.",
         "数値の自然対数を返します。",
@@ -727,6 +1377,31 @@ const HELP: &[(&str, &str, &str)] = &[
         "LOG10",
         "Returns the base-10 logarithm of a number.",
         "数値の常用対数を返します。",
+    ),
+    (
+        "LOGEST",
+        "Returns the statistics of an exponential trend.",
+        "指数回帰曲線の係数などの統計値を返します。",
+    ),
+    (
+        "LOGINV",
+        "Returns the inverse of the lognormal distribution.",
+        "対数正規分布の逆関数の値を返します。",
+    ),
+    (
+        "LOGNORM.DIST",
+        "Returns the lognormal distribution.",
+        "対数正規分布の値を返します。",
+    ),
+    (
+        "LOGNORM.INV",
+        "Returns the inverse of the lognormal distribution.",
+        "対数正規分布の逆関数の値を返します。",
+    ),
+    (
+        "LOGNORMDIST",
+        "Returns the cumulative lognormal distribution.",
+        "累積対数正規分布の値を返します。",
     ),
     (
         "LOOKUP",
@@ -768,6 +1443,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "MDETERM",
         "Returns the determinant of a matrix.",
         "行列の行列式を返します。",
+    ),
+    (
+        "MDURATION",
+        "Returns the modified duration of a security.",
+        "証券の修正デュレーションを返します。",
     ),
     (
         "MEDIAN",
@@ -866,6 +1546,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "エラー値 #N/A を返します。",
     ),
     (
+        "NEGBINOM.DIST",
+        "Returns the negative binomial distribution.",
+        "負の二項分布の値を返します。",
+    ),
+    (
+        "NEGBINOMDIST",
+        "Returns the negative binomial distribution.",
+        "負の二項分布の値を返します。",
+    ),
+    (
         "NETWORKDAYS",
         "Returns the number of working days between two dates.",
         "2 つの日付の間の稼働日数を返します。",
@@ -901,6 +1591,26 @@ const HELP: &[(&str, &str, &str)] = &[
         "標準正規分布の逆関数の値を返します。",
     ),
     (
+        "NORMDIST",
+        "Returns the normal distribution.",
+        "正規分布の値を返します。",
+    ),
+    (
+        "NORMINV",
+        "Returns the inverse of the normal distribution.",
+        "正規分布の逆関数の値を返します。",
+    ),
+    (
+        "NORMSDIST",
+        "Returns the standard normal cumulative distribution.",
+        "標準正規分布の累積値を返します。",
+    ),
+    (
+        "NORMSINV",
+        "Returns the inverse of the standard normal distribution.",
+        "標準正規分布の逆関数の値を返します。",
+    ),
+    (
         "NOT",
         "Reverses TRUE and FALSE.",
         "TRUE と FALSE を反転します。",
@@ -921,9 +1631,19 @@ const HELP: &[(&str, &str, &str)] = &[
         "投資の正味現在価値を返します。",
     ),
     (
+        "NUMBERSTRING",
+        "Returns a number as Japanese numerals.",
+        "数値を漢数字の文字列で返します。",
+    ),
+    (
         "NUMBERVALUE",
         "Converts text to a number, whatever the locale.",
         "ロケールに依存せずに文字列を数値に変換します。",
+    ),
+    (
+        "OCT2BIN",
+        "Converts an octal number to binary.",
+        "8 進数を 2 進数に変換します。",
     ),
     (
         "OCT2DEC",
@@ -931,9 +1651,34 @@ const HELP: &[(&str, &str, &str)] = &[
         "8 進数を 10 進数に変換します。",
     ),
     (
+        "OCT2HEX",
+        "Converts an octal number to hexadecimal.",
+        "8 進数を 16 進数に変換します。",
+    ),
+    (
         "ODD",
         "Rounds a number up to the nearest odd integer.",
         "数値を最も近い奇数に切り上げます。",
+    ),
+    (
+        "ODDFPRICE",
+        "Returns the price of a security with an odd first period.",
+        "最初の利払期間が半端な証券の価格を返します。",
+    ),
+    (
+        "ODDFYIELD",
+        "Returns the yield of a security with an odd first period.",
+        "最初の利払期間が半端な証券の利回りを返します。",
+    ),
+    (
+        "ODDLPRICE",
+        "Returns the price of a security with an odd last period.",
+        "最後の利払期間が半端な証券の価格を返します。",
+    ),
+    (
+        "ODDLYIELD",
+        "Returns the yield of a security with an odd last period.",
+        "最後の利払期間が半端な証券の利回りを返します。",
     ),
     (
         "OFFSET",
@@ -944,6 +1689,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "OR",
         "Checks whether any argument is TRUE.",
         "いずれかの引数が TRUE かどうかを調べます。",
+    ),
+    (
+        "PDURATION",
+        "Returns the periods an investment needs to reach a value.",
+        "投資が指定した価値に達するまでの期間を返します。",
     ),
     (
         "PEARSON",
@@ -991,6 +1741,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "順列の数を返します。",
     ),
     (
+        "PERMUTATIONA",
+        "Returns the number of permutations with repetitions.",
+        "重複順列の数を返します。",
+    ),
+    (
+        "PHI",
+        "Returns the standard normal density.",
+        "標準正規分布の密度関数の値を返します。",
+    ),
+    (
         "PHONETIC",
         "Returns the furigana of a cell's text.",
         "文字列からふりがなを取り出します。",
@@ -1006,6 +1766,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "ローンの定期支払額を返します。",
     ),
     (
+        "POISSON",
+        "Returns the Poisson distribution.",
+        "ポアソン分布の値を返します。",
+    ),
+    (
         "POISSON.DIST",
         "Returns the Poisson distribution.",
         "ポアソン分布の値を返します。",
@@ -1019,6 +1784,26 @@ const HELP: &[(&str, &str, &str)] = &[
         "PPMT",
         "Returns the principal part of a loan payment.",
         "ローン返済額のうち元金部分を返します。",
+    ),
+    (
+        "PRICE",
+        "Returns the price per 100 face value of a security paying periodic interest.",
+        "定期利付債の額面 100 あたりの価格を返します。",
+    ),
+    (
+        "PRICEDISC",
+        "Returns the price per 100 face value of a discounted security.",
+        "割引債の額面 100 あたりの価格を返します。",
+    ),
+    (
+        "PRICEMAT",
+        "Returns the price per 100 face value of a security paying at maturity.",
+        "満期利付債の額面 100 あたりの価格を返します。",
+    ),
+    (
+        "PROB",
+        "Returns the probability that values fall between limits.",
+        "値が範囲内に収まる確率を返します。",
     ),
     (
         "PRODUCT",
@@ -1096,6 +1881,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "期間あたりの利率を返します。",
     ),
     (
+        "RECEIVED",
+        "Returns the amount received at maturity of a fully invested security.",
+        "全額投資された証券の満期日の受取額を返します。",
+    ),
+    (
         "REDUCE",
         "Reduces an array to one value with a LAMBDA.",
         "LAMBDA で配列を 1 つの値に集約します。",
@@ -1171,6 +1961,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "範囲の行数を返します。",
     ),
     (
+        "RRI",
+        "Returns the equivalent interest rate for an investment's growth.",
+        "投資の成長に相当する利率を返します。",
+    ),
+    (
         "RSQ",
         "Returns the square of the correlation coefficient.",
         "相関係数の 2 乗を返します。",
@@ -1196,6 +1991,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "角度のセカントを返します。",
     ),
     (
+        "SECH",
+        "Returns the hyperbolic secant.",
+        "双曲線正割を返します。",
+    ),
+    (
         "SECOND",
         "Returns the second, 0 to 59.",
         "時刻の秒 (0～59) を返します。",
@@ -1204,6 +2004,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "SEQUENCE",
         "Returns a list of sequential numbers.",
         "連続した数値の配列を返します。",
+    ),
+    (
+        "SERIESSUM",
+        "Returns the sum of a power series.",
+        "べき級数の和を返します。",
     ),
     (
         "SHEET",
@@ -1226,9 +2031,24 @@ const HELP: &[(&str, &str, &str)] = &[
         "角度のサインを返します。",
     ),
     (
+        "SINGLE",
+        "Returns one value by implicit intersection.",
+        "暗黙的な共通部分によって 1 つの値を返します。",
+    ),
+    (
         "SINH",
         "Returns the hyperbolic sine.",
         "双曲線正弦を返します。",
+    ),
+    (
+        "SKEW",
+        "Returns the skewness of a distribution.",
+        "分布の歪度を返します。",
+    ),
+    (
+        "SKEW.P",
+        "Returns the skewness of a population.",
+        "母集団の歪度を返します。",
     ),
     (
         "SLN",
@@ -1376,9 +2196,24 @@ const HELP: &[(&str, &str, &str)] = &[
         "スチューデントの t 分布の値を返します。",
     ),
     (
+        "T.DIST.2T",
+        "Returns the two-tailed Student's t-distribution.",
+        "スチューデントの t 分布の両側確率を返します。",
+    ),
+    (
+        "T.DIST.RT",
+        "Returns the right-tailed Student's t-distribution.",
+        "スチューデントの t 分布の右側確率を返します。",
+    ),
+    (
         "T.INV",
         "Returns the inverse of the Student's t-distribution.",
         "スチューデントの t 分布の逆関数の値を返します。",
+    ),
+    (
+        "T.INV.2T",
+        "Returns the two-tailed inverse of the Student's t-distribution.",
+        "スチューデントの t 分布の両側逆関数の値を返します。",
     ),
     (
         "T.TEST",
@@ -1399,6 +2234,26 @@ const HELP: &[(&str, &str, &str)] = &[
         "TANH",
         "Returns the hyperbolic tangent.",
         "双曲線正接を返します。",
+    ),
+    (
+        "TBILLEQ",
+        "Returns the bond-equivalent yield of a Treasury bill.",
+        "米国財務省短期証券の債券換算利回りを返します。",
+    ),
+    (
+        "TBILLPRICE",
+        "Returns the price per 100 face value of a Treasury bill.",
+        "米国財務省短期証券の額面 100 あたりの価格を返します。",
+    ),
+    (
+        "TBILLYIELD",
+        "Returns the yield of a Treasury bill.",
+        "米国財務省短期証券の利回りを返します。",
+    ),
+    (
+        "TDIST",
+        "Returns the Student's t-distribution.",
+        "スチューデントの t 分布の値を返します。",
     ),
     (
         "TEXT",
@@ -1436,6 +2291,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "時刻を表す文字列をシリアル値に変換します。",
     ),
     (
+        "TINV",
+        "Returns the two-tailed inverse of the Student's t-distribution.",
+        "スチューデントの t 分布の両側逆関数の値を返します。",
+    ),
+    (
         "TOCOL",
         "Returns an array as one column.",
         "配列を 1 列にして返します。",
@@ -1462,14 +2322,29 @@ const HELP: &[(&str, &str, &str)] = &[
         "文字列から余分なスペースを削除します。",
     ),
     (
+        "TRIMMEAN",
+        "Returns the mean of the interior of a data set.",
+        "データの上下を除いた平均値を返します。",
+    ),
+    (
         "TRIMRANGE",
         "Trims empty rows and columns from the edges of a range.",
         "範囲の外側の空白の行と列を除きます。",
     ),
     (
+        "TRUE",
+        "Returns the logical value TRUE.",
+        "論理値 TRUE を返します。",
+    ),
+    (
         "TRUNC",
         "Truncates a number to an integer or a number of digits.",
         "数値の小数部を切り捨てて整数または指定した桁数にします。",
+    ),
+    (
+        "TTEST",
+        "Returns the probability from a Student's t-test.",
+        "スチューデントの t 検定の確率を返します。",
     ),
     (
         "TYPE",
@@ -1537,6 +2412,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "文字列や論理値も含めて母集団の分散を返します。",
     ),
     (
+        "VDB",
+        "Returns declining-balance depreciation for any period.",
+        "倍率法による任意の期間の減価償却費を返します。",
+    ),
+    (
         "VLOOKUP",
         "Looks up a value in the first column and returns a value beside it.",
         "範囲の先頭列で値を検索し、その行の値を返します。",
@@ -1555,6 +2435,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "WEEKNUM",
         "Returns the week number of a date in the year.",
         "日付がその年の何週目かを返します。",
+    ),
+    (
+        "WEIBULL",
+        "Returns the Weibull distribution.",
+        "ワイブル分布の値を返します。",
+    ),
+    (
+        "WEIBULL.DIST",
+        "Returns the Weibull distribution.",
+        "ワイブル分布の値を返します。",
     ),
     (
         "WORKDAY",
@@ -1610,6 +2500,31 @@ const HELP: &[(&str, &str, &str)] = &[
         "YEARFRAC",
         "Returns the fraction of a year between two dates.",
         "2 つの日付の間の期間が 1 年に占める割合を返します。",
+    ),
+    (
+        "YIELD",
+        "Returns the yield of a security paying periodic interest.",
+        "定期利付債の利回りを返します。",
+    ),
+    (
+        "YIELDDISC",
+        "Returns the annual yield of a discounted security.",
+        "割引債の年利回りを返します。",
+    ),
+    (
+        "YIELDMAT",
+        "Returns the annual yield of a security paying at maturity.",
+        "満期利付債の年利回りを返します。",
+    ),
+    (
+        "Z.TEST",
+        "Returns the one-tailed probability of a z-test.",
+        "z 検定の片側確率を返します。",
+    ),
+    (
+        "ZTEST",
+        "Returns the one-tailed probability of a z-test.",
+        "z 検定の片側確率を返します。",
     ),
 ];
 
