@@ -148,3 +148,36 @@ fn paint_sheet_icon(window: &mut gpui::Window, at: gpui::Point<gpui::Pixels>, co
         window.paint_path(path, color);
     }
 }
+
+/// Data ▸ Circle Invalid Data: a red oval round each of `cells`, boxes in px
+/// from the grid's top-left whose top-left is `origin`.
+fn paint_invalid_circles(
+    window: &mut gpui::Window,
+    origin: gpui::Point<gpui::Pixels>,
+    cells: &[gpui::Bounds<gpui::Pixels>],
+) {
+    use gpui::{point, px, PathBuilder};
+    // A circle's quarter as a cubic: the control points this far along.
+    const KAPPA: f32 = 0.552_284_8;
+    for cell in cells {
+        let (cx, cy) = (
+            f32::from(origin.x + cell.center().x),
+            f32::from(origin.y + cell.center().y),
+        );
+        let (rx, ry) = (
+            f32::from(cell.size.width) / 2.0 + 4.0,
+            f32::from(cell.size.height) / 2.0 + 3.0,
+        );
+        let (kx, ky) = (rx * KAPPA, ry * KAPPA);
+        let at = |x: f32, y: f32| point(px(x), px(y));
+        let mut oval = PathBuilder::stroke(px(1.5));
+        oval.move_to(at(cx + rx, cy));
+        oval.cubic_bezier_to(at(cx, cy + ry), at(cx + rx, cy + ky), at(cx + kx, cy + ry));
+        oval.cubic_bezier_to(at(cx - rx, cy), at(cx - kx, cy + ry), at(cx - rx, cy + ky));
+        oval.cubic_bezier_to(at(cx, cy - ry), at(cx - rx, cy - ky), at(cx - kx, cy - ry));
+        oval.cubic_bezier_to(at(cx + rx, cy), at(cx + kx, cy - ry), at(cx + rx, cy - ky));
+        if let Ok(path) = oval.build() {
+            window.paint_path(path, gpui::rgb(0xff0000));
+        }
+    }
+}
