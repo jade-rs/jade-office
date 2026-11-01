@@ -2,7 +2,7 @@ use super::WorkbookView;
 use crate::{i18n, theme};
 use gpui::{div, prelude::*, px, Context, MouseButton};
 use jade_office_model::page_setup_dialog::{
-    MarginPreset, PageSetupDialog, PrintOption, FITS, PAPERS,
+    MarginPreset, MarginSide, PageSetupDialog, PrintOption, FITS, PAPERS,
 };
 type View = WorkbookView;
 include!("page_setup_ui.rs");

@@ -76,6 +76,55 @@ pub const FITS: [((u32, u32), &str); 3] = [
     ((0, 1), "page_setup.fit.rows"),
 ];
 
+/// A page margin the dialog steps on its own, as Excel's Margins tab
+/// has a box for each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarginSide {
+    Top,
+    Bottom,
+    Left,
+    Right,
+    Header,
+    Footer,
+}
+
+impl MarginSide {
+    pub const ALL: [MarginSide; 6] = [
+        MarginSide::Top,
+        MarginSide::Bottom,
+        MarginSide::Left,
+        MarginSide::Right,
+        MarginSide::Header,
+        MarginSide::Footer,
+    ];
+
+    /// The i18n key of its name.
+    pub fn label(self) -> &'static str {
+        match self {
+            MarginSide::Top => "page_setup.margin.top",
+            MarginSide::Bottom => "page_setup.margin.bottom",
+            MarginSide::Left => "page_setup.margin.left",
+            MarginSide::Right => "page_setup.margin.right",
+            MarginSide::Header => "page_setup.margin.header",
+            MarginSide::Footer => "page_setup.margin.footer",
+        }
+    }
+
+    fn of(self, margins: &mut PageMargins) -> &mut f64 {
+        match self {
+            MarginSide::Top => &mut margins.top,
+            MarginSide::Bottom => &mut margins.bottom,
+            MarginSide::Left => &mut margins.left,
+            MarginSide::Right => &mut margins.right,
+            MarginSide::Header => &mut margins.header,
+            MarginSide::Footer => &mut margins.footer,
+        }
+    }
+}
+
+/// How far one press of a margin's − or + moves it, in inches.
+pub const MARGIN_STEP: f64 = 0.1;
+
 /// The dialog's print options, each on or off.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrintOption {
@@ -141,6 +190,21 @@ impl PageSetupDialog {
 
     pub fn set_margins(&mut self, preset: MarginPreset) {
         self.setup.margins = Some(preset.margins());
+    }
+
+    /// One margin, in inches.
+    pub fn margin(&self, side: MarginSide) -> f64 {
+        *side.of(&mut self.setup.margins.unwrap_or_default())
+    }
+
+    /// One margin moved `steps` of [`MARGIN_STEP`] up or down, kept between
+    /// 0 and 10 inches and to the hundredth, as Excel's boxes keep it.
+    pub fn step_margin(&mut self, side: MarginSide, steps: i32) {
+        let mut margins = self.setup.margins.unwrap_or_default();
+        let value = side.of(&mut margins);
+        *value =
+            ((*value + MARGIN_STEP * f64::from(steps)).clamp(0.0, 10.0) * 100.0).round() / 100.0;
+        self.setup.margins = Some(margins);
     }
 
     /// The percentage it prints at when not fitting to pages.
