@@ -355,6 +355,8 @@ struct FilterPanel {
     button: FilterButton,
     options: Vec<AutoFilterOption>,
     checked: Vec<bool>,
+    /// The years (with their months) the column has dates in.
+    dates: Vec<(u32, Vec<u32>)>,
     /// Under the button, in the grid's window px.
     at: (f32, f32),
 }
@@ -372,6 +374,8 @@ enum FilterCommand {
     Reapply,
     /// Custom Filter…: its dialog.
     Custom,
+    /// A year (or a month of it) from the date list.
+    Date(u32, Option<u32>),
 }
 
 /// A toolbar button's dropdown.
@@ -1678,10 +1682,12 @@ impl WorkbookView {
                 let zoom = f64::from(self.zoom);
                 let left = button.rect.x + metrics.row_width - scroll.0;
                 let top = button.rect.y + button.rect.height + metrics.column_height - scroll.1;
+                let dates = self.book.filter_date_groups(&button);
                 self.filter = Some(FilterPanel {
                     button,
                     options: options.options,
                     checked,
+                    dates,
                     at: ((left * zoom) as f32, (top * zoom) as f32),
                 });
             }
@@ -1758,6 +1764,12 @@ impl WorkbookView {
             }
             FilterCommand::TopTen => self.open_top_ten(cx),
             FilterCommand::Custom => self.open_custom_filter(cx),
+            FilterCommand::Date(year, month) => {
+                if let Some(panel) = self.filter.take() {
+                    let result = self.book.filter_date(&panel.button, year, month);
+                    self.after_write(result, cx);
+                }
+            }
             FilterCommand::Reapply => {
                 if let Some(panel) = self.filter.take() {
                     let result = self.book.reapply_filter(&panel.button);
@@ -4292,6 +4304,41 @@ impl WorkbookView {
     /// (Select All) and the column's values to tick, OK and Cancel.
     fn filter_panel(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
         let panel = self.filter.as_ref()?;
+        // The date list: each year, then its months under it.
+        let mut date_rows = Vec::new();
+        for (year, months) in &panel.dates {
+            let year = *year;
+            date_rows.push(
+                div()
+                    .id(("filter-year", year as usize))
+                    .px_3()
+                    .py_0p5()
+                    .cursor_pointer()
+                    .hover(|item| item.bg(theme::hovered()))
+                    .child(i18n::format("filter.date.year", &[("year", &year)]))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                        view.filter_command(FilterCommand::Date(year, None), cx)
+                    })),
+            );
+            for month in months {
+                let month = *month;
+                date_rows.push(
+                    div()
+                        .id(("filter-month", (year * 100 + month) as usize))
+                        .pl_6()
+                        .pr_3()
+                        .py_0p5()
+                        .cursor_pointer()
+                        .hover(|item| item.bg(theme::hovered()))
+                        .child(i18n::format("filter.date.month", &[("month", &month)]))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(move |view, _event, _window, cx| {
+                            view.filter_command(FilterCommand::Date(year, Some(month)), cx)
+                        })),
+                );
+            }
+        }
         let action = |id: &'static str, label: &'static str, command: FilterCommand| {
             div()
                 .id(id)
@@ -4376,6 +4423,16 @@ impl WorkbookView {
                     "filter.custom.menu",
                     FilterCommand::Custom,
                 ))
+                .when(!date_rows.is_empty(), |list| {
+                    list.child(
+                        div()
+                            .px_3()
+                            .pt_1()
+                            .text_color(theme::text_dim())
+                            .child(i18n::text("filter.date.heading")),
+                    )
+                    .children(date_rows)
+                })
                 .child(div().my_1().h(px(1.0)).bg(theme::border()))
                 .child(
                     div()
@@ -6295,6 +6352,42 @@ mod tests {
                 view.book.format_at(at(10, 30)).vertical,
                 Some(VerticalAlignment::Bottom)
             );
+        });
+    }
+
+    /// A date column's filter lists its years and months; a month picked
+    /// shows only its rows.
+    #[gpui::test]
+    fn the_filter_lists_dates_by_year_and_month(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        let header = at(20, 99);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(header, "When").unwrap();
+            for (offset, date) in ["2024/1/15", "2024/3/2", "2023/12/31"].iter().enumerate() {
+                view.book
+                    .set_cell(at(20, 100 + offset as u32), date)
+                    .unwrap();
+            }
+            view.book.toggle_filter(span(header, at(20, 102))).unwrap();
+            let cell = view.cell_bounds(header).unwrap();
+            let y = cell.center().y;
+            let mut x = cell.origin.x + cell.size.width - px(1.0);
+            let button = loop {
+                let (left, top) = view.grid_point(gpui::point(x, y)).unwrap();
+                if let Some(button) = view.book.filter_button_at(left, top, view.sheet_scroll()) {
+                    break button;
+                }
+                x -= px(1.0);
+                assert!(x > cell.origin.x, "a filter button on the header");
+            };
+            let scroll = view.sheet_scroll();
+            view.open_filter(button, scroll, cx);
+            let panel = view.filter.as_ref().expect("the dropdown is open");
+            assert_eq!(panel.dates, vec![(2023, vec![12]), (2024, vec![1, 3])]);
+            view.filter_command(FilterCommand::Date(2024, Some(3)), cx);
+            assert!(view.filter.is_none());
+            // Only 2024/3/2's row shows: down from the header lands on it.
+            assert_eq!(view.book.step(header, Direction::Down), at(20, 101));
         });
     }
 

@@ -234,3 +234,42 @@ fn the_top_ten_dialog_picks_how_many_and_items_or_percent() {
     dialog.step(-1000);
     assert_eq!(dialog.count, 1);
 }
+
+/// The date filter lists the years and months a date column falls in, and
+/// shows only the rows of the one picked.
+#[test]
+fn the_date_filter_groups_by_year_and_month() {
+    let mut book = book();
+    let header = CellRef::new(20, 99);
+    book.set_cell(header, "When").unwrap();
+    for (offset, date) in ["2024/1/15", "2024/3/2", "2023/12/31", "2024/3/20"]
+        .iter()
+        .enumerate()
+    {
+        book.set_cell(CellRef::new(20, 100 + offset as u32), date)
+            .unwrap();
+    }
+    let range = span(header, CellRef::new(20, 103));
+    book.toggle_filter(range).unwrap();
+    let button = FilterButton {
+        target: FilterButtonTarget::Worksheet,
+        column: 0,
+        reference: header,
+        range,
+        active: false,
+        rect: jade_xlsx_layout::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        },
+    };
+    assert_eq!(
+        book.filter_date_groups(&button),
+        vec![(2023, vec![12]), (2024, vec![1, 3])]
+    );
+    assert!(book.filter_date(&button, 2024, Some(3)).unwrap());
+    assert_eq!(showing(&book, header, 103).len(), 2);
+    assert!(book.filter_date(&button, 2023, None).unwrap());
+    assert_eq!(showing(&book, header, 103).len(), 1);
+}
