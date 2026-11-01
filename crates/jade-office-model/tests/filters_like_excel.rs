@@ -273,3 +273,40 @@ fn the_date_filter_groups_by_year_and_month() {
     assert!(book.filter_date(&button, 2023, None).unwrap());
     assert_eq!(showing(&book, header, 103).len(), 1);
 }
+
+/// Above/Below Average and Date Filters ▸ This Month, worked out when
+/// applied.
+#[test]
+fn dynamic_filters_show_rows_against_the_average_or_today() {
+    let mut book = book();
+    let header = CellRef::new(20, 99);
+    book.set_cell(header, "Score").unwrap();
+    for (offset, score) in ["40", "10", "70"].iter().enumerate() {
+        book.set_cell(CellRef::new(20, 100 + offset as u32), score)
+            .unwrap();
+    }
+    let range = span(header, CellRef::new(20, 102));
+    book.toggle_filter(range).unwrap();
+    let button = FilterButton {
+        target: FilterButtonTarget::Worksheet,
+        column: 0,
+        reference: header,
+        range,
+        active: false,
+        rect: jade_xlsx_layout::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        },
+    };
+    // The average is 40.
+    assert!(book.filter_dynamic(&button, "aboveAverage").unwrap());
+    assert_eq!(showing(&book, header, 102), ["70"]);
+    assert!(book.filter_dynamic(&button, "belowAverage").unwrap());
+    assert_eq!(showing(&book, header, 102), ["10"]);
+    // Numbers that are no dates of this month: none show.
+    assert!(book.filter_dynamic(&button, "thisMonth").unwrap());
+    assert!(showing(&book, header, 102).is_empty());
+    assert!(book.filter_dynamic(&button, "someday").is_err());
+}

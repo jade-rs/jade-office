@@ -1,5 +1,7 @@
 //! A filter button's date filter, as Excel's list groups a date column:
-//! the years and months its dates fall in, and the rows of those ticked.
+//! the years and months its dates fall in, and the rows of those ticked —
+//! and Date Filters ▸ Today, This Month… and Above/Below Average, worked
+//! out afresh whenever the filter is applied.
 
 use jade_xlsx_headless_api::{AutoFilterChange, DateFilterGroup, DateFilterGrouping};
 use jade_xlsx_reader::{CellRef, DateSystem};
@@ -33,7 +35,32 @@ pub fn year_month(serial: f64, dates: DateSystem) -> Option<(u32, u32)> {
     u32::try_from(year).ok().map(|year| (year, month as u32))
 }
 
+/// The Date Filters a filter button offers, as Excel's `dynamicFilter`
+/// types with the i18n keys of their names.
+pub const DATE_FILTERS: [(&str, &str); 8] = [
+    ("today", "filter.dynamic.today"),
+    ("yesterday", "filter.dynamic.yesterday"),
+    ("thisWeek", "filter.dynamic.this_week"),
+    ("thisMonth", "filter.dynamic.this_month"),
+    ("lastMonth", "filter.dynamic.last_month"),
+    ("thisQuarter", "filter.dynamic.this_quarter"),
+    ("thisYear", "filter.dynamic.this_year"),
+    ("yearToDate", "filter.dynamic.year_to_date"),
+];
+
 impl<B: Backend> Workbook<B> {
+    /// A dynamic filter on the button's column: `kind` is the
+    /// `dynamicFilter` type (`today`, `thisMonth`, `aboveAverage`…).
+    pub fn filter_dynamic(&mut self, button: &FilterButton, kind: &str) -> Result<bool, String> {
+        let change = AutoFilterChange::Dynamic {
+            target: Self::filter_target(button),
+            reference: None,
+            column: button.column,
+            kind: kind.to_string(),
+        };
+        self.change_filter(&change)
+    }
+
     /// The years a filter button's column has dates in, each with the
     /// months it has them in, both in order: what the date filter lists.
     pub fn filter_date_groups(&self, button: &FilterButton) -> Vec<(u32, Vec<u32>)> {

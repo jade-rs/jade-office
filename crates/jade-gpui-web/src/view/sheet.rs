@@ -712,6 +712,8 @@ enum FilterCommand {
     Custom,
     /// A year (or a month of it) from the date list, ticked or unticked.
     Date(u32, Option<u32>),
+    /// Date Filters ▸ Today…, or Above/Below Average: a `dynamicFilter`.
+    Dynamic(&'static str),
 }
 
 #[derive(Clone, Copy)]
@@ -1246,6 +1248,12 @@ impl DocView {
             }
             FilterCommand::TopTen => self.open_top_ten(cx),
             FilterCommand::Custom => self.open_custom_filter(cx),
+            FilterCommand::Dynamic(kind) => {
+                if let Some(panel) = sheet.filter.take() {
+                    let result = sheet.book.filter_dynamic(&panel.button, kind);
+                    self.edited(result, cx);
+                }
+            }
             FilterCommand::Date(year, month) => {
                 if let Some(panel) = sheet.filter.as_mut() {
                     toggle_date(&mut panel.date_ticks, (year, month));
@@ -4841,6 +4849,16 @@ impl DocView {
                     "filter.custom.menu",
                     FilterCommand::Custom,
                 ))
+                .child(action(
+                    "filter-above-average",
+                    "filter.dynamic.above_average",
+                    FilterCommand::Dynamic("aboveAverage"),
+                ))
+                .child(action(
+                    "filter-below-average",
+                    "filter.dynamic.below_average",
+                    FilterCommand::Dynamic("belowAverage"),
+                ))
                 .when(!date_rows.is_empty(), |list| {
                     list.child(
                         div()
@@ -4850,6 +4868,11 @@ impl DocView {
                             .child(i18n::text("filter.date.heading")),
                     )
                     .children(date_rows)
+                    .children(
+                        jade_web::date_filter::DATE_FILTERS
+                            .into_iter()
+                            .map(|(kind, key)| action(kind, key, FilterCommand::Dynamic(kind))),
+                    )
                 })
                 .child(div().my_1().h(px(1.0)).bg(palette::border()))
                 .child(
