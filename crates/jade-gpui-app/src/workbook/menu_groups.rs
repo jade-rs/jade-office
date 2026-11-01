@@ -40,6 +40,8 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         | C::SortDescending
         | C::SortDialog
         | C::ShowFormulas
+        | C::TracePrecedents
+        | C::RemoveArrows
         | C::Subtotal
         | C::RemoveDuplicates
         | C::TextToColumns

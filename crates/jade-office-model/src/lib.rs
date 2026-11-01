@@ -42,6 +42,7 @@ pub mod paste_special;
 #[cfg(feature = "tiny-skia")]
 pub mod pdf;
 pub mod pivots;
+pub mod precedents;
 pub mod print;
 pub mod protection;
 pub use sheet::protected_edits;
