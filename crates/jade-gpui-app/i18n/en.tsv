@@ -3771,3 +3771,5 @@ sheet.menu.trace_precedents	Trace Precedents
 sheet.menu.remove_arrows	Remove Arrows
 sheet.trace.none	This cell has no formula that refers to cells on this sheet.
 sheet.menu.convert_to_number	Convert to Number
+sheet.menu.trace_dependents	Trace Dependents
+sheet.trace.no_dependents	No formula on this sheet refers to this cell.

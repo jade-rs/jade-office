@@ -41,6 +41,7 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         | C::SortDialog
         | C::ShowFormulas
         | C::TracePrecedents
+        | C::TraceDependents
         | C::RemoveArrows
         | C::Subtotal
         | C::RemoveDuplicates

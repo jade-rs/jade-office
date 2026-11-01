@@ -482,6 +482,8 @@ enum MenuCommand {
     ShowFormulas,
     /// Formulas ▸ Trace Precedents from the active cell.
     TracePrecedents,
+    /// Formulas ▸ Trace Dependents from the active cell.
+    TraceDependents,
     /// Formulas ▸ Remove Arrows.
     RemoveArrows,
     /// The error button's Convert to Number on the selection.
@@ -587,6 +589,8 @@ pub struct WorkbookView {
     paste_options: Option<(CellRange, bool)>,
     /// The cells Trace Precedents drew arrows to, until Remove Arrows.
     tracing: Vec<CellRef>,
+    /// The cells Trace Dependents drew arrows from.
+    tracing_dependents: Vec<CellRef>,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -1389,6 +1393,22 @@ impl WorkbookView {
                 });
             }
         }
+        // Trace Dependents: from each traced cell to the formulas reading it.
+        for &source in &self.tracing_dependents {
+            let Some(cell) = self.cell_bounds(source) else {
+                continue;
+            };
+            for dependent in self.book.dependents(source) {
+                let Some(target) = self.cell_bounds(dependent) else {
+                    continue;
+                };
+                arrows.push(TraceArrow {
+                    from: cell.center() - grid.origin,
+                    to: target.center() - grid.origin,
+                    range: None,
+                });
+            }
+        }
         arrows
     }
 
@@ -1652,8 +1672,19 @@ impl WorkbookView {
                 return;
             }
             MenuCommand::ConvertToNumber => self.book.convert_to_number(range),
+            MenuCommand::TraceDependents => {
+                let at = selection.active;
+                if self.book.dependents(at).is_empty() {
+                    self.status = i18n::text("sheet.trace.no_dependents").into();
+                } else if !self.tracing_dependents.contains(&at) {
+                    self.tracing_dependents.push(at);
+                }
+                cx.notify();
+                return;
+            }
             MenuCommand::RemoveArrows => {
                 self.tracing.clear();
+                self.tracing_dependents.clear();
                 cx.notify();
                 return;
             }
@@ -3511,7 +3542,8 @@ impl WorkbookView {
                 items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                 items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
                 items.push((MenuCommand::TracePrecedents, "sheet.menu.trace_precedents"));
-                if !self.tracing.is_empty() {
+                items.push((MenuCommand::TraceDependents, "sheet.menu.trace_dependents"));
+                if !self.tracing.is_empty() || !self.tracing_dependents.is_empty() {
                     items.push((MenuCommand::RemoveArrows, "sheet.menu.remove_arrows"));
                 }
                 if self.range().start.column == self.range().end.column {
@@ -5142,6 +5174,7 @@ impl WorkbookView {
             more_colors: None,
             paste_options: None,
             tracing: Vec::new(),
+            tracing_dependents: Vec::new(),
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -5590,6 +5623,32 @@ mod tests {
             view.menu_command(MenuCommand::TracePrecedents, false, cx);
             assert!(view.tracing.is_empty());
             assert_eq!(view.status.as_ref(), i18n::text("sheet.trace.none"));
+        });
+    }
+
+    /// Trace Dependents draws an arrow to each formula that reads the active
+    /// cell; Remove Arrows clears them; a cell nothing reads has none.
+    #[gpui::test]
+    fn trace_dependents_draws_arrows_from_the_cell(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(6, 10), "7").unwrap();
+            view.book.set_cell(at(7, 10), "=G11*2").unwrap();
+            view.book.set_cell(at(7, 12), "=SUM(G10:G12)").unwrap();
+            view.selection = Selection::cell(at(6, 10));
+            view.menu_command(MenuCommand::TraceDependents, false, cx);
+            assert_eq!(view.tracing_dependents, vec![at(6, 10)]);
+            let grid = view.grid_bounds.get().expect("the grid was laid out");
+            assert_eq!(view.trace_arrows(grid).len(), 2);
+            view.menu_command(MenuCommand::RemoveArrows, false, cx);
+            assert!(view.tracing_dependents.is_empty());
+            view.selection = Selection::cell(at(9, 12));
+            view.menu_command(MenuCommand::TraceDependents, false, cx);
+            assert!(view.tracing_dependents.is_empty());
+            assert_eq!(
+                view.status.as_ref(),
+                i18n::text("sheet.trace.no_dependents")
+            );
         });
     }
 
