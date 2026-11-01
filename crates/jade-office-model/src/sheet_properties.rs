@@ -171,7 +171,11 @@ impl<B: Backend> Workbook<B> {
         self.set_breaks(BTreeSet::new(), BTreeSet::new())
     }
 
-    fn set_breaks(&mut self, rows: BTreeSet<u32>, columns: BTreeSet<u32>) -> Result<bool, String> {
+    pub(crate) fn set_breaks(
+        &mut self,
+        rows: BTreeSet<u32>,
+        columns: BTreeSet<u32>,
+    ) -> Result<bool, String> {
         let name = self.sheet_name();
         self.atomic_edit(|book| {
             let mut steps = 0;
