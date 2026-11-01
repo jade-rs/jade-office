@@ -288,3 +288,41 @@ fn header_and_footer_codes_read_as_excel_prints_them() {
         vec![(Section::Center, "book.xlsx & red".to_string())]
     );
 }
+
+/// Where page 1's cells start and how many lines it strokes, as painted.
+fn first_page(book: &Workbook<TinySkiaBackend>) -> ((f64, f64), usize) {
+    use jade_painter::recording::{Op, RecordingPainter};
+    let pages = book
+        .paint_pages(
+            &PrintFields::default(),
+            |_, _| Some(RecordingPainter::new()),
+        )
+        .unwrap();
+    let ops = pages[0].ops();
+    let origin = ops
+        .iter()
+        .find_map(|op| match op {
+            Op::Translate(x, y) => Some((*x, *y)),
+            _ => None,
+        })
+        .expect("the page moves to its margins");
+    let lines = ops.iter().filter(|op| matches!(op, Op::LineTo(..))).count();
+    (origin, lines)
+}
+
+#[test]
+fn centring_on_the_page_and_gridlines_follow_page_setup() {
+    let mut book = tiny("grid-operations-workbook.xlsx");
+    let ((left, top), lines) = first_page(&book);
+    let format = book.page_format().unwrap();
+    assert_eq!((left, top), (format.margins.left, format.margins.top));
+    let mut setup = book.page_setup().clone();
+    setup.center_horizontally = true;
+    setup.center_vertically = true;
+    setup.print_grid_lines = true;
+    assert!(book.set_page_setup(&setup).unwrap());
+    let ((centred_left, centred_top), gridded) = first_page(&book);
+    // The cells are narrower and shorter than the room inside the margins.
+    assert!(centred_left > left && centred_top > top);
+    assert!(gridded > lines);
+}

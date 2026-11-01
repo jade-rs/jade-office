@@ -1,7 +1,7 @@
 use super::super::DocView;
 use crate::{i18n, palette as theme};
 use gpui::{div, prelude::*, px, Context, MouseButton};
-use jade_web::page_setup_dialog::{MarginPreset, PageSetupDialog, FITS, PAPERS};
+use jade_web::page_setup_dialog::{MarginPreset, PageSetupDialog, PrintOption, FITS, PAPERS};
 type View = DocView;
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
