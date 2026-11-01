@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use jade_painter::Painter;
 
+pub mod cell_styles;
 pub mod charts;
 pub mod clipboard;
 pub mod conditional_formatting;
