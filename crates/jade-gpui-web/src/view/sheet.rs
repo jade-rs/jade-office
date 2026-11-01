@@ -778,6 +778,8 @@ enum MenuCommand {
     TextToColumns,
     SortDialog,
     PageSetup,
+    /// Home ▸ Cell Styles: one of Excel's built-in styles.
+    CellStyle(jade_web::cell_styles::CellStyle),
     /// Page Layout ▸ Breaks: Insert, Remove and Reset All Page Breaks.
     InsertPageBreak,
     RemovePageBreak,
@@ -3093,6 +3095,7 @@ impl DocView {
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::PageSetup => return self.open_page_setup_dialog(cx),
+            MenuCommand::CellStyle(style) => sheet.book.apply_cell_style(range, style),
             MenuCommand::InsertPageBreak => sheet.book.insert_page_break(selection.active),
             MenuCommand::RemovePageBreak => sheet.book.remove_page_break(selection.active),
             MenuCommand::ResetPageBreaks => sheet.book.reset_page_breaks(),
@@ -4506,6 +4509,10 @@ impl DocView {
                         (MenuCommand::PageSetup, "page_setup.menu"),
                         (MenuCommand::InsertPageBreak, "sheet.menu.insert_page_break"),
                     ]);
+                    items.extend(
+                        jade_web::cell_styles::CellStyle::ALL
+                            .map(|style| (MenuCommand::CellStyle(style), style.label())),
+                    );
                     if sheet.book.page_break_at(sheet.selection.active) {
                         items.push((MenuCommand::RemovePageBreak, "sheet.menu.remove_page_break"));
                     }

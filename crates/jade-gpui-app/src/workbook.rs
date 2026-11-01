@@ -541,6 +541,8 @@ enum MenuCommand {
     TextToColumns,
     SortDialog,
     PageSetup,
+    /// Home ▸ Cell Styles: one of Excel's built-in styles.
+    CellStyle(jade_office_model::cell_styles::CellStyle),
     /// Page Layout ▸ Breaks: Insert, Remove and Reset All Page Breaks.
     InsertPageBreak,
     RemovePageBreak,
@@ -1786,6 +1788,7 @@ impl WorkbookView {
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::PageSetup => return self.open_page_setup_dialog(cx),
+            MenuCommand::CellStyle(style) => self.book.apply_cell_style(range, style),
             MenuCommand::InsertPageBreak => self.book.insert_page_break(selection.active),
             MenuCommand::RemovePageBreak => self.book.remove_page_break(selection.active),
             MenuCommand::ResetPageBreaks => self.book.reset_page_breaks(),
@@ -3685,6 +3688,10 @@ impl WorkbookView {
                     (MenuCommand::PageSetup, "page_setup.menu"),
                     (MenuCommand::InsertPageBreak, "sheet.menu.insert_page_break"),
                 ]);
+                items.extend(
+                    jade_office_model::cell_styles::CellStyle::ALL
+                        .map(|style| (MenuCommand::CellStyle(style), style.label())),
+                );
                 if self.book.page_break_at(self.active()) {
                     items.push((MenuCommand::RemovePageBreak, "sheet.menu.remove_page_break"));
                 }
@@ -5966,6 +5973,22 @@ mod tests {
             assert_eq!((width.round(), height.round()), (144.0, 96.0));
             assert!(view.book.undo().unwrap());
             assert!(view.book.object_rect(id, (0.0, 0.0)).is_none());
+        });
+    }
+
+    /// A cell style from the menu formats the selection.
+    #[gpui::test]
+    fn a_cell_style_from_the_menu_formats_the_selection(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::cell(at(9, 30));
+            view.menu_command(
+                MenuCommand::CellStyle(jade_office_model::cell_styles::CellStyle::Bad),
+                false,
+                cx,
+            );
+            let format = view.book.format_at(at(9, 30));
+            assert_eq!(format.fill_color.as_deref(), Some("FFC7CE"));
         });
     }
 

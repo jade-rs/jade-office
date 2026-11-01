@@ -3817,3 +3817,16 @@ sheet.shape.oval	Oval
 sheet.shape.rounded_rectangle	Rounded Rectangle
 sheet.shape.right_arrow	Right Arrow
 filter.date.day	{day}
+sheet.menu.group_cell_styles	Cell Styles
+cell_style.normal	Normal
+cell_style.good	Good
+cell_style.bad	Bad
+cell_style.neutral	Neutral
+cell_style.title	Title
+cell_style.heading1	Heading 1
+cell_style.heading2	Heading 2
+cell_style.heading3	Heading 3
+cell_style.total	Total
+cell_style.input	Input
+cell_style.output	Output
+cell_style.note	Note
