@@ -7575,6 +7575,47 @@ mod tests {
         });
     }
 
+    /// Sort On Cell Color from the Sort dialog: the colour picked goes on
+    /// top, the header row staying where it is.
+    #[gpui::test]
+    fn the_sort_dialog_puts_a_cell_colour_on_top(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(7, 29), "Name").unwrap();
+            view.book.set_cell(at(8, 29), "Sales").unwrap();
+            for (row, (name, sales)) in [("A", "10"), ("B", "30"), ("C", "20")].iter().enumerate() {
+                view.book.set_cell(at(7, 30 + row as u32), name).unwrap();
+                view.book.set_cell(at(8, 30 + row as u32), sales).unwrap();
+            }
+            let green = jade_office_model::sheet::CellFormat {
+                fill_color: Some("00B050".into()),
+                ..Default::default()
+            };
+            view.book
+                .format(jade_office_model::sheet::span(at(7, 32), at(7, 32)), &green)
+                .unwrap();
+            view.selection = Selection::cell(at(7, 29));
+            view.selection.focus = at(8, 32);
+            view.open_sort_dialog(cx);
+            view.sort_action(sort::SortAction::On(0, Some(false)), cx);
+            let dialog = view.sort_dialog.as_ref().unwrap();
+            let green_at = dialog
+                .colors(0, false)
+                .iter()
+                .position(|color| color == "00B050")
+                .expect("the column's green");
+            view.sort_action(sort::SortAction::Color(0, green_at), cx);
+            view.sort_action(sort::SortAction::Take, cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.sort_dialog.is_none());
+            let names: Vec<String> = (29..=32)
+                .map(|row| view.book.display_text(at(7, row)))
+                .collect();
+            assert_eq!(names, ["Name", "C", "A", "B"]);
+        });
+    }
+
     /// Remove Duplicates opens a dialog on the list, every column ticked;
     /// with one column left ticked it takes out the rows repeating it, and
     /// OK with none ticked keeps the dialog open.

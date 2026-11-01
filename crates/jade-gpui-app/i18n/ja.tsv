@@ -3885,3 +3885,10 @@ text_columns.skip	削除する
 text_columns.minus	−
 text_columns.plus	+
 sheet.menu.from_text	テキストまたは CSV から…
+sort.on_values	セルの値
+sort.on_cell_color	セルの色
+sort.on_font_color	フォントの色
+sort.on_top	上
+sort.on_bottom	下
+sort.no_fill	塗りつぶしなし
+sort.automatic	自動

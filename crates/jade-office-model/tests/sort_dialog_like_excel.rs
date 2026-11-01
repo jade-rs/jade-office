@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
 use jade_office_model::sheet::{span, CellRef, Workbook};
-use jade_office_model::sort_dialog::{SortDialog, SortLevel};
+use jade_office_model::sort_dialog::{SortDialog, SortLevel, SortOn};
 use jade_office_model::tiny::TinySkiaBackend;
 
 fn book() -> Workbook<TinySkiaBackend> {
@@ -82,7 +82,8 @@ fn the_dialog_opens_on_the_list_with_one_level_and_adds_others() {
         dialog.levels,
         [SortLevel {
             column: 1,
-            descending: false
+            descending: false,
+            on: SortOn::Values,
         }]
     );
     dialog.add_level();
@@ -94,4 +95,46 @@ fn the_dialog_opens_on_the_list_with_one_level_and_adds_others() {
     dialog.remove_level(0);
     dialog.remove_level(0);
     assert_eq!(dialog.levels.len(), 1);
+}
+
+/// Sort On Cell Color: the dialog offers the colours the column has, the
+/// first not none chosen; that colour's rows go on top, or on bottom.
+#[test]
+fn a_level_sorts_on_a_cell_colour_on_top_or_bottom() {
+    use jade_office_model::sheet::{span, CellFormat};
+    let mut book = book();
+    for (row, name) in ["Name", "a", "b", "c", "d"].iter().enumerate() {
+        book.set_cell(CellRef::new(20, 40 + row as u32), name)
+            .unwrap();
+    }
+    let yellow = CellFormat {
+        fill_color: Some("FFFF00".into()),
+        ..CellFormat::default()
+    };
+    book.format(span(CellRef::new(20, 42), CellRef::new(20, 42)), &yellow)
+        .unwrap();
+    book.format(span(CellRef::new(20, 44), CellRef::new(20, 44)), &yellow)
+        .unwrap();
+    let at = CellRef::new(20, 41);
+    let mut dialog = SortDialog::open(&book, span(CellRef::new(20, 40), CellRef::new(20, 44)), at);
+    // Text over text reads as no header; this list has one.
+    dialog.header = true;
+    assert!(dialog.colors(0, false).contains(&"FFFF00".to_string()));
+    dialog.sort_on(0, Some(false));
+    assert_eq!(dialog.levels[0].on, SortOn::CellColor("FFFF00".into()));
+    assert!(dialog.apply(&mut book).unwrap());
+    let column = |book: &Workbook<TinySkiaBackend>| {
+        (41..=44)
+            .map(|row| book.display_text(CellRef::new(20, row)))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(column(&book), ["b", "d", "a", "c"]);
+    dialog.levels[0].descending = true;
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(column(&book), ["a", "c", "b", "d"]);
+    // Back to the values.
+    dialog.sort_on(0, None);
+    dialog.levels[0].descending = true;
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(column(&book), ["d", "c", "b", "a"]);
 }
