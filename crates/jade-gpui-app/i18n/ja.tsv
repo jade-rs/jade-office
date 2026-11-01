@@ -3832,3 +3832,6 @@ cell_style.output	出力
 cell_style.note	メモ
 sheet.menu.goto_other_sheet_precedent	他のシートの参照元へ移動…
 sheet.trace.other_sheets	他のシートの参照元: {refs}
+validation.circle_invalid	無効データのマーク
+validation.clear_circles	検証サークルのクリア
+validation.none_invalid	このシートには入力規則に違反するセルがありません。

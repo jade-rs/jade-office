@@ -70,6 +70,53 @@ impl<B: Backend> Workbook<B> {
         self.wrote(1)?;
         Ok(true)
     }
+    /// Data ▸ Circle Invalid Data: the cells on the active sheet whose value
+    /// breaks their validation rule, in reading order, at most Excel's 255;
+    /// worked out once per layout revision.
+    pub fn invalid_cells(&self) -> std::rc::Rc<Vec<CellRef>> {
+        let revision = self.layout_revision();
+        if let Some((at, cells)) = &*self.invalid_cells.borrow() {
+            if *at == revision {
+                return cells.clone();
+            }
+        }
+        let workbook = self.engine().workbook();
+        let index = self.sheet_index();
+        let sheet = &workbook.sheets[index];
+        let mut found: Vec<CellRef> = Vec::new();
+        'rules: for rule in &sheet.data_validations {
+            for cell in sheet.rows.iter().flat_map(|row| row.cells.iter()) {
+                if found.len() >= 255 {
+                    break 'rules;
+                }
+                if matches!(cell.value, CellValue::Empty)
+                    || found.contains(&cell.reference)
+                    || !rule
+                        .ranges
+                        .iter()
+                        .any(|range| range.contains(cell.reference))
+                {
+                    continue;
+                }
+                let result = jade_xlsx_calc::validation::validate(
+                    workbook,
+                    index,
+                    cell.reference,
+                    rule,
+                    &Candidate::Value(cell.value.clone()),
+                    self.engine().calculation_time_zone(),
+                );
+                if matches!(result, Ok(ValidationResult::Invalid)) {
+                    found.push(cell.reference);
+                }
+            }
+        }
+        found.sort_by_key(|at| (at.row, at.column));
+        let cells = std::rc::Rc::new(found);
+        *self.invalid_cells.borrow_mut() = Some((revision, cells.clone()));
+        cells
+    }
+
     /// No alert when the value satisfies the rule, or alerts are disabled.
     pub fn validation_alert(
         &self,
