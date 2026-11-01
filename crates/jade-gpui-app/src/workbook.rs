@@ -348,6 +348,7 @@ struct SheetMenu {
 }
 
 include!("workbook/menu_groups.rs");
+include!("workbook/trace_arrows.rs");
 
 /// The dropdown a filter button opens: sorts, a clear, and the column's
 /// values to tick, as Excel's AutoFilter menu.
@@ -479,6 +480,10 @@ enum MenuCommand {
     InsertFunction,
     /// Formulas ▸ Show Formulas, on or off.
     ShowFormulas,
+    /// Formulas ▸ Trace Precedents from the active cell.
+    TracePrecedents,
+    /// Formulas ▸ Remove Arrows.
+    RemoveArrows,
     /// A sheet tab from one place to another.
     MoveSheet(usize, usize),
     /// New Note, or Edit Note on a cell that has one.
@@ -578,6 +583,8 @@ pub struct WorkbookView {
     /// The Paste Options button after a paste from this workbook's copy:
     /// the range pasted on, and whether its menu is open.
     paste_options: Option<(CellRange, bool)>,
+    /// The cells Trace Precedents drew arrows to, until Remove Arrows.
+    tracing: Vec<CellRef>,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -1354,6 +1361,35 @@ impl WorkbookView {
         cx.notify();
     }
 
+    /// Trace Precedents' arrows, from each traced cell's precedents to it,
+    /// in px from the grid's top-left; those scrolled out of sight left out.
+    fn trace_arrows(&self, grid: Bounds<Pixels>) -> Vec<TraceArrow> {
+        let mut arrows = Vec::new();
+        for &target in &self.tracing {
+            let Some(cell) = self.cell_bounds(target) else {
+                continue;
+            };
+            let to = cell.center() - grid.origin;
+            for range in self.book.precedents(target) {
+                let (Some(first), Some(last)) =
+                    (self.cell_bounds(range.start), self.cell_bounds(range.end))
+                else {
+                    continue;
+                };
+                let whole = first.union(&last);
+                arrows.push(TraceArrow {
+                    from: first.center() - grid.origin,
+                    to,
+                    range: (range.start != range.end).then(|| Bounds {
+                        origin: whole.origin - grid.origin,
+                        size: whole.size,
+                    }),
+                });
+            }
+        }
+        arrows
+    }
+
     /// The Paste Options button at the pasted range's corner, with its menu
     /// when open — while that range stays selected.
     fn paste_options_button(
@@ -1603,6 +1639,21 @@ impl WorkbookView {
             MenuCommand::TabColor(index, color) => self.book.set_tab_color(index, color),
             MenuCommand::OpenGroup(_) => return,
             MenuCommand::InsertFunction => return self.open_insert_function(cx),
+            MenuCommand::TracePrecedents => {
+                let at = selection.active;
+                if self.book.precedents(at).is_empty() {
+                    self.status = i18n::text("sheet.trace.none").into();
+                } else if !self.tracing.contains(&at) {
+                    self.tracing.push(at);
+                }
+                cx.notify();
+                return;
+            }
+            MenuCommand::RemoveArrows => {
+                self.tracing.clear();
+                cx.notify();
+                return;
+            }
             MenuCommand::ShowFormulas => {
                 let on = !self.book.show_formulas();
                 self.book.set_show_formulas(on)
@@ -3452,6 +3503,10 @@ impl WorkbookView {
                 }
                 items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                 items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
+                items.push((MenuCommand::TracePrecedents, "sheet.menu.trace_precedents"));
+                if !self.tracing.is_empty() {
+                    items.push((MenuCommand::RemoveArrows, "sheet.menu.remove_arrows"));
+                }
                 if self.range().start.column == self.range().end.column {
                     items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                 }
@@ -4781,6 +4836,21 @@ impl Render for WorkbookView {
             .grid_bounds
             .get()
             .and_then(|grid| self.paste_options_button(grid, cx));
+        let arrows = self
+            .grid_bounds
+            .get()
+            .map(|grid| self.trace_arrows(grid))
+            .unwrap_or_default();
+        let trace = (!arrows.is_empty()).then(|| {
+            canvas(
+                |_, _, _| {},
+                move |bounds, _, window, _| paint_trace_arrows(window, bounds.origin, &arrows),
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+        });
         let menu = self.context_menu(cx);
         let format_dialog = self.format_dialog_element(cx);
         let note = self.note.and_then(|(cell, (x, y))| {
@@ -4926,6 +4996,7 @@ impl Render for WorkbookView {
                             .child(div().w(px(sheet_width)).h(px(sheet_height)).flex_none()),
                     )
                     .children(editor)
+                    .children(trace)
                     .children(paste_options)
                     .children(self.object_frame())
                     .children(note)
@@ -5063,6 +5134,7 @@ impl WorkbookView {
             top_ten: None,
             more_colors: None,
             paste_options: None,
+            tracing: Vec::new(),
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -5488,6 +5560,29 @@ mod tests {
         cx.simulate_keystrokes("enter");
         view.read_with(cx, |view, _| {
             assert_eq!(view.edit.as_ref().unwrap().text.text, "=1+ROUNDUP(");
+        });
+    }
+
+    /// Trace Precedents draws arrows from what the active cell's formula
+    /// reads; Remove Arrows takes them away; a value has none to trace.
+    #[gpui::test]
+    fn trace_precedents_draws_arrows_to_the_cell(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(5, 5), "=B2+SUM(C3:D4)").unwrap();
+            view.selection = Selection::cell(at(5, 5));
+            view.menu_command(MenuCommand::TracePrecedents, false, cx);
+            assert_eq!(view.tracing, vec![at(5, 5)]);
+            let grid = view.grid_bounds.get().expect("the grid was laid out");
+            let arrows = view.trace_arrows(grid);
+            assert_eq!(arrows.len(), 2);
+            assert!(arrows[0].range.is_none() && arrows[1].range.is_some());
+            view.menu_command(MenuCommand::RemoveArrows, false, cx);
+            assert!(view.tracing.is_empty());
+            view.selection = Selection::cell(at(7, 7));
+            view.menu_command(MenuCommand::TracePrecedents, false, cx);
+            assert!(view.tracing.is_empty());
+            assert_eq!(view.status.as_ref(), i18n::text("sheet.trace.none"));
         });
     }
 
