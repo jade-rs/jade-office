@@ -371,3 +371,40 @@ fn page_break_preview_shows_the_print_area_its_pages_and_manual_breaks() {
     assert_eq!(empty.sheet_names().len(), sheets + 1);
     assert!(empty.page_break_view().is_none());
 }
+
+/// Dragging a page break in Page Break Preview: found under the pointer on
+/// its line, moved where it is let go, and taken away when dragged off the
+/// print area; each one undo step.
+#[test]
+fn page_breaks_are_dragged_in_the_preview() {
+    use jade_xlsx_reader::Axis;
+    let mut book = tiny("objects-workbook.xlsx");
+    let scroll = (0.0, 0.0);
+    let (x, top, w, _) = book.cell_rect(at(1, 3), scroll).unwrap();
+    assert_eq!(
+        book.page_break_edge(x + w / 2.0, top + 1.0, scroll),
+        Some((Axis::Rows, 3))
+    );
+    let (_, middle, _, h) = book.cell_rect(at(1, 2), scroll).unwrap();
+    assert_eq!(
+        book.page_break_edge(x + w / 2.0, middle + h / 2.0, scroll),
+        None
+    );
+    // Let go near the top of row 3 (index 2): the break sits above it.
+    let target = book
+        .page_break_target(Axis::Rows, x + w / 2.0, middle + 2.0, scroll)
+        .unwrap();
+    assert_eq!(target, 2);
+    assert!(book.move_page_break(Axis::Rows, 3, target).unwrap());
+    let view = book.page_break_view().unwrap();
+    assert_eq!(view.manual_rows, vec![2]);
+    assert_eq!(
+        view.pages,
+        vec![span(at(0, 0), at(2, 1)), span(at(0, 2), at(2, 4))]
+    );
+    // Off the print area: gone.
+    assert!(book.move_page_break(Axis::Rows, 2, 40).unwrap());
+    assert!(book.page_break_view().unwrap().manual_rows.is_empty());
+    assert!(book.undo().unwrap());
+    assert_eq!(book.page_break_view().unwrap().manual_rows, vec![2]);
+}
