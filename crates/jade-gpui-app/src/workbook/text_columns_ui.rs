@@ -10,6 +10,12 @@ pub(super) enum TextColumnsAction {
     Fixed(bool),
     /// A click on the fixed-width ruler: a break before that character.
     Break(usize),
+    /// From Text's "Start import at row" moved up or down.
+    Start(isize),
+    /// A column of the preview chosen, for its format.
+    Column(usize),
+    /// The chosen column's format.
+    Format(ColumnFormat),
     Take,
     Cancel,
 }
@@ -123,22 +129,94 @@ impl View {
                     ),
             );
         }
+        // The preview as columns; a column's heading picks it for the
+        // format choices below, a skipped one is greyed.
+        let rows = dialog.preview();
+        let columns = rows.iter().map(Vec::len).max().unwrap_or(0).min(30);
+        let format_of = |column: usize| dialog.formats.get(column).copied().unwrap_or_default();
         let mut preview = div()
             .id("text-columns-preview")
-            .max_h(px(120.))
-            .overflow_y_scroll()
+            .max_h(px(150.))
+            .overflow_scroll()
             .p_1()
             .rounded_sm()
             .border_1()
             .border_color(theme::border())
             .bg(theme::window())
             .text_xs()
-            .font_family("Menlo");
-        for pieces in dialog.preview() {
-            preview = preview.child(gpui::SharedString::from(pieces.join(" │ ")));
+            .child(div().flex().children((0..columns).map(|column| {
+                let chosen = dialog.column == column;
+                div()
+                    .id(("text-columns-heading", column))
+                    .w(px(80.))
+                    .flex_none()
+                    .px_1()
+                    .truncate()
+                    .cursor_pointer()
+                    .text_color(theme::text_dim())
+                    .when(chosen, |heading| heading.bg(theme::selected()))
+                    .child(format!(
+                        "{} · {}",
+                        column + 1,
+                        i18n::text(format_of(column).label())
+                    ))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.text_columns_action(TextColumnsAction::Column(column), cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+            })));
+        for pieces in rows {
+            preview = preview.child(div().flex().children((0..columns).map(|column| {
+                let skipped = format_of(column) == ColumnFormat::Skip;
+                div()
+                    .w(px(80.))
+                    .flex_none()
+                    .px_1()
+                    .truncate()
+                    .when(skipped, |cell| cell.text_color(theme::text_dim()))
+                    .when(dialog.column == column, |cell| cell.bg(theme::selected()))
+                    .child(gpui::SharedString::from(
+                        pieces.get(column).cloned().unwrap_or_default().replace('\n', " "),
+                    ))
+            })));
         }
+        let formats = div().flex().flex_wrap().gap_1().children(
+            ColumnFormat::ALL.into_iter().enumerate().map(|(index, format)| {
+                self.text_columns_chip(
+                    ("text-columns-format", index),
+                    format.label(),
+                    dialog.format() == format,
+                    TextColumnsAction::Format(format),
+                    cx,
+                )
+            }),
+        );
+        let start = dialog.import.as_ref().map(|import| {
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(self.text_columns_chip(
+                    "text-columns-start-up",
+                    "text_columns.minus",
+                    false,
+                    TextColumnsAction::Start(-1),
+                    cx,
+                ))
+                .child(div().w(px(32.)).text_center().child(format!("{}", import.start + 1)))
+                .child(self.text_columns_chip(
+                    "text-columns-start-down",
+                    "text_columns.plus",
+                    false,
+                    TextColumnsAction::Start(1),
+                    cx,
+                ))
+        });
         let panel = div()
-            .w(px(440.))
+            .w(px(520.))
             .p_4()
             .rounded_md()
             .bg(theme::panel())
@@ -148,12 +226,17 @@ impl View {
             .text_sm()
             .text_color(theme::text())
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .child(
-                div()
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .child(i18n::text("text_columns.dialog")),
-            )
+            .child(div().font_weight(gpui::FontWeight::BOLD).child(i18n::text(
+                if dialog.import.is_some() {
+                    "text_columns.import_dialog"
+                } else {
+                    "text_columns.dialog"
+                },
+            )))
             .child(mode)
+            .when_some(start, |panel, start| {
+                panel.child(section("text_columns.start_row")).child(start)
+            })
             .map(|panel| {
                 if fixed.is_some() {
                     panel.child(section("text_columns.breaks")).child(ruler)
@@ -172,6 +255,8 @@ impl View {
             })
             .child(section("text_columns.preview"))
             .child(preview)
+            .child(section("text_columns.column_format"))
+            .child(formats)
             .child(
                 div()
                     .mt_4()
@@ -198,7 +283,7 @@ impl View {
 
     fn text_columns_chip(
         &self,
-        id: &'static str,
+        id: impl Into<gpui::ElementId>,
         key: &'static str,
         on: bool,
         action: TextColumnsAction,
@@ -234,6 +319,9 @@ fn change_text_columns_dialog(dialog: &mut TextColumnsDialog, action: TextColumn
             return;
         }
         TextColumnsAction::Break(at) => return dialog.toggle_break(at),
+        TextColumnsAction::Start(step) => return dialog.step_start(step),
+        TextColumnsAction::Column(column) => return dialog.select_column(column),
+        TextColumnsAction::Format(format) => return dialog.set_format(format),
         _ => {}
     }
     let split = &mut dialog.split;
@@ -245,6 +333,9 @@ fn change_text_columns_dialog(dialog: &mut TextColumnsDialog, action: TextColumn
         TextColumnsAction::Consecutive => split.consecutive = !split.consecutive,
         TextColumnsAction::Fixed(_)
         | TextColumnsAction::Break(_)
+        | TextColumnsAction::Start(_)
+        | TextColumnsAction::Column(_)
+        | TextColumnsAction::Format(_)
         | TextColumnsAction::Take
         | TextColumnsAction::Cancel => {}
     }

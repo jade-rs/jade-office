@@ -3876,3 +3876,12 @@ sheet.shape.pentagon_arrow	Pentagon Arrow
 sheet.shape.chevron	Chevron
 sheet.shape.star5	5-Point Star
 sheet.shape.speech_bubble	Speech Bubble
+text_columns.import_dialog	Text Import Wizard
+text_columns.start_row	Start import at row
+text_columns.column_format	Column data format (click a column heading)
+text_columns.general	General
+text_columns.text	Text
+text_columns.skip	Do not import
+text_columns.minus	−
+text_columns.plus	+
+sheet.menu.from_text	From Text/CSV…
