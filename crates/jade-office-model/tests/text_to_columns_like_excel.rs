@@ -112,3 +112,62 @@ fn fixed_width_cuts_at_the_breaks_the_wizard_guesses() {
     dialog.set_fixed_width(false);
     assert!(dialog.split.fixed_width.is_none());
 }
+
+/// The third step: a column taken as Text keeps `007` as written, in the
+/// Text format; a skipped one is left out and the rest close up.
+#[test]
+fn column_formats_keep_text_and_skip_columns() {
+    use jade_office_model::text_columns::ColumnFormat;
+    let mut book = book();
+    let at = CellRef::new(20, 40);
+    book.set_cell(at, "007,drop,2026/1/5").unwrap();
+    let mut dialog = TextColumnsDialog::open(&book, span(at, at), at);
+    dialog.split = TextToColumns {
+        tab: false,
+        comma: true,
+        ..TextToColumns::default()
+    };
+    dialog.select_column(0);
+    dialog.set_format(ColumnFormat::Text);
+    dialog.select_column(1);
+    dialog.set_format(ColumnFormat::Skip);
+    assert_eq!(dialog.format(), ColumnFormat::Skip);
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(book.display_text(at), "007");
+    assert_eq!(book.format_at(at).number_format.as_deref(), Some("@"));
+    // The date closes up next to it, shown as a date.
+    let date = CellRef::new(21, 40);
+    assert_eq!(book.display_text(date), "2026/1/5");
+    assert_eq!(book.display_text(CellRef::new(22, 40)), "");
+    // One undo takes the lot back.
+    assert!(book.undo().unwrap());
+    assert_eq!(book.edit_text(at), "007,drop,2026/1/5");
+}
+
+/// Data ▸ From Text: the file's lines from the start row, split at what
+/// it is split at, a quoted line break kept in its field, put at the active
+/// cell as one undo step.
+#[test]
+fn from_text_imports_a_file_at_the_active_cell() {
+    use jade_office_model::text_columns::ColumnFormat;
+    let mut book = book();
+    let file =
+        "Exported 2026-11-01\r\nCode,Name,Amount\r\n007,\"Two\nlines\",1200\r\n010,Plain,30\r\n";
+    let at = CellRef::new(20, 50);
+    let mut dialog = TextColumnsDialog::open_import("export.txt", file.as_bytes(), at);
+    assert!(dialog.split.comma && !dialog.split.tab);
+    assert_eq!(dialog.sample.len(), 4);
+    dialog.step_start(1);
+    assert_eq!(dialog.sample[0], "Code,Name,Amount");
+    assert_eq!(dialog.preview()[1], ["007", "Two\nlines", "1200"]);
+    dialog.select_column(0);
+    dialog.set_format(ColumnFormat::Text);
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(book.display_text(at), "Code");
+    assert_eq!(book.display_text(CellRef::new(20, 51)), "007");
+    assert_eq!(book.edit_text(CellRef::new(21, 51)), "Two\nlines");
+    assert_eq!(book.number(CellRef::new(22, 51)), Some(1200.0));
+    assert_eq!(book.display_text(CellRef::new(20, 52)), "010");
+    assert!(book.undo().unwrap());
+    assert_eq!(book.display_text(at), "");
+}

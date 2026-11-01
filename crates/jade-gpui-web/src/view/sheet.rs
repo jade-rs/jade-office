@@ -124,6 +124,8 @@ pub(super) struct Sheet {
     pub(super) link_dialog: Option<LinkDialog>,
     pub(super) subtotal_dialog: Option<jade_web::subtotal::SubtotalDialog>,
     pub(super) text_columns_dialog: Option<jade_web::text_columns::TextColumnsDialog>,
+    /// The page's picker is open for Data ▸ From Text.
+    pub(super) awaiting_text: bool,
     pub(super) sort_dialog: Option<jade_web::sort_dialog::SortDialog>,
     pub(super) page_setup_dialog: Option<jade_web::page_setup_dialog::PageSetupDialog>,
     pub(super) custom_filter: Option<jade_web::custom_filter::CustomFilterDialog>,
@@ -782,6 +784,8 @@ enum MenuCommand {
     Subtotal,
     RemoveDuplicates,
     TextToColumns,
+    /// Data ▸ From Text/CSV: a text file through the Text Import Wizard.
+    FromText,
     SortDialog,
     PageSetup,
     /// Home ▸ Cell Styles: one of Excel's built-in styles.
@@ -859,6 +863,7 @@ impl Sheet {
             link_dialog: None,
             subtotal_dialog: None,
             text_columns_dialog: None,
+            awaiting_text: false,
             sort_dialog: None,
             page_setup_dialog: None,
             custom_filter: None,
@@ -3121,6 +3126,7 @@ impl DocView {
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
+            MenuCommand::FromText => return self.open_text_import(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::PageSetup => return self.open_page_setup_dialog(cx),
             MenuCommand::CellStyle(style) => sheet.book.apply_cell_style(range, style),
@@ -4539,6 +4545,7 @@ impl DocView {
                     if selected.start.column == selected.end.column {
                         items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                     }
+                    items.push((MenuCommand::FromText, "sheet.menu.from_text"));
                     if sheet.book.manual_calculation() {
                         items.push((MenuCommand::CalculateNow, "sheet.menu.calculate_now"));
                         items.push((

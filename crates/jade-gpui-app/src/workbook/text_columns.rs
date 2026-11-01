@@ -1,7 +1,7 @@
 use super::WorkbookView;
 use crate::{i18n, theme};
 use gpui::{div, prelude::*, px, Context, MouseButton};
-use jade_office_model::text_columns::TextColumnsDialog;
+use jade_office_model::text_columns::{ColumnFormat, TextColumnsDialog};
 type View = WorkbookView;
 include!("text_columns_ui.rs");
 impl WorkbookView {
@@ -20,6 +20,43 @@ impl WorkbookView {
         self.menu = None;
         cx.notify();
     }
+    /// Data ▸ From Text/CSV: a text file picked, opened in the Text Import
+    /// Wizard to go in at the active cell.
+    pub(super) fn open_text_import(&mut self, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        self.menu = None;
+        let prompt = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+        cx.spawn(async move |view, cx| {
+            let Ok(Ok(Some(paths))) = prompt.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            view.update(cx, |view, cx| match std::fs::read(&path) {
+                Ok(bytes) => view.import_text_file(&name, &bytes, cx),
+                Err(error) => view.after_write(Err(format!("{}: {error}", path.display())), cx),
+            })
+            .ok();
+        })
+        .detach();
+    }
+    /// The wizard opened on the file `name` holding `bytes`.
+    pub(super) fn import_text_file(&mut self, name: &str, bytes: &[u8], cx: &mut Context<Self>) {
+        self.text_columns_dialog = Some(TextColumnsDialog::open_import(name, bytes, self.active()));
+        cx.notify();
+    }
     pub(super) fn text_columns_action(
         &mut self,
         action: TextColumnsAction,
@@ -30,7 +67,7 @@ impl WorkbookView {
                 let Some(dialog) = self.text_columns_dialog.take() else {
                     return;
                 };
-                let result = self.book.text_to_columns(dialog.range, &dialog.split);
+                let result = dialog.apply(&mut self.book);
                 self.after_write(result, cx);
             }
             TextColumnsAction::Cancel => {

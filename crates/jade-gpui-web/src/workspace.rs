@@ -171,6 +171,14 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A text file picked for Data ▸ From Text goes to the sheet that
+        // asked, into its Text Import Wizard.
+        if let Some(tab) = self.active_tab().cloned() {
+            if tab.read(cx).wants_text_import(&name) {
+                tab.update(cx, |view, cx| view.take_text_import(&name, &bytes, cx));
+                return;
+            }
+        }
         // A list picked for a mail merge goes to the document that asked.
         if let Some(tab) = self.active_tab().cloned() {
             if tab.read(cx).wants_data_source() {

@@ -546,6 +546,8 @@ enum MenuCommand {
     RemoveDuplicates,
     /// Data ▸ Text to Columns on the selection's column.
     TextToColumns,
+    /// Data ▸ From Text/CSV: a text file through the Text Import Wizard.
+    FromText,
     SortDialog,
     PageSetup,
     /// Home ▸ Cell Styles: one of Excel's built-in styles.
@@ -1821,6 +1823,7 @@ impl WorkbookView {
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
+            MenuCommand::FromText => return self.open_text_import(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::PageSetup => return self.open_page_setup_dialog(cx),
             MenuCommand::CellStyle(style) => self.book.apply_cell_style(range, style),
@@ -3700,6 +3703,7 @@ impl WorkbookView {
                 if self.range().start.column == self.range().end.column {
                     items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                 }
+                items.push((MenuCommand::FromText, "sheet.menu.from_text"));
                 if self.book.manual_calculation() {
                     items.push((MenuCommand::CalculateNow, "sheet.menu.calculate_now"));
                     items.push((
@@ -7442,6 +7446,32 @@ mod tests {
             assert!(view.text_columns_dialog.is_none());
             assert_eq!(view.book.display_text(at(7, 29)), "東京");
             assert_eq!(view.book.display_text(at(8, 30)), "20");
+        });
+    }
+
+    /// From Text: a tab-separated file in the wizard, its title row
+    /// skipped, the code column kept as text, put at the active cell.
+    #[gpui::test]
+    fn the_text_import_wizard_puts_a_file_at_the_active_cell(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::text_columns::ColumnFormat;
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::cell(at(12, 40));
+            view.import_text_file("codes.txt", "Report\ncode\tqty\n0042\t3\n".as_bytes(), cx);
+            assert!(view.text_columns_dialog.as_ref().unwrap().split.tab);
+            view.text_columns_action(text_columns::TextColumnsAction::Start(1), cx);
+            view.text_columns_action(text_columns::TextColumnsAction::Column(0), cx);
+            view.text_columns_action(
+                text_columns::TextColumnsAction::Format(ColumnFormat::Text),
+                cx,
+            );
+            view.text_columns_action(text_columns::TextColumnsAction::Take, cx);
+        });
+        view.read_with(cx, |view, _| {
+            assert!(view.text_columns_dialog.is_none());
+            assert_eq!(view.book.display_text(at(12, 40)), "code");
+            assert_eq!(view.book.display_text(at(12, 41)), "0042");
+            assert_eq!(view.book.number(at(13, 41)), Some(3.0));
         });
     }
 
