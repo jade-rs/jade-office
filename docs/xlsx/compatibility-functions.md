@@ -75,7 +75,9 @@ typing scenario covers accepted calls, refused arities, rejected-entry history,
 spills and save/reopen. Full core/engine/compile results are recorded in
 [verification.md](verification.md).
 
-The five remaining registration differences are `FILTERXML`, `GROUPBY`,
+`FILTERXML` is registered now (an XPath subset: element paths, `*`, `//`,
+`@attribute`, `text()` and `[n]`, `[last()]`, `[@a]`, `[@a='v']`, `[child='v']`
+predicates). The four remaining registration differences are `GROUPBY`,
 `IMAGE`, `PIVOTBY` and `WEBSERVICE`. Their calculation, workbook/object
 context or external-service requirements are not filled with placeholder
 registry entries. Pivot tables, connections, advanced charts, protection and

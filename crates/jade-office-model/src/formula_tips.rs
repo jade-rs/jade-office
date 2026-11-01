@@ -264,6 +264,7 @@ const SIGNATURES: &[(&str, &[&str])] = &[
     ("FALSE", &[]),
     ("FDIST", &["x", "deg_freedom1", "deg_freedom2"]),
     ("FILTER", &["array", "include", "[if_empty]"]),
+    ("FILTERXML", &["xml", "xpath"]),
     ("FIND", &["find_text", "within_text", "[start_num]"]),
     ("FINDB", &["find_text", "within_text", "[start_num]"]),
     ("FINV", &["probability", "deg_freedom1", "deg_freedom2"]),
