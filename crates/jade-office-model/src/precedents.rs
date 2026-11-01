@@ -2,10 +2,15 @@
 //! on the same sheet a formula reads, and the formulas that read a cell,
 //! which Excel draws blue arrows between.
 
+use std::rc::Rc;
+
 use jade_xlsx_reader::{CellRange, CellRef};
 
 use crate::sheet::Workbook;
 use crate::Backend;
+
+/// A sheet's formulas, each with the cells and ranges it reads there.
+pub(crate) type References = Rc<Vec<(CellRef, Vec<CellRange>)>>;
 
 /// The references in `formula` (with or without its `=`) to cells and
 /// ranges of its own sheet: `A1`, `$B$2`, `C3:D9`. A reference to another
@@ -106,20 +111,35 @@ impl<B: Backend> Workbook<B> {
     /// Trace Dependents from `at`: the cells on this sheet whose formulas
     /// read it, by itself or in a range, in row order.
     pub fn dependents(&self, at: CellRef) -> Vec<CellRef> {
-        let sheet = &self.engine().workbook().sheets[self.sheet_index()];
-        sheet
-            .rows
+        self.references()
             .iter()
-            .flat_map(|row| row.cells.iter())
-            .filter(|cell| cell.formula.is_some() && cell.reference != at)
-            .map(|cell| cell.reference)
-            .filter(|cell| {
-                self.precedents(*cell).iter().any(|range| {
-                    (range.start.row..=range.end.row).contains(&at.row)
-                        && (range.start.column..=range.end.column).contains(&at.column)
-                })
-            })
+            .filter(|(cell, reads)| *cell != at && reads.iter().any(|range| range.contains(at)))
+            .map(|(cell, _)| *cell)
             .collect()
+    }
+
+    /// The active sheet's formulas and what each reads, gathered once per
+    /// layout revision.
+    fn references(&self) -> References {
+        let revision = self.layout_revision();
+        if let Some((at, references)) = &*self.references.borrow() {
+            if *at == revision {
+                return references.clone();
+            }
+        }
+        let sheet = &self.engine().workbook().sheets[self.sheet_index()];
+        let references: References = Rc::new(
+            sheet
+                .rows
+                .iter()
+                .flat_map(|row| row.cells.iter())
+                .filter(|cell| cell.formula.is_some())
+                .map(|cell| (cell.reference, self.precedents(cell.reference)))
+                .filter(|(_, reads)| !reads.is_empty())
+                .collect(),
+        );
+        *self.references.borrow_mut() = Some((revision, references.clone()));
+        references
     }
 }
 
