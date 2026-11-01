@@ -829,6 +829,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "条件に基づいて範囲をフィルターします。",
     ),
     (
+        "FILTERXML",
+        "Returns the data an XPath selects from XML.",
+        "XPath を使って XML から特定のデータを取り出します。",
+    ),
+    (
         "FIND",
         "Finds one text string within another (case-sensitive).",
         "文字列の中から別の文字列を検索します (大文字と小文字を区別)。",
