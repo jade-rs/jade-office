@@ -3136,7 +3136,7 @@ impl DocView {
             MenuCommand::IgnoreError => sheet.book.ignore_error(range),
             MenuCommand::TraceDependents => {
                 let at = sheet.selection.active;
-                if sheet.book.dependents(at).is_empty() {
+                if sheet.book.dependents(at).is_empty() && !sheet.book.read_by_other_sheets(at) {
                     self.status = i18n::text("sheet.trace.no_dependents").into();
                 } else if !sheet.tracing_dependents.contains(&at) {
                     sheet.tracing_dependents.push(at);
@@ -4016,6 +4016,7 @@ impl DocView {
                     to: cell.center(),
                     range: (range.start != range.end).then(|| first.union(&last)),
                     other_sheet: false,
+                    icon_at_head: false,
                 });
             }
         }
@@ -4024,6 +4025,9 @@ impl DocView {
             let Some(cell) = cell_box(source) else {
                 continue;
             };
+            if sheet.book.read_by_other_sheets(source) {
+                arrows.push(TraceArrow::to_other_sheet(cell.center()));
+            }
             for dependent in sheet.book.dependents(source) {
                 let Some(target) = cell_box(dependent) else {
                     continue;
@@ -4033,6 +4037,7 @@ impl DocView {
                     to: target.center(),
                     range: None,
                     other_sheet: false,
+                    icon_at_head: false,
                 });
             }
         }
