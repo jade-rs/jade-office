@@ -6092,7 +6092,11 @@ mod tests {
             let rows = jade_office_model::name_manager::NameManager::rows(&view.book);
             assert_eq!(rows.len(), 1);
             assert_eq!((rows[0].name.as_str(), rows[0].scope), ("Rates", Some(0)));
-            assert!(rows[0].refers_to.ends_with("!$A$1"), "{}", rows[0].refers_to);
+            assert!(
+                rows[0].refers_to.ends_with("!$A$1"),
+                "{}",
+                rows[0].refers_to
+            );
         });
     }
 
