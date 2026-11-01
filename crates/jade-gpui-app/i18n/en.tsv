@@ -3781,3 +3781,13 @@ page_setup.gridlines	Gridlines
 sheet.menu.hide_zeros	Hide Zero Values
 sheet.menu.show_zeros	Show Zero Values
 sheet.insert_picture	Picture…
+sheet.menu.name_manager	Name Manager…
+name_manager.dialog	Name Manager
+name_manager.name	Name
+name_manager.refers_to	Refers To
+name_manager.scope	Scope
+name_manager.none	There are no names in this workbook.
+name_manager.workbook	Workbook
+name_manager.delete	Delete
+name_manager.apply	Apply
+name_manager.close	Close
