@@ -919,7 +919,7 @@ impl Sheet {
             return Some(dialog.field_mut());
         }
         if let Some(dialog) = self.name_manager.as_mut() {
-            return Some(&mut dialog.refers_to);
+            return Some(dialog.field_mut());
         }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
@@ -974,7 +974,7 @@ impl Sheet {
             return Some(dialog.field());
         }
         if let Some(dialog) = self.name_manager.as_ref() {
-            return Some(&dialog.refers_to);
+            return Some(dialog.field());
         }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);

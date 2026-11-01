@@ -3844,3 +3844,12 @@ shift.cells_up	Shift cells up
 shift.entire_row	Entire row
 shift.entire_column	Entire column
 sheet.paste_special.validation	Validation
+name_manager.new	New…
+name_manager.new_dialog	New Name
+name_manager.ok	OK
+name_manager.cancel	Cancel
+name_manager.filter_all	All
+name_manager.filter_worksheet	Scoped to Worksheet
+name_manager.filter_workbook	Scoped to Workbook
+name_manager.filter_errors	With Errors
+name_manager.filter_no_errors	Without Errors
