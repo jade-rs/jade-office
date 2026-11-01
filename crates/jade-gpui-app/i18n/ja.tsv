@@ -3899,3 +3899,5 @@ sheet.shape.elbow_connector	コネクタ: カギ線
 sheet.shape.curved_connector	コネクタ: 曲線
 sort.left_to_right	列単位で並べ替え
 sort.row_n	行 {n}
+sheet.menu.flash_fill	フラッシュ フィル
+sheet.flash_fill_none	選択範囲の隣のデータを確認しましたが、値を入力するためのパターンが見つかりませんでした。フラッシュ フィルを使うには、出力の例をいくつか入力し、入力したい列でアクティブ セルを選んで ⌘E を押してください。

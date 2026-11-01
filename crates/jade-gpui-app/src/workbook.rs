@@ -548,6 +548,8 @@ enum MenuCommand {
     RemoveDuplicates,
     /// Data ▸ Text to Columns on the selection's column.
     TextToColumns,
+    /// Data ▸ Flash Fill in the active cell's column.
+    FlashFill,
     /// Data ▸ From Text/CSV: a text file through the Text Import Wizard.
     FromText,
     SortDialog,
@@ -921,6 +923,29 @@ impl WorkbookView {
             f64::from(position.x - bounds.origin.x) / zoom,
             f64::from(position.y - bounds.origin.y) / zoom,
         ))
+    }
+
+    /// Data ▸ Flash Fill (⌘E) in the active cell's column: the rest of the
+    /// list filled by the pattern its examples follow, selected; or, with
+    /// none to follow, Excel's word for it.
+    fn flash_fill(&mut self, cx: &mut Context<Self>) {
+        if !self.commit_cell(cx) {
+            return;
+        }
+        self.menu = None;
+        let result = match self.book.flash_fill(self.active()) {
+            Ok(Some(filled)) => {
+                self.selection = Selection::cell(filled.start);
+                self.selection.focus = filled.end;
+                Ok(true)
+            }
+            Ok(None) => {
+                self.status = i18n::text("sheet.flash_fill_none").into();
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        };
+        self.after_write(result, cx);
     }
 
     /// The cell's rectangle in the window, for the cell editor and the IME.
@@ -1834,6 +1859,7 @@ impl WorkbookView {
             MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
+            MenuCommand::FlashFill => return self.flash_fill(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::FromText => return self.open_text_import(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
@@ -2545,6 +2571,8 @@ impl WorkbookView {
             "f" => self.open_find(false, cx),
             "t" => self.open_table_dialog(cx),
             "k" => self.open_link_dialog(cx),
+            // ⌘E (Ctrl+E): Flash Fill.
+            "e" => self.flash_fill(cx),
             // ⌃H, as Excel for Mac: Find and Replace (⌘H hides the app).
             "h" if modifiers.control && !modifiers.platform => self.open_find(true, cx),
             // ⌃G, as F5: Go To.
@@ -3691,6 +3719,7 @@ impl WorkbookView {
                     ));
                 }
                 items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
+                items.push((MenuCommand::FlashFill, "sheet.menu.flash_fill"));
                 items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
                 items.push((MenuCommand::NameManager, "sheet.menu.name_manager"));
                 items.push((
@@ -7735,6 +7764,30 @@ mod tests {
                 .map(|column| view.book.display_text(at(column, 50)))
                 .collect();
             assert_eq!(names, ["a", "b", "c"]);
+        });
+    }
+
+    /// ⌘E fills the column down the list by the example typed in it, the
+    /// filled cells selected.
+    #[gpui::test]
+    fn command_e_flash_fills_the_column(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, _| {
+            for (row, name) in ["ann@example.com", "bob@jade.dev", "cy@mail.test"]
+                .iter()
+                .enumerate()
+            {
+                view.book.set_cell(at(20, 60 + row as u32), name).unwrap();
+            }
+            view.book.set_cell(at(21, 60), "example.com").unwrap();
+            view.selection = Selection::cell(at(21, 60));
+        });
+        cx.simulate_keystrokes("cmd-e");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at(21, 61)), "jade.dev");
+            assert_eq!(view.book.display_text(at(21, 62)), "mail.test");
+            assert_eq!(view.selection.range().start, at(21, 61));
+            assert_eq!(view.selection.range().end, at(21, 62));
         });
     }
 

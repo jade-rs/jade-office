@@ -37,6 +37,7 @@ mod conditional;
 mod custom_filter;
 mod duplicates;
 mod find_bar;
+mod flash_fill;
 mod insert_function;
 mod links;
 mod more_colors;
@@ -786,6 +787,8 @@ enum MenuCommand {
     Subtotal,
     RemoveDuplicates,
     TextToColumns,
+    /// Data ▸ Flash Fill in the active cell's column.
+    FlashFill,
     /// Data ▸ From Text/CSV: a text file through the Text Import Wizard.
     FromText,
     SortDialog,
@@ -2626,6 +2629,8 @@ impl DocView {
             "f" => self.open_sheet_find(false, cx),
             "t" => self.open_sheet_table_dialog(cx),
             "k" => self.open_sheet_link_dialog(cx),
+            // ⌘E (Ctrl+E): Flash Fill.
+            "e" => self.sheet_flash_fill(cx),
             // ⌘⇧S: Save As, its extension picking the format.
             "s" if shift => self.open_save_as(cx),
             // ⌘P: the pages, as a PDF to print.
@@ -3130,6 +3135,7 @@ impl DocView {
             MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
             MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
+            MenuCommand::FlashFill => return self.sheet_flash_fill(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::FromText => return self.open_text_import(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
@@ -4591,6 +4597,7 @@ impl DocView {
                     }
                     let selected = sheet.selection.range();
                     items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
+                    items.push((MenuCommand::FlashFill, "sheet.menu.flash_fill"));
                     items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
                     items.push((MenuCommand::NameManager, "sheet.menu.name_manager"));
                     items.push((
