@@ -804,6 +804,9 @@ enum MenuCommand {
     TracePrecedents,
     /// Formulas ▸ Trace Dependents from the active cell.
     TraceDependents,
+    /// The worksheet icon's list: Go To opened on what the active cell's
+    /// formula reads on other sheets.
+    GoToOtherSheetPrecedent,
     /// Formulas ▸ Remove Arrows.
     RemoveArrows,
     /// The error button's Convert to Number on the selection.
@@ -3155,6 +3158,17 @@ impl DocView {
             }
             MenuCommand::ConvertToNumber => sheet.book.convert_to_number(range),
             MenuCommand::IgnoreError => sheet.book.ignore_error(range),
+            MenuCommand::GoToOtherSheetPrecedent => {
+                let refs = sheet.book.other_sheet_precedents(selection.active);
+                self.open_go_to(cx);
+                if let (Some(first), Some(sheet)) = (refs.first(), self.sheet_mut()) {
+                    sheet.naming = Some(TextEdit::selected(first.clone()));
+                }
+                self.status =
+                    i18n::format("sheet.trace.other_sheets", &[("refs", &refs.join(", "))]).into();
+                cx.notify();
+                return;
+            }
             MenuCommand::TraceDependents => {
                 let at = sheet.selection.active;
                 if sheet.book.dependents(at).is_empty() && !sheet.book.read_by_other_sheets(at) {
@@ -4464,6 +4478,12 @@ impl DocView {
                     ));
                     items.push((MenuCommand::TracePrecedents, "sheet.menu.trace_precedents"));
                     items.push((MenuCommand::TraceDependents, "sheet.menu.trace_dependents"));
+                    if sheet.book.reads_other_sheets(sheet.selection.active) {
+                        items.push((
+                            MenuCommand::GoToOtherSheetPrecedent,
+                            "sheet.menu.goto_other_sheet_precedent",
+                        ));
+                    }
                     if !sheet.tracing.is_empty() || !sheet.tracing_dependents.is_empty() {
                         items.push((MenuCommand::RemoveArrows, "sheet.menu.remove_arrows"));
                     }
