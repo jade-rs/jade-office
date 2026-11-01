@@ -2,6 +2,7 @@ use super::super::DocView;
 use crate::{i18n, palette as theme};
 use gpui::{div, prelude::*, px, Context, Modifiers, MouseButton};
 use jade_web::formula_tips as jade_formula_tips;
+use jade_web::function_help as jade_function_help;
 use jade_web::insert_function::{insert_into, InsertFunctionDialog, InsertFunctionKey};
 type View = DocView;
 include!(concat!(
