@@ -2021,6 +2021,9 @@ impl DocView {
             }
             if let Some(sheet) = self.sheet_mut() {
                 sheet.scroll.set_offset(point(px(0.0), px(0.0)));
+                // Each sheet shows at the zoom it was saved at, as in Excel.
+                let zoom = sheet.book.sheet_zoom();
+                self.set_zoom(zoom, cx);
             }
         }
         cx.notify();
