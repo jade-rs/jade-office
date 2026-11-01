@@ -5954,6 +5954,21 @@ mod tests {
         view.read_with(cx, |view, _| assert!(view.name_manager.is_none()));
     }
 
+    /// Insert ▸ Shapes puts each shape at the active cell, selected.
+    #[gpui::test]
+    fn shapes_go_in_at_the_active_cell(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::cell(at(3, 4));
+            view.chart_tool(charts::ChartTool::Shape("ellipse"), cx);
+            let id = view.object.expect("the new shape is selected");
+            let (_, _, width, height) = view.book.object_rect(id, (0.0, 0.0)).expect("placed");
+            assert_eq!((width.round(), height.round()), (144.0, 96.0));
+            assert!(view.book.undo().unwrap());
+            assert!(view.book.object_rect(id, (0.0, 0.0)).is_none());
+        });
+    }
+
     /// Convert to Number from the menu makes a number stored as text the
     /// number it reads as.
     #[gpui::test]

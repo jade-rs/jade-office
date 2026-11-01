@@ -18,12 +18,22 @@ pub(super) enum ChartTool {
     Insert(ChartKind),
     /// Insert ▸ Pictures from a file, at the active cell.
     Picture,
+    /// Insert ▸ Shapes, at the active cell: its preset geometry.
+    Shape(&'static str),
     /// Chart Design, on the selected chart.
     Kind(ChartKind),
     Legend(Option<LegendPosition>),
     Ask(ChartField),
     Delete,
 }
+
+/// The shapes Insert ▸ Shapes offers, with the i18n keys of their names.
+const SHAPE_TOOLS: [(&str, &str); 4] = [
+    ("rect", "sheet.shape.rectangle"),
+    ("ellipse", "sheet.shape.oval"),
+    ("roundRect", "sheet.shape.rounded_rectangle"),
+    ("rightArrow", "sheet.shape.right_arrow"),
+];
 
 /// How far a press has to travel before it drags an object, in px.
 const DRAG_SLOP: f64 = 2.0;
@@ -148,6 +158,15 @@ impl DocView {
                 }
             }
             ChartTool::Picture => return,
+            ChartTool::Shape(preset) => {
+                match sheet.book.insert_shape(sheet.selection.active, preset) {
+                    Ok(id) => {
+                        sheet.object = Some(id);
+                        Ok(true)
+                    }
+                    Err(error) => Err(error),
+                }
+            }
             ChartTool::Delete => match sheet.object.take() {
                 Some(id) => sheet.book.delete_object(id),
                 None => Ok(false),
@@ -318,14 +337,19 @@ impl DocView {
                     cx,
                 ));
             }
-            menu = menu
-                .child(div().h(px(1.0)).my_1().bg(palette::border()))
-                .child(item(
-                    ("chart-picture", 0),
-                    "sheet.insert_picture",
-                    ChartTool::Picture,
-                    cx,
-                ));
+            menu =
+                menu.child(div().h(px(1.0)).my_1().bg(palette::border()))
+                    .child(item(
+                        ("chart-picture", 0),
+                        "sheet.insert_picture",
+                        ChartTool::Picture,
+                        cx,
+                    ))
+                    .children(SHAPE_TOOLS.into_iter().enumerate().map(
+                        |(index, (preset, label))| {
+                            item(("chart-shape", index), label, ChartTool::Shape(preset), cx)
+                        },
+                    ));
         }
         menu
     }
