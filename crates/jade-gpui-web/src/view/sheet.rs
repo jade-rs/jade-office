@@ -146,8 +146,6 @@ pub(super) struct Sheet {
     /// Circle Invalid Data is on: red ovals round the cells breaking their
     /// validation rule.
     pub(super) circling: bool,
-    /// View ▸ Page Break Preview: the pages drawn over the grid.
-    pub(super) page_break_preview: bool,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
@@ -890,7 +888,6 @@ impl Sheet {
             tracing: Vec::new(),
             tracing_dependents: Vec::new(),
             circling: false,
-            page_break_preview: false,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -3207,11 +3204,12 @@ impl DocView {
             }
             MenuCommand::ConvertToNumber => sheet.book.convert_to_number(range),
             MenuCommand::PageBreakPreview(on) => {
-                sheet.page_break_preview = on;
-                if on && sheet.book.page_break_view().is_none() {
+                let nothing = on && sheet.book.page_break_view().is_none();
+                let result = sheet.book.set_page_break_preview(on);
+                self.edited(result, cx);
+                if nothing {
                     self.status = i18n::text("sheet.nothing_to_print").into();
                 }
-                cx.notify();
                 return;
             }
             MenuCommand::CircleInvalid(on) => {
@@ -3404,7 +3402,8 @@ impl DocView {
         }
         // Page Break Preview: a press on a break's line drags it.
         if let Some((axis, from)) = sheet
-            .page_break_preview
+            .book
+            .page_break_preview()
             .then(|| sheet.book.page_break_edge(x, y, scroll))
             .flatten()
         {
@@ -4202,7 +4201,8 @@ impl DocView {
             })
         };
         let page_breaks = sheet
-            .page_break_preview
+            .book
+            .page_break_preview()
             .then(|| sheet.book.page_break_view())
             .flatten()
             .and_then(|view| {
@@ -4725,7 +4725,7 @@ impl DocView {
                         (MenuCommand::PageSetup, "page_setup.menu"),
                         (MenuCommand::InsertPageBreak, "sheet.menu.insert_page_break"),
                     ]);
-                    items.push(if sheet.page_break_preview {
+                    items.push(if sheet.book.page_break_preview() {
                         (
                             MenuCommand::PageBreakPreview(false),
                             "sheet.menu.normal_view",
