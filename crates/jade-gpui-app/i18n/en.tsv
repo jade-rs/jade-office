@@ -3778,3 +3778,5 @@ page_setup.print	Print
 page_setup.center.horizontally	Center Horizontally
 page_setup.center.vertically	Center Vertically
 page_setup.gridlines	Gridlines
+sheet.menu.hide_zeros	Hide Zero Values
+sheet.menu.show_zeros	Show Zero Values
