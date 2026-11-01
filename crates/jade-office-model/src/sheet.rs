@@ -4842,9 +4842,11 @@ mod tests {
 /// Insert ▸ Shapes' gallery: each preset with the i18n key of its name, in
 /// Excel's order — lines, rectangles, basic shapes, block arrows, a star
 /// and a callout.
-pub const SHAPES: [(&str, &str); 26] = [
+pub const SHAPES: [(&str, &str); 28] = [
     ("line", "sheet.shape.line"),
     ("straightConnector1", "sheet.shape.arrow_line"),
+    ("bentConnector3", "sheet.shape.elbow_connector"),
+    ("curvedConnector3", "sheet.shape.curved_connector"),
     ("rect", "sheet.shape.rectangle"),
     ("roundRect", "sheet.shape.rounded_rectangle"),
     ("ellipse", "sheet.shape.oval"),
