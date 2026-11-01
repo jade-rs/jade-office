@@ -3843,3 +3843,4 @@ shift.cells_left	左方向にシフト
 shift.cells_up	上方向にシフト
 shift.entire_row	行全体
 shift.entire_column	列全体
+sheet.paste_special.validation	入力規則
