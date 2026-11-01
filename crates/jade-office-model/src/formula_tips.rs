@@ -334,6 +334,18 @@ const SIGNATURES: &[(&str, &[&str])] = &[
         "GETPIVOTDATA",
         &["data_field", "pivot_table", "[field1]", "[item1]", "..."],
     ),
+    (
+        "GROUPBY",
+        &[
+            "row_fields",
+            "values",
+            "function",
+            "[field_headers]",
+            "[total_depth]",
+            "[sort_order]",
+            "[filter_array]",
+        ],
+    ),
     ("GROWTH", &["known_ys", "[known_xs]", "[new_xs]", "[const]"]),
     ("HARMEAN", &["number1", "[number2]", "..."]),
     ("HEX2BIN", &["number", "[places]"]),
