@@ -3764,3 +3764,6 @@ sheet.paste_options.formats	書式設定
 sheet.paste_options.transpose	行/列の入れ替え
 sheet.look_in_notes	メモ
 sheet.menu.merge_across	横方向に結合
+filter.date.heading	日付
+filter.date.year	{year}年
+filter.date.month	{month}月
