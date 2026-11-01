@@ -645,8 +645,6 @@ pub struct WorkbookView {
     /// Circle Invalid Data is on: red ovals round the cells breaking their
     /// validation rule.
     circling: bool,
-    /// View ▸ Page Break Preview: the pages drawn over the grid.
-    page_break_preview: bool,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -1777,11 +1775,12 @@ impl WorkbookView {
             }
             MenuCommand::ConvertToNumber => self.book.convert_to_number(range),
             MenuCommand::PageBreakPreview(on) => {
-                self.page_break_preview = on;
-                if on && self.book.page_break_view().is_none() {
+                let nothing = on && self.book.page_break_view().is_none();
+                let result = self.book.set_page_break_preview(on);
+                self.after_write(result, cx);
+                if nothing {
                     self.status = i18n::text("sheet.nothing_to_print").into();
                 }
-                cx.notify();
                 return;
             }
             MenuCommand::CircleInvalid(on) => {
@@ -2824,7 +2823,8 @@ impl WorkbookView {
         }
         // Page Break Preview: a press on a break's line drags it.
         if let Some((axis, from)) = self
-            .page_break_preview
+            .book
+            .page_break_preview()
             .then(|| self.book.page_break_edge(x, y, scroll))
             .flatten()
         {
@@ -3829,7 +3829,7 @@ impl WorkbookView {
                     (MenuCommand::PageSetup, "page_setup.menu"),
                     (MenuCommand::InsertPageBreak, "sheet.menu.insert_page_break"),
                 ]);
-                items.push(if self.page_break_preview {
+                items.push(if self.book.page_break_preview() {
                     (
                         MenuCommand::PageBreakPreview(false),
                         "sheet.menu.normal_view",
@@ -5222,7 +5222,8 @@ impl Render for WorkbookView {
         };
         // Page Break Preview's pages, in px from the grid's top-left.
         let page_breaks = self
-            .page_break_preview
+            .book
+            .page_break_preview()
             .then(|| self.book.page_break_view())
             .flatten()
             .and_then(|view| {
@@ -5601,7 +5602,6 @@ impl WorkbookView {
             tracing: Vec::new(),
             tracing_dependents: Vec::new(),
             circling: false,
-            page_break_preview: false,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -6275,10 +6275,10 @@ mod tests {
         let (view, cx) = open_view(cx);
         view.update(cx, |view, cx| {
             view.menu_command(MenuCommand::PageBreakPreview(true), false, cx);
-            assert!(view.page_break_preview);
+            assert!(view.book.page_break_preview());
             assert!(view.book.page_break_view().is_some());
             view.menu_command(MenuCommand::PageBreakPreview(false), false, cx);
-            assert!(!view.page_break_preview);
+            assert!(!view.book.page_break_preview());
         });
     }
 

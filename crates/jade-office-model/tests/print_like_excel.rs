@@ -408,3 +408,17 @@ fn page_breaks_are_dragged_in_the_preview() {
     assert!(book.undo().unwrap());
     assert_eq!(book.page_break_view().unwrap().manual_rows, vec![2]);
 }
+
+/// Page Break Preview is saved with the sheet: the file opens in it again.
+#[test]
+fn page_break_preview_is_saved_with_the_sheet() {
+    let mut book = tiny("objects-workbook.xlsx");
+    assert!(!book.page_break_preview());
+    assert!(book.set_page_break_preview(true).unwrap());
+    assert!(book.page_break_preview());
+    let saved = book.save_bytes().unwrap();
+    let reopened = Workbook::open(&saved, "UTC", TinySkiaBackend::new(&faces()).unwrap()).unwrap();
+    assert!(reopened.page_break_preview());
+    assert!(book.set_page_break_preview(false).unwrap());
+    assert!(!book.page_break_preview());
+}
