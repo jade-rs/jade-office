@@ -155,6 +155,27 @@ impl<B: Backend> Workbook<B> {
         })
     }
 
+    /// Whether the active sheet is in Page Break Preview, as it is saved.
+    pub fn page_break_preview(&self) -> bool {
+        self.engine().workbook().sheets[self.sheet_index()].page_break_preview
+    }
+
+    /// View ▸ Page Break Preview, or the normal view, for the active sheet,
+    /// saved with it so the file opens in that view. `false` when it is
+    /// already so.
+    pub fn set_page_break_preview(&mut self, on: bool) -> Result<bool, String> {
+        let name = self.sheet_name();
+        if !self
+            .engine_mut()
+            .set_page_break_preview(&name, on)
+            .map_err(|error| error.to_string())?
+        {
+            return Ok(false);
+        }
+        self.wrote(1)?;
+        Ok(true)
+    }
+
     /// The page break Page Break Preview has under the point (`x`, `y`) of
     /// the grid, within a few px: the axis it cuts and the row it sits above
     /// (or column it sits left of). `None` off every break.
