@@ -33,6 +33,7 @@ pub mod flash_fill;
 pub mod format_cells;
 pub mod formula_complete;
 pub mod formula_tips;
+pub mod function_help;
 pub mod grid;
 pub mod insert_function;
 pub mod links;

@@ -47,6 +47,9 @@ impl View {
             let text = format!("={name}(");
             jade_formula_tips::argument_tip(&text, text.len())
         });
+        // What the function picked does, in the interface's language.
+        let japanese = i18n::text("insert_function.language") == "ja";
+        let help = chosen.and_then(|name| jade_function_help::function_help(name, japanese));
         let panel = div()
             .w(px(380.))
             .p_4()
@@ -95,6 +98,14 @@ impl View {
                     .children(tip.into_iter().flat_map(|tip| tip.pieces()).map(
                         |(piece, _)| div().child(piece),
                     )),
+            )
+            .child(
+                div()
+                    .mt_1()
+                    .min_h(px(32.))
+                    .text_xs()
+                    .text_color(theme::text_dim())
+                    .children(help),
             )
             .child(
                 div()
