@@ -10,7 +10,7 @@
 //! Lengths are CSS px, 96 to the inch, as the sheet's layout measures.
 
 use jade_painter::Painter;
-use jade_xlsx_layout::{Rect, SheetLayout};
+use jade_xlsx_layout::{column_label, Rect, SheetLayout};
 use jade_xlsx_reader::{CellRange, CellRef, PageMargins, PageOrientation, PageSetup};
 use jade_xlsx_render::RenderOptions;
 
@@ -60,6 +60,10 @@ pub struct PageFormat {
     pub margins: PageMargins,
     /// 1.0 prints at 100%.
     pub scale: f64,
+    /// The row numbers' width and the column letters' height printed round
+    /// the cells, in the layout's px; nothing unless Page Setup prints
+    /// headings.
+    pub headings: (f64, f64),
 }
 
 impl PageFormat {
@@ -67,8 +71,8 @@ impl PageFormat {
     /// inside the margins, at the scale.
     pub fn room(&self) -> (f64, f64) {
         (
-            (self.paper.0 - self.margins.left - self.margins.right) / self.scale,
-            (self.paper.1 - self.margins.top - self.margins.bottom) / self.scale,
+            (self.paper.0 - self.margins.left - self.margins.right) / self.scale - self.headings.0,
+            (self.paper.1 - self.margins.top - self.margins.bottom) / self.scale - self.headings.1,
         )
     }
 }
@@ -145,6 +149,17 @@ impl<B: Backend> Workbook<B> {
                 footer: px(inches.footer),
             },
             scale: f64::from(percent) / 100.0,
+            headings: if setup.print_headings {
+                // As wide as the sheet's last row number needs.
+                let rows = self.engine().workbook().sheets[self.sheet_index()]
+                    .rows
+                    .last()
+                    .map_or(1, |row| row.index + 1);
+                let metrics = jade_xlsx_layout::HeaderMetrics::for_rows(rows);
+                (metrics.row_width, metrics.column_height)
+            } else {
+                (0.0, 0.0)
+            },
         }
     }
 
@@ -326,7 +341,8 @@ impl<B: Backend> Workbook<B> {
                     format.margins.left + spare(centre.0, room_x, extent(&columns, true)),
                     format.margins.top + spare(centre.1, room_y, extent(&rows, false)),
                 )
-                .and_then(|()| painter.scale(format.scale, format.scale));
+                .and_then(|()| painter.scale(format.scale, format.scale))
+                .and_then(|()| painter.translate(format.headings.0, format.headings.1));
             if placed.is_err() {
                 return Err(format!("cannot paint page {}", number + 1));
             }
@@ -355,6 +371,10 @@ impl<B: Backend> Workbook<B> {
                     x += wide;
                 }
                 y += tall;
+            }
+            if format.headings != (0.0, 0.0) {
+                paint_headings(&painter, &layout, format.headings, &columns, &rows)
+                    .map_err(|_| format!("cannot paint page {}", number + 1))?;
             }
             painter.restore();
             self.paint_header_footer(&painter, &format, fields, number + 1, total);
@@ -617,6 +637,54 @@ fn pages(columns: &[Band], rows: &[Band], over_then_down: bool) -> Vec<PrintPage
 }
 
 /// Where column (or row) `index` starts, in the layout's px.
+/// Page Setup's printed headings: the letters of the columns on the page
+/// above them and the numbers of its rows left of them, each in a box, as
+/// Excel prints them; `headings` is the two bands' size.
+fn paint_headings<P: Painter>(
+    painter: &P,
+    layout: &SheetLayout,
+    headings: (f64, f64),
+    columns: &[Option<(u32, u32)>],
+    rows: &[Option<(u32, u32)>],
+) -> Result<(), P::Error> {
+    let (band_width, band_height) = headings;
+    painter.set_font("14.6667px Calibri");
+    painter.set_text_baseline("middle");
+    painter.set_stroke_style_str("#a6a6a6");
+    painter.set_line_width(0.75);
+    let boxed = |label: String, x: f64, y: f64, width: f64, height: f64| {
+        painter.stroke_rect(x, y, width, height);
+        painter.set_fill_style_str("#000000");
+        let text = painter.measure_text_width(&label)?;
+        painter.fill_text(&label, x + (width - text) / 2.0, y + height / 2.0)
+    };
+    let mut x = 0.0;
+    for &(first, last) in columns.iter().flatten() {
+        for column in first..=last {
+            let left = offset(layout, true, column);
+            let wide = offset(layout, true, column + 1) - left;
+            if wide > 0.0 {
+                boxed(column_label(column), x, -band_height, wide, band_height)?;
+            }
+            x += wide;
+        }
+    }
+    let mut y = 0.0;
+    for &(first, last) in rows.iter().flatten() {
+        for row in first..=last {
+            let top = offset(layout, false, row);
+            let tall = offset(layout, false, row + 1) - top;
+            if tall > 0.0 {
+                boxed((row + 1).to_string(), -band_width, y, band_width, tall)?;
+            }
+            y += tall;
+        }
+    }
+    // The corner where the two bands meet.
+    painter.stroke_rect(-band_width, -band_height, band_width, band_height);
+    Ok(())
+}
+
 fn offset(layout: &SheetLayout, columns: bool, index: u32) -> f64 {
     let entries = if columns {
         &layout.columns
