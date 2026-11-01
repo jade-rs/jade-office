@@ -1,5 +1,6 @@
-//! Formulas ▸ Trace Precedents: the cells and ranges on the same sheet a
-//! formula reads, which Excel draws blue arrows from.
+//! Formulas ▸ Trace Precedents and Trace Dependents: the cells and ranges
+//! on the same sheet a formula reads, and the formulas that read a cell,
+//! which Excel draws blue arrows between.
 
 use jade_xlsx_reader::{CellRange, CellRef};
 
@@ -81,6 +82,25 @@ impl<B: Backend> Workbook<B> {
             return Vec::new();
         }
         formula_precedents(&typed)
+    }
+
+    /// Trace Dependents from `at`: the cells on this sheet whose formulas
+    /// read it, by itself or in a range, in row order.
+    pub fn dependents(&self, at: CellRef) -> Vec<CellRef> {
+        let sheet = &self.engine().workbook().sheets[self.sheet_index()];
+        sheet
+            .rows
+            .iter()
+            .flat_map(|row| row.cells.iter())
+            .filter(|cell| cell.formula.is_some() && cell.reference != at)
+            .map(|cell| cell.reference)
+            .filter(|cell| {
+                self.precedents(*cell).iter().any(|range| {
+                    (range.start.row..=range.end.row).contains(&at.row)
+                        && (range.start.column..=range.end.column).contains(&at.column)
+                })
+            })
+            .collect()
     }
 }
 
