@@ -3767,3 +3767,6 @@ sheet.menu.merge_across	横方向に結合
 filter.date.heading	日付
 filter.date.year	{year}年
 filter.date.month	{month}月
+sheet.menu.trace_precedents	参照元のトレース
+sheet.menu.remove_arrows	トレース矢印の削除
+sheet.trace.none	このセルには、このシートのセルを参照する数式がありません。

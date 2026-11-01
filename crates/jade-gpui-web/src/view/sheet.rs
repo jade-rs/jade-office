@@ -129,6 +129,8 @@ pub(super) struct Sheet {
     /// The Paste Options button after a paste from this workbook's copy:
     /// the range pasted on, and whether its menu is open.
     pub(super) paste_options: Option<(CellRange, bool)>,
+    /// The cells Trace Precedents drew arrows to, until Remove Arrows.
+    pub(super) tracing: Vec<CellRef>,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
@@ -325,6 +327,10 @@ struct SheetMenu {
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../jade-gpui-app/src/workbook/menu_groups.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../jade-gpui-app/src/workbook/trace_arrows.rs"
 ));
 
 /// The dropdown a filter button opens: sorts, a clear, and the column's
@@ -759,6 +765,10 @@ enum MenuCommand {
     InsertFunction,
     /// Formulas ▸ Show Formulas, on or off.
     ShowFormulas,
+    /// Formulas ▸ Trace Precedents from the active cell.
+    TracePrecedents,
+    /// Formulas ▸ Remove Arrows.
+    RemoveArrows,
 }
 
 impl Sheet {
@@ -802,6 +812,7 @@ impl Sheet {
             top_ten: None,
             more_colors: None,
             paste_options: None,
+            tracing: Vec::new(),
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -3054,6 +3065,21 @@ impl DocView {
             MenuCommand::TabColor(index, color) => sheet.book.set_tab_color(index, color),
             MenuCommand::OpenGroup(_) => return,
             MenuCommand::InsertFunction => return self.open_insert_function(cx),
+            MenuCommand::TracePrecedents => {
+                let at = sheet.selection.active;
+                if sheet.book.precedents(at).is_empty() {
+                    self.status = i18n::text("sheet.trace.none").into();
+                } else if !sheet.tracing.contains(&at) {
+                    sheet.tracing.push(at);
+                }
+                cx.notify();
+                return;
+            }
+            MenuCommand::RemoveArrows => {
+                sheet.tracing.clear();
+                cx.notify();
+                return;
+            }
             MenuCommand::ShowFormulas => {
                 let on = !sheet.book.show_formulas();
                 sheet.book.set_show_formulas(on)
@@ -3881,6 +3907,43 @@ impl DocView {
         };
 
         // The editor over the active cell, white like the cell under it.
+        // Trace Precedents' arrows, in px from the grid's top-left.
+        let scrolled = (f64::from(at.0 / zoom), f64::from(at.1 / zoom));
+        let cell_box = |cell: CellRef| {
+            sheet
+                .book
+                .cell_rect(cell, scrolled)
+                .map(|(x, y, w, h)| gpui::Bounds {
+                    origin: point(px(x as f32 * zoom), px(y as f32 * zoom)),
+                    size: gpui::size(px(w as f32 * zoom), px(h as f32 * zoom)),
+                })
+        };
+        let mut arrows = Vec::new();
+        for &target in &sheet.tracing {
+            let Some(cell) = cell_box(target) else {
+                continue;
+            };
+            for range in sheet.book.precedents(target) {
+                let (Some(first), Some(last)) = (cell_box(range.start), cell_box(range.end)) else {
+                    continue;
+                };
+                arrows.push(TraceArrow {
+                    from: first.center(),
+                    to: cell.center(),
+                    range: (range.start != range.end).then(|| first.union(&last)),
+                });
+            }
+        }
+        let trace = (!arrows.is_empty()).then(|| {
+            gpui::canvas(
+                |_, _, _| {},
+                move |bounds, _, window, _| paint_trace_arrows(window, bounds.origin, &arrows),
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+        });
         // The Paste Options button at the pasted range's corner, with its
         // menu when open — while that range stays selected.
         let paste_options = sheet
@@ -4247,6 +4310,10 @@ impl DocView {
                     let selected = sheet.selection.range();
                     items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                     items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
+                    items.push((MenuCommand::TracePrecedents, "sheet.menu.trace_precedents"));
+                    if !sheet.tracing.is_empty() {
+                        items.push((MenuCommand::RemoveArrows, "sheet.menu.remove_arrows"));
+                    }
                     if selected.start.column == selected.end.column {
                         items.push((MenuCommand::TextToColumns, "sheet.menu.text_to_columns"));
                     }
@@ -4870,6 +4937,7 @@ impl DocView {
                             ),
                     )
                     .children(cell_editor)
+                    .children(trace)
                     .children(paste_options)
                     .children(note)
                     .children(note_editor)
