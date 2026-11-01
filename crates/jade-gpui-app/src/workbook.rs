@@ -303,6 +303,9 @@ enum SheetDrag {
     },
     /// A header edge.
     Resize(ResizeGesture),
+    /// A page break in Page Break Preview: the axis it cuts, where it was
+    /// and where it would go.
+    PageBreak { axis: Axis, from: u32, to: u32 },
     /// A range pointed at for the formula being typed.
     Point,
     /// The selection picked up by its border: where the pointer took it
@@ -2819,6 +2822,20 @@ impl WorkbookView {
             self.open_filter(button, scroll, cx);
             return;
         }
+        // Page Break Preview: a press on a break's line drags it.
+        if let Some((axis, from)) = self
+            .page_break_preview
+            .then(|| self.book.page_break_edge(x, y, scroll))
+            .flatten()
+        {
+            self.drag = Some(SheetDrag::PageBreak {
+                axis,
+                from,
+                to: from,
+            });
+            cx.notify();
+            return;
+        }
         // A header edge: a drag resizes, a double-click fits the content.
         if let Some(edge) = self.book.resize_hit(x, y, scroll) {
             if event.click_count >= 2 && edge.axis == Axis::Columns {
@@ -3062,6 +3079,20 @@ impl WorkbookView {
                 self.drag = Some(SheetDrag::Resize(gesture));
                 cx.notify();
             }
+            SheetDrag::PageBreak { axis, from, to } => {
+                if let Some(next) = self
+                    .book
+                    .page_break_target(axis, x, y, scroll)
+                    .filter(|next| *next != to)
+                {
+                    self.drag = Some(SheetDrag::PageBreak {
+                        axis,
+                        from,
+                        to: next,
+                    });
+                    cx.notify();
+                }
+            }
             SheetDrag::Move {
                 source,
                 grab,
@@ -3125,6 +3156,12 @@ impl WorkbookView {
         };
         self.pointer = None;
         match drag {
+            SheetDrag::PageBreak { axis, from, to } => {
+                if to != from {
+                    let result = self.book.move_page_break(axis, from, to);
+                    self.after_write(result, cx);
+                }
+            }
             SheetDrag::Fill { source, target } => {
                 let result = attempt(
                     &mut self.book,
@@ -5240,6 +5277,20 @@ impl Render for WorkbookView {
                         false,
                     )
                 }));
+                // A break being dragged, where it would go.
+                if let Some(SheetDrag::PageBreak { axis, to, .. }) = self.drag {
+                    let (start, end) = match axis {
+                        Axis::Rows => (
+                            CellRef::new(view.area.start.column, to),
+                            CellRef::new(view.area.end.column, to),
+                        ),
+                        Axis::Columns => (
+                            CellRef::new(to, view.area.start.row),
+                            CellRef::new(to, view.area.end.row),
+                        ),
+                    };
+                    manual.extend(line(CellRange { start, end }, axis == Axis::Rows));
+                }
                 Some(page_break_overlay(area, &pages, &manual))
             });
         let trace = (!arrows.is_empty() || !circles.is_empty()).then(|| {
@@ -6228,6 +6279,29 @@ mod tests {
             assert!(view.book.page_break_view().is_some());
             view.menu_command(MenuCommand::PageBreakPreview(false), false, cx);
             assert!(!view.page_break_preview);
+        });
+    }
+
+    /// A page break dragged in Page Break Preview lands where it is let
+    /// go.
+    #[gpui::test]
+    fn a_page_break_dragged_in_the_preview_moves(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            // The print area reaches past the rows the break moves between.
+            view.book.set_cell(at(0, 30), "end").unwrap();
+            view.menu_command(MenuCommand::PageBreakPreview(true), false, cx);
+            view.book.insert_page_break(at(0, 5)).unwrap();
+            assert_eq!(view.book.page_break_view().unwrap().manual_rows, vec![5]);
+            view.drag = Some(SheetDrag::PageBreak {
+                axis: Axis::Rows,
+                from: 5,
+                to: 8,
+            });
+            view.drag_end(cx);
+            assert_eq!(view.book.page_break_view().unwrap().manual_rows, vec![8]);
+            assert!(view.book.undo().unwrap());
+            assert_eq!(view.book.page_break_view().unwrap().manual_rows, vec![5]);
         });
     }
 
