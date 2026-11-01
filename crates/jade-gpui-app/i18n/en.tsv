@@ -3770,3 +3770,4 @@ filter.date.month	Month {month}
 sheet.menu.trace_precedents	Trace Precedents
 sheet.menu.remove_arrows	Remove Arrows
 sheet.trace.none	This cell has no formula that refers to cells on this sheet.
+sheet.menu.convert_to_number	Convert to Number

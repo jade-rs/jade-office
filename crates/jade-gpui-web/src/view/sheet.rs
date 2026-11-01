@@ -769,6 +769,8 @@ enum MenuCommand {
     TracePrecedents,
     /// Formulas ▸ Remove Arrows.
     RemoveArrows,
+    /// The error button's Convert to Number on the selection.
+    ConvertToNumber,
 }
 
 impl Sheet {
@@ -3075,6 +3077,7 @@ impl DocView {
                 cx.notify();
                 return;
             }
+            MenuCommand::ConvertToNumber => sheet.book.convert_to_number(range),
             MenuCommand::RemoveArrows => {
                 sheet.tracing.clear();
                 cx.notify();
@@ -4202,6 +4205,10 @@ impl DocView {
                     }
                     if sheet.book.can_paste_special(None) {
                         items.push((MenuCommand::PasteSpecial, "sheet.menu.paste_special"));
+                    }
+                    // A number stored as text: the error button's Convert to Number.
+                    if sheet.book.is_number_as_text(sheet.selection.active) {
+                        items.push((MenuCommand::ConvertToNumber, "sheet.menu.convert_to_number"));
                     }
                     items.extend([
                         (MenuCommand::Clear, "sheet.menu.clear"),

@@ -1750,6 +1750,37 @@ impl<B: Backend> Workbook<B> {
         })
     }
 
+    /// Whether a text cell reads as a number: what error checking flags as
+    /// a number stored as text.
+    pub fn is_number_as_text(&self, at: CellRef) -> bool {
+        self.cells_in(CellRange { start: at, end: at })
+            .next()
+            .is_some_and(|cell| cell.formula.is_none() && number_as_text(&cell.value).is_some())
+    }
+
+    /// The error button's Convert to Number: each number stored as text in
+    /// `range` made the number it reads as. One undo step; `false` when
+    /// there were none.
+    pub fn convert_to_number(&mut self, range: CellRange) -> Result<bool, String> {
+        let values: Vec<(String, CellInput)> = self
+            .cells_in(range)
+            .filter(|cell| cell.formula.is_none())
+            .filter_map(|cell| {
+                number_as_text(&cell.value)
+                    .map(|number| (reference_text(cell.reference), CellInput::Number(number)))
+            })
+            .collect();
+        if values.is_empty() {
+            return Ok(false);
+        }
+        let name = self.sheet_name();
+        self.book
+            .set_cells(&name, &values)
+            .map_err(|error| error.to_string())?;
+        self.wrote(1)?;
+        Ok(true)
+    }
+
     // ---- formats -------------------------------------------------------
 
     /// Changes how `range` looks — one write, one undo.
@@ -3896,6 +3927,22 @@ fn layout_options(
         ..LayoutOptions::default()
     }
     .with_normal_font_metrics(&workbook.styles)
+}
+
+/// The number a text value reads as, as error checking reads it: digits
+/// with a sign, decimals, thousands commas or an exponent.
+fn number_as_text(value: &CellValue) -> Option<f64> {
+    let CellValue::Text(text) = value else {
+        return None;
+    };
+    let text = text.trim();
+    if !text.chars().any(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    text.replace(',', "")
+        .parse::<f64>()
+        .ok()
+        .filter(|n| n.is_finite())
 }
 
 /// The families the toolbar's font box lists: Excel's for Japanese, then
