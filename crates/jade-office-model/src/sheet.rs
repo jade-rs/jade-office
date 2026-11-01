@@ -186,6 +186,10 @@ pub struct Workbook<B: Backend> {
     /// Measures text for layout, kept for the workbook's life so a sheet
     /// laid out again after an edit reuses the widths it measured before.
     measure: Rc<dyn jade_xlsx_layout::TextMeasure>,
+    /// The active sheet's formulas and what each reads on the sheet, as of
+    /// the layout revision it was gathered at: Trace Dependents' arrows ask
+    /// on every frame they are shown.
+    pub(crate) references: RefCell<Option<(u64, crate::precedents::References)>>,
 }
 
 impl<B: Backend> Workbook<B> {
@@ -231,6 +235,7 @@ impl<B: Backend> Workbook<B> {
             revision: 0,
             changes: None,
             measure,
+            references: RefCell::new(None),
         })
     }
 
