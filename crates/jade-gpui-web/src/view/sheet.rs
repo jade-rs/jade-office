@@ -775,6 +775,8 @@ enum MenuCommand {
     RemoveArrows,
     /// The error button's Convert to Number on the selection.
     ConvertToNumber,
+    /// The error button's Ignore Error on the selection.
+    IgnoreError,
 }
 
 impl Sheet {
@@ -3083,6 +3085,7 @@ impl DocView {
                 return;
             }
             MenuCommand::ConvertToNumber => sheet.book.convert_to_number(range),
+            MenuCommand::IgnoreError => sheet.book.ignore_error(range),
             MenuCommand::TraceDependents => {
                 let at = sheet.selection.active;
                 if sheet.book.dependents(at).is_empty() {
@@ -4241,6 +4244,10 @@ impl DocView {
                     // A number stored as text: the error button's Convert to Number.
                     if sheet.book.is_number_as_text(sheet.selection.active) {
                         items.push((MenuCommand::ConvertToNumber, "sheet.menu.convert_to_number"));
+                    }
+                    // A flagged cell: the error button's Ignore Error.
+                    if sheet.book.error_check(sheet.selection.active).is_some() {
+                        items.push((MenuCommand::IgnoreError, "sheet.menu.ignore_error"));
                     }
                     items.extend([
                         (MenuCommand::Clear, "sheet.menu.clear"),

@@ -488,6 +488,8 @@ enum MenuCommand {
     RemoveArrows,
     /// The error button's Convert to Number on the selection.
     ConvertToNumber,
+    /// The error button's Ignore Error on the selection.
+    IgnoreError,
     /// A sheet tab from one place to another.
     MoveSheet(usize, usize),
     /// New Note, or Edit Note on a cell that has one.
@@ -1672,6 +1674,7 @@ impl WorkbookView {
                 return;
             }
             MenuCommand::ConvertToNumber => self.book.convert_to_number(range),
+            MenuCommand::IgnoreError => self.book.ignore_error(range),
             MenuCommand::TraceDependents => {
                 let at = selection.active;
                 if self.book.dependents(at).is_empty() {
@@ -3434,6 +3437,10 @@ impl WorkbookView {
                 // A number stored as text: the error button's Convert to Number.
                 if self.book.is_number_as_text(self.active()) {
                     items.push((MenuCommand::ConvertToNumber, "sheet.menu.convert_to_number"));
+                }
+                // A flagged cell: the error button's Ignore Error.
+                if self.book.error_check(self.active()).is_some() {
+                    items.push((MenuCommand::IgnoreError, "sheet.menu.ignore_error"));
                 }
                 items.extend([
                     (MenuCommand::Clear, "sheet.menu.clear"),
@@ -5649,6 +5656,19 @@ mod tests {
                 view.status.as_ref(),
                 i18n::text("sheet.trace.no_dependents")
             );
+        });
+    }
+
+    /// Ignore Error from the menu turns off the check flagging the cell.
+    #[gpui::test]
+    fn ignore_error_from_the_menu(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(9, 30), "'0042").unwrap();
+            view.selection = Selection::cell(at(9, 30));
+            assert!(view.book.error_check(at(9, 30)).is_some());
+            view.menu_command(MenuCommand::IgnoreError, false, cx);
+            assert!(view.book.error_check(at(9, 30)).is_none());
         });
     }
 

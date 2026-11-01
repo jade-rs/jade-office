@@ -148,3 +148,28 @@ fn trace_dependents_finds_the_formulas_reading_a_cell() {
     );
     assert!(book.dependents(CellRef::new(20, 50)).is_empty());
 }
+
+#[test]
+fn ignore_error_takes_the_green_triangle_away_and_undo_brings_it_back() {
+    let mut book = book();
+    let (text, error, plain) = (
+        CellRef::new(10, 30),
+        CellRef::new(10, 31),
+        CellRef::new(10, 32),
+    );
+    book.set_cell(text, "'00123").unwrap();
+    book.set_cell(error, "=1/0").unwrap();
+    book.set_cell(plain, "abc").unwrap();
+    assert!(book.error_check(text).is_some());
+    assert!(book.error_check(error).is_some());
+    assert!(book.error_check(plain).is_none());
+    assert!(book.ignore_error(span(text, plain)).unwrap());
+    assert!(book.error_check(text).is_none());
+    assert!(book.error_check(error).is_none());
+    // The number stays text: only the check is off.
+    assert!(book.is_number_as_text(text));
+    assert!(!book.ignore_error(span(text, plain)).unwrap());
+    assert!(book.undo().unwrap());
+    assert!(book.error_check(text).is_some());
+    assert!(book.error_check(error).is_some());
+}
