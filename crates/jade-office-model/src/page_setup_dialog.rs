@@ -131,13 +131,15 @@ pub enum PrintOption {
     CenterHorizontally,
     CenterVertically,
     GridLines,
+    Headings,
 }
 
 impl PrintOption {
-    pub const ALL: [PrintOption; 3] = [
+    pub const ALL: [PrintOption; 4] = [
         PrintOption::CenterHorizontally,
         PrintOption::CenterVertically,
         PrintOption::GridLines,
+        PrintOption::Headings,
     ];
 
     /// The i18n key of its name.
@@ -146,6 +148,7 @@ impl PrintOption {
             PrintOption::CenterHorizontally => "page_setup.center.horizontally",
             PrintOption::CenterVertically => "page_setup.center.vertically",
             PrintOption::GridLines => "page_setup.gridlines",
+            PrintOption::Headings => "page_setup.headings",
         }
     }
 }
@@ -225,6 +228,7 @@ impl PageSetupDialog {
             PrintOption::CenterHorizontally => self.setup.center_horizontally,
             PrintOption::CenterVertically => self.setup.center_vertically,
             PrintOption::GridLines => self.setup.print_grid_lines,
+            PrintOption::Headings => self.setup.print_headings,
         }
     }
 
@@ -233,6 +237,7 @@ impl PageSetupDialog {
             PrintOption::CenterHorizontally => &mut self.setup.center_horizontally,
             PrintOption::CenterVertically => &mut self.setup.center_vertically,
             PrintOption::GridLines => &mut self.setup.print_grid_lines,
+            PrintOption::Headings => &mut self.setup.print_headings,
         };
         *on = !*on;
     }

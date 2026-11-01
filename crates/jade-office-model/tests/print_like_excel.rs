@@ -326,3 +326,27 @@ fn centring_on_the_page_and_gridlines_follow_page_setup() {
     assert!(centred_left > left && centred_top > top);
     assert!(gridded > lines);
 }
+
+#[test]
+fn headings_print_round_the_cells_and_take_their_room() {
+    use jade_painter::recording::{Op, RecordingPainter};
+    let mut book = tiny("grid-operations-workbook.xlsx");
+    let labels = |book: &Workbook<TinySkiaBackend>| {
+        let pages = book
+            .paint_pages(
+                &PrintFields::default(),
+                |_, _| Some(RecordingPainter::new()),
+            )
+            .unwrap();
+        pages[0].count(|op| matches!(op, Op::FillText(text, _, _) if text == "A" || text == "1"))
+    };
+    let plain = book.page_format().unwrap().room();
+    assert_eq!(labels(&book), 0);
+    let mut setup = book.page_setup().clone();
+    setup.print_headings = true;
+    assert!(book.set_page_setup(&setup).unwrap());
+    let format = book.page_format().unwrap();
+    assert!(format.headings.0 > 0.0 && format.headings.1 > 0.0);
+    assert_eq!(format.room().0, plain.0 - format.headings.0);
+    assert_eq!(labels(&book), 2);
+}
