@@ -3812,3 +3812,4 @@ sheet.menu.group_page_layout	Page Layout
 sheet.menu.insert_page_break	Insert Page Break
 sheet.menu.remove_page_break	Remove Page Break
 sheet.menu.reset_page_breaks	Reset All Page Breaks
+filter.date.day	{day}
