@@ -1210,6 +1210,7 @@ impl DocView {
                     || sheet.sort_dialog.is_some()
                     || sheet.page_setup_dialog.is_some()
                     || sheet.custom_filter.is_some()
+                    || sheet.name_manager.is_some()
                     || sheet.insert_function.is_some()
                     || sheet.top_ten.is_some()
                     || sheet.more_colors.is_some()
