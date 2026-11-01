@@ -69,7 +69,11 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
             MenuGroup::LinksValidation
         }
         C::CellLocked | C::CellHidden | C::EditRanges(_) => MenuGroup::Protection,
-        C::PageSetup | C::InsertPageBreak | C::RemovePageBreak | C::ResetPageBreaks => {
+        C::PageSetup
+        | C::InsertPageBreak
+        | C::RemovePageBreak
+        | C::ResetPageBreaks
+        | C::PageBreakPreview(_) => {
             MenuGroup::PageLayout
         }
         C::CellStyle(_) => MenuGroup::CellStyles,
