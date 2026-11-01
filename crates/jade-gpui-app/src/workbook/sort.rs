@@ -1,7 +1,7 @@
 use super::WorkbookView;
 use crate::{i18n, theme};
 use gpui::{div, prelude::*, px, Context, MouseButton};
-use jade_office_model::sort_dialog::SortDialog;
+use jade_office_model::sort_dialog::{SortDialog, SortOn};
 type View = WorkbookView;
 include!("sort_ui.rs");
 impl WorkbookView {
@@ -22,12 +22,7 @@ impl WorkbookView {
                 let Some(dialog) = self.sort_dialog.take() else {
                     return;
                 };
-                let result = self.book.sort_by(
-                    dialog.range,
-                    dialog.header,
-                    &dialog.keys(),
-                    dialog.case_sensitive,
-                );
+                let result = dialog.apply(&mut self.book);
                 self.after_write(result, cx);
             }
             SortAction::Cancel => {

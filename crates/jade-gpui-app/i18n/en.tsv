@@ -3885,3 +3885,10 @@ text_columns.skip	Do not import
 text_columns.minus	−
 text_columns.plus	+
 sheet.menu.from_text	From Text/CSV…
+sort.on_values	Values
+sort.on_cell_color	Cell Color
+sort.on_font_color	Font Color
+sort.on_top	On Top
+sort.on_bottom	On Bottom
+sort.no_fill	No Fill
+sort.automatic	Automatic
