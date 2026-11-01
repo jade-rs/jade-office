@@ -380,6 +380,8 @@ enum FilterCommand {
     Custom,
     /// A year (or a month of it) from the date list, ticked or unticked.
     Date(u32, Option<u32>),
+    /// Date Filters ▸ Today…, or Above/Below Average: a `dynamicFilter`.
+    Dynamic(&'static str),
 }
 
 /// `pick` ticked in the date list, or unticked when it was.
@@ -1897,6 +1899,12 @@ impl WorkbookView {
             }
             FilterCommand::TopTen => self.open_top_ten(cx),
             FilterCommand::Custom => self.open_custom_filter(cx),
+            FilterCommand::Dynamic(kind) => {
+                if let Some(panel) = self.filter.take() {
+                    let result = self.book.filter_dynamic(&panel.button, kind);
+                    self.after_write(result, cx);
+                }
+            }
             FilterCommand::Date(year, month) => {
                 if let Some(panel) = self.filter.as_mut() {
                     toggle_date(&mut panel.date_ticks, (year, month));
@@ -4588,6 +4596,16 @@ impl WorkbookView {
                     "filter.custom.menu",
                     FilterCommand::Custom,
                 ))
+                .child(action(
+                    "filter-above-average",
+                    "filter.dynamic.above_average",
+                    FilterCommand::Dynamic("aboveAverage"),
+                ))
+                .child(action(
+                    "filter-below-average",
+                    "filter.dynamic.below_average",
+                    FilterCommand::Dynamic("belowAverage"),
+                ))
                 .when(!date_rows.is_empty(), |list| {
                     list.child(
                         div()
@@ -4597,6 +4615,11 @@ impl WorkbookView {
                             .child(i18n::text("filter.date.heading")),
                     )
                     .children(date_rows)
+                    .children(
+                        jade_office_model::date_filter::DATE_FILTERS
+                            .into_iter()
+                            .map(|(kind, key)| action(kind, key, FilterCommand::Dynamic(kind))),
+                    )
                 })
                 .child(div().my_1().h(px(1.0)).bg(theme::border()))
                 .child(

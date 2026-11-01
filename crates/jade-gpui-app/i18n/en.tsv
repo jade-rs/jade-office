@@ -3797,3 +3797,13 @@ page_setup.margin.left	Left
 page_setup.margin.right	Right
 page_setup.margin.header	Header
 page_setup.margin.footer	Footer
+filter.dynamic.above_average	Above Average
+filter.dynamic.below_average	Below Average
+filter.dynamic.today	Today
+filter.dynamic.yesterday	Yesterday
+filter.dynamic.this_week	This Week
+filter.dynamic.this_month	This Month
+filter.dynamic.last_month	Last Month
+filter.dynamic.this_quarter	This Quarter
+filter.dynamic.this_year	This Year
+filter.dynamic.year_to_date	Year to Date
