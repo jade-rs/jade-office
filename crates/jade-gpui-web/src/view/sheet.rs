@@ -46,6 +46,7 @@ mod paste_special;
 mod pivots;
 mod protection;
 mod save_as;
+mod shift_choice;
 mod sort;
 mod subtotal;
 mod tables;
@@ -129,6 +130,8 @@ pub(super) struct Sheet {
     pub(super) name_manager: Option<jade_web::name_manager::NameManager>,
     pub(super) insert_function: Option<jade_web::insert_function::InsertFunctionDialog>,
     pub(super) top_ten: Option<jade_web::top_ten::TopTenDialog>,
+    /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
+    pub(super) shift_choice: Option<bool>,
     pub(super) more_colors: Option<jade_web::more_colors::MoreColorsDialog>,
     /// The Paste Options button after a paste from this workbook's copy:
     /// the range pasted on, and whether its menu is open.
@@ -862,6 +865,7 @@ impl Sheet {
             name_manager: None,
             insert_function: None,
             top_ten: None,
+            shift_choice: None,
             more_colors: None,
             paste_options: None,
             tracing: Vec::new(),
@@ -1948,6 +1952,7 @@ impl DocView {
             || sheet.name_manager.is_some()
             || sheet.insert_function.is_some()
             || sheet.top_ten.is_some()
+            || sheet.shift_choice.is_some()
             || sheet.more_colors.is_some()
             || sheet.duplicates_dialog.is_some()
         {
@@ -2036,6 +2041,7 @@ impl DocView {
                 || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.shift_choice.is_some()
                 || s.more_colors.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
@@ -2276,6 +2282,9 @@ impl DocView {
         // Top 10's dialog has the keys while it is open.
         if sheet.top_ten.is_some() {
             return self.top_ten_key(key, cx);
+        }
+        if sheet.shift_choice.is_some() {
+            return self.shift_choice_key(key, cx);
         }
         // Insert Function's dialog has the keys while it is open.
         if sheet.insert_function.is_some() {
@@ -2681,6 +2690,14 @@ impl DocView {
                 let result = sheet.book.set_cell(active, &now_text(time));
                 self.edited(result, cx);
             }
+            // Whole rows or columns go at once; cells ask how, as Excel's
+            // Insert and Delete dialogs do.
+            "+" | "-"
+                if !sheet.selection.is_whole_rows() && !sheet.selection.is_whole_columns() =>
+            {
+                sheet.shift_choice = Some(key == "+");
+                cx.notify();
+            }
             "+" => self.sheet_menu_command(MenuCommand::InsertRows, true, cx),
             "-" => self.sheet_menu_command(MenuCommand::DeleteRows, true, cx),
             "space" => {
@@ -2854,6 +2871,7 @@ impl DocView {
                 || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.shift_choice.is_some()
                 || s.more_colors.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
@@ -3248,6 +3266,7 @@ impl DocView {
                 || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.shift_choice.is_some()
                 || s.more_colors.is_some()
                 || s.duplicates_dialog.is_some()
         }) {
@@ -3995,6 +4014,7 @@ impl DocView {
         let name_manager_panel = self.name_manager_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
+        let shift_choice_panel = self.shift_choice_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
@@ -5254,6 +5274,7 @@ impl DocView {
                     .children(name_manager_panel)
                     .children(insert_function_panel)
                     .children(top_ten_panel)
+                    .children(shift_choice_panel)
                     .children(more_colors_panel)
                     .children(duplicates_panel)
                     .children(protection_panel)

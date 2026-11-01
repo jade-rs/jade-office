@@ -80,6 +80,7 @@ mod page_setup;
 mod paste_special;
 mod pivots;
 mod protection;
+mod shift_choice;
 mod sort;
 mod subtotal;
 mod tables;
@@ -622,6 +623,8 @@ pub struct WorkbookView {
     name_manager: Option<jade_office_model::name_manager::NameManager>,
     insert_function: Option<jade_office_model::insert_function::InsertFunctionDialog>,
     top_ten: Option<jade_office_model::top_ten::TopTenDialog>,
+    /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
+    shift_choice: Option<bool>,
     more_colors: Option<jade_office_model::more_colors::MoreColorsDialog>,
     /// The Paste Options button after a paste from this workbook's copy:
     /// the range pasted on, and whether its menu is open.
@@ -856,6 +859,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
@@ -1119,6 +1123,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
@@ -1216,6 +1221,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
@@ -1363,6 +1369,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
@@ -2222,6 +2229,9 @@ impl WorkbookView {
         if self.top_ten.is_some() {
             return self.top_ten_key(key, cx);
         }
+        if self.shift_choice.is_some() {
+            return self.shift_choice_key(key, cx);
+        }
         // Insert Function's dialog has the keys while it is open.
         if self.insert_function.is_some() {
             return self.insert_function_key(key, modifiers, cx);
@@ -2580,6 +2590,12 @@ impl WorkbookView {
             }
             // ⌘+ (⌘⇧=, ⌃⇧=) inserts; ⌃- deletes. ⌘- stays the app's zoom
             // out, a keymap action the sheet never sees.
+            // Whole rows or columns go at once; cells ask how, as Excel's
+            // Insert and Delete dialogs do.
+            "+" | "-" if !self.selection.is_whole_rows() && !self.selection.is_whole_columns() => {
+                self.shift_choice = Some(key == "+");
+                cx.notify();
+            }
             "+" => self.menu_command(MenuCommand::InsertRows, true, cx),
             "-" => self.menu_command(MenuCommand::DeleteRows, true, cx),
             // Ctrl+Space: the selection's columns, whole.
@@ -2699,6 +2715,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
         {
@@ -5189,6 +5206,7 @@ impl Render for WorkbookView {
         let name_manager_panel = self.name_manager_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
+        let shift_choice_panel = self.shift_choice_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
@@ -5355,6 +5373,7 @@ impl Render for WorkbookView {
             .children(name_manager_panel)
             .children(insert_function_panel)
             .children(top_ten_panel)
+            .children(shift_choice_panel)
             .children(more_colors_panel)
             .children(duplicates_panel)
             .children(protection_panel)
@@ -5409,6 +5428,7 @@ impl WorkbookView {
             name_manager: None,
             insert_function: None,
             top_ten: None,
+            shift_choice: None,
             more_colors: None,
             paste_options: None,
             tracing: Vec::new(),
@@ -6638,18 +6658,38 @@ mod tests {
         });
     }
 
-    /// ⌘+ inserts a row above the selection; ⌃- deletes it again (⌘- is
-    /// the app's zoom out).
+    /// ⌘+ on a cell asks how, as Excel's Insert dialog does, and Enter
+    /// shifts the cells down; ⌃- asks again and Enter shifts them back up
+    /// (⌘- is the app's zoom out). Whole rows go without asking.
     #[gpui::test]
     fn command_plus_inserts_rows(cx: &mut gpui::TestAppContext) {
         let (view, cx) = open_view(cx);
-        cx.simulate_keystrokes("down down right");
-        assert_eq!(edit_text(&view, cx, at(1, 2)), "20");
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(6, 10), "x").unwrap();
+            view.book.set_cell(at(7, 10), "beside").unwrap();
+            view.selection = Selection::cell(at(6, 10));
+            cx.notify();
+        });
         cx.simulate_keystrokes("cmd-shift-=");
-        assert_eq!(edit_text(&view, cx, at(1, 2)), "");
-        assert_eq!(edit_text(&view, cx, at(1, 3)), "20");
+        view.read_with(cx, |view, _| assert_eq!(view.shift_choice, Some(true)));
+        cx.simulate_keystrokes("enter");
+        assert_eq!(edit_text(&view, cx, at(6, 10)), "");
+        assert_eq!(edit_text(&view, cx, at(6, 11)), "x");
+        // The cell beside it stayed: only the selected cell moved down.
+        assert_eq!(edit_text(&view, cx, at(7, 10)), "beside");
         cx.simulate_keystrokes("ctrl--");
-        assert_eq!(edit_text(&view, cx, at(1, 2)), "20");
+        view.read_with(cx, |view, _| assert_eq!(view.shift_choice, Some(false)));
+        cx.simulate_keystrokes("enter");
+        assert_eq!(edit_text(&view, cx, at(6, 10)), "x");
+        // Escape asks no more and does nothing.
+        cx.simulate_keystrokes("cmd-shift-= escape");
+        view.read_with(cx, |view, _| assert_eq!(view.shift_choice, None));
+        assert_eq!(edit_text(&view, cx, at(6, 10)), "x");
+        // A whole row is inserted at once.
+        view.update(cx, |view, _| view.selection.whole_rows());
+        cx.simulate_keystrokes("cmd-shift-=");
+        view.read_with(cx, |view, _| assert_eq!(view.shift_choice, None));
+        assert_eq!(edit_text(&view, cx, at(7, 11)), "beside");
     }
 
     /// AutoSum types `=SUM(` round the numbers above, pointed, and Enter

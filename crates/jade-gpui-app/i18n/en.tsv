@@ -3835,3 +3835,11 @@ sheet.trace.other_sheets	Reads on other sheets: {refs}
 validation.circle_invalid	Circle Invalid Data
 validation.clear_circles	Clear Validation Circles
 validation.none_invalid	No cell on this sheet breaks its validation rule.
+shift.insert	Insert
+shift.delete	Delete
+shift.cells_right	Shift cells right
+shift.cells_down	Shift cells down
+shift.cells_left	Shift cells left
+shift.cells_up	Shift cells up
+shift.entire_row	Entire row
+shift.entire_column	Entire column
