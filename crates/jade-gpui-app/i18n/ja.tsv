@@ -3876,3 +3876,12 @@ sheet.shape.pentagon_arrow	矢印: 五方向
 sheet.shape.chevron	矢印: 山形
 sheet.shape.star5	星: 5 pt
 sheet.shape.speech_bubble	吹き出し: 四角形
+text_columns.import_dialog	テキスト ファイル ウィザード
+text_columns.start_row	取り込み開始行
+text_columns.column_format	列のデータ形式 (列の見出しをクリック)
+text_columns.general	標準
+text_columns.text	文字列
+text_columns.skip	削除する
+text_columns.minus	−
+text_columns.plus	+
+sheet.menu.from_text	テキストまたは CSV から…
