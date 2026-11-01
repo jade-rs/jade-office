@@ -281,7 +281,10 @@ impl<B: Backend> Workbook<B> {
             format,
             mut layout,
         } = plan;
-        layout.show_grid_lines = false;
+        // Gridlines print only when Page Setup says so.
+        let setup = self.setup();
+        layout.show_grid_lines = setup.print_grid_lines;
+        let centre = (setup.center_horizontally, setup.center_vertically);
         let (width, height) = format.paper;
         let total = pages.len();
         let mut painted = Vec::with_capacity(total);
@@ -291,12 +294,6 @@ impl<B: Backend> Workbook<B> {
             painter.set_fill_style_str("#ffffff");
             painter.fill_rect(0.0, 0.0, width, height);
             painter.save();
-            let placed = painter
-                .translate(format.margins.left, format.margins.top)
-                .and_then(|()| painter.scale(format.scale, format.scale));
-            if placed.is_err() {
-                return Err(format!("cannot paint page {}", number + 1));
-            }
             // The title columns, then the page's own; the title rows above.
             let columns = [
                 printed.title_columns,
@@ -306,6 +303,33 @@ impl<B: Backend> Workbook<B> {
                 printed.title_rows,
                 Some((printed.range.start.row, printed.range.end.row)),
             ];
+            // Center on page: what is left of the room, split either side.
+            let extent = |spans: &[Option<(u32, u32)>], columns: bool| -> f64 {
+                spans
+                    .iter()
+                    .flatten()
+                    .map(|&(first, last)| {
+                        offset(&layout, columns, last + 1) - offset(&layout, columns, first)
+                    })
+                    .sum()
+            };
+            let (room_x, room_y) = format.room();
+            let spare = |on: bool, room: f64, used: f64| {
+                if on {
+                    ((room - used).max(0.0) / 2.0) * format.scale
+                } else {
+                    0.0
+                }
+            };
+            let placed = painter
+                .translate(
+                    format.margins.left + spare(centre.0, room_x, extent(&columns, true)),
+                    format.margins.top + spare(centre.1, room_y, extent(&rows, false)),
+                )
+                .and_then(|()| painter.scale(format.scale, format.scale));
+            if placed.is_err() {
+                return Err(format!("cannot paint page {}", number + 1));
+            }
             let mut y = 0.0;
             for (first_row, last_row) in rows.into_iter().flatten() {
                 let top = offset(&layout, false, first_row);
