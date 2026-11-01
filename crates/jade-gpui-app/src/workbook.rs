@@ -6092,7 +6092,11 @@ mod tests {
             let rows = jade_office_model::name_manager::NameManager::rows(&view.book);
             assert_eq!(rows.len(), 1);
             assert_eq!((rows[0].name.as_str(), rows[0].scope), ("Rates", Some(0)));
-            assert!(rows[0].refers_to.ends_with("!$A$1"), "{}", rows[0].refers_to);
+            assert!(
+                rows[0].refers_to.ends_with("!$A$1"),
+                "{}",
+                rows[0].refers_to
+            );
         });
     }
 
@@ -6108,6 +6112,34 @@ mod tests {
             assert_eq!((width.round(), height.round()), (144.0, 96.0));
             assert!(view.book.undo().unwrap());
             assert!(view.book.object_rect(id, (0.0, 0.0)).is_none());
+        });
+    }
+
+    /// Every shape in the gallery, lines too, goes in selected, under a name
+    /// both languages have.
+    #[gpui::test]
+    fn every_gallery_shape_goes_in(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            for (index, (preset, label)) in jade_office_model::sheet::SHAPES.into_iter().enumerate()
+            {
+                view.selection = Selection::cell(at(2 + (index as u32 % 4) * 3, 2 + index as u32));
+                view.object = None;
+                view.chart_tool(charts::ChartTool::Shape(preset), cx);
+                let id = view.object.expect(preset);
+                assert!(view.book.object_rect(id, (0.0, 0.0)).is_some(), "{preset}");
+                for words in [
+                    include_str!("../i18n/en.tsv"),
+                    include_str!("../i18n/ja.tsv"),
+                ] {
+                    assert!(
+                        words
+                            .lines()
+                            .any(|line| line.split('\t').next() == Some(label)),
+                        "{label}"
+                    );
+                }
+            }
         });
     }
 

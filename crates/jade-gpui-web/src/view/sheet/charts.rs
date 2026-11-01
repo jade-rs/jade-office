@@ -10,6 +10,7 @@ use jade_web::charts::{
 };
 
 use super::*;
+use jade_web::sheet::SHAPES;
 
 /// What the chart button's items do.
 #[derive(Clone, Copy)]
@@ -26,14 +27,6 @@ pub(super) enum ChartTool {
     Ask(ChartField),
     Delete,
 }
-
-/// The shapes Insert ▸ Shapes offers, with the i18n keys of their names.
-const SHAPE_TOOLS: [(&str, &str); 4] = [
-    ("rect", "sheet.shape.rectangle"),
-    ("ellipse", "sheet.shape.oval"),
-    ("roundRect", "sheet.shape.rounded_rectangle"),
-    ("rightArrow", "sheet.shape.right_arrow"),
-];
 
 /// How far a press has to travel before it drags an object, in px.
 const DRAG_SLOP: f64 = 2.0;
@@ -337,19 +330,28 @@ impl DocView {
                     cx,
                 ));
             }
-            menu =
-                menu.child(div().h(px(1.0)).my_1().bg(palette::border()))
-                    .child(item(
-                        ("chart-picture", 0),
-                        "sheet.insert_picture",
-                        ChartTool::Picture,
-                        cx,
-                    ))
-                    .children(SHAPE_TOOLS.into_iter().enumerate().map(
-                        |(index, (preset, label))| {
-                            item(("chart-shape", index), label, ChartTool::Shape(preset), cx)
-                        },
-                    ));
+            menu = menu
+                .child(div().h(px(1.0)).my_1().bg(palette::border()))
+                .child(item(
+                    ("chart-picture", 0),
+                    "sheet.insert_picture",
+                    ChartTool::Picture,
+                    cx,
+                ))
+                .child(heading("sheet.shapes"))
+                .child(
+                    div().flex().flex_wrap().text_xs().children(
+                        SHAPES
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, (preset, label))| {
+                                item(("chart-shape", index), label, ChartTool::Shape(preset), cx)
+                                    .w(px(110.0))
+                                    .px_2()
+                                    .truncate()
+                            }),
+                    ),
+                );
         }
         menu
     }

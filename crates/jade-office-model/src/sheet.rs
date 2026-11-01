@@ -2130,9 +2130,9 @@ impl<B: Backend> Workbook<B> {
         Ok(id)
     }
 
-    /// Insert ▸ Shapes: a `preset` shape (`rect`, `ellipse`, `roundRect`,
-    /// `rightArrow`) an inch and a half wide and an inch tall at `at`. The
-    /// new shape's id.
+    /// Insert ▸ Shapes: a `preset` shape (one of [`SHAPES`]) an inch and a
+    /// half wide and an inch tall at `at` — a line across that box. The new
+    /// shape's id.
     pub fn insert_shape(&mut self, at: CellRef, preset: &str) -> Result<u32, String> {
         let name = self.sheet_name();
         let id = self
@@ -4816,3 +4816,35 @@ mod tests {
         assert!(!book.on_selection_border(x + w / 2.0, y + h / 2.0, (0.0, 0.0), range));
     }
 }
+
+/// Insert ▸ Shapes' gallery: each preset with the i18n key of its name, in
+/// Excel's order — lines, rectangles, basic shapes, block arrows, a star
+/// and a callout.
+pub const SHAPES: [(&str, &str); 26] = [
+    ("line", "sheet.shape.line"),
+    ("straightConnector1", "sheet.shape.arrow_line"),
+    ("rect", "sheet.shape.rectangle"),
+    ("roundRect", "sheet.shape.rounded_rectangle"),
+    ("ellipse", "sheet.shape.oval"),
+    ("triangle", "sheet.shape.triangle"),
+    ("rtTriangle", "sheet.shape.right_triangle"),
+    ("parallelogram", "sheet.shape.parallelogram"),
+    ("trapezoid", "sheet.shape.trapezoid"),
+    ("diamond", "sheet.shape.diamond"),
+    ("pentagon", "sheet.shape.pentagon"),
+    ("hexagon", "sheet.shape.hexagon"),
+    ("octagon", "sheet.shape.octagon"),
+    ("plus", "sheet.shape.cross"),
+    ("can", "sheet.shape.cylinder"),
+    ("heart", "sheet.shape.heart"),
+    ("smileyFace", "sheet.shape.smiley"),
+    ("rightArrow", "sheet.shape.right_arrow"),
+    ("leftArrow", "sheet.shape.left_arrow"),
+    ("upArrow", "sheet.shape.up_arrow"),
+    ("downArrow", "sheet.shape.down_arrow"),
+    ("leftRightArrow", "sheet.shape.left_right_arrow"),
+    ("homePlate", "sheet.shape.pentagon_arrow"),
+    ("chevron", "sheet.shape.chevron"),
+    ("star5", "sheet.shape.star5"),
+    ("wedgeRectCallout", "sheet.shape.speech_bubble"),
+];
