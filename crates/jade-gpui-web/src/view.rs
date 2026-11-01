@@ -3863,6 +3863,11 @@ impl EntityInputHandler for DocView {
                     size: size(px(bounds[2]), px(bounds[3])),
                 });
             }
+            if sheet.edit.is_some() {
+                if let Some(caret) = sheet.ime_caret.get() {
+                    return Some(caret);
+                }
+            }
         }
         // In a Word document, beside the caret — a selection's moving end,
         // which the renderer reports no caret for.

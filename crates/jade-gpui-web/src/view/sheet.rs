@@ -81,6 +81,8 @@ pub(super) struct Sheet {
     pub selection: Selection,
     pub edit: Option<CellEdit>,
     pub scroll: ScrollHandle,
+    /// The cell editor's painted caret, in window CSS pixels.
+    pub ime_caret: Rc<Cell<Option<Bounds<Pixels>>>>,
     painted: Option<PaintedSheet>,
     /// The cells as tiles and the header bands, kept between frames.
     tiles: SheetTiles,
@@ -809,6 +811,7 @@ impl Sheet {
             selection: Selection::default(),
             edit: None,
             scroll: ScrollHandle::new(),
+            ime_caret: Rc::new(Cell::new(None)),
             painted: None,
             tiles: SheetTiles::default(),
             viewport: (1.0, 1.0),
@@ -4111,6 +4114,7 @@ impl DocView {
                         }),
                 )
             });
+        sheet.ime_caret.set(None);
         let cell_editor = sheet.edit.as_ref().and_then(|edit| {
             let (x, y, w, h) = sheet
                 .book
@@ -4131,7 +4135,12 @@ impl DocView {
                     .border_color(rgb(0x217346))
                     .text_color(gpui::black())
                     .text_size(px(14.0 * zoom))
-                    .child(caret_line(&edit.text, gpui::black(), true))
+                    .child(caret_line_with_bounds(
+                        &edit.text,
+                        gpui::black(),
+                        true,
+                        Some(sheet.ime_caret.clone()),
+                    ))
                     .children(completion_list(edit, px(h as f32 * zoom), cx))
                     .children(formula_tip(edit, px(h as f32 * zoom))),
             )
@@ -5151,6 +5160,15 @@ impl DocView {
 
 /// Text being typed, with its caret drawn where it is and its lines kept.
 pub(super) fn caret_line(text: &TextEdit, caret_color: gpui::Hsla, tall: bool) -> gpui::Div {
+    caret_line_with_bounds(text, caret_color, tall, None)
+}
+
+fn caret_line_with_bounds(
+    text: &TextEdit,
+    caret_color: gpui::Hsla,
+    tall: bool,
+    bounds: Option<Rc<Cell<Option<Bounds<Pixels>>>>>,
+) -> gpui::Div {
     if text.whole {
         let mut selected = caret_color;
         selected.a = 0.3;
@@ -5163,7 +5181,19 @@ pub(super) fn caret_line(text: &TextEdit, caret_color: gpui::Hsla, tall: bool) -
     }
     let (before, after) = text.split();
     let height = if tall { 15.0 } else { 12.0 };
-    let caret = div().flex_none().w(px(1.0)).h(px(height)).bg(caret_color);
+    let caret = div()
+        .relative()
+        .flex_none()
+        .w(px(1.0))
+        .h(px(height))
+        .bg(caret_color)
+        .when_some(bounds, |caret, bounds| {
+            caret.child(
+                gpui::canvas(move |rect, _, _| bounds.set(Some(rect)), |_, _, _, _| {})
+                    .absolute()
+                    .size_full(),
+            )
+        });
     let line = |text: &str| div().whitespace_nowrap().child(text.to_string());
     let mut lines = div().flex().flex_col();
     let mut caret = Some(caret);
