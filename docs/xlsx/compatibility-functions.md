@@ -77,7 +77,9 @@ spills and save/reopen. Full core/engine/compile results are recorded in
 
 `FILTERXML` is registered now (an XPath subset: element paths, `*`, `//`,
 `@attribute`, `text()` and `[n]`, `[last()]`, `[@a]`, `[@a='v']`, `[child='v']`
-predicates). The four remaining registration differences are `GROUPBY`,
+predicates), and `GROUPBY` (row fields, a LAMBDA or a function named bare,
+headers, a grand total at either end, sorting and a filter; subtotal depths
+above one not yet). The three remaining registration differences are
 `IMAGE`, `PIVOTBY` and `WEBSERVICE`. Their calculation, workbook/object
 context or external-service requirements are not filled with placeholder
 registry entries. Pivot tables, connections, advanced charts, protection and
