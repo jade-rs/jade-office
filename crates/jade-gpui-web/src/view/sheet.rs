@@ -347,14 +347,16 @@ struct FilterPanel {
     checked: Vec<bool>,
     /// The years (with their months) the column has dates in.
     dates: Vec<(u32, Vec<u32>)>,
-    /// The years, and months of them, ticked in the date list.
-    date_ticks: Vec<(u32, Option<u32>)>,
+    /// The years, months of them and days of those ticked in the date list.
+    date_ticks: Vec<(u32, Option<u32>, Option<u32>)>,
+    /// The months opened in the date list to show their days.
+    opened_months: Vec<(u32, u32)>,
     /// Under the button, in the grid's px.
     at: (f32, f32),
 }
 
 /// `pick` ticked in the date list, or unticked when it was.
-fn toggle_date(ticks: &mut Vec<(u32, Option<u32>)>, pick: (u32, Option<u32>)) {
+fn toggle_date<T: PartialEq>(ticks: &mut Vec<T>, pick: T) {
     match ticks.iter().position(|tick| *tick == pick) {
         Some(at) => {
             ticks.remove(at);
@@ -710,8 +712,11 @@ enum FilterCommand {
     Reapply,
     /// Custom Filter…: its dialog.
     Custom,
-    /// A year (or a month of it) from the date list, ticked or unticked.
-    Date(u32, Option<u32>),
+    /// A year (or a month of it, or a day of that) from the date list,
+    /// ticked or unticked.
+    Date(u32, Option<u32>, Option<u32>),
+    /// A month of the date list opened to show its days, or closed.
+    OpenMonth(u32, u32),
     /// Date Filters ▸ Today…, or Above/Below Average: a `dynamicFilter`.
     Dynamic(&'static str),
 }
@@ -1258,9 +1263,15 @@ impl DocView {
                     self.edited(result, cx);
                 }
             }
-            FilterCommand::Date(year, month) => {
+            FilterCommand::Date(year, month, day) => {
                 if let Some(panel) = sheet.filter.as_mut() {
-                    toggle_date(&mut panel.date_ticks, (year, month));
+                    toggle_date(&mut panel.date_ticks, (year, month, day));
+                }
+                cx.notify();
+            }
+            FilterCommand::OpenMonth(year, month) => {
+                if let Some(panel) = sheet.filter.as_mut() {
+                    toggle_date(&mut panel.opened_months, (year, month));
                 }
                 cx.notify();
             }
@@ -3293,6 +3304,7 @@ impl DocView {
                         checked,
                         dates,
                         date_ticks: Vec::new(),
+                        opened_months: Vec::new(),
                         at: (
                             (left * f64::from(zoom)) as f32,
                             (top * f64::from(zoom)) as f32,
@@ -4755,18 +4767,19 @@ impl DocView {
                         .px_3()
                         .py_0p5()
                         .cursor_pointer()
-                        .when(panel.date_ticks.contains(&(year, None)), |row| {
+                        .when(panel.date_ticks.contains(&(year, None, None)), |row| {
                             row.bg(palette::selected())
                         })
                         .hover(|item| item.bg(palette::hovered()))
                         .child(i18n::format("filter.date.year", &[("year", &year)]))
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .on_click(cx.listener(move |view, _event, _window, cx| {
-                            view.filter_command(FilterCommand::Date(year, None), cx)
+                            view.filter_command(FilterCommand::Date(year, None, None), cx)
                         })),
                 );
                 for month in months {
                     let month = *month;
+                    let opened = panel.opened_months.contains(&(year, month));
                     date_rows.push(
                         div()
                             .id(("filter-month", (year * 100 + month) as usize))
@@ -4774,16 +4787,65 @@ impl DocView {
                             .pr_3()
                             .py_0p5()
                             .cursor_pointer()
-                            .when(panel.date_ticks.contains(&(year, Some(month))), |row| {
-                                row.bg(palette::selected())
-                            })
+                            .when(
+                                panel.date_ticks.contains(&(year, Some(month), None)),
+                                |row| row.bg(palette::selected()),
+                            )
                             .hover(|item| item.bg(palette::hovered()))
+                            .flex()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .id(("filter-open-month", (year * 100 + month) as usize))
+                                    .w(px(12.0))
+                                    .text_color(palette::text_dim())
+                                    .child(if opened { "−" } else { "+" })
+                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation()
+                                    })
+                                    .on_click(cx.listener(move |view, _event, _window, cx| {
+                                        cx.stop_propagation();
+                                        view.filter_command(
+                                            FilterCommand::OpenMonth(year, month),
+                                            cx,
+                                        )
+                                    })),
+                            )
                             .child(i18n::format("filter.date.month", &[("month", &month)]))
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .on_click(cx.listener(move |view, _event, _window, cx| {
-                                view.filter_command(FilterCommand::Date(year, Some(month)), cx)
+                                view.filter_command(
+                                    FilterCommand::Date(year, Some(month), None),
+                                    cx,
+                                )
                             })),
                     );
+                    if !opened {
+                        continue;
+                    }
+                    for day in sheet.book.filter_date_days(&panel.button, year, month) {
+                        date_rows.push(
+                            div()
+                                .id(("filter-day", (year * 10_000 + month * 100 + day) as usize))
+                                .pl(px(52.0))
+                                .pr_3()
+                                .py_0p5()
+                                .cursor_pointer()
+                                .when(
+                                    panel.date_ticks.contains(&(year, Some(month), Some(day))),
+                                    |row| row.bg(palette::selected()),
+                                )
+                                .hover(|item| item.bg(palette::hovered()))
+                                .child(i18n::format("filter.date.day", &[("day", &day)]))
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .on_click(cx.listener(move |view, _event, _window, cx| {
+                                    view.filter_command(
+                                        FilterCommand::Date(year, Some(month), Some(day)),
+                                        cx,
+                                    )
+                                })),
+                        );
+                    }
                 }
             }
             let action = |id: &'static str, label: &'static str, command: FilterCommand| {

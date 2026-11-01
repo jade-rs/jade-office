@@ -99,27 +99,56 @@ impl<B: Backend> Workbook<B> {
         year: u32,
         month: Option<u32>,
     ) -> Result<bool, String> {
-        self.filter_dates(button, &[(year, month)])
+        self.filter_dates(button, &[(year, month, None)])
     }
 
-    /// The date filter with several years and months ticked: the rows whose
-    /// date falls in any of them show.
+    /// The days of `year`-`month` the button's column has dates on, in
+    /// order: what the date list shows under an opened month.
+    pub fn filter_date_days(&self, button: &FilterButton, year: u32, month: u32) -> Vec<u32> {
+        let column = button.range.start.column + button.column;
+        let dates = self.date_system();
+        let mut days = std::collections::BTreeSet::new();
+        for row in button.range.start.row + 1..=button.range.end.row {
+            let at = CellRef::new(column, row);
+            let Some(serial) = self.number(at) else {
+                continue;
+            };
+            let is_date = self
+                .format_at(at)
+                .number_format
+                .as_deref()
+                .is_some_and(jade_xlsx_layout::number_format::is_date_format);
+            if !is_date {
+                continue;
+            }
+            if let Some(fields) = jade_xlsx_layout::number_format::calendar_fields(serial, dates) {
+                if fields[0] == year && fields[1] == month {
+                    days.insert(fields[2]);
+                }
+            }
+        }
+        days.into_iter().collect()
+    }
+
+    /// The date filter with several years, months and days ticked — each a
+    /// year, a month of it, or a day of that — the rows whose date falls in
+    /// any of them show.
     pub fn filter_dates(
         &mut self,
         button: &FilterButton,
-        picks: &[(u32, Option<u32>)],
+        picks: &[(u32, Option<u32>, Option<u32>)],
     ) -> Result<bool, String> {
         let groups = picks
             .iter()
-            .map(|&(year, month)| DateFilterGroup {
-                grouping: if month.is_some() {
-                    DateFilterGrouping::Month
-                } else {
-                    DateFilterGrouping::Year
+            .map(|&(year, month, day)| DateFilterGroup {
+                grouping: match (month, day) {
+                    (Some(_), Some(_)) => DateFilterGrouping::Day,
+                    (Some(_), None) => DateFilterGrouping::Month,
+                    _ => DateFilterGrouping::Year,
                 },
                 year,
                 month,
-                day: None,
+                day: month.and(day),
                 hour: None,
                 minute: None,
                 second: None,

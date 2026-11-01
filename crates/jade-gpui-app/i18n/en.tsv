@@ -3816,3 +3816,4 @@ sheet.shape.rectangle	Rectangle
 sheet.shape.oval	Oval
 sheet.shape.rounded_rectangle	Rounded Rectangle
 sheet.shape.right_arrow	Right Arrow
+filter.date.day	{day}
