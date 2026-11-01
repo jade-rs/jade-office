@@ -73,6 +73,18 @@ pub fn formula_precedents(formula: &str) -> Vec<CellRange> {
     found
 }
 
+/// Whether `formula` reads another sheet (`Sheet2!A1`, `'Q1 data'!B2:C9`):
+/// a `!` outside text in quotes.
+pub fn formula_reads_other_sheets(formula: &str) -> bool {
+    let mut quoted = false;
+    formula.chars().any(|c| {
+        if c == '"' {
+            quoted = !quoted;
+        }
+        c == '!' && !quoted
+    })
+}
+
 impl<B: Backend> Workbook<B> {
     /// Trace Precedents from `at`: what its formula reads on this sheet;
     /// none for a value.
@@ -82,6 +94,13 @@ impl<B: Backend> Workbook<B> {
             return Vec::new();
         }
         formula_precedents(&typed)
+    }
+
+    /// Whether `at`'s formula reads another sheet, which Trace Precedents
+    /// shows as an arrow from a worksheet icon.
+    pub fn reads_other_sheets(&self, at: CellRef) -> bool {
+        let typed = self.edit_text(at);
+        typed.starts_with('=') && formula_reads_other_sheets(&typed)
     }
 
     /// Trace Dependents from `at`: the cells on this sheet whose formulas
@@ -113,6 +132,14 @@ mod tests {
             start: CellRef::parse(a).unwrap(),
             end: CellRef::parse(b).unwrap(),
         }
+    }
+
+    #[test]
+    fn a_bang_outside_text_reads_another_sheet() {
+        assert!(formula_reads_other_sheets("=Sheet2!A1+1"));
+        assert!(formula_reads_other_sheets("=SUM('Q1 data'!B2:C9)"));
+        assert!(!formula_reads_other_sheets("=A1&\"!\""));
+        assert!(!formula_reads_other_sheets("=SUM(A1:B2)"));
     }
 
     #[test]
