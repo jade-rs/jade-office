@@ -43,6 +43,21 @@ The engine's renderers — documents, slides and sheets — also run as WebAssem
 python3 -m http.server 8765 --directory crates/jade-web/www
 ```
 
+The browser IME regression runs against that server with Playwright. It checks
+the native input's candidate anchor, Word composition, scrolling and zoom, and
+multiline Excel editing at 1× and 2× device scale. Install its test dependency
+outside the repository:
+
+```sh
+npm install --prefix /tmp/jade-ime-test playwright
+/tmp/jade-ime-test/node_modules/.bin/playwright install chromium
+NODE_PATH=/tmp/jade-ime-test/node_modules node scripts/test-web-ime.cjs
+```
+
+The browser platform is patched locally in `vendor/gpui-pre-web`: version 0.3.9
+leaves its IME position hook empty. The patch positions the hidden textarea and
+scrolls its native caret past mirrored context without resetting composition.
+
 Then open http://localhost:8765/ — the gpui shell, laid out like the native app (the same title bar, explorer, tabs, slide and page lists, formula bar and status bar, in the same palette, words and icons: it compiles in `jade-gpui-app`'s i18n tables and icon set). The explorer lists the bundled samples; open your own with the + button, ⌘O or by dropping files on the page; `?open=contract.docx` opens one at start. Word documents edit as in the native app: click to place the caret, drag or Shift-click to select, the arrows, Home and End (Shift extends), ⌘A, type over the selection (IMEs included), Backspace, Delete and Enter, ⌘C/⌘X/⌘V (pasted lines become paragraphs), undo and redo, and save the edited .docx. Over the pages sits jade-ide's ribbon, ported from its style menu and table tools (`crates/jade-gpui-web/src/ribbon.rs`, the native app's `crates/jade-gpui-app/src/ribbon.rs`, both over `jade-office-model`'s `word.rs`): font family and size, grow and shrink, bold, italic, underline (⌘B/⌘I/⌘U), strikethrough, sub- and superscript, colour, highlight and clear formatting — on the selection, or on the word around a bare caret, as in Word; bullets and numbering, indent, alignment, line spacing, shading and borders; the style gallery (標準 and 見出し 1–3, then the document's own paragraph styles); a table picked on a 10 × 8 grid; and, with the caret in a table, rows and columns inserted and deleted, the table deleted or split, cells merged and unmerged, the engine's table-style presets, and a cell-format list (table and cell alignment, shading, borders, even rows and columns, split cells, repeated header row). http://localhost:8765/canvas.html is the plain canvas page over the wasm-bindgen API.
 
 What a keystroke, an open, a cell edit or a paint costs in the browser build is measured by `crates/jade-office-perf`: the same renderers on the tiny-skia painter at 2x, natively, under callgrind. `.github/workflows/perf.yml` runs it on a pull request's base and head and comments the instructions each scenario took, and the functions that moved (`scripts/perf/`, after jade-core's). Run one scenario plainly with `cargo run --profile perf-ci --manifest-path crates/jade-office-perf/Cargo.toml -- docx-keystroke contract.docx`.
