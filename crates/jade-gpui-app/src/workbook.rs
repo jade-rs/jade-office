@@ -718,7 +718,7 @@ impl WorkbookView {
             return Some(dialog.field_mut());
         }
         if let Some(dialog) = self.name_manager.as_mut() {
-            return Some(&mut dialog.refers_to);
+            return Some(dialog.field_mut());
         }
         if let Some(ask) = self.chart_asking.as_mut() {
             return Some(&mut ask.text);
@@ -770,7 +770,7 @@ impl WorkbookView {
             return Some(dialog.field());
         }
         if let Some(dialog) = self.name_manager.as_ref() {
-            return Some(&dialog.refers_to);
+            return Some(dialog.field());
         }
         if let Some(ask) = self.chart_asking.as_ref() {
             return Some(&ask.text);
@@ -6072,6 +6072,28 @@ mod tests {
         });
         cx.simulate_keystrokes("escape");
         view.read_with(cx, |view, _| assert!(view.name_manager.is_none()));
+    }
+
+    /// New… in the Name Manager: a name typed for the first sheet, Tab to
+    /// its reference (the selection), Enter making it.
+    #[gpui::test]
+    fn the_name_manager_makes_a_name_for_a_sheet(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.menu_command(MenuCommand::NameManager, false, cx);
+            view.name_manager_action(name_manager::NameManagerAction::New, cx);
+            view.name_manager_action(name_manager::NameManagerAction::Scope(Some(0)), cx);
+        });
+        cx.simulate_input("Rates");
+        cx.simulate_keystrokes("tab enter");
+        view.read_with(cx, |view, _| {
+            let dialog = view.name_manager.as_ref().expect("still open");
+            assert!(dialog.new.is_none());
+            let rows = jade_office_model::name_manager::NameManager::rows(&view.book);
+            assert_eq!(rows.len(), 1);
+            assert_eq!((rows[0].name.as_str(), rows[0].scope), ("Rates", Some(0)));
+            assert!(rows[0].refers_to.ends_with("!$A$1"), "{}", rows[0].refers_to);
+        });
     }
 
     /// Insert ▸ Shapes puts each shape at the active cell, selected.
