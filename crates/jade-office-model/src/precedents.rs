@@ -194,6 +194,27 @@ impl<B: Backend> Workbook<B> {
             .collect()
     }
 
+    /// What `at`'s formula reads on other sheets, as Go To takes it
+    /// (`'Q1 data'!B2:C9`): the worksheet icon's list.
+    pub fn other_sheet_precedents(&self, at: CellRef) -> Vec<String> {
+        let typed = self.edit_text(at);
+        if !typed.starts_with('=') {
+            return Vec::new();
+        }
+        let mut found: Vec<String> = Vec::new();
+        for (sheet, range) in formula_sheet_references(&typed) {
+            let text = format!(
+                "{}!{}",
+                jade_xlsx_reader::quote_sheet_name(&sheet),
+                crate::sheet::range_text(range)
+            );
+            if !found.contains(&text) {
+                found.push(text);
+            }
+        }
+        found
+    }
+
     /// Whether a formula on another sheet reads `at`, which Trace
     /// Dependents shows as an arrow to a worksheet icon.
     pub fn read_by_other_sheets(&self, at: CellRef) -> bool {

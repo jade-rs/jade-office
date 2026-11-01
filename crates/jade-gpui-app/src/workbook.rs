@@ -508,6 +508,9 @@ enum MenuCommand {
     TracePrecedents,
     /// Formulas ▸ Trace Dependents from the active cell.
     TraceDependents,
+    /// The worksheet icon's list: Go To opened on what the active cell's
+    /// formula reads on other sheets.
+    GoToOtherSheetPrecedent,
     /// Formulas ▸ Remove Arrows.
     RemoveArrows,
     /// The error button's Convert to Number on the selection.
@@ -1727,6 +1730,17 @@ impl WorkbookView {
             }
             MenuCommand::ConvertToNumber => self.book.convert_to_number(range),
             MenuCommand::IgnoreError => self.book.ignore_error(range),
+            MenuCommand::GoToOtherSheetPrecedent => {
+                let refs = self.book.other_sheet_precedents(selection.active);
+                self.open_go_to(cx);
+                if let Some(first) = refs.first() {
+                    self.naming = Some(TextEdit::selected(first.clone()));
+                }
+                self.status =
+                    i18n::format("sheet.trace.other_sheets", &[("refs", &refs.join(", "))]).into();
+                cx.notify();
+                return;
+            }
             MenuCommand::TraceDependents => {
                 let at = selection.active;
                 if self.book.dependents(at).is_empty() && !self.book.read_by_other_sheets(at) {
@@ -3643,6 +3657,12 @@ impl WorkbookView {
                 ));
                 items.push((MenuCommand::TracePrecedents, "sheet.menu.trace_precedents"));
                 items.push((MenuCommand::TraceDependents, "sheet.menu.trace_dependents"));
+                if self.book.reads_other_sheets(self.active()) {
+                    items.push((
+                        MenuCommand::GoToOtherSheetPrecedent,
+                        "sheet.menu.goto_other_sheet_precedent",
+                    ));
+                }
                 if !self.tracing.is_empty() || !self.tracing_dependents.is_empty() {
                     items.push((MenuCommand::RemoveArrows, "sheet.menu.remove_arrows"));
                 }
@@ -5851,6 +5871,39 @@ mod tests {
             let arrows = view.trace_arrows(grid);
             assert_eq!(arrows.len(), 1);
             assert!(arrows[0].other_sheet && arrows[0].icon_at_head);
+        });
+    }
+
+    /// The worksheet icon's list: Go To opens on what the formula reads on
+    /// another sheet, and Enter goes there.
+    #[gpui::test]
+    fn go_to_takes_a_precedent_on_another_sheet(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            let other = view.book.add_sheet().unwrap();
+            let name = view.book.sheet_names()[other].clone();
+            view.sheet_names = view
+                .book
+                .sheet_names()
+                .into_iter()
+                .map(Into::into)
+                .collect();
+            view.book
+                .set_cell(at(5, 5), &format!("='{name}'!C3+1"))
+                .unwrap();
+            view.selection = Selection::cell(at(5, 5));
+            view.menu_command(MenuCommand::GoToOtherSheetPrecedent, false, cx);
+            let typed = view
+                .naming
+                .as_ref()
+                .map(|text| text.text.clone())
+                .unwrap_or_default();
+            assert!(typed.contains(&name) && typed.ends_with("!C3"), "{typed}");
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.sheet_index(), 1);
+            assert_eq!(view.selection.active, at(2, 2));
         });
     }
 
