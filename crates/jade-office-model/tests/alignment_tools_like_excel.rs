@@ -109,3 +109,26 @@ fn merge_across_merges_each_row_on_its_own() {
         .merge_across(span(CellRef::new(10, 30), CellRef::new(10, 32)))
         .unwrap());
 }
+
+#[test]
+fn convert_to_number_turns_numbers_stored_as_text_into_numbers() {
+    let mut book = book();
+    let (a, b, c) = (
+        CellRef::new(10, 30),
+        CellRef::new(10, 31),
+        CellRef::new(10, 32),
+    );
+    book.set_cell(a, "'00123").unwrap();
+    book.set_cell(b, "'1,234.5").unwrap();
+    book.set_cell(c, "'abc").unwrap();
+    assert!(book.is_number_as_text(a));
+    assert!(!book.is_number_as_text(c));
+    assert!(book.convert_to_number(span(a, c)).unwrap());
+    assert_eq!(book.number(a), Some(123.0));
+    assert_eq!(book.number(b), Some(1234.5));
+    assert_eq!(book.display_text(c), "abc");
+    assert!(!book.is_number_as_text(a));
+    assert!(!book.convert_to_number(span(a, c)).unwrap());
+    assert!(book.undo().unwrap());
+    assert!(book.is_number_as_text(a));
+}
