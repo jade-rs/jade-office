@@ -3773,3 +3773,4 @@ sheet.trace.none	このセルには、このシートのセルを参照する数
 sheet.menu.convert_to_number	数値に変換する
 sheet.menu.trace_dependents	参照先のトレース
 sheet.trace.no_dependents	このシートには、このセルを参照する数式がありません。
+sheet.menu.ignore_error	エラーを無視する

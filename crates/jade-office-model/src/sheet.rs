@@ -14,7 +14,7 @@ use jade_painter::Painter;
 use jade_xlsx_headless_api::{AutoFilterChange, AutoFilterTarget, CellInput};
 use jade_xlsx_headless_editor::{
     chart_kind, formula_text, ClipboardSnapshot, ConditionalFormatView, ConditionalStyle,
-    FormatChange, HeadlessWorkbook, NewConditionalRule, ShapeAnchor,
+    ErrorCheck, FormatChange, HeadlessWorkbook, NewConditionalRule, ShapeAnchor,
 };
 
 use crate::charts::{ChartChange, ChartInfo, ChartKind, LegendPosition};
@@ -1778,6 +1778,63 @@ impl<B: Backend> Workbook<B> {
             .set_cells(&name, &values)
             .map_err(|error| error.to_string())?;
         self.wrote(1)?;
+        Ok(true)
+    }
+
+    /// The background error check that flags `at` with a green triangle —
+    /// a number stored as text, or a formula giving an error — unless the
+    /// sheet ignores it there.
+    pub fn error_check(&self, at: CellRef) -> Option<ErrorCheck> {
+        let cell = self.cells_in(CellRange { start: at, end: at }).next()?;
+        let check = match &cell.value {
+            CellValue::Error(_) if cell.formula.is_some() => ErrorCheck::EvalError,
+            value if cell.formula.is_none() && number_as_text(value).is_some() => {
+                ErrorCheck::NumberStoredAsText
+            }
+            _ => return None,
+        };
+        let ignored = self.engine().workbook().sheets[self.sheet_index()]
+            .ignored_errors
+            .iter()
+            .any(|entry| {
+                entry.covers(at)
+                    && match check {
+                        ErrorCheck::EvalError => entry.eval_error,
+                        ErrorCheck::NumberStoredAsText => entry.number_stored_as_text,
+                    }
+            });
+        (!ignored).then_some(check)
+    }
+
+    /// The error button's Ignore Error: the checks flagging cells in
+    /// `range` turned off there, saved with the sheet. One undo step;
+    /// `false` when nothing in it was flagged.
+    pub fn ignore_error(&mut self, range: CellRange) -> Result<bool, String> {
+        let flagged: BTreeSet<_> = self
+            .cells_in(range)
+            .map(|cell| cell.reference)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|at| self.error_check(at))
+            .map(|check| check == ErrorCheck::EvalError)
+            .collect();
+        if flagged.is_empty() {
+            return Ok(false);
+        }
+        let name = self.sheet_name();
+        self.atomic_edit(|book| {
+            for eval in &flagged {
+                let check = if *eval {
+                    ErrorCheck::EvalError
+                } else {
+                    ErrorCheck::NumberStoredAsText
+                };
+                book.engine_mut()
+                    .ignore_error(&name, range, check)
+                    .map_err(|error| error.to_string())?;
+            }
+            book.wrote(flagged.len())
+        })?;
         Ok(true)
     }
 
