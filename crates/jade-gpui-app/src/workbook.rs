@@ -1427,6 +1427,7 @@ impl WorkbookView {
                         size: whole.size,
                     }),
                     other_sheet: false,
+                    icon_at_head: false,
                 });
             }
         }
@@ -1435,6 +1436,9 @@ impl WorkbookView {
             let Some(cell) = self.cell_bounds(source) else {
                 continue;
             };
+            if self.book.read_by_other_sheets(source) {
+                arrows.push(TraceArrow::to_other_sheet(cell.center() - grid.origin));
+            }
             for dependent in self.book.dependents(source) {
                 let Some(target) = self.cell_bounds(dependent) else {
                     continue;
@@ -1444,6 +1448,7 @@ impl WorkbookView {
                     to: target.center() - grid.origin,
                     range: None,
                     other_sheet: false,
+                    icon_at_head: false,
                 });
             }
         }
@@ -1713,7 +1718,7 @@ impl WorkbookView {
             MenuCommand::IgnoreError => self.book.ignore_error(range),
             MenuCommand::TraceDependents => {
                 let at = selection.active;
-                if self.book.dependents(at).is_empty() {
+                if self.book.dependents(at).is_empty() && !self.book.read_by_other_sheets(at) {
                     self.status = i18n::text("sheet.trace.no_dependents").into();
                 } else if !self.tracing_dependents.contains(&at) {
                     self.tracing_dependents.push(at);
@@ -5747,6 +5752,30 @@ mod tests {
             view.selection = Selection::cell(at(6, 6));
             view.menu_command(MenuCommand::TracePrecedents, false, cx);
             assert_eq!(view.tracing, vec![at(5, 5), at(6, 6)]);
+        });
+    }
+
+    /// A cell another sheet's formula reads gets Excel's dashed arrow to a
+    /// worksheet icon when its dependents are traced.
+    #[gpui::test]
+    fn trace_dependents_marks_what_other_sheets_read(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            let sheet = view.book.sheet_names()[0].clone();
+            let other = view.book.add_sheet().unwrap();
+            view.book.select_sheet(other).unwrap();
+            view.book
+                .set_cell(at(0, 0), &format!("='{sheet}'!G11*2"))
+                .unwrap();
+            view.book.select_sheet(0).unwrap();
+            view.book.set_cell(at(6, 10), "5").unwrap();
+            view.selection = Selection::cell(at(6, 10));
+            view.menu_command(MenuCommand::TraceDependents, false, cx);
+            assert_eq!(view.tracing_dependents, vec![at(6, 10)]);
+            let grid = view.grid_bounds.get().expect("the grid was laid out");
+            let arrows = view.trace_arrows(grid);
+            assert_eq!(arrows.len(), 1);
+            assert!(arrows[0].other_sheet && arrows[0].icon_at_head);
         });
     }
 

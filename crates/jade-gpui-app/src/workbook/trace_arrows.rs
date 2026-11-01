@@ -10,6 +10,9 @@ struct TraceArrow {
     to: gpui::Point<gpui::Pixels>,
     range: Option<gpui::Bounds<gpui::Pixels>>,
     other_sheet: bool,
+    /// The worksheet icon at the head rather than the tail: a cell read by
+    /// other sheets' formulas, as Trace Dependents shows it.
+    icon_at_head: bool,
 }
 
 impl TraceArrow {
@@ -21,6 +24,19 @@ impl TraceArrow {
             to,
             range: None,
             other_sheet: true,
+            icon_at_head: false,
+        }
+    }
+
+    /// The arrow from `from` to the worksheet icon down and to its right.
+    fn to_other_sheet(from: gpui::Point<gpui::Pixels>) -> Self {
+        use gpui::px;
+        Self {
+            from,
+            to: gpui::point(from.x + px(48.), from.y + px(28.)),
+            range: None,
+            other_sheet: true,
+            icon_at_head: true,
         }
     }
 }
@@ -72,7 +88,7 @@ fn paint_trace_arrows(
             window.paint_path(path, color);
         }
         if arrow.other_sheet {
-            paint_sheet_icon(window, from, color);
+            paint_sheet_icon(window, if arrow.icon_at_head { to } else { from }, color);
         } else {
             paint_dot(window, from, color);
         }

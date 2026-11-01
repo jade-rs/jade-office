@@ -190,6 +190,8 @@ pub struct Workbook<B: Backend> {
     /// the layout revision it was gathered at: Trace Dependents' arrows ask
     /// on every frame they are shown.
     pub(crate) references: RefCell<Option<(u64, crate::precedents::References)>>,
+    /// The same for what the other sheets' formulas read of the active one.
+    pub(crate) read_elsewhere: RefCell<Option<(u64, Rc<Vec<CellRange>>)>>,
 }
 
 impl<B: Backend> Workbook<B> {
@@ -239,6 +241,7 @@ impl<B: Backend> Workbook<B> {
             changes: None,
             measure,
             references: RefCell::new(None),
+            read_elsewhere: RefCell::new(None),
         })
     }
 
