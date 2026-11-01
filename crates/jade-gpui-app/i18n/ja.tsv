@@ -3812,3 +3812,7 @@ sheet.menu.group_page_layout	ページレイアウト
 sheet.menu.insert_page_break	改ページの挿入
 sheet.menu.remove_page_break	改ページの解除
 sheet.menu.reset_page_breaks	すべての改ページを解除
+sheet.shape.rectangle	正方形/長方形
+sheet.shape.oval	楕円
+sheet.shape.rounded_rectangle	四角形: 角を丸くする
+sheet.shape.right_arrow	矢印: 右

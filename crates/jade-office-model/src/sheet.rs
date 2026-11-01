@@ -2127,6 +2127,20 @@ impl<B: Backend> Workbook<B> {
         Ok(id)
     }
 
+    /// Insert ▸ Shapes: a `preset` shape (`rect`, `ellipse`, `roundRect`,
+    /// `rightArrow`) an inch and a half wide and an inch tall at `at`. The
+    /// new shape's id.
+    pub fn insert_shape(&mut self, at: CellRef, preset: &str) -> Result<u32, String> {
+        let name = self.sheet_name();
+        let id = self
+            .book
+            .insert_shape(&name, at, preset, (144.0, 96.0))
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(id)
+    }
+
     /// Insert ▸ Chart over `range`: the new chart's id.
     pub fn insert_chart(&mut self, range: CellRange, kind: ChartKind) -> Result<u32, String> {
         let name = self.sheet_name();
