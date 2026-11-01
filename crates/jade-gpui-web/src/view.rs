@@ -1218,6 +1218,7 @@ impl DocView {
                     || sheet.name_manager.is_some()
                     || sheet.insert_function.is_some()
                     || sheet.top_ten.is_some()
+                    || sheet.shift_choice.is_some()
                     || sheet.more_colors.is_some()
                     || sheet.duplicates_dialog.is_some()
                 {
