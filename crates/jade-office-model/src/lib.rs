@@ -35,6 +35,7 @@ pub mod grid;
 pub mod insert_function;
 pub mod links;
 pub mod more_colors;
+pub mod name_manager;
 pub mod names;
 pub mod number_formats;
 pub mod page_setup_dialog;
