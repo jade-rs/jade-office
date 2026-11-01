@@ -173,3 +173,24 @@ fn ignore_error_takes_the_green_triangle_away_and_undo_brings_it_back() {
     assert!(book.error_check(text).is_some());
     assert!(book.error_check(error).is_some());
 }
+
+#[test]
+fn trace_dependents_sees_a_formula_typed_after_it_last_looked() {
+    let mut book = book();
+    let source = CellRef::new(10, 30);
+    book.set_cell(source, "5").unwrap();
+    book.set_cell(CellRef::new(11, 30), "=K31+1").unwrap();
+    assert_eq!(book.dependents(source), vec![CellRef::new(11, 30)]);
+    book.set_cell(CellRef::new(12, 30), "=K31*2").unwrap();
+    assert_eq!(
+        book.dependents(source),
+        vec![CellRef::new(11, 30), CellRef::new(12, 30)]
+    );
+    book.set_cell(CellRef::new(11, 30), "7").unwrap();
+    assert_eq!(book.dependents(source), vec![CellRef::new(12, 30)]);
+    assert!(book.undo().unwrap());
+    assert_eq!(
+        book.dependents(source),
+        vec![CellRef::new(11, 30), CellRef::new(12, 30)]
+    );
+}
