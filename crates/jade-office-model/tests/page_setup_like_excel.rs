@@ -1,5 +1,6 @@
 //! The Page Setup dialog as Excel's: orientation, paper, a scale or fitting
-//! to pages, and the margin presets, written to the sheet as one undo step.
+//! to pages, the margin presets, and centring and gridlines, written to the
+//! sheet as one undo step.
 
 #![cfg(feature = "tiny-skia")]
 
@@ -7,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
-use jade_office_model::page_setup_dialog::{MarginPreset, PageSetupDialog};
+use jade_office_model::page_setup_dialog::{MarginPreset, PageSetupDialog, PrintOption};
 use jade_office_model::sheet::Workbook;
 use jade_office_model::tiny::TinySkiaBackend;
 
@@ -57,4 +58,22 @@ fn the_dialog_writes_orientation_paper_scaling_and_margins() {
     assert_eq!(book.page_setup().fit_to(), None);
     assert!(book.undo().unwrap());
     assert!(!PageSetupDialog::open(&book).landscape());
+}
+
+#[test]
+fn the_dialog_toggles_centring_and_gridlines() {
+    let mut book = book();
+    let mut dialog = PageSetupDialog::open(&book);
+    for option in PrintOption::ALL {
+        assert!(!dialog.print_option(option));
+    }
+    dialog.toggle_print_option(PrintOption::CenterHorizontally);
+    dialog.toggle_print_option(PrintOption::GridLines);
+    assert!(book.set_page_setup(&dialog.setup).unwrap());
+    let again = PageSetupDialog::open(&book);
+    assert!(again.print_option(PrintOption::CenterHorizontally));
+    assert!(!again.print_option(PrintOption::CenterVertically));
+    assert!(again.print_option(PrintOption::GridLines));
+    assert!(book.undo().unwrap());
+    assert!(!PageSetupDialog::open(&book).print_option(PrintOption::GridLines));
 }

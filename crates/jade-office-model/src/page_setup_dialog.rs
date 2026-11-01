@@ -1,6 +1,7 @@
 //! Excel's Page Setup dialog for a sheet: orientation, paper, scaling —
-//! a percentage, or fitting to pages — and the Normal, Wide and Narrow
-//! margins, written to the sheet's `pageSetup` and `pageMargins` as one
+//! a percentage, or fitting to pages — the Normal, Wide and Narrow
+//! margins, and centring on the page and printing the gridlines, written
+//! to the sheet's `pageSetup`, `pageMargins` and `printOptions` as one
 //! undo step.
 
 use jade_xlsx_reader::{PageMargins, PageOrientation, PageSetup};
@@ -75,6 +76,31 @@ pub const FITS: [((u32, u32), &str); 3] = [
     ((0, 1), "page_setup.fit.rows"),
 ];
 
+/// The dialog's print options, each on or off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrintOption {
+    CenterHorizontally,
+    CenterVertically,
+    GridLines,
+}
+
+impl PrintOption {
+    pub const ALL: [PrintOption; 3] = [
+        PrintOption::CenterHorizontally,
+        PrintOption::CenterVertically,
+        PrintOption::GridLines,
+    ];
+
+    /// The i18n key of its name.
+    pub fn label(self) -> &'static str {
+        match self {
+            PrintOption::CenterHorizontally => "page_setup.center.horizontally",
+            PrintOption::CenterVertically => "page_setup.center.vertically",
+            PrintOption::GridLines => "page_setup.gridlines",
+        }
+    }
+}
+
 /// The dialog: the sheet's page setup as it is being changed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PageSetupDialog {
@@ -128,6 +154,23 @@ impl PageSetupDialog {
         let scale = (self.scale() as i32 + by).clamp(10, 400) as u32;
         self.setup.scale = Some(scale);
         self.setup.fit_to_page = false;
+    }
+
+    pub fn print_option(&self, option: PrintOption) -> bool {
+        match option {
+            PrintOption::CenterHorizontally => self.setup.center_horizontally,
+            PrintOption::CenterVertically => self.setup.center_vertically,
+            PrintOption::GridLines => self.setup.print_grid_lines,
+        }
+    }
+
+    pub fn toggle_print_option(&mut self, option: PrintOption) {
+        let on = match option {
+            PrintOption::CenterHorizontally => &mut self.setup.center_horizontally,
+            PrintOption::CenterVertically => &mut self.setup.center_vertically,
+            PrintOption::GridLines => &mut self.setup.print_grid_lines,
+        };
+        *on = !*on;
     }
 
     /// Fit to `wide` by `tall` pages.
