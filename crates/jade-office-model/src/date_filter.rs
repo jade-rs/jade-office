@@ -1,5 +1,5 @@
 //! A filter button's date filter, as Excel's list groups a date column:
-//! the years and months its dates fall in, and the rows of one of them.
+//! the years and months its dates fall in, and the rows of those ticked.
 
 use jade_xlsx_headless_api::{AutoFilterChange, DateFilterGroup, DateFilterGrouping};
 use jade_xlsx_reader::{CellRef, DateSystem};
@@ -72,24 +72,37 @@ impl<B: Backend> Workbook<B> {
         year: u32,
         month: Option<u32>,
     ) -> Result<bool, String> {
-        let group = DateFilterGroup {
-            grouping: if month.is_some() {
-                DateFilterGrouping::Month
-            } else {
-                DateFilterGrouping::Year
-            },
-            year,
-            month,
-            day: None,
-            hour: None,
-            minute: None,
-            second: None,
-        };
+        self.filter_dates(button, &[(year, month)])
+    }
+
+    /// The date filter with several years and months ticked: the rows whose
+    /// date falls in any of them show.
+    pub fn filter_dates(
+        &mut self,
+        button: &FilterButton,
+        picks: &[(u32, Option<u32>)],
+    ) -> Result<bool, String> {
+        let groups = picks
+            .iter()
+            .map(|&(year, month)| DateFilterGroup {
+                grouping: if month.is_some() {
+                    DateFilterGrouping::Month
+                } else {
+                    DateFilterGrouping::Year
+                },
+                year,
+                month,
+                day: None,
+                hour: None,
+                minute: None,
+                second: None,
+            })
+            .collect();
         let change = AutoFilterChange::Dates {
             target: Self::filter_target(button),
             reference: None,
             column: button.column,
-            groups: vec![group],
+            groups,
             include_blank: false,
         };
         self.change_filter(&change)
