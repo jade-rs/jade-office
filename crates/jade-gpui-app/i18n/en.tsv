@@ -3897,3 +3897,5 @@ sheet.menu.page_break_preview	Page Break Preview
 sheet.menu.normal_view	Normal View
 sheet.shape.elbow_connector	Elbow Connector
 sheet.shape.curved_connector	Curved Connector
+sort.left_to_right	Sort left to right
+sort.row_n	Row {n}

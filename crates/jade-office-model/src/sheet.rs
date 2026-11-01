@@ -2321,6 +2321,7 @@ impl<B: Backend> Workbook<B> {
                 descending,
                 color: None,
             }],
+            by_columns: false,
         };
         let name = self.sheet_name();
         let summary = self
@@ -2349,6 +2350,46 @@ impl<B: Backend> Workbook<B> {
             .map(|&(column, descending)| (column, descending, None))
             .collect();
         self.sort_by_colors(range, header, &keys, case_sensitive)
+    }
+
+    /// Sort Options ▸ Sort left to right over `range`: `keys` are rows of the
+    /// sheet, each by value or colour; `header` leaves the first column where
+    /// it is. One undo step; `false` when no column moved.
+    pub fn sort_left_to_right(
+        &mut self,
+        range: CellRange,
+        header: bool,
+        keys: &[(u32, bool, Option<jade_xlsx_headless_api::SortColor>)],
+        case_sensitive: bool,
+    ) -> Result<bool, String> {
+        if keys.is_empty() || range.end.column <= range.start.column + u32::from(header) {
+            return Ok(false);
+        }
+        let request = jade_xlsx_headless_api::SortRequest {
+            reference: range_text_full(range),
+            header,
+            case_sensitive,
+            locale: None,
+            phonetic: None,
+            keys: keys
+                .iter()
+                .map(|(row, descending, color)| jade_xlsx_headless_api::SortKey {
+                    column: row.clamp(&range.start.row, &range.end.row) - range.start.row,
+                    descending: *descending,
+                    color: color.clone(),
+                })
+                .collect(),
+            by_columns: true,
+        };
+        let name = self.sheet_name();
+        let summary = self
+            .book
+            .sort_range(&name, &request)
+            .map_err(|error| error.to_string())?;
+        if summary.moved_rows == 0 {
+            return Ok(false);
+        }
+        self.restructured()
     }
 
     /// [`Workbook::sort_by`] with keys that may sort on a colour: the cells
@@ -2380,6 +2421,7 @@ impl<B: Backend> Workbook<B> {
                     },
                 )
                 .collect(),
+            by_columns: false,
         };
         let name = self.sheet_name();
         let summary = self
@@ -2565,6 +2607,7 @@ impl<B: Backend> Workbook<B> {
                 descending,
                 color: None,
             }],
+            by_columns: false,
         };
         let name = self.sheet_name();
         let summary = self
