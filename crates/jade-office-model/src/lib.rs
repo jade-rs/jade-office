@@ -29,6 +29,7 @@ pub mod deck;
 pub mod duplicates;
 pub mod editable_ranges;
 pub mod find;
+pub mod flash_fill;
 pub mod format_cells;
 pub mod formula_complete;
 pub mod formula_tips;
