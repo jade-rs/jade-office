@@ -2,6 +2,7 @@ use super::WorkbookView;
 use crate::{i18n, theme};
 use gpui::{div, prelude::*, px, Context, Modifiers, MouseButton};
 use jade_office_model::formula_tips as jade_formula_tips;
+use jade_office_model::function_help as jade_function_help;
 use jade_office_model::insert_function::{insert_into, InsertFunctionDialog, InsertFunctionKey};
 type View = WorkbookView;
 include!("insert_function_ui.rs");
