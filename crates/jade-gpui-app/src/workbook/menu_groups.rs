@@ -53,6 +53,7 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         | C::Subtotal
         | C::RemoveDuplicates
         | C::TextToColumns
+        | C::FlashFill
         | C::FromText
         | C::CalculateNow
         | C::ManualCalculation(_)

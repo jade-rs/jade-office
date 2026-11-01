@@ -3899,3 +3899,5 @@ sheet.shape.elbow_connector	Elbow Connector
 sheet.shape.curved_connector	Curved Connector
 sort.left_to_right	Sort left to right
 sort.row_n	Row {n}
+sheet.menu.flash_fill	Flash Fill
+sheet.flash_fill_none	Looked at all the data next to your selection and didn't see a pattern for filling in values for you. To use Flash Fill, enter a couple of examples of the output you'd like to see, keep the active cell in the column you want filled in, and press ⌘E.
