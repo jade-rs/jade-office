@@ -3791,3 +3791,9 @@ name_manager.workbook	ブック
 name_manager.delete	削除
 name_manager.apply	適用
 name_manager.close	閉じる
+page_setup.margin.top	上
+page_setup.margin.bottom	下
+page_setup.margin.left	左
+page_setup.margin.right	右
+page_setup.margin.header	ヘッダー
+page_setup.margin.footer	フッター
