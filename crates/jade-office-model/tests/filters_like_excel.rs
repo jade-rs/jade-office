@@ -310,3 +310,39 @@ fn dynamic_filters_show_rows_against_the_average_or_today() {
     assert!(showing(&book, header, 102).is_empty());
     assert!(book.filter_dynamic(&button, "someday").is_err());
 }
+
+/// A day of a month ticked shows only that day's rows.
+#[test]
+fn the_date_filter_ticks_single_days() {
+    let mut book = book();
+    let header = CellRef::new(20, 99);
+    book.set_cell(header, "When").unwrap();
+    for (offset, date) in ["2024/1/15", "2024/1/20", "2024/2/1"].iter().enumerate() {
+        book.set_cell(CellRef::new(20, 100 + offset as u32), date)
+            .unwrap();
+    }
+    let range = span(header, CellRef::new(20, 102));
+    book.toggle_filter(range).unwrap();
+    let button = FilterButton {
+        target: FilterButtonTarget::Worksheet,
+        column: 0,
+        reference: header,
+        range,
+        active: false,
+        rect: jade_xlsx_layout::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        },
+    };
+    assert_eq!(book.filter_date_days(&button, 2024, 1), vec![15, 20]);
+    assert!(book
+        .filter_dates(&button, &[(2024, Some(1), Some(20)), (2024, Some(2), None)])
+        .unwrap());
+    assert_eq!(showing(&book, header, 102).len(), 2);
+    assert_eq!(
+        book.step(header, jade_office_model::grid::Direction::Down),
+        CellRef::new(20, 101)
+    );
+}
