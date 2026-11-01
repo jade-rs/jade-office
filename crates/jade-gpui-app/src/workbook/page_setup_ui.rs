@@ -8,6 +8,8 @@ pub(super) enum PageSetupAction {
     /// One of `FITS`, by its place.
     Fit(usize),
     Margins(MarginPreset),
+    /// A margin stepped down (-1) or up (+1).
+    Margin(MarginSide, i32),
     Print(PrintOption),
     Take,
     Cancel,
@@ -91,6 +93,46 @@ impl View {
                 cx,
             )
         }));
+        // Custom margins: each side stepped on its own, in inches.
+        let custom = div()
+            .mt_2()
+            .flex()
+            .flex_wrap()
+            .gap_1()
+            .children(MarginSide::ALL.into_iter().enumerate().map(|(index, side)| {
+                div()
+                    .w(px(200.))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        div()
+                            .w(px(64.))
+                            .text_xs()
+                            .text_color(theme::text_dim())
+                            .child(i18n::text(side.label())),
+                    )
+                    .child(self.page_setup_chip(
+                        ("page-margin-down", index),
+                        "−".into(),
+                        false,
+                        PageSetupAction::Margin(side, -1),
+                        cx,
+                    ))
+                    .child(
+                        div()
+                            .w(px(44.))
+                            .text_center()
+                            .child(format!("{:.2}\"", dialog.margin(side))),
+                    )
+                    .child(self.page_setup_chip(
+                        ("page-margin-up", index),
+                        "+".into(),
+                        false,
+                        PageSetupAction::Margin(side, 1),
+                        cx,
+                    ))
+            }));
         let options = row().children(PrintOption::ALL.into_iter().map(|option| {
             self.page_setup_chip(
                 option.label(),
@@ -124,6 +166,7 @@ impl View {
             .child(scaling)
             .child(section("page_setup.margins"))
             .child(margins)
+            .child(custom)
             .child(section("page_setup.print"))
             .child(options)
             .child(
@@ -190,6 +233,7 @@ fn change_page_setup_dialog(dialog: &mut PageSetupDialog, action: PageSetupActio
             }
         }
         PageSetupAction::Margins(preset) => dialog.set_margins(preset),
+        PageSetupAction::Margin(side, steps) => dialog.step_margin(side, steps),
         PageSetupAction::Print(option) => dialog.toggle_print_option(option),
         PageSetupAction::Take | PageSetupAction::Cancel => {}
     }

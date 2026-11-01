@@ -77,3 +77,25 @@ fn the_dialog_toggles_centring_and_gridlines() {
     assert!(book.undo().unwrap());
     assert!(!PageSetupDialog::open(&book).print_option(PrintOption::GridLines));
 }
+
+#[test]
+fn each_margin_steps_on_its_own() {
+    use jade_office_model::page_setup_dialog::MarginSide;
+    let mut book = book();
+    let mut dialog = PageSetupDialog::open(&book);
+    assert_eq!(dialog.margin(MarginSide::Top), 0.75);
+    dialog.step_margin(MarginSide::Top, 3);
+    dialog.step_margin(MarginSide::Left, -1);
+    assert_eq!(dialog.margin(MarginSide::Top), 1.05);
+    assert_eq!(dialog.margin(MarginSide::Left), 0.6);
+    // Not a preset any more, and never below nothing.
+    assert_eq!(dialog.margin_preset(), None);
+    dialog.step_margin(MarginSide::Footer, -100);
+    assert_eq!(dialog.margin(MarginSide::Footer), 0.0);
+    assert!(book.set_page_setup(&dialog.setup).unwrap());
+    let margins = book.page_setup().margins.unwrap();
+    assert_eq!(
+        (margins.top, margins.left, margins.footer),
+        (1.05, 0.6, 0.0)
+    );
+}

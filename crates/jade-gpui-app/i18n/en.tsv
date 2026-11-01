@@ -3791,3 +3791,9 @@ name_manager.workbook	Workbook
 name_manager.delete	Delete
 name_manager.apply	Apply
 name_manager.close	Close
+page_setup.margin.top	Top
+page_setup.margin.bottom	Bottom
+page_setup.margin.left	Left
+page_setup.margin.right	Right
+page_setup.margin.header	Header
+page_setup.margin.footer	Footer
