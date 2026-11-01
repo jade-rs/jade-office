@@ -197,7 +197,7 @@ impl<B: Backend> Workbook<B> {
     /// name such as `Asia/Tokyo`; UTC when the engine does not know it).
     pub fn open(bytes: &[u8], time_zone: &str, backend: B) -> Result<Self, String> {
         backend.prepare_fonts(bytes);
-        let book = HeadlessWorkbook::open_for_editing_in_time_zone(bytes, time_zone)
+        let mut book = HeadlessWorkbook::open_for_editing_in_time_zone(bytes, time_zone)
             .or_else(|_| HeadlessWorkbook::open_for_editing(bytes))
             .map_err(|error| format!("cannot read the workbook: {error}"))?;
         let workbook = book.workbook();
@@ -218,6 +218,9 @@ impl<B: Backend> Workbook<B> {
             .unwrap_or(0);
         let measure = measurer(&backend)?;
         let layout = lay_out(&book, index, (MIN_COLUMNS, MIN_ROWS), &measure)?;
+        // The layout shows the bytes as opened: the first thing typed lays
+        // out only its rows again, as everything typed after it does.
+        let _ = book.take_typed_changes();
         Ok(Self {
             identity: std::sync::Arc::new(()),
             book,
