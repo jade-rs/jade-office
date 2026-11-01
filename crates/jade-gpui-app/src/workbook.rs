@@ -7714,6 +7714,30 @@ mod tests {
         });
     }
 
+    /// Sort left to right from the Sort dialog's options orders the columns
+    /// by the row picked.
+    #[gpui::test]
+    fn the_sort_dialog_sorts_left_to_right(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            for (column, name) in ["c", "a", "b"].iter().enumerate() {
+                view.book.set_cell(at(7 + column as u32, 50), name).unwrap();
+            }
+            view.selection = Selection::cell(at(7, 50));
+            view.selection.focus = at(9, 50);
+            view.open_sort_dialog(cx);
+            view.sort_action(sort::SortAction::LeftToRight, cx);
+            assert!(view.sort_dialog.as_ref().unwrap().left_to_right);
+            view.sort_action(sort::SortAction::Take, cx);
+        });
+        view.read_with(cx, |view, _| {
+            let names: Vec<String> = (7..=9)
+                .map(|column| view.book.display_text(at(column, 50)))
+                .collect();
+            assert_eq!(names, ["a", "b", "c"]);
+        });
+    }
+
     /// Remove Duplicates opens a dialog on the list, every column ticked;
     /// with one column left ticked it takes out the rows repeating it, and
     /// OK with none ticked keeps the dialog open.
