@@ -99,3 +99,25 @@ fn each_margin_steps_on_its_own() {
         (1.05, 0.6, 0.0)
     );
 }
+
+#[test]
+fn page_breaks_are_inserted_removed_and_reset_each_in_one_step() {
+    use jade_office_model::sheet::CellRef;
+    let mut book = book();
+    let at = CellRef::new(1, 2);
+    assert!(!book.has_page_breaks());
+    let pages = book.print_pages().unwrap().len();
+    assert!(book.insert_page_break(at).unwrap());
+    assert!(book.page_break_at(at));
+    // A break above row 3 and left of column B: four pages from one.
+    assert!(book.print_pages().unwrap().len() > pages);
+    assert!(book.remove_page_break(at).unwrap());
+    assert!(!book.has_page_breaks());
+    assert!(book.undo().unwrap());
+    assert!(book.page_break_at(at));
+    assert!(book.reset_page_breaks().unwrap());
+    assert!(!book.has_page_breaks());
+    assert!(!book.reset_page_breaks().unwrap());
+    // Nothing goes above the first row or left of the first column.
+    assert!(!book.insert_page_break(CellRef::new(0, 0)).unwrap());
+}

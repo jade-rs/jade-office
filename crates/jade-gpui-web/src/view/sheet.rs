@@ -773,6 +773,10 @@ enum MenuCommand {
     TextToColumns,
     SortDialog,
     PageSetup,
+    /// Page Layout ▸ Breaks: Insert, Remove and Reset All Page Breaks.
+    InsertPageBreak,
+    RemovePageBreak,
+    ResetPageBreaks,
     ManualCalculation(bool),
     CalculateNow,
     DeleteSheet(usize),
@@ -3078,6 +3082,9 @@ impl DocView {
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::PageSetup => return self.open_page_setup_dialog(cx),
+            MenuCommand::InsertPageBreak => sheet.book.insert_page_break(selection.active),
+            MenuCommand::RemovePageBreak => sheet.book.remove_page_break(selection.active),
+            MenuCommand::ResetPageBreaks => sheet.book.reset_page_breaks(),
             MenuCommand::ManualCalculation(manual) => sheet.book.set_manual_calculation(manual),
             MenuCommand::CalculateNow => sheet.book.calculate_now(),
             MenuCommand::AutoOutline => sheet.book.auto_outline(),
@@ -4480,7 +4487,14 @@ impl DocView {
                         (MenuCommand::Validation, "validation.dialog"),
                         (MenuCommand::ClearValidation, "validation.clear_selection"),
                         (MenuCommand::PageSetup, "page_setup.menu"),
+                        (MenuCommand::InsertPageBreak, "sheet.menu.insert_page_break"),
                     ]);
+                    if sheet.book.page_break_at(sheet.selection.active) {
+                        items.push((MenuCommand::RemovePageBreak, "sheet.menu.remove_page_break"));
+                    }
+                    if sheet.book.has_page_breaks() {
+                        items.push((MenuCommand::ResetPageBreaks, "sheet.menu.reset_page_breaks"));
+                    }
                     items
                 }
             };

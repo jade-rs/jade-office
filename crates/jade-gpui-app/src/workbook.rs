@@ -536,6 +536,10 @@ enum MenuCommand {
     TextToColumns,
     SortDialog,
     PageSetup,
+    /// Page Layout ▸ Breaks: Insert, Remove and Reset All Page Breaks.
+    InsertPageBreak,
+    RemovePageBreak,
+    ResetPageBreaks,
     /// Formulas ▸ Calculation Options: manual (true) or automatic.
     ManualCalculation(bool),
     /// Formulas ▸ Calculate Now.
@@ -1772,6 +1776,9 @@ impl WorkbookView {
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
             MenuCommand::SortDialog => return self.open_sort_dialog(cx),
             MenuCommand::PageSetup => return self.open_page_setup_dialog(cx),
+            MenuCommand::InsertPageBreak => self.book.insert_page_break(selection.active),
+            MenuCommand::RemovePageBreak => self.book.remove_page_break(selection.active),
+            MenuCommand::ResetPageBreaks => self.book.reset_page_breaks(),
             MenuCommand::ManualCalculation(manual) => self.book.set_manual_calculation(manual),
             MenuCommand::CalculateNow => self.book.calculate_now(),
             MenuCommand::AutoOutline => self.book.auto_outline(),
@@ -3659,7 +3666,14 @@ impl WorkbookView {
                     (MenuCommand::Validation, "validation.dialog"),
                     (MenuCommand::ClearValidation, "validation.clear_selection"),
                     (MenuCommand::PageSetup, "page_setup.menu"),
+                    (MenuCommand::InsertPageBreak, "sheet.menu.insert_page_break"),
                 ]);
+                if self.book.page_break_at(self.active()) {
+                    items.push((MenuCommand::RemovePageBreak, "sheet.menu.remove_page_break"));
+                }
+                if self.book.has_page_breaks() {
+                    items.push((MenuCommand::ResetPageBreaks, "sheet.menu.reset_page_breaks"));
+                }
                 items
             }
         };
