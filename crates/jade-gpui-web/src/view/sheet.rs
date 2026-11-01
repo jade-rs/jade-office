@@ -3076,7 +3076,7 @@ impl DocView {
             MenuCommand::InsertFunction => return self.open_insert_function(cx),
             MenuCommand::TracePrecedents => {
                 let at = sheet.selection.active;
-                if sheet.book.precedents(at).is_empty() {
+                if sheet.book.precedents(at).is_empty() && !sheet.book.reads_other_sheets(at) {
                     self.status = i18n::text("sheet.trace.none").into();
                 } else if !sheet.tracing.contains(&at) {
                     sheet.tracing.push(at);
@@ -3945,6 +3945,9 @@ impl DocView {
             let Some(cell) = cell_box(target) else {
                 continue;
             };
+            if sheet.book.reads_other_sheets(target) {
+                arrows.push(TraceArrow::from_other_sheet(cell.center()));
+            }
             for range in sheet.book.precedents(target) {
                 let (Some(first), Some(last)) = (cell_box(range.start), cell_box(range.end)) else {
                     continue;
@@ -3953,6 +3956,7 @@ impl DocView {
                     from: first.center(),
                     to: cell.center(),
                     range: (range.start != range.end).then(|| first.union(&last)),
+                    other_sheet: false,
                 });
             }
         }
@@ -3969,6 +3973,7 @@ impl DocView {
                     from: cell.center(),
                     to: target.center(),
                     range: None,
+                    other_sheet: false,
                 });
             }
         }
