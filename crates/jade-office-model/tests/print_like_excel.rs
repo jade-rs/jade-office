@@ -350,3 +350,24 @@ fn headings_print_round_the_cells_and_take_their_room() {
     assert_eq!(format.room().0, plain.0 - format.headings.0);
     assert_eq!(labels(&book), 2);
 }
+
+/// Page Break Preview: the print area, its pages in order and the manual
+/// break inside it, for drawing over the grid; none for an empty sheet.
+#[test]
+fn page_break_preview_shows_the_print_area_its_pages_and_manual_breaks() {
+    let book = tiny("objects-workbook.xlsx");
+    let view = book.page_break_view().expect("something prints");
+    assert_eq!(view.area, span(at(0, 0), at(2, 4)));
+    assert_eq!(
+        view.pages,
+        vec![span(at(0, 0), at(2, 2)), span(at(0, 3), at(2, 4))]
+    );
+    assert_eq!(view.manual_rows, vec![3]);
+    assert!(view.manual_columns.is_empty());
+
+    let mut empty = tiny("grid-operations-workbook.xlsx");
+    let sheets = empty.sheet_names().len();
+    empty.add_sheet().unwrap();
+    assert_eq!(empty.sheet_names().len(), sheets + 1);
+    assert!(empty.page_break_view().is_none());
+}
