@@ -3808,3 +3808,7 @@ filter.dynamic.this_quarter	This Quarter
 filter.dynamic.this_year	This Year
 filter.dynamic.year_to_date	Year to Date
 page_setup.headings	Row and Column Headings
+sheet.menu.group_page_layout	Page Layout
+sheet.menu.insert_page_break	Insert Page Break
+sheet.menu.remove_page_break	Remove Page Break
+sheet.menu.reset_page_breaks	Reset All Page Breaks
