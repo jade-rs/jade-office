@@ -5729,6 +5729,32 @@ mod tests {
         });
     }
 
+    /// Insert ▸ Pictures puts a picture at the active cell, selected, its
+    /// box its own size; one undo takes it away.
+    #[gpui::test]
+    fn a_picture_goes_in_at_the_active_cell(cx: &mut gpui::TestAppContext) {
+        // A 4 × 3 red PNG.
+        let png: &[u8] = &[
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 4, 0, 0, 0, 3,
+            8, 2, 0, 0, 0, 59, 150, 57, 145, 0, 0, 0, 16, 73, 68, 65, 84, 120, 156, 99, 248, 207,
+            192, 0, 71, 12, 56, 57, 0, 245, 49, 11, 245, 53, 123, 251, 130, 0, 0, 0, 0, 73, 69, 78,
+            68, 174, 66, 96, 130,
+        ];
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::cell(at(3, 4));
+            view.insert_picture(png, cx);
+            let id = view.object.expect("the new picture is selected");
+            let (_, _, width, height) = view.book.object_rect(id, (0.0, 0.0)).expect("placed");
+            let (w, h) = jade_office_model::word::picture::picture_size(png).unwrap();
+            assert!((width - f64::from(w)).abs() < 1.0 && (height - f64::from(h)).abs() < 1.0);
+            assert!(view.book.undo().unwrap());
+            assert!(view.book.object_rect(id, (0.0, 0.0)).is_none());
+            view.insert_picture(b"not a picture", cx);
+            assert!(view.status.as_ref().contains("PNG"));
+        });
+    }
+
     /// Convert to Number from the menu makes a number stored as text the
     /// number it reads as.
     #[gpui::test]

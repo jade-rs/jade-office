@@ -16,6 +16,8 @@ use super::*;
 pub(super) enum ChartTool {
     /// Insert ▸ Chart over the selection.
     Insert(ChartKind),
+    /// Insert ▸ Pictures from a file, at the active cell.
+    Picture,
     /// Chart Design, on the selected chart.
     Kind(ChartKind),
     Legend(Option<LegendPosition>),
@@ -125,6 +127,13 @@ impl DocView {
     }
 
     pub(super) fn chart_tool(&mut self, tool: ChartTool, cx: &mut Context<Self>) {
+        // The page's file picker; the picture comes back through the
+        // workspace to `insert_sheet_picture`.
+        if let ChartTool::Picture = tool {
+            self.host.pick();
+            cx.notify();
+            return;
+        }
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
@@ -138,6 +147,7 @@ impl DocView {
                     Err(error) => Err(error),
                 }
             }
+            ChartTool::Picture => return,
             ChartTool::Delete => match sheet.object.take() {
                 Some(id) => sheet.book.delete_object(id),
                 None => Ok(false),
@@ -172,6 +182,22 @@ impl DocView {
                 cx.notify();
                 return;
             }
+        };
+        self.edited(result, cx);
+    }
+
+    /// A picture picked for Insert ▸ Pictures, put on the sheet at the
+    /// active cell, selected.
+    pub(crate) fn insert_sheet_picture(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let result = match sheet.book.insert_picture(sheet.selection.active, bytes) {
+            Ok(id) => {
+                sheet.object = Some(id);
+                Ok(true)
+            }
+            Err(error) => Err(error),
         };
         self.edited(result, cx);
     }
@@ -292,6 +318,14 @@ impl DocView {
                     cx,
                 ));
             }
+            menu = menu
+                .child(div().h(px(1.0)).my_1().bg(palette::border()))
+                .child(item(
+                    ("chart-picture", 0),
+                    "sheet.insert_picture",
+                    ChartTool::Picture,
+                    cx,
+                ));
         }
         menu
     }
