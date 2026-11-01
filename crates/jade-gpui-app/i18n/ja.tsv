@@ -3853,3 +3853,26 @@ name_manager.filter_worksheet	ワークシートに登録された名前
 name_manager.filter_workbook	ブックに登録された名前
 name_manager.filter_errors	エラーのある名前
 name_manager.filter_no_errors	エラーのない名前
+sheet.shapes	図形
+sheet.shape.line	直線
+sheet.shape.arrow_line	直線矢印コネクタ
+sheet.shape.triangle	二等辺三角形
+sheet.shape.right_triangle	直角三角形
+sheet.shape.parallelogram	平行四辺形
+sheet.shape.trapezoid	台形
+sheet.shape.diamond	ひし形
+sheet.shape.pentagon	正五角形
+sheet.shape.hexagon	六角形
+sheet.shape.octagon	八角形
+sheet.shape.cross	十字形
+sheet.shape.cylinder	円柱
+sheet.shape.heart	ハート
+sheet.shape.smiley	スマイル
+sheet.shape.left_arrow	矢印: 左
+sheet.shape.up_arrow	矢印: 上
+sheet.shape.down_arrow	矢印: 下
+sheet.shape.left_right_arrow	矢印: 左右
+sheet.shape.pentagon_arrow	矢印: 五方向
+sheet.shape.chevron	矢印: 山形
+sheet.shape.star5	星: 5 pt
+sheet.shape.speech_bubble	吹き出し: 四角形

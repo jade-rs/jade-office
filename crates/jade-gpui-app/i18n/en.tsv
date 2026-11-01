@@ -3853,3 +3853,26 @@ name_manager.filter_worksheet	Scoped to Worksheet
 name_manager.filter_workbook	Scoped to Workbook
 name_manager.filter_errors	With Errors
 name_manager.filter_no_errors	Without Errors
+sheet.shapes	Shapes
+sheet.shape.line	Line
+sheet.shape.arrow_line	Line Arrow
+sheet.shape.triangle	Isosceles Triangle
+sheet.shape.right_triangle	Right Triangle
+sheet.shape.parallelogram	Parallelogram
+sheet.shape.trapezoid	Trapezoid
+sheet.shape.diamond	Diamond
+sheet.shape.pentagon	Regular Pentagon
+sheet.shape.hexagon	Hexagon
+sheet.shape.octagon	Octagon
+sheet.shape.cross	Cross
+sheet.shape.cylinder	Cylinder
+sheet.shape.heart	Heart
+sheet.shape.smiley	Smiley Face
+sheet.shape.left_arrow	Left Arrow
+sheet.shape.up_arrow	Up Arrow
+sheet.shape.down_arrow	Down Arrow
+sheet.shape.left_right_arrow	Left-Right Arrow
+sheet.shape.pentagon_arrow	Pentagon Arrow
+sheet.shape.chevron	Chevron
+sheet.shape.star5	5-Point Star
+sheet.shape.speech_bubble	Speech Bubble
