@@ -3770,3 +3770,4 @@ filter.date.month	{month}月
 sheet.menu.trace_precedents	参照元のトレース
 sheet.menu.remove_arrows	トレース矢印の削除
 sheet.trace.none	このセルには、このシートのセルを参照する数式がありません。
+sheet.menu.convert_to_number	数値に変換する
