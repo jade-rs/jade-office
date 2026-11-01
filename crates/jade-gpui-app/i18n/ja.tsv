@@ -3844,3 +3844,12 @@ shift.cells_up	上方向にシフト
 shift.entire_row	行全体
 shift.entire_column	列全体
 sheet.paste_special.validation	入力規則
+name_manager.new	新規作成…
+name_manager.new_dialog	新しい名前
+name_manager.ok	OK
+name_manager.cancel	キャンセル
+name_manager.filter_all	すべて
+name_manager.filter_worksheet	ワークシートに登録された名前
+name_manager.filter_workbook	ブックに登録された名前
+name_manager.filter_errors	エラーのある名前
+name_manager.filter_no_errors	エラーのない名前

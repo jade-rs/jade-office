@@ -1,7 +1,8 @@
 use super::WorkbookView;
 use crate::{i18n, theme};
 use gpui::{div, prelude::*, px, Context, Modifiers, MouseButton};
-use jade_office_model::name_manager::{NameManager, NameManagerKey, NameRow};
+use jade_office_model::name_manager::{NameFilter, NameManager, NameManagerKey, NameRow, NewName};
+use jade_office_model::text::TextEdit;
 type View = WorkbookView;
 include!("name_manager_ui.rs");
 impl WorkbookView {
@@ -12,7 +13,7 @@ impl WorkbookView {
             .iter()
             .map(|name| name.to_string())
             .collect();
-        Some((dialog, NameManager::rows(&self.book), sheets))
+        Some((dialog, dialog.listed(&self.book), sheets))
     }
     /// Formulas ▸ Name Manager.
     pub(super) fn open_name_manager(&mut self, cx: &mut Context<Self>) {
@@ -34,10 +35,30 @@ impl WorkbookView {
             }
             NameManagerAction::Take => {
                 let result = dialog.apply(&mut self.book);
-                if let Some(at) = dialog.selected {
+                if let (None, Some(at)) = (dialog.new.as_ref(), dialog.selected) {
                     dialog.select(&self.book, at);
                 }
                 result
+            }
+            NameManagerAction::Filter(filter) => {
+                dialog.set_filter(&self.book, filter);
+                Ok(false)
+            }
+            NameManagerAction::New => {
+                dialog.start_new(&self.book, self.selection.range());
+                Ok(false)
+            }
+            NameManagerAction::CancelNew => {
+                dialog.cancel_new(&self.book);
+                Ok(false)
+            }
+            NameManagerAction::Scope(scope) => {
+                dialog.set_scope(scope);
+                Ok(false)
+            }
+            NameManagerAction::Focus(on_name) => {
+                dialog.focus_name(on_name);
+                Ok(false)
             }
             NameManagerAction::Delete => dialog.delete(&mut self.book),
             NameManagerAction::Close => {
