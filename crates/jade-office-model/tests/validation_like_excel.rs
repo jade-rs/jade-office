@@ -433,3 +433,22 @@ fn choosing_a_textual_boolean_or_date_does_not_fail_due_to_typed_input_coercion(
     }
     assert!(book.set_validation_choice(at, "not a choice").is_err());
 }
+
+#[test]
+fn circle_invalid_data_finds_the_values_breaking_their_rule() {
+    let mut book = book();
+    // Values typed before the rule: 5 passes "less than 10", 50 and 70 do not.
+    for (row, value) in [(1, "5"), (2, "50"), (3, "70")] {
+        book.set_cell(CellRef::new(7, row), value).unwrap();
+    }
+    assert!(book.invalid_cells().is_empty());
+    book.apply_data_validation(&rule("whole", "H2:H4", "10"))
+        .unwrap();
+    assert_eq!(
+        book.invalid_cells().as_slice(),
+        [CellRef::new(7, 2), CellRef::new(7, 3)]
+    );
+    // Put right, a cell drops out.
+    book.set_cell(CellRef::new(7, 2), "9").unwrap();
+    assert_eq!(book.invalid_cells().as_slice(), [CellRef::new(7, 3)]);
+}

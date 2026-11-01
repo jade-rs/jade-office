@@ -192,6 +192,8 @@ pub struct Workbook<B: Backend> {
     pub(crate) references: RefCell<Option<(u64, crate::precedents::References)>>,
     /// The same for what the other sheets' formulas read of the active one.
     pub(crate) read_elsewhere: RefCell<Option<(u64, Rc<Vec<CellRange>>)>>,
+    /// The same for the cells breaking their validation rule.
+    pub(crate) invalid_cells: RefCell<Option<(u64, Rc<Vec<CellRef>>)>>,
 }
 
 impl<B: Backend> Workbook<B> {
@@ -242,6 +244,7 @@ impl<B: Backend> Workbook<B> {
             measure,
             references: RefCell::new(None),
             read_elsewhere: RefCell::new(None),
+            invalid_cells: RefCell::new(None),
         })
     }
 

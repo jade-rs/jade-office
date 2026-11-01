@@ -3832,3 +3832,6 @@ cell_style.output	Output
 cell_style.note	Note
 sheet.menu.goto_other_sheet_precedent	Go To Precedent on Another Sheet…
 sheet.trace.other_sheets	Reads on other sheets: {refs}
+validation.circle_invalid	Circle Invalid Data
+validation.clear_circles	Clear Validation Circles
+validation.none_invalid	No cell on this sheet breaks its validation rule.
