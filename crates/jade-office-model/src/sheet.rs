@@ -2094,6 +2094,33 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    /// Insert ▸ Pictures: `image` (PNG, JPEG or GIF) on the sheet with its
+    /// top-left at `at`'s, at its own size — shrunk, its proportions kept,
+    /// when wider or taller than 1000 px. The new picture's id.
+    pub fn insert_picture(&mut self, at: CellRef, image: &[u8]) -> Result<u32, String> {
+        let (width, height) = crate::word::picture::picture_size(image)
+            .filter(|(width, height)| *width > 0 && *height > 0)
+            .ok_or("a picture must be PNG, JPEG or GIF")?;
+        let (width, height) = (f64::from(width), f64::from(height));
+        let shrink = (1000.0 / width.max(height)).min(1.0);
+        let name = self.sheet_name();
+        let id = self
+            .book
+            .insert_picture(&name, at, image, (width * shrink, height * shrink))
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        if let Some(to) = self.book.workbook().sheets[self.index]
+            .shapes
+            .iter()
+            .find(|shape| shape.id == id)
+            .and_then(|shape| shape.to)
+        {
+            self.reach(to);
+        }
+        Ok(id)
+    }
+
     /// Insert ▸ Chart over `range`: the new chart's id.
     pub fn insert_chart(&mut self, range: CellRange, kind: ChartKind) -> Result<u32, String> {
         let name = self.sheet_name();

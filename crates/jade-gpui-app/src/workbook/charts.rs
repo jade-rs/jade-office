@@ -18,6 +18,8 @@ use crate::{i18n, theme};
 pub(super) enum ChartTool {
     /// Insert ▸ Chart over the selection.
     Insert(ChartKind),
+    /// Insert ▸ Pictures from a file, at the active cell.
+    Picture,
     /// Chart Design, on the selected chart.
     Kind(ChartKind),
     Legend(Option<LegendPosition>),
@@ -131,6 +133,10 @@ impl WorkbookView {
 
     pub(super) fn chart_tool(&mut self, tool: ChartTool, cx: &mut Context<Self>) {
         let result = match tool {
+            ChartTool::Picture => {
+                self.pick_picture(cx);
+                return;
+            }
             ChartTool::Insert(kind) => match self.book.insert_chart(self.range(), kind) {
                 Ok(id) => {
                     self.object = Some(id);
@@ -172,6 +178,42 @@ impl WorkbookView {
                 cx.notify();
                 return;
             }
+        };
+        self.after_write(result, cx);
+    }
+
+    /// Insert ▸ Pictures: a PNG, JPEG or GIF file, put at the active cell.
+    fn pick_picture(&mut self, cx: &mut Context<Self>) {
+        let prompt = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+        cx.spawn(async move |view, cx| {
+            let Ok(Ok(Some(paths))) = prompt.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            view.update(cx, |view, cx| match std::fs::read(&path) {
+                Ok(bytes) => view.insert_picture(&bytes, cx),
+                Err(error) => view.after_write(Err(format!("{}: {error}", path.display())), cx),
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// `bytes` put on the sheet at the active cell, selected.
+    pub(super) fn insert_picture(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        let result = match self.book.insert_picture(self.active(), bytes) {
+            Ok(id) => {
+                self.object = Some(id);
+                Ok(true)
+            }
+            Err(error) => Err(error),
         };
         self.after_write(result, cx);
     }
@@ -286,6 +328,14 @@ impl WorkbookView {
                     cx,
                 ));
             }
+            menu = menu
+                .child(div().h(px(1.0)).my_1().bg(theme::border()))
+                .child(item(
+                    ("chart-picture", 0),
+                    "sheet.insert_picture",
+                    ChartTool::Picture,
+                    cx,
+                ));
         }
         menu
     }
