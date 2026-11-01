@@ -82,6 +82,27 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    /// Whether the active sheet shows a zero in cells worth zero, as Excel
+    /// does unless told not to.
+    pub fn show_zeros(&self) -> bool {
+        self.engine().workbook().sheets[self.sheet_index()].show_zeros
+    }
+
+    /// Zeros on the active sheet shown or (`on` false) left blank. One undo
+    /// step; `false` when it already was.
+    pub fn set_show_zeros(&mut self, on: bool) -> Result<bool, String> {
+        let name = self.sheet_name();
+        if !self
+            .engine_mut()
+            .set_show_zeros(&name, on)
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(false);
+        }
+        self.wrote(1)?;
+        Ok(true)
+    }
+
     pub fn page_setup(&self) -> &PageSetup {
         &self.engine().workbook().sheets[self.sheet_index()].page_setup
     }

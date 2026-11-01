@@ -767,6 +767,8 @@ enum MenuCommand {
     InsertFunction,
     /// Formulas ▸ Show Formulas, on or off.
     ShowFormulas,
+    /// Show a zero in cells that have zero value, on or off.
+    ShowZeros,
     /// Formulas ▸ Trace Precedents from the active cell.
     TracePrecedents,
     /// Formulas ▸ Trace Dependents from the active cell.
@@ -3106,6 +3108,10 @@ impl DocView {
                 let on = !sheet.book.show_formulas();
                 sheet.book.set_show_formulas(on)
             }
+            MenuCommand::ShowZeros => {
+                let on = !sheet.book.show_zeros();
+                sheet.book.set_show_zeros(on)
+            }
         };
         // Rows or columns gone from under a copy let go of it, as in Excel.
         if matches!(
@@ -4361,6 +4367,14 @@ impl DocView {
                     let selected = sheet.selection.range();
                     items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                     items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
+                    items.push((
+                        MenuCommand::ShowZeros,
+                        if sheet.book.show_zeros() {
+                            "sheet.menu.hide_zeros"
+                        } else {
+                            "sheet.menu.show_zeros"
+                        },
+                    ));
                     items.push((MenuCommand::TracePrecedents, "sheet.menu.trace_precedents"));
                     items.push((MenuCommand::TraceDependents, "sheet.menu.trace_dependents"));
                     if !sheet.tracing.is_empty() || !sheet.tracing_dependents.is_empty() {

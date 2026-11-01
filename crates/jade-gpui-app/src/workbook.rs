@@ -480,6 +480,8 @@ enum MenuCommand {
     InsertFunction,
     /// Formulas ▸ Show Formulas, on or off.
     ShowFormulas,
+    /// Show a zero in cells that have zero value, on or off.
+    ShowZeros,
     /// Formulas ▸ Trace Precedents from the active cell.
     TracePrecedents,
     /// Formulas ▸ Trace Dependents from the active cell.
@@ -1699,6 +1701,10 @@ impl WorkbookView {
             MenuCommand::ShowFormulas => {
                 let on = !self.book.show_formulas();
                 self.book.set_show_formulas(on)
+            }
+            MenuCommand::ShowZeros => {
+                let on = !self.book.show_zeros();
+                self.book.set_show_zeros(on)
             }
             MenuCommand::MoveSheet(index, to) => {
                 let result = self.book.move_sheet(index, to);
@@ -3553,6 +3559,14 @@ impl WorkbookView {
                 }
                 items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                 items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
+                items.push((
+                    MenuCommand::ShowZeros,
+                    if self.book.show_zeros() {
+                        "sheet.menu.hide_zeros"
+                    } else {
+                        "sheet.menu.show_zeros"
+                    },
+                ));
                 items.push((MenuCommand::TracePrecedents, "sheet.menu.trace_precedents"));
                 items.push((MenuCommand::TraceDependents, "sheet.menu.trace_dependents"));
                 if !self.tracing.is_empty() || !self.tracing_dependents.is_empty() {
@@ -5699,6 +5713,19 @@ mod tests {
             assert!(view.book.error_check(at(9, 30)).is_some());
             view.menu_command(MenuCommand::IgnoreError, false, cx);
             assert!(view.book.error_check(at(9, 30)).is_none());
+        });
+    }
+
+    /// Hide Zero Values and Show Zero Values toggle the sheet's setting.
+    #[gpui::test]
+    fn zero_values_hide_and_show_from_the_menu(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            assert!(view.book.show_zeros());
+            view.menu_command(MenuCommand::ShowZeros, false, cx);
+            assert!(!view.book.show_zeros());
+            view.menu_command(MenuCommand::ShowZeros, false, cx);
+            assert!(view.book.show_zeros());
         });
     }
 
