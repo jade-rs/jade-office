@@ -79,8 +79,10 @@ spills and save/reopen. Full core/engine/compile results are recorded in
 `@attribute`, `text()` and `[n]`, `[last()]`, `[@a]`, `[@a='v']`, `[child='v']`
 predicates), and `GROUPBY` (row fields, a LAMBDA or a function named bare,
 headers, a grand total at either end, sorting and a filter; subtotal depths
-above one not yet). The three remaining registration differences are
-`IMAGE`, `PIVOTBY` and `WEBSERVICE`. Their calculation, workbook/object
+above one not yet) and `PIVOTBY` (row and column fields, totals either side
+or none, sorting both ways, a filter). The two remaining registration
+differences are `IMAGE`, which needs pictures in cells, and `WEBSERVICE`,
+which needs the network. Their calculation, workbook/object
 context or external-service requirements are not filled with placeholder
 registry entries. Pivot tables, connections, advanced charts, protection and
 other [audit areas](ibis-parity.md) remain part of the active parity goal.
