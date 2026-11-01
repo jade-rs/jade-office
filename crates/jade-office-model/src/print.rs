@@ -155,6 +155,100 @@ impl<B: Backend> Workbook<B> {
         })
     }
 
+    /// The page break Page Break Preview has under the point (`x`, `y`) of
+    /// the grid, within a few px: the axis it cuts and the row it sits above
+    /// (or column it sits left of). `None` off every break.
+    pub fn page_break_edge(
+        &self,
+        x: f64,
+        y: f64,
+        scroll: (f64, f64),
+    ) -> Option<(jade_xlsx_reader::Axis, u32)> {
+        const SLOP: f64 = 4.0;
+        let view = self.page_break_view()?;
+        let (ax, ay, _, _) = self.cell_rect(view.area.start, scroll)?;
+        let (ex, ey, ew, eh) = self.cell_rect(view.area.end, scroll)?;
+        let inside = |along: f64, from: f64, to: f64| from <= along && along <= to;
+        let rows: std::collections::BTreeSet<u32> = view
+            .pages
+            .iter()
+            .map(|page| page.start.row)
+            .filter(|row| *row > view.area.start.row)
+            .collect();
+        let columns: std::collections::BTreeSet<u32> = view
+            .pages
+            .iter()
+            .map(|page| page.start.column)
+            .filter(|column| *column > view.area.start.column)
+            .collect();
+        if inside(x, ax, ex + ew) {
+            for row in rows {
+                let (_, top, _, _) =
+                    self.cell_rect(CellRef::new(view.area.start.column, row), scroll)?;
+                if (y - top).abs() <= SLOP {
+                    return Some((jade_xlsx_reader::Axis::Rows, row));
+                }
+            }
+        }
+        if inside(y, ay, ey + eh) {
+            for column in columns {
+                let (left, _, _, _) =
+                    self.cell_rect(CellRef::new(column, view.area.start.row), scroll)?;
+                if (x - left).abs() <= SLOP {
+                    return Some((jade_xlsx_reader::Axis::Columns, column));
+                }
+            }
+        }
+        None
+    }
+
+    /// Where a page break dragged to (`x`, `y`) would go: the row boundary
+    /// (or column boundary) nearest the point.
+    pub fn page_break_target(
+        &self,
+        axis: jade_xlsx_reader::Axis,
+        x: f64,
+        y: f64,
+        scroll: (f64, f64),
+    ) -> Option<u32> {
+        let cell = match self.hit(x, y, scroll)? {
+            crate::grid::Hit::Cell(cell) => cell,
+            _ => return None,
+        };
+        let (left, top, width, height) = self.cell_rect(cell, scroll)?;
+        Some(match axis {
+            jade_xlsx_reader::Axis::Rows => cell.row + u32::from(y > top + height / 2.0),
+            jade_xlsx_reader::Axis::Columns => cell.column + u32::from(x > left + width / 2.0),
+        })
+    }
+
+    /// A page break dragged in Page Break Preview from `from` to `to` along
+    /// `axis`: the manual break there moved (an automatic one made manual
+    /// where it lands), or, dragged out of the print area, taken away. One
+    /// undo step; `false` when nothing changes.
+    pub fn move_page_break(
+        &mut self,
+        axis: jade_xlsx_reader::Axis,
+        from: u32,
+        to: u32,
+    ) -> Result<bool, String> {
+        let Some(view) = self.page_break_view() else {
+            return Ok(false);
+        };
+        let (mut rows, mut columns) = self.manual_breaks();
+        let (breaks, first, last) = match axis {
+            jade_xlsx_reader::Axis::Rows => (&mut rows, view.area.start.row, view.area.end.row),
+            jade_xlsx_reader::Axis::Columns => {
+                (&mut columns, view.area.start.column, view.area.end.column)
+            }
+        };
+        breaks.remove(&from);
+        if first < to && to <= last {
+            breaks.insert(to);
+        }
+        self.set_breaks(rows, columns)
+    }
+
     /// The active sheet's pages, in the order they print: down the first
     /// columns that fit, then the next — or across first, if the sheet says.
     pub fn print_pages(&self) -> Result<Vec<PrintPage>, String> {

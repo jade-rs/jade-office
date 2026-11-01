@@ -301,6 +301,13 @@ enum SheetDrag {
         target: CellRange,
     },
     Resize(ResizeGesture),
+    /// A page break in Page Break Preview: the axis it cuts, where it was
+    /// and where it would go.
+    PageBreak {
+        axis: Axis,
+        from: u32,
+        to: u32,
+    },
     Point,
     /// The selection picked up by its border: where the pointer took it
     /// (offset from its top-left), where it would land, and whether ⌥ copies.
@@ -3395,6 +3402,20 @@ impl DocView {
             }
             return;
         }
+        // Page Break Preview: a press on a break's line drags it.
+        if let Some((axis, from)) = sheet
+            .page_break_preview
+            .then(|| sheet.book.page_break_edge(x, y, scroll))
+            .flatten()
+        {
+            sheet.drag = Some(SheetDrag::PageBreak {
+                axis,
+                from,
+                to: from,
+            });
+            cx.notify();
+            return;
+        }
         // A header edge: a drag resizes, a double-click fits the content.
         if let Some(edge) = sheet.book.resize_hit(x, y, scroll) {
             if event.click_count >= 2 && edge.axis == Axis::Columns {
@@ -3688,6 +3709,20 @@ impl DocView {
                 sheet.drag = Some(SheetDrag::Resize(gesture));
                 cx.notify();
             }
+            SheetDrag::PageBreak { axis, from, to } => {
+                if let Some(next) = sheet
+                    .book
+                    .page_break_target(axis, x, y, scroll)
+                    .filter(|next| *next != to)
+                {
+                    sheet.drag = Some(SheetDrag::PageBreak {
+                        axis,
+                        from,
+                        to: next,
+                    });
+                    cx.notify();
+                }
+            }
             SheetDrag::Move {
                 source,
                 grab,
@@ -3752,6 +3787,12 @@ impl DocView {
         };
         sheet.pointer = None;
         match drag {
+            SheetDrag::PageBreak { axis, from, to } => {
+                if to != from {
+                    let result = sheet.book.move_page_break(axis, from, to);
+                    self.edited(result, cx);
+                }
+            }
             SheetDrag::Fill { source, target } => {
                 let result = attempt(
                     &mut sheet.book,
@@ -4203,6 +4244,20 @@ impl DocView {
                         false,
                     )
                 }));
+                // A break being dragged, where it would go.
+                if let Some(SheetDrag::PageBreak { axis, to, .. }) = sheet.drag {
+                    let (start, end) = match axis {
+                        Axis::Rows => (
+                            CellRef::new(view.area.start.column, to),
+                            CellRef::new(view.area.end.column, to),
+                        ),
+                        Axis::Columns => (
+                            CellRef::new(to, view.area.start.row),
+                            CellRef::new(to, view.area.end.row),
+                        ),
+                    };
+                    manual.extend(line(CellRange { start, end }, axis == Axis::Rows));
+                }
                 Some(page_break_overlay(area, &pages, &manual))
             });
         let trace = (!arrows.is_empty() || !circles.is_empty()).then(|| {
