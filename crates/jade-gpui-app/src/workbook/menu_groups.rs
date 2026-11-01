@@ -10,6 +10,7 @@ enum MenuGroup {
     PivotTable,
     LinksValidation,
     Protection,
+    PageLayout,
 }
 
 impl MenuGroup {
@@ -22,6 +23,7 @@ impl MenuGroup {
             MenuGroup::PivotTable => "sheet.menu.group_pivot_table",
             MenuGroup::LinksValidation => "sheet.menu.group_links_validation",
             MenuGroup::Protection => "sheet.menu.group_protection",
+            MenuGroup::PageLayout => "sheet.menu.group_page_layout",
         }
     }
 }
@@ -63,6 +65,9 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
             MenuGroup::LinksValidation
         }
         C::CellLocked | C::CellHidden | C::EditRanges(_) => MenuGroup::Protection,
+        C::PageSetup | C::InsertPageBreak | C::RemovePageBreak | C::ResetPageBreaks => {
+            MenuGroup::PageLayout
+        }
         _ => return None,
     })
 }
