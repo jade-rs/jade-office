@@ -118,7 +118,7 @@ impl<B: Backend> Workbook<B> {
 
     /// The manual page breaks on the active sheet: the rows they sit above
     /// and the columns they sit left of.
-    fn manual_breaks(&self) -> (BTreeSet<u32>, BTreeSet<u32>) {
+    pub(crate) fn manual_breaks(&self) -> (BTreeSet<u32>, BTreeSet<u32>) {
         let sheet = &self.engine().workbook().sheets[self.sheet_index()];
         let manual = |breaks: &[jade_xlsx_reader::PageBreak]| {
             breaks

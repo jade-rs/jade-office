@@ -519,6 +519,8 @@ enum MenuCommand {
     /// Data ▸ Data Validation ▸ Circle Invalid Data, and Clear Validation
     /// Circles.
     CircleInvalid(bool),
+    /// View ▸ Page Break Preview, or back to Normal.
+    PageBreakPreview(bool),
     /// The error button's Ignore Error on the selection.
     IgnoreError,
     /// A sheet tab from one place to another.
@@ -638,6 +640,8 @@ pub struct WorkbookView {
     /// Circle Invalid Data is on: red ovals round the cells breaking their
     /// validation rule.
     circling: bool,
+    /// View ▸ Page Break Preview: the pages drawn over the grid.
+    page_break_preview: bool,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -1744,6 +1748,14 @@ impl WorkbookView {
                 return;
             }
             MenuCommand::ConvertToNumber => self.book.convert_to_number(range),
+            MenuCommand::PageBreakPreview(on) => {
+                self.page_break_preview = on;
+                if on && self.book.page_break_view().is_none() {
+                    self.status = i18n::text("sheet.nothing_to_print").into();
+                }
+                cx.notify();
+                return;
+            }
             MenuCommand::CircleInvalid(on) => {
                 self.circling = on;
                 if on && self.book.invalid_cells().is_empty() {
@@ -3751,6 +3763,17 @@ impl WorkbookView {
                     (MenuCommand::PageSetup, "page_setup.menu"),
                     (MenuCommand::InsertPageBreak, "sheet.menu.insert_page_break"),
                 ]);
+                items.push(if self.page_break_preview {
+                    (
+                        MenuCommand::PageBreakPreview(false),
+                        "sheet.menu.normal_view",
+                    )
+                } else {
+                    (
+                        MenuCommand::PageBreakPreview(true),
+                        "sheet.menu.page_break_preview",
+                    )
+                });
                 items.extend(
                     jade_office_model::cell_styles::CellStyle::ALL
                         .map(|style| (MenuCommand::CellStyle(style), style.label())),
@@ -5131,6 +5154,65 @@ impl Render for WorkbookView {
                 .collect(),
             _ => Vec::new(),
         };
+        // Page Break Preview's pages, in px from the grid's top-left.
+        let page_breaks = self
+            .page_break_preview
+            .then(|| self.book.page_break_view())
+            .flatten()
+            .and_then(|view| {
+                let scroll = self.sheet_scroll();
+                let zoom = self.zoom;
+                let range_box = |range: CellRange| {
+                    let (x, y, _, _) = self.book.cell_rect(range.start, scroll)?;
+                    let (ex, ey, ew, eh) = self.book.cell_rect(range.end, scroll)?;
+                    Some(Bounds {
+                        origin: point(px(x as f32 * zoom), px(y as f32 * zoom)),
+                        size: size(
+                            px((ex + ew - x) as f32 * zoom),
+                            px((ey + eh - y) as f32 * zoom),
+                        ),
+                    })
+                };
+                let area = range_box(view.area)?;
+                let pages: Vec<Bounds<Pixels>> = view
+                    .pages
+                    .iter()
+                    .filter_map(|page| range_box(*page))
+                    .collect();
+                let line = |range: CellRange, across: bool| {
+                    range_box(range).map(|bounds| Bounds {
+                        origin: bounds.origin,
+                        size: if across {
+                            size(bounds.size.width, px(2.))
+                        } else {
+                            size(px(2.), bounds.size.height)
+                        },
+                    })
+                };
+                let mut manual: Vec<Bounds<Pixels>> = view
+                    .manual_rows
+                    .iter()
+                    .filter_map(|&row| {
+                        line(
+                            CellRange {
+                                start: CellRef::new(view.area.start.column, row),
+                                end: CellRef::new(view.area.end.column, row),
+                            },
+                            true,
+                        )
+                    })
+                    .collect();
+                manual.extend(view.manual_columns.iter().filter_map(|&column| {
+                    line(
+                        CellRange {
+                            start: CellRef::new(column, view.area.start.row),
+                            end: CellRef::new(column, view.area.end.row),
+                        },
+                        false,
+                    )
+                }));
+                Some(page_break_overlay(area, &pages, &manual))
+            });
         let trace = (!arrows.is_empty() || !circles.is_empty()).then(|| {
             canvas(
                 |_, _, _| {},
@@ -5291,6 +5373,7 @@ impl Render for WorkbookView {
                             .child(div().w(px(sheet_width)).h(px(sheet_height)).flex_none()),
                     )
                     .children(editor)
+                    .children(page_breaks)
                     .children(trace)
                     .children(paste_options)
                     .children(self.object_frame())
@@ -5438,6 +5521,7 @@ impl WorkbookView {
             tracing: Vec::new(),
             tracing_dependents: Vec::new(),
             circling: false,
+            page_break_preview: false,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -6101,6 +6185,20 @@ mod tests {
                 "{}",
                 rows[0].refers_to
             );
+        });
+    }
+
+    /// Page Break Preview from the Page Layout menu draws the pages, and
+    /// Normal View takes them away.
+    #[gpui::test]
+    fn page_break_preview_turns_on_and_off(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.menu_command(MenuCommand::PageBreakPreview(true), false, cx);
+            assert!(view.page_break_preview);
+            assert!(view.book.page_break_view().is_some());
+            view.menu_command(MenuCommand::PageBreakPreview(false), false, cx);
+            assert!(!view.page_break_preview);
         });
     }
 

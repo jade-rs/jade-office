@@ -181,3 +181,71 @@ fn paint_invalid_circles(
         }
     }
 }
+
+/// View ▸ Page Break Preview over the grid, boxes in px from its top-left:
+/// grey over what does not print, a blue line round the print area
+/// (`area`), each page's edges dashed blue with "Page N" in its middle, and
+/// a manual break (`manual`, thin boxes) solid, as Excel draws them.
+fn page_break_overlay(
+    area: gpui::Bounds<gpui::Pixels>,
+    pages: &[gpui::Bounds<gpui::Pixels>],
+    manual: &[gpui::Bounds<gpui::Pixels>],
+) -> gpui::Div {
+    use gpui::{div, px, Styled};
+    const BLUE: u32 = 0x1f5fd6;
+    // Far enough past any viewport for the grey to reach its edges.
+    const FAR: f32 = 1.0e5;
+    let grey = |left: f32, top: f32, width: f32, height: f32| {
+        div()
+            .absolute()
+            .left(px(left))
+            .top(px(top))
+            .w(px(width))
+            .h(px(height))
+            .bg(gpui::rgba(0x8080_8066))
+    };
+    let (left, top) = (f32::from(area.origin.x), f32::from(area.origin.y));
+    let (right, bottom) = (
+        f32::from(area.origin.x + area.size.width),
+        f32::from(area.origin.y + area.size.height),
+    );
+    let place = |bounds: gpui::Bounds<gpui::Pixels>| {
+        div()
+            .absolute()
+            .left(bounds.origin.x)
+            .top(bounds.origin.y)
+            .w(bounds.size.width)
+            .h(bounds.size.height)
+    };
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+        .overflow_hidden()
+        .child(grey(-FAR, -FAR, 2.0 * FAR, top + FAR))
+        .child(grey(-FAR, bottom, 2.0 * FAR, FAR))
+        .child(grey(-FAR, top, left + FAR, bottom - top))
+        .child(grey(right, top, FAR, bottom - top))
+        .children(pages.iter().enumerate().map(|(index, page)| {
+            place(*page)
+                .border_1()
+                .border_dashed()
+                .border_color(gpui::rgb(BLUE))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(28.))
+                .text_color(gpui::rgba(0x8080_80a0))
+                .child(crate::i18n::format(
+                    "page_break.page",
+                    &[("n", &(index + 1))],
+                ))
+        }))
+        .children(
+            manual
+                .iter()
+                .map(|line| place(*line).bg(gpui::rgb(BLUE))),
+        )
+        .child(place(area).border_2().border_color(gpui::rgb(BLUE)))
+}

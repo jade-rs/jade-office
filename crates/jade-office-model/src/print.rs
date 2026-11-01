@@ -106,7 +106,55 @@ pub struct PrintPage {
     pub title_columns: Option<(u32, u32)>,
 }
 
+/// View ▸ Page Break Preview: what prints and how it is cut into pages,
+/// for drawing over the grid.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageBreakView {
+    /// The print area.
+    pub area: CellRange,
+    /// Each page's cells, in the order they print (page 1 first).
+    pub pages: Vec<CellRange>,
+    /// The rows a manual break sits above, within the print area.
+    pub manual_rows: Vec<u32>,
+    /// The columns a manual break sits left of, within the print area.
+    pub manual_columns: Vec<u32>,
+}
+
 impl<B: Backend> Workbook<B> {
+    /// Page Break Preview of the active sheet; `None` when nothing prints.
+    pub fn page_break_view(&self) -> Option<PageBreakView> {
+        let pages: Vec<CellRange> = self
+            .print_pages()
+            .ok()?
+            .into_iter()
+            .map(|page| page.range)
+            .collect();
+        let first = *pages.first()?;
+        let area = pages.iter().fold(first, |area, page| CellRange {
+            start: CellRef::new(
+                area.start.column.min(page.start.column),
+                area.start.row.min(page.start.row),
+            ),
+            end: CellRef::new(
+                area.end.column.max(page.end.column),
+                area.end.row.max(page.end.row),
+            ),
+        });
+        let (rows, columns) = self.manual_breaks();
+        Some(PageBreakView {
+            area,
+            pages,
+            manual_rows: rows
+                .into_iter()
+                .filter(|row| area.start.row < *row && *row <= area.end.row)
+                .collect(),
+            manual_columns: columns
+                .into_iter()
+                .filter(|column| area.start.column < *column && *column <= area.end.column)
+                .collect(),
+        })
+    }
+
     /// The active sheet's pages, in the order they print: down the first
     /// columns that fit, then the next — or across first, if the sheet says.
     pub fn print_pages(&self) -> Result<Vec<PrintPage>, String> {
