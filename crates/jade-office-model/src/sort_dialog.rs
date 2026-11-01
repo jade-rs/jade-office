@@ -20,8 +20,9 @@ pub enum SortOn {
     FontColor(String),
 }
 
-/// One level of the Sort dialog: a column of the list, counted from its
-/// first, what it sorts on and its order — for a colour, on bottom.
+/// One level of the Sort dialog: a column of the list (a row, sorting left
+/// to right), counted from its first, what it sorts on and its order — for
+/// a colour, on bottom.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SortLevel {
     pub column: usize,
@@ -37,11 +38,17 @@ pub struct SortDialog {
     pub header: bool,
     pub case_sensitive: bool,
     pub levels: Vec<SortLevel>,
+    /// Options ▸ Sort left to right: the columns move, by rows' values.
+    pub left_to_right: bool,
     /// The header row's names, for when the list has one.
     headers: Vec<String>,
     /// Per column, the fill colours and the font colours its cells have, in
     /// the order they first come, for Sort On's choices.
     colors: Vec<(Vec<String>, Vec<String>)>,
+    /// The same per row, for sorting left to right.
+    row_colors: Vec<(Vec<String>, Vec<String>)>,
+    /// The active cell, whose column (or row) the first level starts on.
+    at: CellRef,
 }
 
 /// How far down the list the colours offered are looked for.
@@ -64,26 +71,33 @@ impl SortDialog {
             .map(|column| book.display_text(CellRef::new(column, range.start.row)))
             .collect();
         let column = at.column.clamp(range.start.column, range.end.column) - range.start.column;
-        let colors = (range.start.column..=range.end.column)
-            .map(|column| {
-                let (mut fills, mut fonts) = (Vec::new(), Vec::new());
-                let last = range.end.row.min(range.start.row + COLOR_ROWS);
-                for row in range.start.row..=last {
-                    let format = book.format_at(CellRef::new(column, row));
-                    let note = |list: &mut Vec<String>, color: Option<String>| {
-                        let color = color.unwrap_or_default();
-                        if !list.contains(&color) {
-                            list.push(color);
-                        }
-                    };
-                    if let Some(fill) = format.fill_color {
-                        note(&mut fills, Some(fill));
+        let width = (range.end.column - range.start.column + 1) as usize;
+        let height = (range.end.row - range.start.row + 1) as usize;
+        let mut colors = vec![(Vec::new(), Vec::new()); width];
+        let mut row_colors = vec![(Vec::new(), Vec::new()); height];
+        let note = |list: &mut Vec<String>, color: String| {
+            if !list.contains(&color) {
+                list.push(color);
+            }
+        };
+        let last_row = range.end.row.min(range.start.row + COLOR_ROWS);
+        let last_column = range.end.column.min(range.start.column + COLOR_ROWS);
+        for row in range.start.row..=last_row {
+            for column in range.start.column..=last_column {
+                let format = book.format_at(CellRef::new(column, row));
+                let font = format.font_color.unwrap_or_default();
+                let lists = [
+                    &mut colors[(column - range.start.column) as usize],
+                    &mut row_colors[(row - range.start.row) as usize],
+                ];
+                for (fills, fonts) in lists {
+                    if let Some(fill) = &format.fill_color {
+                        note(fills, fill.clone());
                     }
-                    note(&mut fonts, format.font_color);
+                    note(fonts, font.clone());
                 }
-                (fills, fonts)
-            })
-            .collect();
+            }
+        }
         Self {
             range,
             header: book.looks_like_headers(range),
@@ -93,17 +107,68 @@ impl SortDialog {
                 descending: false,
                 on: SortOn::Values,
             }],
+            left_to_right: false,
             headers,
             colors,
+            row_colors,
+            at,
         }
+    }
+
+    /// How many columns (or, sorting left to right, rows) a level can pick.
+    fn line_count(&self) -> usize {
+        if self.left_to_right {
+            (self.range.end.row - self.range.start.row + 1) as usize
+        } else {
+            self.headers.len()
+        }
+    }
+
+    /// The rows a level can pick sorting left to right, by their numbers on
+    /// the sheet.
+    pub fn row_numbers(&self) -> Vec<u32> {
+        (self.range.start.row..=self.range.end.row)
+            .map(|row| row + 1)
+            .collect()
+    }
+
+    /// Options ▸ Sort left to right, or top to bottom again: one level, on
+    /// the active cell's row (or column); no header, as Excel has none for
+    /// columns sorted left to right.
+    pub fn set_left_to_right(&mut self, on: bool) {
+        if self.left_to_right == on {
+            return;
+        }
+        self.left_to_right = on;
+        let line = if on {
+            self.at.row.clamp(self.range.start.row, self.range.end.row) - self.range.start.row
+        } else {
+            self.at
+                .column
+                .clamp(self.range.start.column, self.range.end.column)
+                - self.range.start.column
+        };
+        if on {
+            self.header = false;
+        }
+        self.levels = vec![SortLevel {
+            column: line as usize,
+            descending: false,
+            on: SortOn::Values,
+        }];
     }
 
     /// The colours level `level`'s column has for Sort On Cell Color
     /// (`font` false) or Font Color: `RRGGBB`, empty for none.
     pub fn colors(&self, level: usize, font: bool) -> &[String] {
+        let lines = if self.left_to_right {
+            &self.row_colors
+        } else {
+            &self.colors
+        };
         self.levels
             .get(level)
-            .and_then(|level| self.colors.get(level.column))
+            .and_then(|level| lines.get(level.column))
             .map_or(&[], |(fills, fonts)| if font { fonts } else { fills })
     }
 
@@ -161,7 +226,7 @@ impl SortDialog {
         if self.levels.len() >= MAX_LEVELS {
             return;
         }
-        let column = (0..self.headers.len())
+        let column = (0..self.line_count())
             .find(|column| self.levels.iter().all(|level| level.column != *column))
             .unwrap_or(0);
         self.levels.push(SortLevel {
@@ -207,22 +272,23 @@ impl SortDialog {
                         rgb: rgb.clone(),
                     }),
                 };
-                (
-                    self.range.start.column + level.column as u32,
-                    level.descending,
-                    color,
-                )
+                let start = if self.left_to_right {
+                    self.range.start.row
+                } else {
+                    self.range.start.column
+                };
+                (start + level.column as u32, level.descending, color)
             })
             .collect()
     }
 
     /// OK: the list sorted as the levels say. `false` when no row moved.
     pub fn apply<B: Backend>(&self, book: &mut Workbook<B>) -> Result<bool, String> {
-        book.sort_by_colors(
-            self.range,
-            self.header,
-            &self.color_keys(),
-            self.case_sensitive,
-        )
+        let keys = self.color_keys();
+        if self.left_to_right {
+            book.sort_left_to_right(self.range, self.header, &keys, self.case_sensitive)
+        } else {
+            book.sort_by_colors(self.range, self.header, &keys, self.case_sensitive)
+        }
     }
 }

@@ -138,3 +138,40 @@ fn a_level_sorts_on_a_cell_colour_on_top_or_bottom() {
     assert!(dialog.apply(&mut book).unwrap());
     assert_eq!(column(&book), ["d", "c", "b", "a"]);
 }
+
+/// Options ▸ Sort left to right: the levels pick rows, no header, and the
+/// columns move by the row chosen; back to top to bottom resets the level.
+#[test]
+fn sorting_left_to_right_orders_the_columns_by_a_row() {
+    use jade_office_model::sheet::span;
+    let mut book = book();
+    for (column, (key, name)) in [("3", "c"), ("1", "a"), ("2", "b")].iter().enumerate() {
+        book.set_cell(CellRef::new(20 + column as u32, 60), key)
+            .unwrap();
+        book.set_cell(CellRef::new(20 + column as u32, 61), name)
+            .unwrap();
+    }
+    let range = span(CellRef::new(20, 60), CellRef::new(22, 61));
+    let mut dialog = SortDialog::open(&book, range, CellRef::new(21, 60));
+    dialog.set_left_to_right(true);
+    assert!(dialog.left_to_right && !dialog.header);
+    assert_eq!(dialog.row_numbers(), [61, 62]);
+    assert_eq!(dialog.levels[0].column, 0, "the active cell's row");
+    assert!(dialog.apply(&mut book).unwrap());
+    let row = |book: &Workbook<TinySkiaBackend>| {
+        (20..=22)
+            .map(|column| book.display_text(CellRef::new(column, 61)))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(row(&book), ["a", "b", "c"]);
+    // By the second row, descending.
+    dialog.levels[0].column = 1;
+    dialog.levels[0].descending = true;
+    assert!(dialog.apply(&mut book).unwrap());
+    assert_eq!(row(&book), ["c", "b", "a"]);
+    assert!(book.undo().unwrap());
+    assert_eq!(row(&book), ["a", "b", "c"]);
+    dialog.set_left_to_right(false);
+    assert_eq!(dialog.levels.len(), 1);
+    assert_eq!(dialog.levels[0].column, 1, "the active cell's column again");
+}
