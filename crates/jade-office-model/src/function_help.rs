@@ -24,6 +24,21 @@ const HELP: &[(&str, &str, &str)] = &[
         "すべての引数が TRUE かどうかを調べます。",
     ),
     (
+        "ARABIC",
+        "Converts a Roman numeral to a number.",
+        "ローマ数字を数値に変換します。",
+    ),
+    (
+        "AREAS",
+        "Returns the number of areas in a reference.",
+        "参照に含まれる領域の数を返します。",
+    ),
+    (
+        "ARRAYTOTEXT",
+        "Returns an array's values as text.",
+        "配列の値を文字列で返します。",
+    ),
+    (
         "ASC",
         "Converts full-width letters to half-width.",
         "全角の英数カナ文字を半角に変換します。",
@@ -42,6 +57,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "ATAN2",
         "Returns the arctangent of x and y coordinates.",
         "x 座標と y 座標のアークタンジェントを返します。",
+    ),
+    (
+        "AVEDEV",
+        "Returns the average absolute deviation from the mean.",
+        "平均値からの絶対偏差の平均を返します。",
     ),
     (
         "AVERAGE",
@@ -64,9 +84,34 @@ const HELP: &[(&str, &str, &str)] = &[
         "複数の条件に一致するセルの平均値を返します。",
     ),
     (
+        "BASE",
+        "Converts a number to text in another base.",
+        "数値を指定した基数の文字列に変換します。",
+    ),
+    (
         "BIN2DEC",
         "Converts a binary number to decimal.",
         "2 進数を 10 進数に変換します。",
+    ),
+    (
+        "BINOM.DIST",
+        "Returns the binomial distribution probability.",
+        "二項分布の確率を返します。",
+    ),
+    (
+        "BITAND",
+        "Returns the bitwise AND of two numbers.",
+        "2 つの数値のビット単位の AND を返します。",
+    ),
+    (
+        "BITOR",
+        "Returns the bitwise OR of two numbers.",
+        "2 つの数値のビット単位の OR を返します。",
+    ),
+    (
+        "BITXOR",
+        "Returns the bitwise XOR of two numbers.",
+        "2 つの数値のビット単位の XOR を返します。",
     ),
     (
         "BYCOL",
@@ -82,6 +127,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "CEILING",
         "Rounds a number up to the nearest multiple of significance.",
         "数値を基準値の倍数に切り上げます。",
+    ),
+    (
+        "CEILING.MATH",
+        "Rounds a number up to an integer or multiple.",
+        "数値を整数または基準値の倍数に切り上げます。",
+    ),
+    (
+        "CELL",
+        "Returns information about a cell's format, place or contents.",
+        "セルの書式、位置、内容についての情報を返します。",
     ),
     (
         "CHAR",
@@ -139,6 +194,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "複数の文字列を結合して 1 つの文字列にします。",
     ),
     (
+        "CONFIDENCE.NORM",
+        "Returns the confidence interval for a mean.",
+        "母集団の平均の信頼区間を返します。",
+    ),
+    (
         "CONVERT",
         "Converts a number from one unit to another.",
         "数値の単位を変換します。",
@@ -152,6 +212,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "COS",
         "Returns the cosine of an angle.",
         "角度のコサインを返します。",
+    ),
+    (
+        "COSH",
+        "Returns the hyperbolic cosine.",
+        "双曲線余弦を返します。",
+    ),
+    (
+        "COT",
+        "Returns the cotangent of an angle.",
+        "角度のコタンジェントを返します。",
     ),
     (
         "COUNT",
@@ -177,6 +247,31 @@ const HELP: &[(&str, &str, &str)] = &[
         "COUNTIFS",
         "Counts the cells that meet several conditions.",
         "複数の条件に一致するセルの個数を返します。",
+    ),
+    (
+        "COVARIANCE.P",
+        "Returns the population covariance.",
+        "母集団の共分散を返します。",
+    ),
+    (
+        "COVARIANCE.S",
+        "Returns the sample covariance.",
+        "標本の共分散を返します。",
+    ),
+    (
+        "CSC",
+        "Returns the cosecant of an angle.",
+        "角度のコセカントを返します。",
+    ),
+    (
+        "CUMIPMT",
+        "Returns the interest paid between two periods.",
+        "指定した期間に支払う利息の累計を返します。",
+    ),
+    (
+        "CUMPRINC",
+        "Returns the principal paid between two periods.",
+        "指定した期間に支払う元金の累計を返します。",
     ),
     (
         "DATE",
@@ -224,6 +319,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "データベースの条件に一致するレコードの数値の個数を返します。",
     ),
     (
+        "DCOUNTA",
+        "Counts a database column's non-empty cells that meet criteria.",
+        "データベースの条件に一致するレコードの空白でないセルの個数を返します。",
+    ),
+    (
         "DDB",
         "Returns double-declining-balance depreciation.",
         "倍率法による減価償却費を返します。",
@@ -239,9 +339,39 @@ const HELP: &[(&str, &str, &str)] = &[
         "10 進数を 16 進数に変換します。",
     ),
     (
+        "DEC2OCT",
+        "Converts a decimal number to octal.",
+        "10 進数を 8 進数に変換します。",
+    ),
+    (
+        "DECIMAL",
+        "Converts text in a base to a decimal number.",
+        "指定した基数の文字列を 10 進数に変換します。",
+    ),
+    (
         "DEGREES",
         "Converts radians to degrees.",
         "ラジアンを度に変換します。",
+    ),
+    (
+        "DEVSQ",
+        "Returns the sum of squared deviations from the mean.",
+        "平均値からの偏差の 2 乗和を返します。",
+    ),
+    (
+        "DGET",
+        "Returns the one database value that meets criteria.",
+        "データベースの条件に一致する 1 つの値を返します。",
+    ),
+    (
+        "DMAX",
+        "Returns the largest database value that meets criteria.",
+        "データベースの条件に一致するレコードの最大値を返します。",
+    ),
+    (
+        "DMIN",
+        "Returns the smallest database value that meets criteria.",
+        "データベースの条件に一致するレコードの最小値を返します。",
     ),
     (
         "DOLLAR",
@@ -274,6 +404,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "指定した月数だけ離れた月の末日を返します。",
     ),
     (
+        "ERROR.TYPE",
+        "Returns a number for an error value.",
+        "エラー値に対応する数値を返します。",
+    ),
+    (
         "EVEN",
         "Rounds a number up to the nearest even integer.",
         "数値を最も近い偶数に切り上げます。",
@@ -289,9 +424,24 @@ const HELP: &[(&str, &str, &str)] = &[
         "e を底とする数値のべき乗を返します。",
     ),
     (
+        "EXPAND",
+        "Expands an array to more rows and columns.",
+        "配列を指定した行数と列数に拡張します。",
+    ),
+    (
+        "EXPON.DIST",
+        "Returns the exponential distribution.",
+        "指数分布の値を返します。",
+    ),
+    (
         "FACT",
         "Returns the factorial of a number.",
         "数値の階乗を返します。",
+    ),
+    (
+        "FACTDOUBLE",
+        "Returns the double factorial of a number.",
+        "数値の二重階乗を返します。",
     ),
     (
         "FILTER",
@@ -304,6 +454,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "文字列の中から別の文字列を検索します (大文字と小文字を区別)。",
     ),
     (
+        "FINDB",
+        "Finds one text within another, counting bytes.",
+        "文字列の中から別の文字列を検索し、バイト単位の位置を返します。",
+    ),
+    (
         "FIXED",
         "Formats a number as text with a fixed number of decimals.",
         "数値を指定した小数点以下桁数の文字列に変換します。",
@@ -312,6 +467,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "FLOOR",
         "Rounds a number down to the nearest multiple of significance.",
         "数値を基準値の倍数に切り捨てます。",
+    ),
+    (
+        "FLOOR.MATH",
+        "Rounds a number down to an integer or multiple.",
+        "数値を整数または基準値の倍数に切り捨てます。",
     ),
     (
         "FORECAST",
@@ -347,6 +507,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "GETPIVOTDATA",
         "Returns data stored in a pivot table.",
         "ピボットテーブルのデータを返します。",
+    ),
+    (
+        "GROWTH",
+        "Returns values along an exponential trend.",
+        "指数トレンドに沿った値を返します。",
     ),
     (
         "HARMEAN",
@@ -409,6 +574,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "文字列で指定されたセル参照を返します。",
     ),
     (
+        "INFO",
+        "Returns information about the working environment.",
+        "現在の操作環境についての情報を返します。",
+    ),
+    (
         "INT",
         "Rounds a number down to the nearest integer.",
         "数値を超えない最大の整数を返します。",
@@ -464,6 +634,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "値が #N/A かどうかを調べます。",
     ),
     (
+        "ISNONTEXT",
+        "Checks whether a value is not text.",
+        "値が文字列以外かどうかを調べます。",
+    ),
+    (
         "ISNUMBER",
         "Checks whether a value is a number.",
         "値が数値かどうかを調べます。",
@@ -474,9 +649,19 @@ const HELP: &[(&str, &str, &str)] = &[
         "数値が奇数かどうかを調べます。",
     ),
     (
+        "ISOMITTED",
+        "Checks whether a LAMBDA argument was left out.",
+        "LAMBDA の引数が省略されたかどうかを調べます。",
+    ),
+    (
         "ISOWEEKNUM",
         "Returns the ISO week number of a date.",
         "日付の ISO 週番号を返します。",
+    ),
+    (
+        "ISREF",
+        "Checks whether a value is a reference.",
+        "値がセル参照かどうかを調べます。",
     ),
     (
         "ISTEXT",
@@ -509,9 +694,19 @@ const HELP: &[(&str, &str, &str)] = &[
         "文字列の先頭から指定した数の文字を返します。",
     ),
     (
+        "LEFTB",
+        "Returns bytes from the start of a text string.",
+        "文字列の先頭から指定したバイト数の文字を返します。",
+    ),
+    (
         "LEN",
         "Returns the number of characters in a text string.",
         "文字列の文字数を返します。",
+    ),
+    (
+        "LENB",
+        "Returns the number of bytes in a text string.",
+        "文字列のバイト数を返します。",
     ),
     (
         "LET",
@@ -544,6 +739,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "文字列を小文字に変換します。",
     ),
     (
+        "MAKEARRAY",
+        "Builds an array by applying a LAMBDA to each position.",
+        "各位置に LAMBDA を適用して配列を作成します。",
+    ),
+    (
         "MAP",
         "Applies a LAMBDA to each value of arrays.",
         "配列の各値に LAMBDA を適用した結果を返します。",
@@ -555,9 +755,19 @@ const HELP: &[(&str, &str, &str)] = &[
     ),
     ("MAX", "Returns the largest value.", "最大値を返します。"),
     (
+        "MAXA",
+        "Returns the largest value, counting text and logical values.",
+        "文字列や論理値も含めて最大値を返します。",
+    ),
+    (
         "MAXIFS",
         "Returns the largest value among the cells that meet conditions.",
         "条件に一致するセルの中の最大値を返します。",
+    ),
+    (
+        "MDETERM",
+        "Returns the determinant of a matrix.",
+        "行列の行列式を返します。",
     ),
     (
         "MEDIAN",
@@ -569,7 +779,17 @@ const HELP: &[(&str, &str, &str)] = &[
         "Returns characters from the middle of a text string.",
         "文字列の指定した位置から指定した数の文字を返します。",
     ),
+    (
+        "MIDB",
+        "Returns bytes from the middle of a text string.",
+        "文字列の指定した位置から指定したバイト数の文字を返します。",
+    ),
     ("MIN", "Returns the smallest value.", "最小値を返します。"),
+    (
+        "MINA",
+        "Returns the smallest value, counting text and logical values.",
+        "文字列や論理値も含めて最小値を返します。",
+    ),
     (
         "MINIFS",
         "Returns the smallest value among the cells that meet conditions.",
@@ -579,6 +799,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "MINUTE",
         "Returns the minute, 0 to 59.",
         "時刻の分 (0～59) を返します。",
+    ),
+    (
+        "MINVERSE",
+        "Returns the inverse of a matrix.",
+        "行列の逆行列を返します。",
+    ),
+    (
+        "MIRR",
+        "Returns the modified internal rate of return.",
+        "修正内部利益率を返します。",
     ),
     (
         "MMULT",
@@ -596,6 +826,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "最も頻繁に出現する値を返します。",
     ),
     (
+        "MODE.MULT",
+        "Returns every most frequent value.",
+        "最も頻繁に出現する値をすべて返します。",
+    ),
+    (
+        "MODE.SNGL",
+        "Returns the most frequent value.",
+        "最も頻繁に出現する値を返します。",
+    ),
+    (
         "MONTH",
         "Returns the month, 1 to 12.",
         "日付の月 (1～12) を返します。",
@@ -604,6 +844,21 @@ const HELP: &[(&str, &str, &str)] = &[
         "MROUND",
         "Rounds a number to the nearest multiple.",
         "数値を指定した値の倍数に丸めます。",
+    ),
+    (
+        "MULTINOMIAL",
+        "Returns the multinomial of the numbers.",
+        "数値の多項係数を返します。",
+    ),
+    (
+        "MUNIT",
+        "Returns the unit matrix of a size.",
+        "指定した次元の単位行列を返します。",
+    ),
+    (
+        "N",
+        "Returns a value converted to a number.",
+        "値を数値に変換して返します。",
     ),
     (
         "NA",
@@ -621,6 +876,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "週末を指定して 2 つの日付の間の稼働日数を返します。",
     ),
     (
+        "NOMINAL",
+        "Returns the nominal annual interest rate.",
+        "名目年利率を返します。",
+    ),
+    (
         "NORM.DIST",
         "Returns the normal distribution.",
         "正規分布の値を返します。",
@@ -629,6 +889,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "NORM.INV",
         "Returns the inverse of the normal distribution.",
         "正規分布の逆関数の値を返します。",
+    ),
+    (
+        "NORM.S.DIST",
+        "Returns the standard normal distribution.",
+        "標準正規分布の値を返します。",
+    ),
+    (
+        "NORM.S.INV",
+        "Returns the inverse of the standard normal distribution.",
+        "標準正規分布の逆関数の値を返します。",
     ),
     (
         "NOT",
@@ -656,6 +926,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "ロケールに依存せずに文字列を数値に変換します。",
     ),
     (
+        "OCT2DEC",
+        "Converts an octal number to decimal.",
+        "8 進数を 10 進数に変換します。",
+    ),
+    (
         "ODD",
         "Rounds a number up to the nearest odd integer.",
         "数値を最も近い奇数に切り上げます。",
@@ -671,14 +946,44 @@ const HELP: &[(&str, &str, &str)] = &[
         "いずれかの引数が TRUE かどうかを調べます。",
     ),
     (
+        "PEARSON",
+        "Returns the Pearson correlation coefficient.",
+        "ピアソンの積率相関係数を返します。",
+    ),
+    (
         "PERCENTILE",
         "Returns the k-th percentile of values.",
         "値の k 番目の百分位数を返します。",
     ),
     (
+        "PERCENTILE.EXC",
+        "Returns the k-th percentile, k between 0 and 1 exclusive.",
+        "値の k 番目の百分位数を返します (k は 0 より大きく 1 より小さい)。",
+    ),
+    (
         "PERCENTILE.INC",
         "Returns the k-th percentile, k from 0 to 1 inclusive.",
         "値の k 番目の百分位数を返します (k は 0 以上 1 以下)。",
+    ),
+    (
+        "PERCENTOF",
+        "Returns the share a subset is of all the data.",
+        "部分のデータが全体に占める割合を返します。",
+    ),
+    (
+        "PERCENTRANK",
+        "Returns the percentage rank of a value in a data set.",
+        "データの中での値の百分率順位を返します。",
+    ),
+    (
+        "PERCENTRANK.EXC",
+        "Returns the percentage rank, 0 and 1 excluded.",
+        "値の百分率順位を返します (0 と 1 を含まない)。",
+    ),
+    (
+        "PERCENTRANK.INC",
+        "Returns the percentage rank, 0 and 1 included.",
+        "値の百分率順位を返します (0 と 1 を含む)。",
     ),
     (
         "PERMUT",
@@ -699,6 +1004,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "PMT",
         "Returns the periodic payment for a loan.",
         "ローンの定期支払額を返します。",
+    ),
+    (
+        "POISSON.DIST",
+        "Returns the Poisson distribution.",
+        "ポアソン分布の値を返します。",
     ),
     (
         "POWER",
@@ -731,6 +1041,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "データの四分位数を返します。",
     ),
     (
+        "QUARTILE.EXC",
+        "Returns a quartile, 0 and 4 excluded.",
+        "データの四分位数を返します (0 と 4 を含まない)。",
+    ),
+    (
         "QUARTILE.INC",
         "Returns a quartile, 0 to 4 inclusive.",
         "データの四分位数を返します (0 以上 4 以下)。",
@@ -749,6 +1064,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "RAND",
         "Returns a random number from 0 up to 1.",
         "0 以上 1 未満の乱数を返します。",
+    ),
+    (
+        "RANDARRAY",
+        "Returns an array of random numbers.",
+        "乱数の配列を返します。",
     ),
     (
         "RANDBETWEEN",
@@ -781,9 +1101,29 @@ const HELP: &[(&str, &str, &str)] = &[
         "LAMBDA で配列を 1 つの値に集約します。",
     ),
     (
+        "REGEXEXTRACT",
+        "Extracts text that matches a regular expression.",
+        "正規表現に一致する文字列を取り出します。",
+    ),
+    (
+        "REGEXREPLACE",
+        "Replaces text that matches a regular expression.",
+        "正規表現に一致する文字列を置き換えます。",
+    ),
+    (
+        "REGEXTEST",
+        "Checks whether text matches a regular expression.",
+        "文字列が正規表現に一致するかどうかを調べます。",
+    ),
+    (
         "REPLACE",
         "Replaces part of a text string by position.",
         "文字列の指定した位置の文字を置き換えます。",
+    ),
+    (
+        "REPLACEB",
+        "Replaces part of a text string, counting bytes.",
+        "文字列の指定したバイト位置の文字を置き換えます。",
     ),
     (
         "REPT",
@@ -794,6 +1134,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "RIGHT",
         "Returns characters from the end of a text string.",
         "文字列の末尾から指定した数の文字を返します。",
+    ),
+    (
+        "RIGHTB",
+        "Returns bytes from the end of a text string.",
+        "文字列の末尾から指定したバイト数の文字を返します。",
+    ),
+    (
+        "ROMAN",
+        "Converts a number to a Roman numeral.",
+        "数値をローマ数字に変換します。",
     ),
     (
         "ROUND",
@@ -826,9 +1176,24 @@ const HELP: &[(&str, &str, &str)] = &[
         "相関係数の 2 乗を返します。",
     ),
     (
+        "SCAN",
+        "Applies a LAMBDA to each value, returning each step.",
+        "各値に LAMBDA を適用し、途中の結果を配列で返します。",
+    ),
+    (
         "SEARCH",
         "Finds one text string within another (not case-sensitive).",
         "文字列の中から別の文字列を検索します (大文字と小文字を区別しない)。",
+    ),
+    (
+        "SEARCHB",
+        "Finds one text within another, counting bytes, ignoring case.",
+        "文字列の中から別の文字列をバイト単位で検索します (大文字と小文字を区別しない)。",
+    ),
+    (
+        "SEC",
+        "Returns the secant of an angle.",
+        "角度のセカントを返します。",
     ),
     (
         "SECOND",
@@ -841,6 +1206,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "連続した数値の配列を返します。",
     ),
     (
+        "SHEET",
+        "Returns the sheet number of a reference.",
+        "参照されているシートの番号を返します。",
+    ),
+    (
+        "SHEETS",
+        "Returns the number of sheets in a reference.",
+        "参照に含まれるシートの数を返します。",
+    ),
+    (
         "SIGN",
         "Returns the sign of a number: 1, 0 or -1.",
         "数値の符号 (1、0、-1) を返します。",
@@ -849,6 +1224,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "SIN",
         "Returns the sine of an angle.",
         "角度のサインを返します。",
+    ),
+    (
+        "SINH",
+        "Returns the hyperbolic sine.",
+        "双曲線正弦を返します。",
     ),
     (
         "SLN",
@@ -881,6 +1261,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "数値の平方根を返します。",
     ),
     (
+        "SQRTPI",
+        "Returns the square root of a number times pi.",
+        "数値に π を掛けた値の平方根を返します。",
+    ),
+    (
+        "STANDARDIZE",
+        "Returns a normalised value from a distribution.",
+        "正規化された値を返します。",
+    ),
+    (
         "STDEV",
         "Estimates standard deviation from a sample.",
         "標本に基づいて標準偏差を推定します。",
@@ -894,6 +1284,26 @@ const HELP: &[(&str, &str, &str)] = &[
         "STDEV.S",
         "Estimates standard deviation from a sample.",
         "標本に基づいて標準偏差を推定します。",
+    ),
+    (
+        "STDEVA",
+        "Estimates standard deviation from a sample, counting text and logical values.",
+        "文字列や論理値も含めて標本の標準偏差を推定します。",
+    ),
+    (
+        "STDEVP",
+        "Returns the standard deviation of a whole population.",
+        "母集団全体の標準偏差を返します。",
+    ),
+    (
+        "STDEVPA",
+        "Returns the population standard deviation, counting text and logical values.",
+        "文字列や論理値も含めて母集団の標準偏差を返します。",
+    ),
+    (
+        "STEYX",
+        "Returns the standard error of predicted y values.",
+        "回帰の標準誤差を返します。",
     ),
     (
         "SUBSTITUTE",
@@ -931,14 +1341,49 @@ const HELP: &[(&str, &str, &str)] = &[
         "引数の 2 乗の和を返します。",
     ),
     (
+        "SUMX2MY2",
+        "Returns the sum of the differences of squares of two arrays.",
+        "2 つの配列の要素の 2 乗の差を合計します。",
+    ),
+    (
+        "SUMX2PY2",
+        "Returns the sum of the sums of squares of two arrays.",
+        "2 つの配列の要素の 2 乗の和を合計します。",
+    ),
+    (
+        "SUMXMY2",
+        "Returns the sum of squared differences of two arrays.",
+        "2 つの配列の要素の差の 2 乗を合計します。",
+    ),
+    (
         "SWITCH",
         "Compares a value with a list and returns the matching result.",
         "値を一覧と比較し、一致した値に対応する結果を返します。",
     ),
     (
+        "SYD",
+        "Returns sum-of-years' digits depreciation.",
+        "級数法による減価償却費を返します。",
+    ),
+    (
         "T",
         "Returns text if the value is text, else an empty string.",
         "値が文字列ならその文字列を、そうでなければ空の文字列を返します。",
+    ),
+    (
+        "T.DIST",
+        "Returns the Student's t-distribution.",
+        "スチューデントの t 分布の値を返します。",
+    ),
+    (
+        "T.INV",
+        "Returns the inverse of the Student's t-distribution.",
+        "スチューデントの t 分布の逆関数の値を返します。",
+    ),
+    (
+        "T.TEST",
+        "Returns the probability from a Student's t-test.",
+        "スチューデントの t 検定の確率を返します。",
     ),
     (
         "TAKE",
@@ -949,6 +1394,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "TAN",
         "Returns the tangent of an angle.",
         "角度のタンジェントを返します。",
+    ),
+    (
+        "TANH",
+        "Returns the hyperbolic tangent.",
+        "双曲線正接を返します。",
     ),
     (
         "TEXT",
@@ -1012,6 +1462,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "文字列から余分なスペースを削除します。",
     ),
     (
+        "TRIMRANGE",
+        "Trims empty rows and columns from the edges of a range.",
+        "範囲の外側の空白の行と列を除きます。",
+    ),
+    (
         "TRUNC",
         "Truncates a number to an integer or a number of digits.",
         "数値の小数部を切り捨てて整数または指定した桁数にします。",
@@ -1047,6 +1502,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "数値を表す文字列を数値に変換します。",
     ),
     (
+        "VALUETOTEXT",
+        "Returns a value as text.",
+        "値を文字列で返します。",
+    ),
+    (
         "VAR",
         "Estimates variance from a sample.",
         "標本に基づいて分散を推定します。",
@@ -1060,6 +1520,21 @@ const HELP: &[(&str, &str, &str)] = &[
         "VAR.S",
         "Estimates variance from a sample.",
         "標本に基づいて分散を推定します。",
+    ),
+    (
+        "VARA",
+        "Estimates variance from a sample, counting text and logical values.",
+        "文字列や論理値も含めて標本の分散を推定します。",
+    ),
+    (
+        "VARP",
+        "Returns the variance of a whole population.",
+        "母集団全体の分散を返します。",
+    ),
+    (
+        "VARPA",
+        "Returns the population variance, counting text and logical values.",
+        "文字列や論理値も含めて母集団の分散を返します。",
     ),
     (
         "VLOOKUP",
@@ -1090,6 +1565,16 @@ const HELP: &[(&str, &str, &str)] = &[
         "WORKDAY.INTL",
         "Returns the date a number of working days away, with chosen weekends.",
         "週末を指定して稼働日数だけ離れた日付を返します。",
+    ),
+    (
+        "WRAPCOLS",
+        "Wraps a row or column into columns.",
+        "行や列の値を指定した数ごとに折り返して列にします。",
+    ),
+    (
+        "WRAPROWS",
+        "Wraps a row or column into rows.",
+        "行や列の値を指定した数ごとに折り返して行にします。",
     ),
     (
         "XIRR",
