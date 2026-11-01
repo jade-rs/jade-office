@@ -850,6 +850,7 @@ impl WorkbookView {
             self.selection = Selection::default();
             self.tab_start = None;
             self.scroll.set_offset(point(px(0.0), px(0.0)));
+            self.zoom = editor::clamp_zoom(self.book.sheet_zoom());
             // The old image belongs to the old sheet.
             self.retire_image();
         }
@@ -5214,6 +5215,8 @@ impl WorkbookView {
             .into_iter()
             .map(SharedString::from)
             .collect();
+        // Each sheet opens at the zoom it was saved at, as in Excel.
+        let zoom = editor::clamp_zoom(book.sheet_zoom());
         Ok(WorkbookView {
             path: path.to_path_buf(),
             book,
@@ -5267,7 +5270,7 @@ impl WorkbookView {
             image: None,
             retired: Vec::new(),
             painted: None,
-            zoom: 1.0,
+            zoom,
             viewport: (1.0, 1.0),
             grid_bounds: Rc::new(Cell::new(None)),
             scroll: ScrollHandle::new(),

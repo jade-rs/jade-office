@@ -82,6 +82,15 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    /// The zoom the active sheet was saved at, as a factor (0.85 for 85%):
+    /// the one Excel opens it at.
+    pub fn sheet_zoom(&self) -> f32 {
+        let percent = self.engine().workbook().sheets[self.sheet_index()]
+            .zoom_percent
+            .unwrap_or(100);
+        percent as f32 / 100.0
+    }
+
     /// Whether the active sheet shows a zero in cells worth zero, as Excel
     /// does unless told not to.
     pub fn show_zeros(&self) -> bool {

@@ -786,6 +786,11 @@ impl DocView {
         if kind == Kind::Document && compat_mode == jade_web::word::compat::CURRENT_MODE {
             compat_mode = jade_web::word::compat::compatibility_mode(bytes);
         }
+        // A deck fits; a workbook opens at the zoom its sheet was saved at.
+        let zoom = match &document {
+            Document::Workbook(sheet) => Some(clamp_zoom(sheet.book.sheet_zoom())),
+            _ => (kind != Kind::Deck).then_some(1.0),
+        };
         Ok(Self {
             name,
             text_encoding,
@@ -797,7 +802,7 @@ impl DocView {
             status: SharedString::default(),
             surface: Rc::new(Cell::new(None)),
             focus,
-            zoom: (kind != Kind::Deck).then_some(1.0),
+            zoom,
             shown_zoom: 1.0,
             show_notes: true,
             slideshow: false,
