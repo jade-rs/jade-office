@@ -131,6 +131,8 @@ pub(super) struct Sheet {
     pub(super) paste_options: Option<(CellRange, bool)>,
     /// The cells Trace Precedents drew arrows to, until Remove Arrows.
     pub(super) tracing: Vec<CellRef>,
+    /// The cells Trace Dependents drew arrows from.
+    pub(super) tracing_dependents: Vec<CellRef>,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
@@ -767,6 +769,8 @@ enum MenuCommand {
     ShowFormulas,
     /// Formulas ▸ Trace Precedents from the active cell.
     TracePrecedents,
+    /// Formulas ▸ Trace Dependents from the active cell.
+    TraceDependents,
     /// Formulas ▸ Remove Arrows.
     RemoveArrows,
     /// The error button's Convert to Number on the selection.
@@ -815,6 +819,7 @@ impl Sheet {
             more_colors: None,
             paste_options: None,
             tracing: Vec::new(),
+            tracing_dependents: Vec::new(),
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
@@ -3078,8 +3083,19 @@ impl DocView {
                 return;
             }
             MenuCommand::ConvertToNumber => sheet.book.convert_to_number(range),
+            MenuCommand::TraceDependents => {
+                let at = sheet.selection.active;
+                if sheet.book.dependents(at).is_empty() {
+                    self.status = i18n::text("sheet.trace.no_dependents").into();
+                } else if !sheet.tracing_dependents.contains(&at) {
+                    sheet.tracing_dependents.push(at);
+                }
+                cx.notify();
+                return;
+            }
             MenuCommand::RemoveArrows => {
                 sheet.tracing.clear();
+                sheet.tracing_dependents.clear();
                 cx.notify();
                 return;
             }
@@ -3937,6 +3953,22 @@ impl DocView {
                 });
             }
         }
+        // Trace Dependents: from each traced cell to the formulas reading it.
+        for &source in &sheet.tracing_dependents {
+            let Some(cell) = cell_box(source) else {
+                continue;
+            };
+            for dependent in sheet.book.dependents(source) {
+                let Some(target) = cell_box(dependent) else {
+                    continue;
+                };
+                arrows.push(TraceArrow {
+                    from: cell.center(),
+                    to: target.center(),
+                    range: None,
+                });
+            }
+        }
         let trace = (!arrows.is_empty()).then(|| {
             gpui::canvas(
                 |_, _, _| {},
@@ -4318,7 +4350,8 @@ impl DocView {
                     items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
                     items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
                     items.push((MenuCommand::TracePrecedents, "sheet.menu.trace_precedents"));
-                    if !sheet.tracing.is_empty() {
+                    items.push((MenuCommand::TraceDependents, "sheet.menu.trace_dependents"));
+                    if !sheet.tracing.is_empty() || !sheet.tracing_dependents.is_empty() {
                         items.push((MenuCommand::RemoveArrows, "sheet.menu.remove_arrows"));
                     }
                     if selected.start.column == selected.end.column {

@@ -132,3 +132,19 @@ fn convert_to_number_turns_numbers_stored_as_text_into_numbers() {
     assert!(book.undo().unwrap());
     assert!(book.is_number_as_text(a));
 }
+
+#[test]
+fn trace_dependents_finds_the_formulas_reading_a_cell() {
+    let mut book = book();
+    let source = CellRef::new(10, 30);
+    book.set_cell(source, "5").unwrap();
+    book.set_cell(CellRef::new(11, 30), "=K31*2").unwrap();
+    book.set_cell(CellRef::new(12, 31), "=SUM(J31:K32)")
+        .unwrap();
+    book.set_cell(CellRef::new(13, 31), "=J1").unwrap();
+    assert_eq!(
+        book.dependents(source),
+        vec![CellRef::new(11, 30), CellRef::new(12, 31)]
+    );
+    assert!(book.dependents(CellRef::new(20, 50)).is_empty());
+}
