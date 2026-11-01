@@ -6115,6 +6115,34 @@ mod tests {
         });
     }
 
+    /// Every shape in the gallery, lines too, goes in selected, under a name
+    /// both languages have.
+    #[gpui::test]
+    fn every_gallery_shape_goes_in(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            for (index, (preset, label)) in jade_office_model::sheet::SHAPES.into_iter().enumerate()
+            {
+                view.selection = Selection::cell(at(2 + (index as u32 % 4) * 3, 2 + index as u32));
+                view.object = None;
+                view.chart_tool(charts::ChartTool::Shape(preset), cx);
+                let id = view.object.expect(preset);
+                assert!(view.book.object_rect(id, (0.0, 0.0)).is_some(), "{preset}");
+                for words in [
+                    include_str!("../i18n/en.tsv"),
+                    include_str!("../i18n/ja.tsv"),
+                ] {
+                    assert!(
+                        words
+                            .lines()
+                            .any(|line| line.split('\t').next() == Some(label)),
+                        "{label}"
+                    );
+                }
+            }
+        });
+    }
+
     /// A cell style from the menu formats the selection.
     #[gpui::test]
     fn a_cell_style_from_the_menu_formats_the_selection(cx: &mut gpui::TestAppContext) {
