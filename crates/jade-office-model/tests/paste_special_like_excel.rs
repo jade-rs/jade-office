@@ -190,6 +190,8 @@ fn the_dialog_moves_between_its_choices_with_the_arrows() {
     dialog.key("down");
     assert_eq!(dialog.what, PasteWhat::ColumnWidths, "stops at the last");
     dialog.key("up");
+    assert_eq!(dialog.what, PasteWhat::Validation);
+    dialog.key("up");
     dialog.key("up");
     assert_eq!(dialog.what, PasteWhat::Values);
     assert!(!dialog.key("x"));
@@ -344,4 +346,55 @@ fn paste_options_paste_again_as_chosen() {
         book.repaste(at(23, 70), PasteOption::KeepSource).unwrap(),
         None
     );
+}
+
+/// Paste Special ▸ Validation: the copied cells' rules, moved with them,
+/// in place of the rules pasted on; the values stay. One undo.
+#[test]
+fn validation_pastes_only_the_rules() {
+    use jade_xlsx_reader::DataValidation;
+    let mut book = book();
+    // U61:U70 must be whole numbers below the cell to their left.
+    book.apply_data_validation(&DataValidation {
+        ranges: vec![CellRange::parse("U61:U70").unwrap()],
+        validation_type: Some("whole".into()),
+        operator: Some("lessThan".into()),
+        show_error_message: true,
+        formula1: Some("T61".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    // A rule where it lands, which goes; and a value, which stays.
+    book.apply_data_validation(&DataValidation {
+        ranges: vec![CellRange::parse("Z1:Z3").unwrap()],
+        validation_type: Some("list".into()),
+        formula1: Some("\"a,b\"".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    book.set_cell(at(25, 1), "a").unwrap();
+    // U65:V66 copied to Z1: only U65:U66 has a rule.
+    book.copy(span(at(20, 64), at(21, 65)), false);
+    let landed = book
+        .paste_special(at(25, 0), None, special(PasteWhat::Validation))
+        .unwrap();
+    assert_eq!(landed, Some(span(at(25, 0), at(26, 1))));
+    assert_eq!(book.display_text(at(25, 1)), "a", "values stay");
+    let moved = book.data_validation_at(at(25, 0)).expect("rule moved");
+    assert_eq!(moved.ranges, vec![CellRange::parse("Z1:Z2").unwrap()]);
+    // The cell to the left, still.
+    assert_eq!(moved.formula1.as_deref(), Some("Y1"));
+    assert!(book.data_validation_at(at(26, 0)).is_none());
+    // The old list is gone where it was pasted on, kept below.
+    assert!(book
+        .data_validation_at(at(25, 2))
+        .is_some_and(|rule| rule.validation_type.as_deref() == Some("list")));
+    assert!(
+        book.data_validation_at(at(20, 64)).is_some(),
+        "copy keeps its rule"
+    );
+    assert!(book.undo().unwrap());
+    assert!(book
+        .data_validation_at(at(25, 0))
+        .is_some_and(|rule| rule.validation_type.as_deref() == Some("list")));
 }

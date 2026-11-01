@@ -12,6 +12,9 @@
 //! - Values: what the cells show as values — a formula's result, not the
 //!   formula — keeping the formats pasted on.
 //! - Formats: the formats only; the values pasted on stay.
+//! - Validation: the copied cells' data validation given to the cells
+//!   pasted on in place of theirs — a copied cell without any clears it —
+//!   and nothing else; the rules' formulas move as a paste moves them.
 //! - Column widths: the copied columns' widths given to the columns pasted
 //!   on, and nothing else.
 //!
@@ -39,16 +42,18 @@ pub enum PasteWhat {
     Formulas,
     Values,
     Formats,
+    Validation,
     ColumnWidths,
 }
 
 impl PasteWhat {
     /// The dialog's choices, in Excel's order.
-    pub const ALL: [PasteWhat; 5] = [
+    pub const ALL: [PasteWhat; 6] = [
         PasteWhat::All,
         PasteWhat::Formulas,
         PasteWhat::Values,
         PasteWhat::Formats,
+        PasteWhat::Validation,
         PasteWhat::ColumnWidths,
     ];
 
@@ -59,6 +64,7 @@ impl PasteWhat {
             PasteWhat::Formulas => "sheet.paste_special.formulas",
             PasteWhat::Values => "sheet.paste_special.values",
             PasteWhat::Formats => "sheet.paste_special.formats",
+            PasteWhat::Validation => "sheet.paste_special.validation",
             PasteWhat::ColumnWidths => "sheet.paste_special.column_widths",
         }
     }
@@ -251,6 +257,9 @@ impl<B: Backend> Workbook<B> {
         if special.what == PasteWhat::ColumnWidths {
             return self.paste_column_widths(at);
         }
+        if special.what == PasteWhat::Validation {
+            return self.paste_validation(at);
+        }
         let grid = match self.copied_cells() {
             Some((_, _, true)) => return Ok(None),
             Some((sheet, range, false)) => self.copied_grid(sheet, range, at, special.transpose),
@@ -296,7 +305,7 @@ impl<B: Backend> Workbook<B> {
                         Some(style) => (self.input_at(to), Some(style)),
                         None => continue,
                     },
-                    PasteWhat::ColumnWidths => continue,
+                    PasteWhat::ColumnWidths | PasteWhat::Validation => continue,
                 };
                 let write = if special.operation == PasteOperation::None
                     || special.what == PasteWhat::Formats
@@ -357,6 +366,85 @@ impl<B: Backend> Workbook<B> {
                 at.row + (range.end.row - range.start.row),
             ),
         }))
+    }
+
+    /// Validation at `at`: each rule over the copied cells given to the
+    /// cells they land on, its formulas moved as far as the cells move, after
+    /// the rules there are cleared. One undo. Returns the range pasted on.
+    fn paste_validation(&mut self, at: CellRef) -> Result<Option<CellRange>, String> {
+        let Some((sheet, range, false)) = self.copied_cells() else {
+            return Ok(None);
+        };
+        let Some(source) = self.engine().workbook().sheets.get(sheet) else {
+            return Ok(None);
+        };
+        let moved = |cell: CellRef| {
+            CellRef::new(
+                at.column + (cell.column - range.start.column),
+                at.row + (cell.row - range.start.row),
+            )
+        };
+        let landed = CellRange {
+            start: at,
+            end: moved(range.end),
+        };
+        let rules: Vec<jade_xlsx_reader::DataValidation> = source
+            .data_validations
+            .iter()
+            .filter_map(|rule| {
+                let anchor = rule.ranges.first()?.start;
+                let ranges: Vec<CellRange> = rule
+                    .ranges
+                    .iter()
+                    .filter_map(|over| {
+                        let start = CellRef::new(
+                            over.start.column.max(range.start.column),
+                            over.start.row.max(range.start.row),
+                        );
+                        let end = CellRef::new(
+                            over.end.column.min(range.end.column),
+                            over.end.row.min(range.end.row),
+                        );
+                        (start.column <= end.column && start.row <= end.row).then(|| CellRange {
+                            start: moved(start),
+                            end: moved(end),
+                        })
+                    })
+                    .collect();
+                // Relative references count from the rule's first cell; the
+                // cells keep what they read when that cell moves with them.
+                let to = ranges.first()?.start;
+                let shift = |formula: &Option<String>| {
+                    formula
+                        .as_deref()
+                        .map(|formula| translate_formula(formula, anchor, to))
+                };
+                Some(jade_xlsx_reader::DataValidation {
+                    formula1: shift(&rule.formula1),
+                    formula2: shift(&rule.formula2),
+                    ranges,
+                    ..rule.clone()
+                })
+            })
+            .collect();
+        let name = self.sheet_name();
+        self.atomic_edit(|book| {
+            let mut steps = usize::from(
+                book.engine_mut()
+                    .clear_data_validation_ranges(&name, &[landed])
+                    .map_err(|error| error.to_string())?,
+            );
+            for rule in &rules {
+                book.engine_mut()
+                    .apply_data_validation(&name, rule)
+                    .map_err(|error| error.to_string())?;
+                steps += 1;
+            }
+            if steps > 0 {
+                book.wrote(steps)?;
+            }
+            Ok(Some(landed))
+        })
     }
 
     /// A Paste Options choice after the paste at `at` just made from this
