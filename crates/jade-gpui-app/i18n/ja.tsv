@@ -3817,3 +3817,16 @@ sheet.shape.oval	楕円
 sheet.shape.rounded_rectangle	四角形: 角を丸くする
 sheet.shape.right_arrow	矢印: 右
 filter.date.day	{day}日
+sheet.menu.group_cell_styles	セルのスタイル
+cell_style.normal	標準
+cell_style.good	良い
+cell_style.bad	悪い
+cell_style.neutral	どちらでもない
+cell_style.title	タイトル
+cell_style.heading1	見出し 1
+cell_style.heading2	見出し 2
+cell_style.heading3	見出し 3
+cell_style.total	集計
+cell_style.input	入力
+cell_style.output	出力
+cell_style.note	メモ

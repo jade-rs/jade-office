@@ -11,6 +11,7 @@ enum MenuGroup {
     LinksValidation,
     Protection,
     PageLayout,
+    CellStyles,
 }
 
 impl MenuGroup {
@@ -24,6 +25,7 @@ impl MenuGroup {
             MenuGroup::LinksValidation => "sheet.menu.group_links_validation",
             MenuGroup::Protection => "sheet.menu.group_protection",
             MenuGroup::PageLayout => "sheet.menu.group_page_layout",
+            MenuGroup::CellStyles => "sheet.menu.group_cell_styles",
         }
     }
 }
@@ -68,6 +70,7 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         C::PageSetup | C::InsertPageBreak | C::RemovePageBreak | C::ResetPageBreaks => {
             MenuGroup::PageLayout
         }
+        C::CellStyle(_) => MenuGroup::CellStyles,
         _ => return None,
     })
 }

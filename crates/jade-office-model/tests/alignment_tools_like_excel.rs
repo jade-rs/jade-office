@@ -194,3 +194,32 @@ fn trace_dependents_sees_a_formula_typed_after_it_last_looked() {
         vec![CellRef::new(11, 30), CellRef::new(12, 30)]
     );
 }
+
+#[test]
+fn cell_styles_set_what_they_decide_and_keep_the_number_format() {
+    use jade_office_model::cell_styles::CellStyle;
+    let mut book = book();
+    let at = CellRef::new(10, 30);
+    let range = span(at, at);
+    book.set_cell(at, "0.25").unwrap();
+    book.format(
+        range,
+        &jade_office_model::sheet::CellFormat {
+            number_format: Some("0%".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(book.apply_cell_style(range, CellStyle::Good).unwrap());
+    let format = book.format_at(at);
+    assert_eq!(format.fill_color.as_deref(), Some("C6EFCE"));
+    assert_eq!(format.font_color.as_deref(), Some("006100"));
+    assert_eq!(format.number_format.as_deref(), Some("0%"));
+    assert!(book.apply_cell_style(range, CellStyle::Heading1).unwrap());
+    let format = book.format_at(at);
+    assert_eq!(format.bold, Some(true));
+    assert_eq!(format.fill_color.filter(|color| !color.is_empty()), None);
+    assert_eq!(format.number_format.as_deref(), Some("0%"));
+    assert!(book.undo().unwrap());
+    assert_eq!(book.format_at(at).fill_color.as_deref(), Some("C6EFCE"));
+}
