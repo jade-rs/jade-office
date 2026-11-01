@@ -484,6 +484,8 @@ enum MenuCommand {
     TracePrecedents,
     /// Formulas ▸ Remove Arrows.
     RemoveArrows,
+    /// The error button's Convert to Number on the selection.
+    ConvertToNumber,
     /// A sheet tab from one place to another.
     MoveSheet(usize, usize),
     /// New Note, or Edit Note on a cell that has one.
@@ -1649,6 +1651,7 @@ impl WorkbookView {
                 cx.notify();
                 return;
             }
+            MenuCommand::ConvertToNumber => self.book.convert_to_number(range),
             MenuCommand::RemoveArrows => {
                 self.tracing.clear();
                 cx.notify();
@@ -3396,6 +3399,10 @@ impl WorkbookView {
                 }
                 if self.book.can_paste_special(None) {
                     items.push((MenuCommand::PasteSpecial, "sheet.menu.paste_special"));
+                }
+                // A number stored as text: the error button's Convert to Number.
+                if self.book.is_number_as_text(self.active()) {
+                    items.push((MenuCommand::ConvertToNumber, "sheet.menu.convert_to_number"));
                 }
                 items.extend([
                     (MenuCommand::Clear, "sheet.menu.clear"),
@@ -5583,6 +5590,20 @@ mod tests {
             view.menu_command(MenuCommand::TracePrecedents, false, cx);
             assert!(view.tracing.is_empty());
             assert_eq!(view.status.as_ref(), i18n::text("sheet.trace.none"));
+        });
+    }
+
+    /// Convert to Number from the menu makes a number stored as text the
+    /// number it reads as.
+    #[gpui::test]
+    fn convert_to_number_from_the_menu(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(9, 30), "'0042").unwrap();
+            view.selection = Selection::cell(at(9, 30));
+            assert!(view.book.is_number_as_text(at(9, 30)));
+            view.menu_command(MenuCommand::ConvertToNumber, false, cx);
+            assert_eq!(view.book.number(at(9, 30)), Some(42.0));
         });
     }
 
