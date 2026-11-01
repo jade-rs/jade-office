@@ -1,5 +1,7 @@
 use crate::{sheet::Workbook, Backend};
-use jade_xlsx_reader::{CellRange, PageSetup, SheetVisibility};
+use std::collections::BTreeSet;
+
+use jade_xlsx_reader::{Axis, CellRange, CellRef, PageSetup, SheetVisibility};
 
 impl<B: Backend> Workbook<B> {
     pub fn hidden_sheets(&self) -> Vec<usize> {
@@ -110,6 +112,84 @@ impl<B: Backend> Workbook<B> {
         }
         self.wrote(1)?;
         Ok(true)
+    }
+
+    // ---- page breaks ------------------------------------------------------
+
+    /// The manual page breaks on the active sheet: the rows they sit above
+    /// and the columns they sit left of.
+    fn manual_breaks(&self) -> (BTreeSet<u32>, BTreeSet<u32>) {
+        let sheet = &self.engine().workbook().sheets[self.sheet_index()];
+        let manual = |breaks: &[jade_xlsx_reader::PageBreak]| {
+            breaks
+                .iter()
+                .filter(|brk| brk.manual)
+                .map(|brk| brk.before)
+                .collect::<BTreeSet<u32>>()
+        };
+        (manual(&sheet.row_breaks), manual(&sheet.column_breaks))
+    }
+
+    /// Whether a manual page break sits above `at`'s row or left of its
+    /// column: Remove Page Break has one to take away.
+    pub fn page_break_at(&self, at: CellRef) -> bool {
+        let (rows, columns) = self.manual_breaks();
+        rows.contains(&at.row) || columns.contains(&at.column)
+    }
+
+    /// Whether the active sheet has any manual page break.
+    pub fn has_page_breaks(&self) -> bool {
+        let (rows, columns) = self.manual_breaks();
+        !rows.is_empty() || !columns.is_empty()
+    }
+
+    /// Page Layout ▸ Breaks ▸ Insert Page Break: a break above `at`'s row and
+    /// left of its column, as Excel puts them — none above the first row or
+    /// left of the first column. One undo step.
+    pub fn insert_page_break(&mut self, at: CellRef) -> Result<bool, String> {
+        let (mut rows, mut columns) = self.manual_breaks();
+        if at.row > 0 {
+            rows.insert(at.row);
+        }
+        if at.column > 0 {
+            columns.insert(at.column);
+        }
+        self.set_breaks(rows, columns)
+    }
+
+    /// Remove Page Break: the breaks above `at`'s row and left of its column
+    /// taken away. One undo step.
+    pub fn remove_page_break(&mut self, at: CellRef) -> Result<bool, String> {
+        let (mut rows, mut columns) = self.manual_breaks();
+        rows.remove(&at.row);
+        columns.remove(&at.column);
+        self.set_breaks(rows, columns)
+    }
+
+    /// Reset All Page Breaks: every manual break on the sheet taken away.
+    pub fn reset_page_breaks(&mut self) -> Result<bool, String> {
+        self.set_breaks(BTreeSet::new(), BTreeSet::new())
+    }
+
+    fn set_breaks(&mut self, rows: BTreeSet<u32>, columns: BTreeSet<u32>) -> Result<bool, String> {
+        let name = self.sheet_name();
+        self.atomic_edit(|book| {
+            let mut steps = 0;
+            for (axis, breaks) in [(Axis::Rows, &rows), (Axis::Columns, &columns)] {
+                if book
+                    .engine_mut()
+                    .set_manual_breaks(&name, axis, breaks)
+                    .map_err(|error| error.to_string())?
+                {
+                    steps += 1;
+                }
+            }
+            if steps == 0 {
+                return Ok(false);
+            }
+            book.wrote(steps)?;
+            Ok(true)
+        })
     }
 
     pub fn page_setup(&self) -> &PageSetup {
