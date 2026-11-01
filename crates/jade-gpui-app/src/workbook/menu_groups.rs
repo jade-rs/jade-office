@@ -48,6 +48,7 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         | C::NameManager
         | C::TracePrecedents
         | C::TraceDependents
+        | C::GoToOtherSheetPrecedent
         | C::RemoveArrows
         | C::Subtotal
         | C::RemoveDuplicates

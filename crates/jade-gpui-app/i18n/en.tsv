@@ -3830,3 +3830,5 @@ cell_style.total	Total
 cell_style.input	Input
 cell_style.output	Output
 cell_style.note	Note
+sheet.menu.goto_other_sheet_precedent	Go To Precedent on Another Sheet…
+sheet.trace.other_sheets	Reads on other sheets: {refs}

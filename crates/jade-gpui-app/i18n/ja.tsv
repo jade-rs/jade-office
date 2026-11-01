@@ -3830,3 +3830,5 @@ cell_style.total	集計
 cell_style.input	入力
 cell_style.output	出力
 cell_style.note	メモ
+sheet.menu.goto_other_sheet_precedent	他のシートの参照元へ移動…
+sheet.trace.other_sheets	他のシートの参照元: {refs}
