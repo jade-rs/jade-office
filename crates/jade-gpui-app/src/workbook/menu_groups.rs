@@ -64,7 +64,7 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         | C::EditPivot
         | C::DeletePivot
         | C::Table => MenuGroup::PivotTable,
-        C::Link | C::RemoveLinks | C::Validation | C::ClearValidation => {
+        C::Link | C::RemoveLinks | C::Validation | C::ClearValidation | C::CircleInvalid(_) => {
             MenuGroup::LinksValidation
         }
         C::CellLocked | C::CellHidden | C::EditRanges(_) => MenuGroup::Protection,

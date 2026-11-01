@@ -515,6 +515,9 @@ enum MenuCommand {
     RemoveArrows,
     /// The error button's Convert to Number on the selection.
     ConvertToNumber,
+    /// Data ▸ Data Validation ▸ Circle Invalid Data, and Clear Validation
+    /// Circles.
+    CircleInvalid(bool),
     /// The error button's Ignore Error on the selection.
     IgnoreError,
     /// A sheet tab from one place to another.
@@ -627,6 +630,9 @@ pub struct WorkbookView {
     tracing: Vec<CellRef>,
     /// The cells Trace Dependents drew arrows from.
     tracing_dependents: Vec<CellRef>,
+    /// Circle Invalid Data is on: red ovals round the cells breaking their
+    /// validation rule.
+    circling: bool,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
@@ -1729,6 +1735,14 @@ impl WorkbookView {
                 return;
             }
             MenuCommand::ConvertToNumber => self.book.convert_to_number(range),
+            MenuCommand::CircleInvalid(on) => {
+                self.circling = on;
+                if on && self.book.invalid_cells().is_empty() {
+                    self.status = i18n::text("validation.none_invalid").into();
+                }
+                cx.notify();
+                return;
+            }
             MenuCommand::IgnoreError => self.book.ignore_error(range),
             MenuCommand::GoToOtherSheetPrecedent => {
                 let refs = self.book.other_sheet_precedents(selection.active);
@@ -3705,6 +3719,14 @@ impl WorkbookView {
                     (MenuCommand::RemoveLinks, "link.remove"),
                     (MenuCommand::Validation, "validation.dialog"),
                     (MenuCommand::ClearValidation, "validation.clear_selection"),
+                    (
+                        MenuCommand::CircleInvalid(true),
+                        "validation.circle_invalid",
+                    ),
+                    (
+                        MenuCommand::CircleInvalid(false),
+                        "validation.clear_circles",
+                    ),
                     (MenuCommand::PageSetup, "page_setup.menu"),
                     (MenuCommand::InsertPageBreak, "sheet.menu.insert_page_break"),
                 ]);
@@ -5074,10 +5096,27 @@ impl Render for WorkbookView {
             .get()
             .map(|grid| self.trace_arrows(grid))
             .unwrap_or_default();
-        let trace = (!arrows.is_empty()).then(|| {
+        // Circle Invalid Data's ovals, in px from the grid's top-left.
+        let circles: Vec<Bounds<Pixels>> = match self.grid_bounds.get() {
+            Some(grid) if self.circling => self
+                .book
+                .invalid_cells()
+                .iter()
+                .filter_map(|&cell| self.cell_bounds(cell))
+                .map(|cell| Bounds {
+                    origin: cell.origin - grid.origin,
+                    size: cell.size,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        let trace = (!arrows.is_empty() || !circles.is_empty()).then(|| {
             canvas(
                 |_, _, _| {},
-                move |bounds, _, window, _| paint_trace_arrows(window, bounds.origin, &arrows),
+                move |bounds, _, window, _| {
+                    paint_trace_arrows(window, bounds.origin, &arrows);
+                    paint_invalid_circles(window, bounds.origin, &circles);
+                },
             )
             .absolute()
             .top_0()
@@ -5374,6 +5413,7 @@ impl WorkbookView {
             paste_options: None,
             tracing: Vec::new(),
             tracing_dependents: Vec::new(),
+            circling: false,
             duplicates_dialog: None,
             protection_dialog: None,
             table_dialog: None,
