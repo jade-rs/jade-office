@@ -300,6 +300,10 @@ pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
             symbol.chosen = Some(code);
         }
     }
+    // A colour code typed wins over the wheel.
+    if let Dialog::Color(color) = &mut dialog {
+        color.wheel.set_hex(&typed.text);
+    }
     view.characters.close();
     let done = match dialog {
         Dialog::Font(dialog) => WordCharacters::apply_font_dialog(&mut view.document, &dialog),
@@ -311,18 +315,18 @@ pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         Dialog::DateTime(dialog) => return insert::confirm_date_time(view, dialog, cx),
         Dialog::Ruby(state) => return ruby::confirm(view, state, cx),
         Dialog::Enclose(dialog) => return enclose::confirm(view, dialog, typed.text, cx),
-        Dialog::Color(dialog) => match dialog.back {
+        Dialog::Color(dialog) => match (dialog.hex(), dialog.back) {
             // From the フォント dialog: back to it, with the colour chosen.
-            Some(mut font) => {
-                font.format.color = Some(dialog.color.to_ascii_uppercase());
+            (hex, Some(mut font)) => {
+                font.format.color = Some(hex);
                 font.format.theme_color = None;
                 view.characters.open(Dialog::Font(font));
                 return cx.notify();
             }
-            None => WordCharacters::apply_run_format(
+            (hex, None) => WordCharacters::apply_run_format(
                 &mut view.document,
                 HeadlessRunFormat {
-                    color: Some(dialog.hex()),
+                    color: Some(hex),
                     ..Default::default()
                 },
             ),
@@ -895,6 +899,82 @@ mod tests {
         assert!(xml.contains(r#"w:val="wave""#));
         assert!(xml.contains(r#"w:themeColor="accent1""#));
         assert!(xml.contains(r#"w:vertCompress="1""#));
+    }
+
+    /// その他の色… opens the colour wheel: a click at the right edge is red,
+    /// a drag down the brightness slider darkens it, a code typed moves the
+    /// wheel to it, and OK colours the selection.
+    #[gpui::test]
+    fn the_colour_wheel_picks_by_angle_distance_and_brightness(cx: &mut gpui::TestAppContext) {
+        use gpui::{point, px, Modifiers, MouseButton};
+        let (view, cx) = open_selected(cx);
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::Characters(CharAction::MoreFontColors), cx)
+        });
+        cx.run_until_parked();
+        let bounds = |view: &crate::DocumentView| {
+            let Some(Dialog::Color(dialog)) = view.characters.dialog.as_ref() else {
+                panic!("その他の色 opens the wheel");
+            };
+            (dialog.wheel_bounds.get(), dialog.slider_bounds.get())
+        };
+        let (wheel, slider) = view.read_with(cx, |view, _| bounds(view));
+        let wheel = wheel.expect("the wheel was drawn");
+        let slider = slider.expect("the slider was drawn");
+        let hex = |view: &crate::DocumentView| match view.characters.dialog.as_ref() {
+            Some(Dialog::Color(dialog)) => dialog.hex(),
+            _ => panic!("the wheel is open"),
+        };
+        // The right edge is red; a drag past the edge is taken at the edge.
+        let center = wheel.center();
+        let inside = point(center.x + px(super::color::RADIUS - 2.0), center.y);
+        let past = point(center.x + px(super::color::RADIUS + 8.0), center.y);
+        cx.simulate_mouse_down(inside, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(past, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_up(past, MouseButton::Left, Modifiers::default());
+        assert_eq!(view.read_with(cx, |view, _| hex(view)), "FF0000");
+        // The centre is white.
+        cx.simulate_click(center, Modifiers::default());
+        assert_eq!(view.read_with(cx, |view, _| hex(view)), "FFFFFF");
+        // Dragged from the edge to halfway in: half saturated.
+        let edge = point(center.x + px(super::color::RADIUS), center.y);
+        cx.simulate_mouse_down(edge, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(
+            point(center.x + px(super::color::RADIUS / 2.0), center.y),
+            MouseButton::Left,
+            Modifiers::default(),
+        );
+        cx.simulate_mouse_up(
+            point(center.x + px(super::color::RADIUS / 2.0), center.y),
+            MouseButton::Left,
+            Modifiers::default(),
+        );
+        assert_eq!(view.read_with(cx, |view, _| hex(view)), "FF8080");
+        // Halfway down the slider: half as bright.
+        cx.simulate_click(
+            point(
+                slider.center().x,
+                slider.origin.y + slider.size.height / 2.0,
+            ),
+            Modifiers::default(),
+        );
+        let darker = view.read_with(cx, |view, _| hex(view));
+        assert!(
+            darker.starts_with("7F") || darker.starts_with("80"),
+            "{darker}"
+        );
+        // A code typed moves the wheel; OK colours the selection.
+        cx.simulate_input("2F5496");
+        cx.run_until_parked();
+        assert_eq!(view.read_with(cx, |view, _| hex(view)), "2F5496");
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, _| {
+            assert!(view.characters.dialog.is_none());
+            assert_eq!(
+                view.format_state().character.color.as_deref(),
+                Some("2F5496")
+            );
+        });
     }
 
     /// 体裁: turning off 日本語と英字の間隔を自動調整する closes the gap

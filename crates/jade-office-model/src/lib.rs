@@ -21,6 +21,7 @@ use jade_painter::Painter;
 pub mod cell_styles;
 pub mod charts;
 pub mod clipboard;
+pub mod color_wheel;
 pub mod conditional_formatting;
 pub mod csv;
 pub mod custom_filter;

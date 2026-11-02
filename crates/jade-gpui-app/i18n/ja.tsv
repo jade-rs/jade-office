@@ -3933,3 +3933,5 @@ sheet.menu.ungroup_sheets	シートのグループ解除
 sheet.group	[グループ]
 recent.remove	一覧から削除
 recent.more	その他のオプション
+chars.color.new	新規
+chars.color.current	現在の色
