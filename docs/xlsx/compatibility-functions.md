@@ -78,9 +78,11 @@ spills and save/reopen. Full core/engine/compile results are recorded in
 `FILTERXML` is registered now (an XPath subset: element paths, `*`, `//`,
 `@attribute`, `text()` and `[n]`, `[last()]`, `[@a]`, `[@a='v']`, `[child='v']`
 predicates), and `GROUPBY` (row fields, a LAMBDA or a function named bare,
-headers, a grand total at either end, sorting and a filter; subtotal depths
-above one not yet) and `PIVOTBY` (row and column fields, totals either side
-or none, sorting both ways, a filter). The two remaining registration
+headers, a grand total and subtotals at either end, sorting and a filter) and
+`PIVOTBY` (row and column fields, totals either side or none, sorting both
+ways, a filter, and `relative_to` for PERCENTOF or a LAMBDA of two
+parameters; the parent totals stand for the grand total with one level of
+fields). The two remaining registration
 differences are `IMAGE`, which needs pictures in cells, and `WEBSERVICE`,
 which needs the network. Their calculation, workbook/object
 context or external-service requirements are not filled with placeholder
