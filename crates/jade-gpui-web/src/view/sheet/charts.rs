@@ -10,6 +10,7 @@ use jade_web::charts::{
 };
 
 use super::*;
+use jade_web::freeform::{FreeformDraft, FreeformStep};
 use jade_web::sheet::SHAPES;
 
 /// What the chart button's items do.
@@ -21,6 +22,8 @@ pub(super) enum ChartTool {
     Picture,
     /// Insert ▸ Shapes, at the active cell: its preset geometry.
     Shape(&'static str),
+    /// Insert ▸ Shapes ▸ Freeform: drawn on the sheet a click at a time.
+    Freeform,
     /// Chart Design, on the selected chart.
     Kind(ChartKind),
     Legend(Option<LegendPosition>),
@@ -39,6 +42,87 @@ impl Sheet {
 }
 
 impl DocView {
+    /// A click while a freeform is drawn, at a grid point: a corner more;
+    /// back on the first, the shape closed; a double-click ends it open.
+    pub(super) fn freeform_click(&mut self, x: f64, y: f64, clicks: usize, cx: &mut Context<Self>) {
+        let zoom = self.shown_zoom;
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        let Some(point) = sheet.book.sheet_point(x, y, scroll) else {
+            return;
+        };
+        let Some(draft) = sheet.freeform.as_mut() else {
+            return;
+        };
+        match draft.add(point) {
+            FreeformStep::Close => self.finish_freeform(true, cx),
+            FreeformStep::Continue if clicks >= 2 => self.finish_freeform(false, cx),
+            FreeformStep::Continue => cx.notify(),
+        }
+    }
+
+    /// Ends the freeform being drawn: put in, closed or open, when it has
+    /// two corners or more, and selected.
+    pub(super) fn finish_freeform(&mut self, closed: bool, cx: &mut Context<Self>) {
+        self.status = SharedString::default();
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let Some(draft) = sheet.freeform.take() else {
+            return;
+        };
+        if !draft.can_finish() {
+            cx.notify();
+            return;
+        }
+        let result = match sheet.book.insert_freeform(&draft.points, closed) {
+            Ok(id) => {
+                sheet.object = Some(id);
+                Ok(true)
+            }
+            Err(error) => Err(error),
+        };
+        self.edited(result, cx);
+    }
+
+    /// Keys while a freeform is drawn: Enter ends it open, Escape drops it.
+    pub(super) fn freeform_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        match key {
+            "enter" => self.finish_freeform(false, cx),
+            "escape" => {
+                if let Some(sheet) = self.sheet_mut() {
+                    sheet.freeform = None;
+                }
+                self.status = SharedString::default();
+                cx.notify();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// The freeform being drawn, over the grid.
+    pub(super) fn freeform_overlay(&self) -> Option<gpui::Canvas<()>> {
+        let sheet = self.sheet_ref()?;
+        let draft = sheet.freeform.as_ref()?;
+        let zoom = self.shown_zoom;
+        let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        let corners: Vec<Point<Pixels>> = draft
+            .points
+            .iter()
+            .map(|&(x, y)| {
+                let (x, y) = sheet.book.viewport_point(x, y, scroll);
+                gpui::point(px(x as f32 * zoom), px(y as f32 * zoom))
+            })
+            .collect();
+        Some(gpui::canvas(
+            |_, _, _| {},
+            move |bounds, _, window, _| paint_freeform(window, bounds.origin, &corners),
+        ))
+    }
+
     /// A press at a grid point: on the selected object's handle it starts
     /// a resize, on an object it selects it and starts a move. False when
     /// the press is not an object's, which leaves no object selected.
@@ -137,10 +221,20 @@ impl DocView {
             cx.notify();
             return;
         }
+        if let ChartTool::Freeform = tool {
+            if let Some(sheet) = self.sheet_mut() {
+                sheet.object = None;
+                sheet.freeform = Some(FreeformDraft::default());
+            }
+            self.status = i18n::text("sheet.freeform_hint").into();
+            cx.notify();
+            return;
+        }
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
         let result = match tool {
+            ChartTool::Freeform => return,
             ChartTool::Insert(kind) => {
                 match sheet.book.insert_chart(sheet.selection.range(), kind) {
                     Ok(id) => {
@@ -339,6 +433,12 @@ impl DocView {
                     cx,
                 ))
                 .child(heading("sheet.shapes"))
+                .child(item(
+                    ("chart-freeform", 0),
+                    "sheet.freeform",
+                    ChartTool::Freeform,
+                    cx,
+                ))
                 .child(
                     div().flex().flex_wrap().text_xs().children(
                         SHAPES
