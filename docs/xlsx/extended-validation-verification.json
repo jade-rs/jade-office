@@ -1913,9 +1913,9 @@
     "container-wide disablePrompts and saved prompt-window coordinates in UI presentation",
     "Excel application save/repair/calculation and pixel oracles",
     "new native screen scenario runtime and manual context-menu interactions",
-    "broader ibisOffice gaps including pivots, slicers, query and other imported extension families"
+    "broader Excel gaps including pivots, slicers, query and other imported extension families"
   ],
   "prior_checkpoint": "x14-verification.json",
   "counts_are_additive": false,
-  "goal_status": "active; broader ibisOffice parity remains incomplete"
+  "goal_status": "active; broader Excel parity remains incomplete"
 }

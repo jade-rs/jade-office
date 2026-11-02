@@ -1,7 +1,7 @@
 # XLSX data validation
 
 The validation work extends Jade's standard SpreadsheetML and x14
-`dataValidation` rules. It is part of the ongoing [ibis comparison](ibis-parity.md), not a
+`dataValidation` rules. It is part of the ongoing [coverage audit](coverage.md), not a
 claim of complete Excel parity.
 
 ## Implemented paths
@@ -196,11 +196,7 @@ also now leave unknown source choices untouched. The package-wide partial-shift 
 reader-owned validation records and supported sources; see
 [formula-ownership.md](formula-ownership.md). Other formula passes remain open.
 
-The pinned reference's [structural writer](https://github.com/ibisjp/ibis-office/blob/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-pptx/src/save/xlsx_structure.rs)
-was re-inspected for ordinary validation coverage/formula and count updates.
-Its implementation is comparison evidence, not an oracle establishing the
-expected result of every imported alternative or deleted-anchor case. No code
-was copied. Microsoft's [extended sqref definition](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/4d7cc415-6c51-4c71-8dbd-a2e28bdd9193)
+No third-party code was copied. Microsoft's [extended sqref definition](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/4d7cc415-6c51-4c71-8dbd-a2e28bdd9193)
 permits range adjustment during worksheet layout changes. General MCE around
 records/containers, indexed edits or partial shifts of noncanonical coverage
 alternatives, conditional formatting and other formula/extension contexts

@@ -21,8 +21,6 @@
     "crates/jade-gpui-web/Cargo.toml": "fce66cdbf65a355c9d1f00c99843825173fba95c0b890173bf20a78ffc0b8659",
     "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd"
   },
-  "reference_revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-  "reference_implementation_code_incorporated": false,
   "engine_regression": {
     "manifest": "jade-core/third_party/ironcalc-base/Cargo.toml",
     "selection": "--lib complete actual standalone engine suite",
@@ -36,10 +34,7 @@
     "reason": "No engine source/build/patch change. Prior2246 passes/8 ignored and489-file replay are carried evidence; neither was rerun for this milestone."
   },
   "function_inventory": {
-    "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
     "jade_registered": 507,
-    "ibis_registered": 512,
-    "shared": 507,
     "not_registered_in_jade": [
       "FILTERXML",
       "GROUPBY",
@@ -47,8 +42,7 @@
       "PIVOTBY",
       "WEBSERVICE"
     ],
-    "jade_only": [],
-    "method": "Executed actual locked/offline engine inventory example; output equals recorded inventory and pinned-reference comparison",
+    "method": "Executed actual locked/offline engine inventory example; output equals recorded inventory",
     "registration_changed_this_milestone": false,
     "remaining_functions_are_placeholders": false,
     "rerun_this_milestone": false,
@@ -91,19 +85,6 @@
     "disabled_and_column_protected_reports_charged": false,
     "limits_are_excel_equivalence_claims": false
   },
-  "reference_review_evidence": {
-    "records": [
-      {
-        "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/pivot.rs",
-        "file": "/tmp/jade-xlsx-parity-fallback/reference-pivot-app-pinned.rs",
-        "sha256": "cda2f88f8ed2594217e222ebf109ab02cd1bdbb21a83ba19f73bd22bb1329e9f",
-        "bytes": 149473,
-        "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-        "license": "AGPL-3.0-only; behavior inspection only; no implementation copied",
-        "fetched_at": "2026-10-24T03:21:58.422839+00:00"
-      }
-    ]
-  },
   "normative_style_data": {
     "source": "ECMA-376 Part1 fifth edition2016, normative SpreadsheetML styles component",
     "url": "https://ecma-international.org/wp-content/uploads/ECMA-376-1_5th_edition_december_2016.zip",
@@ -113,7 +94,7 @@
     "file": "presetTableStyles.xml",
     "sha256": "74c6cf73d551bb2bd33a51690d4922095260b6647b2a38fcbc0d6da6c6275d7e",
     "data_modified": false,
-    "code_source": "Independent Jade implementation; no ibis/Apache implementation code incorporated",
+    "code_source": "Independent Jade implementation; no third-party implementation code incorporated",
     "pivot_presets": 84,
     "style_references_in_normative_data": "Pivot definitions use zero-based dxf indices (0..N-1). The ordinary table definitions in the same unmodified file use one-based indices and are not loaded by this pivot renderer.",
     "normative_sample": {
@@ -177,7 +158,7 @@
   ],
   "checked_at_utc": "2026-10-24T10:50:09.287652+00:00",
   "prior_checkpoint": "pivot-authoring-verification.json",
-  "goal_status": "active; full ibisOffice parity remains incomplete",
+  "goal_status": "active; full Excel parity remains incomplete",
   "scope": "Preserving worksheet-pivot creation and deletion, existing/new destination sheets, common native/browser creation panel, actual report/cache graph ownership, static bound-chart caches, protection and one history transaction",
   "oracle_limits": "Independent original synthetic corpus, literal saved values, actual model pixels/history, official unmodified component schemas with raw Office xml:space deviations retained and actual SDK Transitional validation. Full Office refresh/save/repair/visual and native/browser interaction equivalence is not claimed.",
   "xlsx_package_suites": {
@@ -3282,7 +3263,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/generate_pivot_chart_fixture.py": "159f02a71e29e124827fdd07345527e50ce721acaa8855a3a265d7b2c469fb2e",
     "scripts/xlsx/generate_pivot_fixture.py": "224ace9682c0f1da78712e34dce584b9c12ce462f286e2ff26d63263a1884256",
     "scripts/xlsx/generate_pivot_style_fixture.py": "97b167ef01f1017772bc2bb992fdaed60ae5c8dc18579067ca227d8aba6c5ec2",

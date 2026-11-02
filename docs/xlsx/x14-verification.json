@@ -1792,5 +1792,5 @@
   ],
   "prior_checkpoint": "table-template-verification.json",
   "counts_are_additive": false,
-  "goal_status": "active; broader ibisOffice parity remains incomplete"
+  "goal_status": "active; broader Excel parity remains incomplete"
 }

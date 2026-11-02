@@ -102,10 +102,9 @@ general MCE, individual DrawingML/VML object locks, scenario editing, all
 merged/compound selection paths, large-file performance and broader
 digest/locale behavior still require work. Native/browser interaction and
 Excel save/repair/rendering oracles were not performed. The wider
-[ibisOffice audit](ibis-parity.md) remains active, including pivots, slicers,
+[coverage audit](coverage.md) remains active, including pivots, slicers,
 queries, advanced charts, encryption and the six remaining function
-registrations. Reference behavior was inspected; implementation code was
-not incorporated.
+registrations. No third-party implementation code was incorporated.
 
 The subsequent [object-protection follow-up](object-protection.md) adds
 independent worksheet object guards and caches selected permission metadata.

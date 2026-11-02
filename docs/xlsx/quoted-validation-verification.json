@@ -78,7 +78,7 @@
   "application_probe": "No Excel/LibreOffice/Numbers bundle found in the common /Applications or user Applications locations inspected. This is not a proof that no installation exists elsewhere; no application oracle was run.",
   "prior_checkpoint": "table-ownership-verification.json",
   "counts_are_additive": false,
-  "goal_status": "active; broader ibisOffice parity remains incomplete",
+  "goal_status": "active; broader Excel parity remains incomplete",
   "targets": [
     {
       "package": "jade-xlsx-reader",

@@ -21,8 +21,6 @@
     "crates/jade-gpui-web/Cargo.toml": "fce66cdbf65a355c9d1f00c99843825173fba95c0b890173bf20a78ffc0b8659",
     "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd"
   },
-  "reference_revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-  "reference_implementation_code_incorporated": false,
   "checked_at_utc": "2026-10-23T23:22:05.713701+00:00",
   "scope": "Automatic password prompts for refused typed single-cell entries through shared model and actual native/browser commit paths, valid cached range candidates and workbook-session/pending-entry identity",
   "xlsx_package_suites": {
@@ -2823,7 +2821,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2"
   },
   "shared_model_target_source_sha256": {
@@ -2901,10 +2898,7 @@
     "method": "Recorded engine source/build/patch hashes unchanged."
   },
   "function_inventory": {
-    "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
     "jade_registered": 506,
-    "ibis_registered": 512,
-    "shared": 506,
     "not_registered_in_jade": [
       "FILTERXML",
       "GETPIVOTDATA",
@@ -2913,7 +2907,6 @@
       "PIVOTBY",
       "WEBSERVICE"
     ],
-    "jade_only": [],
     "carried_forward_from": "individual-object-protection-verification.json",
     "registration_changed_this_milestone": false
   },
@@ -2981,27 +2974,9 @@
     "Additional digest/locale coverage, full structural-writer ownership, revision/window guards, encryption and large production/performance/Office calculation/save/repair/pixel evidence",
     "Examples, benchmarks, full model/unit/feature matrix including Skia-only print/Thai cases, pivots, slicers, queries, advanced charts, six missing function registrations and other audit areas"
   ],
-  "reference_behavior_inspected": [
-    "crates/ibis-office-app/src/xlsx/protection.rs",
-    "crates/ibis-office-app/src/xlsx/cell_edit.rs"
-  ],
-  "reference_review_rerun_this_milestone": true,
-  "reference_review_evidence": {
-    "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/protection.rs",
-    "sha256": "72c5bb4d13c238bd3d413239b14d8aedde3a509d40af825bb5697f84610adf0e",
-    "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-    "license": "AGPL-3.0-only; behavior inspection only; no implementation code incorporated",
-    "file": "/tmp/jade-xlsx-parity-fallback/reference-protection-pinned.rs",
-    "cell_edit": {
-      "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/cell_edit.rs",
-      "sha256": "234e6ca0fed196ba051ce92e24bcfdc3a610ac27336ef473ff943fa9bb54a40e",
-      "file": "/tmp/jade-xlsx-parity-fallback/reference-cell-edit-pinned.rs"
-    },
-    "behavior_observed": "Pinned protection.rs exposes explicit named-range authentication and cell permission guards; cell_edit.rs invokes the cell guard at editing entry points. No complete reference UI/call-graph oracle was performed. This automatic prompt follows the OOXML prompted-password requirement, not a claim that an equivalent reference dialog was exercised."
-  },
   "prior_checkpoint": "individual-object-protection-verification.json",
   "counts_are_additive_with_prior_checkpoints": false,
-  "goal_status": "active; full ibisOffice parity remains incomplete",
+  "goal_status": "active; full Excel parity remains incomplete",
   "evidence_file_sha256": {
     "range-prompt-core-report.json": "9a141aed134aea601aa2d4deffeb4b68655bc1f885f5e792336d228bf2dc7d89",
     "range-prompt-broader-report.json": "f8050dfb76d91816c79a5f1c3be364755dea74e0edb5e78ebdf2ea92089e0532",

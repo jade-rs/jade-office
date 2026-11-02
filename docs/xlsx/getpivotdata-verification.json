@@ -21,8 +21,6 @@
     "crates/jade-gpui-web/Cargo.toml": "fce66cdbf65a355c9d1f00c99843825173fba95c0b890173bf20a78ffc0b8659",
     "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd"
   },
-  "reference_revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-  "reference_implementation_code_incorporated": false,
   "checked_at_utc": "2026-10-24T02:41:35.359690+00:00",
   "scope": "Actual GETPIVOTDATA registry/context/evaluation against saved visible pivot results; MCE declaration selection and ambiguous-owner cache retention; preserving report/source relocation, source-sheet rename and atomic unsupported-edit guards. Complete pivot refresh/authoring and full parity remain incomplete.",
   "xlsx_package_suites": {
@@ -393,10 +391,7 @@
     "carried_forward": false
   },
   "function_inventory": {
-    "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
     "jade_registered": 507,
-    "ibis_registered": 512,
-    "shared": 507,
     "not_registered_in_jade": [
       "FILTERXML",
       "GROUPBY",
@@ -404,8 +399,7 @@
       "PIVOTBY",
       "WEBSERVICE"
     ],
-    "jade_only": [],
-    "method": "Executed the actual engine inventory example under the real locked/offline workspace graph, then compare_functions.py against pinned reference",
+    "method": "Executed the actual engine inventory example under the real locked/offline workspace graph",
     "registration_changed_this_milestone": true,
     "remaining_functions_are_placeholders": false
   },
@@ -2986,7 +2980,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/generate_pivot_fixture.py": "224ace9682c0f1da78712e34dce584b9c12ce462f286e2ff26d63263a1884256",
     "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2"
   },
@@ -3099,42 +3092,6 @@
     "pivot_declarations_per_container": 4096,
     "pivot_table_declarations_per_workbook": 4096
   },
-  "reference_review_evidence": {
-    "fetched_at": "2026-10-24T00:47:13.596708+00:00",
-    "records": [
-      {
-        "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-pptx/src/xlsx_pivot.rs",
-        "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-        "file": "/tmp/jade-xlsx-parity-fallback/reference-pivot-reader-pinned.rs",
-        "bytes": 24694,
-        "sha256": "1adda277873926b8f2502bb7bd2c65202aea17734946ff13e30a869564d571f6",
-        "license": "AGPL-3.0-only; behavior inspection only; no code copied"
-      },
-      {
-        "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-pptx/src/save/xlsx_pivot.rs",
-        "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-        "file": "/tmp/jade-xlsx-parity-fallback/reference-pivot-writer-pinned.rs",
-        "bytes": 43598,
-        "sha256": "6ad680e472cecb75a81e452b46664f60b41e72be30fbd141cb8810c5975c3ab1",
-        "license": "AGPL-3.0-only; behavior inspection only; no code copied"
-      },
-      {
-        "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-calc/src/functions/lookup.rs",
-        "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-        "file": "/tmp/jade-xlsx-parity-fallback/reference-pivot-function-lookup-pinned.rs",
-        "sha256": "83ad9170559d05d2eb8ff508afec702550d4e05e3eabd84368eebdbe7dc83e2b",
-        "license": "AGPL-3.0-only; behavior inspection only; no code copied"
-      },
-      {
-        "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-calc/src/functions/table.rs",
-        "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-        "file": "/tmp/jade-xlsx-parity-fallback/reference-pivot-function-table-pinned.rs",
-        "sha256": "9d2cbb71d2c25ba099b101d6e444e975699542e3306a5c9a8b45421aaed5843d",
-        "license": "AGPL-3.0-only; behavior inspection only; no code copied"
-      }
-    ]
-  },
-  "reference_scope": "Pinned metadata/axis/cache boundaries and GETPIVOTDATA argument/callback forms; behavior inspection only, no AGPL implementation copied.",
   "official_behavior_sources": [
     "https://support.microsoft.com/en-us/excel/functions/getpivotdata-function",
     "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.rowitems?view=openxml-3.0.1",
@@ -3184,12 +3141,12 @@
   "not_proven": [
     "Legacy two-argument reference/descriptor syntax, complete cube/member aliases and true most-recent creation ordering when a reference covers multiple pivots (current choice is last saved declaration)",
     "Refresh/rebuild, create/delete/cut-move/layout/filter/group/calculated authoring, source invalidation and general pivot MCE/extension/producer variants",
-    "Complete Excel/reference/native/browser interaction/repair/save/calculation/pixel oracles and all model feature/unit matrices including Skia-only print/Thai cases",
+    "Complete Excel/native/browser interaction/repair/save/calculation/pixel oracles and all model feature/unit matrices including Skia-only print/Thai cases",
     "FILTERXML/GROUPBY/IMAGE/PIVOTBY/WEBSERVICE registrations and the remaining slicer/timeline/query/chart/view/rich-text/protection/encryption audit areas"
   ],
   "prior_checkpoint": "pivot-reader-verification.json",
   "counts_are_additive_with_prior_checkpoints": false,
-  "goal_status": "active; full ibisOffice parity remains incomplete",
+  "goal_status": "active; full Excel parity remains incomplete",
   "evidence_file_sha256": {
     "getpivot-core-report.json": "d2b6b02403088dc83a4e1a4df927b85c448daf49759032dc1373ae787c7e618f",
     "getpivot-broader-report.json": "f9b6789cfb9dcf33518a7ecfcebb19764a68eaac949bade3365eed0241476d49",

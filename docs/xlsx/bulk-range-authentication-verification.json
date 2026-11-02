@@ -21,8 +21,6 @@
     "crates/jade-gpui-web/Cargo.toml": "fce66cdbf65a355c9d1f00c99843825173fba95c0b890173bf20a78ffc0b8659",
     "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd"
   },
-  "reference_revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-  "reference_implementation_code_incorporated": false,
   "checked_at_utc": "2026-10-24T00:46:23.559018+00:00",
   "scope": "Deferred editable-range authentication for native/browser paste, clear, active-entry fill, directional fill, series fill and range move/copy; exact required write coverage and atomic authentication+command commit",
   "xlsx_package_suites": {
@@ -2883,7 +2881,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2"
   },
   "shared_model_target_source_sha256": {
@@ -2954,10 +2951,7 @@
     "method": "Recorded engine source/build/patch hashes unchanged."
   },
   "function_inventory": {
-    "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
     "jade_registered": 506,
-    "ibis_registered": 512,
-    "shared": 506,
     "not_registered_in_jade": [
       "FILTERXML",
       "GETPIVOTDATA",
@@ -2966,7 +2960,6 @@
       "PIVOTBY",
       "WEBSERVICE"
     ],
-    "jade_only": [],
     "carried_forward_from": "bulk-edit-atomicity-verification.json",
     "registration_changed_this_milestone": false
   },
@@ -2979,21 +2972,12 @@
     "Context generation is checkpointed and updated by source writes, recalculation cache writes, row-height writes, time-zone changes, history and grants. Sparse protection queries can evaluate staged authorized rectangles without modifying actual permissions.",
     "The contract covers returned failures for supported cell bulk commands. Panic/process termination/allocation-failure recovery, general editor transactions and large-production performance are unproven."
   ],
-  "reference_review_rerun_this_milestone": false,
-  "reference_review_evidence": {
-    "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/clipboard.rs",
-    "sha256": "84ce4b8a662824520e94bae1196020f8b4d5cb6d91baaa208b4bba9912a6fe56",
-    "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-    "license": "AGPL-3.0-only; behavior inspection only; no implementation code incorporated",
-    "file": "/tmp/jade-xlsx-parity-fallback/reference-clipboard-pinned.rs",
-    "scope": "Retained pinned clipboard behavior inspection; shared Jade pending-operation runtime cases and official Excel data-validation documentation supply the new behavior evidence. No complete reference/Excel UI oracle."
-  },
   "official_behavior_sources": [
     "https://support.microsoft.com/en-us/excel/more-on-data-validation",
     "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.protectedrange?view=openxml-3.0.1",
     "https://support.microsoft.com/en-us/excel/get-started/lock-or-unlock-specific-areas-of-a-protected-worksheet"
   ],
-  "oracle_limits": "Runtime tests exercise the actual shared shell attempt/dialog/commit path and generated XLSX, plus both actual application compiler graphs. They do not execute native/browser keyboard/pointer/paint or an Excel/reference application oracle.",
+  "oracle_limits": "Runtime tests exercise the actual shared shell attempt/dialog/commit path and generated XLSX, plus both actual application compiler graphs. They do not execute native/browser keyboard/pointer/paint or an Excel application oracle.",
   "cache_preservation": {
     "shared_rust193": {
       "manifest": "/tmp/jade-xlsx-parity-fallback/bulk-auth-shared-cache.parts/manifest.json",
@@ -3037,12 +3021,12 @@
   ],
   "not_proven": [
     "Pending navigation replay; automatic prompts for other formatting/structural/object commands, all clipboard/spill/table/schema edge cases, general editor transactions and full compound selections",
-    "Actual Excel/reference/native/browser interaction/save-repair/calculation/pixel oracles; complete model/unit/feature matrices including Skia-only print/Thai cases",
+    "Actual Excel/native/browser interaction/save-repair/calculation/pixel oracles; complete model/unit/feature matrices including Skia-only print/Thai cases",
     "Account identity/ACLs, general MCE/drawing ownership/scenarios, pivots/slicers/queries/advanced charts, six missing function registrations, encryption and remaining audit areas"
   ],
   "prior_checkpoint": "bulk-edit-atomicity-verification.json",
   "counts_are_additive_with_prior_checkpoints": false,
-  "goal_status": "active; full ibisOffice parity remains incomplete",
+  "goal_status": "active; full Excel parity remains incomplete",
   "evidence_file_sha256": {
     "bulk-auth-core-report.json": "5aabceac3d94f1ac9536cf9f5edbb55041bfb49717b0de6672fdab29e0a8481e",
     "bulk-auth-broader-report.json": "26ea46824a38afdbd53590e4455e44fa606792817900f9b6ece3a30dbb50f15c",

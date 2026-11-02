@@ -98,7 +98,7 @@ The other structural/sheet-rename/package-part writers retain their existing
 ownership passes. Those passes, rich-text/phonetic authoring, broader imported
 records, performance on large production corpora, manual native dialogs and
 Excel save/repair/calculation/pixel oracles remain open. The broader
-[ibisOffice comparison](ibis-parity.md) is still active. No external
+[coverage audit](coverage.md) is still active. No external
 implementation code was copied.
 
 ## Final checkpoint

@@ -80,7 +80,7 @@
   "application_probe": "No Excel/LibreOffice/Numbers bundle found in the common /Applications or user Applications locations inspected. This is not a proof that no installation exists elsewhere; no application oracle was run.",
   "prior_checkpoint": "quoted-validation-verification.json",
   "counts_are_additive": false,
-  "goal_status": "active; broader ibisOffice parity remains incomplete",
+  "goal_status": "active; broader Excel parity remains incomplete",
   "targets": [
     {
       "package": "jade-xlsx-reader",
@@ -1926,7 +1926,6 @@
     "Containers holding opaque children/comments remain after their last interpreted record is deleted, with the remaining known-record count; Excel repair behavior is not captured."
   ],
   "comparison_sources": {
-    "ibis_structural_writer": "https://github.com/ibisjp/ibis-office/blob/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-pptx/src/save/xlsx_structure.rs",
     "extended_coverage_definition": "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/4d7cc415-6c51-4c71-8dbd-a2e28bdd9193",
     "note": "Source-level behavior inspected, no code copied; not an Excel application oracle."
   }

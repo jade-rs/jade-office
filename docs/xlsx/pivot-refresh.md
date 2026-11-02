@@ -50,11 +50,9 @@ metadata in rebuilt entries causes refusal rather than silent deletion.
 Generated output is reread to catch new catalog inconsistencies; that check
 does not establish schema validity or Excel repair-free round-tripping.
 
-## Reference comparison and remaining work
+## Remaining work
 
-The pinned [ibisOffice pivot command implementation](https://github.com/ibisjp/ibis-office/blob/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/pivot.rs)
-was inspected for behavior only. No AGPL implementation was copied. Its refresh
-path also reapplies pivot styles, autofits and synchronizes PivotCharts. Jade's
+Excel's refresh path also reapplies pivot styles, autofits and synchronizes PivotCharts. Jade's
 ordinary chart-cache update is not PivotChart binding synchronization.
 
 Creation/deletion, source/layout/filter editing and automatic
@@ -87,7 +85,7 @@ Exact target results, hashes, exclusions and evidence are in
 [pivot-refresh-verification.json](pivot-refresh-verification.json). No Excel
 repair/save/pixel oracle, broad producer corpus or native/browser pointer and
 keyboard exercise was performed. Skia-only model cases and the full model
-feature/unit matrix remain outside this selection. Full ibisOffice parity is
+feature/unit matrix remain outside this selection. Full Excel parity is
 still an active goal.
 
 

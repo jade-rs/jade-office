@@ -67,7 +67,7 @@ cell/shared-string/run/phonetic ownership and selection. General MCE and
 other feature families still need their own audit; correct preservation by
 this writer does not establish correct interpretation in every reader.
 
-This is part of the ongoing [ibisOffice comparison](ibis-parity.md). Manual
+This is part of the ongoing [coverage audit](coverage.md). Manual
 native interaction, Excel save/repair/calculation/pixel oracles and the broader
 feature gaps remain open.
 

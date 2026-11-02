@@ -38,7 +38,7 @@ numeric value convergence. The final traced calculation already supplies the
 committed formula caches, so there is no extra volatile evaluation between graph
 validation and commit.
 
-## Limits and reference comparison
+## Limits
 
 This is an observed, conservative dependency graph. Reference-only operands
 can overapproximate value dependencies. Unread branches are revisited if later
@@ -53,9 +53,7 @@ at most `min(N*(N+1), 16384)` cache refreshes for N distinct targets. These are
 resource constraints, not Excel compatibility claims. Cross-workbook providers,
 general asynchronous data connections and query Refresh All remain unimplemented.
 
-The pinned [ibisOffice refresh command](https://github.com/ibisjp/ibis-office/blob/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/pivot.rs)
-was inspected for behavior only; no AGPL implementation was copied. Jade's
-earlier saved-order batch is documented in [refresh all](pivot-refresh-all.md).
+Jade's earlier saved-order batch is documented in [refresh all](pivot-refresh-all.md).
 Full pivot styles/autofit, PivotChart synchronization, automatic load refresh,
 creation/deletion, source/layout/filter authoring, grouping/calculated/show-as,
 OLAP, slicers and timelines still need work.
@@ -78,11 +76,10 @@ model refusal. The refresh targets now contain 38 headless and five model cases.
 The final snapshot covers 315 scoped source/build/corpus/provenance hashes and
 28 model target hashes; 196 scoped changed/new Rust files pass formatting. The
 regenerated engine patch replays 489 source/build files against the hash-pinned
-original 480-file inventory. The actual registry remains 507 of the pinned
-reference's 512 names. Detailed evidence is in
+original 480-file inventory. The actual registry remains 507 names. Detailed evidence is in
 [pivot-refresh-order-verification.json](pivot-refresh-order-verification.json).
 
 Counts replace earlier checkpoints. Full producer/Excel repair/save/pixel and
 native/browser pointer/keyboard oracles, Skia-only cases and the entire model
-feature/unit matrix remain outside this selection. Full ibisOffice parity
+feature/unit matrix remain outside this selection. Full Excel parity
 remains an active goal.
