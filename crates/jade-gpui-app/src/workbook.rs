@@ -7226,6 +7226,26 @@ mod tests {
         });
     }
 
+    /// More Colors… picks from the spectrum, then a shade of it.
+    #[gpui::test]
+    fn more_colors_picks_from_the_spectrum(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.selection = Selection::cell(at(10, 30));
+            view.tool(Tool::MoreColors(false), cx);
+            let spectrum = jade_office_model::more_colors::MoreColorsDialog::spectrum();
+            view.more_colors_pick(&spectrum[0][16], cx);
+            let shades = view.more_colors.as_ref().unwrap().shades();
+            view.more_colors_pick(&shades[9], cx);
+            view.more_colors_action(more_colors::MoreColorsAction::Take, cx);
+            assert!(view.more_colors.is_none());
+            assert_eq!(
+                view.book.format_at(at(10, 30)).font_color.as_deref(),
+                Some(shades[9].as_str())
+            );
+        });
+    }
+
     /// More Colors… takes a typed colour code; one that is not a colour
     /// keeps the dialog open.
     #[gpui::test]
