@@ -4920,6 +4920,34 @@ mod tests {
             .unwrap());
     }
 
+    /// A link to a file by path is read against the workbook's Hyperlink
+    /// Base, else the folder the workbook is in.
+    #[test]
+    fn link_paths_follow_the_hyperlink_base() {
+        let book = open("grid-operations-workbook.xlsx");
+        assert_eq!(book.hyperlink_base(), None);
+        assert_eq!(
+            book.link_url("q3.xlsx", Some("/Users/ann")),
+            "file:///Users/ann/q3.xlsx"
+        );
+        let mut package =
+            jade_opc::OpcPackage::open(&fixture("grid-operations-workbook.xlsx")).unwrap();
+        package.replace(
+            "docProps/app.xml",
+            br#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Microsoft Excel</Application><HyperlinkBase>https://intranet.example.com/a&amp;b/</HyperlinkBase></Properties>"#.to_vec(),
+        );
+        let bytes = package.write().unwrap();
+        let book = Workbook::open(&bytes, "UTC", TinySkiaBackend::new(&faces()).unwrap()).unwrap();
+        assert_eq!(
+            book.hyperlink_base().as_deref(),
+            Some("https://intranet.example.com/a&b/")
+        );
+        assert_eq!(
+            book.link_url("q3.xlsx", Some("/Users/ann")),
+            "https://intranet.example.com/a&b/q3.xlsx"
+        );
+    }
+
     /// A link to the web opens it; one into the workbook goes there.
     #[test]
     fn hyperlinks_lead_to_the_web_or_a_place_in_the_workbook() {
