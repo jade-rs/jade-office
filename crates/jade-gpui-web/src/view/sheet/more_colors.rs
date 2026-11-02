@@ -11,6 +11,16 @@ impl DocView {
     fn more_colors_editor(&self) -> Option<&MoreColorsDialog> {
         self.sheet_ref()?.more_colors.as_ref()
     }
+    /// A colour clicked on the spectrum or the strip of shades.
+    pub(super) fn more_colors_pick(&mut self, rgb: &str, cx: &mut Context<Self>) {
+        if let Some(dialog) = self
+            .sheet_mut()
+            .and_then(|sheet| sheet.more_colors.as_mut())
+        {
+            dialog.pick(rgb);
+            cx.notify();
+        }
+    }
     /// More Colors… from the fill (true) or font colour gallery.
     pub(super) fn open_more_colors(&mut self, fill: bool, cx: &mut Context<Self>) {
         if let Some(sheet) = self.sheet_mut() {
