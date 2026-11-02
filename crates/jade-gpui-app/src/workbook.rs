@@ -3337,11 +3337,18 @@ impl WorkbookView {
         cx.notify();
     }
 
-    /// Follows a hyperlink: a web address opens in the browser, a place in
-    /// the workbook is selected.
+    /// Follows a hyperlink: a web address opens in the browser, a file by
+    /// path is read against the Hyperlink Base or this workbook's folder,
+    /// a place in the workbook is selected.
     fn follow_link(&mut self, link: Link, cx: &mut Context<Self>) {
         match link {
-            Link::Url(url) => cx.open_url(&url),
+            Link::Url(url) => {
+                let folder = self
+                    .path
+                    .parent()
+                    .map(|folder| folder.to_string_lossy().into_owned());
+                cx.open_url(&self.book.link_url(&url, folder.as_deref()));
+            }
             Link::Place { sheet, range } => {
                 self.select_sheet(sheet, cx);
                 if self.book.can_select_range(range) {

@@ -3553,11 +3553,17 @@ impl DocView {
         self.edited(result, cx);
     }
 
-    /// Follows a hyperlink: a web address opens in the browser, a place in
-    /// the workbook is selected.
+    /// Follows a hyperlink: a web address opens in the browser, a file by
+    /// path is read against the Hyperlink Base, a place in the workbook is
+    /// selected.
     fn follow_link(&mut self, link: Link, cx: &mut Context<Self>) {
         match link {
-            Link::Url(url) => cx.open_url(&url),
+            Link::Url(url) => {
+                let url = self
+                    .sheet_ref()
+                    .map_or(url.clone(), |sheet| sheet.book.link_url(&url, None));
+                cx.open_url(&url);
+            }
             Link::Place { sheet, range } => {
                 self.select_sheet(sheet, cx);
                 if let Some(state) = self.sheet_mut() {
