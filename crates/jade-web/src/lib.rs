@@ -20,7 +20,7 @@ pub use jade_office_model::{
     links, more_colors, name_manager, number_formats, page_setup_dialog, paste_special, pivots,
     precedents, print, protected_edits, protection, recent_files, report, scenarios, sheet, solver,
     sort_dialog, spin, subtotal, tables, text, text_columns, top_ten, typing, validation, what_if,
-    word,
+    word, zoom_dialog,
 };
 
 pub mod document;

@@ -73,6 +73,7 @@ pub mod typing;
 pub mod validation;
 pub mod what_if;
 pub mod word;
+pub mod zoom_dialog;
 
 #[cfg(feature = "skia")]
 pub mod skia;

@@ -171,7 +171,7 @@ pub struct Workbook<B: Backend> {
     index: usize,
     layout: SheetLayout,
     extent: (u32, u32),
-    dirty: bool,
+    pub(crate) dirty: bool,
     /// How many of the book's undo steps each edit took, latest last: a
     /// typed `10%` is a value and a format, and undoes as one.
     steps: Vec<usize>,
@@ -198,6 +198,9 @@ pub struct Workbook<B: Backend> {
     /// tabs): what is typed, cleared or formatted goes into each of them
     /// too, as it does in Excel's Group mode.
     group: Vec<usize>,
+    /// The zoom each sheet was last shown at, by its part, where that is not
+    /// the one it was opened at: saved with it, as Excel saves the zoom.
+    pub(crate) zooms: Vec<(String, u32)>,
     /// Measures text for layout, kept for the workbook's life so a sheet
     /// laid out again after an edit reuses the widths it measured before.
     measure: Rc<dyn jade_xlsx_layout::TextMeasure>,
@@ -276,6 +279,7 @@ impl<B: Backend> Workbook<B> {
             surface: RefCell::new(None),
             pieces: RefCell::new(Vec::new()),
             group,
+            zooms: Vec::new(),
             revision: 0,
             changes: None,
             measure,
@@ -556,6 +560,18 @@ impl<B: Backend> Workbook<B> {
             rect.width,
             rect.height,
         ))
+    }
+
+    /// The cell's rectangle on the sheet (sheet px from A1's corner, no
+    /// headers), as (x, y, width, height).
+    pub(crate) fn sheet_position(&self, reference: CellRef) -> Option<(f64, f64, f64, f64)> {
+        let rect = self.layout.cell_rect(reference)?;
+        Some((rect.x, rect.y, rect.width, rect.height))
+    }
+
+    /// The width of the frozen columns and the height of the frozen rows.
+    pub(crate) fn frozen_size(&self) -> (f64, f64) {
+        (self.layout.frozen_width(), self.layout.frozen_height())
     }
 
     /// The scroll (sheet px) that shows `reference` in a viewport of `size`
@@ -3831,10 +3847,20 @@ impl<B: Backend> Workbook<B> {
 
     /// The workbook as `.xlsx` bytes, as saving writes it; marks it saved.
     pub fn save_bytes(&mut self) -> Result<Vec<u8>, String> {
-        // The group's tabs saved selected, as Excel saves grouped sheets.
+        // The group's tabs saved selected, as Excel saves grouped sheets,
+        // and each sheet at the zoom it was last shown at.
+        let sheets = &self.book.workbook().sheets;
+        let zooms: Vec<(usize, u32)> = self
+            .zooms
+            .iter()
+            .filter_map(|(part, percent)| {
+                let index = sheets.iter().position(|sheet| &sheet.part_name == part)?;
+                Some((index, *percent))
+            })
+            .collect();
         let bytes = self
             .book
-            .save_bytes_selecting(&self.grouped_sheets())
+            .save_bytes_viewing(&self.grouped_sheets(), &zooms)
             .map_err(|error| error.to_string())?;
         self.dirty = false;
         Ok(bytes)

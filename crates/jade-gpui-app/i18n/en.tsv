@@ -3818,6 +3818,20 @@ sheet.shape.rounded_rectangle	Rounded Rectangle
 sheet.shape.right_arrow	Right Arrow
 filter.date.day	{day}
 sheet.menu.group_cell_styles	Cell Styles
+sheet.menu.group_view	View
+sheet.menu.freeze_top_row	Freeze Top Row
+sheet.menu.freeze_first_column	Freeze First Column
+sheet.menu.hide_gridlines	Hide Gridlines
+sheet.menu.show_gridlines	Show Gridlines
+sheet.menu.hide_headings	Hide Headings
+sheet.menu.show_headings	Show Headings
+sheet.menu.zoom	Zoom…
+sheet.menu.zoom_selection	Zoom to Selection
+sheet.zoom.title	Zoom
+sheet.zoom.magnification	Magnification
+sheet.zoom.fit_selection	Fit selection
+sheet.zoom.custom	Custom:
+sheet.zoom.out_of_range	Enter a whole number from 10 to 400.
 cell_style.normal	Normal
 cell_style.good	Good
 cell_style.bad	Bad
