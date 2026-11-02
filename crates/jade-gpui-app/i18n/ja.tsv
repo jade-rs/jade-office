@@ -3929,3 +3929,5 @@ sheet.shape.star24	星: 24 pt
 sheet.shape.star32	星: 32 pt
 sheet.shape.speech_bubble_rounded	吹き出し: 角を丸めた四角形
 sheet.shape.speech_bubble_oval	吹き出し: 円形
+sheet.menu.ungroup	シートのグループ解除
+sheet.group	[グループ]
