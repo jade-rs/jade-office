@@ -24,6 +24,8 @@ pub(super) enum ChartTool {
     Shape(&'static str),
     /// Insert ▸ Shapes ▸ Freeform: drawn on the sheet a click at a time.
     Freeform,
+    /// Insert ▸ Shapes ▸ Scribble: drawn freehand, dragged.
+    Scribble,
     /// Chart Design, on the selected chart.
     Kind(ChartKind),
     Legend(Option<LegendPosition>),
@@ -56,10 +58,33 @@ impl DocView {
         let Some(draft) = sheet.freeform.as_mut() else {
             return;
         };
+        // A scribble starts where it is pressed and follows the drag.
+        if draft.scribble {
+            draft.drag(point);
+            sheet.drag = Some(SheetDrag::Scribble);
+            cx.notify();
+            return;
+        }
         match draft.add(point) {
             FreeformStep::Close => self.finish_freeform(true, cx),
             FreeformStep::Continue if clicks >= 2 => self.finish_freeform(false, cx),
             FreeformStep::Continue => cx.notify(),
+        }
+    }
+
+    /// A scribble's drag at a grid point: a point more along its line.
+    pub(super) fn scribble_to(&mut self, x: f64, y: f64, cx: &mut Context<Self>) {
+        let zoom = self.shown_zoom;
+        let Some(sheet) = self.sheet_mut() else {
+            return;
+        };
+        let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        let Some(point) = sheet.book.sheet_point(x, y, scroll) else {
+            return;
+        };
+        if let Some(draft) = sheet.freeform.as_mut() {
+            draft.drag(point);
+            cx.notify();
         }
     }
 
@@ -221,12 +246,22 @@ impl DocView {
             cx.notify();
             return;
         }
-        if let ChartTool::Freeform = tool {
+        if let ChartTool::Freeform | ChartTool::Scribble = tool {
+            let scribble = matches!(tool, ChartTool::Scribble);
             if let Some(sheet) = self.sheet_mut() {
                 sheet.object = None;
-                sheet.freeform = Some(FreeformDraft::default());
+                sheet.freeform = Some(if scribble {
+                    FreeformDraft::scribble()
+                } else {
+                    FreeformDraft::default()
+                });
             }
-            self.status = i18n::text("sheet.freeform_hint").into();
+            self.status = i18n::text(if scribble {
+                "sheet.scribble_hint"
+            } else {
+                "sheet.freeform_hint"
+            })
+            .into();
             cx.notify();
             return;
         }
@@ -234,7 +269,7 @@ impl DocView {
             return;
         };
         let result = match tool {
-            ChartTool::Freeform => return,
+            ChartTool::Freeform | ChartTool::Scribble => return,
             ChartTool::Insert(kind) => {
                 match sheet.book.insert_chart(sheet.selection.range(), kind) {
                     Ok(id) => {
@@ -437,6 +472,12 @@ impl DocView {
                     ("chart-freeform", 0),
                     "sheet.freeform",
                     ChartTool::Freeform,
+                    cx,
+                ))
+                .child(item(
+                    ("chart-scribble", 0),
+                    "sheet.scribble",
+                    ChartTool::Scribble,
                     cx,
                 ))
                 .child(
