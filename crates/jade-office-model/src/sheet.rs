@@ -5134,9 +5134,9 @@ mod tests {
 }
 
 /// Insert ▸ Shapes' gallery: each preset with the i18n key of its name, in
-/// Excel's order — lines, rectangles, basic shapes, block arrows, a star
-/// and a callout.
-pub const SHAPES: [(&str, &str); 28] = [
+/// Excel's order — lines, rectangles, basic shapes, block arrows, equation
+/// shapes, flowchart shapes, stars and callouts.
+pub const SHAPES: [(&str, &str); 50] = [
     ("line", "sheet.shape.line"),
     ("straightConnector1", "sheet.shape.arrow_line"),
     ("bentConnector3", "sheet.shape.elbow_connector"),
@@ -5163,6 +5163,37 @@ pub const SHAPES: [(&str, &str); 28] = [
     ("leftRightArrow", "sheet.shape.left_right_arrow"),
     ("homePlate", "sheet.shape.pentagon_arrow"),
     ("chevron", "sheet.shape.chevron"),
+    ("mathPlus", "sheet.shape.plus_sign"),
+    (
+        "flowChartAlternateProcess",
+        "sheet.shape.flowchart_alternate_process",
+    ),
+    ("flowChartDecision", "sheet.shape.flowchart_decision"),
+    ("flowChartInputOutput", "sheet.shape.flowchart_data"),
+    ("flowChartPreparation", "sheet.shape.flowchart_preparation"),
+    ("flowChartTerminator", "sheet.shape.flowchart_terminator"),
+    (
+        "flowChartOffpageConnector",
+        "sheet.shape.flowchart_offpage_connector",
+    ),
+    (
+        "flowChartMagneticDisk",
+        "sheet.shape.flowchart_magnetic_disk",
+    ),
+    ("flowChartExtract", "sheet.shape.flowchart_extract"),
+    ("flowChartMerge", "sheet.shape.flowchart_merge"),
+    ("flowChartOr", "sheet.shape.flowchart_or"),
+    ("star4", "sheet.shape.star4"),
     ("star5", "sheet.shape.star5"),
+    ("star6", "sheet.shape.star6"),
+    ("star7", "sheet.shape.star7"),
+    ("star8", "sheet.shape.star8"),
+    ("star10", "sheet.shape.star10"),
+    ("star12", "sheet.shape.star12"),
+    ("star16", "sheet.shape.star16"),
+    ("star24", "sheet.shape.star24"),
+    ("star32", "sheet.shape.star32"),
     ("wedgeRectCallout", "sheet.shape.speech_bubble"),
+    ("wedgeRoundRectCallout", "sheet.shape.speech_bubble_rounded"),
+    ("wedgeEllipseCallout", "sheet.shape.speech_bubble_oval"),
 ];
