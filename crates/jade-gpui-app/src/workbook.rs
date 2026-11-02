@@ -185,6 +185,9 @@ struct CellEdit {
     /// word's start, the caret and the name's place: typing on starts
     /// again from the first.
     suggested: Option<(usize, usize, usize)>,
+    /// The workbook's defined names and tables, which AutoComplete lists
+    /// with the functions.
+    names: Vec<String>,
 }
 
 /// The name AutoComplete's list has picked: the one the arrows moved to
@@ -205,7 +208,7 @@ fn completion_list(
     below: Pixels,
     cx: &mut Context<WorkbookView>,
 ) -> Option<gpui::Div> {
-    let list = formula_complete::completion(&edit.text.text, edit.text.caret)?;
+    let list = formula_complete::completion_with(&edit.text.text, edit.text.caret, &edit.names)?;
     let chosen = picked(edit, &list);
     let start = list.start;
     Some(
@@ -223,24 +226,24 @@ fn completion_list(
             .text_xs()
             .text_color(theme::text())
             .children(list.names.iter().enumerate().map(|(index, name)| {
-                let name: &'static str = name;
+                let name = name.clone();
                 div()
                     .id(("formula-complete", index))
                     .px_2()
                     .cursor_pointer()
                     .when(index == chosen, |row| row.bg(theme::selected()))
                     .hover(|row| row.bg(theme::hovered()))
-                    .child(name)
+                    .child(gpui::SharedString::from(name.clone()))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |view, _event, window, cx| {
                             window.focus(&view.focus);
                             if let Some(edit) = view.edit.as_mut() {
                                 if let Some(list) =
-                                    formula_complete::completion(&edit.text.text, edit.text.caret)
+                                    formula_complete::completion_with(&edit.text.text, edit.text.caret, &edit.names)
                                         .filter(|list| list.start == start)
                                 {
-                                    formula_complete::accept(&mut edit.text, &list, name);
+                                    formula_complete::accept(&mut edit.text, &list, &name);
                                     edit.point = None;
                                     edit.suggested = None;
                                 }
@@ -256,7 +259,7 @@ fn completion_list(
 /// The argument tip under the cell being typed into, its current argument
 /// in bold — while AutoComplete's list is not showing there.
 fn formula_tip(edit: &CellEdit, below: Pixels) -> Option<gpui::Div> {
-    if formula_complete::completion(&edit.text.text, edit.text.caret).is_some() {
+    if formula_complete::completion_with(&edit.text.text, edit.text.caret, &edit.names).is_some() {
         return None;
     }
     let tip = formula_tips::argument_tip(&edit.text.text, edit.text.caret)?;
@@ -1062,6 +1065,7 @@ impl WorkbookView {
             in_place: false,
             point,
             suggested: None,
+            names: self.book.formula_names(),
         });
         self.reveal(self.active());
         cx.notify();
@@ -1143,6 +1147,7 @@ impl WorkbookView {
             in_place,
             point: None,
             suggested: None,
+            names: self.book.formula_names(),
         });
         self.reveal(self.active());
         cx.notify();
@@ -2349,14 +2354,14 @@ impl WorkbookView {
             if edit.text.marked.is_some() {
                 return false;
             }
-            let completion = formula_complete::completion(&edit.text.text, edit.text.caret);
+            let completion = formula_complete::completion_with(&edit.text.text, edit.text.caret, &edit.names);
             match key {
                 // Function AutoComplete: Tab puts the name picked in, the
                 // arrows move through the list.
                 "tab" if !shift && completion.is_some() => {
                     if let Some(list) = completion {
-                        let name = list.names[picked(edit, &list)];
-                        formula_complete::accept(&mut edit.text, &list, name);
+                        let name = list.names[picked(edit, &list)].clone();
+                        formula_complete::accept(&mut edit.text, &list, &name);
                         edit.point = None;
                         edit.suggested = None;
                     }
@@ -6089,7 +6094,7 @@ mod tests {
         cx.simulate_input("=SU");
         let second = view.read_with(cx, |view, _| {
             let edit = view.edit.as_ref().expect("typing into the cell");
-            let list = formula_complete::completion(&edit.text.text, edit.text.caret)
+            let list = formula_complete::completion_with(&edit.text.text, edit.text.caret, &edit.names)
                 .expect("the list shows");
             assert_eq!(list.names[0], "SUBSTITUTE");
             list.names[1]

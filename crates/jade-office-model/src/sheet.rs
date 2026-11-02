@@ -1170,6 +1170,12 @@ impl<B: Backend> Workbook<B> {
         // Its parentheses closed, a function given the wrong number of
         // arguments is refused too, as Excel refuses it.
         if let CellInput::Formula(formula) = &typed.input {
+            // `-A1+`, a formula by its sign, is refused as `=-A1+` is.
+            if !text.starts_with('=')
+                && typing::signed_formula(text).is_some_and(typing::formula_problem)
+            {
+                return Err(typing::FORMULA_PROBLEM.to_string());
+            }
             if formula_text::wrong_argument_count(formula) {
                 return Err(typing::FORMULA_PROBLEM.to_string());
             }
@@ -3590,6 +3596,35 @@ impl<B: Backend> Workbook<B> {
             ),
         };
         Some(self.outline(axis, index, index, change))
+    }
+
+    /// The names Formula AutoComplete lists with the functions, as Excel
+    /// does: the workbook's defined names and those of the current sheet,
+    /// not hidden ones or Excel's own (`_xlnm.Print_Area`), and its tables.
+    pub fn formula_names(&self) -> Vec<String> {
+        let workbook = self.book.workbook();
+        let mut names: Vec<String> = workbook
+            .defined_names
+            .iter()
+            .filter(|name| {
+                !name.hidden
+                    && !name.name.starts_with("_xlnm.")
+                    && name
+                        .local_sheet_index
+                        .is_none_or(|sheet| sheet == self.index)
+            })
+            .map(|name| name.name.clone())
+            .chain(
+                workbook
+                    .sheets
+                    .iter()
+                    .flat_map(|sheet| &sheet.tables)
+                    .map(|table| table.display_name.clone()),
+            )
+            .collect();
+        names.sort_by_key(|name| name.to_uppercase());
+        names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+        names
     }
 
     /// Whether formulas wait for Calculate Now (Formulas ▸ Calculation
