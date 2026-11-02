@@ -3907,3 +3907,25 @@ sheet.freeform	フリーフォーム
 sheet.freeform_hint	クリックで頂点を追加します。最初の頂点をクリックすると図形を閉じ、ダブルクリックまたは Enter で開いたまま終了、Esc で取り消します。
 sheet.scribble	フリーハンド
 sheet.scribble_hint	ドラッグして線を自由に描きます。Esc で取り消します。
+sheet.shape.plus_sign	プラス記号
+sheet.shape.flowchart_alternate_process	フローチャート: 代替処理
+sheet.shape.flowchart_decision	フローチャート: 判断
+sheet.shape.flowchart_data	フローチャート: データ
+sheet.shape.flowchart_preparation	フローチャート: 準備
+sheet.shape.flowchart_terminator	フローチャート: 端子
+sheet.shape.flowchart_offpage_connector	フローチャート: 他ページ結合子
+sheet.shape.flowchart_magnetic_disk	フローチャート: 磁気ディスク
+sheet.shape.flowchart_extract	フローチャート: 抜き出し
+sheet.shape.flowchart_merge	フローチャート: 組合せ
+sheet.shape.flowchart_or	フローチャート: 論理和
+sheet.shape.star4	星: 4 pt
+sheet.shape.star6	星: 6 pt
+sheet.shape.star7	星: 7 pt
+sheet.shape.star8	星: 8 pt
+sheet.shape.star10	星: 10 pt
+sheet.shape.star12	星: 12 pt
+sheet.shape.star16	星: 16 pt
+sheet.shape.star24	星: 24 pt
+sheet.shape.star32	星: 32 pt
+sheet.shape.speech_bubble_rounded	吹き出し: 角を丸めた四角形
+sheet.shape.speech_bubble_oval	吹き出し: 円形
