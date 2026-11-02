@@ -157,7 +157,7 @@ impl DocView {
     }
 
     /// Records where the show's slide is drawn.
-    pub(super) fn show_bounds_recorder(&self) -> impl IntoElement {
+    pub(super) fn show_bounds_recorder(&self) -> gpui::Canvas<()> {
         let store = Rc::clone(&self.show.bounds);
         canvas(
             move |bounds, _window, _cx| store.set(Some(bounds)),
