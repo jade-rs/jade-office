@@ -110,6 +110,32 @@ fn paint_trace_arrows(
     }
 }
 
+/// A freeform being drawn: its corners, in px from the grid's top-left,
+/// joined and dotted.
+fn paint_freeform(
+    window: &mut gpui::Window,
+    origin: gpui::Point<gpui::Pixels>,
+    corners: &[gpui::Point<gpui::Pixels>],
+) {
+    use gpui::{px, PathBuilder};
+    let color = gpui::rgb(0x217346);
+    if let [first, rest @ ..] = corners {
+        if !rest.is_empty() {
+            let mut line = PathBuilder::stroke(px(1.5));
+            line.move_to(origin + *first);
+            for corner in rest {
+                line.line_to(origin + *corner);
+            }
+            if let Ok(path) = line.build() {
+                window.paint_path(path, color);
+            }
+        }
+    }
+    for corner in corners {
+        paint_dot(window, origin + *corner, color);
+    }
+}
+
 /// The dot at a precedent on this sheet.
 fn paint_dot(window: &mut gpui::Window, at: gpui::Point<gpui::Pixels>, color: gpui::Rgba) {
     use gpui::{point, px, PathBuilder};

@@ -4,7 +4,7 @@
 //! the selection, or — with a chart selected — changes its type, legend,
 //! title and data, as Excel's Chart Design does.
 
-use gpui::{div, prelude::*, px, Context, Modifiers, MouseButton};
+use gpui::{div, prelude::*, px, Context, Modifiers, MouseButton, SharedString};
 use jade_office_model::charts::{
     dragged, handle_at, ChartAsk, ChartField, ChartKey, ChartKind, Handle, LegendPosition,
     CHART_KINDS, LEGENDS,
@@ -12,6 +12,7 @@ use jade_office_model::charts::{
 
 use super::{caret_line, SheetDrag, Tool, WorkbookView, SHEET_TOOLBAR_HEIGHT};
 use crate::{i18n, theme};
+use jade_office_model::freeform::{FreeformDraft, FreeformStep};
 use jade_office_model::sheet::SHAPES;
 
 /// What the chart button's items do.
@@ -23,6 +24,8 @@ pub(super) enum ChartTool {
     Picture,
     /// Insert ▸ Shapes, at the active cell: its preset geometry.
     Shape(&'static str),
+    /// Insert ▸ Shapes ▸ Freeform: drawn on the sheet a click at a time.
+    Freeform,
     /// Chart Design, on the selected chart.
     Kind(ChartKind),
     Legend(Option<LegendPosition>),
@@ -34,6 +37,76 @@ pub(super) enum ChartTool {
 const DRAG_SLOP: f64 = 2.0;
 
 impl WorkbookView {
+    /// A click while a freeform is drawn, at a grid point: a corner more;
+    /// back on the first, the shape closed; a double-click ends it open.
+    pub(super) fn freeform_click(&mut self, x: f64, y: f64, clicks: usize, cx: &mut Context<Self>) {
+        let Some(point) = self.book.sheet_point(x, y, self.sheet_scroll()) else {
+            return;
+        };
+        let Some(draft) = self.freeform.as_mut() else {
+            return;
+        };
+        match draft.add(point) {
+            FreeformStep::Close => self.finish_freeform(true, cx),
+            FreeformStep::Continue if clicks >= 2 => self.finish_freeform(false, cx),
+            FreeformStep::Continue => cx.notify(),
+        }
+    }
+
+    /// Ends the freeform being drawn: put in, closed or open, when it has
+    /// two corners or more, and selected.
+    pub(super) fn finish_freeform(&mut self, closed: bool, cx: &mut Context<Self>) {
+        let Some(draft) = self.freeform.take() else {
+            return;
+        };
+        self.status = SharedString::from("");
+        if !draft.can_finish() {
+            cx.notify();
+            return;
+        }
+        let result = match self.book.insert_freeform(&draft.points, closed) {
+            Ok(id) => {
+                self.object = Some(id);
+                Ok(true)
+            }
+            Err(error) => Err(error),
+        };
+        self.after_write(result, cx);
+    }
+
+    /// Keys while a freeform is drawn: Enter ends it open, Escape drops it.
+    pub(super) fn freeform_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        match key {
+            "enter" => self.finish_freeform(false, cx),
+            "escape" => {
+                self.freeform = None;
+                self.status = SharedString::from("");
+                cx.notify();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// The freeform being drawn, over the grid.
+    pub(super) fn freeform_overlay(&self) -> Option<gpui::Canvas<()>> {
+        let draft = self.freeform.as_ref()?;
+        let zoom = self.zoom;
+        let scroll = self.sheet_scroll();
+        let corners: Vec<gpui::Point<gpui::Pixels>> = draft
+            .points
+            .iter()
+            .map(|&(x, y)| {
+                let (x, y) = self.book.viewport_point(x, y, scroll);
+                gpui::point(px(x as f32 * zoom), px(y as f32 * zoom))
+            })
+            .collect();
+        Some(gpui::canvas(
+            |_, _, _| {},
+            move |bounds, _, window, _| super::paint_freeform(window, bounds.origin, &corners),
+        ))
+    }
+
     /// The selected object, when it is a chart.
     pub(super) fn selected_chart(&self) -> Option<u32> {
         self.object.filter(|id| self.book.chart(*id).is_some())
@@ -138,6 +211,13 @@ impl WorkbookView {
         let result = match tool {
             ChartTool::Picture => {
                 self.pick_picture(cx);
+                return;
+            }
+            ChartTool::Freeform => {
+                self.object = None;
+                self.freeform = Some(FreeformDraft::default());
+                self.status = i18n::text("sheet.freeform_hint").into();
+                cx.notify();
                 return;
             }
             ChartTool::Shape(preset) => match self.book.insert_shape(self.active(), preset) {
@@ -347,6 +427,12 @@ impl WorkbookView {
                     cx,
                 ))
                 .child(heading("sheet.shapes"))
+                .child(item(
+                    ("chart-freeform", 0),
+                    "sheet.freeform",
+                    ChartTool::Freeform,
+                    cx,
+                ))
                 .child(
                     div().flex().flex_wrap().text_xs().children(
                         SHAPES

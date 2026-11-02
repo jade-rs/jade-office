@@ -139,6 +139,8 @@ pub(super) struct Sheet {
     /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
     pub(super) shift_choice: Option<bool>,
     pub(super) more_colors: Option<jade_web::more_colors::MoreColorsDialog>,
+    /// Insert ▸ Shapes ▸ Freeform's corners while it is drawn.
+    pub(super) freeform: Option<jade_web::freeform::FreeformDraft>,
     /// The Paste Options button after a paste from this workbook's copy:
     /// the range pasted on, and whether its menu is open.
     pub(super) paste_options: Option<(CellRange, bool)>,
@@ -890,6 +892,7 @@ impl Sheet {
             top_ten: None,
             shift_choice: None,
             more_colors: None,
+            freeform: None,
             paste_options: None,
             tracing: Vec::new(),
             tracing_dependents: Vec::new(),
@@ -2298,6 +2301,12 @@ impl DocView {
             }
             sheet.choices = None;
         }
+        if sheet.freeform.is_some() && self.freeform_key(key, cx) {
+            return true;
+        }
+        let Some(sheet) = self.sheet_mut() else {
+            return false;
+        };
         // More Colors' dialog has the keys while it is open.
         if sheet.more_colors.is_some() {
             return self.more_colors_key(key, modifiers, cx);
@@ -3340,6 +3349,14 @@ impl DocView {
         sheet.choices = None;
         if sheet.renaming.is_some() || sheet.naming.is_some() {
             self.finish_naming(true, cx);
+        }
+        // A freeform being drawn takes the clicks.
+        if self
+            .sheet_ref()
+            .is_some_and(|sheet| sheet.freeform.is_some())
+        {
+            self.freeform_click(x, y, event.click_count, cx);
+            return;
         }
         let Some(sheet) = self.sheet_mut() else {
             return;
@@ -5448,6 +5465,10 @@ impl DocView {
                     .children(cell_editor)
                     .children(page_breaks)
                     .children(trace)
+                    .children(
+                        self.freeform_overlay()
+                            .map(|overlay| overlay.absolute().top_0().left_0().size_full()),
+                    )
                     .children(paste_options)
                     .children(note)
                     .children(note_editor)
