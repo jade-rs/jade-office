@@ -531,6 +531,8 @@ enum MenuCommand {
     /// New Note, or Edit Note on a cell that has one.
     EditNote,
     DeleteNote,
+    /// A reply to the cell's threaded comment.
+    ReplyComment,
     /// The selected whole rows or columns.
     Hide,
     Unhide,
@@ -612,6 +614,9 @@ pub struct WorkbookView {
     finding: Option<FindBar>,
     /// A note being written on a cell.
     noting: Option<(CellRef, TextEdit)>,
+    /// Whether that is a reply to the cell's threaded comment rather than
+    /// the note itself.
+    replying: bool,
     /// A conditional format's dialog, asking for its value.
     asking: Option<RuleAsk>,
     /// The conditional formatting Rules Manager, open.
@@ -1841,6 +1846,14 @@ impl WorkbookView {
                 let at = selection.active;
                 let text = self.book.note(at).unwrap_or_default().to_string();
                 self.noting = Some((at, TextEdit::new(text)));
+                self.replying = false;
+                cx.notify();
+                return;
+            }
+            // A reply starts empty, the thread shown above it.
+            MenuCommand::ReplyComment => {
+                self.noting = Some((selection.active, TextEdit::new(String::new())));
+                self.replying = true;
                 cx.notify();
                 return;
             }
@@ -2707,8 +2720,18 @@ impl WorkbookView {
                 self.sheets_changed(result, cx);
             }
         } else if let Some((cell, text)) = self.noting.take() {
+            let replying = std::mem::take(&mut self.replying);
             if take {
-                let result = self.book.set_note(cell, &text.text, "jade");
+                let result = if replying {
+                    self.book.reply_to_comment(
+                        cell,
+                        &text.text,
+                        "jade",
+                        &crate::word_signatures::now_utc(),
+                    )
+                } else {
+                    self.book.set_note(cell, &text.text, "jade")
+                };
                 self.after_write(result, cx);
             }
         } else if self.finding.take().is_some() {
@@ -3730,6 +3753,9 @@ impl WorkbookView {
                     if self.book.has_outline(axis) {
                         items.push((MenuCommand::ClearOutline, "sheet.menu.clear_outline"));
                     }
+                }
+                if self.book.has_comment_thread(self.active()) {
+                    items.push((MenuCommand::ReplyComment, "sheet.menu.reply_comment"));
                 }
                 if self.book.note(self.active()).is_some() {
                     items.extend([
@@ -5331,6 +5357,19 @@ impl Render for WorkbookView {
         let note_editor = self.noting.as_ref().and_then(|(cell, text)| {
             let grid = self.grid_bounds.get()?;
             let bounds = self.cell_bounds(*cell)?;
+            let thread = self
+                .replying
+                .then(|| self.book.note(*cell))
+                .flatten()
+                .map(|thread| {
+                    div()
+                        .pb_1()
+                        .mb_1()
+                        .border_b_1()
+                        .border_color(gpui::rgb(0xd6cf9a))
+                        .text_color(gpui::rgb(0x5f5f5f))
+                        .child(thread.to_string())
+                });
             Some(
                 div()
                     .absolute()
@@ -5345,6 +5384,7 @@ impl Render for WorkbookView {
                     .shadow_md()
                     .text_xs()
                     .text_color(gpui::black())
+                    .children(thread)
                     .child(caret_line(text, gpui::black(), false)),
             )
         });
@@ -5581,6 +5621,7 @@ impl WorkbookView {
             going_to: false,
             finding: None,
             noting: None,
+            replying: false,
             asking: None,
             managing: false,
             object: None,
