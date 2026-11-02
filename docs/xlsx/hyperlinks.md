@@ -44,8 +44,10 @@ which has no folder, a relative path with no Hyperlink Base opens as written.
 
 Remaining limits:
 
-- The link style currently uses the default Office blue rather than looking up
-  a customized theme hyperlink style; visited-link styling remains absent.
+- A new link takes the theme's hyperlink colour (`theme="10"`, the Office blue
+  when the workbook has no theme) and an underline, rather than the workbook's
+  own Hyperlink cell style should it have customised one; visited-link styling
+  remains absent.
 - Existing linked formulas retain their formula; this dialog does not rewrite
   the arguments of a `HYPERLINK()` formula.
 - File pickers and a dedicated email form are absent; their addresses can be
