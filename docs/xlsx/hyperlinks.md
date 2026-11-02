@@ -35,11 +35,15 @@ hyperlink permission and cell locking. Styling a spill range does not count as
 writing into its outputs; an explicit label that overwrites an output still
 blocks the spill and clears its other outputs.
 
+An address that is a path opens as Excel opens it. A relative one
+(`report.docx`, `..\data\q3.xlsx`) is read against the workbook's Hyperlink
+Base (`docProps/app.xml`, a folder or a web address) or, in the native shell,
+the folder the workbook is in, and opens as a `file://` URL (or one under the
+web base). `C:\…` and `\\server\share\…` open as file URLs. In the web shell,
+which has no folder, a relative path with no Hyperlink Base opens as written.
+
 Remaining limits:
 
-- Relative file paths and hyperlink base properties are saved but opening them
-  relative to the workbook's filesystem location/base address is not yet
-  implemented in both shells.
 - The link style currently uses the default Office blue rather than looking up
   a customized theme hyperlink style; visited-link styling remains absent.
 - Existing linked formulas retain their formula; this dialog does not rewrite
