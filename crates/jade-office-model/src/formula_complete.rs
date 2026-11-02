@@ -1,6 +1,7 @@
-//! Formula AutoComplete: while a formula is typed, the functions whose
-//! names start with the word before the caret, as Excel lists them under
-//! the cell; Tab puts the one picked in with its `(`.
+//! Formula AutoComplete: while a formula is typed, the functions, defined
+//! names and tables whose names start with the word before the caret, as
+//! Excel lists them under the cell; Tab puts the one picked in — a
+//! function with its `(`.
 
 use std::sync::OnceLock;
 
@@ -20,7 +21,12 @@ pub fn function_names() -> &'static [String] {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Completion {
     pub start: usize,
-    pub names: Vec<&'static str>,
+    pub names: Vec<String>,
+}
+
+/// Whether `name` is a function's, which goes in with its `(`.
+pub fn is_function(name: &str) -> bool {
+    function_names().iter().any(|function| function == name)
 }
 
 /// The list for `text` with the caret at byte `caret`, when it is a formula
@@ -28,7 +34,14 @@ pub struct Completion {
 /// a quoted string, not a sheet's or a reference's tail, and not followed
 /// by more of the word.
 pub fn completion(text: &str, caret: usize) -> Option<Completion> {
-    if !text.starts_with('=') || caret > text.len() || !text.is_char_boundary(caret) {
+    completion_with(text, caret, &[])
+}
+
+/// [`completion`] listing the workbook's defined names and tables (`names`)
+/// with the functions, in one alphabetical list, as Excel does.
+pub fn completion_with(text: &str, caret: usize, names: &[String]) -> Option<Completion> {
+    // `+` and `-` start a formula too, as in Excel.
+    if !text.starts_with(['=', '+', '-']) || caret > text.len() || !text.is_char_boundary(caret) {
         return None;
     }
     let word = |c: char| c.is_ascii_alphanumeric() || c == '.' || c == '_';
@@ -58,23 +71,39 @@ pub fn completion(text: &str, caret: usize) -> Option<Completion> {
     if text[..start].matches('"').count() % 2 == 1 {
         return None;
     }
-    let typed = typed.to_ascii_uppercase();
-    let names: Vec<&'static str> = function_names()
+    let typed = typed.to_uppercase();
+    let mut listed: Vec<String> = function_names()
         .iter()
         .filter(|name| name.starts_with(&typed))
         .take(MAX_SHOWN)
-        .map(String::as_str)
+        .cloned()
+        .chain(
+            names
+                .iter()
+                .filter(|name| name.to_uppercase().starts_with(&typed))
+                .cloned(),
+        )
         .collect();
-    (!names.is_empty()).then_some(Completion { start, names })
+    listed.sort_by_key(|name| name.to_uppercase());
+    listed.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    listed.truncate(MAX_SHOWN);
+    (!listed.is_empty()).then_some(Completion {
+        start,
+        names: listed,
+    })
 }
 
-/// The name picked put in for the word being typed, with its `(`, the caret
-/// after it.
+/// The name picked put in for the word being typed — a function's with its
+/// `(` — the caret after it.
 pub fn accept(edit: &mut TextEdit, completion: &Completion, name: &str) {
     let end = edit.caret.min(edit.text.len());
-    edit.text
-        .replace_range(completion.start..end, &format!("{name}("));
-    edit.caret = completion.start + name.len() + 1;
+    let text = if is_function(name) {
+        format!("{name}(")
+    } else {
+        name.to_string()
+    };
+    edit.text.replace_range(completion.start..end, &text);
+    edit.caret = completion.start + text.len();
     edit.whole = false;
 }
 
@@ -86,11 +115,12 @@ mod tests {
     fn the_word_before_the_caret_lists_the_functions_it_starts() {
         let list = completion("=SU", 3).unwrap();
         assert_eq!(list.start, 1);
-        assert!(list.names.contains(&"SUM") && list.names.contains(&"SUMIF"));
+        assert!(list.names.iter().any(|name| name == "SUM"));
+        assert!(list.names.iter().any(|name| name == "SUMIF"));
         assert!(list.names.len() <= MAX_SHOWN);
         // Lower case works; inside an argument too.
         let list = completion("=1+vlo", 6).unwrap();
-        assert_eq!((list.start, list.names[0]), (3, "VLOOKUP"));
+        assert_eq!((list.start, list.names[0].as_str()), (3, "VLOOKUP"));
         // Not a formula, mid-word, in quotes, after a sheet or a `$`.
         assert!(completion("SU", 2).is_none());
         assert!(completion("=SUM", 2).is_none());
@@ -109,5 +139,32 @@ mod tests {
         accept(&mut edit, &list, "VLOOKUP");
         assert_eq!(edit.text, "=1+VLOOKUP(");
         assert_eq!(edit.caret, edit.text.len());
+    }
+
+    #[test]
+    fn defined_names_and_tables_are_listed_with_the_functions() {
+        let names = vec![
+            "SalesTax".to_string(),
+            "Sales_2024".to_string(),
+            "Rates".to_string(),
+        ];
+        let list = completion_with("=sa", 3, &names).unwrap();
+        // Alphabetical, the names among the functions.
+        assert!(list.names.iter().any(|name| name == "SalesTax"));
+        assert!(list.names.iter().any(|name| name == "Sales_2024"));
+        assert!(!list.names.iter().any(|name| name == "Rates"));
+        let mut sorted = list.names.clone();
+        sorted.sort_by_key(|name| name.to_uppercase());
+        assert_eq!(sorted, list.names);
+        // A name goes in as it is, without a parenthesis.
+        let mut edit = TextEdit::new("=SUM(sal".into());
+        edit.caret = 8;
+        let list = completion_with(&edit.text, edit.caret, &names).unwrap();
+        accept(&mut edit, &list, "SalesTax");
+        assert_eq!(edit.text, "=SUM(SalesTax");
+        assert_eq!(edit.caret, edit.text.len());
+        // A formula started with + or - lists them too.
+        assert!(completion_with("+Rat", 4, &names).is_some());
+        assert!(completion_with("-su", 3, &[]).is_some());
     }
 }
