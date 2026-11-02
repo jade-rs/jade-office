@@ -3618,6 +3618,56 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    /// Where the book is saved, for `CELL("filename")` and
+    /// `INFO("directory")` — from the next recalculation, as in Excel, whose
+    /// current folder is also the last one a file was opened or saved in.
+    pub fn set_location(&mut self, path: &std::path::Path) {
+        let directory = path
+            .parent()
+            .filter(|folder| !folder.as_os_str().is_empty())
+            .map(|folder| {
+                let mut folder = folder.to_string_lossy().into_owned();
+                if !folder.ends_with(std::path::MAIN_SEPARATOR) {
+                    folder.push(std::path::MAIN_SEPARATOR);
+                }
+                folder
+            });
+        let file_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        ironcalc_base::host::set_current_directory(directory.clone());
+        let document = jade_xlsx_calc::Document {
+            file_name,
+            directory,
+            ..self.book.document().clone()
+        };
+        self.book.set_document(document);
+    }
+
+    /// The top-left cell the window shows (zero-based row and column), for
+    /// `INFO("origin")` at the next recalculation.
+    pub fn set_view_origin(&mut self, row: u32, column: u32) {
+        let origin = Some((row as i32 + 1, column as i32 + 1));
+        if self.book.document().origin != origin {
+            let document = jade_xlsx_calc::Document {
+                origin,
+                ..self.book.document().clone()
+            };
+            self.book.set_document(document);
+        }
+    }
+
+    /// The same from the window's scroll position (sheet px), which the
+    /// shells note before an edit recalculates.
+    pub fn note_view_origin(&mut self, scroll: (f64, f64)) {
+        let (x, y) = self
+            .layout
+            .sheet_point_in_viewport(0.0, 0.0, scroll.0, scroll.1);
+        let column = self.layout.column_at(x.max(0.0)).unwrap_or(0);
+        let row = self.layout.row_at(y.max(0.0)).unwrap_or(0);
+        self.set_view_origin(row, column);
+    }
+
     /// Formulas ▸ Calculate Now (F9): every formula recalculated, in manual
     /// calculation as in automatic. Not an undo step, as in Excel.
     pub fn calculate_now(&mut self) -> Result<bool, String> {

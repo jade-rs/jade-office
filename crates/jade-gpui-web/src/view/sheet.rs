@@ -1965,6 +1965,7 @@ impl DocView {
     /// Writes the cell being typed into, if any; the write recalculates.
     /// A formula Excel would refuse keeps the editor open and returns false.
     pub(super) fn commit_cell(&mut self, cx: &mut Context<Self>) -> bool {
+        let zoom = self.shown_zoom;
         let Some(sheet) = self.sheet_mut() else {
             return true;
         };
@@ -1991,6 +1992,9 @@ impl DocView {
         let Some(edit) = sheet.edit.take() else {
             return true;
         };
+        // INFO("origin") reads the top-left cell the window shows.
+        let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
+        sheet.book.note_view_origin(scroll);
         let result = sheet.book.set_cell(sheet.selection.active, &edit.text.text);
         if result
             .as_ref()
