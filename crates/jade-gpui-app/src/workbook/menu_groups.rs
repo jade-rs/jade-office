@@ -7,6 +7,7 @@ enum MenuGroup {
     Clear,
     InsertDelete,
     Data,
+    WhatIf,
     PivotTable,
     LinksValidation,
     Protection,
@@ -21,6 +22,7 @@ impl MenuGroup {
             MenuGroup::Clear => "sheet.menu.group_clear",
             MenuGroup::InsertDelete => "sheet.menu.group_insert_delete",
             MenuGroup::Data => "sheet.menu.group_data",
+            MenuGroup::WhatIf => "sheet.menu.group_what_if",
             MenuGroup::PivotTable => "sheet.menu.group_pivot_table",
             MenuGroup::LinksValidation => "sheet.menu.group_links_validation",
             MenuGroup::Protection => "sheet.menu.group_protection",
@@ -60,6 +62,7 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         | C::Outline(_)
         | C::AutoOutline
         | C::ClearOutline => MenuGroup::Data,
+        C::WhatIf(_) => MenuGroup::WhatIf,
         C::CreatePivot
         | C::RefreshAllPivots
         | C::RefreshPivot

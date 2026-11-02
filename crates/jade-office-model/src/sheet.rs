@@ -211,6 +211,21 @@ pub struct Workbook<B: Backend> {
     pub(crate) invalid_cells: RefCell<Option<(u64, Rc<Vec<CellRef>>)>>,
 }
 
+/// A workbook's state to come back to, from [`Workbook::checkpoint`].
+pub struct Checkpoint {
+    engine: jade_xlsx_headless_editor::EditCheckpoint,
+    index: usize,
+    extent: (u32, u32),
+    dirty: bool,
+    revision: u64,
+    layout: SheetLayout,
+    steps: Vec<usize>,
+    undone: Vec<usize>,
+    clipboard: Option<Clip>,
+    clipboard_revision: u64,
+    changes: Option<Vec<Rect>>,
+}
+
 impl<B: Backend> Workbook<B> {
     /// Opens `.xlsx` bytes for editing, recalculating in `time_zone` (an IANA
     /// name such as `Asia/Tokyo`; UTC when the engine does not know it).
@@ -950,6 +965,9 @@ impl<B: Backend> Workbook<B> {
         if self.contents_hidden_on(index, reference) {
             return String::new();
         }
+        if let Some(table) = self.data_table_on(index, reference) {
+            return crate::data_table::table_formula(&table);
+        }
         let Some(cell) = self.book.workbook().sheets[index]
             .rows
             .iter()
@@ -1146,6 +1164,10 @@ impl<B: Backend> Workbook<B> {
     ) -> Result<Option<usize>, String> {
         if text == self.edit_text(reference) {
             return Ok(None);
+        }
+        // Excel's "Cannot change part of a data table."
+        if self.data_table_at(reference).is_some() {
+            return Err(crate::data_table::DATA_TABLE_REFUSED.to_string());
         }
         if let Some(alert) = self.validation_alert(reference, text)? {
             if !accept_warning || alert.style == crate::validation::AlertStyle::Stop {
@@ -1692,31 +1714,56 @@ impl<B: Backend> Workbook<B> {
         &mut self,
         edit: impl FnOnce(&mut Self) -> Result<T, String>,
     ) -> Result<T, String> {
-        let engine = self.book.edit_checkpoint();
-        let (index, extent, dirty, revision) = (self.index, self.extent, self.dirty, self.revision);
-        let layout = self.layout.clone();
-        let steps = self.steps.clone();
-        let undone = self.undone.clone();
-        let clipboard = self.clipboard.clone();
-        let clipboard_revision = self.clipboard_revision;
-        let changes = self.changes.clone();
+        let checkpoint = self.checkpoint();
         match edit(self) {
             Ok(value) => Ok(value),
             Err(error) => {
-                assert!(self.book.restore_edit_checkpoint(engine));
-                self.index = index;
-                self.extent = extent;
-                self.dirty = dirty;
-                self.revision = revision;
-                self.layout = layout;
-                self.steps = steps;
-                self.undone = undone;
-                self.clipboard = clipboard;
-                self.clipboard_revision = clipboard_revision;
-                self.changes = changes;
+                self.restore_checkpoint(checkpoint);
                 Err(error)
             }
         }
+    }
+
+    /// The workbook as it is now, undo history and all, to come back to:
+    /// what a Goal Seek or Solver result's Cancel puts back.
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            engine: self.book.edit_checkpoint(),
+            index: self.index,
+            extent: self.extent,
+            dirty: self.dirty,
+            revision: self.revision,
+            layout: self.layout.clone(),
+            steps: self.steps.clone(),
+            undone: self.undone.clone(),
+            clipboard: self.clipboard.clone(),
+            clipboard_revision: self.clipboard_revision,
+            changes: self.changes.clone(),
+        }
+    }
+
+    /// Back to `checkpoint`, as if nothing since had happened: no undo step
+    /// left behind, nothing to redo.
+    pub fn restore(&mut self, checkpoint: Checkpoint) {
+        let revision = self.revision;
+        self.restore_checkpoint(checkpoint);
+        // What was painted since is not the sheet restored.
+        self.revision = revision.wrapping_add(1);
+        self.changes = None;
+    }
+
+    fn restore_checkpoint(&mut self, checkpoint: Checkpoint) {
+        assert!(self.book.restore_edit_checkpoint(checkpoint.engine));
+        self.index = checkpoint.index;
+        self.extent = checkpoint.extent;
+        self.dirty = checkpoint.dirty;
+        self.revision = checkpoint.revision;
+        self.layout = checkpoint.layout;
+        self.steps = checkpoint.steps;
+        self.undone = checkpoint.undone;
+        self.clipboard = checkpoint.clipboard;
+        self.clipboard_revision = checkpoint.clipboard_revision;
+        self.changes = checkpoint.changes;
     }
     fn valid_edit_range(range: CellRange) -> bool {
         range.start.column <= range.end.column
