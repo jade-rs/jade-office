@@ -25,9 +25,13 @@ pub use jade_pptx_writer::{
 mod format;
 mod insert;
 mod selection;
+mod picture;
+pub use picture::*;
+mod smartart;
 mod text;
 pub use format::{step_size, FormatStrip, TextCommand, FONT_SIZES};
 pub use insert::{Insert, ShapePreset, SHAPE_PRESETS};
+pub use smartart::*;
 pub use text::{Motion, ShapeText};
 
 use crate::Backend;
@@ -762,14 +766,31 @@ impl<B: Backend> Deck<B> {
         let scaled = painter.scale(scale, scale).is_ok();
         let parts = &self.parts;
         let mut draw_image = |shape: &PlacedShape| -> bool {
-            let Some((part, bytes)) = shape.image_part.as_deref().and_then(|part| {
+            // The key names the part and any picture effects, applied (and an
+            // SVG drawn) once.
+            let lookup = |part: &str| {
                 parts
                     .get(part.trim_start_matches('/'))
                     .or_else(|| parts.get(part))
-                    .map(|bytes| (part, bytes))
+                    .map(Vec::as_slice)
+            };
+            // An animated GIF shows the frame it has reached.
+            let playing = shape
+                .image_part
+                .as_deref()
+                .map(|key| picture::playing(key, lookup(key)));
+            let Some((part, bytes)) = playing.as_deref().and_then(|key| {
+                jade_picture_effects::image_bytes(key, |part| {
+                    parts
+                        .get(part.trim_start_matches('/'))
+                        .or_else(|| parts.get(part))
+                        .map(Vec::as_slice)
+                })
+                .map(|bytes| (key, bytes))
             }) else {
                 return false;
             };
+            let bytes = &*bytes;
             // The crop is relative to the bitmap's own size; against a unit
             // square it is the normalised source rectangle `draw_image` takes.
             let Some((source, destination)) = shape.image_rectangles(1.0, 1.0) else {

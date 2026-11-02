@@ -372,13 +372,14 @@ impl DocView {
         cx.notify();
     }
 
-    /// A PNG or JPEG placed in the middle of the slide on show, selected.
+    /// A picture — PNG, JPEG, GIF or SVG — placed in the middle of the
+    /// slide on show, selected.
     pub(crate) fn insert_picture(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
         self.commit_slide_text(cx);
         let Document::Deck { deck, current, .. } = &mut self.document else {
             return;
         };
-        let result = deck.insert_picture(*current, bytes);
+        let result = deck.insert_picture_file(*current, bytes);
         if let Err(error) = &result {
             self.status = i18n::format("deck.picture_failed", &[("error", error)]).into();
             cx.notify();
