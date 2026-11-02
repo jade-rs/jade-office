@@ -2543,6 +2543,8 @@ version = "0.1.0"
 dependencies = [
  "jade-painter",
  "jade-pptx-layout",
+ "jade-pptx-reader",
+ "unicode-segmentation",
 ]
 
 [[package]]
