@@ -161,6 +161,9 @@ pub struct Workspace {
     /// should not be read that often.
     listings: HashMap<PathBuf, Vec<Entry>>,
     recent: Vec<recent::Entry>,
+    /// The recent row whose "…" menu is open: the list it is in, and the
+    /// row.
+    recent_menu: Option<(&'static str, usize)>,
     /// Documents 自動回復 kept that were never saved.
     recovered: Vec<crate::autorecover::Recovered>,
     error: Option<SharedString>,
@@ -181,6 +184,7 @@ impl Workspace {
             expanded: HashSet::new(),
             listings: HashMap::new(),
             recent: recent::entries(),
+            recent_menu: None,
             recovered: crate::autorecover::recovered(),
             error: None,
             focus: cx.focus_handle(),
@@ -401,7 +405,17 @@ impl Workspace {
         &self.recent
     }
 
+    /// The recent row whose "…" menu is open.
+    pub(crate) fn recent_menu(&self) -> Option<(&'static str, usize)> {
+        self.recent_menu
+    }
+
+    pub(crate) fn set_recent_menu(&mut self, menu: Option<(&'static str, usize)>) {
+        self.recent_menu = menu;
+    }
+
     pub(crate) fn reload_recent(&mut self) {
+        self.recent_menu = None;
         self.recent = recent::entries();
     }
 
@@ -754,7 +768,13 @@ impl Workspace {
             })
             .collect();
 
-        let recent = crate::workspace_files::recent_rows(&self.recent, 8, "recent-row", cx);
+        let recent = crate::workspace_files::recent_rows(
+            &self.recent,
+            8,
+            "recent-row",
+            self.recent_menu,
+            cx,
+        );
         let recovered = crate::workspace_files::recovered_rows(&self.recovered, cx);
 
         div()

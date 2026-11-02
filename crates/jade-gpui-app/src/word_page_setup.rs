@@ -5,6 +5,7 @@
 //! (`word::page_setup`), which the browser shell draws too.
 
 use gpui::{div, prelude::*, px, AnyElement, Context, KeyDownEvent, MouseButton, SharedString};
+use jade_office_model::spin::{specs, SpinSpec, SpinUnit};
 use jade_office_model::word::page::Paper;
 use jade_office_model::word::page_setup::{
     points_to_mm, ApplyTo, BorderSetting, ColumnPreset, ColumnsDialog, CoverPage, Field, GridMode,
@@ -15,6 +16,7 @@ use jade_office_model::word::page_setup::{
 
 use crate::ribbon::{dropdown, group, listener, menu_panel, menu_row, row, Action, Popup};
 use crate::tooltip::Tooltip;
+use crate::word_spin::{spin_field, Spin, SpinOwner};
 use crate::{i18n, theme, DocumentView};
 
 /// What the レイアウト tab's page controls do beyond `PageCommand`.
@@ -62,12 +64,9 @@ pub enum PageDialog {
     Borders(PageBorderDialog),
 }
 
-/// The open dialog and the number being typed into one of its fields.
+/// The open dialog. Its number fields are spin boxes (`word_spin`).
 pub struct PageDialogState {
     pub dialog: PageDialog,
-    /// The field, what has been typed, and whether typing has begun (the
-    /// first character replaces the value, as in Word's fields).
-    pub typing: Option<(Key, String, bool)>,
     /// Why OK did nothing, when it did nothing.
     pub problem: Option<&'static str>,
 }
@@ -141,15 +140,6 @@ fn heading(label: &'static str) -> gpui::Div {
         .child(t(label))
 }
 
-fn number_text(value: f32, decimals: bool) -> String {
-    if decimals {
-        let text = format!("{value:.1}");
-        text.trim_end_matches(".0").to_string()
-    } else {
-        format!("{}", value.round() as i64)
-    }
-}
-
 impl PageDialogState {
     fn value(&self, key: Key) -> f32 {
         match (&self.dialog, key) {
@@ -170,20 +160,18 @@ impl PageDialogState {
         }
     }
 
-    fn decimals(key: Key) -> bool {
+    /// What a field holds: millimetres, points or a count, its range and
+    /// its step.
+    fn spec(key: Key) -> SpinSpec {
         match key {
-            Key::Setup(field) => {
-                field.is_length() || matches!(field, Field::CharPitch | Field::LinePitch)
-            }
-            Key::ColumnWidth(_) | Key::ColumnSpace(_) => true,
-            Key::ColumnCount | Key::PageStart => false,
-        }
-    }
-
-    fn text(&self, key: Key) -> String {
-        match self.typing.as_ref() {
-            Some((typing, text, true)) if *typing == key => text.clone(),
-            _ => number_text(self.value(key), Self::decimals(key)),
+            Key::Setup(field) if field.is_length() => specs::PAGE_MM,
+            Key::Setup(Field::CharPitch | Field::LinePitch) => specs::PITCH_PT,
+            Key::Setup(Field::Columns) | Key::ColumnCount => specs::count(1.0, 45.0),
+            Key::Setup(Field::LineCountBy) => specs::count(1.0, 100.0),
+            Key::Setup(Field::LineStart) => specs::count(1.0, 32767.0),
+            Key::Setup(_) => specs::count(1.0, 999.0),
+            Key::ColumnWidth(_) | Key::ColumnSpace(_) => specs::PAGE_MM,
+            Key::PageStart => specs::count(0.0, 32767.0),
         }
     }
 
@@ -207,27 +195,6 @@ impl PageDialogState {
             }
             _ => {}
         }
-    }
-
-    /// What was typed becomes the field's value.
-    pub fn commit(&mut self) {
-        if let Some((key, text, started)) = self.typing.take() {
-            if started {
-                if let Ok(value) = text.parse::<f32>() {
-                    self.set(key, value);
-                }
-            }
-        }
-    }
-
-    fn step(&mut self, key: Key, up: bool) {
-        self.commit();
-        let step = match key {
-            Key::Setup(Field::CharPitch | Field::LinePitch) => 0.5,
-            _ => 1.0,
-        };
-        let value = self.value(key) + if up { step } else { -step };
-        self.set(key, value);
     }
 }
 
@@ -487,7 +454,6 @@ impl DocumentView {
             SetupAction::Open(tab) => {
                 self.page_dialog = Some(PageDialogState {
                     dialog: PageDialog::Setup(Box::new(document.page_setup_dialog(tab))),
-                    typing: None,
                     problem: None,
                 });
                 cx.notify();
@@ -497,7 +463,6 @@ impl DocumentView {
                 let setup = document.page_setup_dialog(SetupTab::Grid);
                 self.page_dialog = Some(PageDialogState {
                     dialog: PageDialog::Columns(ColumnsDialog::open(&setup)),
-                    typing: None,
                     problem: None,
                 });
                 cx.notify();
@@ -507,7 +472,6 @@ impl DocumentView {
                 let numbering = document.section_layout().page_numbering;
                 self.page_dialog = Some(PageDialogState {
                     dialog: PageDialog::PageNumbers(PageNumberDialog::open(numbering)),
-                    typing: None,
                     problem: None,
                 });
                 cx.notify();
@@ -533,7 +497,6 @@ impl DocumentView {
                 let setup = document.page_setup_dialog(SetupTab::Other);
                 self.page_dialog = Some(PageDialogState {
                     dialog: PageDialog::Borders(PageBorderDialog::open(&setup)),
-                    typing: None,
                     problem: None,
                 });
                 cx.notify();
@@ -556,7 +519,6 @@ impl DocumentView {
         let Some(mut state) = self.page_dialog.take() else {
             return;
         };
-        state.commit();
         let result = match &state.dialog {
             PageDialog::Setup(dialog) => {
                 if let Some(problem) = dialog.problem() {
@@ -600,79 +562,56 @@ impl DocumentView {
 
     fn edit_setup(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut PageSetupDialog)) {
         self.edit_page_dialog(cx, |state| {
-            state.commit();
             if let PageDialog::Setup(dialog) = &mut state.dialog {
                 edit(dialog);
             }
         });
     }
 
-    /// Keys while a dialog is open: digits into the field being typed,
-    /// Enter applies (or ends the typing), Escape cancels.
+    /// Keys while a dialog is open: Enter applies, Escape cancels; its
+    /// spin boxes take their own keys first (`word_spin`).
     pub(crate) fn page_dialog_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        let Some(state) = self.page_dialog.as_mut() else {
+        if self.page_dialog.is_none() {
             return false;
-        };
-        let key = event.keystroke.key.as_str();
-        match key {
-            "escape" => {
-                if state.typing.take().is_none() {
-                    self.page_dialog = None;
-                }
-            }
+        }
+        match event.keystroke.key.as_str() {
+            "escape" => self.page_dialog = None,
             "enter" | "return" => {
-                if state.typing.is_some() {
-                    state.commit();
-                } else {
-                    self.apply_page_dialog(cx);
-                    return true;
-                }
+                self.apply_page_dialog(cx);
+                return true;
             }
-            "tab" => state.commit(),
-            "backspace" => {
-                if let Some((_, text, started)) = state.typing.as_mut() {
-                    *started = true;
-                    text.pop();
-                }
-            }
-            "up" | "down" => {
-                if let Some((key, _, _)) = state.typing {
-                    state.step(key, event.keystroke.key == "up");
-                    state.typing = Some((key, String::new(), false));
-                }
-            }
-            _ => {
-                let typed = event
-                    .keystroke
-                    .key_char
-                    .clone()
-                    .unwrap_or_else(|| event.keystroke.key.clone());
-                let Some((_, text, started)) = state.typing.as_mut() else {
-                    // The dialog is modal: nothing reaches the document.
-                    return true;
-                };
-                for ch in typed.chars() {
-                    let ch = match ch {
-                        '０'..='９' => char::from(b'0' + (ch as u32 - '０' as u32) as u8),
-                        '．' => '.',
-                        other => other,
-                    };
-                    if ch.is_ascii_digit() || ch == '.' {
-                        if !*started {
-                            text.clear();
-                            *started = true;
-                        }
-                        text.push(ch);
-                    }
-                }
-            }
+            // The dialog is modal: nothing reaches the document.
+            _ => return true,
         }
         cx.notify();
         true
     }
 
-    /// A number field: its value (or what is typed, with a caret), and the
-    /// spinner beside it.
+    /// A number field as a spin box: its value in its unit, and what it
+    /// sets.
+    pub(crate) fn page_spin(&self, key: Key, enabled: bool) -> Spin {
+        let value = self
+            .page_dialog
+            .as_ref()
+            .map_or(0.0, |state| state.value(key));
+        Spin::new(
+            format!("page-{key:?}"),
+            SpinOwner::PageSetup,
+            PageDialogState::spec(key),
+            value as f64,
+            move |view, value| {
+                if let Some(state) = view.page_dialog.as_mut() {
+                    state.set(key, value as f32);
+                    state.problem = None;
+                }
+            },
+        )
+        .enabled(enabled)
+        .width(84.0)
+    }
+
+    /// A number field: the spin box, and the unit after it when the box
+    /// does not show one (段, 字, 行).
     fn number_field(
         &self,
         key: Key,
@@ -680,85 +619,15 @@ impl DocumentView {
         enabled: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Some(state) = self.page_dialog.as_ref() else {
-            return div().into_any_element();
-        };
-        let focused = state
-            .typing
-            .as_ref()
-            .is_some_and(|(typing, _, _)| *typing == key);
-        let id = format!("{key:?}");
+        let spec = PageDialogState::spec(key);
         div()
             .flex()
             .items_center()
-            .gap_0p5()
-            .child(
-                div()
-                    .id(SharedString::from(format!("field-{id}")))
-                    .w(px(64.0))
-                    .h(px(20.0))
-                    .px_1()
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(if focused {
-                        theme::accent()
-                    } else {
-                        theme::border()
-                    })
-                    .bg(theme::canvas())
-                    .when(!enabled, |field| field.text_color(theme::text_faint()))
-                    .when(enabled, |field| {
-                        field
-                            .cursor_text()
-                            .on_click(cx.listener(move |view, _, _, cx| {
-                                view.edit_page_dialog(cx, |state| {
-                                    state.commit();
-                                    state.typing = Some((key, String::new(), false));
-                                })
-                            }))
-                    })
-                    .child(state.text(key))
-                    .when(focused, |field| {
-                        field.child(div().w(px(1.0)).h(px(12.0)).bg(theme::accent()))
-                    }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("up-{id}")))
-                            .px_0p5()
-                            .text_size(px(8.0))
-                            .when(enabled, |spin| {
-                                spin.cursor_pointer()
-                                    .hover(|spin| spin.bg(theme::hovered()))
-                                    .on_click(cx.listener(move |view, _, _, cx| {
-                                        view.edit_page_dialog(cx, |state| state.step(key, true))
-                                    }))
-                            })
-                            .child("▲"),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("down-{id}")))
-                            .px_0p5()
-                            .text_size(px(8.0))
-                            .when(enabled, |spin| {
-                                spin.cursor_pointer()
-                                    .hover(|spin| spin.bg(theme::hovered()))
-                                    .on_click(cx.listener(move |view, _, _, cx| {
-                                        view.edit_page_dialog(cx, |state| state.step(key, false))
-                                    }))
-                            })
-                            .child("▼"),
-                    ),
-            )
-            .child(div().text_color(theme::text_dim()).child(t(unit)))
+            .gap_1()
+            .child(spin_field(self, self.page_spin(key, enabled), cx))
+            .when(spec.unit == SpinUnit::Count, |field| {
+                field.child(div().text_color(theme::text_dim()).child(t(unit)))
+            })
             .into_any_element()
     }
 
@@ -1434,7 +1303,6 @@ impl DocumentView {
 
     fn edit_borders(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut PageBorderDialog)) {
         self.edit_page_dialog(cx, |state| {
-            state.commit();
             if let PageDialog::Borders(dialog) = &mut state.dialog {
                 edit(dialog);
             }
@@ -1622,7 +1490,6 @@ impl DocumentView {
 
     fn edit_columns(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut ColumnsDialog)) {
         self.edit_page_dialog(cx, |state| {
-            state.commit();
             if let PageDialog::Columns(dialog) = &mut state.dialog {
                 edit(dialog);
             }
@@ -1731,7 +1598,6 @@ impl DocumentView {
         edit: impl FnOnce(&mut PageNumberDialog),
     ) {
         self.edit_page_dialog(cx, |state| {
-            state.commit();
             if let PageDialog::PageNumbers(dialog) = &mut state.dialog {
                 edit(dialog);
             }
@@ -1846,7 +1712,7 @@ impl DocumentView {
 
 #[cfg(test)]
 mod tests {
-    use super::{PageDialog, SetupAction};
+    use super::{Field, Key, PageDialog, SetupAction};
     use crate::ribbon::Action;
     use jade_office_model::word::page_setup::{
         mm_to_points, ApplyTo, ColumnPreset, LineNumbersPreset, PageBreak, SetupTab, WordPageSetup,
@@ -1885,28 +1751,44 @@ mod tests {
                 panic!("the ページ設定 dialog");
             };
             assert_eq!(dialog.apply_to, dialog.apply_choices[0]);
-            state.typing = Some((
-                super::Key::Setup(jade_office_model::word::page_setup::Field::MarginLeft),
-                String::new(),
-                false,
-            ));
-        });
-        cx.simulate_keystrokes("3 2 . 5");
-        cx.simulate_keystrokes("enter");
-        view.update(cx, |view, cx| {
-            let state = view.page_dialog.as_mut().unwrap();
-            assert!(state.typing.is_none(), "Enter ends the typing first");
-            state.step(
-                super::Key::Setup(jade_office_model::word::page_setup::Field::Gutter),
-                true,
-            );
             if let PageDialog::Setup(dialog) = &mut state.dialog {
                 dialog
                     .set_multiple_pages(jade_office_model::word::page_setup::MultiplePages::Mirror);
                 dialog.apply_to = ApplyTo::WholeDocument;
             }
+            let left = view.page_spin(Key::Setup(Field::MarginLeft), true);
+            view.focus_spin(&left);
             let _ = cx;
         });
+        // The left margin, typed; Tab commits it.
+        cx.simulate_input("32.5");
+        cx.simulate_keystrokes("tab");
+        view.update(cx, |view, _| {
+            assert!(view.spin.is_none(), "Tab commits the field");
+            let state = view.page_dialog.as_ref().unwrap();
+            assert!((state.value(Key::Setup(Field::MarginLeft)) - 32.5).abs() < 0.05);
+            let gutter = view.page_spin(Key::Setup(Field::Gutter), true);
+            view.focus_spin(&gutter);
+            assert_eq!(view.spin_text().unwrap().text, "0 mm");
+        });
+        // The gutter typed in centimetres, then stepped: ↑ goes on from
+        // 5 mm and the field keeps its unit.
+        cx.simulate_input("0.5 cm");
+        cx.simulate_keystrokes("up");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.spin_text().unwrap().text, "6 mm");
+        });
+        // Something that is not a length is turned down.
+        cx.simulate_input("wide");
+        cx.simulate_keystrokes("tab");
+        view.update(cx, |view, _| {
+            let state = view.page_dialog.as_ref().unwrap();
+            assert!((state.value(Key::Setup(Field::Gutter)) - 6.0).abs() < 0.05);
+            let gutter = view.page_spin(Key::Setup(Field::Gutter), true);
+            view.focus_spin(&gutter);
+        });
+        // Enter commits the field and is the dialog's OK.
+        cx.simulate_input("1");
         cx.simulate_keystrokes("enter");
         view.read_with(cx, |view, _| {
             assert!(view.page_dialog.is_none());

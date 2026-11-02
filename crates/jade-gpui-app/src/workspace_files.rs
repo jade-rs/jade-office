@@ -3,7 +3,7 @@
 //! explorer on), and the documents 自動回復 kept that were never saved —
 //! offered back after a crash, as Word's ドキュメントの回復 does.
 
-use gpui::{div, prelude::*, px, svg, AnyElement, Context, SharedString};
+use gpui::{anchored, deferred, div, prelude::*, px, svg, AnyElement, Context, SharedString};
 use std::path::{Path, PathBuf};
 
 use crate::autorecover::{self, Recovered};
@@ -12,11 +12,14 @@ use crate::tooltip::Tooltip;
 use crate::workspace::Workspace;
 use crate::{i18n, theme};
 
-/// The rows of the recent files, a pin on each.
+/// The rows of the recent files: a pin on each, and on hover a "…" button
+/// whose menu pins or unpins the file and takes it off the list (一覧から削
+/// 除), as Word's start page does. `menu` is the row whose menu is open.
 pub fn recent_rows(
     entries: &[recent::Entry],
     limit: usize,
     id: &'static str,
+    menu: Option<(&'static str, usize)>,
     cx: &mut Context<Workspace>,
 ) -> Vec<AnyElement> {
     entries
@@ -28,9 +31,11 @@ pub fn recent_rows(
             let path = entry.path.clone();
             let pin_path = entry.path.clone();
             let pinned = entry.pinned;
+            let menu_open = menu == Some((id, index));
             div()
                 .id((id, index))
                 .group("recent-row")
+                .relative()
                 .flex()
                 .items_center()
                 .gap_1p5()
@@ -42,6 +47,7 @@ pub fn recent_rows(
                 .text_xs()
                 .text_color(theme::text_dim())
                 .hover(|row| row.bg(theme::hovered()).text_color(theme::text()))
+                .when(menu_open, |row| row.bg(theme::hovered()))
                 .children(kind.map(|kind| {
                     svg()
                         .path(crate::workspace::kind_icon(kind))
@@ -82,12 +88,110 @@ pub fn recent_rows(
                             cx.notify();
                         })),
                 )
+                .child(more_button(id, index, menu_open, cx))
+                .children(menu_open.then(|| recent_menu(&entry.path, pinned, cx)))
                 .on_click(cx.listener(move |workspace, _event, window, cx| {
                     workspace.open_path_from_ui(path.clone(), window, cx)
                 }))
                 .into_any_element()
         })
         .collect()
+}
+
+/// The row's "…" button: shown on hover, or while its menu is open.
+fn more_button(
+    id: &'static str,
+    index: usize,
+    open: bool,
+    cx: &mut Context<Workspace>,
+) -> impl IntoElement {
+    div()
+        .id(("recent-more", index))
+        .p_0p5()
+        .rounded_sm()
+        .tooltip(Tooltip::text(i18n::text("recent.more")))
+        .when(!open, |more| {
+            more.invisible()
+                .group_hover("recent-row", |more| more.visible())
+        })
+        .when(open, |more| more.bg(theme::selected()))
+        .hover(|more| more.bg(theme::selected()))
+        .child(
+            svg()
+                .path("icons/ellipsis.svg")
+                .size_3()
+                .text_color(theme::text_dim()),
+        )
+        .on_click(cx.listener(move |workspace, _event, _window, cx| {
+            cx.stop_propagation();
+            let menu = (!open).then_some((id, index));
+            workspace.set_recent_menu(menu);
+            cx.notify();
+        }))
+}
+
+/// The "…" menu: ピン留め (or ピン留めを外す) and 一覧から削除.
+fn recent_menu(path: &Path, pinned: bool, cx: &mut Context<Workspace>) -> AnyElement {
+    let rows = recent::menu(pinned).into_iter().map(|action| {
+        let path = path.to_path_buf();
+        div()
+            .id(action.label_key())
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .h(px(24.0))
+            .rounded_sm()
+            .whitespace_nowrap()
+            .cursor_pointer()
+            .text_color(theme::text())
+            .hover(|row| row.bg(theme::hovered()))
+            .child(
+                svg()
+                    .path(action.icon())
+                    .size_3()
+                    .text_color(theme::text_dim()),
+            )
+            .child(i18n::text(action.label_key()))
+            .on_click(cx.listener(move |workspace, _event, _window, cx| {
+                cx.stop_propagation();
+                recent::perform(&path, action);
+                workspace.reload_recent();
+                cx.notify();
+            }))
+    });
+    div()
+        .absolute()
+        .top_full()
+        .right_0()
+        .child(
+            deferred(
+                anchored().snap_to_window_with_margin(px(8.0)).child(
+                    div()
+                        .id("recent-menu")
+                        .occlude()
+                        .on_mouse_down_out(cx.listener(|workspace, _, _, cx| {
+                            workspace.set_recent_menu(None);
+                            cx.notify();
+                        }))
+                        .mt_1()
+                        .p_1()
+                        .min_w(px(160.0))
+                        .flex()
+                        .flex_col()
+                        .rounded_md()
+                        .bg(theme::panel())
+                        .border_1()
+                        .border_color(theme::border())
+                        .shadow_lg()
+                        .font_family(crate::UI_FONT_FAMILY)
+                        .text_xs()
+                        .children(rows),
+                ),
+            )
+            .with_priority(4),
+        )
+        .into_any_element()
 }
 
 /// The recovered documents, each with 開く and 削除.
@@ -240,7 +344,7 @@ pub fn start_lists(workspace: &Workspace, cx: &mut Context<Workspace>) -> AnyEle
             lists.child(section(
                 "workspace.recent",
                 "icons/clock.svg",
-                recent_rows(&entries, 10, "start-recent", cx),
+                recent_rows(&entries, 10, "start-recent", workspace.recent_menu(), cx),
             ))
         })
         .when(!folders.is_empty(), |lists| {

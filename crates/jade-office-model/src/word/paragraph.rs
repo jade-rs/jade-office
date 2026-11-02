@@ -438,6 +438,16 @@ impl ParagraphForm {
         &mut self.fields[Self::index(self.focus)]
     }
 
+    /// `field`'s number, if what it holds reads as one.
+    pub fn number(&self, field: ParagraphField) -> Option<f32> {
+        parse_number(&self.field(field).text)
+    }
+
+    /// Sets `field` from its spin box.
+    pub fn set_number(&mut self, field: ParagraphField, value: f32) {
+        self.fields[Self::index(field)] = TextEdit::selected(shown_number(value));
+    }
+
     /// Puts typing in `field`, its text selected so typing replaces it.
     pub fn focus_on(&mut self, field: ParagraphField) {
         self.focus = field;
@@ -533,5 +543,31 @@ mod tests {
         assert_eq!(shown_number(2.0), "2");
         assert_eq!(shown_number(10.5), "10.5");
         assert_eq!(shown_number(0.0), "0");
+    }
+
+    #[test]
+    fn a_spin_box_sets_a_field_that_reads_back() {
+        let format = ParagraphFormat {
+            alignment: "left".into(),
+            unit: IndentUnit::Characters,
+            left: 1.0,
+            right: 0.0,
+            special: SpecialIndent::None,
+            special_by: 0.0,
+            before: 0.0,
+            after: 0.0,
+            line: LineSpacing::Single,
+            widow_control: true,
+            keep_next: false,
+            keep_lines: false,
+            page_break_before: false,
+        };
+        let mut form = ParagraphForm::new(format);
+        assert_eq!(form.number(ParagraphField::Left), Some(1.0));
+        form.set_number(ParagraphField::Left, 1.5);
+        form.set_number(ParagraphField::Before, 6.0);
+        let read = form.read().unwrap();
+        assert_eq!(read.left, 1.5);
+        assert_eq!(read.before, 6.0);
     }
 }

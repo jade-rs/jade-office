@@ -238,6 +238,8 @@ pub fn prompt_and_open(cx: &mut App) {
 /// with one path per line; a pinned one (ピン留め) is marked, stays at the
 /// top and is never pushed off the list.
 pub mod recent {
+    use jade_office_model::recent_files::{self, RecentEntry};
+    pub use jade_office_model::recent_files::{menu, RecentAction};
     use std::path::{Path, PathBuf};
 
     const LIMIT: usize = 12;
@@ -297,6 +299,12 @@ pub mod recent {
         write(&pin(read_all(), path, pinned));
     }
 
+    /// A "…" menu entry on `path`'s row: ピン留め, ピン留めを外す or 一覧から
+    /// 削除.
+    pub fn perform(path: &Path, action: RecentAction) {
+        write(&act(read_all(), path, action));
+    }
+
     fn parse(contents: &str) -> Vec<Entry> {
         let mut entries: Vec<Entry> = contents
             .lines()
@@ -332,36 +340,47 @@ pub mod recent {
             .join("\n")
     }
 
-    /// `path` moved to the front of its group, without duplicates, the
-    /// unpinned ones cut to the limit.
-    fn push(mut entries: Vec<Entry>, path: PathBuf) -> Vec<Entry> {
-        let pinned = entries
-            .iter()
-            .any(|entry| entry.path == path && entry.pinned);
-        entries.retain(|entry| entry.path != path);
-        entries.insert(0, Entry { path, pinned });
-        entries.sort_by_key(|entry| !entry.pinned);
-        let mut unpinned = 0;
-        entries.retain(|entry| {
-            if entry.pinned {
-                return true;
-            }
-            unpinned += 1;
-            unpinned <= LIMIT
-        });
+    fn to_list(entries: Vec<Entry>) -> Vec<RecentEntry<PathBuf>> {
         entries
+            .into_iter()
+            .map(|entry| RecentEntry {
+                key: entry.path,
+                pinned: entry.pinned,
+            })
+            .collect()
     }
 
-    fn pin(mut entries: Vec<Entry>, path: &Path, pinned: bool) -> Vec<Entry> {
-        match entries.iter_mut().find(|entry| entry.path == path) {
-            Some(entry) => entry.pinned = pinned,
-            None => entries.push(Entry {
-                path: path.to_path_buf(),
-                pinned,
-            }),
-        }
-        entries.sort_by_key(|entry| !entry.pinned);
+    fn from_list(entries: Vec<RecentEntry<PathBuf>>) -> Vec<Entry> {
         entries
+            .into_iter()
+            .map(|entry| Entry {
+                path: entry.key,
+                pinned: entry.pinned,
+            })
+            .collect()
+    }
+
+    /// `path` moved to the front of its group, without duplicates, the
+    /// unpinned ones cut to the limit.
+    fn push(entries: Vec<Entry>, path: PathBuf) -> Vec<Entry> {
+        from_list(recent_files::push(to_list(entries), path, LIMIT))
+    }
+
+    fn pin(entries: Vec<Entry>, path: &Path, pinned: bool) -> Vec<Entry> {
+        from_list(recent_files::pin(
+            to_list(entries),
+            &path.to_path_buf(),
+            pinned,
+        ))
+    }
+
+    /// What the row's "…" menu picked, done to `entries`.
+    fn act(entries: Vec<Entry>, path: &Path, action: RecentAction) -> Vec<Entry> {
+        from_list(recent_files::apply(
+            to_list(entries),
+            &path.to_path_buf(),
+            action,
+        ))
     }
 
     /// The folders the recent files are in, most recent first: where Word
@@ -427,6 +446,29 @@ pub mod recent {
             assert!(read[0].pinned);
             let read = pin(read, Path::new("/b.docx"), false);
             assert!(read.iter().all(|entry| !entry.pinned));
+        }
+
+        #[test]
+        fn removing_from_the_list_takes_pinned_and_unpinned_files_off() {
+            let entries = parse("pinned\t/kept.docx\n/a.docx\n/b.xlsx");
+            let entries = act(entries, Path::new("/a.docx"), RecentAction::Remove);
+            let read = parse(&format(&entries));
+            assert_eq!(
+                paths(&read),
+                ["/kept.docx", "/b.xlsx"].map(PathBuf::from).to_vec()
+            );
+            assert!(read[0].pinned);
+            let read = act(read, Path::new("/kept.docx"), RecentAction::Remove);
+            assert_eq!(format(&read), "/b.xlsx");
+        }
+
+        #[test]
+        fn the_menu_pins_and_unpins_through_the_store_format() {
+            let entries = parse("/a.docx\n/b.xlsx");
+            let entries = act(entries, Path::new("/b.xlsx"), RecentAction::Pin);
+            assert_eq!(format(&entries), "pinned\t/b.xlsx\n/a.docx");
+            let entries = act(entries, Path::new("/b.xlsx"), RecentAction::Unpin);
+            assert!(entries.iter().all(|entry| !entry.pinned));
         }
     }
 }

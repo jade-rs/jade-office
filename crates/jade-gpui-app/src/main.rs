@@ -70,6 +70,7 @@ mod word_save_options;
 #[cfg(test)]
 mod word_shortcut_tests;
 mod word_signatures;
+mod word_spin;
 mod word_story;
 mod word_styles;
 mod word_table;
@@ -1121,6 +1122,7 @@ impl gpui::AssetSource for Assets {
             "chevron-right",
             "chevrons-up-down",
             "clock",
+            "ellipsis",
             "eraser",
             "eye-off",
             "file",
@@ -1376,6 +1378,8 @@ struct DocumentView {
     tables: word_table::TableUi,
     /// The フォント dialog and the other character tools' dialogs.
     characters: word_characters::Characters,
+    /// The spin box with the keyboard, in whichever dialog (`word_spin`).
+    spin: Option<word_spin::SpinFocus>,
     /// The paragraph, list, style and design tools' dialog, rulers and pane.
     tools: word_tools::WordTools,
     /// 参考資料's dialogs, the navigation pane and ブックマーク表示.
@@ -1621,6 +1625,13 @@ impl DocumentView {
         // through would edit around the preedit.
         if self.marked.is_some() {
             return;
+        }
+        // A spin box with the keyboard takes its keys first; Enter and
+        // Escape go on to its dialog once it has let go.
+        match self.spin_key(event, cx) {
+            Some(word_spin::SpinKeyOutcome::Taken) => return cx.stop_propagation(),
+            Some(word_spin::SpinKeyOutcome::Typing) => return,
+            Some(word_spin::SpinKeyOutcome::PassOn) | None => {}
         }
         // The 印刷 panel takes every key while it is open.
         if word_print::handle_key(self, event.keystroke.key.as_str(), cx) {
@@ -2653,6 +2664,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = self.spin_text() {
+            return Some(field);
+        }
         if let Some(field) = self.printing.as_ref().and_then(|panel| panel.field()) {
             return Some(field);
         }
@@ -2694,6 +2708,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if self.spin_text().is_some() {
+            return self.spin_text_mut();
+        }
         if self.printing.as_ref().is_some_and(|panel| panel.typing) {
             return self.printing.as_mut().and_then(|panel| panel.field_mut());
         }
@@ -4327,8 +4344,8 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // A dialog is modal: its key handler takes the digits it wants.
-        if self.page_dialog.is_some() {
+        // A dialog is modal: only its spin box takes typing.
+        if self.page_dialog.is_some() && self.spin_text().is_none() {
             return;
         }
         // 閲覧: typing changes nothing.
@@ -4383,7 +4400,7 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.page_dialog.is_some() {
+        if self.page_dialog.is_some() && self.spin_text().is_none() {
             return;
         }
         if word_views::modes::read_only(self)
@@ -5356,6 +5373,7 @@ fn document_view(
         show_comments: false,
         tables: word_table::TableUi::default(),
         characters: word_characters::Characters::default(),
+        spin: None,
         tools: word_tools::WordTools::default(),
         references: word_references::References::default(),
         controls: word_controls::ControlsUi::default(),

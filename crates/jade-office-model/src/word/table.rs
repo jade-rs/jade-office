@@ -736,6 +736,41 @@ impl TablePropertiesDialog {
         self.tick(field);
     }
 
+    /// A box's number, in millimetres (or percent): 0 when it holds none.
+    pub fn number(&self, field: Field) -> f32 {
+        self.value(field).trim().parse().unwrap_or(0.0)
+    }
+
+    /// A box set from its spin box, which has turned what was typed into
+    /// the box's unit: its checkbox goes on as when it is typed into.
+    pub fn set_number(&mut self, field: Field, value: f32) {
+        let value = (value * 10.0).round() / 10.0;
+        self.text.insert(
+            field,
+            if value.fract() == 0.0 {
+                format!("{value:.0}")
+            } else {
+                format!("{value:.1}")
+            },
+        );
+        self.tick(field);
+    }
+
+    /// The spin box a field is: millimetres by tenths (a position may be
+    /// negative), or the table's width as a percentage.
+    pub fn spin_spec(&self, field: Field) -> crate::spin::SpinSpec {
+        use crate::spin::{specs, SpinSpec, SpinUnit};
+        match field {
+            Field::TableWidth if self.width_percent => {
+                SpinSpec::new(SpinUnit::Percent, 0.0, 600.0, 1.0, 1)
+            }
+            Field::PositionHorizontal | Field::PositionVertical | Field::Indent => {
+                SpinSpec::new(SpinUnit::Mm, -558.8, 558.8, 1.0, 1)
+            }
+            _ => specs::TABLE_MM,
+        }
+    }
+
     /// A value typed into a box turns its checkbox on, as in Word.
     fn tick(&mut self, field: Field) {
         match field {
@@ -2582,6 +2617,15 @@ mod tests {
         };
         let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Row);
         assert!(dialog.commands(span, 2, &[100.0, 100.0], 450.0).is_empty());
+        // A spin box's value lands in the box and ticks its checkbox.
+        let mut spun = dialog.clone();
+        let spec = spun.spin_spec(Field::Spacing);
+        assert_eq!(spec.format(spun.number(Field::Spacing) as f64), "0 mm");
+        spun.set_number(Field::Spacing, 1.25);
+        assert_eq!(spun.value(Field::Spacing), "1.3");
+        assert!(spun.spacing_on);
+        spun.width_percent = true;
+        assert_eq!(spun.spin_spec(Field::TableWidth).format(80.0), "80 %");
         dialog.focus = Some(Field::RowHeight);
         dialog.type_text("10");
         dialog.row_exact = true;

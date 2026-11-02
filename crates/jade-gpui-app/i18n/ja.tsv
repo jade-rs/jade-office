@@ -3931,3 +3931,7 @@ sheet.shape.speech_bubble_rounded	吹き出し: 角を丸めた四角形
 sheet.shape.speech_bubble_oval	吹き出し: 円形
 sheet.menu.ungroup_sheets	シートのグループ解除
 sheet.group	[グループ]
+recent.remove	一覧から削除
+recent.more	その他のオプション
+chars.color.new	新規
+chars.color.current	現在の色

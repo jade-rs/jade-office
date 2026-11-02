@@ -308,6 +308,10 @@ pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
             symbol.chosen = Some(code);
         }
     }
+    // A colour code typed wins over the wheel.
+    if let Dialog::Color(color) = &mut dialog {
+        color.wheel.set_hex(&typed.text);
+    }
     view.characters.close();
     let done = match dialog {
         Dialog::Font(dialog) => {
@@ -320,19 +324,19 @@ pub fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         Dialog::Ruby(state) => return ruby::confirm(view, state, cx),
         Dialog::Enclose(dialog) => return enclose::confirm(view, dialog, typed.text, cx),
         Dialog::PasteSpecial(dialog) => return paste::confirm(view, dialog, cx),
-        Dialog::Color(dialog) => match dialog.back {
+        Dialog::Color(dialog) => match (dialog.hex(), dialog.back) {
             // From the フォント dialog: back to it, with the colour chosen.
-            Some(mut font) => {
-                font.format.color = Some(dialog.color.to_ascii_uppercase());
+            (hex, Some(mut font)) => {
+                font.format.color = Some(hex);
                 font.format.theme_color = None;
                 view.characters.open(Dialog::Font(font));
                 return cx.notify();
             }
-            None => view.word_edit_result(|document| {
+            (hex, None) => view.word_edit_result(|document| {
                 WordCharacters::apply_run_format(
                     document,
                     HeadlessRunFormat {
-                        color: Some(dialog.hex()),
+                        color: Some(hex),
                         ..Default::default()
                     },
                 )

@@ -29,6 +29,7 @@ pub(crate) mod side_by_side;
 
 use crate::view::{zoom_step, DocView, EditorArea, Kind};
 use crate::{i18n, palette, Fonts, Host, UI_FONT};
+use jade_web::recent_files::{self, RecentAction, RecentEntry};
 
 const TITLE_BAR_HEIGHT: f32 = 40.0;
 const ACTIVITY_BAR_WIDTH: f32 = 44.0;
@@ -45,7 +46,9 @@ pub struct Workspace {
     /// The bytes of every file opened, so a closed one can come back from
     /// the recent list: the page has no path to read it from again.
     files: HashMap<SharedString, Rc<Vec<u8>>>,
-    recent: Vec<SharedString>,
+    recent: Vec<RecentEntry<SharedString>>,
+    /// The recent row whose "…" menu is open.
+    recent_menu: Option<usize>,
     error: Option<SharedString>,
     focus: FocusHandle,
     fonts: Rc<Fonts>,
@@ -81,6 +84,7 @@ impl Workspace {
             samples: samples.into_iter().map(SharedString::from).collect(),
             files: HashMap::new(),
             recent: Vec::new(),
+            recent_menu: None,
             error: None,
             focus: cx.focus_handle(),
             fonts,
@@ -276,9 +280,8 @@ impl Workspace {
                     .detach();
                 self.tabs.push(entity);
                 self.files.insert(name.clone(), bytes);
-                self.recent.retain(|recent| *recent != name);
-                self.recent.insert(0, name);
-                self.recent.truncate(RECENT_LIMIT);
+                self.recent =
+                    recent_files::push(std::mem::take(&mut self.recent), name, RECENT_LIMIT);
                 self.error = None;
                 self.activate(self.tabs.len() - 1, window, cx);
             }
@@ -690,14 +693,7 @@ impl Workspace {
             .recent
             .iter()
             .enumerate()
-            .map(|(index, name)| {
-                let name = name.clone();
-                row(("recent-row", index), &name, 8.0, false).on_click(cx.listener(
-                    move |workspace, _event, window, cx| {
-                        workspace.open_by_name(name.clone(), window, cx)
-                    },
-                ))
-            })
+            .map(|(index, entry)| self.recent_row(index, entry, cx))
             .collect();
 
         div()
@@ -776,6 +772,171 @@ impl Workspace {
                     )
                     .child(div().flex().flex_col().pb_2().children(recent))
             })
+    }
+
+    /// A recent file: its pin, and on hover a "…" button whose menu pins or
+    /// unpins it and takes it off the list (一覧から削除), as the native
+    /// start page's rows do.
+    fn recent_row(
+        &self,
+        index: usize,
+        entry: &RecentEntry<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let name = entry.key.clone();
+        let pinned = entry.pinned;
+        let menu_open = self.recent_menu == Some(index);
+        let kind = Kind::of(&name);
+        let pin_name = name.clone();
+        let open_name = name.clone();
+        div()
+            .id(("recent-row", index))
+            .group("recent-row")
+            .relative()
+            .flex()
+            .items_center()
+            .gap_1p5()
+            .mx_1()
+            .py(px(4.0))
+            .pl(px(8.0))
+            .pr_2()
+            .rounded_md()
+            .cursor_pointer()
+            .text_xs()
+            .text_color(palette::dim())
+            .hover(|row| row.bg(palette::hovered()).text_color(palette::text()))
+            .when(menu_open, |row| row.bg(palette::hovered()))
+            .children(kind.map(|kind| svg().path(kind.icon()).size_3p5().text_color(kind.color())))
+            .child(div().flex_1().min_w_0().truncate().child(name.clone()))
+            .child(
+                div()
+                    .id(("recent-pin", index))
+                    .p_0p5()
+                    .rounded_sm()
+                    .tooltip(crate::tooltip::Tooltip::text(i18n::text(if pinned {
+                        "recent.unpin"
+                    } else {
+                        "recent.pin"
+                    })))
+                    .when(!pinned, |pin| {
+                        pin.invisible()
+                            .group_hover("recent-row", |pin| pin.visible())
+                    })
+                    .hover(|pin| pin.bg(palette::selected()))
+                    .child(svg().path("icons/pin.svg").size_3().text_color(if pinned {
+                        palette::accent()
+                    } else {
+                        palette::faint()
+                    }))
+                    .on_click(cx.listener(move |workspace, _event, _window, cx| {
+                        cx.stop_propagation();
+                        let action = if pinned {
+                            RecentAction::Unpin
+                        } else {
+                            RecentAction::Pin
+                        };
+                        workspace.recent_action(&pin_name, action, cx);
+                    })),
+            )
+            .child(
+                div()
+                    .id(("recent-more", index))
+                    .p_0p5()
+                    .rounded_sm()
+                    .tooltip(crate::tooltip::Tooltip::text(i18n::text("recent.more")))
+                    .when(!menu_open, |more| {
+                        more.invisible()
+                            .group_hover("recent-row", |more| more.visible())
+                    })
+                    .when(menu_open, |more| more.bg(palette::selected()))
+                    .hover(|more| more.bg(palette::selected()))
+                    .child(
+                        svg()
+                            .path("icons/ellipsis.svg")
+                            .size_3()
+                            .text_color(palette::dim()),
+                    )
+                    .on_click(cx.listener(move |workspace, _event, _window, cx| {
+                        cx.stop_propagation();
+                        workspace.recent_menu = (!menu_open).then_some(index);
+                        cx.notify();
+                    })),
+            )
+            .when(menu_open, |row| {
+                row.child(self.recent_menu_panel(&name, pinned, cx))
+            })
+            .on_click(cx.listener(move |workspace, _event, window, cx| {
+                workspace.open_by_name(open_name.clone(), window, cx)
+            }))
+            .into_any_element()
+    }
+
+    /// The "…" menu: ピン留め (or ピン留めを外す) and 一覧から削除.
+    fn recent_menu_panel(
+        &self,
+        name: &SharedString,
+        pinned: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let rows = recent_files::menu(pinned).into_iter().map(|action| {
+            let name = name.clone();
+            div()
+                .id(action.label_key())
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .h(px(24.0))
+                .rounded_sm()
+                .whitespace_nowrap()
+                .cursor_pointer()
+                .text_color(palette::text())
+                .hover(|row| row.bg(palette::hovered()))
+                .child(
+                    svg()
+                        .path(action.icon())
+                        .size_3()
+                        .text_color(palette::dim()),
+                )
+                .child(i18n::text(action.label_key()))
+                .on_click(cx.listener(move |workspace, _event, _window, cx| {
+                    cx.stop_propagation();
+                    workspace.recent_action(&name, action, cx);
+                }))
+        });
+        div().absolute().top_full().right_0().child(
+            gpui::deferred(
+                gpui::anchored().snap_to_window_with_margin(px(8.0)).child(
+                    div()
+                        .id("recent-menu")
+                        .occlude()
+                        .on_mouse_down_out(cx.listener(|workspace, _, _, cx| {
+                            workspace.recent_menu = None;
+                            cx.notify();
+                        }))
+                        .mt_1()
+                        .p_1()
+                        .min_w(px(160.0))
+                        .flex()
+                        .flex_col()
+                        .rounded_md()
+                        .bg(palette::panel())
+                        .border_1()
+                        .border_color(palette::border())
+                        .shadow_lg()
+                        .text_xs()
+                        .children(rows),
+                ),
+            )
+            .with_priority(4),
+        )
+    }
+
+    /// A "…" menu entry (or the pin) done to the recent list.
+    fn recent_action(&mut self, name: &SharedString, action: RecentAction, cx: &mut Context<Self>) {
+        self.recent = recent_files::apply(std::mem::take(&mut self.recent), name, action);
+        self.recent_menu = None;
+        cx.notify();
     }
 
     /// 回復されたファイル: each copy, when it was made, 開く and 削除.

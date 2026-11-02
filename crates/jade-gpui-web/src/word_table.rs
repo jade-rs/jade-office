@@ -17,6 +17,7 @@ use crate::ribbon::{
     dropdown, group, listener, menu_caption, menu_panel, menu_row, row, Action, Popup,
 };
 use crate::tooltip::Tooltip;
+use crate::view::word_spin::{spin_field, Spin, SpinOwner};
 use crate::view::DocView;
 use crate::{i18n, palette};
 
@@ -1011,9 +1012,13 @@ pub fn insert_menu_rows(cx: &mut Context<DocView>) -> Vec<AnyElement> {
 
 // ---- what the tools do ---------------------------------------------------------
 
-pub fn dialog_element(dialog: &TableDialog, cx: &mut Context<DocView>) -> AnyElement {
+pub fn dialog_element(
+    view: &DocView,
+    dialog: &TableDialog,
+    cx: &mut Context<DocView>,
+) -> AnyElement {
     let body = match dialog {
-        TableDialog::Properties(properties) => properties_body(properties, cx),
+        TableDialog::Properties(properties) => properties_body(view, properties, cx),
         TableDialog::Borders(borders) => borders_body(borders, cx),
         TableDialog::Cells { delete, shift } => cells_body(*delete, *shift, cx),
         TableDialog::Split {
@@ -1124,49 +1129,40 @@ fn props(
     })
 }
 
-/// A number box of 表のプロパティ: its value, its unit, and ▼▲.
-fn number_box(
-    dialog: &TablePropertiesDialog,
-    field: Field,
-    unit: &'static str,
-    cx: &mut Context<DocView>,
-) -> AnyElement {
-    let focused = dialog.focus == Some(field);
-    let id = format!("{field:?}");
-    div()
-        .flex()
-        .items_center()
-        .gap_0p5()
-        .child(
-            div()
-                .id(SharedString::from(format!("{id}-box")))
-                .w(px(54.0))
-                .px_1()
-                .rounded_sm()
-                .border_1()
-                .border_color(if focused {
-                    palette::accent()
-                } else {
-                    palette::border()
-                })
-                .bg(palette::window())
-                .cursor_pointer()
-                .child(dialog.value(field).to_string())
-                .on_click(props(cx, move |dialog| dialog.focus = Some(field))),
-        )
-        .child(div().text_color(palette::dim()).child(unit))
-        .child(
-            chip(SharedString::from(format!("{id}-down")), "▼", false)
-                .on_click(props(cx, move |dialog| dialog.step(field, -0.5))),
-        )
-        .child(
-            chip(SharedString::from(format!("{id}-up")), "▲", false)
-                .on_click(props(cx, move |dialog| dialog.step(field, 0.5))),
-        )
-        .into_any_element()
+/// A number field of 表のプロパティ as a spin box showing its unit — mm,
+/// or % for a width in percent.
+pub(crate) fn table_spin(dialog: &TablePropertiesDialog, field: Field) -> Spin {
+    Spin::new(
+        format!("table-{field:?}"),
+        SpinOwner::Table,
+        dialog.spin_spec(field),
+        dialog.number(field) as f64,
+        move |view, value| {
+            if let Some(TableDialog::Properties(properties)) = view
+                .table_tools_mut()
+                .and_then(|tools| tools.dialog.as_mut())
+            {
+                properties.set_number(field, value as f32);
+            }
+        },
+    )
+    .width(80.0)
 }
 
-fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) -> AnyElement {
+fn number_box(
+    view: &DocView,
+    dialog: &TablePropertiesDialog,
+    field: Field,
+    cx: &mut Context<DocView>,
+) -> AnyElement {
+    spin_field(view, table_spin(dialog, field), cx)
+}
+
+fn properties_body(
+    view: &DocView,
+    dialog: &TablePropertiesDialog,
+    cx: &mut Context<DocView>,
+) -> AnyElement {
     let tabs = PropertiesTab::ALL
         .iter()
         .enumerate()
@@ -1189,7 +1185,6 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
             .into_any_element()
         })
         .collect::<Vec<_>>();
-    let mm_unit = "mm";
     let body = match dialog.tab {
         PropertiesTab::Table => {
             let mut body = div()
@@ -1202,12 +1197,7 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
                             checkbox("width-on", t("table.prop.width"), dialog.width_on)
                                 .on_click(props(cx, |dialog| dialog.width_on = !dialog.width_on)),
                         )
-                        .child(number_box(
-                            dialog,
-                            Field::TableWidth,
-                            if dialog.width_percent { "%" } else { mm_unit },
-                            cx,
-                        ))
+                        .child(number_box(view, dialog, Field::TableWidth, cx))
                         .child(div().text_color(palette::dim()).child(t("table.prop.unit")))
                         .child(
                             chip("unit-mm", "mm", !dialog.width_percent)
@@ -1239,9 +1229,9 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
                     ),
                 )
                 .child(line().child(label("table.prop.indent")).child(number_box(
+                    view,
                     dialog,
                     Field::Indent,
-                    mm_unit,
                     cx,
                 )))
                 .child(
@@ -1274,7 +1264,7 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
                         ),
                 );
             if dialog.position_open {
-                body = body.child(position_section(dialog, cx));
+                body = body.child(position_section(view, dialog, cx));
             }
             if dialog.options_open {
                 body = body.child(
@@ -1290,16 +1280,16 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
                         .child(
                             line()
                                 .child(label("table.prop.top"))
-                                .child(number_box(dialog, Field::MarginTop, mm_unit, cx))
+                                .child(number_box(view, dialog, Field::MarginTop, cx))
                                 .child(label("table.prop.left_margin"))
-                                .child(number_box(dialog, Field::MarginLeft, mm_unit, cx)),
+                                .child(number_box(view, dialog, Field::MarginLeft, cx)),
                         )
                         .child(
                             line()
                                 .child(label("table.prop.bottom"))
-                                .child(number_box(dialog, Field::MarginBottom, mm_unit, cx))
+                                .child(number_box(view, dialog, Field::MarginBottom, cx))
                                 .child(label("table.prop.right_margin"))
-                                .child(number_box(dialog, Field::MarginRight, mm_unit, cx)),
+                                .child(number_box(view, dialog, Field::MarginRight, cx)),
                         )
                         .child(
                             line()
@@ -1313,7 +1303,7 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
                                         dialog.spacing_on = !dialog.spacing_on
                                     })),
                                 )
-                                .child(number_box(dialog, Field::Spacing, mm_unit, cx)),
+                                .child(number_box(view, dialog, Field::Spacing, cx)),
                         )
                         .child(
                             checkbox("autofit-on", t("table.prop.autofit"), dialog.autofit)
@@ -1344,7 +1334,7 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
                             dialog.row_height_on = !dialog.row_height_on
                         })),
                     )
-                    .child(number_box(dialog, Field::RowHeight, mm_unit, cx))
+                    .child(number_box(view, dialog, Field::RowHeight, cx))
                     .child(
                         div()
                             .text_color(palette::dim())
@@ -1398,7 +1388,7 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
                             dialog.column_width_on = !dialog.column_width_on
                         })),
                     )
-                    .child(number_box(dialog, Field::ColumnWidth, mm_unit, cx)),
+                    .child(number_box(view, dialog, Field::ColumnWidth, cx)),
             ),
         PropertiesTab::Cell => {
             let mut body = div()
@@ -1413,7 +1403,7 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
                                     dialog.cell_width_on = !dialog.cell_width_on
                                 })),
                         )
-                        .child(number_box(dialog, Field::CellWidth, mm_unit, cx)),
+                        .child(number_box(view, dialog, Field::CellWidth, cx)),
                 )
                 .child(
                     line()
@@ -1470,16 +1460,16 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
                         .child(
                             line()
                                 .child(label("table.prop.top"))
-                                .child(number_box(dialog, Field::CellMarginTop, mm_unit, cx))
+                                .child(number_box(view, dialog, Field::CellMarginTop, cx))
                                 .child(label("table.prop.left_margin"))
-                                .child(number_box(dialog, Field::CellMarginLeft, mm_unit, cx)),
+                                .child(number_box(view, dialog, Field::CellMarginLeft, cx)),
                         )
                         .child(
                             line()
                                 .child(label("table.prop.bottom"))
-                                .child(number_box(dialog, Field::CellMarginBottom, mm_unit, cx))
+                                .child(number_box(view, dialog, Field::CellMarginBottom, cx))
                                 .child(label("table.prop.right_margin"))
-                                .child(number_box(dialog, Field::CellMarginRight, mm_unit, cx)),
+                                .child(number_box(view, dialog, Field::CellMarginRight, cx)),
                         ),
                 );
             }
@@ -1496,8 +1486,11 @@ fn properties_body(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) ->
 }
 
 /// 表の位置.
-fn position_section(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) -> AnyElement {
-    let mm_unit = "mm";
+fn position_section(
+    view: &DocView,
+    dialog: &TablePropertiesDialog,
+    cx: &mut Context<DocView>,
+) -> AnyElement {
     let horizontal = [
         ("left", "table.prop.left"),
         ("center", "table.prop.center"),
@@ -1541,7 +1534,7 @@ fn position_section(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) -
                         dialog.position_x_align = Some(value.to_string())
                     }))
                 }))
-                .child(number_box(dialog, Field::PositionHorizontal, mm_unit, cx)),
+                .child(number_box(view, dialog, Field::PositionHorizontal, cx)),
         )
         .child(
             line()
@@ -1570,7 +1563,7 @@ fn position_section(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) -
                         dialog.position_y_align = Some(value.to_string())
                     }))
                 }))
-                .child(number_box(dialog, Field::PositionVertical, mm_unit, cx)),
+                .child(number_box(view, dialog, Field::PositionVertical, cx)),
         )
         .child(
             line()
@@ -1590,16 +1583,16 @@ fn position_section(dialog: &TablePropertiesDialog, cx: &mut Context<DocView>) -
         .child(
             line()
                 .child(label("table.prop.top"))
-                .child(number_box(dialog, Field::DistanceTop, mm_unit, cx))
+                .child(number_box(view, dialog, Field::DistanceTop, cx))
                 .child(label("table.prop.left_margin"))
-                .child(number_box(dialog, Field::DistanceLeft, mm_unit, cx)),
+                .child(number_box(view, dialog, Field::DistanceLeft, cx)),
         )
         .child(
             line()
                 .child(label("table.prop.bottom"))
-                .child(number_box(dialog, Field::DistanceBottom, mm_unit, cx))
+                .child(number_box(view, dialog, Field::DistanceBottom, cx))
                 .child(label("table.prop.right_margin"))
-                .child(number_box(dialog, Field::DistanceRight, mm_unit, cx)),
+                .child(number_box(view, dialog, Field::DistanceRight, cx)),
         )
         .child(
             line()
