@@ -109,6 +109,9 @@ pub(super) struct Sheet {
     pub finding: Option<FindBar>,
     /// A note being written on a cell.
     pub noting: Option<(CellRef, TextEdit)>,
+    /// Whether that is a reply to the cell's threaded comment rather than
+    /// the note itself.
+    pub replying: bool,
     /// Save As (⌘⇧S): the file's name being typed.
     pub saving_as: Option<TextEdit>,
     /// A conditional format's dialog, asking for its value.
@@ -781,6 +784,8 @@ enum MenuCommand {
     MoveSheet(usize, usize),
     EditNote,
     DeleteNote,
+    /// A reply to the cell's threaded comment.
+    ReplyComment,
     Hide,
     Unhide,
     FreezePanes,
@@ -865,6 +870,7 @@ impl Sheet {
             going_to: false,
             finding: None,
             noting: None,
+            replying: false,
             saving_as: None,
             asking: None,
             managing: false,
@@ -2796,8 +2802,18 @@ impl DocView {
                 self.sheets_changed(result, cx);
             }
         } else if let Some((cell, text)) = sheet.noting.take() {
+            let replying = std::mem::take(&mut sheet.replying);
             if take {
-                let result = sheet.book.set_note(cell, &text.text, "jade");
+                let result = if replying {
+                    sheet.book.reply_to_comment(
+                        cell,
+                        &text.text,
+                        "jade",
+                        &super::word_review::now_iso(),
+                    )
+                } else {
+                    sheet.book.set_note(cell, &text.text, "jade")
+                };
                 self.edited(result, cx);
             }
         } else if sheet.finding.take().is_some() {
@@ -3118,6 +3134,14 @@ impl DocView {
                 let at = selection.active;
                 let text = sheet.book.note(at).unwrap_or_default().to_string();
                 sheet.noting = Some((at, TextEdit::new(text)));
+                sheet.replying = false;
+                cx.notify();
+                return;
+            }
+            // A reply starts empty, the thread shown above it.
+            MenuCommand::ReplyComment => {
+                sheet.noting = Some((selection.active, TextEdit::new(String::new())));
+                sheet.replying = true;
                 cx.notify();
                 return;
             }
@@ -4626,6 +4650,9 @@ impl DocView {
                             items.push((MenuCommand::ClearOutline, "sheet.menu.clear_outline"));
                         }
                     }
+                    if sheet.book.has_comment_thread(sheet.selection.active) {
+                        items.push((MenuCommand::ReplyComment, "sheet.menu.reply_comment"));
+                    }
                     if sheet.book.note(sheet.selection.active).is_some() {
                         items.extend([
                             (MenuCommand::EditNote, "sheet.menu.edit_note"),
@@ -4973,6 +5000,19 @@ impl DocView {
             let (x, y, w, _) = sheet
                 .book
                 .cell_rect(*cell, (f64::from(at.0 / zoom), f64::from(at.1 / zoom)))?;
+            let thread = sheet
+                .replying
+                .then(|| sheet.book.note(*cell))
+                .flatten()
+                .map(|thread| {
+                    div()
+                        .pb_1()
+                        .mb_1()
+                        .border_b_1()
+                        .border_color(rgb(0xd6cf9a))
+                        .text_color(rgb(0x5f5f5f))
+                        .child(thread.to_string())
+                });
             Some(
                 div()
                     .absolute()
@@ -4987,6 +5027,7 @@ impl DocView {
                     .shadow_md()
                     .text_xs()
                     .text_color(gpui::black())
+                    .children(thread)
                     .child(caret_line(text, gpui::black(), false)),
             )
         });

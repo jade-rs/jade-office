@@ -2985,6 +2985,48 @@ impl<B: Backend> Workbook<B> {
         self.restructured()
     }
 
+    /// Whether the comment on `at` is a threaded comment, one that takes
+    /// replies, rather than a note.
+    pub fn has_comment_thread(&self, at: CellRef) -> bool {
+        self.note(at).is_some()
+            && self
+                .book
+                .has_comment_thread(&self.sheet_name(), &reference_text(at))
+                .unwrap_or(false)
+    }
+
+    /// A reply by `author` to the threaded comment on `at`, dated `when`
+    /// (UTC, `YYYY-MM-DDTHH:MM:SS`, a trailing `Z` allowed). Empty text, or
+    /// a cell with no thread, changes nothing.
+    pub fn reply_to_comment(
+        &mut self,
+        at: CellRef,
+        text: &str,
+        author: &str,
+        when: &str,
+    ) -> Result<bool, String> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(false);
+        }
+        let name = self.sheet_name();
+        let replied = self
+            .book
+            .reply_to_comment(
+                &name,
+                &reference_text(at),
+                author,
+                text,
+                when.trim_end_matches('Z'),
+            )
+            .map_err(|error| error.to_string())?;
+        if replied {
+            self.restructured()
+        } else {
+            Ok(false)
+        }
+    }
+
     // ---- rows, columns and sheets -----------------------------------------
 
     /// Insert or delete cells within the selection's column/row strip.
@@ -4772,6 +4814,46 @@ mod tests {
         assert!(book.move_sheet(1, 0).unwrap());
         assert_eq!(book.sheet_index(), 0);
         assert_eq!(book.sheet_names()[1], first);
+    }
+
+    /// A threaded comment takes replies; a note does not.
+    #[test]
+    fn replies_to_threaded_comments() {
+        const THREADS: &str = r#"<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"><threadedComment ref="B2" dT="2026-11-01T10:00:00.00" personId="{P1}" id="{A}"><text>Check this</text></threadedComment></ThreadedComments>"#;
+        const PERSONS: &str = r#"<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"><person displayName="Ann Lee" id="{P1}" userId="ann" providerId="None"/></personList>"#;
+        let mut package =
+            jade_opc::OpcPackage::open(&fixture("grid-operations-workbook.xlsx")).unwrap();
+        let rels = package
+            .part_str("xl/worksheets/_rels/sheet1.xml.rels")
+            .unwrap()
+            .unwrap()
+            .replace(
+                "</Relationships>",
+                "<Relationship Id=\"thread\" Type=\"http://schemas.microsoft.com/office/2017/10/relationships/threadedComment\" Target=\"../threadedComments/threadedComment1.xml\"/></Relationships>",
+            );
+        package.replace("xl/worksheets/_rels/sheet1.xml.rels", rels.into_bytes());
+        package.replace(
+            "xl/threadedComments/threadedComment1.xml",
+            THREADS.as_bytes().to_vec(),
+        );
+        package.replace("xl/persons/person.xml", PERSONS.as_bytes().to_vec());
+        let bytes = package.write().unwrap();
+        let mut book =
+            Workbook::open(&bytes, "UTC", TinySkiaBackend::new(&faces()).unwrap()).unwrap();
+        assert_eq!(book.note(at(1, 1)), Some("Ann Lee: Check this"));
+        assert!(book.has_comment_thread(at(1, 1)));
+        assert!(book
+            .reply_to_comment(at(1, 1), " Done ", "jade", "2026-11-02T09:00:00Z")
+            .unwrap());
+        assert_eq!(book.note(at(1, 1)), Some("Ann Lee: Check this\njade: Done"));
+        assert!(!book
+            .reply_to_comment(at(1, 1), "  ", "jade", "2026-11-02T09:00:00Z")
+            .unwrap());
+        assert!(book.set_note(at(3, 3), "plain note", "jade").unwrap());
+        assert!(!book.has_comment_thread(at(3, 3)));
+        assert!(!book
+            .reply_to_comment(at(3, 3), "?", "jade", "2026-11-02T09:00:00Z")
+            .unwrap());
     }
 
     /// A link to the web opens it; one into the workbook goes there.
