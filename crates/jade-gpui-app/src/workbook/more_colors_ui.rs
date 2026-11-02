@@ -27,6 +27,54 @@ impl View {
                     }),
                 )
         };
+        // Excel's Custom tab: a click on the spectrum takes a hue and
+        // saturation, one on the strip beside it a lighter or darker shade.
+        let swatch = |id: String, rgb: String, width: f32, height: f32| {
+            div()
+                .id(gpui::ElementId::Name(id.into()))
+                .w(px(width))
+                .h(px(height))
+                .bg(gpui::rgb(u32::from_str_radix(&rgb, 16).unwrap_or(0)))
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        this.more_colors_pick(&rgb, cx);
+                        cx.stop_propagation();
+                    }),
+                )
+        };
+        let spectrum = div()
+            .flex()
+            .flex_col()
+            .border_1()
+            .border_color(theme::border())
+            .children(
+                MoreColorsDialog::spectrum()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(row, colors)| {
+                        div().flex().children(colors.into_iter().enumerate().map(
+                            |(column, rgb)| {
+                                swatch(format!("more-colors-hue-{row}-{column}"), rgb, 10., 12.)
+                            },
+                        ))
+                    }),
+            );
+        let shades = div()
+            .flex()
+            .flex_col()
+            .border_1()
+            .border_color(theme::border())
+            .children(
+                dialog
+                    .shades()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(step, rgb)| {
+                        swatch(format!("more-colors-shade-{step}"), rgb, 16., 96. / 13.)
+                    }),
+            );
         let panel = div()
             .w(px(320.))
             .p_4()
@@ -43,6 +91,14 @@ impl View {
                     .font_weight(gpui::FontWeight::BOLD)
                     .mb_2()
                     .child(i18n::text("sheet.tool.more_colors_dialog")),
+            )
+            .child(
+                div()
+                    .mb_3()
+                    .flex()
+                    .gap_2()
+                    .child(spectrum)
+                    .child(shades),
             )
             .child(
                 div()
