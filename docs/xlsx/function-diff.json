@@ -1,11 +1,10 @@
 {
   "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-  "jade_registered": 509,
+  "jade_registered": 510,
   "ibis_registered": 512,
-  "shared": 509,
+  "shared": 510,
   "not_registered_in_jade": [
     "IMAGE",
-    "PIVOTBY",
     "WEBSERVICE"
   ],
   "jade_only": []
