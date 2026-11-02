@@ -11,7 +11,9 @@ use gpui::{
     div, prelude::*, px, AnyElement, Context, MouseDownEvent, MouseMoveEvent, SharedString,
 };
 use jade_office_model::word::clipboard::WordClipboard;
-use jade_office_model::word::selection::{block_ranges, caret_rect, range_rects, ranges_text};
+use jade_office_model::word::selection::{
+    block_ranges, caret_rect, composition_marks_in, range_rects, ranges_text,
+};
 use jade_office_model::word::Position;
 
 use crate::ribbon::Action;
@@ -343,6 +345,42 @@ pub fn overlay(view: &DocumentView, index: usize) -> Option<AnyElement> {
                     } else {
                         gpui::rgba(0x3f7fdf44)
                     })
+            }))
+            .into_any_element(),
+    )
+}
+
+/// The line marking an IME's composition on page `index`: under the text,
+/// or down the right of its column in vertical text (縦書き).
+pub fn composition(view: &DocumentView, index: usize) -> Option<AnyElement> {
+    let marked = view.marked.clone()?;
+    let manager = view.document.renderer().selection_manager();
+    let zoom = view.zoom;
+    let marks: Vec<_> =
+        composition_marks_in(manager, view.insert_at.0, marked.start, marked.end, 1.0)
+            .into_iter()
+            .filter_map(|(x, y, width, height)| {
+                let (page, local_y) = view.document.page_and_offset(y);
+                (page == index).then_some((x, local_y, width, height))
+            })
+            .collect();
+    if marks.is_empty() {
+        return None;
+    }
+    Some(
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .children(marks.into_iter().map(|(x, y, width, height)| {
+                div()
+                    .absolute()
+                    .left(px(x as f32 * zoom))
+                    .top(px(y as f32 * zoom))
+                    .w(px((width as f32 * zoom).max(1.0)))
+                    .h(px((height as f32 * zoom).max(1.0)))
+                    .bg(theme::caret())
             }))
             .into_any_element(),
     )

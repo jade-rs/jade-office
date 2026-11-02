@@ -2652,6 +2652,8 @@ impl DocView {
                 height as f32 * zoom,
             )
         });
+        // The line under an IME's composition, or down its column.
+        let composition = document.composition_marks();
         // The caret, as a page and a rectangle on it.
         // Inside an equation its own caret is drawn (`word_equation`).
         let caret = document
@@ -2801,6 +2803,17 @@ impl DocView {
                                     .map(|overlay| word_equation::overlay_elements(overlay, zoom))
                                     .unwrap_or_default(),
                             )
+                            .children(composition.iter().filter(|mark| mark.page == index).map(
+                                |mark| {
+                                    div()
+                                        .absolute()
+                                        .left(px(mark.x as f32 * zoom))
+                                        .top(px(mark.y as f32 * zoom))
+                                        .w(px((mark.width as f32 * zoom).max(1.0)))
+                                        .h(px((mark.height as f32 * zoom).max(1.0)))
+                                        .bg(palette::ink())
+                                },
+                            ))
                             .children(caret.filter(|(page, ..)| *page == index).map(
                                 |(_, x, y, caret_height)| {
                                     div()

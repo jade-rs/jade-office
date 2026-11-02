@@ -5014,6 +5014,7 @@ impl Render for DocumentView {
                                         )
                                         .children(word_views::grid_overlay(self, index))
                                         .children(word_views::select::overlay(self, index))
+                                        .children(word_views::select::composition(self, index))
                                         .children(word_views::outline::symbols(self, index, cx))
                                         .children(self.caret_overlay(index))
                                         .children(word_references::page_marks(
