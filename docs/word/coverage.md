@@ -1,10 +1,9 @@
 # Word feature coverage map
 
-**Covers:** for every row of the Word part of the reference feature list
-(rows 1–506, the yardstick described in [`docs/PARITY.md`](../PARITY.md)),
+**Covers:** for every Word feature tracked in [`docs/PARITY.md`](../PARITY.md)
+(rows 1–506),
 the automated test that exercises it in jade, or **none** where no test does.
-Row labels are jade's own short names; the row number is the key into the
-reference list.
+Row labels are jade's own short names.
 
 **Derived from:** jade-office `9df8a1e` with jade-core `9fea681` (origin/main,
 2026-10-22). Every `#[test]` function under `crates/*/{src,tests}` and
@@ -24,8 +23,7 @@ Paths: `jade-web/…`, `jade-office-model/…`, `jade-gpui-app/…` are under
   aspect of it is: "lists" may be covered by a parse test while the dialog
   that makes one is not.
 - **none** means no test names the behaviour. It does not mean the feature
-  is absent; see the row's status in the reference list and
-  [`docs/GAPS.md`](../GAPS.md).
+  is absent; see [`docs/GAPS.md`](../GAPS.md).
 - Rows 402–410 are documentation rows; they point at the file in this
   directory that answers them.
 

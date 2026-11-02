@@ -248,5 +248,5 @@ All in `jade-core/crates/` unless noted; file :: test.
 - Update Table of Contents updates only the first TOC.
 - REF `\n`, `\r`, `\w` all give the same label; REF `\p`, `\f`, `\t`,
   `\d` are ignored.
-- Mail-merge fields have no data source (see the mail-merge rows of the
-  reference list).
+- Mail-merge fields have no data source (see the mail-merge rows of
+  [coverage.md](coverage.md)).
