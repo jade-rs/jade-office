@@ -496,6 +496,8 @@ enum MenuCommand {
     CellLocked,
     CellHidden,
     RenameSheet(usize),
+    /// Ungroup Sheets: back to the active sheet alone.
+    Ungroup,
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -1745,6 +1747,11 @@ impl WorkbookView {
                 self.selection = Selection::default();
                 self.scroll.set_offset(point(px(0.0), px(0.0)));
                 result
+            }
+            MenuCommand::Ungroup => {
+                self.book.ungroup();
+                cx.notify();
+                return;
             }
             MenuCommand::RenameSheet(index) => {
                 let name = self.sheet_names.get(index).map(|name| name.to_string());
@@ -3662,6 +3669,9 @@ impl WorkbookView {
                 for hidden in self.book.hidden_sheets() {
                     items.push((MenuCommand::UnhideSheet(hidden), "sheet.menu.unhide_sheet"));
                 }
+                if self.book.is_grouped() {
+                    items.push((MenuCommand::Ungroup, "sheet.menu.ungroup_sheets"));
+                }
                 if index > 0 {
                     items.push((
                         MenuCommand::MoveSheet(index, index - 1),
@@ -4009,6 +4019,7 @@ impl WorkbookView {
         let renaming = self.renaming.as_ref().map(|(index, text)| (*index, text));
         // A hidden sheet has no tab, as in Excel.
         let visible = self.book.sheet_tabs();
+        let grouped = self.book.grouped_sheets();
         let mut tabs: Vec<gpui::AnyElement> = self
             .sheet_names
             .iter()
@@ -4055,6 +4066,11 @@ impl WorkbookView {
                     .when(!selected, |tab| {
                         tab.when_some(tab_fill, |tab, fill| tab.bg(fill))
                     })
+                    // A grouped sheet's tab is white, as the active one's.
+                    .when(
+                        !selected && grouped.len() > 1 && grouped.contains(&index),
+                        |tab| tab.bg(theme::window()),
+                    )
                     .when(selected, |tab| {
                         tab.bg(theme::window()).child(
                             div()
@@ -4074,8 +4090,14 @@ impl WorkbookView {
                     .on_click(cx.listener(move |view, event: &ClickEvent, window, cx| {
                         window.focus(&view.focus);
                         view.menu = None;
+                        let modifiers = event.modifiers();
                         if event.click_count() >= 2 {
                             view.menu_command(MenuCommand::RenameSheet(index), false, cx);
+                        } else if modifiers.platform || modifiers.control || modifiers.shift {
+                            // ⌘-click groups a sheet or takes it out, as
+                            // Shift-click groups the run of them.
+                            view.book.group_sheet(index, modifiers.shift);
+                            cx.notify();
                         } else {
                             view.select_sheet(index, cx);
                         }
@@ -4125,6 +4147,20 @@ impl WorkbookView {
                 }))
                 .into_any_element(),
         );
+        // Excel's title says "[Group]" while sheets are grouped.
+        if grouped.len() > 1 {
+            tabs.push(
+                div()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .px_3()
+                    .text_xs()
+                    .text_color(theme::accent())
+                    .child(i18n::text("sheet.group"))
+                    .into_any_element(),
+            );
+        }
         tabs
     }
 }
@@ -6478,6 +6514,30 @@ mod tests {
             let (x, y, width, _) = view.book.object_bounds(id).unwrap();
             assert!((x - 200.0).abs() < 0.5 && (y - 100.0).abs() < 0.5);
             assert!((width - 80.0).abs() < 0.5);
+        });
+    }
+
+    /// Grouped sheets take what is typed; Ungroup Sheets ends the group.
+    #[gpui::test]
+    fn grouped_sheets_take_what_is_typed(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.menu_command(MenuCommand::InsertSheet, false, cx);
+            view.select_sheet(0, cx);
+            view.book.group_sheet(1, false);
+            assert!(view.book.is_grouped());
+            view.selection = Selection::cell(at(6, 50));
+        });
+        cx.simulate_input("grouped");
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, cx| {
+            assert_eq!(view.book.display_text(at(6, 50)), "grouped");
+            // The grouped tab moves within the group.
+            view.select_sheet(1, cx);
+            assert!(view.book.is_grouped());
+            assert_eq!(view.book.display_text(at(6, 50)), "grouped");
+            view.menu_command(MenuCommand::Ungroup, false, cx);
+            assert!(!view.book.is_grouped());
         });
     }
 
