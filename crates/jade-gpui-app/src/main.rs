@@ -1121,6 +1121,7 @@ impl gpui::AssetSource for Assets {
             "chevron-right",
             "chevrons-up-down",
             "clock",
+            "ellipsis",
             "eraser",
             "eye-off",
             "file",

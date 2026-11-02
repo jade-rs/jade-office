@@ -50,6 +50,7 @@ pub mod pivots;
 pub mod precedents;
 pub mod print;
 pub mod protection;
+pub mod recent_files;
 pub use sheet::protected_edits;
 pub mod sheet;
 pub mod sheet_properties;
