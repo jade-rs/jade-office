@@ -640,6 +640,8 @@ pub struct WorkbookView {
     /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
     shift_choice: Option<bool>,
     more_colors: Option<jade_office_model::more_colors::MoreColorsDialog>,
+    /// Insert ▸ Shapes ▸ Freeform's corners while it is drawn.
+    freeform: Option<jade_office_model::freeform::FreeformDraft>,
     /// The Paste Options button after a paste from this workbook's copy:
     /// the range pasted on, and whether its menu is open.
     paste_options: Option<(CellRange, bool)>,
@@ -2277,6 +2279,9 @@ impl WorkbookView {
             return true;
         }
 
+        if self.freeform.is_some() && self.freeform_key(key, cx) {
+            return true;
+        }
         // More Colors' dialog has the keys while it is open.
         if self.more_colors.is_some() {
             return self.more_colors_key(key, modifiers, cx);
@@ -2800,6 +2805,11 @@ impl WorkbookView {
         let Some((x, y)) = self.grid_point(event.position) else {
             return;
         };
+        // A freeform being drawn takes the clicks.
+        if self.freeform.is_some() {
+            self.freeform_click(x, y, event.click_count, cx);
+            return;
+        }
         let scroll = self.sheet_scroll();
         // The outline gutter's level buttons and boxes collapse and expand.
         if self.edit.is_none() {
@@ -5503,6 +5513,10 @@ impl Render for WorkbookView {
                     .children(editor)
                     .children(page_breaks)
                     .children(trace)
+                    .children(
+                        self.freeform_overlay()
+                            .map(|overlay| overlay.absolute().top_0().left_0().size_full()),
+                    )
                     .children(paste_options)
                     .children(self.object_frame())
                     .children(note)
@@ -5646,6 +5660,7 @@ impl WorkbookView {
             top_ten: None,
             shift_choice: None,
             more_colors: None,
+            freeform: None,
             paste_options: None,
             tracing: Vec::new(),
             tracing_dependents: Vec::new(),
@@ -6393,6 +6408,44 @@ mod tests {
                     );
                 }
             }
+        });
+    }
+
+    /// Freeform: clicks add corners, the first closes the shape, Enter
+    /// ends one open; the shape goes in where it was drawn, selected.
+    #[gpui::test]
+    fn freeforms_are_drawn_a_click_at_a_time(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.chart_tool(charts::ChartTool::Freeform, cx);
+            assert!(view.freeform.is_some());
+            let scroll = view.sheet_scroll();
+            let click =
+                |view: &mut WorkbookView, x: f64, y: f64, cx: &mut Context<WorkbookView>| {
+                    let (x, y) = view.book.viewport_point(x, y, scroll);
+                    view.freeform_click(x, y, 1, cx);
+                };
+            click(view, 200.0, 140.0, cx);
+            click(view, 260.0, 100.0, cx);
+            click(view, 320.0, 140.0, cx);
+            assert!(view.freeform_overlay().is_some());
+            click(view, 202.0, 141.0, cx);
+            assert!(view.freeform.is_none());
+            let id = view.object.expect("the closed freeform");
+            let (x, y, width, height) = view.book.object_bounds(id).unwrap();
+            assert!((x - 200.0).abs() < 0.5 && (y - 100.0).abs() < 0.5);
+            assert!((width - 120.0).abs() < 0.5 && (height - 40.0).abs() < 0.5);
+            // Open, ended by Enter; Escape drops a drawing.
+            view.chart_tool(charts::ChartTool::Freeform, cx);
+            click(view, 400.0, 100.0, cx);
+            click(view, 450.0, 160.0, cx);
+            assert!(view.freeform_key("enter", cx));
+            assert_ne!(view.object, Some(id));
+            assert!(view.object.is_some());
+            view.chart_tool(charts::ChartTool::Freeform, cx);
+            click(view, 400.0, 300.0, cx);
+            assert!(view.freeform_key("escape", cx));
+            assert!(view.freeform.is_none());
         });
     }
 
