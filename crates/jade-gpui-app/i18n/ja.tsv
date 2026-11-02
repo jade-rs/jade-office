@@ -4676,3 +4676,34 @@ tool.residuals	残差
 tool.standard_residuals	標準残差
 tool.probability_output	確率出力
 tool.percentile	百分位数
+watermark.button	透かし
+watermark.title	ユーザー設定の透かし
+watermark.custom	ユーザー設定の透かし...
+watermark.remove	透かしの削除
+watermark.none	なし
+watermark.text	テキスト
+watermark.language	言語
+watermark.language.japanese	日本語
+watermark.language.english	英語 (米国)
+watermark.text_field	テキスト
+watermark.font	フォント
+watermark.size	サイズ
+watermark.size.auto	自動
+watermark.color	色
+watermark.semitransparent	半透明にする
+watermark.layout	レイアウト
+watermark.diagonal	対角線上
+watermark.horizontal	水平
+watermark.no_text	透かしのテキストを入力してください。
+watermark.no_font	フォントを選んでください。
+watermark.bad_size	サイズは 1 から 1638 ポイントの間で指定してください。
+watermark.color.silver	銀色
+watermark.color.gray	灰色
+watermark.color.black	黒
+watermark.color.dark_red	濃い赤
+watermark.color.red	赤
+watermark.color.orange	オレンジ
+watermark.color.green	緑
+watermark.color.blue	青
+watermark.color.navy	濃い青
+watermark.color.purple	紫

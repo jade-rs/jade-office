@@ -4676,3 +4676,34 @@ tool.residuals	Residuals
 tool.standard_residuals	Standard Residuals
 tool.probability_output	PROBABILITY OUTPUT
 tool.percentile	Percentile
+watermark.button	Watermark
+watermark.title	Custom Watermark
+watermark.custom	Custom Watermark...
+watermark.remove	Remove Watermark
+watermark.none	No watermark
+watermark.text	Text watermark
+watermark.language	Language
+watermark.language.japanese	Japanese
+watermark.language.english	English (United States)
+watermark.text_field	Text
+watermark.font	Font
+watermark.size	Size
+watermark.size.auto	Auto
+watermark.color	Color
+watermark.semitransparent	Semitransparent
+watermark.layout	Layout
+watermark.diagonal	Diagonal
+watermark.horizontal	Horizontal
+watermark.no_text	Type the watermark text.
+watermark.no_font	Choose a font.
+watermark.bad_size	The size must be between 1 and 1638 points.
+watermark.color.silver	Silver
+watermark.color.gray	Gray
+watermark.color.black	Black
+watermark.color.dark_red	Dark Red
+watermark.color.red	Red
+watermark.color.orange	Orange
+watermark.color.green	Green
+watermark.color.blue	Blue
+watermark.color.navy	Dark Blue
+watermark.color.purple	Purple

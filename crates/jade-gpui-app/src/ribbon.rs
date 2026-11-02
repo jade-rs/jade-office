@@ -109,6 +109,8 @@ pub enum Popup {
     Equation(crate::word_equation::EquationPopup),
     /// レイアウト's ハイフネーション (`word_hyphenation`).
     Hyphenation,
+    /// デザイン's 透かし (`word_watermark`).
+    Watermark,
     /// 描画's lists (`word_draw`).
     Draw(crate::word_draw::DrawPopup),
     /// The 校閲 tab's lists (`word_review_tools`).
