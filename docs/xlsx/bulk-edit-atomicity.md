@@ -15,11 +15,6 @@ before permission work for dense rectangles. Complete axes retain their sparse
 writer path; permissions use style/default/authenticated-range bands and explicit
 cell exceptions, including blanks, instead of visiting billions of cells.
 
-The pinned Excel [clipboard implementation](https://support.microsoft.com/excel)
-was inspected for its paste permission gate and batched document-command paths.
-No reference implementation code was incorporated. Source inspection is separate
-from the actual Jade regressions above and does not establish reference UI parity.
-
 ## Editing checkpoint
 
 An opaque `EditCheckpoint` captures the complete headless in-memory state:
@@ -73,4 +68,4 @@ The later [bulk-authentication milestone](bulk-range-authentication.md) adds
 automatic prompts for supported paste/clear/fill/move commands. Interrupted-navigation
 replay remains open. Clipboard/filter/spill/table/schema edge cases, account identity,
 full model/feature matrices and actual Excel/native/browser interaction oracles
-remain part of the wider [Excel audit](coverage.md).
+remain part of the wider [coverage audit](coverage.md).

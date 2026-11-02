@@ -2727,7 +2727,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2"
   },
   "shared_model_target_source_sha256": {
@@ -2787,10 +2786,7 @@
     "method": "Recorded engine source/build/patch hashes unchanged."
   },
   "function_inventory": {
-    "reference_commit": "",
     "jade_registered": 506,
-    "baseline_registered": 512,
-    "shared": 506,
     "not_registered_in_jade": [
       "FILTERXML",
       "GETPIVOTDATA",
@@ -2799,7 +2795,6 @@
       "PIVOTBY",
       "WEBSERVICE"
     ],
-    "jade_only": [],
     "carried_forward_from": "sheet-protection-verification.json",
     "registration_changed_this_milestone": false
   },
@@ -2868,11 +2863,8 @@
     "Complete merged/compound selection, keyboard focus/accessibility, native/browser runtime captures and IME/clipboard/application behavior",
     "Additional digest/legacy locale behavior, full XML schema/structural-writer ownership, large production/performance and Office save/repair/calculation/pixel oracles",
     "Examples, benchmarks and full model/unit/feature matrix including Skia-only print/Thai cases",
-    "Pivots, slicers, queries, advanced charts, six remaining function registrations and other coverage.md areas"
+    "Pivots, slicers, queries, advanced charts, six remaining function registrations and other open areas"
   ],
-  "reference_revision": "",
-  "reference_behavior_inspected": "crates/Excel-app/src/xlsx/protection.rs",
-  "reference_implementation_code_incorporated": false,
   "prior_checkpoint": "sheet-protection-verification.json",
   "counts_are_additive_with_prior_checkpoints": false,
   "goal_status": "active; full Excel parity remains incomplete",

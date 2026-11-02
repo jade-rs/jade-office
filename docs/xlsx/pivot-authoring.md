@@ -8,8 +8,8 @@ This page's counts and source hashes describe the earlier authoring checkpoint.
 Saved worksheet pivots now have a common editor in the native and browser
 context menus. Select a cell inside a supported report and choose Edit pivot
 table. This closes part of the authoring gap in the
-[pinned Excel comparison](coverage.md); the implementation is independent
-and incorporates no reference implementation code.
+[coverage audit](coverage.md); the implementation is independent
+and incorporates no third-party implementation code.
 
 The editor changes the source range or declared name/table, report origin,
 row/column/filter fields and their order, Values axis, report layout, value

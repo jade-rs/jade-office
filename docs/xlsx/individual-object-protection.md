@@ -100,4 +100,4 @@ or MCE remain open. Full schema validation, malformed/unsupported record repair,
 large-file performance and real Office save/repair/rendering evidence are not
 proven. This does not add form controls, a scenario editor, automatic range
 authentication prompts or encrypted XLSX support. The wider
-[Excel parity audit](coverage.md) remains active.
+[coverage audit](coverage.md) remains active.

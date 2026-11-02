@@ -21,8 +21,6 @@
     "crates/jade-gpui-web/Cargo.toml": "fce66cdbf65a355c9d1f00c99843825173fba95c0b890173bf20a78ffc0b8659",
     "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd"
   },
-  "reference_revision": "",
-  "reference_implementation_code_incorporated": false,
   "checked_at_utc": "2026-10-23T22:53:55.555592+00:00",
   "scope": "Individual imported DrawingML/VML object and text locks, shared owned identity/spans and selected relationships, preserving drawing/text/note updates, shared-model command/history behavior",
   "xlsx_package_suites": {
@@ -2818,7 +2816,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2"
   },
   "shared_model_target_source_sha256": {
@@ -2880,10 +2877,7 @@
     "method": "Recorded engine source/build/patch hashes unchanged."
   },
   "function_inventory": {
-    "reference_commit": "",
     "jade_registered": 506,
-    "baseline_registered": 512,
-    "shared": 506,
     "not_registered_in_jade": [
       "FILTERXML",
       "GETPIVOTDATA",
@@ -2892,7 +2886,6 @@
       "PIVOTBY",
       "WEBSERVICE"
     ],
-    "jade_only": [],
     "carried_forward_from": "object-protection-verification.json",
     "registration_changed_this_milestone": false
   },
@@ -2965,8 +2958,6 @@
     "Additional digest/locale behavior, full structural-writer ownership, large production/performance and actual Office calculation/save/repair/pixel oracles",
     "Examples, benchmarks, full model/unit/feature matrix including Skia-only print/Thai cases, pivots, slicers, queries, advanced charts, six missing function registrations and other audit areas"
   ],
-  "reference_behavior_inspected": "crates/Excel-app/src/xlsx/protection.rs",
-  "reference_review_rerun_this_milestone": false,
   "prior_checkpoint": "object-protection-verification.json",
   "counts_are_additive_with_prior_checkpoints": false,
   "goal_status": "active; full Excel parity remains incomplete",

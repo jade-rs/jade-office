@@ -15,12 +15,8 @@ also documents the case-sensitive range password. Existing standard/x14,
 legacy/ISO verification and unsaved session-grant policies remain in effect;
 this does not add account/domain identity authentication.
 
-The pinned Excel [protection](https://support.microsoft.com/excel)
-and [cell-edit](https://support.microsoft.com/excel)
-files were reviewed for their explicit range-authentication and edit-guard
-behavior. No implementation code was incorporated. This automatic dialog follows
-the OOXML requirement above; a complete reference UI/call-graph comparison was
-not performed.
+No third-party implementation code was incorporated. This automatic dialog follows
+the OOXML requirement above.
 
 ## Candidate and pending-entry state
 
@@ -78,7 +74,7 @@ commits the entry at its original cell. General merged/compound selection,
 account/ACL authentication, full MCE authoring and real Excel/native/browser
 interaction oracles remain open. Runtime model tests and shell compilation do
 not establish pixel, keyboard or Office application equivalence. The wider
-[Excel parity audit](coverage.md) remains active.
+[coverage audit](coverage.md) remains active.
 
 The later [compound-edit milestone](bulk-edit-atomicity.md) fixes data/history
 leakage on returned errors from tiled paste and active-entry range fill.

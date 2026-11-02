@@ -50,11 +50,9 @@ metadata in rebuilt entries causes refusal rather than silent deletion.
 Generated output is reread to catch new catalog inconsistencies; that check
 does not establish schema validity or Excel repair-free round-tripping.
 
-## Reference comparison and remaining work
+## Remaining work
 
-The pinned [Excel pivot command implementation](https://support.microsoft.com/excel)
-was inspected for behavior only. No AGPL implementation was copied. Its refresh
-path also reapplies pivot styles, autofits and synchronizes PivotCharts. Jade's
+Excel's refresh path also reapplies pivot styles, autofits and synchronizes PivotCharts. Jade's
 ordinary chart-cache update is not PivotChart binding synchronization.
 
 Creation/deletion, source/layout/filter editing and automatic

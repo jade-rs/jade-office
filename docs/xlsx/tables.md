@@ -1,6 +1,6 @@
 # Table authoring work
 
-This work addresses the table gaps in the [baseline comparison](coverage.md).
+This work addresses the table gaps in the [coverage audit](coverage.md).
 It is in progress. The checks below do not establish full table/Excel parity.
 
 ## Implemented paths

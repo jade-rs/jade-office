@@ -507,9 +507,8 @@ CDATA/no-op byte stability, save/reopen, history and actual candidate results.
 Supported coverage/fallback alternatives are moved even when the selected
 coverage itself is unchanged. Absolute deleted sources remain `#REF!`.
 
-Source-level comparisons used the pinned baseline structural writer and the
-LibreOffice condition/validation update paths as implementation evidence.
-No implementation code was copied. The new candidate checks establish the
+Source-level comparisons used the LibreOffice condition/validation update
+paths as implementation evidence. No implementation code was copied. The new candidate checks establish the
 surviving external bound's behavior; neither source comparison establishes
 Excel's application behavior for all imported edge cases. General MCE around
 records/containers, noncanonical coverage authoring/partial shifts, broader
@@ -594,8 +593,8 @@ runtime, manual dialogs and Excel application oracles remain unverified.
 
 ## Compatibility calls and implicit intersection milestone
 
-The engine now registers 506 English names. The generated inventory against
-pinned Excel has six remaining names, down from nine; this measures
+The engine now registers 506 English names. Six Excel function names remain
+unregistered, down from nine; this measures
 registration, not full semantic parity. ECMA.CEILING has an actual arithmetic
 path; SINGLE/ANCHORARRAY have lookup, case/arity/prefix metadata and operator
 lowering. Imported display-prefix normalization no longer loses those calls.
@@ -622,11 +621,9 @@ later anchor; integration also covers one-cell arrays, blocked/unblocked
 spills, lambda binding shadowing, cache replacement, arities, prefixes,
 FORMULATEXT length boundaries, save/reopen and history.
 
-The pinned baseline math source groups ECMA.CEILING with the PRECISE variant.
-Jade follows the signed two-argument ECMA description and documented CEILING
-examples instead; this semantic difference is explicitly recorded in
-[compatibility-functions.md](compatibility-functions.md). No reference code
-was copied. Further application captures remain required.
+Jade does not treat ECMA.CEILING as the PRECISE variant; it follows the
+signed two-argument ECMA description and documented CEILING examples, as
+recorded in [compatibility-functions.md](compatibility-functions.md). Further application captures remain required.
 
 The first standalone-engine attempt used the core workspace package selector,
 which cannot run dev-dependency tests for its excluded engine package. Missing
@@ -647,7 +644,7 @@ not used as the final proof below.
 | Browser wasm production, Rust 1.99.0 | Compilation passed |
 | Rust formatting and whitespace | 106 changed/new Rust files with Rust 2021 edition and both repository whitespace checks passed |
 | Canonical engine patch replay | 487 source/build files matched byte for byte; original 480-file upstream hash inventory unchanged |
-| Generated function inventory | Actual final engine inventory matches the saved 506 names; pinned reference has 512 |
+| Generated function inventory | Actual final engine inventory matches the saved 506 names |
 
 [compatibility-functions-verification.json](compatibility-functions-verification.json)
 records the final targets, manifests/lockfiles, patch replay and 118 frozen
@@ -1063,7 +1060,7 @@ The current policy remains sheet-wide: individually unlocked DrawingML/VML
 objects can be overrestricted. Their client-data/text-lock handling, scenario
 editing, general DrawingML ownership/MCE and object selection/gesture/runtime
 oracles remain open. Automatic range-authentication prompts, encryption and
-the wider [Excel audit](coverage.md) also remain active. These tests and
+the wider [coverage audit](coverage.md) also remain active. These tests and
 compilation do not establish Excel application behavior or full Excel parity.
 
 
@@ -1119,7 +1116,7 @@ source counts, scope and evidence are in
 
 Individual flag-authoring UI, complete locked-object selection/gesture feedback,
 group/member editing, general DrawingML/VML ownership/MCE, scenario editing,
-automatic range prompts and the wider [Excel audit](coverage.md) remain
+automatic range prompts and the wider [coverage audit](coverage.md) remain
 open. Specification tests and compilation do not establish actual Excel or
 native/browser interaction behavior, and full Excel parity is incomplete.
 
@@ -1179,7 +1176,7 @@ Automatic paste/clear/fill/compound prompts and replay of interrupted navigation
 remain open. Such operations retain existing guarded refusals and manual range
 authentication. Account/ACL identity authentication, broader selection, full MCE,
 actual native/browser/Excel interaction evidence and the wider
-[Excel audit](coverage.md) remain incomplete.
+[coverage audit](coverage.md) remain incomplete.
 
 
 ## Compound paste and range-fill atomicity
@@ -1248,7 +1245,7 @@ member checks; raw targets absent and native metadata directory links retained.
 
 Bulk-operation automatic authentication, pending-navigation replay, broader
 clipboard/filter/spill/table/schema cases, account identity, full MCE and real
-Excel/reference/native/browser interaction oracles remain open. Full Excel
+Excel/native/browser interaction oracles remain open. Full Excel
 parity is not established; the wider [audit](coverage.md) remains active.
 
 
