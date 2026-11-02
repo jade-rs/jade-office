@@ -3929,3 +3929,5 @@ sheet.shape.star24	24-Point Star
 sheet.shape.star32	32-Point Star
 sheet.shape.speech_bubble_rounded	Speech Bubble: Rounded Rectangle
 sheet.shape.speech_bubble_oval	Speech Bubble: Oval
+sheet.menu.ungroup	Ungroup Sheets
+sheet.group	[Group]

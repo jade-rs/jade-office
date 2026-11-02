@@ -785,6 +785,8 @@ enum MenuCommand {
     CellLocked,
     CellHidden,
     RenameSheet(usize),
+    /// Ungroup Sheets: back to the active sheet alone.
+    Ungroup,
     MoveSheet(usize, usize),
     EditNote,
     DeleteNote,
@@ -3201,6 +3203,11 @@ impl DocView {
                 };
                 sheet.book.outline(axis, first, last, change)
             }
+            MenuCommand::Ungroup => {
+                sheet.book.ungroup();
+                cx.notify();
+                return;
+            }
             MenuCommand::RenameSheet(index) => {
                 let name = sheet.names.get(index).map(|name| name.to_string());
                 sheet.renaming = name.map(|name| (index, TextEdit::selected(name)));
@@ -4435,6 +4442,7 @@ impl DocView {
         let renaming = sheet.renaming.as_ref().map(|(index, text)| (*index, text));
         // A hidden sheet has no tab, as in Excel.
         let visible = sheet.book.sheet_tabs();
+        let grouped = sheet.book.grouped_sheets();
         let mut tabs: Vec<gpui::AnyElement> = sheet
             .names
             .iter()
@@ -4481,6 +4489,11 @@ impl DocView {
                     .when(!selected, |tab| {
                         tab.when_some(tab_fill, |tab, fill| tab.bg(fill))
                     })
+                    // A grouped sheet's tab is white, as the active one's.
+                    .when(
+                        !selected && grouped.len() > 1 && grouped.contains(&index),
+                        |tab| tab.bg(palette::window()),
+                    )
                     .when(selected, |tab| {
                         tab.bg(palette::window()).child(
                             div()
@@ -4499,8 +4512,16 @@ impl DocView {
                     .on_click(
                         cx.listener(move |view, event: &gpui::ClickEvent, window, cx| {
                             window.focus(&view.focus, cx);
+                            let modifiers = event.modifiers();
                             if event.click_count() >= 2 {
                                 view.sheet_menu_command(MenuCommand::RenameSheet(index), false, cx);
+                            } else if modifiers.platform || modifiers.control || modifiers.shift {
+                                // ⌘-click groups a sheet or takes it out, as
+                                // Shift-click groups the run of them.
+                                if let Some(sheet) = view.sheet_mut() {
+                                    sheet.book.group_sheet(index, modifiers.shift);
+                                }
+                                cx.notify();
                             } else {
                                 view.select_sheet(index, cx);
                             }
@@ -4547,6 +4568,20 @@ impl DocView {
                 }))
                 .into_any_element(),
         );
+        // Excel's title says "[Group]" while sheets are grouped.
+        if grouped.len() > 1 {
+            tabs.push(
+                div()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .px_3()
+                    .text_xs()
+                    .text_color(palette::accent())
+                    .child(i18n::text("sheet.group"))
+                    .into_any_element(),
+            );
+        }
 
         let menu = sheet.menu.as_ref().map(|menu| {
             let items: Vec<(MenuCommand, &'static str)> = match menu.tab {
@@ -4563,6 +4598,9 @@ impl DocView {
                     ];
                     for hidden in sheet.book.hidden_sheets() {
                         items.push((MenuCommand::UnhideSheet(hidden), "sheet.menu.unhide_sheet"));
+                    }
+                    if sheet.book.is_grouped() {
+                        items.push((MenuCommand::Ungroup, "sheet.menu.ungroup"));
                     }
                     if index > 0 {
                         items.push((
