@@ -266,6 +266,21 @@ sheet.menu.text_to_columns	Text to Columns
 sheet.menu.calculate_now	Calculate Now (F9)
 sheet.menu.manual_calculation	Calculation: Manual
 sheet.menu.automatic_calculation	Calculation: Automatic
+sheet.menu.calculation_options	Calculation Options…
+calculation.dialog	Calculation Options
+calculation.workbook	Workbook Calculation
+calculation.automatic	Automatic
+calculation.automatic_except_tables	Automatic except for data tables
+calculation.manual	Manual
+calculation.recalculate_before_save	Recalculate workbook before saving
+calculation.iteration_section	Iteration
+calculation.enable_iteration	Enable iterative calculation
+calculation.maximum_iterations	Maximum Iterations:
+calculation.maximum_change	Maximum Change:
+calculation.precision_section	When calculating this workbook
+calculation.precision_as_displayed	Set precision as displayed
+calculation.precision_warning	Formulas keep only the digits their cells show.
+calculation.invalid_numbers	Maximum Iterations must be 1 to 32767 and Maximum Change 0 or more.
 text_columns.dialog	Text to Columns
 text_columns.delimiters	Delimiters
 text_columns.tab	Tab

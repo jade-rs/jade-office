@@ -3618,6 +3618,39 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
+    /// File ▸ Options ▸ Formulas, as the workbook has them: how it
+    /// calculates, whether it recalculates before saving, iterative
+    /// calculation and precision as displayed.
+    pub fn calculation_options(&self) -> crate::calculation_options::CalculationOptions {
+        let workbook = self.book.workbook();
+        crate::calculation_options::CalculationOptions {
+            mode: workbook.calculation_mode,
+            recalculate_before_save: workbook.calculate_on_save,
+            iteration: workbook.iteration,
+            precision_as_displayed: !workbook.full_precision,
+        }
+    }
+
+    /// Sets the calculation options, saved with the workbook and, as in
+    /// Excel, not an undo step; formulas recalculate unless calculation is
+    /// manual.
+    pub fn set_calculation_options(
+        &mut self,
+        options: &crate::calculation_options::CalculationOptions,
+    ) -> Result<bool, String> {
+        if *options == self.calculation_options() {
+            return Ok(false);
+        }
+        self.book
+            .set_calculation_properties(options.mode, options.recalculate_before_save)
+            .map_err(|error| error.to_string())?;
+        self.book
+            .set_calculation_options(options.iteration, !options.precision_as_displayed)
+            .map_err(|error| error.to_string())?;
+        self.after_write()?;
+        Ok(true)
+    }
+
     /// Formulas ▸ Calculate Now (F9): every formula recalculated, in manual
     /// calculation as in automatic. Not an undo step, as in Excel.
     pub fn calculate_now(&mut self) -> Result<bool, String> {

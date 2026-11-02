@@ -57,6 +57,7 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         | C::FromText
         | C::CalculateNow
         | C::ManualCalculation(_)
+        | C::CalculationOptions
         | C::Outline(_)
         | C::AutoOutline
         | C::ClearOutline => MenuGroup::Data,
