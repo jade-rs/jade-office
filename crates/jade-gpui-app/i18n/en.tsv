@@ -3903,3 +3903,5 @@ sheet.menu.flash_fill	Flash Fill
 sheet.flash_fill_none	Looked at all the data next to your selection and didn't see a pattern for filling in values for you. To use Flash Fill, enter a couple of examples of the output you'd like to see, keep the active cell in the column you want filled in, and press ⌘E.
 insert_function.language	en
 sheet.menu.reply_comment	Reply to Comment
+sheet.freeform	Freeform
+sheet.freeform_hint	Click to add corners. Click the first corner to close the shape; double-click or press Enter to end it open; Esc cancels.

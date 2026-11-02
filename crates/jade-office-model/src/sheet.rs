@@ -2155,6 +2155,67 @@ impl<B: Backend> Workbook<B> {
         Ok(id)
     }
 
+    /// Insert ▸ Shapes ▸ Freeform: a shape through `points` (sheet px, two
+    /// at least), closed and filled when `closed`, an open line otherwise;
+    /// the new shape's id.
+    pub fn insert_freeform(&mut self, points: &[(f64, f64)], closed: bool) -> Result<u32, String> {
+        let left = points.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+        let top = points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+        if !left.is_finite() || !top.is_finite() {
+            return Err("a freeform needs two points or more".into());
+        }
+        let (at, (x, y)) = self.anchor_point(left, top);
+        let corners: Vec<(f64, f64)> = points.iter().map(|p| (p.0 - left, p.1 - top)).collect();
+        let name = self.sheet_name();
+        let id = self
+            .book
+            .insert_freeform(
+                &name,
+                at,
+                (x as f64 / 9_525.0, y as f64 / 9_525.0),
+                &corners,
+                closed,
+            )
+            .map_err(|error| error.to_string())?;
+        self.record(1);
+        self.after_write()?;
+        Ok(id)
+    }
+
+    /// A point of the viewport (sheet px from its top-left, headers
+    /// included) at `scroll`, in the cells' sheet px; `None` over the
+    /// headers.
+    pub fn sheet_point(&self, x: f64, y: f64, scroll: (f64, f64)) -> Option<(f64, f64)> {
+        let metrics = self.layout.header_metrics();
+        if x < metrics.row_width || y < metrics.column_height {
+            return None;
+        }
+        Some(self.layout.sheet_point_in_viewport(
+            x - metrics.row_width,
+            y - metrics.column_height,
+            scroll.0,
+            scroll.1,
+        ))
+    }
+
+    /// A sheet point (the cells' sheet px) in the viewport at `scroll`,
+    /// headers included: where [`Workbook::sheet_point`] would read it.
+    pub fn viewport_point(&self, x: f64, y: f64, scroll: (f64, f64)) -> (f64, f64) {
+        let metrics = self.layout.header_metrics();
+        // Frozen panes do not scroll.
+        let x = if x < self.layout.frozen_width() {
+            x
+        } else {
+            x - scroll.0
+        };
+        let y = if y < self.layout.frozen_height() {
+            y
+        } else {
+            y - scroll.1
+        };
+        (x + metrics.row_width, y + metrics.column_height)
+    }
+
     /// Insert ▸ Chart over `range`: the new chart's id.
     pub fn insert_chart(&mut self, range: CellRange, kind: ChartKind) -> Result<u32, String> {
         let name = self.sheet_name();
@@ -4878,6 +4939,22 @@ mod tests {
             "{styles}"
         );
         assert!(styles.contains("theme=\"5\" tint=\"-0.499984740745262\""));
+    }
+
+    /// A freeform drawn on the sheet goes in through its corners, anchored
+    /// where its top-left falls.
+    #[test]
+    fn freeforms_go_in_where_they_are_drawn() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        let (x, y) = book.viewport_point(130.0, 45.0, (0.0, 0.0));
+        assert_eq!(book.sheet_point(x, y, (0.0, 0.0)), Some((130.0, 45.0)));
+        let id = book
+            .insert_freeform(&[(130.0, 85.0), (160.0, 45.0), (190.0, 85.0)], true)
+            .unwrap();
+        let (left, top, width, height) = book.object_bounds(id).unwrap();
+        assert!((left - 130.0).abs() < 0.5 && (top - 45.0).abs() < 0.5);
+        assert!((width - 60.0).abs() < 0.5 && (height - 40.0).abs() < 0.5);
+        assert!(book.insert_freeform(&[], false).is_err());
     }
 
     /// A threaded comment takes replies; a note does not.
