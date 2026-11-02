@@ -3905,3 +3905,5 @@ insert_function.language	ja
 sheet.menu.reply_comment	コメントに返信
 sheet.freeform	フリーフォーム
 sheet.freeform_hint	クリックで頂点を追加します。最初の頂点をクリックすると図形を閉じ、ダブルクリックまたは Enter で開いたまま終了、Esc で取り消します。
+sheet.scribble	フリーハンド
+sheet.scribble_hint	ドラッグして線を自由に描きます。Esc で取り消します。

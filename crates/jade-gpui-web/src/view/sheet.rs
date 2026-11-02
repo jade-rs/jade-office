@@ -299,6 +299,8 @@ struct Pointing {
 #[derive(Clone, Copy)]
 enum SheetDrag {
     Select(DragKind),
+    /// Scribble's line, its points kept in the freeform draft.
+    Scribble,
     Fill {
         source: CellRange,
         target: CellRange,
@@ -3718,6 +3720,7 @@ impl DocView {
         let scroll = Self::sheet_scroll(&sheet.scroll, zoom);
         let reached = sheet.book.reach_point(x, y, scroll);
         match drag {
+            SheetDrag::Scribble => self.scribble_to(x, y, cx),
             SheetDrag::Select(kind) => {
                 let hit = sheet.book.hit(x, y, scroll).unwrap_or(Hit::Cell(reached));
                 let hit = match (kind, hit) {
@@ -3833,6 +3836,7 @@ impl DocView {
         };
         sheet.pointer = None;
         match drag {
+            SheetDrag::Scribble => self.finish_freeform(false, cx),
             SheetDrag::PageBreak { axis, from, to } => {
                 if to != from {
                     let result = sheet.book.move_page_break(axis, from, to);
