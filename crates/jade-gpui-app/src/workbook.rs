@@ -308,6 +308,8 @@ enum SheetDrag {
     PageBreak { axis: Axis, from: u32, to: u32 },
     /// A range pointed at for the formula being typed.
     Point,
+    /// Scribble's line, its points kept in the freeform draft.
+    Scribble,
     /// The selection picked up by its border: where the pointer took it
     /// (offset from its top-left), where it would land, and whether ⌥
     /// copies rather than moves.
@@ -3075,6 +3077,7 @@ impl WorkbookView {
         let scroll = self.sheet_scroll();
         let reached = self.book.reach_point(x, y, scroll);
         match drag {
+            SheetDrag::Scribble => self.scribble_to(x, y, cx),
             SheetDrag::Select(kind) => {
                 let hit = self.book.hit(x, y, scroll).unwrap_or(Hit::Cell(reached));
                 let hit = match (kind, hit) {
@@ -3189,6 +3192,7 @@ impl WorkbookView {
         };
         self.pointer = None;
         match drag {
+            SheetDrag::Scribble => self.finish_freeform(false, cx),
             SheetDrag::PageBreak { axis, from, to } => {
                 if to != from {
                     let result = self.book.move_page_break(axis, from, to);
@@ -6446,6 +6450,34 @@ mod tests {
             click(view, 400.0, 300.0, cx);
             assert!(view.freeform_key("escape", cx));
             assert!(view.freeform.is_none());
+        });
+    }
+
+    /// Scribble: a press starts the line, the drag draws it, the release
+    /// puts it in as an open freeform.
+    #[gpui::test]
+    fn scribbles_follow_the_drag(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.chart_tool(charts::ChartTool::Scribble, cx);
+            let scroll = view.sheet_scroll();
+            let (x, y) = view.book.viewport_point(200.0, 100.0, scroll);
+            view.freeform_click(x, y, 1, cx);
+            assert!(matches!(view.drag, Some(SheetDrag::Scribble)));
+            for step in 1..=10 {
+                let (x, y) = view.book.viewport_point(
+                    200.0 + 8.0 * f64::from(step),
+                    100.0 + 3.0 * f64::from(step % 3),
+                    scroll,
+                );
+                view.scribble_to(x, y, cx);
+            }
+            view.drag_end(cx);
+            assert!(view.freeform.is_none());
+            let id = view.object.expect("the scribble");
+            let (x, y, width, _) = view.book.object_bounds(id).unwrap();
+            assert!((x - 200.0).abs() < 0.5 && (y - 100.0).abs() < 0.5);
+            assert!((width - 80.0).abs() < 0.5);
         });
     }
 
