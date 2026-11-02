@@ -138,6 +138,7 @@ pub fn pages(
                     )
                     .children(super::grid_overlay(view, index))
                     .children(super::select::overlay(view, index))
+                    .children(super::select::composition(view, index))
                     .children(view.caret_overlay(index))
                     .child(
                         canvas(

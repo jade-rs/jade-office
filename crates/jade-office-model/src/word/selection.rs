@@ -190,6 +190,60 @@ pub fn range_rects(manager: &SelectionManager, start: Position, end: Position) -
     rects
 }
 
+/// The marks under an IME's composition, from the rectangles its text is
+/// drawn in ([`range_rects`]). Across the page each line's text gets a thin
+/// line under it; in vertical text (縦書き), where every character is a
+/// rectangle of its own down a column, the column's characters are joined
+/// and the line runs down their right side, as Word marks a composition in
+/// a vertical document. `thickness` is the line's, in the same units.
+pub fn composition_marks(rects: &[Rect], vertical: bool, thickness: f64) -> Vec<Rect> {
+    if !vertical {
+        return rects
+            .iter()
+            .filter(|(_, _, width, _)| *width > 0.0)
+            .map(|&(x, y, width, height)| (x, y + height - thickness, width, thickness))
+            .collect();
+    }
+    // A column: cells one under the other that share their left edge.
+    let mut columns: Vec<Rect> = Vec::new();
+    for &(x, y, width, height) in rects {
+        if height <= 0.0 {
+            continue;
+        }
+        match columns.last_mut() {
+            Some((cx, cy, cw, ch)) if (*cx - x).abs() < 0.5 && (y - (*cy + *ch)).abs() < 0.5 => {
+                *cw = cw.max(width);
+                *ch = y + height - *cy;
+            }
+            _ => columns.push((x, y, width, height)),
+        }
+    }
+    columns
+        .into_iter()
+        .map(|(x, y, width, height)| (x + width, y, thickness, height))
+        .collect()
+}
+
+/// [`composition_marks`] for the composition from `start` to `end` of
+/// `paragraph`, vertical when the lines it is on stack down a column.
+pub fn composition_marks_in(
+    manager: &SelectionManager,
+    paragraph: usize,
+    start: usize,
+    end: usize,
+    thickness: f64,
+) -> Vec<Rect> {
+    if end <= start {
+        return Vec::new();
+    }
+    let vertical = manager
+        .paragraphs()
+        .get(paragraph)
+        .is_some_and(|laid| laid.lines.iter().any(|line| line.vertical));
+    let rects = range_rects(manager, (paragraph, start), (paragraph, end));
+    composition_marks(&rects, vertical, thickness)
+}
+
 /// 矩形選択: the ranges an ⌥-drag from one point to another takes — on
 /// every line the rectangle crosses, the text between its left and right
 /// edges. `paragraphs` limits the search to the paragraphs that can be in
@@ -283,6 +337,30 @@ mod tests {
         text[start..end].to_string()
     }
 
+
+    #[test]
+    fn composition_is_marked_under_each_line_across_the_page() {
+        let rects = [(10.0, 100.0, 50.0, 20.0), (0.0, 120.0, 30.0, 20.0)];
+        assert_eq!(
+            composition_marks(&rects, false, 1.0),
+            vec![(10.0, 119.0, 50.0, 1.0), (0.0, 139.0, 30.0, 1.0)]
+        );
+    }
+
+    #[test]
+    fn vertical_composition_is_marked_down_the_right_of_its_column() {
+        // Three characters down one column, then one at the top of the next.
+        let rects = [
+            (200.0, 50.0, 14.0, 14.0),
+            (200.0, 64.0, 14.0, 14.0),
+            (200.0, 78.0, 12.0, 14.0),
+            (170.0, 50.0, 14.0, 14.0),
+        ];
+        assert_eq!(
+            composition_marks(&rects, true, 1.0),
+            vec![(214.0, 50.0, 1.0, 42.0), (184.0, 50.0, 1.0, 14.0)]
+        );
+    }
     #[test]
     fn a_double_click_takes_a_run_of_one_script() {
         let text = "東京都へ行くテストデータ。";

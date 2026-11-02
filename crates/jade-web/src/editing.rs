@@ -576,6 +576,34 @@ impl EditableDocument {
         self.highlight_rects()
     }
 
+    /// The line marking the composition, page by page, in CSS px of its
+    /// page: under the text, or down the right of its column in vertical
+    /// text (縦書き). Empty when no composition is open.
+    pub fn composition_marks(&self) -> Vec<HighlightRect> {
+        let Some((paragraph, start, end)) = self.composition else {
+            return Vec::new();
+        };
+        jade_office_model::word::selection::composition_marks_in(
+            self.renderer.selection_manager(),
+            paragraph,
+            start,
+            end,
+            1.0,
+        )
+        .into_iter()
+        .map(|(x, y, width, height)| {
+            let (page, y) = self.page_and_offset(y);
+            HighlightRect {
+                page,
+                x,
+                y,
+                width,
+                height,
+            }
+        })
+        .collect()
+    }
+
     /// Measure another participant in the current layout without changing
     /// this editor's caret, selection, composition or undo history.
     pub fn selection_geometry(
