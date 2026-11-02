@@ -2374,10 +2374,23 @@ impl<B: Backend> Workbook<B> {
 
     /// Insert ▸ Chart over `range`: the new chart's id.
     pub fn insert_chart(&mut self, range: CellRange, kind: ChartKind) -> Result<u32, String> {
+        self.insert_chart_with(range, |book, sheet, range| {
+            book.insert_chart(sheet, range, kind)
+        })
+    }
+
+    /// A chart over `range` that `make` puts in, as Insert ▸ Chart does.
+    pub(crate) fn insert_chart_with(
+        &mut self,
+        range: CellRange,
+        make: impl FnOnce(
+            &mut HeadlessWorkbook,
+            &str,
+            &str,
+        ) -> Result<u32, jade_xlsx_headless_editor::HeadlessError>,
+    ) -> Result<u32, String> {
         let name = self.sheet_name();
-        let id = self
-            .book
-            .insert_chart(&name, &range_text_full(range), kind)
+        let id = make(&mut self.book, &name, &range_text_full(range))
             .map_err(|error| error.to_string())?;
         self.record(1);
         self.after_write()?;
@@ -2446,11 +2459,24 @@ impl<B: Backend> Workbook<B> {
                 });
             }
         }
+        let workbook = self.book.workbook();
+        let on = &workbook.sheets[self.index];
+        let series = crate::charts::series_infos(chart, |reference| {
+            let resolved =
+                jade_xlsx_reader::chart::resolve_chart_reference(reference, on, Some(workbook))?;
+            let cell = resolved.points.first()?.cell?;
+            Some(match &cell.value {
+                CellValue::Text(text) => text.clone(),
+                CellValue::Number(number) => number.to_string(),
+                _ => return None,
+            })
+        });
         Some(ChartInfo {
             kind: chart_kind(chart),
             title: chart.title.clone(),
             legend,
             data: bounds.map(range_text_full),
+            series,
         })
     }
 

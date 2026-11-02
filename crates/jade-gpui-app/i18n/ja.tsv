@@ -228,6 +228,52 @@ chart.legend.right	右
 chart.legend.top	上
 chart.legend.left	左
 chart.legend.bottom	下
+chart.family.column	縦棒
+chart.family.bar	横棒
+chart.family.line	折れ線
+chart.family.area	面
+chart.family.pie	円
+chart.family.scatter	散布図
+chart.family.bubble	バブル
+chart.family.radar	レーダー
+chart.family.combo	組み合わせ
+chart.kind.percent_column	100% 積み上げ縦棒
+chart.kind.percent_bar	100% 積み上げ横棒
+chart.kind.stacked_line	積み上げ折れ線
+chart.kind.percent_line	100% 積み上げ折れ線
+chart.kind.stacked_line_markers	マーカー付き積み上げ折れ線
+chart.kind.percent_line_markers	マーカー付き 100% 積み上げ折れ線
+chart.kind.stacked_area	積み上げ面
+chart.kind.percent_area	100% 積み上げ面
+chart.kind.scatter_smooth_markers	散布図 (平滑線とマーカー)
+chart.kind.scatter_smooth	散布図 (平滑線)
+chart.kind.scatter_lines_markers	散布図 (直線とマーカー)
+chart.kind.scatter_lines	散布図 (直線)
+chart.kind.bubble	バブル
+chart.kind.radar	レーダー
+chart.kind.radar_markers	マーカー付きレーダー
+chart.kind.filled_radar	塗りつぶしレーダー
+chart.kind.column_line	集合縦棒 - 折れ線
+chart.kind.column_line_secondary	集合縦棒 - 第 2 軸の折れ線
+chart.kind.area_column	積み上げ面 - 集合縦棒
+chart.switch_rows	行/列の切り替え
+chart.select_data	データ ソースの選択
+chart.series.legend	凡例項目 (系列)
+chart.series.add_button	追加
+chart.series.edit_button	編集
+chart.series.remove	削除
+chart.series.up	上へ移動
+chart.series.down	下へ移動
+chart.series.add	系列の編集
+chart.series.edit	系列の編集
+chart.series.name	系列名
+chart.series.values	系列値
+chart.series.categories	軸ラベルの範囲
+chart.series.x_values	系列 X の値
+chart.series.y_values	系列 Y の値
+chart.series.sizes	系列のバブル サイズ
+chart.series.type	グラフの種類
+chart.series.secondary	第 2 軸
 sheet.tool.chart	グラフ
 sheet.format.general_name	標準
 sheet.format.general	General

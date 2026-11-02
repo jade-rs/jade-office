@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 use jade_office_model::aliased_faces;
 use jade_office_model::charts::{
-    dragged, handle_at, ChartChange, ChartKind, Handle, LegendPosition, CHART_KINDS,
+    dragged, handle_at, AskAction, AskPage, ChartAsk, ChartChange, ChartKind, ChartPick, Handle,
+    LegendPosition, CHART_GALLERY,
 };
 use jade_office_model::sheet::{CellRange, CellRef, Workbook};
 use jade_office_model::tiny::TinySkiaBackend;
@@ -182,11 +183,178 @@ fn chart_design_changes_type_title_legend_and_data() {
             },
         )
         .is_err());
-    // Every kind the menu offers has words.
-    assert_eq!(CHART_KINDS.len(), 10);
-    assert!(CHART_KINDS
+    // Every type the gallery offers has words.
+    assert_eq!(CHART_GALLERY.len(), 9);
+    assert!(CHART_GALLERY
         .iter()
+        .flat_map(|(_, kinds)| kinds.iter())
         .all(|(_, key)| key.starts_with("chart.kind.")));
+}
+
+/// Insert ▸ Chart's gallery: every type it offers goes in as that type
+/// and is drawn; a combination is read back as one.
+#[test]
+fn every_type_in_the_gallery_goes_in_as_itself() {
+    let mut count = 0;
+    for (_, kinds) in CHART_GALLERY {
+        for (pick, label) in kinds.iter().copied() {
+            let mut book = book();
+            let id = book.insert_chart_as(data(), pick).unwrap();
+            let info = book.chart(id).unwrap();
+            let expected = match pick {
+                ChartPick::Kind(kind) => kind,
+                ChartPick::Combo(..) => ChartKind::Combo,
+            };
+            assert_eq!(info.kind, Some(expected), "{label}");
+            assert!(book.is_dirty());
+            count += 1;
+        }
+    }
+    assert_eq!(count, 28);
+}
+
+/// Change Chart Type ▸ Combo: the first series columns, the second a line
+/// on the secondary axis; back to one type, and the series are one type
+/// again.
+#[test]
+fn change_chart_type_makes_a_combination_and_back() {
+    let mut book = book();
+    let id = book.insert_chart(data(), ChartKind::Column).unwrap();
+    assert!(book
+        .set_chart_type(
+            id,
+            ChartPick::Combo(ChartKind::Column, ChartKind::Line, true)
+        )
+        .unwrap());
+    let info = book.chart(id).unwrap();
+    assert_eq!(info.kind, Some(ChartKind::Combo));
+    assert_eq!(info.series[0].references.kind, Some(ChartKind::Column));
+    assert_eq!(info.series[1].references.kind, Some(ChartKind::Line));
+    assert!(info.series[1].references.secondary);
+    assert_eq!(info.series[1].name, "Double");
+    assert!(book
+        .set_chart_type(id, ChartPick::Kind(ChartKind::StackedColumn))
+        .unwrap());
+    let info = book.chart(id).unwrap();
+    assert_eq!(info.kind, Some(ChartKind::StackedColumn));
+    assert!(info.series.iter().all(|series| series.references.kind.is_none()));
+    assert!(book.undo().unwrap());
+    assert_eq!(book.chart(id).unwrap().kind, Some(ChartKind::Combo));
+}
+
+/// Switch Row/Column: a series for each row, then each column again.
+#[test]
+fn switch_row_column_turns_the_series_round() {
+    let mut book = book();
+    let id = book.insert_chart(data(), ChartKind::Column).unwrap();
+    let switch = ChartChange {
+        switch_rows: true,
+        ..ChartChange::default()
+    };
+    assert!(book.set_chart(id, &switch).unwrap());
+    let names: Vec<String> = book
+        .chart(id)
+        .unwrap()
+        .series
+        .into_iter()
+        .map(|series| series.name)
+        .collect();
+    assert_eq!(names, ["Alpha", "Beta", "Gamma"]);
+    assert!(book.set_chart(id, &switch).unwrap());
+    assert_eq!(book.chart(id).unwrap().series.len(), 2);
+    assert_eq!(book.chart(id).unwrap().data.as_deref(), Some("A1:C4"));
+}
+
+/// Select Data Source: Add, Edit, Remove and Move Up change the series at
+/// once; Edit Series takes a name of its own or a cell's; Cancel takes
+/// all of it back.
+#[test]
+fn select_data_source_adds_edits_removes_and_moves_series() {
+    let mut book = book();
+    let id = book.insert_chart(data(), ChartKind::Column).unwrap();
+    let before = book.save_bytes().unwrap();
+    let mut ask = ChartAsk::select_data(id, &book.chart(id).unwrap());
+    let series = |ask: &ChartAsk| match &ask.page {
+        AskPage::Data(data) => data
+            .series
+            .iter()
+            .map(|series| series.name.clone())
+            .collect::<Vec<_>>(),
+        _ => panic!("Select Data Source"),
+    };
+    assert_eq!(series(&ask), ["Amount", "Double"]);
+    // Add: Edit Series, typing into the values.
+    ask.act(&mut book, AskAction::Add).unwrap();
+    ask.typing().unwrap().replace(None, "=B2:B4", false);
+    // Tab back round to the name.
+    assert_eq!(ask.key("tab", false), jade_office_model::charts::ChartKey::Handled);
+    ask.typing().unwrap().replace(None, "Plan", false);
+    let done = ask.act(&mut book, AskAction::Take).unwrap();
+    assert!(done.wrote && !done.closed);
+    assert_eq!(series(&ask), ["Amount", "Double", "Plan"]);
+    let info = book.chart(id).unwrap();
+    assert_eq!(
+        info.series[2].references.values,
+        "Operations!$B$2:$B$4"
+    );
+    assert_eq!(info.series[2].references.name.as_deref(), Some("\"Plan\""));
+    // Edit: its name from a cell now.
+    ask.act(&mut book, AskAction::Pick(2)).unwrap();
+    ask.act(&mut book, AskAction::Edit).unwrap();
+    assert_eq!(ask.key("tab", false), jade_office_model::charts::ChartKey::Handled);
+    ask.typing().unwrap().replace(None, "=A3", false);
+    ask.act(&mut book, AskAction::Take).unwrap();
+    assert_eq!(series(&ask), ["Amount", "Double", "Beta"]);
+    // A value that is no reference is refused, and Edit Series stays.
+    ask.act(&mut book, AskAction::Edit).unwrap();
+    ask.typing().unwrap().replace(None, "lots", false);
+    assert!(ask.act(&mut book, AskAction::Take).is_err());
+    ask.act(&mut book, AskAction::Cancel).unwrap();
+    // Move Up, then Remove.
+    ask.act(&mut book, AskAction::Move(true)).unwrap();
+    assert_eq!(series(&ask), ["Amount", "Beta", "Double"]);
+    ask.act(&mut book, AskAction::Pick(0)).unwrap();
+    ask.act(&mut book, AskAction::Remove).unwrap();
+    assert_eq!(series(&ask), ["Beta", "Double"]);
+    assert_eq!(book.chart(id).unwrap().series.len(), 2);
+    // Cancel: all of it back.
+    let done = ask.act(&mut book, AskAction::Cancel).unwrap();
+    assert!(done.closed);
+    assert_eq!(book.save_bytes().unwrap(), before);
+}
+
+/// Edit Series on a column chart: a series drawn as a line on the
+/// secondary axis makes the chart a combination.
+#[test]
+fn edit_series_puts_one_series_on_the_secondary_axis() {
+    let mut book = book();
+    let id = book.insert_chart(data(), ChartKind::Column).unwrap();
+    let mut ask = ChartAsk::select_data(id, &book.chart(id).unwrap());
+    ask.act(&mut book, AskAction::Pick(1)).unwrap();
+    ask.act(&mut book, AskAction::Edit).unwrap();
+    let (kind, secondary) = match &ask.page {
+        AskPage::Data(data) => {
+            let (_, form) = data.editing.as_ref().unwrap();
+            let at = |key: &str| form.fields.iter().position(|f| f.key == key).unwrap();
+            (at("chart.series.type"), at("chart.series.secondary"))
+        }
+        _ => panic!("Select Data Source"),
+    };
+    let line = jade_office_model::charts::SERIES_KINDS
+        .iter()
+        .position(|kind| *kind == ChartKind::Line)
+        .unwrap();
+    ask.act(&mut book, AskAction::Choose(kind, line)).unwrap();
+    ask.act(&mut book, AskAction::Field(secondary)).unwrap();
+    ask.act(&mut book, AskAction::Take).unwrap();
+    let info = book.chart(id).unwrap();
+    assert_eq!(info.kind, Some(ChartKind::Combo));
+    assert!(info.series[1].references.secondary);
+    assert_eq!(info.series[1].references.kind, Some(ChartKind::Line));
+    assert_eq!(info.series[0].references.kind, Some(ChartKind::Column));
+    // OK closes it, keeping what it did.
+    assert!(ask.act(&mut book, AskAction::Take).unwrap().closed);
+    assert_eq!(book.chart(id).unwrap().kind, Some(ChartKind::Combo));
 }
 
 #[test]
@@ -212,20 +380,20 @@ fn an_excel_chart_is_found_and_changed_too() {
 /// chart has; an emptied title is no title.
 #[test]
 fn the_text_dialog_asks_for_a_title_or_a_range() {
-    use jade_office_model::charts::{ChartAsk, ChartField, ChartKey};
+    use jade_office_model::charts::{ChartField, ChartKey};
     let mut book = book();
     let id = book.insert_chart(data(), ChartKind::Column).unwrap();
     let info = book.chart(id).unwrap();
     let mut ask = ChartAsk::new(id, ChartField::Data, &info);
-    assert_eq!(ask.text.text, "A1:C4");
-    ask.text.replace(None, "A1:B4", false);
+    assert_eq!(ask.typed().unwrap().text, "A1:C4");
+    ask.typing().unwrap().replace(None, "A1:B4", false);
     assert_eq!(ask.key("x", false), ChartKey::Unhandled);
     assert_eq!(ask.key("enter", false), ChartKey::Take);
     assert!(book.set_chart(id, &ask.change()).unwrap());
     assert_eq!(book.chart(id).unwrap().data.as_deref(), Some("A1:B4"));
     let mut ask = ChartAsk::new(id, ChartField::Title, &book.chart(id).unwrap());
-    assert_eq!(ask.text.text, "Chart Title");
-    ask.text.replace(None, "", false);
+    assert_eq!(ask.typed().unwrap().text, "Chart Title");
+    ask.typing().unwrap().replace(None, "", false);
     assert!(book.set_chart(id, &ask.change()).unwrap());
     assert_eq!(book.chart(id).unwrap().title, "");
     assert_eq!(ask.key("escape", false), ChartKey::Close);

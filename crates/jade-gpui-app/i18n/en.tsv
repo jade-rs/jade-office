@@ -228,6 +228,52 @@ chart.legend.right	Right
 chart.legend.top	Top
 chart.legend.left	Left
 chart.legend.bottom	Bottom
+chart.family.column	Column
+chart.family.bar	Bar
+chart.family.line	Line
+chart.family.area	Area
+chart.family.pie	Pie
+chart.family.scatter	X Y (Scatter)
+chart.family.bubble	Bubble
+chart.family.radar	Radar
+chart.family.combo	Combo
+chart.kind.percent_column	100% Stacked Column
+chart.kind.percent_bar	100% Stacked Bar
+chart.kind.stacked_line	Stacked Line
+chart.kind.percent_line	100% Stacked Line
+chart.kind.stacked_line_markers	Stacked Line with Markers
+chart.kind.percent_line_markers	100% Stacked Line with Markers
+chart.kind.stacked_area	Stacked Area
+chart.kind.percent_area	100% Stacked Area
+chart.kind.scatter_smooth_markers	Scatter with Smooth Lines and Markers
+chart.kind.scatter_smooth	Scatter with Smooth Lines
+chart.kind.scatter_lines_markers	Scatter with Straight Lines and Markers
+chart.kind.scatter_lines	Scatter with Straight Lines
+chart.kind.bubble	Bubble
+chart.kind.radar	Radar
+chart.kind.radar_markers	Radar with Markers
+chart.kind.filled_radar	Filled Radar
+chart.kind.column_line	Clustered Column - Line
+chart.kind.column_line_secondary	Clustered Column - Line on Secondary Axis
+chart.kind.area_column	Stacked Area - Clustered Column
+chart.switch_rows	Switch Row/Column
+chart.select_data	Select Data Source
+chart.series.legend	Legend Entries (Series)
+chart.series.add_button	Add
+chart.series.edit_button	Edit
+chart.series.remove	Remove
+chart.series.up	Move Up
+chart.series.down	Move Down
+chart.series.add	Edit Series
+chart.series.edit	Edit Series
+chart.series.name	Series name
+chart.series.values	Series values
+chart.series.categories	Axis label range
+chart.series.x_values	Series X values
+chart.series.y_values	Series Y values
+chart.series.sizes	Series bubble size
+chart.series.type	Chart type
+chart.series.secondary	Secondary Axis
 sheet.tool.chart	Chart
 sheet.format.general_name	General
 sheet.format.general	General

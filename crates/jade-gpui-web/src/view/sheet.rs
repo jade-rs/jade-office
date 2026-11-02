@@ -952,7 +952,7 @@ impl Sheet {
             return Some(dialog.field_mut());
         }
         if let Some(ask) = self.chart_asking.as_mut() {
-            return Some(&mut ask.text);
+            return ask.typing();
         }
         if let Some(ask) = self.asking.as_mut() {
             return ask.typing();
@@ -1007,7 +1007,7 @@ impl Sheet {
             return Some(dialog.field());
         }
         if let Some(ask) = self.chart_asking.as_ref() {
-            return Some(&ask.text);
+            return ask.typed();
         }
         if let Some(ask) = self.asking.as_ref() {
             return ask.typed();
