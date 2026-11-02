@@ -337,7 +337,6 @@ mod tests {
         text[start..end].to_string()
     }
 
-
     #[test]
     fn composition_is_marked_under_each_line_across_the_page() {
         let rects = [(10.0, 100.0, 50.0, 20.0), (0.0, 120.0, 30.0, 20.0)];
