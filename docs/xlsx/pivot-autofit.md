@@ -23,7 +23,7 @@ unrelated worksheet content, merged cells and hidden/zero-width columns do not
 drive widths. Noncompact reports retain their first label column's width.
 
 `applyWidthHeightFormats="0"` disables automatic width changes. An absent flag
-uses the pinned reference's enabled policy; this is not a claim that the XSD
+is treated as enabled; this is not a claim that the XSD
 supplies that default. `useAutoFormatting`, `preserveFormatting` and legacy
 `autoFormatId` have separate roles and are not reinterpreted as this width switch.
 The existing custom/manual-style preservation behavior is retained.
@@ -77,7 +77,7 @@ parity.
 Primary semantics: [Excel PivotTable options](https://support.microsoft.com/en-gb/excel/pivottable-options)
 and [standard location/filter dimensions](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.location?view=openxml-3.0.1).
 The independent implementation reuses Jade's unit conversion, font measurement,
-number formatting and preserving writer; no reference implementation code was
+number formatting and preserving writer; no third-party implementation code was
 incorporated.
 
 ## Verified checkpoint

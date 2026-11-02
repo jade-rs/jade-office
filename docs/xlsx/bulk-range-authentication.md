@@ -67,10 +67,10 @@ The model run excludes the established Skia-only print/Thai cases and other
 model/unit/feature combinations. Earlier engine runtime, patch-replay and function
 inventory evidence is carried with unchanged source hashes, not rerun here.
 
-Actual keyboard/pointer/paint interactions, Excel/reference application captures,
+Actual keyboard/pointer/paint interactions, Excel application captures,
 merged/compound selections, broader clipboard/spill/table/schema behavior,
 pending-navigation replay and prompts for other command families remain
 unverified or incomplete. Panic/process/allocation-failure recovery and large
 production performance are outside this returned-error contract. The full
-[Excel parity goal](coverage.md), including pivots, slicers, queries,
+[Excel coverage goal](coverage.md), including pivots, slicers, queries,
 advanced charts, six missing function registrations and encryption, remains active.

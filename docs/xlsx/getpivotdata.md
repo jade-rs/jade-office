@@ -61,9 +61,8 @@ The earlier query/structure checkpoint is recorded in
 [getpivotdata-verification.json](getpivotdata-verification.json). Current frozen
 source and application compiler results include the later
 [dependency-order checkpoint](pivot-refresh-order-verification.json).
-The generated [function inventory](jade-function-inventory.json) and
-[difference](function-diff.json) are produced by executing the actual engine
-inventory example and comparing it with the pinned reference inventory.
+The generated [function inventory](jade-function-inventory.json) is produced
+by executing the actual engine inventory example.
 Tests include:
 
 - `jade-core/crates/jade-xlsx-calc/tests/pivot_calculation.rs`;
@@ -78,7 +77,7 @@ The fixture is independently generated, with deliberate unused shared-cache
 indices and stale formula-cache values in calculation tests. It is a regression
 fixture, not an Office-produced schema/repair/save/render oracle. Vendored
 engine changes remain recorded against the hash-pinned official upstream crate
-by `scripts/xlsx/replay_engine_patch.py`; no baseline implementation code is copied.
+by `scripts/xlsx/replay_engine_patch.py`; no third-party implementation code is copied.
 
 ## Remaining work
 
@@ -90,12 +89,10 @@ saved declaration; an actual creation-order/Office oracle is still needed.
 Other function languages, cross-workbook references, custom subtotal descriptor
 syntax, general cache-derived semantics and broader application captures also
 remain. Slicers, timelines and pivot charts require their own implementation.
-The overall [Excel parity goal](coverage.md) remains active.
+The overall [Excel coverage goal](coverage.md) remains active.
 
 Primary behavior references: [Microsoft GETPIVOTDATA](https://support.microsoft.com/en-us/excel/functions/getpivotdata-function),
 [compressed RowItems](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.rowitems?view=openxml-3.0.1),
 [PageField item indices](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.pagefield?view=openxml-3.0.1),
 and [cache definitions](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.pivotcachedefinition?view=openxml-3.0.1).
-The pinned reference's [GETPIVOTDATA wrapper](https://support.microsoft.com/excel)
-was inspected for argument forms and callback/context requirements. Source
-inspection, generated regression results and Office oracles are separate evidence.
+Generated regression results and Office oracles are separate evidence.

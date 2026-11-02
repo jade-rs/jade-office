@@ -1,10 +1,9 @@
 # Parity with a full Office suite
 
-The current XLSX comparison against a pinned Excel revision, with
-implementation gaps and regression gates, is in [xlsx/coverage.md](xlsx/coverage.md).
-The current generated function inventory is 507 names against the pinned
-reference's 512. This measures registration, not complete calculation or
-application compatibility; current results and limits are in
+The current XLSX coverage audit, with implementation gaps and regression gates,
+is in [xlsx/coverage.md](xlsx/coverage.md).
+The current generated function inventory is 507 names. This measures
+registration, not complete calculation or application compatibility; current results and limits are in
 [xlsx/verification.md](xlsx/verification.md). The latest [pivot creation/deletion](xlsx/pivot-lifecycle.md) adds a common
 creation dialog, atomic new-sheet/report/cache graphs and static chart snapshots
 of currently displayed values, with independent schema and SDK checks;
@@ -13,15 +12,14 @@ counts below describe the earlier baseline.
 
 The goal set on 2026-10-21: jade office opens, draws, edits and saves Word,
 Excel and PowerPoint files as a complete office suite does, measured
-against a reference list of some 1,800 features an Office user reaches
-for — Word's 506 first.
+feature by feature against what Word, Excel and PowerPoint do — Word first.
 
 `docs/GAPS.md` lists what everyday users hit first; this file tracks the
 distance to a whole suite, and how it is measured.
 
 ## Where jade stood on 2026-10-21
 
-Each item of the yardstick was classified from jade's code:
+Each feature was classified from jade's code:
 **full** (drawn and editable as Office does), **render** (read and drawn,
 no way to make or change it), **partial**, **roundtrip** (kept on save, not
 drawn), **missing**.
@@ -110,8 +108,8 @@ few dialogs that are native-only for now (listed in
 
 Per-area detail behind the Word numbers above, in `docs/word/`:
 
-- [coverage.md](word/coverage.md) — the test that covers each row of the
-  reference list, and the rows no test covers.
+- [coverage.md](word/coverage.md) — the test that covers each Word feature,
+  and the features no test covers.
 - [enumerations.md](word/enumerations.md) — border, underline, highlight,
   shape, text-effect, emphasis and number-format values one by one.
 - [compatibility-modes.md](word/compatibility-modes.md) — compatibility modes,
@@ -128,8 +126,8 @@ Per-area detail behind the Word numbers above, in `docs/word/`:
 ## Batch 4: every Word item
 
 With files and printing, the Draw tab, the View tab and editing aids,
-review and protection, and the fidelity fixes, all 506 Word items of the
-reference list are drawn and editable in the native app. Still to do, and
+review and protection, and the fidelity fixes, all 506 Word features
+are drawn and editable in the native app. Still to do, and
 tracked: the browser shell's share of a few of them (views, Word Options,
 AutoRecover, the picture/shape format tab — `docs/word/web-vs-desktop.md`),
 and checks against files Word itself wrote for open passwords and digital

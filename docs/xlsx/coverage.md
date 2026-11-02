@@ -1,56 +1,51 @@
-# XLSX parity with Excel
+# XLSX coverage
 
-Audit started 2026-10-23. Reference: [Excel
-](https://support.microsoft.com/excel).
-Jade baseline: jade-office `e97451d`, jade-core `e3a5929`.
+Audit started 2026-10-23 against Excel behaviour. Jade baseline: jade-office
+`e97451d`, jade-core `e3a5929`.
 
-This is an implementation comparison, not an Excel certification. The
-reference's feature catalogue has 933 XLSX entries, including individual
-functions and audit tasks. Its `Completed` labels do not establish that every
-operation renders, calculates and round-trips correctly. Source inspection,
-Jade regression tests and Office oracle captures are separate evidence.
-No baseline implementation code is incorporated into Jade.
+This is a coverage audit, not an Excel certification. Jade regression tests,
+generated-workbook checks and Office oracle captures are separate evidence;
+UI presence alone is not counted as a passed runtime check.
 
 ## Findings and order of work
 
-Paths under `Excel-app/src/xlsx` and `pptx/src` below are relative
-to the reference's `crates/`. Jade engine paths are under `jade-core/crates`.
-“Preserved” means the original package part is retained, not that Jade can
-interpret or edit its contents. “Partial” explicitly does not claim parity.
+Jade engine paths are under `jade-core/crates`. “Preserved” means the original
+package part is retained, not that Jade can interpret or edit its contents.
+“Partial” explicitly does not claim parity.
 
-| Area | Reference implementation | Jade at the baseline | Current gap / acceptance requirement |
-|---|---|---|---|
-| Package read, cells, shared formulas, 1900/1904 | `pptx/src/xlsx.rs`, `save/xlsx.rs` | Reader/writer, shared formula expansion and date epoch tests | Added common namespace/hierarchy-aware standard cell/shared-string/rich/phonetic reading, Choice/Fallback selection, owned cell/cache writes and existing compatible-representation updates; see [cell content](cell-content.md). General MCE, alternate grid/shared-formula topology, other feature families, full schema validation and production/application corpus evidence remain |
-| Formula registration | `calc/src/functions` | 503 registered names | Added ECMA.CEILING and complete call/prefix/registry paths for SINGLE/ANCHORARRAY: 507 versus the reference’s 512, including saved-result GETPIVOTDATA. Five names remain; generated inventory/difference and semantic limits are in [compatibility-functions.md](compatibility-functions.md) |
-| Formula semantics, arrays, names | `calc/src/eval`, `formula`, `recalc.rs` | IronCalc adapter, spills, scoped range names | Added named constants/expressions and cycle termination; relative names, named LAMBDAs and array-producing names need broader oracle coverage |
-| External links and service functions | `xlsx/external_links.rs`, `pptx/src/xlsx_external.rs` | Original parts and unsupported formula caches preserved | External workbook manager, refresh, linked data types, service/provider integration missing |
-| Typed input, IME, furigana, cell rich text | `xlsx/cell_edit.rs`, `phonetic.rs` | Typed input/IME/PHONETIC; rich text read and drawn | Rich-text run authoring and phonetic editing missing |
-| Clipboard and Paste Special | `xlsx/clipboard.rs`, `paste_special_dialog.rs` | Values/formulas/formats/transpose/skip blanks | Added returned-error rollback for tiled text/internal-copy paste and active-entry range fill, complete edit checkpoints, guarded cut sources and sparse full-axis permissions; see [compound edit atomicity](bulk-edit-atomicity.md). Arithmetic operations, column widths, validation-only paste, links, external rich clipboard remain. Added shared native/browser bulk editable-range authentication for paste, clear, all fill variants and move/copy, with deferred credentials, exact write coverage and atomic command/grant commit; see [bulk authentication](bulk-range-authentication.md) |
-| Clear, Find, Go To | `xlsx/find.rs`, `goto_special.rs` | Clear contents, Find/Replace | Clear formats/all, result list, values/notes/selection scopes, Go To Special remain |
-| Fill and input assistance | `xlsx/fill.rs`, `series.rs`, `flash_fill.rs`, `autocomplete.rs` | Numeric series, copy/fill handle | Date/text series, flash fill, formula suggestions/argument help remain |
-| Names and scope | `xlsx/names.rs`, `pptx/src/save/xlsx.rs` | Read-only definitions | Added scoped create/update/delete/recalculation and name-box create/navigation; Name Manager dialog remains |
-| Cell formatting and styles | `xlsx/custom_format.rs`, `cell_styles.rs`, `format_more.rs` | Number/font/fill/alignment/wrap/borders editor | Rotation, vertical text, shrink-to-fit, indent, pattern/gradient fills, named styles/theme authoring remain |
-| Conditional formatting | `xlsx/conditional*.rs`, `pptx/src/save/xlsx_sizes.rs` | Wide read/render support; basic rule creation | The package rewrite now follows owned standard/x14 conditional formulas and formula thresholds. Full rule editing, precedence, stop-if-true, custom icons, advanced data-bar authoring and whole-axis anchor/namespace cases remain |
-| Sheet tabs | `xlsx/sheet_ui.rs`, `save/xlsx_structure.rs` | Add/delete/rename/move; visibility/tab colour read | Added hide/unhide in both shells and tab-colour writer/model; sheet copy and tab-colour controls remain |
-| Rows/columns, cell shifts, outlines | `xlsx/cells_dialog.rs`, `headers.rs`, `subtotal_dialog.rs` | Whole-axis insertion/deletion, hiding/sizing/fit | Added cell-range insertion/deletion, structural table-header insertion, shared-model APIs and both context menus; 1,106 tests across the six selected implementation crates passed. x14 rule/validation/sparkline coordinate and identity reconciliation is implemented; keyboard choice dialog, other extension families, grouping and subtotal authoring remain; see [cell-shifts.md](cell-shifts.md) |
-| Sheet/window views | `xlsx/split_view.rs`, `custom_views.rs`, `arrange_windows.rs` | Saved freeze panes/gridlines; application zoom | Persisted freeze/view changes, split views, custom views and workbook windows remain |
-| Tables | `xlsx/table_edit.rs`, `table_design.rs`, `save/xlsx_structure.rs` | Read/render, structured-reference calculation, header rename | Added create/resize/style/header/totals/calculated-column/entry expansion/conversion writers, model and dialogs. The regression across the six selected implementation crates (1,106 tests) and both shell builds passed. Explicit ownership, duplicate targets and table namespace/template hierarchy are handled. Added table-width/height band shifts, structural header insertion, calculated-row fill and saved-template rebasing. Custom-style authoring, dedicated table commands, clipboard/filter/spill/extension edge cases, dialog runtime and Office oracles remain. See [tables.md](tables.md) |
-| Sort/filter | `xlsx/sort_edit.rs`, `filter.rs`, `advanced_filter.rs` | Engine multi-key/custom/date/rank filters; basic UI | Advanced/custom sort/filter UI, colour/icon criteria, custom lists and advanced filters remain |
-| Validation | `xlsx/validation.rs`, `save/xlsx_sizes.rs` | Read; limited UI enforcement | Added preserving writer, all standard rule types, relative/formula bounds, names/dynamic lists, input/error messages, alert choices, native/browser editing and history. x14 reading, indexed preserving edits, shared input enforcement, quoted-list/source-alternative read/write and dropdown literal handling added. Whole-axis edits now retain x14 rules and rebase deleted anchors while isolating opaque XML. The package rewrite used by partial shifts and table changes now scopes formula ownership and x14 table context; invalid-data circles, validation-only paste, general MCE, advanced coercion and Office oracle coverage remain; see [validation.md](validation.md) |
-| Hyperlinks and notes | `xlsx/links.rs`, `notes.rs` | Link following, note authoring | Added URL/file/internal/named-link authoring, display text/ScreenTips, range removal, native/browser dialogs and history. Relative file opening/base-address handling and Office round-trip/oracle cases remain; see [hyperlinks.md](hyperlinks.md) |
-| Charts | `xlsx/chart_edit.rs`, `chart_insert.rs`, `chart_template.rs` | Basic authoring; classic/combo/radar/bubble rendering | Extended/3-D/stock/surface/statistical charts, full axes/series/labels/effects controls and chart sheets/templates remain |
-| Sparklines | `xlsx/sparkline_dialog.rs`, `save/xlsx_sizes.rs` | Read/render | Added namespace/hierarchy-aware reading, CDATA/entity leaves and valid single-cell destinations, with cross-sheet edits/save/history cases; see [sparkline reading](sparkline-reading.md). Create/edit/group/style/axis controls, authoring writer, date-axis rendering, general MCE and Office oracles remain |
-| Shapes, pictures and SmartArt | `xlsx/shape_edit.rs`, `pptx/src/save/xlsx_shapes.rs` | Drawing parts retained; basic draw/move/resize/delete/text | Insertion, geometry/effects/crop, grouping, SmartArt authoring, in-cell/linked images remain |
-| Ink and form controls | `xlsx/ink.rs`, `control*.rs` | Parts preserved | Read/render/edit support remains |
-| Pivot tables/charts | `xlsx/pivot*.rs`, `pptx/src/xlsx_pivot.rs`, `save/xlsx_pivot.rs` | Parts preserved | Added typed catalog, GETPIVOTDATA, structural movement, selected/all refresh and observed dependency scheduling. Standard relationship ownership reads 22 normative reports; named custom/84 normative styles reach both shells and raster/history tests. Refresh now saves report/filter column fitting using backend metrics, shared-column maxima and opt-out/protected widths in one atomic edit; see [autofit](pivot-autofit.md). Added locally corroborated classic PivotChart refresh, stable point/series styles, reference preservation and report-tab rename; see [PivotCharts](pivot-charts.md). Added preserving existing-pivot source/layout/measure/member/page/style editing and a common native/browser editor; see [authoring](pivot-authoring.md). Source headers/order/count must remain unchanged. Added atomic creation/deletion, new/existing destinations, a common creation panel and displayed-value static chart snapshots; see [creation/deletion](pivot-lifecycle.md). Blank/no-value design, reused-cache creation, source field remapping, advanced/calculated/grouped/show-as authoring, complete legacy fitting/page/group/styles/charts/controls/external identity, load refresh, OLAP and broad Office oracles remain |
-| Slicers and timelines | `xlsx/slicer*.rs`, `timeline*.rs`, `save/xlsx_slicer.rs` | Parts preserved | Model/read/render, filtering, connections and authoring remain |
-| Queries and XML maps | `xlsx/query*.rs`, `xml_maps.rs` | Parts preserved | Query operations, source connections/refresh, model authoring and XML maps remain |
-| What-if and analysis | `xlsx/goal_seek.rs`, `solver_panel.rs`, `scenario_manager.rs`, `data_table.rs`, `analysis_panel.rs`, `forecast_sheet.rs` | Formula calculation only | Goal Seek, Solver, scenarios, data tables, analysis/forecast tools remain |
-| Protection and encryption | `xlsx/protection.rs`, `password.rs` | Sheet protection read and enforced on supported edits | Added imported workbook structure protection in reader/writer/model and both shell command guards, with atomic refusals and preserving saves; see [workbook protection](workbook-protection.md). Added workbook structure protect/unprotect, SHA/legacy password authentication, preserving metadata/history and a shared native/browser dialog; see [protection authoring](protection-authoring.md). Added worksheet protect/unprotect with optional SHA/legacy authentication, cell lock/hidden-content authoring, fifteen permissions and shared native/browser controls; see [sheet protection](sheet-protection-authoring.md). Added standard/x14 editable-range reading, preserving CRUD/structural shifts, password authentication, unsaved sheet-local grants and a shared manager; see [editable ranges](editable-ranges.md). Added independent worksheet object guards for notes, shapes, pictures and charts plus reader/cached queries for content/object/scenario permissions; see [object protection](object-protection.md). Added individual imported DrawingML/VML position/text locks, owned identities/selected references and preserving drawing/note updates; see [individual object protection](individual-object-protection.md). Added automatic typed single-cell range-password prompts through the shared dialog and both editors; see [range prompts](range-unlock-prompts.md). Added automatic bulk-operation authentication with deferred proofs and atomic command/grant commit; see [bulk authentication](bulk-range-authentication.md). Pending navigation replay, individual flag-authoring/selection feedback, general drawing ownership/MCE, account ACLs, scenario editing, broader selection/application oracles, window/revision guards, additional digest/locale coverage and encrypted XLSX flow remain |
-| Collaboration and review | `xlsx/threaded_comments.rs`, `spelling_panel.rs` | Legacy notes | Threaded comments and spelling UI remain |
-| Page setup and print | `xlsx/page_layout.rs`, `header_footer*.rs`, `print.rs` | Read settings, paginate/PDF, header/footer writer | Added paper/orientation/margins/scaling/page order/print titles/print area writers and model; Page Setup UI, break authoring, headings/gridlines/centering and workbook-wide print remain |
-| File formats and recovery | `xlsx/import_text.rs`, `repair.rs`, `backup_save.rs`, `pptx/src/xls*.rs`, `ods*.rs` | XLSX/CSV/PDF; opaque parts preserved | XLS/XLSB/ODS, text import options, macro/template conversion, recovery/repair UI remain |
-| Accessibility, properties, settings | `xlsx/accessibility_panel.rs`, `properties_panel.rs`, `compatibility_panel.rs` | Basic shell/file handling | Workbook accessibility checker, object alt-text editing, properties/custom properties and compatibility/settings UI remain |
+| Area | Jade at the baseline | Current gap / acceptance requirement |
+|---|---|---|
+| Package read, cells, shared formulas, 1900/1904 | Reader/writer, shared formula expansion and date epoch tests | Added common namespace/hierarchy-aware standard cell/shared-string/rich/phonetic reading, Choice/Fallback selection, owned cell/cache writes and existing compatible-representation updates; see [cell content](cell-content.md). General MCE, alternate grid/shared-formula topology, other feature families, full schema validation and production/application corpus evidence remain |
+| Formula registration | 503 registered names | Added ECMA.CEILING and complete call/prefix/registry paths for SINGLE/ANCHORARRAY: 507 registered names, including saved-result GETPIVOTDATA. The Excel functions still unregistered, the generated inventory and semantic limits are in [compatibility-functions.md](compatibility-functions.md) |
+| Formula semantics, arrays, names | IronCalc adapter, spills, scoped range names | Added named constants/expressions and cycle termination; relative names, named LAMBDAs and array-producing names need broader oracle coverage |
+| External links and service functions | Original parts and unsupported formula caches preserved | External workbook manager, refresh, linked data types, service/provider integration missing |
+| Typed input, IME, furigana, cell rich text | Typed input/IME/PHONETIC; rich text read and drawn | Rich-text run authoring and phonetic editing missing |
+| Clipboard and Paste Special | Values/formulas/formats/transpose/skip blanks | Added returned-error rollback for tiled text/internal-copy paste and active-entry range fill, complete edit checkpoints, guarded cut sources and sparse full-axis permissions; see [compound edit atomicity](bulk-edit-atomicity.md). Arithmetic operations, column widths, validation-only paste, links, external rich clipboard remain. Added shared native/browser bulk editable-range authentication for paste, clear, all fill variants and move/copy, with deferred credentials, exact write coverage and atomic command/grant commit; see [bulk authentication](bulk-range-authentication.md) |
+| Clear, Find, Go To | Clear contents, Find/Replace | Clear formats/all, result list, values/notes/selection scopes, Go To Special remain |
+| Fill and input assistance | Numeric series, copy/fill handle | Date/text series, flash fill, formula suggestions/argument help remain |
+| Names and scope | Read-only definitions | Added scoped create/update/delete/recalculation and name-box create/navigation; Name Manager dialog remains |
+| Cell formatting and styles | Number/font/fill/alignment/wrap/borders editor | Rotation, vertical text, shrink-to-fit, indent, pattern/gradient fills, named styles/theme authoring remain |
+| Conditional formatting | Wide read/render support; basic rule creation | The package rewrite now follows owned standard/x14 conditional formulas and formula thresholds. Full rule editing, precedence, stop-if-true, custom icons, advanced data-bar authoring and whole-axis anchor/namespace cases remain |
+| Sheet tabs | Add/delete/rename/move; visibility/tab colour read | Added hide/unhide in both shells and tab-colour writer/model; sheet copy and tab-colour controls remain |
+| Rows/columns, cell shifts, outlines | Whole-axis insertion/deletion, hiding/sizing/fit | Added cell-range insertion/deletion, structural table-header insertion, shared-model APIs and both context menus; 1,106 tests across the six selected implementation crates passed. x14 rule/validation/sparkline coordinate and identity reconciliation is implemented; keyboard choice dialog, other extension families, grouping and subtotal authoring remain; see [cell-shifts.md](cell-shifts.md) |
+| Sheet/window views | Saved freeze panes/gridlines; application zoom | Persisted freeze/view changes, split views, custom views and workbook windows remain |
+| Tables | Read/render, structured-reference calculation, header rename | Added create/resize/style/header/totals/calculated-column/entry expansion/conversion writers, model and dialogs. The regression across the six selected implementation crates (1,106 tests) and both shell builds passed. Explicit ownership, duplicate targets and table namespace/template hierarchy are handled. Added table-width/height band shifts, structural header insertion, calculated-row fill and saved-template rebasing. Custom-style authoring, dedicated table commands, clipboard/filter/spill/extension edge cases, dialog runtime and Office oracles remain. See [tables.md](tables.md) |
+| Sort/filter | Engine multi-key/custom/date/rank filters; basic UI | Advanced/custom sort/filter UI, colour/icon criteria, custom lists and advanced filters remain |
+| Validation | Read; limited UI enforcement | Added preserving writer, all standard rule types, relative/formula bounds, names/dynamic lists, input/error messages, alert choices, native/browser editing and history. x14 reading, indexed preserving edits, shared input enforcement, quoted-list/source-alternative read/write and dropdown literal handling added. Whole-axis edits now retain x14 rules and rebase deleted anchors while isolating opaque XML. The package rewrite used by partial shifts and table changes now scopes formula ownership and x14 table context; invalid-data circles, validation-only paste, general MCE, advanced coercion and Office oracle coverage remain; see [validation.md](validation.md) |
+| Hyperlinks and notes | Link following, note authoring | Added URL/file/internal/named-link authoring, display text/ScreenTips, range removal, native/browser dialogs and history. Relative file opening/base-address handling and Office round-trip/oracle cases remain; see [hyperlinks.md](hyperlinks.md) |
+| Charts | Basic authoring; classic/combo/radar/bubble rendering | Extended/3-D/stock/surface/statistical charts, full axes/series/labels/effects controls and chart sheets/templates remain |
+| Sparklines | Read/render | Added namespace/hierarchy-aware reading, CDATA/entity leaves and valid single-cell destinations, with cross-sheet edits/save/history cases; see [sparkline reading](sparkline-reading.md). Create/edit/group/style/axis controls, authoring writer, date-axis rendering, general MCE and Office oracles remain |
+| Shapes, pictures and SmartArt | Drawing parts retained; basic draw/move/resize/delete/text | Insertion, geometry/effects/crop, grouping, SmartArt authoring, in-cell/linked images remain |
+| Ink and form controls | Parts preserved | Read/render/edit support remains |
+| Pivot tables/charts | Parts preserved | Added typed catalog, GETPIVOTDATA, structural movement, selected/all refresh and observed dependency scheduling. Standard relationship ownership reads 22 normative reports; named custom/84 normative styles reach both shells and raster/history tests. Refresh now saves report/filter column fitting using backend metrics, shared-column maxima and opt-out/protected widths in one atomic edit; see [autofit](pivot-autofit.md). Added locally corroborated classic PivotChart refresh, stable point/series styles, reference preservation and report-tab rename; see [PivotCharts](pivot-charts.md). Added preserving existing-pivot source/layout/measure/member/page/style editing and a common native/browser editor; see [authoring](pivot-authoring.md). Source headers/order/count must remain unchanged. Added atomic creation/deletion, new/existing destinations, a common creation panel and displayed-value static chart snapshots; see [creation/deletion](pivot-lifecycle.md). Blank/no-value design, reused-cache creation, source field remapping, advanced/calculated/grouped/show-as authoring, complete legacy fitting/page/group/styles/charts/controls/external identity, load refresh, OLAP and broad Office oracles remain |
+| Slicers and timelines | Parts preserved | Model/read/render, filtering, connections and authoring remain |
+| Queries and XML maps | Parts preserved | Query operations, source connections/refresh, model authoring and XML maps remain |
+| What-if and analysis | Formula calculation only | Goal Seek, Solver, scenarios, data tables, analysis/forecast tools remain |
+| Protection and encryption | Sheet protection read and enforced on supported edits | Added imported workbook structure protection in reader/writer/model and both shell command guards, with atomic refusals and preserving saves; see [workbook protection](workbook-protection.md). Added workbook structure protect/unprotect, SHA/legacy password authentication, preserving metadata/history and a shared native/browser dialog; see [protection authoring](protection-authoring.md). Added worksheet protect/unprotect with optional SHA/legacy authentication, cell lock/hidden-content authoring, fifteen permissions and shared native/browser controls; see [sheet protection](sheet-protection-authoring.md). Added standard/x14 editable-range reading, preserving CRUD/structural shifts, password authentication, unsaved sheet-local grants and a shared manager; see [editable ranges](editable-ranges.md). Added independent worksheet object guards for notes, shapes, pictures and charts plus reader/cached queries for content/object/scenario permissions; see [object protection](object-protection.md). Added individual imported DrawingML/VML position/text locks, owned identities/selected references and preserving drawing/note updates; see [individual object protection](individual-object-protection.md). Added automatic typed single-cell range-password prompts through the shared dialog and both editors; see [range prompts](range-unlock-prompts.md). Added automatic bulk-operation authentication with deferred proofs and atomic command/grant commit; see [bulk authentication](bulk-range-authentication.md). Pending navigation replay, individual flag-authoring/selection feedback, general drawing ownership/MCE, account ACLs, scenario editing, broader selection/application oracles, window/revision guards, additional digest/locale coverage and encrypted XLSX flow remain |
+| Collaboration and review | Legacy notes | Threaded comments and spelling UI remain |
+| Page setup and print | Read settings, paginate/PDF, header/footer writer | Added paper/orientation/margins/scaling/page order/print titles/print area writers and model; Page Setup UI, break authoring, headings/gridlines/centering and workbook-wide print remain |
+| File formats and recovery | XLSX/CSV/PDF; opaque parts preserved | XLS/XLSB/ODS, text import options, macro/template conversion, recovery/repair UI remain |
+| Accessibility, properties, settings | Basic shell/file handling | Workbook accessibility checker, object alt-text editing, properties/custom properties and compatibility/settings UI remain |
 
 ## Regression gates added
 
@@ -167,19 +162,16 @@ these additions. API/model availability is not counted as a completed UI.
 The commands, counts and limitations of the checks performed are recorded in
 [verification.md](verification.md).
 
-## Reproducing the function comparison
+## Reproducing the function inventory
 
 Generate the Jade registration list from the actual engine:
 
 ```sh
 cargo run --manifest-path jade-core/Cargo.toml \
   -p jade-xlsx-headless-editor --example function_inventory > /tmp/jade-functions.json
-python3 scripts/xlsx/compare_functions.py --jade /tmp/jade-functions.json
 ```
 
-The reference inventory was obtained by calling
-`baseline_calc::functions::implemented()` at the pinned revision, sorting and
-deduplicating the result. `ANCHORARRAY` and `SINGLE` are now registered names
+The output is sorted and deduplicated. `ANCHORARRAY` and `SINGLE` are now registered names
 with parser/operator representations in Jade. Their earlier inventory absence
 did not mean all saved spill/intersection formulas were unsupported; the
 [compatibility-call cases](compatibility-functions.md) distinguish the actual
@@ -189,13 +181,13 @@ network-backed evaluation.
 
 The goal remains open until the remaining areas above have implementations,
 UI paths and appropriate regression/oracle evidence. Do not replace this with
-a blanket parity percentage based on function or catalogue entry counts.
+a blanket parity percentage based on function or feature counts.
 
 
 The [bulk editable-range authentication checkpoint](bulk-range-authentication.md)
 passes 1,251 XLSX cases across 182 targets, 22 OPC unit cases and 142 shared-model
 cases across twenty-six named tiny-skia targets, plus both application compiler
-graphs. This is a scoped regression result; full reference/Excel equivalence is
+graphs. This is a scoped regression result; full Excel equivalence is
 not established.
 
 
@@ -208,15 +200,14 @@ reader checkpoint preceded GETPIVOTDATA evaluation and the later explicit-refres
 The [saved-pivot query checkpoint](getpivotdata.md) passes 1,300 XLSX
 cases across 186 targets, 22 OPC cases, 146 shared-model cases across 27 named
 tiny-skia targets and 2,242 actual engine cases (eight existing ignored), plus
-both actual application compiler graphs. The registry now has 507 of the pinned
-reference's 512 names. Full Excel/Excel parity remains incomplete.
+both actual application compiler graphs. The registry now has 507 names. Full Excel parity remains incomplete.
 
 
 The [explicit pivot refresh checkpoint](pivot-refresh.md) passes 1,334
 XLSX cases across 188 targets, 22 OPC cases, 148 shared-model cases across 28
 named tiny-skia targets and 2,242 engine cases (eight existing ignored), plus
 both actual application compiler graphs. Counts replace earlier checkpoints.
-The function registry remains 507 of 512; full Excel parity remains open.
+The function registry remains 507; full Excel parity remains open.
 
 
 The [refresh-all checkpoint](pivot-refresh-all.md) passes 1,338 XLSX
@@ -245,7 +236,7 @@ as historical runtime evidence; the pinned489-file patch was replayed again.
 The unmodified normative workbook exposed a real ownership error: CT_Worksheet
 has no pivotTableParts list. Actual relationship ownership now yields22 tables.
 Earlier synthetic-marker tests did not establish standard ownership. Named
-style/refresh raster regressions do not establish full Office or baseline parity.
+style/refresh raster regressions do not establish full Office or Excel parity.
 
 ## Current pivot column-fitting checkpoint
 

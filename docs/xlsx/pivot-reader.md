@@ -74,9 +74,8 @@ The original deterministic
 [fixture generator](../../scripts/xlsx/generate_pivot_fixture.py) creates source
 East10+5 and West20+7, saved report15/27/42, date values, a historical unused shared
 item and declared relationship/content-type parts. Regeneration is byte-identical.
-This generated fixture is not an Excel schema/repair/save/render oracle. Pinned
-Excel pivot reader/writer boundaries and GETPIVOTDATA routing were inspected
-for behavior; no reference implementation code was incorporated.
+This generated fixture is not an Excel schema/repair/save/render oracle. No
+third-party implementation code was incorporated.
 
 | Final check | Result |
 |---|---|
@@ -91,7 +90,7 @@ for behavior; no reference implementation code was incorporated.
 Counts replace the prior checkpoint. Earlier unchanged-engine runtime/patch/
 function-inventory evidence is carried rather than rerun. Model Skia-only print/
 Thai and other feature/unit combinations remain excluded. Actual keyboard/pointer/
-paint and Excel/reference producer/save-repair/calculation oracles remain open.
+paint and Excel producer/save-repair/calculation oracles remain open.
 
 Microsoft defines GETPIVOTDATA as retrieving
 [visible PivotTable data](https://support.microsoft.com/en-us/excel/functions/getpivotdata-function),

@@ -98,7 +98,7 @@ onto the page, `?open=` and `?word_platform=`, tile residency.
 
 ## To port
 
-Rows of the reference list that are full in the native app but whose UI the
+Word features that are full in the native app but whose UI the
 browser shell still needs. Some name files that other streams are adding
 and that are not on origin/main yet; the stream is in brackets.
 

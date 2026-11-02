@@ -56,7 +56,7 @@ calculation or pixel oracle was run for this milestone. The subsequent
 [cell-content pass](cell-content.md) addresses standard cell, shared-string,
 rich-run and phonetic ownership/selection. Whole-axis and sheet-rename/delete
 passes, other extension families and the
-broader [parity audit](coverage.md) remain open.
+broader [coverage audit](coverage.md) remain open.
 
 ## Final checkpoint
 

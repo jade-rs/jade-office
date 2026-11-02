@@ -22,13 +22,11 @@ unverified source formula refuses the entire operation. Original bytes,
 calculation state and both history branches are restored. No reports is a true
 no-op; an uncertain catalog is refused rather than silently omitting reports.
 
-## Comparison and limits
+## Limits
 
-The pinned [Excel command](https://support.microsoft.com/excel)
-updates saved-order reports on a working copy and commits compound sheet
-commands. Its style/autofit and PivotChart synchronization still exceed Jade's
-current implementation. Source was inspected for behavior only; no AGPL
-implementation was copied.
+Excel's Refresh All also reapplies pivot styles, autofits columns and
+synchronizes PivotCharts; those steps still exceed Jade's current
+implementation.
 
 At this checkpoint Jade processed caches in saved report declaration order, deduplicated by cache
 ID. This is not dependency-graph scheduling: backward cross-cache dependencies

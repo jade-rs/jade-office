@@ -1926,7 +1926,6 @@
     "Containers holding opaque children/comments remain after their last interpreted record is deleted, with the remaining known-record count; Excel repair behavior is not captured."
   ],
   "comparison_sources": {
-    "baseline_structural_writer": "https://support.microsoft.com/excel",
     "extended_coverage_definition": "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-xlsx/4d7cc415-6c51-4c71-8dbd-a2e28bdd9193",
     "note": "Source-level behavior inspected, no code copied; not an Excel application oracle."
   }

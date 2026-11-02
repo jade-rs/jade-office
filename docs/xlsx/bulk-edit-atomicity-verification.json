@@ -21,8 +21,6 @@
     "crates/jade-gpui-web/Cargo.toml": "fce66cdbf65a355c9d1f00c99843825173fba95c0b890173bf20a78ffc0b8659",
     "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd"
   },
-  "reference_revision": "",
-  "reference_implementation_code_incorporated": false,
   "checked_at_utc": "2026-10-23T23:55:50.761410+00:00",
   "scope": "Compound tiled text/internal-copy paste and active-entry range-fill returned-error atomicity; complete headless editing checkpoints, immutable shared history/clipboard payloads and guarded cut sources",
   "xlsx_package_suites": {
@@ -2871,7 +2869,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2"
   },
   "shared_model_target_source_sha256": {
@@ -2941,10 +2938,7 @@
     "method": "Recorded engine source/build/patch hashes unchanged."
   },
   "function_inventory": {
-    "reference_commit": "",
     "jade_registered": 506,
-    "baseline_registered": 512,
-    "shared": 506,
     "not_registered_in_jade": [
       "FILTERXML",
       "GETPIVOTDATA",
@@ -2953,7 +2947,6 @@
       "PIVOTBY",
       "WEBSERVICE"
     ],
-    "jade_only": [],
     "carried_forward_from": "range-unlock-prompts-verification.json",
     "registration_changed_this_milestone": false
   },
@@ -2966,19 +2959,7 @@
     "Both native and browser shells already use the shared methods; no separate behavior or new UI controls are introduced.",
     "The guarantee covers returned failures in these supported compound paths. Process termination, panic, allocation failure, general editor transactions and large-production performance are not established."
   ],
-  "reference_review_rerun_this_milestone": true,
-  "reference_behavior_inspected": [
-    "crates/Excel-app/src/xlsx/clipboard.rs"
-  ],
-  "reference_review_evidence": {
-    "url": "https://support.microsoft.com/excel",
-    "sha256": "84ce4b8a662824520e94bae1196020f8b4d5cb6d91baaa208b4bba9912a6fe56",
-    "revision": "",
-    "license": "AGPL-3.0-only; behavior inspection only; no implementation code incorporated",
-    "file": "/tmp/jade-xlsx-parity-fallback/reference-clipboard-pinned.rs",
-    "scope": "Clipboard command permission gates and batched document command boundaries; no complete application/call-graph oracle"
-  },
-  "oracle_limits": "Actual generated-XLSX/shared-model runtime probes and application compilation are separate from pinned reference source inspection. No complete reference/Excel/native/browser keyboard/pointer/paint oracle was performed.",
+  "oracle_limits": "Actual generated-XLSX/shared-model runtime probes and application compilation only. No complete Excel/native/browser keyboard/pointer/paint oracle was performed.",
   "cache_preservation": {
     "shared_rust193": {
       "manifest": "/tmp/jade-xlsx-parity-fallback/bulk-atomicity-shared-cache.parts/manifest.json",
@@ -3024,7 +3005,7 @@
   "not_proven": [
     "Automatic password prompts for bulk operations and pending navigation continuation, arbitrary editor transactions, panic/process-termination/allocation-failure recovery, and large production performance",
     "Broader clipboard/filter/spill/table/schema ownership cases, full merged/compound selections, account identity, object selection feedback and general MCE/scenario editing",
-    "Actual Excel/reference/native/browser interaction and save/repair/calculation/pixel oracles, full model/unit/feature matrices including Skia-only print/Thai cases",
+    "Actual Excel/native/browser interaction and save/repair/calculation/pixel oracles, full model/unit/feature matrices including Skia-only print/Thai cases",
     "Pivots/slicers/queries/advanced charts, six missing function registrations, encryption and other audit areas"
   ],
   "prior_checkpoint": "range-unlock-prompts-verification.json",

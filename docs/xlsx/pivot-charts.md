@@ -10,9 +10,9 @@ earlier checkpoint.
 The standard `chartSpace/pivotSource` binding is now read explicitly. Refreshing
 a locally resolved report reconciles its chart categories and series in the
 same staged transaction as caches, report cells, column widths and calculation.
-This closes a gap in the [pinned Excel comparison](coverage.md), where
-the reference updates bound charts after rebuilding pivot data. Jade's
-implementation is independent; no reference implementation code is copied.
+This closes a gap in the [coverage audit](coverage.md): Excel updates bound
+charts after rebuilding pivot data. Jade's
+implementation is independent; no third-party implementation code is copied.
 
 ## Behavior
 

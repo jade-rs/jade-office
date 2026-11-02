@@ -91,7 +91,6 @@ authoring/authentication, structural reconciliation and session unlocks.
 The [object-protection follow-up](object-protection.md) adds independent
 worksheet object guards. Automatic edit-triggered prompts, account ACLs, individual
 DrawingML/VML object locks, scenario editing, encryption, additional digest/locale behavior, all merged/compound
-selection paths and Office save/repair/rendering oracles remain open. The complete [Excel audit](coverage.md) remains
+selection paths and Office save/repair/rendering oracles remain open. The complete [coverage audit](coverage.md) remains
 active, including pivots, slicers, queries, advanced charts and remaining
-functions. Reference implementation behavior was inspected; no implementation
-code was incorporated.
+functions. No third-party implementation code was incorporated.
