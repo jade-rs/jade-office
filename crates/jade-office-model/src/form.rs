@@ -315,8 +315,14 @@ impl Form {
                 FormKey::Handled
             }
             key => match self.typing_mut() {
-                Some(edit) if edit.edit_key(key) => FormKey::Handled,
-                _ => FormKey::Unhandled,
+                Some(edit) => {
+                    if edit.edit_key(key) {
+                        FormKey::Handled
+                    } else {
+                        FormKey::Unhandled
+                    }
+                }
+                None => FormKey::Unhandled,
             },
         }
     }
