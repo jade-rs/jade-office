@@ -194,6 +194,10 @@ pub struct Workbook<B: Backend> {
     /// The same for pieces of the sheet painted on their own — tiles of
     /// cells, the header bands — by their size.
     pieces: RefCell<Vec<(B::Painter, u32, u32)>>,
+    /// The other sheets grouped with the active one (⌘- or Shift-clicked
+    /// tabs): what is typed, cleared or formatted goes into each of them
+    /// too, as it does in Excel's Group mode.
+    group: Vec<usize>,
     /// Measures text for layout, kept for the workbook's life so a sheet
     /// laid out again after an edit reuses the widths it measured before.
     measure: Rc<dyn jade_xlsx_layout::TextMeasure>,
@@ -250,6 +254,7 @@ impl<B: Backend> Workbook<B> {
             clipboard_revision: 0,
             surface: RefCell::new(None),
             pieces: RefCell::new(Vec::new()),
+            group: Vec::new(),
             revision: 0,
             changes: None,
             measure,
@@ -315,6 +320,17 @@ impl<B: Backend> Workbook<B> {
     pub fn select_sheet(&mut self, index: usize) -> Result<(), String> {
         if index >= self.book.workbook().sheets.len() {
             return Err(format!("no sheet at index {index}"));
+        }
+        // A grouped sheet's tab moves within the group; any other's ends it.
+        if index != self.index {
+            if self.group.contains(&index) {
+                let was = self.index;
+                self.group.retain(|&other| other != index);
+                self.group.push(was);
+                self.group.sort_unstable();
+            } else {
+                self.group.clear();
+            }
         }
         if index != self.index {
             self.changes = None;
@@ -1086,9 +1102,10 @@ impl<B: Backend> Workbook<B> {
     /// Writes typed text into a cell, recalculating. Returns whether the
     /// cell changed.
     pub fn set_cell(&mut self, reference: CellRef, text: &str) -> Result<bool, String> {
-        let Some(steps) = self.write_cell(reference, text)? else {
+        let Some(mut steps) = self.write_cell(reference, text)? else {
             return Ok(false);
         };
+        steps += self.write_group_cell(reference, text)?;
         self.record(steps);
         self.after_write()?;
         Ok(true)
@@ -1180,6 +1197,133 @@ impl<B: Backend> Workbook<B> {
             }
         }
         Ok(Some(steps))
+    }
+
+    // ---- grouped sheets ---------------------------------------------------
+
+    /// ⌘-click on a sheet's tab (`extend` false) puts it in the group or
+    /// takes it out; Shift-click (`extend` true) groups every visible sheet
+    /// from the active one to it. The active sheet stays active.
+    pub fn group_sheet(&mut self, index: usize, extend: bool) {
+        let count = self.book.workbook().sheets.len();
+        if index >= count || index == self.index {
+            return;
+        }
+        if extend {
+            let (from, to) = (self.index.min(index), self.index.max(index));
+            self.group = (from..=to)
+                .filter(|&other| other != self.index && self.sheet_visible(other))
+                .collect();
+        } else if let Some(at) = self.group.iter().position(|&other| other == index) {
+            self.group.remove(at);
+        } else {
+            self.group.push(index);
+            self.group.sort_unstable();
+        }
+    }
+
+    /// Back to the active sheet alone.
+    pub fn ungroup(&mut self) {
+        self.group.clear();
+    }
+
+    /// Every sheet in the group, the active one included, in tab order;
+    /// just the active one when none is grouped with it.
+    pub fn grouped_sheets(&self) -> Vec<usize> {
+        let mut sheets = self.group.clone();
+        sheets.push(self.index);
+        sheets.sort_unstable();
+        sheets
+    }
+
+    /// Whether sheets are grouped: Excel's title says "[Group]".
+    pub fn is_grouped(&self) -> bool {
+        !self.group.is_empty()
+    }
+
+    fn sheet_visible(&self, index: usize) -> bool {
+        self.book.workbook().sheets[index].visibility == jade_xlsx_reader::SheetVisibility::Visible
+    }
+
+    /// The names of the sheets grouped with the active one.
+    fn group_names(&self) -> Vec<(usize, String)> {
+        self.group
+            .iter()
+            .map(|&index| (index, self.book.workbook().sheets[index].name.clone()))
+            .collect()
+    }
+
+    /// `text` typed into `reference` on each sheet grouped with the active
+    /// one, as typing reads it (a General cell taking the format typed in);
+    /// the undo steps it took.
+    fn write_group_cell(&mut self, reference: CellRef, text: &str) -> Result<usize, String> {
+        let date1904 = matches!(
+            self.book.workbook().date_system,
+            jade_xlsx_reader::DateSystem::Nineteen04
+        );
+        let at = reference_text(reference);
+        let mut steps = 0;
+        for (index, name) in self.group_names() {
+            let typed = typing::read(text, date1904);
+            let format = typed
+                .format
+                .filter(|_| self.number_format_on(index, reference).is_none());
+            self.book
+                .set(&name, &at, typed.input)
+                .map_err(|error| error.to_string())?;
+            steps += 1;
+            if let Some(code) = format {
+                let change = FormatChange {
+                    number_format: Some(code.to_string()),
+                    ..Default::default()
+                };
+                if self.book.set_format(&name, &at, &change).is_ok() {
+                    steps += 1;
+                }
+            }
+        }
+        Ok(steps)
+    }
+
+    /// `range` emptied on each sheet grouped with the active one; the undo
+    /// steps it took.
+    fn clear_group(&mut self, range: CellRange) -> Result<usize, String> {
+        let mut steps = 0;
+        for (index, name) in self.group_names() {
+            let values: Vec<(String, CellInput)> = self.book.workbook().sheets[index]
+                .rows
+                .iter()
+                .filter(|row| row.index >= range.start.row && row.index <= range.end.row)
+                .flat_map(|row| row.cells.iter())
+                .filter(|cell| {
+                    cell.reference.column >= range.start.column
+                        && cell.reference.column <= range.end.column
+                        && (cell.formula.is_some() || !matches!(cell.value, CellValue::Empty))
+                })
+                .map(|cell| (reference_text(cell.reference), CellInput::Blank))
+                .collect();
+            if values.is_empty() {
+                continue;
+            }
+            self.book
+                .set_cells(&name, &values)
+                .map_err(|error| error.to_string())?;
+            steps += 1;
+        }
+        Ok(steps)
+    }
+
+    /// `change` on `range` of each sheet grouped with the active one; the
+    /// undo steps it took.
+    fn format_group(&mut self, range: CellRange, change: &FormatChange) -> Result<usize, String> {
+        let mut steps = 0;
+        for (_, name) in self.group_names() {
+            self.book
+                .set_format(&name, &range_text_full(range), change)
+                .map_err(|error| error.to_string())?;
+            steps += 1;
+        }
+        Ok(steps)
     }
 
     // ---- filling ----------------------------------------------------------
@@ -1707,14 +1851,19 @@ impl<B: Backend> Workbook<B> {
             .filter(|cell| cell.formula.is_some() || !matches!(cell.value, CellValue::Empty))
             .map(|cell| (reference_text(cell.reference), CellInput::Blank))
             .collect();
-        if values.is_empty() {
+        let name = self.sheet_name();
+        let mut steps = 0;
+        if !values.is_empty() {
+            self.book
+                .set_cells(&name, &values)
+                .map_err(|error| error.to_string())?;
+            steps += 1;
+        }
+        steps += self.clear_group(range)?;
+        if steps == 0 {
             return Ok(false);
         }
-        let name = self.sheet_name();
-        self.book
-            .set_cells(&name, &values)
-            .map_err(|error| error.to_string())?;
-        self.record(1);
+        self.record(steps);
         self.after_write()?;
         Ok(true)
     }
@@ -1876,7 +2025,8 @@ impl<B: Backend> Workbook<B> {
         self.book
             .set_format(&name, &range_text_full(range), change)
             .map_err(|error| error.to_string())?;
-        self.record(1);
+        let steps = 1 + self.format_group(range, change)?;
+        self.record(steps);
         self.after_write()?;
         Ok(true)
     }
@@ -2705,7 +2855,7 @@ impl<B: Backend> Workbook<B> {
             self.book
                 .set_format(&name, &range_text_full(range), change)
                 .map_err(|error| error.to_string())?;
-            steps += 1;
+            steps += 1 + self.format_group(range, change)?;
         }
         if steps == 0 {
             return Ok(false);
@@ -3241,6 +3391,8 @@ impl<B: Backend> Workbook<B> {
     /// Moves the sheet at `index` to `to` in the tab order, keeping it
     /// selected.
     pub fn move_sheet(&mut self, index: usize, to: usize) -> Result<bool, String> {
+        // Sheets numbered anew: the group, kept by number, ends.
+        self.group.clear();
         let names = self.sheet_names();
         let Some(name) = names.get(index) else {
             return Err(format!("no sheet at index {index}"));
@@ -3280,6 +3432,8 @@ impl<B: Backend> Workbook<B> {
     /// Adds a sheet after the current one and selects it, named as Excel
     /// names a new sheet (`Sheet4`).
     pub fn add_sheet(&mut self) -> Result<usize, String> {
+        // Sheets numbered anew: the group, kept by number, ends.
+        self.group.clear();
         let names = self.sheet_names();
         let name = (1..)
             .map(|n| format!("Sheet{n}"))
@@ -3300,6 +3454,8 @@ impl<B: Backend> Workbook<B> {
     /// it, named as Excel names a copy (`Sheet1 (2)`), and shown. Returns the
     /// copy's index.
     pub fn copy_sheet(&mut self, index: usize) -> Result<usize, String> {
+        // Sheets numbered anew: the group, kept by number, ends.
+        self.group.clear();
         let names = self.sheet_names();
         let source = names
             .get(index)
@@ -3521,6 +3677,8 @@ impl<B: Backend> Workbook<B> {
 
     /// Deletes a sheet; the last visible one cannot go.
     pub fn delete_sheet(&mut self, index: usize) -> Result<bool, String> {
+        // Sheets numbered anew: the group, kept by number, ends.
+        self.group.clear();
         let name = self
             .sheet_names()
             .get(index)
@@ -4955,6 +5113,55 @@ mod tests {
         assert!((left - 130.0).abs() < 0.5 && (top - 45.0).abs() < 0.5);
         assert!((width - 60.0).abs() < 0.5 && (height - 40.0).abs() < 0.5);
         assert!(book.insert_freeform(&[], false).is_err());
+    }
+
+    /// Grouped sheets take what is typed, cleared and formatted on the
+    /// active one, in one undo step; another sheet's tab ends the group.
+    #[test]
+    fn grouped_sheets_take_the_same_edits() {
+        let mut book = open("grid-operations-workbook.xlsx");
+        book.add_sheet().unwrap();
+        book.add_sheet().unwrap();
+        book.select_sheet(0).unwrap();
+        let names = book.sheet_names();
+        assert!(!book.is_grouped());
+        book.group_sheet(2, true);
+        assert_eq!(book.grouped_sheets(), vec![0, 1, 2]);
+        book.group_sheet(1, false);
+        assert_eq!(book.grouped_sheets(), vec![0, 2]);
+        let at = CellRef::new(5, 40);
+        assert!(book.set_cell(at, "42").unwrap());
+        let value = |book: &Workbook<TinySkiaBackend>, index: usize| {
+            book.book
+                .cell(&names[index], "F41")
+                .map(|cell| cell.display)
+                .unwrap_or_default()
+        };
+        assert_eq!(value(&book, 0), "42");
+        assert_eq!(value(&book, 2), "42");
+        assert_eq!(value(&book, 1), "");
+        let bold = FormatChange {
+            bold: Some(true),
+            ..Default::default()
+        };
+        assert!(book.format(span(at, at), &bold).unwrap());
+        assert_eq!(
+            book.book.format_at(&names[2], "F41").unwrap().bold,
+            Some(true)
+        );
+        // One undo takes the format back from both.
+        assert!(book.undo().unwrap());
+        assert_eq!(
+            book.book.format_at(&names[2], "F41").unwrap().bold,
+            Some(false)
+        );
+        assert!(book.clear(span(at, at)).unwrap());
+        assert_eq!(value(&book, 2), "");
+        // The grouped tab moves the group's active sheet; another ends it.
+        book.select_sheet(2).unwrap();
+        assert_eq!(book.grouped_sheets(), vec![0, 2]);
+        book.select_sheet(1).unwrap();
+        assert!(!book.is_grouped());
     }
 
     /// A threaded comment takes replies; a note does not.
