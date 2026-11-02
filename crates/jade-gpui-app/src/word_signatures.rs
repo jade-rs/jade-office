@@ -153,7 +153,7 @@ pub fn confirm_line(view: &mut DocumentView, form: LineForm, cx: &mut Context<Do
     view.reviewed(result, cx);
 }
 
-fn now_utc() -> String {
+pub(crate) fn now_utc() -> String {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs())
