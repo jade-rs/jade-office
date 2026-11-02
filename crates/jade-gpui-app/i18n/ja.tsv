@@ -3931,3 +3931,26 @@ sheet.shape.speech_bubble_rounded	吹き出し: 角を丸めた四角形
 sheet.shape.speech_bubble_oval	吹き出し: 円形
 sheet.menu.ungroup_sheets	シートのグループ解除
 sheet.group	[グループ]
+# What-If Analysis
+sheet.menu.group_what_if	What-If 分析
+what_if.alert.reference	参照が正しくありません。
+sheet.menu.goal_seek	ゴール シーク…
+goal_seek.dialog	ゴール シーク
+goal_seek.set	数式入力セル
+goal_seek.to	目標値
+goal_seek.changing	変化させるセル
+goal_seek.status	ゴール シーク
+goal_seek.found	セル {cell} の収束値を探索しています。解答が見つかりました。
+goal_seek.not_found	セル {cell} の収束値を探索しています。解答が見つからない可能性があります。
+goal_seek.target	目標値: {value}
+goal_seek.current	現在値: {value}
+goal_seek.alert.formula	数式入力セルには数式を入力してください。
+goal_seek.alert.value	変化させるセルには値を入力してください。
+goal_seek.alert.number	目標値には数値を入力してください。
+sheet.menu.data_table	データ テーブル…
+data_table.dialog	データ テーブル
+data_table.row	行の代入セル
+data_table.column	列の代入セル
+data_table.alert.input	代入セルの参照が正しくありません。
+data_table.alert.selection	代入する値、数式、結果を入れるセルを含む範囲を選択してください。
+data_table.refused	データ テーブルの一部を変更することはできません。

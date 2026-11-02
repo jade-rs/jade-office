@@ -3931,3 +3931,26 @@ sheet.shape.speech_bubble_rounded	Speech Bubble: Rounded Rectangle
 sheet.shape.speech_bubble_oval	Speech Bubble: Oval
 sheet.menu.ungroup_sheets	Ungroup Sheets
 sheet.group	[Group]
+# What-If Analysis
+sheet.menu.group_what_if	What-If Analysis
+what_if.alert.reference	Reference is not valid.
+sheet.menu.goal_seek	Goal Seek…
+goal_seek.dialog	Goal Seek
+goal_seek.set	Set cell
+goal_seek.to	To value
+goal_seek.changing	By changing cell
+goal_seek.status	Goal Seek Status
+goal_seek.found	Goal Seeking with Cell {cell} found a solution.
+goal_seek.not_found	Goal Seeking with Cell {cell} may not have found a solution.
+goal_seek.target	Target value: {value}
+goal_seek.current	Current value: {value}
+goal_seek.alert.formula	Cell must contain a formula.
+goal_seek.alert.value	Cell must contain a value.
+goal_seek.alert.number	Invalid value.
+sheet.menu.data_table	Data Table…
+data_table.dialog	Data Table
+data_table.row	Row input cell
+data_table.column	Column input cell
+data_table.alert.input	Input cell reference is not valid.
+data_table.alert.selection	Select the input values, the formulas and the cells for the results first.
+data_table.refused	Cannot change part of a data table.

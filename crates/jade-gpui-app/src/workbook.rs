@@ -36,6 +36,7 @@ use gpui::{
     Pixels, RenderImage, ScrollHandle, SharedString, UTF16Selection, Window,
 };
 use jade_office_model::csv;
+use jade_office_model::what_if::WhatIfTool;
 use jade_office_model::find::FindBar;
 use jade_office_model::formula_complete;
 use jade_office_model::formula_tips;
@@ -86,6 +87,7 @@ mod subtotal;
 mod tables;
 mod text_columns;
 mod top_ten;
+mod what_if;
 mod validation;
 use crate::{
     byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Print, Redo, Save,
@@ -553,6 +555,9 @@ enum MenuCommand {
     ClearOutline,
     /// Data ▸ Subtotal over the selection with the dialog's defaults.
     Subtotal,
+    /// Data ▸ What-If Analysis and the analysis tools: a dialog of the
+    /// model's.
+    WhatIf(WhatIfTool),
     /// Data ▸ Remove Duplicates over the selection or the list round it.
     RemoveDuplicates,
     /// Data ▸ Text to Columns on the selection's column.
@@ -657,6 +662,8 @@ pub struct WorkbookView {
     /// validation rule.
     circling: bool,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
+    /// Goal Seek, Data Table and the other What-If Analysis dialogs.
+    what_if: Option<jade_office_model::what_if::WhatIfDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
     pivot_dialog: Option<PivotPanel>,
@@ -728,6 +735,9 @@ impl WorkbookView {
         if let Some(dialog) = self.validation_dialog.as_mut() {
             return Some(dialog.field_mut());
         }
+        if let Some(dialog) = self.what_if.as_mut() {
+            return dialog.form_mut().typing_mut();
+        }
         if let Some(dialog) = self.more_colors.as_mut() {
             return Some(&mut dialog.code);
         }
@@ -779,6 +789,9 @@ impl WorkbookView {
         }
         if let Some(dialog) = self.validation_dialog.as_ref() {
             return Some(dialog.field());
+        }
+        if let Some(dialog) = self.what_if.as_ref() {
+            return dialog.form().typing();
         }
         if let Some(dialog) = self.more_colors.as_ref() {
             return Some(&dialog.code);
@@ -882,6 +895,7 @@ impl WorkbookView {
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return;
         }
@@ -1169,6 +1183,7 @@ impl WorkbookView {
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return false;
         }
@@ -1226,6 +1241,9 @@ impl WorkbookView {
             Err(error) if error == jade_office_model::typing::FORMULA_PROBLEM => {
                 self.status = SharedString::from(i18n::text("sheet.formula_problem"))
             }
+            Err(error) if error == jade_office_model::data_table::DATA_TABLE_REFUSED => {
+                self.status = SharedString::from(i18n::text("data_table.refused"))
+            }
             // An entry a data validation refuses: the rule's words, or
             // Excel's.
             // A protected sheet: Excel's words.
@@ -1267,6 +1285,7 @@ impl WorkbookView {
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return;
         }
@@ -1415,6 +1434,7 @@ impl WorkbookView {
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return;
         }
@@ -1884,6 +1904,7 @@ impl WorkbookView {
             MenuCommand::FreezePanes => self.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
+            MenuCommand::WhatIf(tool) => return self.open_what_if(tool, cx),
             MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
             MenuCommand::FlashFill => return self.flash_fill(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
@@ -2290,6 +2311,10 @@ impl WorkbookView {
 
         if self.freeform.is_some() && self.freeform_key(key, cx) {
             return true;
+        }
+        // A What-If Analysis dialog has the keys while it is open.
+        if self.what_if.is_some() {
+            return self.what_if_key(key, modifiers, cx);
         }
         // More Colors' dialog has the keys while it is open.
         if self.more_colors.is_some() {
@@ -2800,6 +2825,7 @@ impl WorkbookView {
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return;
         }
@@ -3813,6 +3839,11 @@ impl WorkbookView {
                     ));
                 }
                 items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
+                items.extend(
+                    WhatIfTool::MENU
+                        .iter()
+                        .map(|&(tool, label)| (MenuCommand::WhatIf(tool), label)),
+                );
                 items.push((MenuCommand::FlashFill, "sheet.menu.flash_fill"));
                 items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
                 items.push((MenuCommand::NameManager, "sheet.menu.name_manager"));
@@ -5472,6 +5503,7 @@ impl Render for WorkbookView {
         let top_ten_panel = self.top_ten_panel(cx);
         let shift_choice_panel = self.shift_choice_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
+        let what_if_panel = self.what_if_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -5644,6 +5676,7 @@ impl Render for WorkbookView {
             .children(top_ten_panel)
             .children(shift_choice_panel)
             .children(more_colors_panel)
+            .children(what_if_panel)
             .children(duplicates_panel)
             .children(protection_panel)
             .children(validation_panel)
@@ -5706,6 +5739,7 @@ impl WorkbookView {
             tracing_dependents: Vec::new(),
             circling: false,
             duplicates_dialog: None,
+            what_if: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -8114,6 +8148,37 @@ mod tests {
                 .map(|row| view.book.display_text(at(7, row)))
                 .collect();
             assert_eq!(branches, ["Branch", "Tokyo", "Osaka", ""]);
+        });
+    }
+
+    /// Goal Seek from the menu: the set cell starts as the active cell, the
+    /// target and the changing cell are typed (Tab between them), OK finds
+    /// the value and shows its status, and Cancel there puts it back.
+    #[gpui::test]
+    fn goal_seek_finds_a_value_and_cancel_takes_it_back(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(7, 29), "4").unwrap();
+            view.book.set_cell(at(7, 30), "=H30*3+1").unwrap();
+            view.selection = Selection::cell(at(7, 30));
+            view.menu_command(MenuCommand::WhatIf(WhatIfTool::GoalSeek), false, cx);
+            let dialog = view.what_if.as_ref().unwrap();
+            assert_eq!(dialog.form().text("set"), "$H$31");
+        });
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("31");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("H30");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at(7, 29)), "10");
+            assert!(view.what_if.is_some(), "the status shows");
+            assert!(view.edit.is_none(), "typing went into the dialog");
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.what_if.is_none());
+            assert_eq!(view.book.display_text(at(7, 29)), "4");
         });
     }
 

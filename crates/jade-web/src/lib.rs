@@ -14,11 +14,11 @@ use std::sync::Arc;
 
 pub use jade_office_model::tiny::TinySkiaBackend;
 pub use jade_office_model::{
-    cell_styles, charts, conditional_formatting, csv, custom_filter, date_filter, deck, duplicates,
-    editable_ranges, find, format_cells, formula_complete, formula_tips, freeform, function_help,
+    cell_styles, charts, conditional_formatting, csv, custom_filter, data_table, date_filter, deck, duplicates,
+    editable_ranges, find, form, format_cells, formula_complete, formula_tips, freeform, function_help, goal_seek,
     grid, insert_function, links, more_colors, name_manager, number_formats, page_setup_dialog,
     paste_special, pivots, precedents, print, protected_edits, protection, sheet, sort_dialog,
-    subtotal, tables, text, text_columns, top_ten, typing, validation, word,
+    subtotal, tables, text, text_columns, top_ten, typing, validation, what_if, word,
 };
 
 pub mod document;
