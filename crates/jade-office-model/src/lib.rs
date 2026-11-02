@@ -62,6 +62,7 @@ pub mod top_ten;
 pub mod typing;
 pub mod validation;
 pub mod word;
+pub mod zoom_dialog;
 
 #[cfg(feature = "skia")]
 pub mod skia;

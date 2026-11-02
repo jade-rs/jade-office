@@ -18,7 +18,7 @@ pub use jade_office_model::{
     editable_ranges, find, format_cells, formula_complete, formula_tips, freeform, function_help,
     grid, insert_function, links, more_colors, name_manager, number_formats, page_setup_dialog,
     paste_special, pivots, precedents, print, protected_edits, protection, sheet, sort_dialog,
-    subtotal, tables, text, text_columns, top_ten, typing, validation, word,
+    subtotal, tables, text, text_columns, top_ten, typing, validation, word, zoom_dialog,
 };
 
 pub mod document;
