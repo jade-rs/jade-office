@@ -150,6 +150,17 @@ pub struct Summary {
     pub average: Option<f64>,
 }
 
+/// The colour gallery's rows: the theme colour itself, lighter by 80, 60
+/// and 40 %, darker by 25 and 50 %, as the tints Excel writes for them.
+const THEME_TINTS: [&str; 6] = [
+    "",
+    "0.79998168889431442",
+    "0.59999389629810485",
+    "0.39997558519241921",
+    "-0.249977111117893",
+    "-0.499984740745262",
+];
+
 #[path = "protected_edits.rs"]
 pub mod protected_edits;
 
@@ -2824,8 +2835,9 @@ impl<B: Backend> Workbook<B> {
     /// The colour gallery's theme colours, as Excel lays them out: the
     /// theme's ten (Background 1, Text 1, Background 2, Text 2, Accents 1–6)
     /// across, then each lighter by 80, 60 and 40 % and darker by 25 and
-    /// 50 %, row by row, as `RRGGBB`. The Office theme's when the workbook
-    /// has none.
+    /// 50 %, row by row, as `RRGGBB` — tinted as a cell drawing the theme
+    /// reference [`Workbook::theme_color`] writes shows it. The Office
+    /// theme's when the workbook has none.
     pub fn theme_palette(&self) -> Vec<String> {
         const OFFICE: [[u8; 3]; 10] = [
             [0xFF, 0xFF, 0xFF],
@@ -2840,26 +2852,44 @@ impl<B: Backend> Workbook<B> {
             [0x70, 0xAD, 0x47],
         ];
         let theme = &self.book.workbook().styles.theme_colors;
-        let base: Vec<[u8; 3]> = (0..10)
-            .map(|index| theme.get(index).copied().flatten().unwrap_or(OFFICE[index]))
-            .collect();
-        let hex = |[r, g, b]: [u8; 3]| format!("{r:02X}{g:02X}{b:02X}");
-        let lighter = |color: [u8; 3], by: f32| {
-            color.map(|channel| {
-                (f32::from(channel) + (255.0 - f32::from(channel)) * by).round() as u8
-            })
-        };
-        let darker = |color: [u8; 3], by: f32| {
-            color.map(|channel| (f32::from(channel) * (1.0 - by)).round() as u8)
-        };
-        let mut palette: Vec<String> = base.iter().copied().map(hex).collect();
-        for by in [0.8, 0.6, 0.4] {
-            palette.extend(base.iter().map(|color| hex(lighter(*color, by))));
-        }
-        for by in [0.25, 0.5] {
-            palette.extend(base.iter().map(|color| hex(darker(*color, by))));
+        let mut palette = Vec::with_capacity(60);
+        for tint in THEME_TINTS {
+            for (index, office) in OFFICE.iter().enumerate() {
+                let base = theme.get(index).copied().flatten().unwrap_or(*office);
+                let [r, g, b, _] = jade_xlsx_layout::color::rgba(jade_xlsx_reader::Color::Theme {
+                    index: index as u32,
+                    tint: tint.parse().unwrap_or(0.0),
+                    resolved: Some(base),
+                })
+                .unwrap_or([base[0], base[1], base[2], 255]);
+                palette.push(format!("{r:02X}{g:02X}{b:02X}"));
+            }
         }
         palette
+    }
+
+    /// What the gallery's `index`th theme colour is written as: a theme
+    /// reference with its tint (`theme:4:0.39997558519241921`), as Excel
+    /// writes one, so it follows the workbook's theme; its `RRGGBB` when
+    /// the workbook's theme does not have that colour.
+    pub fn theme_color(&self, index: usize) -> Option<String> {
+        let tint = THEME_TINTS.get(index / 10)?;
+        let column = index % 10;
+        let themed = self
+            .book
+            .workbook()
+            .styles
+            .theme_colors
+            .get(column)
+            .is_some_and(|color| color.is_some());
+        if !themed {
+            return self.theme_palette().get(index).cloned();
+        }
+        Some(if tint.is_empty() {
+            format!("theme:{column}")
+        } else {
+            format!("theme:{column}:{tint}")
+        })
     }
 
     /// The font colour (`RRGGBB`).
@@ -4814,6 +4844,40 @@ mod tests {
         assert!(book.move_sheet(1, 0).unwrap());
         assert_eq!(book.sheet_index(), 0);
         assert_eq!(book.sheet_names()[1], first);
+    }
+
+    /// A theme swatch is written as Excel writes it, a theme reference with
+    /// its tint, and the cell shows the swatch's colour.
+    #[test]
+    fn theme_colours_are_written_as_theme_references() {
+        // With no theme of its own, a workbook takes the Office theme's
+        // colours as they are.
+        let plain = open("grid-operations-workbook.xlsx");
+        assert_eq!(plain.theme_color(4).as_deref(), Some("4472C4"));
+        let mut book = open("sample-workbook.xlsx");
+        let palette = book.theme_palette();
+        assert_eq!(palette.len(), 60);
+        let color = book.theme_color(14).unwrap();
+        assert_eq!(color, "theme:4:0.79998168889431442");
+        assert_eq!(book.theme_color(4).as_deref(), Some("theme:4"));
+        assert_eq!(book.theme_color(60), None);
+        assert!(book.font_color(span(at(2, 2), at(2, 2)), &color).unwrap());
+        assert!(book
+            .fill_color(span(at(2, 2), at(2, 2)), book.theme_color(55).as_deref())
+            .unwrap());
+        let look = book.format_at(at(2, 2));
+        assert_eq!(look.font_color.as_deref(), Some(palette[14].as_str()));
+        assert_eq!(look.fill_color.as_deref(), Some(palette[55].as_str()));
+        let styles = jade_opc::OpcPackage::open(&book.save_bytes().unwrap())
+            .unwrap()
+            .part_str("xl/styles.xml")
+            .unwrap()
+            .unwrap();
+        assert!(
+            styles.contains("theme=\"4\" tint=\"0.79998168889431442\""),
+            "{styles}"
+        );
+        assert!(styles.contains("theme=\"5\" tint=\"-0.499984740745262\""));
     }
 
     /// A threaded comment takes replies; a note does not.
