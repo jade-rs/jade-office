@@ -4040,3 +4040,246 @@ deck.picture.photo_album	フォト アルバム
 deck.picture.album_layout	{count} 枚の図/スライド
 deck.picture.convert_to_shapes	図形に変換
 deck.picture.crop_handles	トリミング ハンドル
+anim.tab	アニメーション
+transition.tab	画面切り替え
+zoom.tab	ズーム
+anim.preview	プレビュー
+anim.gallery	アニメーション スタイル
+anim.class.entrance	開始
+anim.class.emphasis	強調
+anim.class.exit	終了
+anim.class.path	アニメーションの軌跡
+anim.more_effects	その他の効果
+anim.add	アニメーションの追加
+anim.painter	アニメーションのコピー/貼り付け
+anim.painter_hint	アニメーションを貼り付けるオブジェクトをクリックしてください
+anim.select_object	アニメーションを追加するオブジェクトを選択してください
+anim.draw_path_hint	スライドのプレビューをクリックして軌跡を描き、ダブルクリックで終了します
+anim.path_done	軌跡を終了
+anim.path_cancel	キャンセル
+anim.effect_options	効果のオプション
+anim.sequence	連続
+anim.seq.one_object	1 つのオブジェクトとして
+anim.seq.by_paragraph	段落別
+anim.seq.by_series	系列別
+anim.seq.by_category	項目別
+anim.seq.by_series_element	系列の要素別
+anim.seq.by_category_element	項目の要素別
+anim.start	開始
+anim.start.on_click	クリック時
+anim.start.with_previous	直前の動作と同時
+anim.start.after_previous	直前の動作の後
+anim.duration	継続時間
+anim.delay	遅延
+anim.move_earlier	順番を前にする
+anim.move_later	順番を後にする
+anim.remove	削除
+anim.remove_all	すべて削除
+anim.enhancements	効果
+anim.smooth_start	滑らかに開始
+anim.smooth_end	滑らかに終了
+anim.rewind	再生が終了したら巻き戻す
+anim.auto_reverse	自動的に元に戻す
+anim.repeat	繰り返し
+anim.repeat.none	(なし)
+anim.repeat.two	2
+anim.repeat.three	3
+anim.repeat.next_click	次のクリックまで
+anim.repeat.end_of_slide	スライドの最後まで
+anim.after	アニメーションの後
+anim.after.none	淡色表示しない
+anim.after.dim	淡色表示
+anim.after.hide	アニメーションの後で非表示にする
+anim.after.hide_on_click	次のクリックで非表示にする
+anim.text	テキストの動作
+anim.text.all_at_once	すべて同時
+anim.text.by_word	単語単位
+anim.text.by_letter	文字単位
+anim.trigger	トリガー
+anim.trigger.sequence	一連のクリック動作の一部として開始
+anim.trigger.on_click_of	クリック時: {name}
+anim.trigger.bookmark	ブックマーク時: {name}
+anim.trigger.heading	トリガー: {name}
+anim.pane	アニメーション ウィンドウ
+anim.none	このスライドにはアニメーションがありません
+anim.media	メディア
+anim.custom_effect	ユーザー設定
+anim.effect.appear	表示
+anim.effect.fade	フェード
+anim.effect.fly_in	スライドイン
+anim.effect.float_in	フロートイン
+anim.effect.split	スプリット
+anim.effect.wipe	ワイプ
+anim.effect.shape	図形
+anim.effect.wheel	ホイール
+anim.effect.random_bars	ランダムストライプ
+anim.effect.grow_turn	グローとターン
+anim.effect.zoom	ズーム
+anim.effect.swivel	ターン
+anim.effect.bounce	バウンド
+anim.effect.blinds	ブラインド
+anim.effect.box	ボックス
+anim.effect.checkerboard	チェッカーボード
+anim.effect.diamond	ひし形
+anim.effect.dissolve_in	ディゾルブイン
+anim.effect.plus	プラス
+anim.effect.peek_in	クリップ
+anim.effect.strips	ストリップ
+anim.effect.wedge	くさび形
+anim.effect.float_down	フロートダウン
+anim.effect.expand	エキスパンド
+anim.effect.rise_up	ライズアップ
+anim.effect.basic_zoom	ベーシック ズーム
+anim.effect.pulse	パルス
+anim.effect.color_pulse	カラー パルス
+anim.effect.teeter	シーソー
+anim.effect.spin	スピン
+anim.effect.grow_shrink	拡大/収縮
+anim.effect.desaturate	薄く
+anim.effect.darken	暗く
+anim.effect.lighten	明るく
+anim.effect.transparency	透過性
+anim.effect.object_color	オブジェクト カラー
+anim.effect.complementary_color	補色
+anim.effect.line_color	線の色
+anim.effect.fill_color	塗りつぶしの色
+anim.effect.brush_color	ブラシの色
+anim.effect.font_color	フォントの色
+anim.effect.underline	下線
+anim.effect.bold_flash	太字フラッシュ
+anim.effect.bold_reveal	太字表示
+anim.effect.wave	ウェーブ
+anim.effect.blink	ブリンク
+anim.effect.disappear	クリア
+anim.effect.fly_out	スライドアウト
+anim.effect.float_out	フロートアウト
+anim.effect.shrink_turn	縮小および回転
+anim.effect.dissolve_out	ディゾルブアウト
+anim.effect.sink_down	シンクダウン
+anim.effect.lines	直線
+anim.effect.arcs	アーチ
+anim.effect.turns	ターン
+anim.effect.shapes	図形
+anim.effect.loops	ループ
+anim.effect.custom	ユーザー設定パス
+anim.effect.left	左へ
+anim.effect.up	上へ
+anim.effect.right	右へ
+anim.effect.arc_left	左へアーチ
+anim.effect.arc_right	右へアーチ
+anim.effect.arc_up	上へアーチ
+anim.effect.turn_right	右へターン
+anim.effect.turn_up	上へターン
+anim.effect.turn_up_right	右上へターン
+anim.effect.square	正方形
+anim.effect.equal_triangle	正三角形
+anim.effect.trapezoid	台形
+anim.effect.octagon	八角形
+anim.effect.five_point_star	星 5
+anim.effect.heart	ハート
+anim.effect.diagonal_down_right	右下へ
+anim.effect.diagonal_up_right	右上へ
+anim.effect.zigzag	ジグザグ
+anim.option.from_bottom	下から
+anim.option.from_bottom_left	左下から
+anim.option.from_left	左から
+anim.option.from_top_left	左上から
+anim.option.from_top	上から
+anim.option.from_top_right	右上から
+anim.option.from_right	右から
+anim.option.from_bottom_right	右下から
+anim.option.horizontal_out	ワイプアウト (横)
+anim.option.horizontal_in	ワイプイン (横)
+anim.option.vertical_out	ワイプアウト (縦)
+anim.option.vertical_in	ワイプイン (縦)
+anim.option.in	イン
+anim.option.out	アウト
+anim.option.spoke_1	スポーク 1
+anim.option.spoke_2	スポーク 2
+anim.option.spoke_3	スポーク 3
+anim.option.spoke_4	スポーク 4
+anim.option.spoke_8	スポーク 8
+anim.option.horizontal	横
+anim.option.vertical	縦
+anim.option.object_center	オブジェクトの中心
+anim.option.slide_center	スライドの中心
+anim.option.clockwise	時計回り
+anim.option.counterclockwise	反時計回り
+anim.option.both	両方
+anim.option.smoothly	スムーズ
+anim.option.through_black	黒を通過
+anim.option.circle	円
+anim.option.diamond	ひし形
+anim.option.plus	プラス
+anim.option.objects	オブジェクト
+anim.option.words	単語
+anim.option.characters	文字
+transition.gallery	画面切り替え効果
+transition.none	なし
+transition.group.subtle	弱
+transition.group.exciting	はなやか
+transition.group.dynamic	ダイナミック コンテンツ
+transition.effect.morph	変形
+transition.effect.fade	フェード
+transition.effect.push	プッシュ
+transition.effect.wipe	ワイプ
+transition.effect.split	スプリット
+transition.effect.reveal	出現
+transition.effect.cut	カット
+transition.effect.random_bars	ランダム ストライプ
+transition.effect.shape	図形
+transition.effect.uncover	アンカバー
+transition.effect.cover	カバー
+transition.effect.flash	フラッシュ
+transition.effect.fall_over	フォール オーバー
+transition.effect.drape	ドレープ
+transition.effect.curtains	カーテン
+transition.effect.wind	風
+transition.effect.prestige	Prestige
+transition.effect.fracture	フラクチャー
+transition.effect.crush	クラッシュ
+transition.effect.peel_off	ピール オフ
+transition.effect.page_curl	ページ カール
+transition.effect.airplane	飛行機
+transition.effect.origami	折り紙
+transition.effect.dissolve	ディゾルブ
+transition.effect.checkerboard	チェッカーボード
+transition.effect.blinds	ブラインド
+transition.effect.clock	時計
+transition.effect.ripple	さざ波
+transition.effect.honeycomb	ハチの巣
+transition.effect.glitter	グリッター
+transition.effect.vortex	渦巻き
+transition.effect.shred	シュレッド
+transition.effect.switch	切り替え
+transition.effect.flip	反転
+transition.effect.gallery	ギャラリー
+transition.effect.cube	キューブ
+transition.effect.doors	扉
+transition.effect.box	ボックス
+transition.effect.comb	コーム
+transition.effect.zoom	ズーム
+transition.effect.random	ランダム
+transition.effect.pan	パン
+transition.effect.ferris_wheel	観覧車
+transition.effect.conveyor	コンベヤ
+transition.effect.window	ウィンドウ
+transition.effect.fly_through	フライスルー
+transition.sound	サウンド
+transition.sound.none	[サウンドなし]
+transition.sound.stop	[前のサウンドを停止]
+transition.sound.other	その他のサウンド...
+transition.sound.loop	次のサウンドまでループ
+transition.advance	画面切り替えのタイミング
+transition.on_click	クリック時
+transition.after	自動
+transition.apply_all	すべてに適用
+zoom.insert	ズームの挿入
+zoom.summary	サマリー ズーム
+zoom.slide	スライド ズーム
+zoom.section	セクション ズーム
+zoom.no_sections	このプレゼンテーションにはセクションがありません
+zoom.insert_button	挿入
+zoom.options	ズームのオプション
+zoom.return	ズームに戻る
+zoom.background	ズームの背景

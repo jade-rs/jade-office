@@ -242,7 +242,12 @@ pub struct DeckView {
     /// 挿入 › SmartArt and the SmartArt tools.
     smartart: smartart::SmartArtTools,
     pictures: picture::PictureTools,
+    /// The アニメーション, 画面切り替え and ズーム panes.
+    anim: animation_tab::AnimationUi,
 }
+
+#[path = "deck_animation.rs"]
+mod animation_tab;
 
 impl DeckView {
     fn go_to(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -2646,7 +2651,7 @@ impl Render for DeckView {
         let (area_width, area_height) = workspace::editor_area(window, cx);
         let notes_height = if self.show_notes { NOTES_HEIGHT } else { 0.0 };
         let available = (
-            (area_width - SIDEBAR_WIDTH - SLIDE_MARGIN * 2.0).max(40.0),
+            (area_width - SIDEBAR_WIDTH - self.anim.width() - SLIDE_MARGIN * 2.0).max(40.0),
             (area_height - TOOLBAR_HEIGHT - FORMAT_BAR_HEIGHT - notes_height - SLIDE_MARGIN * 2.0)
                 .max(40.0),
         );
@@ -2672,6 +2677,8 @@ impl Render for DeckView {
             ));
         }
 
+        let animation_panel = self.animation_panel(window, cx);
+        let animation_buttons = self.animation_buttons(cx);
         let strip = self.format_strip();
         let format_bar = self
             .format_bar(&strip.clone().unwrap_or_default(), self.popup, cx)
@@ -2996,6 +3003,7 @@ impl Render for DeckView {
                                 )
                                 .on_click(cx.listener(|view, _event, _window, cx| view.print(cx))),
                             )
+                            .child(animation_buttons)
                             .child(
                                 toolbar_button(
                                     "from-current",
@@ -3157,6 +3165,7 @@ impl Render for DeckView {
                         )
                     }),
             )
+            .children(animation_panel)
     }
 }
 
@@ -3195,6 +3204,7 @@ impl DeckView {
             status: SharedString::from(""),
             smartart: Default::default(),
             pictures: Default::default(),
+            anim: Default::default(),
         };
         view.refresh_shapes();
         Ok(view)
