@@ -1015,6 +1015,9 @@ impl DocView {
             Err(error) if error == jade_web::typing::FORMULA_PROBLEM => {
                 self.status = i18n::text("sheet.formula_problem").into();
             }
+            Err(error) if error == jade_web::data_table::DATA_TABLE_REFUSED => {
+                self.status = i18n::text("data_table.refused").into();
+            }
             // An entry a data validation refuses: the rule's words, or
             // Excel's.
             // A protected sheet: Excel's words.
