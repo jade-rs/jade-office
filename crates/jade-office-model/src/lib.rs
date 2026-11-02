@@ -56,6 +56,7 @@ pub use sheet::protected_edits;
 pub mod sheet;
 pub mod sheet_properties;
 pub mod sort_dialog;
+pub mod spin;
 pub mod subtotal;
 pub mod tables;
 pub mod text;

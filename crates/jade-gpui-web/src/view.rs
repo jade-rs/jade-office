@@ -64,6 +64,7 @@ pub(crate) mod word_ruler;
 mod word_screen_reader;
 pub(crate) mod word_setup;
 mod word_signatures;
+pub(crate) mod word_spin;
 pub(crate) mod word_story;
 pub(crate) mod word_styles;
 mod word_table;
@@ -551,6 +552,8 @@ pub struct DocView {
     word_count: RefCell<Option<(FormatKey, SharedString)>>,
     /// The フォント dialog and the other character tools' dialogs.
     characters: word_characters::Characters,
+    /// The spin box with the keyboard, in whichever dialog (`word_spin`).
+    spin: Option<word_spin::SpinFocus>,
     /// 参考資料's dialogs, the navigation pane and ブックマーク表示
     /// (`word_references`).
     references: word_references::References,
@@ -809,6 +812,7 @@ impl DocView {
             paste_arrived: false,
             word_count: RefCell::new(None),
             characters: word_characters::Characters::default(),
+            spin: None,
             references: word_references::References::default(),
             controls: word_controls::ControlsUi::default(),
             fields: word_fields::FieldsUi::default(),
@@ -3013,6 +3017,13 @@ impl DocView {
                 .ok();
             });
         }
+        // A spin box with the keyboard takes its keys first; Enter, Tab and
+        // Escape go on to its dialog once it has let go.
+        match self.spin_key(event, cx) {
+            Some(word_spin::SpinKeyOutcome::Taken) => return cx.stop_propagation(),
+            Some(word_spin::SpinKeyOutcome::Typing) => return,
+            Some(word_spin::SpinKeyOutcome::PassOn) | None => {}
+        }
         // 互換性チェック, テンプレートとアドイン and ファイル サイズの圧縮
         // are modal (`word_files`).
         if self.files_key(key, cx) {
@@ -3355,6 +3366,9 @@ impl DocView {
     }
 
     fn current_text(&self) -> Option<&TextEdit> {
+        if let Some(field) = self.spin_text() {
+            return Some(field);
+        }
         if let Some(field) = self.views.text_field() {
             return Some(field);
         }
@@ -3683,6 +3697,11 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(field) = self.spin_text_mut() {
+            let range = range.filter(|range| !(field.whole && range.is_empty()));
+            field.replace(range, text, false);
+            return cx.notify();
+        }
         if word_mailings::is_open(self) {
             if let Some(field) = self
                 .mailings
@@ -3711,8 +3730,9 @@ impl EntityInputHandler for DocView {
         if self.table_dialog_typed(text, cx) {
             return;
         }
+        // A dialog is modal: only its spin box (above) takes typing.
         if self.page_dialog.is_some() {
-            return self.page_dialog_input(text, cx);
+            return;
         }
         if self.immersive_open() {
             return;
@@ -3789,6 +3809,11 @@ impl EntityInputHandler for DocView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(field) = self.spin_text_mut() {
+            let range = range.filter(|range| !(field.whole && range.is_empty()));
+            field.replace(range, new_text, true);
+            return cx.notify();
+        }
         if word_mailings::is_open(self) {
             if let Some(field) = self
                 .mailings

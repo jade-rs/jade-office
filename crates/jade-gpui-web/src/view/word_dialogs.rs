@@ -11,7 +11,9 @@ use jade_web::word::{
 };
 
 use super::sheet::caret_line;
+use super::word_spin::{spin_field, Spin, SpinOwner};
 use super::*;
+use jade_web::spin::{specs, Metrics};
 
 /// The dialog open over the pages.
 pub(super) enum Dialog {
@@ -48,7 +50,8 @@ impl Dialog {
         match self {
             Dialog::Link(form) => Some(form.field()),
             Dialog::Note(form) => Some(&form.text),
-            Dialog::Paragraph(form) => Some(form.focused()),
+            // Its numbers are spin boxes, which take their own typing.
+            Dialog::Paragraph(_) => None,
             Dialog::Reviewer(form) => Some(form.focused()),
             Dialog::AltText(form) => Some(&form.description),
             Dialog::Compare { author, .. } => Some(author),
@@ -62,7 +65,7 @@ impl Dialog {
         match self {
             Dialog::Link(form) => Some(form.field_mut()),
             Dialog::Note(form) => Some(&mut form.text),
-            Dialog::Paragraph(form) => Some(form.focused_mut()),
+            Dialog::Paragraph(_) => None,
             Dialog::Reviewer(form) => Some(form.focused_mut()),
             Dialog::AltText(form) => Some(&mut form.description),
             Dialog::Compare { author, .. } => Some(author),
@@ -182,7 +185,66 @@ impl DocView {
             return;
         };
         let form = ParagraphForm::new(document.paragraph_format());
+        let left = self.paragraph_spin(&form, ParagraphField::Left);
         self.open_dialog(Dialog::Paragraph(Box::new(form)), cx);
+        // The left indent has the keyboard, as in Word.
+        self.focus_spin(&left);
+    }
+
+    /// The 段落 dialog's `field` takes the keyboard.
+    fn focus_paragraph_field(&mut self, field: ParagraphField) {
+        if let Document::Pages {
+            dialog: Some(dialog),
+            ..
+        } = &self.document
+        {
+            if let Dialog::Paragraph(form) = dialog.as_ref() {
+                let spin = self.paragraph_spin(form, field);
+                self.focus_spin(&spin);
+            }
+        }
+    }
+
+    /// A number field of the 段落 dialog as a spin box: indents in 字 (or
+    /// mm), spacing in pt, 間隔 in pt or 行.
+    fn paragraph_spin(&self, form: &ParagraphForm, field: ParagraphField) -> Spin {
+        let format = &form.format;
+        let spec = match field {
+            ParagraphField::Left | ParagraphField::Right => match format.unit {
+                IndentUnit::Characters => specs::INDENT_CHARS,
+                IndentUnit::Millimetres => specs::INDENT_MM,
+            },
+            ParagraphField::SpecialBy => match format.unit {
+                IndentUnit::Characters => specs::SPECIAL_CHARS,
+                IndentUnit::Millimetres => specs::SPECIAL_MM,
+            },
+            ParagraphField::Before | ParagraphField::After => specs::PARAGRAPH_SPACING,
+            ParagraphField::LineAmount => match format.line {
+                LineSpacing::Multiple(_) => specs::LINE_MULTIPLE,
+                _ => specs::LINE_POINTS,
+            },
+        };
+        let char_pt = match &self.document {
+            Document::Pages { document, .. } => document
+                .caret()
+                .map_or(10.5, |(paragraph, _)| document.character_width(paragraph)),
+            _ => 10.5,
+        };
+        let value = form.number(field).unwrap_or(0.0) as f64;
+        Spin::new(
+            format!("paragraph-{field:?}"),
+            SpinOwner::Paragraph,
+            spec,
+            value,
+            move |view, value| {
+                view.edit_paragraph_form(|form| form.set_number(field, value as f32));
+            },
+        )
+        .metrics(Metrics {
+            char_pt: char_pt as f64,
+            ..Metrics::default()
+        })
+        .on_focus(move |view| view.edit_paragraph_form(|form| form.focus = field))
     }
 
     /// 校閲 › ユーザー情報: who comments and changes are put down to.
@@ -223,11 +285,7 @@ impl DocView {
     }
 
     /// Changes the open 段落 dialog from a click on one of its controls.
-    fn edit_paragraph_form(
-        &mut self,
-        edit: impl FnOnce(&mut ParagraphForm),
-        cx: &mut Context<Self>,
-    ) {
+    fn edit_paragraph_form(&mut self, edit: impl FnOnce(&mut ParagraphForm)) {
         if let Document::Pages {
             dialog: Some(dialog),
             ..
@@ -235,7 +293,6 @@ impl DocView {
         {
             if let Dialog::Paragraph(form) = dialog.as_mut() {
                 edit(form);
-                cx.notify();
             }
         }
     }
@@ -283,7 +340,11 @@ impl DocView {
             "tab" => match open {
                 Dialog::Link(form) => form.switch_field(),
                 Dialog::Note(form) => form.text.insert("\t"),
-                Dialog::Paragraph(form) => form.step_focus(!event.keystroke.modifiers.shift),
+                Dialog::Paragraph(form) => {
+                    form.step_focus(!event.keystroke.modifiers.shift);
+                    let field = form.focus;
+                    self.focus_paragraph_field(field);
+                }
                 Dialog::Reviewer(form) => form.next_field(),
                 Dialog::AltText(form) => form.decorative = !form.decorative,
                 Dialog::Compare { form, .. } => form.options.by_word = !form.options.by_word,
@@ -720,36 +781,26 @@ impl DocView {
             .cursor_pointer()
             .child(label)
             .on_click(cx.listener(move |view, _event, _window, cx| {
-                view.edit_paragraph_form(|form| pick(form), cx)
+                view.edit_paragraph_form(|form| pick(form));
+                cx.notify();
             }))
             .into_any_element()
     }
 
-    /// A number field of the 段落 dialog, which a click gives the keyboard.
+    /// A number field of the 段落 dialog: its label and its spin box.
     fn number(
         &self,
         form: &ParagraphForm,
         field: ParagraphField,
         label: &'static str,
-        unit: &'static str,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         div()
-            .id(ElementId::Name(format!("paragraph-{field:?}").into()))
             .flex()
             .items_center()
-            .gap_1()
-            .cursor_text()
-            .child(field_box(
-                label,
-                form.field(field),
-                form.focus == field,
-                56.0,
-            ))
-            .child(div().text_color(palette::dim()).child(unit))
-            .on_click(cx.listener(move |view, _event, _window, cx| {
-                view.edit_paragraph_form(|form| form.focus_on(field), cx)
-            }))
+            .gap_2()
+            .child(div().text_color(palette::dim()).child(label))
+            .child(spin_field(self, self.paragraph_spin(form, field), cx))
             .into_any_element()
     }
 
@@ -788,7 +839,8 @@ impl DocView {
             )
             .child(label)
             .on_click(cx.listener(move |view, _event, _window, cx| {
-                view.edit_paragraph_form(|form| flip(form), cx)
+                view.edit_paragraph_form(|form| flip(form));
+                cx.notify();
             }))
             .into_any_element()
     }
@@ -796,10 +848,6 @@ impl DocView {
     /// The 段落 dialog: インデントと行間隔, 改ページと改行, OK and キャンセル.
     fn paragraph_dialog(&self, form: &ParagraphForm, cx: &mut Context<Self>) -> gpui::AnyElement {
         let format = &form.format;
-        let unit = i18n::text(match format.unit {
-            IndentUnit::Characters => "paragraph.unit.chars",
-            IndentUnit::Millimetres => "paragraph.unit.mm",
-        });
         let caption = |text: &'static str| {
             div()
                 .w(px(72.0))
@@ -839,18 +887,11 @@ impl DocView {
         }
         let mut indent = vec![
             caption(i18n::text("paragraph.indent")),
-            self.number(
-                form,
-                ParagraphField::Left,
-                i18n::text("paragraph.left"),
-                unit,
-                cx,
-            ),
+            self.number(form, ParagraphField::Left, i18n::text("paragraph.left"), cx),
             self.number(
                 form,
                 ParagraphField::Right,
                 i18n::text("paragraph.right"),
-                unit,
                 cx,
             ),
             label(i18n::text("paragraph.special")),
@@ -877,7 +918,6 @@ impl DocView {
             form,
             ParagraphField::SpecialBy,
             i18n::text("paragraph.by"),
-            unit,
             cx,
         ));
         let mut spacing = vec![
@@ -886,14 +926,12 @@ impl DocView {
                 form,
                 ParagraphField::Before,
                 i18n::text("paragraph.before"),
-                "pt",
                 cx,
             ),
             self.number(
                 form,
                 ParagraphField::After,
                 i18n::text("paragraph.after"),
-                "pt",
                 cx,
             ),
             label(i18n::text("paragraph.line")),
@@ -916,16 +954,10 @@ impl DocView {
             ));
         }
         if format.line.amount().is_some() {
-            let unit = if matches!(format.line, LineSpacing::Multiple(_)) {
-                i18n::text("paragraph.unit.lines")
-            } else {
-                "pt"
-            };
             spacing.push(self.number(
                 form,
                 ParagraphField::LineAmount,
                 i18n::text("paragraph.by"),
-                unit,
                 cx,
             ));
         }

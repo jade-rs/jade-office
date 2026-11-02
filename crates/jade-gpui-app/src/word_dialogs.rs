@@ -5,12 +5,14 @@
 //! (`jade-gpui-web/src/view/word_dialogs.rs`).
 
 use gpui::{div, prelude::*, px, AnyElement, Context, ElementId, KeyDownEvent, SharedString};
+use jade_office_model::spin::{specs, Metrics};
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::{
     IndentUnit, LineSpacing, LinkForm, LinkTarget, NoteForm, NoteKind, ParagraphField,
     ParagraphForm, SpecialIndent, WordLinks, WordParagraphs,
 };
 
+use crate::word_spin::{spin_field, Spin, SpinOwner};
 use crate::{t, theme, DocumentView};
 
 /// The dialog open over the pages.
@@ -29,7 +31,8 @@ impl Dialog {
         match self {
             Dialog::Link(form) => Some(form.field()),
             Dialog::Note(form) => Some(&form.text),
-            Dialog::Paragraph(form) => Some(form.focused()),
+            // Its numbers are spin boxes, which take their own typing.
+            Dialog::Paragraph(_) => None,
         }
     }
 
@@ -37,7 +40,7 @@ impl Dialog {
         match self {
             Dialog::Link(form) => Some(form.field_mut()),
             Dialog::Note(form) => Some(&mut form.text),
-            Dialog::Paragraph(form) => Some(form.focused_mut()),
+            Dialog::Paragraph(_) => None,
         }
     }
 }
@@ -163,7 +166,61 @@ impl DocumentView {
     pub(crate) fn open_paragraph_dialog(&mut self, cx: &mut Context<Self>) {
         self.sync_selection();
         let form = ParagraphForm::new(self.document.paragraph_format());
+        let left = self.paragraph_spin(&form, ParagraphField::Left);
         self.open_dialog(Dialog::Paragraph(Box::new(form)), cx);
+        // The left indent has the keyboard, as in Word.
+        self.focus_spin(&left);
+    }
+
+    /// The 段落 dialog's `field` takes the keyboard.
+    fn focus_paragraph_field(&mut self, field: ParagraphField) {
+        if let Some(Dialog::Paragraph(form)) = self.dialog.as_ref() {
+            let spin = self.paragraph_spin(form, field);
+            self.focus_spin(&spin);
+        }
+    }
+
+    /// A number field of the 段落 dialog as a spin box: indents in 字 (or
+    /// mm), spacing in pt, 間隔 in pt or 行.
+    pub(crate) fn paragraph_spin(&self, form: &ParagraphForm, field: ParagraphField) -> Spin {
+        let format = &form.format;
+        let spec = match field {
+            ParagraphField::Left | ParagraphField::Right => match format.unit {
+                IndentUnit::Characters => specs::INDENT_CHARS,
+                IndentUnit::Millimetres => specs::INDENT_MM,
+            },
+            ParagraphField::SpecialBy => match format.unit {
+                IndentUnit::Characters => specs::SPECIAL_CHARS,
+                IndentUnit::Millimetres => specs::SPECIAL_MM,
+            },
+            ParagraphField::Before | ParagraphField::After => specs::PARAGRAPH_SPACING,
+            ParagraphField::LineAmount => match format.line {
+                LineSpacing::Multiple(_) => specs::LINE_MULTIPLE,
+                _ => specs::LINE_POINTS,
+            },
+        };
+        let metrics = Metrics {
+            char_pt: self.document.character_width(self.insert_at.0) as f64,
+            ..Metrics::default()
+        };
+        let value = form.number(field).unwrap_or(0.0) as f64;
+        Spin::new(
+            format!("paragraph-{field:?}"),
+            SpinOwner::Paragraph,
+            spec,
+            value,
+            move |view, value| {
+                if let Some(Dialog::Paragraph(form)) = view.dialog.as_mut() {
+                    form.set_number(field, value as f32);
+                }
+            },
+        )
+        .metrics(metrics)
+        .on_focus(move |view| {
+            if let Some(Dialog::Paragraph(form)) = view.dialog.as_mut() {
+                form.focus = field;
+            }
+        })
     }
 
     /// Changes the open 段落 dialog from a click on one of its controls.
@@ -229,7 +286,11 @@ impl DocumentView {
             "tab" => match dialog {
                 Dialog::Link(form) => form.switch_field(),
                 Dialog::Note(form) => form.text.insert("\t"),
-                Dialog::Paragraph(form) => form.step_focus(!event.keystroke.modifiers.shift),
+                Dialog::Paragraph(form) => {
+                    form.step_focus(!event.keystroke.modifiers.shift);
+                    let field = form.focus;
+                    self.focus_paragraph_field(field);
+                }
             },
             _ => {
                 let edited = dialog.field_mut().is_some_and(|field| field.edit_key(key));
@@ -340,31 +401,20 @@ impl DocumentView {
             .into_any_element()
     }
 
-    /// A number field of the 段落 dialog, which a click gives the keyboard.
+    /// A number field of the 段落 dialog: its label and its spin box.
     fn number(
         &self,
         form: &ParagraphForm,
         field: ParagraphField,
         label: &'static str,
-        unit: &'static str,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
-            .id(ElementId::Name(format!("paragraph-{field:?}").into()))
             .flex()
             .items_center()
-            .gap_1()
-            .cursor_text()
-            .child(field_box(
-                label,
-                form.field(field),
-                form.focus == field,
-                56.0,
-            ))
-            .child(div().text_xs().text_color(theme::text_dim()).child(unit))
-            .on_click(cx.listener(move |view, _event, _window, cx| {
-                view.edit_paragraph_form(|form| form.focus_on(field), cx)
-            }))
+            .gap_2()
+            .child(div().text_xs().text_color(theme::text_dim()).child(label))
+            .child(spin_field(self, self.paragraph_spin(form, field), cx))
             .into_any_element()
     }
 
@@ -409,10 +459,6 @@ impl DocumentView {
     /// The 段落 dialog: インデントと行間隔, 改ページと改行, OK and キャンセル.
     fn paragraph_dialog(&self, form: &ParagraphForm, cx: &mut Context<Self>) -> AnyElement {
         let format = &form.format;
-        let unit = t(match format.unit {
-            IndentUnit::Characters => "paragraph.unit.chars",
-            IndentUnit::Millimetres => "paragraph.unit.mm",
-        });
         let caption = |text: &'static str| {
             div()
                 .w(px(72.0))
@@ -447,8 +493,8 @@ impl DocumentView {
         }
         let mut indent = vec![
             caption(t("paragraph.indent")),
-            self.number(form, ParagraphField::Left, t("paragraph.left"), unit, cx),
-            self.number(form, ParagraphField::Right, t("paragraph.right"), unit, cx),
+            self.number(form, ParagraphField::Left, t("paragraph.left"), cx),
+            self.number(form, ParagraphField::Right, t("paragraph.right"), cx),
             div()
                 .text_xs()
                 .text_color(theme::text_dim())
@@ -473,17 +519,11 @@ impl DocumentView {
                 },
             ));
         }
-        indent.push(self.number(form, ParagraphField::SpecialBy, t("paragraph.by"), unit, cx));
+        indent.push(self.number(form, ParagraphField::SpecialBy, t("paragraph.by"), cx));
         let mut spacing = vec![
             caption(t("paragraph.spacing")),
-            self.number(
-                form,
-                ParagraphField::Before,
-                t("paragraph.before"),
-                "pt",
-                cx,
-            ),
-            self.number(form, ParagraphField::After, t("paragraph.after"), "pt", cx),
+            self.number(form, ParagraphField::Before, t("paragraph.before"), cx),
+            self.number(form, ParagraphField::After, t("paragraph.after"), cx),
             div()
                 .text_xs()
                 .text_color(theme::text_dim())
@@ -508,18 +548,7 @@ impl DocumentView {
             ));
         }
         if format.line.amount().is_some() {
-            let unit = if matches!(format.line, LineSpacing::Multiple(_)) {
-                t("paragraph.unit.lines")
-            } else {
-                "pt"
-            };
-            spacing.push(self.number(
-                form,
-                ParagraphField::LineAmount,
-                t("paragraph.by"),
-                unit,
-                cx,
-            ));
+            spacing.push(self.number(form, ParagraphField::LineAmount, t("paragraph.by"), cx));
         }
         let pagination = vec![
             caption(t("paragraph.pagination")),

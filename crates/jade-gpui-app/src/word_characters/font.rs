@@ -6,16 +6,23 @@
 //! カーニング, the OpenType features and the text effects.
 
 use gpui::{div, prelude::*, px, AnyElement, ClickEvent, Context, FontWeight, SharedString};
+use jade_office_model::spin::{specs, SpinSpec, SpinUnit};
 use jade_office_model::word::font::{
     theme_palette, Effect, FontDialog, FontTab, HeadlessThemeColor, EMPHASIS_MARKS, FONT_SIZES,
     LIGATURES, NUMBER_FORMS, NUMBER_SPACINGS, SCALES, STANDARD_COLORS, UNDERLINE_STYLES,
 };
 
 use super::{
-    caption, check, list_panel, list_row, points, select, stepper, swatch, theme_colors, with_list,
-    Dialog, DialogList,
+    caption, check, list_panel, list_row, points, select, swatch, theme_colors, with_list, Dialog,
+    DialogList,
 };
+use crate::word_spin::{spin_field, Spin, SpinOwner};
 use crate::{i18n, theme, DocumentView};
+
+/// 文字間隔's 間隔: how far 広く or 狭く, by tenths of a point.
+const SPACING_BY: SpinSpec = SpinSpec::new(SpinUnit::Pt, 0.0, 1584.0, 0.1, 1);
+/// 位置's 間隔: how far 上げる or 下げる, by halves of a point.
+const POSITION_BY: SpinSpec = SpinSpec::new(SpinUnit::Pt, 0.0, 1584.0, 0.5, 1);
 
 fn dialog(view: &DocumentView) -> Option<&FontDialog> {
     match view.characters.dialog.as_ref()? {
@@ -403,6 +410,18 @@ fn labelled(label: &'static str, control: impl IntoElement) -> gpui::Div {
         .child(control)
 }
 
+/// サイズ as a spin box.
+pub(crate) fn size_spin(size: f32) -> Spin {
+    Spin::new(
+        "font-size",
+        SpinOwner::Characters,
+        specs::FONT_SIZE,
+        size as f64,
+        |view, value| edit(view, |dialog| dialog.format.font_size = Some(value as f32)),
+    )
+    .width(76.0)
+}
+
 fn font_tab(
     view: &mut DocumentView,
     dialog: &FontDialog,
@@ -466,18 +485,42 @@ fn font_tab(
                     }),
             );
     let size = format.font_size.unwrap_or(10.5);
-    let sizes = choice_select(
-        view,
-        "font-size",
-        DialogList::Size,
-        64.0,
-        points(size),
-        FONT_SIZES
-            .iter()
-            .map(|size| (points(*size), SharedString::from(points(*size))))
-            .collect(),
-        |dialog, value: String| dialog.format.font_size = value.parse().ok(),
-        cx,
+    // サイズ: a spin box to type into or step, and Word's sizes to pick from.
+    let size_spin = spin_field(view, size_spin(size), cx);
+    let sizes_open = view.characters.list == Some(DialogList::Size);
+    let size_menu = sizes_open.then(|| {
+        list_panel("choice-list", 120.0)
+            .children(FONT_SIZES.iter().enumerate().map(|(index, choice)| {
+                let choice = *choice;
+                list_row(("font-size", index), points(choice), choice == size)
+                    .on_click(pick(cx, move |dialog| {
+                        dialog.format.font_size = Some(choice)
+                    }))
+            }))
+            .into_any_element()
+    });
+    let sizes = with_list(
+        div()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .child(size_spin)
+            .child(
+                div()
+                    .id("font-size-list")
+                    .px_1()
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .hover(|button| button.bg(theme::hovered()))
+                    .child("▾")
+                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                        let characters = &mut view.characters;
+                        characters.list =
+                            (characters.list != Some(DialogList::Size)).then_some(DialogList::Size);
+                        cx.notify();
+                    })),
+            ),
+        size_menu,
     );
     // The complex-script style: Word keeps it apart (w:bCs, w:iCs).
     let (complex_bold, complex_italic) = (
@@ -511,33 +554,21 @@ fn font_tab(
                 }),
         );
     let complex_size = format.complex_font_size.unwrap_or(size);
-    let complex_sizes = stepper(
-        "complex-size",
-        points(complex_size),
-        true,
+    let complex_sizes = spin_field(
+        view,
+        Spin::new(
+            "complex-size",
+            SpinOwner::Characters,
+            specs::FONT_SIZE,
+            complex_size as f64,
+            |view, value| {
+                edit(view, |dialog| {
+                    dialog.format.complex_font_size = Some(value as f32)
+                })
+            },
+        )
+        .width(76.0),
         cx,
-        move |view, grow| {
-            edit(view, |dialog| {
-                let current = dialog
-                    .format
-                    .complex_font_size
-                    .or(dialog.format.font_size)
-                    .unwrap_or(10.5);
-                let next = if grow {
-                    FONT_SIZES
-                        .iter()
-                        .copied()
-                        .find(|step| *step > current + 0.01)
-                } else {
-                    FONT_SIZES
-                        .iter()
-                        .rev()
-                        .copied()
-                        .find(|step| *step < current - 0.01)
-                };
-                dialog.format.complex_font_size = Some(next.unwrap_or(current));
-            })
-        },
     );
     let color = color_select(
         view,
@@ -731,17 +762,22 @@ fn advanced_tab(
             -spacing.abs().max(1.0),
             cx,
         ))
-        .child(stepper(
-            "spacing-by",
-            format!("{} pt", points(spacing.abs())),
-            spacing != 0.0,
+        .child(spin_field(
+            view,
+            Spin::new(
+                "spacing-by",
+                SpinOwner::Characters,
+                SPACING_BY,
+                spacing.abs() as f64,
+                |view, value| {
+                    edit(view, |dialog| {
+                        let sign = if dialog.spacing() < 0.0 { -1.0 } else { 1.0 };
+                        dialog.format.spacing = Some(sign * value as f32);
+                    })
+                },
+            )
+            .enabled(spacing != 0.0),
             cx,
-            |view, more| {
-                edit(view, |dialog| {
-                    let sign = if dialog.spacing() < 0.0 { -1.0 } else { 1.0 };
-                    dialog.step_spacing(if more { 0.5 * sign } else { -0.5 * sign })
-                })
-            },
         ));
     let position = dialog.position();
     let position_kind =
@@ -775,17 +811,22 @@ fn advanced_tab(
             -position.abs().max(3.0),
             cx,
         ))
-        .child(stepper(
-            "position-by",
-            format!("{} pt", points(position.abs())),
-            position != 0.0,
+        .child(spin_field(
+            view,
+            Spin::new(
+                "position-by",
+                SpinOwner::Characters,
+                POSITION_BY,
+                position.abs() as f64,
+                |view, value| {
+                    edit(view, |dialog| {
+                        let sign = if dialog.position() < 0.0 { -1.0 } else { 1.0 };
+                        dialog.format.position = Some(sign * value as f32);
+                    })
+                },
+            )
+            .enabled(position != 0.0),
             cx,
-            |view, more| {
-                edit(view, |dialog| {
-                    let sign = if dialog.position() < 0.0 { -1.0 } else { 1.0 };
-                    dialog.step_position(if more { 0.5 * sign } else { -0.5 * sign })
-                })
-            },
         ));
     let kerning = dialog.kerning();
     let kerning_row = div()
@@ -800,16 +841,23 @@ fn advanced_tab(
                 },
             )),
         )
-        .child(stepper(
-            "kerning-from",
-            kerning.map(points).unwrap_or_default(),
-            kerning.is_some(),
+        .child(spin_field(
+            view,
+            Spin::new(
+                "kerning-from",
+                SpinOwner::Characters,
+                specs::KERNING,
+                kerning.unwrap_or(format.font_size.unwrap_or(10.5)) as f64,
+                |view, value| {
+                    edit(view, |dialog| {
+                        if dialog.kerning().is_some() {
+                            dialog.format.kerning = Some(value as f32);
+                        }
+                    })
+                },
+            )
+            .enabled(kerning.is_some()),
             cx,
-            |view, more| {
-                edit(view, |dialog| {
-                    dialog.step_kerning(if more { 0.5 } else { -0.5 })
-                })
-            },
         ))
         .child(i18n::text("chars.kerning_from"));
     let ligatures = choice_select(

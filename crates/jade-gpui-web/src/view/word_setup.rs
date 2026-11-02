@@ -5,6 +5,7 @@
 //! (`word::page_setup`), which the browser shell draws too.
 
 use gpui::{div, px, AnyElement, Context, KeyDownEvent, MouseButton, SharedString};
+use jade_web::spin::{specs, SpinSpec, SpinUnit};
 use jade_web::word::page::Paper;
 use jade_web::word::page_setup::{
     points_to_mm, ApplyTo, BorderSetting, ColumnPreset, ColumnsDialog, CoverPage, Field, GridMode,
@@ -13,6 +14,7 @@ use jade_web::word::page_setup::{
     PAGE_BORDER_STYLES, PAGE_COLORS, PAGE_NUMBER_FORMATS, SECTION_STARTS, VERTICAL_ALIGNMENTS,
 };
 
+use super::word_spin::{spin_field, Spin, SpinOwner};
 use super::*;
 use crate::ribbon::{dropdown, group, listener, menu_panel, menu_row, row, Action, Popup};
 use crate::tooltip::Tooltip;
@@ -62,12 +64,9 @@ pub enum PageDialog {
     Borders(PageBorderDialog),
 }
 
-/// The open dialog and the number being typed into one of its fields.
+/// The open dialog. Its number fields are spin boxes (`word_spin`).
 pub struct PageDialogState {
     pub dialog: PageDialog,
-    /// The field, what has been typed, and whether typing has begun (the
-    /// first character replaces the value, as in Word's fields).
-    pub typing: Option<(Key, String, bool)>,
     /// Why OK did nothing, when it did nothing.
     pub problem: Option<&'static str>,
 }
@@ -149,15 +148,6 @@ fn heading(label: &'static str) -> gpui::Div {
         .child(t(label))
 }
 
-fn number_text(value: f32, decimals: bool) -> String {
-    if decimals {
-        let text = format!("{value:.1}");
-        text.trim_end_matches(".0").to_string()
-    } else {
-        format!("{}", value.round() as i64)
-    }
-}
-
 impl PageDialogState {
     fn value(&self, key: Key) -> f32 {
         match (&self.dialog, key) {
@@ -178,20 +168,18 @@ impl PageDialogState {
         }
     }
 
-    fn decimals(key: Key) -> bool {
+    /// What a field holds: millimetres, points or a count, its range and
+    /// its step.
+    fn spec(key: Key) -> SpinSpec {
         match key {
-            Key::Setup(field) => {
-                field.is_length() || matches!(field, Field::CharPitch | Field::LinePitch)
-            }
-            Key::ColumnWidth(_) | Key::ColumnSpace(_) => true,
-            Key::ColumnCount | Key::PageStart => false,
-        }
-    }
-
-    fn text(&self, key: Key) -> String {
-        match self.typing.as_ref() {
-            Some((typing, text, true)) if *typing == key => text.clone(),
-            _ => number_text(self.value(key), Self::decimals(key)),
+            Key::Setup(field) if field.is_length() => specs::PAGE_MM,
+            Key::Setup(Field::CharPitch | Field::LinePitch) => specs::PITCH_PT,
+            Key::Setup(Field::Columns) | Key::ColumnCount => specs::count(1.0, 45.0),
+            Key::Setup(Field::LineCountBy) => specs::count(1.0, 100.0),
+            Key::Setup(Field::LineStart) => specs::count(1.0, 32767.0),
+            Key::Setup(_) => specs::count(1.0, 999.0),
+            Key::ColumnWidth(_) | Key::ColumnSpace(_) => specs::PAGE_MM,
+            Key::PageStart => specs::count(0.0, 32767.0),
         }
     }
 
@@ -215,27 +203,6 @@ impl PageDialogState {
             }
             _ => {}
         }
-    }
-
-    /// What was typed becomes the field's value.
-    pub fn commit(&mut self) {
-        if let Some((key, text, started)) = self.typing.take() {
-            if started {
-                if let Ok(value) = text.parse::<f32>() {
-                    self.set(key, value);
-                }
-            }
-        }
-    }
-
-    fn step(&mut self, key: Key, up: bool) {
-        self.commit();
-        let step = match key {
-            Key::Setup(Field::CharPitch | Field::LinePitch) => 0.5,
-            _ => 1.0,
-        };
-        let value = self.value(key) + if up { step } else { -step };
-        self.set(key, value);
     }
 }
 
@@ -642,7 +609,6 @@ impl DocView {
         if let Some(dialog) = dialog {
             self.page_dialog = Some(Box::new(PageDialogState {
                 dialog,
-                typing: None,
                 problem: None,
             }));
             return cx.notify();
@@ -669,7 +635,6 @@ impl DocView {
         let Some(mut state) = self.page_dialog.take() else {
             return;
         };
-        state.commit();
         if let PageDialog::Setup(dialog) = &state.dialog {
             if let Some(problem) = dialog.problem() {
                 state.problem = Some(problem);
@@ -698,84 +663,56 @@ impl DocView {
 
     fn edit_setup(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut PageSetupDialog)) {
         self.edit_page_dialog(cx, |state| {
-            state.commit();
             if let PageDialog::Setup(dialog) = &mut state.dialog {
                 edit(dialog);
             }
         });
     }
 
-    /// Keys while a dialog is open: digits into the field being typed,
-    /// Enter applies (or ends the typing), Escape cancels.
+    /// Keys while a dialog is open: Enter applies, Escape cancels; its
+    /// spin boxes take their own keys first (`word_spin`).
     pub(crate) fn page_dialog_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        let Some(state) = self.page_dialog.as_mut() else {
+        if self.page_dialog.is_none() {
             return false;
-        };
-        let key = event.keystroke.key.as_str();
-        match key {
-            "escape" => {
-                if state.typing.take().is_none() {
-                    self.page_dialog = None;
-                }
-            }
+        }
+        match event.keystroke.key.as_str() {
+            "escape" => self.page_dialog = None,
             "enter" | "return" => {
-                if state.typing.is_some() {
-                    state.commit();
-                } else {
-                    self.apply_page_dialog(cx);
-                    return true;
-                }
+                self.apply_page_dialog(cx);
+                return true;
             }
-            "tab" => state.commit(),
-            "backspace" => {
-                if let Some((_, text, started)) = state.typing.as_mut() {
-                    *started = true;
-                    text.pop();
-                }
-            }
-            "up" | "down" => {
-                if let Some((key, _, _)) = state.typing {
-                    state.step(key, event.keystroke.key == "up");
-                    state.typing = Some((key, String::new(), false));
-                }
-            }
-            // Typed characters arrive through the input handler
-            // (`page_dialog_input`), as the browser delivers them.
+            // The dialog is modal: nothing reaches the document.
             _ => return true,
         }
         cx.notify();
         true
     }
 
-    /// Text the browser typed while a dialog is open: digits and a decimal
-    /// point into the field being typed into; nothing reaches the document.
-    pub(super) fn page_dialog_input(&mut self, typed: &str, cx: &mut Context<Self>) {
-        let Some((_, text, started)) = self
+    /// A number field as a spin box: its value in its unit, and what it
+    /// sets.
+    pub(crate) fn page_spin(&self, key: Key, enabled: bool) -> Spin {
+        let value = self
             .page_dialog
-            .as_mut()
-            .and_then(|state| state.typing.as_mut())
-        else {
-            return;
-        };
-        for ch in typed.chars() {
-            let ch = match ch {
-                '０'..='９' => char::from(b'0' + (ch as u32 - '０' as u32) as u8),
-                '．' => '.',
-                other => other,
-            };
-            if ch.is_ascii_digit() || ch == '.' {
-                if !*started {
-                    text.clear();
-                    *started = true;
+            .as_ref()
+            .map_or(0.0, |state| state.value(key));
+        Spin::new(
+            format!("page-{key:?}"),
+            SpinOwner::PageSetup,
+            PageDialogState::spec(key),
+            value as f64,
+            move |view, value| {
+                if let Some(state) = view.page_dialog.as_mut() {
+                    state.set(key, value as f32);
+                    state.problem = None;
                 }
-                text.push(ch);
-            }
-        }
-        cx.notify();
+            },
+        )
+        .enabled(enabled)
+        .width(84.0)
     }
 
-    /// A number field: its value (or what is typed, with a caret), and the
-    /// spinner beside it.
+    /// A number field: the spin box, and the unit after it when the box
+    /// does not show one (段, 字, 行).
     fn number_field(
         &self,
         key: Key,
@@ -783,85 +720,15 @@ impl DocView {
         enabled: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Some(state) = self.page_dialog.as_ref() else {
-            return div().into_any_element();
-        };
-        let focused = state
-            .typing
-            .as_ref()
-            .is_some_and(|(typing, _, _)| *typing == key);
-        let id = format!("{key:?}");
+        let spec = PageDialogState::spec(key);
         div()
             .flex()
             .items_center()
-            .gap_0p5()
-            .child(
-                div()
-                    .id(SharedString::from(format!("field-{id}")))
-                    .w(px(64.0))
-                    .h(px(20.0))
-                    .px_1()
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(if focused {
-                        palette::accent()
-                    } else {
-                        palette::border()
-                    })
-                    .bg(palette::canvas())
-                    .when(!enabled, |field| field.text_color(palette::faint()))
-                    .when(enabled, |field| {
-                        field
-                            .cursor_text()
-                            .on_click(cx.listener(move |view, _, _, cx| {
-                                view.edit_page_dialog(cx, |state| {
-                                    state.commit();
-                                    state.typing = Some((key, String::new(), false));
-                                })
-                            }))
-                    })
-                    .child(state.text(key))
-                    .when(focused, |field| {
-                        field.child(div().w(px(1.0)).h(px(12.0)).bg(palette::accent()))
-                    }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("up-{id}")))
-                            .px_0p5()
-                            .text_size(px(8.0))
-                            .when(enabled, |spin| {
-                                spin.cursor_pointer()
-                                    .hover(|spin| spin.bg(palette::hovered()))
-                                    .on_click(cx.listener(move |view, _, _, cx| {
-                                        view.edit_page_dialog(cx, |state| state.step(key, true))
-                                    }))
-                            })
-                            .child("▲"),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("down-{id}")))
-                            .px_0p5()
-                            .text_size(px(8.0))
-                            .when(enabled, |spin| {
-                                spin.cursor_pointer()
-                                    .hover(|spin| spin.bg(palette::hovered()))
-                                    .on_click(cx.listener(move |view, _, _, cx| {
-                                        view.edit_page_dialog(cx, |state| state.step(key, false))
-                                    }))
-                            })
-                            .child("▼"),
-                    ),
-            )
-            .child(div().text_color(palette::dim()).child(t(unit)))
+            .gap_1()
+            .child(spin_field(self, self.page_spin(key, enabled), cx))
+            .when(spec.unit == SpinUnit::Count, |field| {
+                field.child(div().text_color(palette::dim()).child(t(unit)))
+            })
             .into_any_element()
     }
 
@@ -1426,7 +1293,6 @@ impl DocView {
 
     fn edit_borders(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut PageBorderDialog)) {
         self.edit_page_dialog(cx, |state| {
-            state.commit();
             if let PageDialog::Borders(dialog) = &mut state.dialog {
                 edit(dialog);
             }
@@ -1614,7 +1480,6 @@ impl DocView {
 
     fn edit_columns(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut ColumnsDialog)) {
         self.edit_page_dialog(cx, |state| {
-            state.commit();
             if let PageDialog::Columns(dialog) = &mut state.dialog {
                 edit(dialog);
             }
@@ -1723,7 +1588,6 @@ impl DocView {
         edit: impl FnOnce(&mut PageNumberDialog),
     ) {
         self.edit_page_dialog(cx, |state| {
-            state.commit();
             if let PageDialog::PageNumbers(dialog) = &mut state.dialog {
                 edit(dialog);
             }

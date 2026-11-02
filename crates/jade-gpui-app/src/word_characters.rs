@@ -13,7 +13,7 @@
 
 mod color;
 mod enclose;
-mod font;
+pub(crate) mod font;
 mod insert;
 mod paste;
 mod ribbon;

@@ -302,7 +302,7 @@ impl DocView {
     /// The open table dialog, over the pages.
     pub(super) fn table_dialog_element(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let dialog = self.table_tools()?.dialog.as_ref()?;
-        Some(crate::word_table::dialog_element(dialog, cx))
+        Some(crate::word_table::dialog_element(self, dialog, cx))
     }
 
     /// What the table tabs show, read only while one of them is showing.
