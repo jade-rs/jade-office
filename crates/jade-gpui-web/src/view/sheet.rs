@@ -1358,7 +1358,7 @@ impl DocView {
             Tool::Fill(color) => sheet.book.fill_color(range, color),
             Tool::MoreColors(fill) => return self.open_more_colors(fill, cx),
             Tool::ThemeColor(fill, index) => {
-                let Some(color) = sheet.book.theme_palette().get(index).cloned() else {
+                let Some(color) = sheet.book.theme_color(index) else {
                     return;
                 };
                 if fill {
