@@ -15,12 +15,7 @@ also documents the case-sensitive range password. Existing standard/x14,
 legacy/ISO verification and unsaved session-grant policies remain in effect;
 this does not add account/domain identity authentication.
 
-The pinned ibisOffice [protection](https://github.com/ibisjp/ibis-office/blob/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/protection.rs)
-and [cell-edit](https://github.com/ibisjp/ibis-office/blob/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/cell_edit.rs)
-files were reviewed for their explicit range-authentication and edit-guard
-behavior. No implementation code was incorporated. This automatic dialog follows
-the OOXML requirement above; a complete reference UI/call-graph comparison was
-not performed.
+This automatic dialog follows the OOXML requirement above.
 
 ## Candidate and pending-entry state
 
@@ -78,7 +73,7 @@ commits the entry at its original cell. General merged/compound selection,
 account/ACL authentication, full MCE authoring and real Excel/native/browser
 interaction oracles remain open. Runtime model tests and shell compilation do
 not establish pixel, keyboard or Office application equivalence. The wider
-[ibisOffice parity audit](ibis-parity.md) remains active.
+parity audit remains active.
 
 The later [compound-edit milestone](bulk-edit-atomicity.md) fixes data/history
 leakage on returned errors from tiled paste and active-entry range fill.

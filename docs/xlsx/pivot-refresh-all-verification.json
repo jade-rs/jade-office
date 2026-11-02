@@ -21,7 +21,6 @@
     "crates/jade-gpui-web/Cargo.toml": "fce66cdbf65a355c9d1f00c99843825173fba95c0b890173bf20a78ffc0b8659",
     "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd"
   },
-  "reference_revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
   "reference_implementation_code_incorporated": false,
   "oracle_limits": "Generated original fixtures and runtime reader/editor/model checks plus actual application compiler graphs. No producer corpus/Excel schema-repair/save/render oracle or native/browser keyboard/pointer/paint exercise was performed.",
   "scope_note": {
@@ -434,23 +433,6 @@
     "regenerated_this_milestone": false,
     "replayed_this_milestone": true,
     "carried_forward": false
-  },
-  "function_inventory": {
-    "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-    "jade_registered": 507,
-    "ibis_registered": 512,
-    "shared": 507,
-    "not_registered_in_jade": [
-      "FILTERXML",
-      "GROUPBY",
-      "IMAGE",
-      "PIVOTBY",
-      "WEBSERVICE"
-    ],
-    "jade_only": [],
-    "method": "Executed actual locked/offline engine inventory example; output equals recorded inventory and pinned-reference comparison",
-    "registration_changed_this_milestone": false,
-    "remaining_functions_are_placeholders": false
   },
   "new_cases": {
     "headless_refresh_all": 4,
@@ -3063,7 +3045,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/generate_pivot_fixture.py": "224ace9682c0f1da78712e34dce584b9c12ce462f286e2ff26d63263a1884256",
     "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2"
   },
@@ -3133,20 +3114,6 @@
     "combined_shared_report_edits": 1000000,
     "limits_are_excel_equivalence_claims": false
   },
-  "reference_review_evidence": {
-    "records": [
-      {
-        "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/pivot.rs",
-        "file": "/tmp/jade-xlsx-parity-fallback/reference-pivot-app-pinned.rs",
-        "sha256": "cda2f88f8ed2594217e222ebf109ab02cd1bdbb21a83ba19f73bd22bb1329e9f",
-        "bytes": 149473,
-        "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-        "license": "AGPL-3.0-only; behavior inspection only; no implementation copied",
-        "fetched_at": "2026-10-24T03:21:58.422839+00:00"
-      }
-    ]
-  },
-  "reference_scope": "Pinned app selected/all-pivot refresh stages a working copy, updates saved-order reports, then makes compound commands. Behavior inspected only; no AGPL code copied. Jade additionally deduplicates shared caches and recalculates before each source.",
   "official_behavior_sources": [
     "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.pivotcachedefinition?view=openxml-3.0.1",
     "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.pivottabledefinition?view=openxml-3.0.1",
@@ -3205,7 +3172,7 @@
   ],
   "prior_checkpoint": "pivot-refresh-verification.json",
   "counts_are_additive_with_prior_checkpoints": false,
-  "goal_status": "active; full ibisOffice parity remains incomplete",
+  "goal_status": "active; full parity with the reference feature list remains incomplete",
   "evidence_file_sha256": {
     "pivot-all-core-report.json": "aa0dc18f02342a19c6aa505c31f4267d289176f500c2feb2ad6bdad0d263d13b",
     "pivot-all-broader-report.json": "f6111d7b205a5d2455c467c52b223621583cb209afd426b1b85132b38af873db",

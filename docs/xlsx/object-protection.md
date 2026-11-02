@@ -67,7 +67,7 @@ restricted when the sheet's object lock is on. General DrawingML namespace/MCE
 ownership, object selection/gesture feedback and native/browser interaction
 oracles also remain open. No scenario editor or Office application oracle was
 added. Automatic editable-range authentication prompts, encryption, other
-protection gaps and the wider [ibisOffice audit](ibis-parity.md) remain active.
+protection gaps and the wider parity audit remain active.
 
 The later [individual-object milestone](individual-object-protection.md) supersedes
 the sheet-wide overrestriction described here for supported direct DrawingML

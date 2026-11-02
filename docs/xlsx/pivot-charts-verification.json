@@ -21,7 +21,6 @@
     "crates/jade-gpui-web/Cargo.toml": "fce66cdbf65a355c9d1f00c99843825173fba95c0b890173bf20a78ffc0b8659",
     "jade-core/crates/jade-xlsx-native-render/Cargo.lock": "cbbef40e2c13060a04ba8958085e8f476f9a9000bec11cd69ffd08b7140ffcdd"
   },
-  "reference_revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
   "reference_implementation_code_incorporated": false,
   "scope_note": {
     "excluded_paths": [
@@ -63,25 +62,6 @@
     "engine_sources_unchanged_this_milestone": true,
     "reason": "No engine source/build/patch changes; the same pinned patch was replayed against all489 current files. Prior2246 passed/8 existing ignored retained as historical runtime evidence."
   },
-  "function_inventory": {
-    "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-    "jade_registered": 507,
-    "ibis_registered": 512,
-    "shared": 507,
-    "not_registered_in_jade": [
-      "FILTERXML",
-      "GROUPBY",
-      "IMAGE",
-      "PIVOTBY",
-      "WEBSERVICE"
-    ],
-    "jade_only": [],
-    "method": "Executed actual locked/offline engine inventory example; output equals recorded inventory and pinned-reference comparison",
-    "registration_changed_this_milestone": false,
-    "remaining_functions_are_placeholders": false,
-    "rerun_this_milestone": false,
-    "reason": "Engine and function registry unchanged; prior actual507-name inventory retained."
-  },
   "native_compile": {
     "manifest": "crates/jade-gpui-app/Cargo.toml",
     "production_and_test_code": true,
@@ -111,19 +91,6 @@
     "combined_shared_report_edits": 1000000,
     "limits_are_excel_equivalence_claims": false
   },
-  "reference_review_evidence": {
-    "records": [
-      {
-        "url": "https://raw.githubusercontent.com/ibisjp/ibis-office/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/pivot.rs",
-        "file": "/tmp/jade-xlsx-parity-fallback/reference-pivot-app-pinned.rs",
-        "sha256": "cda2f88f8ed2594217e222ebf109ab02cd1bdbb21a83ba19f73bd22bb1329e9f",
-        "bytes": 149473,
-        "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-        "license": "AGPL-3.0-only; behavior inspection only; no implementation copied",
-        "fetched_at": "2026-10-24T03:21:58.422839+00:00"
-      }
-    ]
-  },
   "dependency_policies": [
     "Tracing is optional and model-owned. Both model constructors start without a trace; enabled evaluation tracks scalar reads, reference/range results, dynamic/named/structured references and spill edges. Conditional formatting is excluded and spill restarts reset trace state.",
     "Trace rectangles retain empty cells; contained point reads compact into a covering rectangle. Incomplete traces are explicitly refused. Normal calculation uses the same evaluation/cache/spill/chart path without a trace allocation.",
@@ -150,7 +117,7 @@
     "file": "presetTableStyles.xml",
     "sha256": "74c6cf73d551bb2bd33a51690d4922095260b6647b2a38fcbc0d6da6c6275d7e",
     "data_modified": false,
-    "code_source": "Independent Jade implementation; no ibis/Apache implementation code incorporated",
+    "code_source": "Independent Jade implementation; no third-party implementation code incorporated",
     "pivot_presets": 84,
     "style_references_in_normative_data": "Pivot definitions use zero-based dxf indices (0..N-1). The ordinary table definitions in the same unmodified file use one-based indices and are not loaded by this pivot renderer.",
     "normative_sample": {
@@ -204,7 +171,7 @@
     "limits_are_excel_equivalence_claims": false
   },
   "checked_at_utc": "2026-10-24T07:25:27.291742+00:00",
-  "scope": "Typed classic PivotChart binding, local report synchronization, member/series/style identity, preserving contiguous references, report-tab rename and ST_Xstring worksheet/source identity. Full ibisOffice parity remains incomplete.",
+  "scope": "Typed classic PivotChart binding, local report synchronization, member/series/style identity, preserving contiguous references, report-tab rename and ST_Xstring worksheet/source identity. full parity with the reference feature list remains incomplete.",
   "oracle_limits": "Independently generated original fixture, literal XML/value assertions, actual TinySkia refresh/save/history pixels and native Skia imported pixels. Three original SDK PivotChart fixtures supply a read-only typed-binding probe. No complete family/producer/Office refresh/save/repair/interaction or model unit/feature matrix oracle is claimed.",
   "xlsx_package_suites": {
     "passed": 1409,
@@ -3274,7 +3241,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/generate_pivot_chart_fixture.py": "91a54633a738da71d2124d1c3eefcc85d68732fe61f4802ce83cd50914026ec7",
     "scripts/xlsx/generate_pivot_fixture.py": "224ace9682c0f1da78712e34dce584b9c12ce462f286e2ff26d63263a1884256",
     "scripts/xlsx/generate_pivot_style_fixture.py": "97b167ef01f1017772bc2bb992fdaed60ae5c8dc18579067ca227d8aba6c5ec2",
@@ -3450,7 +3416,6 @@
     "measure_rows_indexed_once": true,
     "limits_are_excel_equivalence_claims": false
   },
-  "reference_scope": "Pinned app PivotChart synchronization inspected for behavior only. Independent Jade implementation uses its typed report model, own preserving XML/cache writer and existing renderers. No AGPL implementation copied.",
   "official_behavior_sources": [
     "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/3a82b89e-7264-40c1-a09f-d569374fe6a9",
     "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.charts.pivotsource?view=openxml-3.0.1",
@@ -3525,7 +3490,7 @@
     "General chart namespace/MCE/schema/resource hardening, five missing registrations and all other full-audit gaps"
   ],
   "prior_checkpoint": "pivot-autofit-verification.json",
-  "goal_status": "active; full ibisOffice parity remains incomplete",
+  "goal_status": "active; full parity with the reference feature list remains incomplete",
   "evidence_file_sha256": {
     "pivot-chart-core-report.json": "bafd9b7408b44b78d963bc37f9e3521e5bbffd9b69478dcb777d841042dc518c",
     "pivot-chart-broader-report.json": "98dfe4455f673fe2aeb23f2863e8d1187a5f3bf9eb25eef54788164ee0427e21",

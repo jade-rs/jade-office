@@ -2524,7 +2524,6 @@
     "jade-core/crates/jade-xlsx-reader/src/sheet_protection.rs": "eda647daa677aceca488d4bed20d5bc02952acba6f600b00b5f10c48e79aa11f",
     "jade-core/third_party/ironcalc-base/src/lib.rs": "e90e4158e34196107c9ddb0c0371b4737d7f347343b96fe4060d057585957e32",
     "jade-core/third_party/ironcalc-base/src/functions/mod.rs": "b877b7468e8896ca3e0aec84189dc6a6bddf3a04f7e0ec41e73f8d0e53be6e02",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "jade-core/crates/jade-xlsx-writer/src/merges.rs": "a0a944558725025f8cdc943a698ed29be2d08f5b206f57e3925e3d7145a1a472",
     "jade-core/crates/jade-xlsx-reader/tests/charts.rs": "1ba6e16fe5b12224c51894f5e9c53ce2a6ece57b8492b92767058d9bbad8c854",
     "jade-core/crates/jade-xlsx-reader/src/phonetic.rs": "fd92fc20af5082cf98821c31379535f48b43a0daa7a54f50111b76df5f39199c",
@@ -2730,23 +2729,6 @@
     "carried_forward_from": "protection-authoring-verification.json",
     "method": "Recorded engine source/build/patch hashes unchanged."
   },
-  "function_inventory": {
-    "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-    "jade_registered": 506,
-    "ibis_registered": 512,
-    "shared": 506,
-    "not_registered_in_jade": [
-      "FILTERXML",
-      "GETPIVOTDATA",
-      "GROUPBY",
-      "IMAGE",
-      "PIVOTBY",
-      "WEBSERVICE"
-    ],
-    "jade_only": [],
-    "carried_forward_from": "protection-authoring-verification.json",
-    "registration_changed_this_milestone": false
-  },
   "implementation_policies": [
     "New sheet verifiers share SHA-512/100000 iterations and 16-byte platform-random salt; randomness failure is returned.",
     "Modern incomplete/unsupported/wrong credentials never fall back to legacy. Existing workbook and sheet credentials are not overwritten without authenticated removal.",
@@ -2808,14 +2790,12 @@
     "Additional digest/legacy locale behavior and general MCE protection authoring",
     "Full XML schema/structural-writer ownership, large production/performance and Office save/repair/calculation/pixel oracles",
     "Examples, benchmarks and full model/unit/feature matrix including Skia-only print/Thai cases",
-    "Pivots, slicers, queries, advanced charts, six remaining function registrations and other ibis-parity.md areas"
+    "Pivots, slicers, queries, advanced charts, six remaining function registrations and other parity audit areas"
   ],
-  "reference_revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-  "reference_behavior_inspected": "crates/ibis-office-app/src/xlsx/protection.rs",
   "reference_implementation_code_incorporated": false,
   "prior_checkpoint": "protection-authoring-verification.json",
   "counts_are_additive_with_prior_checkpoints": false,
-  "goal_status": "active; full ibisOffice parity remains incomplete",
+  "goal_status": "active; full parity with the reference feature list remains incomplete",
   "evidence_file_sha256": {
     "sheet-protection-core-report.json": "56c05ff0812a2d42ad456f1a6edbd1a120622a9eea80775db7132c8cbe43077a",
     "sheet-protection-broader-report.json": "eaffc7581fd2cef9621053ca377d6c74dc74f2dd3d1bcab80f6a576e1525f77f",

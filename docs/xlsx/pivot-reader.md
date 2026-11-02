@@ -74,9 +74,7 @@ The original deterministic
 [fixture generator](../../scripts/xlsx/generate_pivot_fixture.py) creates source
 East10+5 and West20+7, saved report15/27/42, date values, a historical unused shared
 item and declared relationship/content-type parts. Regeneration is byte-identical.
-This generated fixture is not an Excel schema/repair/save/render oracle. Pinned
-ibisOffice pivot reader/writer boundaries and GETPIVOTDATA routing were inspected
-for behavior; no reference implementation code was incorporated.
+This generated fixture is not an Excel schema/repair/save/render oracle.
 
 | Final check | Result |
 |---|---|
@@ -104,5 +102,5 @@ would not establish that behavior.
 
 Derived/grouped/OLAP/calculated record semantics, all producer layouts, pivot
 refresh/layout/filter/authoring, structural/clipboard ownership, slicers/timelines,
-queries and the remaining [full audit](ibis-parity.md) are incomplete. This reader
-foundation does not establish full ibisOffice parity.
+queries and the remaining full audit are incomplete. This reader
+foundation does not establish full parity with the reference feature list.

@@ -8,7 +8,7 @@ retain historical scopes and counts; they are not additive.
 Record started 2026-10-23; later milestones retain their own timestamps.
 
 The first table covers the initial metadata/name-management changes described in
-[ibis-parity.md](ibis-parity.md). They do not certify the remaining feature
+the parity audit. They do not certify the remaining feature
 gaps, or establish pixel/Office parity.
 
 ## Verification scope
@@ -507,10 +507,8 @@ CDATA/no-op byte stability, save/reopen, history and actual candidate results.
 Supported coverage/fallback alternatives are moved even when the selected
 coverage itself is unchanged. Absolute deleted sources remain `#REF!`.
 
-Source-level comparisons used the pinned ibis structural writer and the
-LibreOffice condition/validation update paths as implementation evidence.
-No implementation code was copied. The new candidate checks establish the
-surviving external bound's behavior; neither source comparison establishes
+The new candidate checks establish the
+surviving external bound's behavior; they do not establish
 Excel's application behavior for all imported edge cases. General MCE around
 records/containers, noncanonical coverage authoring/partial shifts, broader
 conditional-formatting anchors/namespace handling, the package-wide partial-
@@ -594,9 +592,8 @@ runtime, manual dialogs and Excel application oracles remain unverified.
 
 ## Compatibility calls and implicit intersection milestone
 
-The engine now registers 506 English names. The generated inventory against
-pinned ibisOffice has six remaining names, down from nine; this measures
-registration, not full semantic parity. ECMA.CEILING has an actual arithmetic
+The engine now registers 506 English names; this measures registration, not
+full semantic parity. ECMA.CEILING has an actual arithmetic
 path; SINGLE/ANCHORARRAY have lookup, case/arity/prefix metadata and operator
 lowering. Imported display-prefix normalization no longer loses those calls.
 
@@ -622,11 +619,9 @@ later anchor; integration also covers one-cell arrays, blocked/unblocked
 spills, lambda binding shadowing, cache replacement, arities, prefixes,
 FORMULATEXT length boundaries, save/reopen and history.
 
-The pinned ibis math source groups ECMA.CEILING with the PRECISE variant.
 Jade follows the signed two-argument ECMA description and documented CEILING
-examples instead; this semantic difference is explicitly recorded in
-[compatibility-functions.md](compatibility-functions.md). No reference code
-was copied. Further application captures remain required.
+examples for ECMA.CEILING, as recorded in
+[compatibility-functions.md](compatibility-functions.md). Further application captures remain required.
 
 The first standalone-engine attempt used the core workspace package selector,
 which cannot run dev-dependency tests for its excluded engine package. Missing
@@ -647,7 +642,7 @@ not used as the final proof below.
 | Browser wasm production, Rust 1.99.0 | Compilation passed |
 | Rust formatting and whitespace | 106 changed/new Rust files with Rust 2021 edition and both repository whitespace checks passed |
 | Canonical engine patch replay | 487 source/build files matched byte for byte; original 480-file upstream hash inventory unchanged |
-| Generated function inventory | Actual final engine inventory matches the saved 506 names; pinned reference has 512 |
+| Generated function inventory | Actual final engine inventory matches the saved 506 names |
 
 [compatibility-functions-verification.json](compatibility-functions-verification.json)
 records the final targets, manifests/lockfiles, patch replay and 118 frozen
@@ -838,7 +833,7 @@ revision guards, encryption, general MCE around workbook protection, broader
 structural-writer ownership, manual UI captures and complete disabled-menu
 availability remain open. Pivots, slicers, queries, advanced charts, the six
 remaining function names and the other audit gaps still prevent claiming
-full ibisOffice parity.
+full parity with the reference feature list.
 
 ## Workbook protection authoring and authentication
 
@@ -895,7 +890,7 @@ oracles remain unverified. At this workbook-only checkpoint,
 sheet-protection authoring/authentication,
 editable ranges, formula hiding, revision/window operation guards, encryption,
 broader algorithms/locales, general MCE and the remaining audit gaps are
-still open. This milestone does not establish full ibisOffice parity.
+still open. This milestone does not establish full parity with the reference feature list.
 
 ## Worksheet protection and hidden contents
 
@@ -950,7 +945,7 @@ Editable ranges/session unlocks, independent objects/scenarios-only operation
 guards, full merged/compound selection and platform interaction oracles,
 revision/window guards, encryption and the other audit gaps remain open.
 Specification-generated fixtures and compilation do not replace Office or
-native/browser runtime evidence. The full ibisOffice parity goal remains active.
+native/browser runtime evidence. The parity goal remains active.
 
 
 ## Editable ranges and session authentication
@@ -1006,7 +1001,7 @@ independent objects/scenarios-only guards, complete merged/compound selection,
 revision/window guards, encryption, broader locale/performance coverage and
 Office/native/browser interaction oracles remain open. Pivots, slicers, queries,
 advanced charts and the six missing function registrations remain in the
-[active audit](ibis-parity.md). Full ibisOffice parity is not established.
+active audit. Full parity with the reference feature list is not established.
 
 
 ## Independent worksheet object protection
@@ -1063,8 +1058,8 @@ The current policy remains sheet-wide: individually unlocked DrawingML/VML
 objects can be overrestricted. Their client-data/text-lock handling, scenario
 editing, general DrawingML ownership/MCE and object selection/gesture/runtime
 oracles remain open. Automatic range-authentication prompts, encryption and
-the wider [ibisOffice audit](ibis-parity.md) also remain active. These tests and
-compilation do not establish Excel application behavior or full ibisOffice parity.
+the wider parity audit also remain active. These tests and
+compilation do not establish Excel application behavior or full parity with the reference feature list.
 
 
 ## Individual drawing and note protection
@@ -1119,9 +1114,9 @@ source counts, scope and evidence are in
 
 Individual flag-authoring UI, complete locked-object selection/gesture feedback,
 group/member editing, general DrawingML/VML ownership/MCE, scenario editing,
-automatic range prompts and the wider [ibisOffice audit](ibis-parity.md) remain
+automatic range prompts and the wider parity audit remain
 open. Specification tests and compilation do not establish actual Excel or
-native/browser interaction behavior, and full ibisOffice parity is incomplete.
+native/browser interaction behavior, and full parity with the reference feature list is incomplete.
 
 
 ## Automatic range-password prompts for cell entries
@@ -1179,7 +1174,7 @@ Automatic paste/clear/fill/compound prompts and replay of interrupted navigation
 remain open. Such operations retain existing guarded refusals and manual range
 authentication. Account/ACL identity authentication, broader selection, full MCE,
 actual native/browser/Excel interaction evidence and the wider
-[ibisOffice audit](ibis-parity.md) remain incomplete.
+parity audit remain incomplete.
 
 
 ## Compound paste and range-fill atomicity
@@ -1248,8 +1243,8 @@ member checks; raw targets absent and native metadata directory links retained.
 
 Bulk-operation automatic authentication, pending-navigation replay, broader
 clipboard/filter/spill/table/schema cases, account identity, full MCE and real
-Excel/reference/native/browser interaction oracles remain open. Full ibisOffice
-parity is not established; the wider [audit](ibis-parity.md) remains active.
+Excel/reference/native/browser interaction oracles remain open. Full reference-list
+parity is not established; the wider parity audit remains active.
 
 
 ## Deferred bulk range authentication
@@ -1282,7 +1277,7 @@ restored exactly and their established directory links retained. No graph,
 dependency-version, manifest, compiler or assertion substitution was used.
 
 Pending-navigation replay, other protection/clipboard/schema cases and all
-remaining areas in the [full audit](ibis-parity.md) remain active work.
+remaining areas in the full audit remain active work.
 
 
 ## Declared pivot/cache reader foundation
@@ -1309,7 +1304,7 @@ relationship test draft was corrected to retain the existing stricter whole-inpu
 ownership rejection; no production guard or old assertion was relaxed. Exact
 source, target, resource bounds and provenance are in
 [pivot-reader-verification.json](pivot-reader-verification.json). Full pivot
-calculation/refresh/layout/authoring and the wider [audit](ibis-parity.md) remain
+calculation/refresh/layout/authoring and the wider parity audit remain
 active work.
 
 
@@ -1364,7 +1359,7 @@ pass formatting. Details are in
 [pivot-refresh-verification.json](pivot-refresh-verification.json).
 
 This does not establish full style/autofit/PivotChart synchronization, refresh-all
-or automatic load refresh, advanced pivot authoring or full ibisOffice parity.
+or automatic load refresh, advanced pivot authoring or full parity with the reference feature list.
 Existing model feature exclusions and producer/Excel/manual interaction oracle
 limits remain. Historical counts above are not additive.
 

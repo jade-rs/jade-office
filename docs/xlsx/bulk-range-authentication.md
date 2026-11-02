@@ -72,5 +72,5 @@ merged/compound selections, broader clipboard/spill/table/schema behavior,
 pending-navigation replay and prompts for other command families remain
 unverified or incomplete. Panic/process/allocation-failure recovery and large
 production performance are outside this returned-error contract. The full
-[ibisOffice parity goal](ibis-parity.md), including pivots, slicers, queries,
+parity goal, including pivots, slicers, queries,
 advanced charts, six missing function registrations and encryption, remains active.

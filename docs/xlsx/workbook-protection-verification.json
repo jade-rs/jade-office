@@ -2482,7 +2482,6 @@
     "jade-core/third_party/ironcalc-base/src/test/test_fn_formulatext.rs": "01d730c30f9d5982f17b8bedc050e935fdc86e0274503193ef22f776de79cb7d",
     "jade-core/third_party/ironcalc-base/src/test/user_model/test_defined_names.rs": "299b7bdfee974a79cd052a41009ed6c1f74f7f29ba88119b3cb8ca20f492038a",
     "jade-core/third_party/ironcalc-base/src/worksheet.rs": "c25e4408628df236ffb86daaccafe2492acfe75ec8ebcef1d245e77231b90592",
-    "scripts/xlsx/compare_functions.py": "d59073a459752ba85a722126b528fa9c3f4d99b0fd4a03a9ba965a56cba966ad",
     "scripts/xlsx/replay_engine_patch.py": "e76fda549fad5ec8676faca7fae19fea5748c3d10054d1684e54b24e9e00f1d2",
     "jade-core/crates/jade-xlsx-reader/Cargo.toml": "ead6f3dd37ec305e517bb79bf82a61650368d0ed9185f7765046b20d373ddddb",
     "jade-core/crates/jade-xlsx-reader/tests/moves_formula.rs": "c93aaf898b50d37d8c77ecdc5d34a2d0e1769513096f5617def836cdb8d980c5",
@@ -2673,23 +2672,6 @@
     "carried_forward_from": "cell-content-verification.json",
     "method": "Engine source/build/patch hashes unchanged."
   },
-  "function_inventory": {
-    "reference_commit": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-    "jade_registered": 506,
-    "ibis_registered": 512,
-    "shared": 506,
-    "not_registered_in_jade": [
-      "FILTERXML",
-      "GETPIVOTDATA",
-      "GROUPBY",
-      "IMAGE",
-      "PIVOTBY",
-      "WEBSERVICE"
-    ],
-    "jade_only": [],
-    "carried_forward_from": "cell-content-verification.json",
-    "registration_changed_this_milestone": false
-  },
   "public_corpus": {
     "manifest": "jade-core/crates/jade-xlsx-diff/tests/fixtures/public/manifest.json",
     "fixtures": 7,
@@ -2704,22 +2686,17 @@
     "https://support.microsoft.com/en-us/excel/protect-a-workbook",
     "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.workbookprotection?view=openxml-3.0.1"
   ],
-  "reference": {
-    "revision": "6e004f71ed43ea73c1a6cb0f0496483c107a0485",
-    "path": "crates/ibis-office-app/src/xlsx/protection.rs",
-    "inspection": "Structure guard and separate protect/unprotect panels confirmed; independently implemented Jade code, no reference implementation code incorporated."
-  },
   "not_proven": [
     "Protection/unprotection authoring and password authentication, editable ranges, hidden formulas, workbook-window/revision guards, encryption",
     "General MCE selection around workbook protection and broader namespace ownership of existing workbook structural writers",
     "Native/browser manual runtime capture and complete disabled-menu availability parity",
     "Examples, benchmarks, full model/unit/feature matrix including Skia-only print/Thai cases",
     "Excel save/repair/calculation/pixel oracle; broader production/performance corpus",
-    "Pivots, slicers, queries, advanced charts and other areas in ibis-parity.md; six remaining formula registrations and broader formula semantics"
+    "Pivots, slicers, queries, advanced charts and other areas of the parity audit; six remaining formula registrations and broader formula semantics"
   ],
   "prior_checkpoint": "cell-content-verification.json",
   "counts_are_additive_with_prior_checkpoints": false,
-  "goal_status": "active; full ibisOffice parity remains incomplete",
+  "goal_status": "active; full parity with the reference feature list remains incomplete",
   "task_private_cache_preservation": {
     "verified_at_utc": "2026-10-23T17:06:41.075305+00:00",
     "caches": {

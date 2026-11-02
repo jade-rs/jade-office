@@ -90,5 +90,4 @@ broader legacy/application oracles and general MCE around protection records
 remain open. The existing structural writers' broader ownership and complete
 menu availability also require coverage. Neither package round-trip tests
 nor independent digest vectors replace Excel save/repair/calculation/UI
-oracles. The [ibisOffice comparison](ibis-parity.md) remains active. No
-reference implementation code was incorporated.
+oracles. The parity comparison remains active.

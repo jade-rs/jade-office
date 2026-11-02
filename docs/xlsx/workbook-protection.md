@@ -11,10 +11,7 @@ The [Microsoft workbook protection guidance](https://support.microsoft.com/en-us
 lists these sheet operations as restricted by structure protection. The
 [Open XML workbookProtection definition](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.spreadsheet.workbookprotection?view=openxml-3.0.1)
 places the record under the workbook and distinguishes structure, windows,
-revision and password attributes. The pinned ibisOffice protection module
-also exposes a structure guard and separate protection/unprotection panels;
-see the [reference comparison](ibis-parity.md). Jade's changes were implemented
-independently; reference implementation code was not incorporated.
+revision and password attributes.
 
 ## Behavior
 
@@ -69,4 +66,4 @@ native/browser runtime captures remain open. General MCE selection around
 workbook-protection records and the existing workbook structural writers'
 broader namespace ownership also need separate coverage. Menus are guarded;
 the original guard milestone did not include protect/unprotect authoring.
-The newer dialog still needs manual runtime/complete menu availability evidence. The broader ibisOffice goal remains active.
+The newer dialog still needs manual runtime/complete menu availability evidence. The broader reference-list goal remains active.

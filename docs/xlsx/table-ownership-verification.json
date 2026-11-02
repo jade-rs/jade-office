@@ -1861,10 +1861,10 @@
     "new native screen command runtime and manual context-menu/dialog interactions",
     "other worksheet/drawing/formula namespace and ownership contexts",
     "other imported table/filter/clipboard/spill/grid-edge cases, custom-style authoring and dedicated table commands",
-    "broader ibisOffice gaps including pivots, slicers, queries and alternate validation forms"
+    "broader gaps against the reference feature list including pivots, slicers, queries and alternate validation forms"
   ],
   "application_probe": "No Excel/LibreOffice/Numbers bundle found in the common /Applications or user Applications locations inspected. This is not a proof that no installation exists elsewhere; no application oracle was run.",
   "prior_checkpoint": "extended-validation-verification.json",
   "counts_are_additive": false,
-  "goal_status": "active; broader ibisOffice parity remains incomplete"
+  "goal_status": "active; broader parity with the reference feature list remains incomplete"
 }

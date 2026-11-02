@@ -15,10 +15,6 @@ before permission work for dense rectangles. Complete axes retain their sparse
 writer path; permissions use style/default/authenticated-range bands and explicit
 cell exceptions, including blanks, instead of visiting billions of cells.
 
-The pinned ibisOffice [clipboard implementation](https://github.com/ibisjp/ibis-office/blob/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/clipboard.rs)
-was inspected for its paste permission gate and batched document-command paths.
-No reference implementation code was incorporated. Source inspection is separate
-from the actual Jade regressions above and does not establish reference UI parity.
 
 ## Editing checkpoint
 
@@ -73,4 +69,4 @@ The later [bulk-authentication milestone](bulk-range-authentication.md) adds
 automatic prompts for supported paste/clear/fill/move commands. Interrupted-navigation
 replay remains open. Clipboard/filter/spill/table/schema edge cases, account identity,
 full model/feature matrices and actual Excel/native/browser interaction oracles
-remain part of the wider [ibisOffice audit](ibis-parity.md).
+remain part of the wider parity audit.

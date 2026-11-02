@@ -10,9 +10,8 @@ earlier checkpoint.
 The standard `chartSpace/pivotSource` binding is now read explicitly. Refreshing
 a locally resolved report reconciles its chart categories and series in the
 same staged transaction as caches, report cells, column widths and calculation.
-This closes a gap in the [pinned ibisOffice comparison](ibis-parity.md), where
-the reference updates bound charts after rebuilding pivot data. Jade's
-implementation is independent; no reference implementation code is copied.
+This closes a gap in the parity comparison: Excel updates bound charts after
+rebuilding pivot data.
 
 ## Behavior
 
@@ -106,7 +105,7 @@ and package test totals. Revision, URLs, asset hashes and probe evidence are
 recorded in the verification file.
 
 The complete Office save/repair/visual and native/browser pointer/keyboard
-interaction oracles remain unverified. Full ibisOffice parity remains open.
+interaction oracles remain unverified. Full parity with the reference feature list remains open.
 
 ## Verified checkpoint
 

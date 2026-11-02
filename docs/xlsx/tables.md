@@ -1,6 +1,6 @@
 # Table authoring work
 
-This work addresses the table gaps in the [ibis comparison](ibis-parity.md).
+This work addresses the table gaps in the parity comparison.
 It is in progress. The checks below do not establish full table/Excel parity.
 
 ## Implemented paths

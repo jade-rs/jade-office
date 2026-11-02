@@ -108,11 +108,10 @@ The engine/registry and prior 489-file patch replay are carried unchanged eviden
 
 The official [deletion guide](https://support.microsoft.com/en-us/excel/delete-a-pivottable)
 describes removing a report from a worksheet; the current implementation adds
-that operation to both Jade context menus. The independent original corpus and
-preserving implementation incorporate no reference implementation code.
+that operation to both Jade context menus.
 Detailed hashes, target results and limits are in
 [pivot-lifecycle-verification.json](pivot-lifecycle-verification.json).
-Full ibisOffice parity, complete Office refresh/save/repair/visual validation,
+Full parity with the reference feature list, complete Office refresh/save/repair/visual validation,
 all native/browser widget interactions, blank/advanced pivot layouts, source
 schema remapping, grouped/calculated/show-as fields, full PivotChart conversion,
 slicers/timelines and the other audit gaps remain open.

@@ -8,8 +8,7 @@ This page's counts and source hashes describe the earlier authoring checkpoint.
 Saved worksheet pivots now have a common editor in the native and browser
 context menus. Select a cell inside a supported report and choose Edit pivot
 table. This closes part of the authoring gap in the
-[pinned ibisOffice comparison](ibis-parity.md); the implementation is independent
-and incorporates no reference implementation code.
+parity comparison.
 
 The editor changes the source range or declared name/table, report origin,
 row/column/filter fields and their order, Values axis, report layout, value
@@ -119,5 +118,5 @@ show-as and advanced value/top-N/dynamic filters, unsupported compact/mixed
 layouts, all grouped/page styles, automatic load refresh, OLAP, slicers and
 timelines remain open. Full native/browser interaction, Office refresh/save/
 repair/visual equivalence, all chart producers/options, general chart MCE/schema
-hardening and the other audit gaps remain unproven. Full ibisOffice parity is
+hardening and the other audit gaps remain unproven. Full parity with the reference feature list is
 not complete.

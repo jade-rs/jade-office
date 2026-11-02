@@ -24,11 +24,8 @@ no-op; an uncertain catalog is refused rather than silently omitting reports.
 
 ## Comparison and limits
 
-The pinned [ibisOffice command](https://github.com/ibisjp/ibis-office/blob/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/pivot.rs)
-updates saved-order reports on a working copy and commits compound sheet
-commands. Its style/autofit and PivotChart synchronization still exceed Jade's
-current implementation. Source was inspected for behavior only; no AGPL
-implementation was copied.
+Excel's refresh also reapplies styles, autofits and synchronizes PivotCharts,
+which still exceed Jade's current implementation.
 
 At this checkpoint Jade processed caches in saved report declaration order, deduplicated by cache
 ID. This is not dependency-graph scheduling: backward cross-cache dependencies
@@ -69,5 +66,5 @@ Exact evidence is in
 [pivot-refresh-all-verification.json](pivot-refresh-all-verification.json).
 Counts replace earlier checkpoints. No broad producer/Excel repair/save/pixel
 oracle or native/browser pointer/keyboard exercise was performed. The existing
-Skia-only and full model feature/unit exclusions remain. Full ibisOffice parity
+Skia-only and full model feature/unit exclusions remain. Full parity with the reference feature list
 is an active goal.

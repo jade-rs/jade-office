@@ -1,11 +1,8 @@
 # Cell insertion and deletion
 
-This is part of the [ibisOffice comparison](ibis-parity.md), not a claim of
-complete XLSX or Excel parity. The reference exposes four choices in
-[`cells_dialog.rs`](https://github.com/ibisjp/ibis-office/blob/6e004f71ed43ea73c1a6cb0f0496483c107a0485/crates/ibis-office-app/src/xlsx/cells_dialog.rs)
-and applies them in `ibis-doc-model/src/sheet_command.rs`. No reference
-implementation code was copied. The implementation uses Jade's own structural
-geometry, formula scanner and preserving XML edits.
+This is not a claim of complete XLSX or Excel parity. Excel's Insert and
+Delete dialogs offer four choices. The implementation uses Jade's own
+structural geometry, formula scanner and preserving XML edits.
 
 ## Implemented
 
@@ -14,7 +11,7 @@ deletion. Rows means down/up within its columns; columns means right/left
 within its rows. Entire-axis selections delegate to the existing whole-axis
 writer. `shift_cells_formula` moves absolute and relative A1 references into
 the affected sheet. References whose perpendicular span crosses the strip
-retain their boundaries, matching the reference implementation's rule.
+retain their boundaries.
 Strings, structured selectors, external workbook references and 3-D sheet
 qualifiers are not mistaken for local cells. Deleted references become
 `#REF!`; retained ranges shorten or grow.

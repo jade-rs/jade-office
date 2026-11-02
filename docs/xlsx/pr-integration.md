@@ -37,4 +37,4 @@ The core PR is merged. Its workspace tests, lint, XLSX native checks, Word
 oracle and benchmark checks pass. The macOS Word timing case exceeded its
 unchanged 25ms limit once (29.5ms); a rerun was requested without weakening it.
 Final job results remain linked from the PR.
-All remaining compatibility gaps in [ibis-parity.md](ibis-parity.md) still apply.
+All remaining compatibility gaps in the parity audit still apply.
