@@ -7,6 +7,9 @@ use jade_xlsx_reader::{CellRange, CellRef};
 use crate::data_table::DataTableDialog;
 use crate::form::Form;
 use crate::goal_seek::GoalSeekDialog;
+use crate::analysis::AnalysisDialog;
+use crate::solver::SolverDialog;
+use crate::scenarios::ScenarioManager;
 use crate::sheet::Workbook;
 use crate::Backend;
 
@@ -64,6 +67,8 @@ pub trait ToolDialog {
     ) -> Result<Outcome, String> {
         Ok(Outcome::stay())
     }
+    /// The words the dialog's reports are written in; most write none.
+    fn set_words(&mut self, _words: fn(&'static str) -> &'static str) {}
 }
 
 /// The commands that open one, as the grid's menu lists them.
@@ -71,13 +76,19 @@ pub trait ToolDialog {
 pub enum WhatIfTool {
     GoalSeek,
     DataTable,
+    ScenarioManager,
+    Solver,
+    DataAnalysis,
 }
 
 impl WhatIfTool {
     /// The grid menu's What-If Analysis group, with each one's i18n key.
-    pub const MENU: [(WhatIfTool, &'static str); 2] = [
+    pub const MENU: [(WhatIfTool, &'static str); 5] = [
         (WhatIfTool::GoalSeek, "sheet.menu.goal_seek"),
         (WhatIfTool::DataTable, "sheet.menu.data_table"),
+        (WhatIfTool::ScenarioManager, "sheet.menu.scenario_manager"),
+        (WhatIfTool::Solver, "sheet.menu.solver"),
+        (WhatIfTool::DataAnalysis, "sheet.menu.data_analysis"),
     ];
 }
 
@@ -85,6 +96,9 @@ impl WhatIfTool {
 pub enum WhatIfDialog {
     GoalSeek(GoalSeekDialog),
     DataTable(DataTableDialog),
+    ScenarioManager(ScenarioManager),
+    Solver(SolverDialog),
+    DataAnalysis(AnalysisDialog),
 }
 
 /// `$body` with `$dialog` bound to whichever dialog is open.
@@ -93,6 +107,9 @@ macro_rules! each {
         match $self {
             WhatIfDialog::GoalSeek($dialog) => $body,
             WhatIfDialog::DataTable($dialog) => $body,
+            WhatIfDialog::DataAnalysis($dialog) => $body,
+            WhatIfDialog::Solver($dialog) => $body,
+            WhatIfDialog::ScenarioManager($dialog) => $body,
         }
     };
 }
@@ -101,18 +118,27 @@ impl WhatIfDialog {
     /// The dialog `tool` opens, on the selection.
     pub fn open<B: Backend>(
         tool: WhatIfTool,
-        _book: &Workbook<B>,
+        book: &Workbook<B>,
         selected: CellRange,
         at: CellRef,
     ) -> Self {
         match tool {
             WhatIfTool::GoalSeek => WhatIfDialog::GoalSeek(GoalSeekDialog::open(at)),
             WhatIfTool::DataTable => WhatIfDialog::DataTable(DataTableDialog::open(selected)),
+            WhatIfTool::DataAnalysis => WhatIfDialog::DataAnalysis(AnalysisDialog::open(selected)),
+            WhatIfTool::Solver => WhatIfDialog::Solver(SolverDialog::open(book, at)),
+            WhatIfTool::ScenarioManager => WhatIfDialog::ScenarioManager(ScenarioManager::open(book, selected)),
         }
     }
 
     pub fn form(&self) -> &Form {
         each!(self, dialog => dialog.form())
+    }
+
+    /// The words the dialog writes its reports in, from the shell's i18n
+    /// table.
+    pub fn set_words(&mut self, words: fn(&'static str) -> &'static str) {
+        each!(self, dialog => dialog.set_words(words))
     }
 
     pub fn form_mut(&mut self) -> &mut Form {

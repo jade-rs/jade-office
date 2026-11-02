@@ -14,12 +14,9 @@ impl WorkbookView {
         if !self.commit_cell(cx) {
             return;
         }
-        self.what_if = Some(WhatIfDialog::open(
-            tool,
-            &self.book,
-            self.range(),
-            self.active(),
-        ));
+        let mut dialog = WhatIfDialog::open(tool, &self.book, self.range(), self.active());
+        dialog.set_words(i18n::text);
+        self.what_if = Some(dialog);
         self.menu = None;
         cx.notify();
     }

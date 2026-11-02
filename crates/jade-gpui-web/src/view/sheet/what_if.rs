@@ -18,12 +18,10 @@ impl DocView {
             return;
         }
         if let Some(s) = self.sheet_mut() {
-            s.what_if = Some(WhatIfDialog::open(
-                tool,
-                &s.book,
-                s.selection.range(),
-                s.selection.active,
-            ));
+            let mut dialog =
+                WhatIfDialog::open(tool, &s.book, s.selection.range(), s.selection.active);
+            dialog.set_words(i18n::text);
+            s.what_if = Some(dialog);
             s.menu = None;
         }
         cx.notify();
