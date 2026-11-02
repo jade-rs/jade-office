@@ -3670,7 +3670,7 @@ impl WorkbookView {
                     items.push((MenuCommand::UnhideSheet(hidden), "sheet.menu.unhide_sheet"));
                 }
                 if self.book.is_grouped() {
-                    items.push((MenuCommand::Ungroup, "sheet.menu.ungroup"));
+                    items.push((MenuCommand::Ungroup, "sheet.menu.ungroup_sheets"));
                 }
                 if index > 0 {
                     items.push((
