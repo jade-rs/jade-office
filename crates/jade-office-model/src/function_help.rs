@@ -1771,6 +1771,11 @@ const HELP: &[(&str, &str, &str)] = &[
         "円周率 π の値を返します。",
     ),
     (
+        "PIVOTBY",
+        "Groups values by row and column fields and aggregates each pair.",
+        "行と列のフィールドで値をグループ化し、組み合わせごとに集計します。",
+    ),
+    (
         "PMT",
         "Returns the periodic payment for a loan.",
         "ローンの定期支払額を返します。",
