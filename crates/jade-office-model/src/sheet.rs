@@ -235,6 +235,12 @@ impl<B: Backend> Workbook<B> {
             .filter(visible)
             .or_else(|| (0..workbook.sheets.len()).find(visible))
             .unwrap_or(0);
+        // Sheets saved grouped come back grouped: each one's tab selected.
+        let group: Vec<usize> = (0..workbook.sheets.len())
+            .filter(|&other| {
+                other != index && workbook.sheets[other].tab_selected && visible(&other)
+            })
+            .collect();
         let measure = measurer(&backend)?;
         let layout = lay_out(&book, index, (MIN_COLUMNS, MIN_ROWS), &measure)?;
         // The layout shows the bytes as opened: the first thing typed lays
@@ -254,7 +260,7 @@ impl<B: Backend> Workbook<B> {
             clipboard_revision: 0,
             surface: RefCell::new(None),
             pieces: RefCell::new(Vec::new()),
-            group: Vec::new(),
+            group,
             revision: 0,
             changes: None,
             measure,
@@ -3778,7 +3784,11 @@ impl<B: Backend> Workbook<B> {
 
     /// The workbook as `.xlsx` bytes, as saving writes it; marks it saved.
     pub fn save_bytes(&mut self) -> Result<Vec<u8>, String> {
-        let bytes = self.book.save_bytes().map_err(|error| error.to_string())?;
+        // The group's tabs saved selected, as Excel saves grouped sheets.
+        let bytes = self
+            .book
+            .save_bytes_selecting(&self.grouped_sheets())
+            .map_err(|error| error.to_string())?;
         self.dirty = false;
         Ok(bytes)
     }
@@ -5157,6 +5167,11 @@ mod tests {
         );
         assert!(book.clear(span(at, at)).unwrap());
         assert_eq!(value(&book, 2), "");
+        // Saved, the group comes back grouped.
+        let saved = book.save_bytes().unwrap();
+        let reopened =
+            Workbook::open(&saved, "UTC", TinySkiaBackend::new(&faces()).unwrap()).unwrap();
+        assert_eq!(reopened.grouped_sheets(), vec![0, 2]);
         // The grouped tab moves the group's active sheet; another ends it.
         book.select_sheet(2).unwrap();
         assert_eq!(book.grouped_sheets(), vec![0, 2]);
