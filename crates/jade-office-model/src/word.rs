@@ -104,6 +104,7 @@ pub mod styles;
 pub mod table;
 pub mod table_ui;
 pub mod templates;
+pub mod text_from_file;
 pub mod thesaurus;
 pub mod typography;
 pub mod view;

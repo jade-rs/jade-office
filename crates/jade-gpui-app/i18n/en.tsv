@@ -5002,6 +5002,9 @@ word.ptab.leader	Leader
 word.ptab.leader_none	None
 doc.sort_title	Sort
 table.sort.paragraphs	Paragraphs
+word.text_from_file	Text from File…
+word.text_from_file.title	Insert the text of another file at the insertion point
+word.text_from_file.prompt	Insert
 reveal.title	Reveal Formatting
 reveal.tooltip	Show the formatting of the selection
 reveal.font	Font

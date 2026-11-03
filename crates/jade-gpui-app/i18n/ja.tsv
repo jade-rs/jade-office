@@ -5002,6 +5002,9 @@ word.ptab.leader	リーダー
 word.ptab.leader_none	なし
 doc.sort_title	並べ替え
 table.sort.paragraphs	段落
+word.text_from_file	ファイルからテキスト…
+word.text_from_file.title	別のファイルの文字列をカーソル位置に挿入します
+word.text_from_file.prompt	挿入
 reveal.title	書式の詳細
 reveal.tooltip	選択範囲の書式の詳細を表示します
 reveal.font	フォント

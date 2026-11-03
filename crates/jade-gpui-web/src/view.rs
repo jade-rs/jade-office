@@ -33,6 +33,7 @@ use jade_web::word::similar::RangeFormat;
 
 mod deck;
 mod word_alignment_tab;
+pub(crate) mod word_text_from_file;
 pub(crate) mod word_reveal;
 mod word_similar;
 mod deck_show;

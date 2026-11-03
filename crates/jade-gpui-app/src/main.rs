@@ -33,6 +33,7 @@ mod shell;
 mod tooltip;
 mod word_accessibility;
 mod word_alignment_tab;
+mod word_text_from_file;
 mod word_reveal;
 mod word_characters;
 mod word_compare;

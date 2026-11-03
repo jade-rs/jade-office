@@ -37,7 +37,7 @@ pub const SUBDOCUMENT: &str =
 pub const MARK: char = '\u{E000}';
 
 const TAG: &str = "jade.subdoc";
-const DOCUMENT: &str = "word/document.xml";
+pub(super) const DOCUMENT: &str = "word/document.xml";
 const DOCUMENT_RELS: &str = "word/_rels/document.xml.rels";
 const NUMBERING: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering";
@@ -464,11 +464,11 @@ pub fn edit_is_locked(document: &WordDocument, paragraphs: RangeInclusive<usize>
 
 /// An element's place in the XML: all of it, and what is between its tags.
 #[derive(Clone, Debug)]
-struct Element {
-    name: String,
-    start: usize,
-    end: usize,
-    inner: Range<usize>,
+pub(super) struct Element {
+    pub(super) name: String,
+    pub(super) start: usize,
+    pub(super) end: usize,
+    pub(super) inner: Range<usize>,
 }
 
 enum Block {
@@ -487,7 +487,7 @@ fn children(xml: &str, within: Range<usize>) -> Vec<Element> {
 
 /// The elements `root_depth` levels into `within`: 1 for an element's
 /// children, 0 for a document's root.
-fn scan(xml: &str, within: Range<usize>, root_depth: usize) -> Vec<Element> {
+pub(super) fn scan(xml: &str, within: Range<usize>, root_depth: usize) -> Vec<Element> {
     let offset = within.start;
     let fragment = &xml[within];
     let mut reader = Reader::from_str(fragment);
@@ -539,7 +539,7 @@ fn scan(xml: &str, within: Range<usize>, root_depth: usize) -> Vec<Element> {
 }
 
 /// The document's body and its blocks.
-fn body(xml: &str) -> Option<(Element, Vec<Element>)> {
+pub(super) fn body(xml: &str) -> Option<(Element, Vec<Element>)> {
     let root = scan(xml, 0..xml.len(), 0)
         .into_iter()
         .find(|element| element.name.ends_with(":document") || element.name == "document")?;
@@ -692,7 +692,7 @@ fn blank_like(master: &OpcPackage) -> Result<Vec<u8>, String> {
 /// `content`, blocks of `from`'s body, made to work in `to`'s: the parts
 /// its relationships name copied over, and the styles and lists it uses
 /// that `to` does not have.
-fn import(content: &str, from: &OpcPackage, to: &mut OpcPackage) -> Result<String, String> {
+pub(super) fn import(content: &str, from: &OpcPackage, to: &mut OpcPackage) -> Result<String, String> {
     let content = import_relationships(content, from, to)?;
     let content = import_numbering(&content, from, to)?;
     import_styles(&content, from, to);
@@ -1117,15 +1117,15 @@ fn file_name_for(heading: &str, rels: &[Relationship], exists: &dyn Fn(&str) -> 
 
 // ---- small helpers ------------------------------------------------------
 
-fn open(docx: &[u8]) -> Result<OpcPackage, String> {
+pub(super) fn open(docx: &[u8]) -> Result<OpcPackage, String> {
     OpcPackage::open(docx).map_err(|error| error.to_string())
 }
 
-fn write(package: &OpcPackage) -> Result<Vec<u8>, String> {
+pub(super) fn write(package: &OpcPackage) -> Result<Vec<u8>, String> {
     package.write().map_err(|error| error.to_string())
 }
 
-fn document(package: &OpcPackage) -> Result<String, String> {
+pub(super) fn document(package: &OpcPackage) -> Result<String, String> {
     package
         .part_str(DOCUMENT)
         .map_err(|error| error.to_string())?
@@ -1295,7 +1295,7 @@ fn element_with(xml: &str, open: &str, marker: &str, close: &str) -> Option<Stri
 }
 
 /// The text of a block's `w:t`s.
-fn plain_text(xml: &str) -> String {
+pub(super) fn plain_text(xml: &str) -> String {
     let mut out = String::new();
     let mut rest = xml;
     while let Some(at) = rest.find("<w:t") {
