@@ -68,6 +68,7 @@ use std::time::Duration;
 
 use crate::editor::{self, Editor};
 
+mod calculation_options;
 mod charts;
 mod conditional;
 mod custom_filter;
@@ -594,6 +595,8 @@ enum MenuCommand {
     ManualCalculation(bool),
     /// Formulas ▸ Calculate Now.
     CalculateNow,
+    /// Formulas ▸ Calculation Options…: the dialog.
+    CalculationOptions,
 }
 
 /// What a painted image was painted for. A frame that matches it needs no new
@@ -662,6 +665,8 @@ pub struct WorkbookView {
     name_manager: Option<jade_office_model::name_manager::NameManager>,
     insert_function: Option<jade_office_model::insert_function::InsertFunctionDialog>,
     top_ten: Option<jade_office_model::top_ten::TopTenDialog>,
+    /// Formulas ▸ Calculation Options, while open.
+    calculation_options: Option<jade_office_model::calculation_options::CalculationOptionsDialog>,
     /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
     shift_choice: Option<bool>,
     more_colors: Option<jade_office_model::more_colors::MoreColorsDialog>,
@@ -1964,6 +1969,7 @@ impl WorkbookView {
             MenuCommand::ResetPageBreaks => self.book.reset_page_breaks(),
             MenuCommand::ManualCalculation(manual) => self.book.set_manual_calculation(manual),
             MenuCommand::CalculateNow => self.book.calculate_now(),
+            MenuCommand::CalculationOptions => return self.open_calculation_options(cx),
             MenuCommand::AutoOutline => self.book.auto_outline(),
             MenuCommand::ClearOutline => self.book.clear_outline(if selection.is_whole_columns() {
                 Axis::Columns
@@ -2375,6 +2381,9 @@ impl WorkbookView {
         // Top 10's dialog has the keys while it is open.
         if self.top_ten.is_some() {
             return self.top_ten_key(key, cx);
+        }
+        if self.calculation_options.is_some() {
+            return self.calculation_options_key(key, cx);
         }
         if self.shift_choice.is_some() {
             return self.shift_choice_key(key, cx);
@@ -3940,6 +3949,10 @@ impl WorkbookView {
                         "sheet.menu.manual_calculation",
                     ));
                 }
+                items.push((
+                    MenuCommand::CalculationOptions,
+                    "sheet.menu.calculation_options",
+                ));
                 items.push((MenuCommand::InsertFunction, "insert_function.menu"));
                 items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                 items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
@@ -5551,6 +5564,7 @@ impl Render for WorkbookView {
         let name_manager_panel = self.name_manager_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
+        let calculation_options_panel = self.calculation_options_panel(cx);
         let shift_choice_panel = self.shift_choice_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
         let what_if_panel = self.what_if_panel(cx);
@@ -5725,6 +5739,7 @@ impl Render for WorkbookView {
             .children(name_manager_panel)
             .children(insert_function_panel)
             .children(top_ten_panel)
+            .children(calculation_options_panel)
             .children(shift_choice_panel)
             .children(more_colors_panel)
             .children(what_if_panel)
@@ -5785,6 +5800,7 @@ impl WorkbookView {
             name_manager: None,
             insert_function: None,
             top_ten: None,
+            calculation_options: None,
             shift_choice: None,
             more_colors: None,
             zoom_dialog: None,
