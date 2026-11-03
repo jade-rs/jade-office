@@ -4,7 +4,7 @@ The installed reference application is **Word 16.0.19127.20860**. Captures open
 DOCX files read-only and preserve source/application/PDF/EMF hashes. Different
 Word builds and repeated runs get distinct version/capture directories.
 
-The indexed corpus covers **15 unique documents, 93 pages and 17,139 visible
+The indexed corpus covers **17 unique documents, 133 pages and 18,099 visible
 non-whitespace characters**. Both absolute axes must match within 0.375pt;
 text, order and page count must also match. No origin alignment, fitted scale
 or relaxed tolerance is used. See
@@ -18,9 +18,9 @@ layout also respects omitted sizes, leading blank paragraphs and keepNext.
 Each platform-specific change retains the existing Mac policy and goldens.
 
 Word drawing origins are captured directly through `Page.EnhMetaFileBits`.
-All 10,908 characters of the two Yokohama documents, contract, numbering-restart
-and Yu Gothic probe pass against these origins. PDF exports and failed PDF
-comparisons are retained too: PDF glyph rounding introduces subpoint differences
+All 11,868 characters of the two Yokohama documents, contract, numbering-restart,
+the Yu Gothic probe and both Times New Roman sweeps pass against these origins.
+PDF exports and failed PDF comparisons are retained too: PDF glyph rounding introduces subpoint differences
 in some long lines, so matching Word drawing origins does not imply those
 PDF-origin comparisons passed.
 
@@ -36,7 +36,7 @@ Local verification after the boundary-spacing correction:
 Core Actions runs an independent Mac coordinate gate on `macos-latest` for
 every PR. Deviations fail the job. A separate `windows-latest` gate reconstructs
 EMF references and tests portable Windows geometry with bundled stand-ins;
-it includes 8,438 complete X/Y characters plus numbering boundaries and
+it includes 9,398 complete X/Y characters plus numbering boundaries and
 controlled baselines. Full installed-font comparisons run on this Word machine.
 Parent Actions runs its own Mac coordinate gate because submodule workflows
 are not triggered by parent PRs. Neither gate allows failure or refreshes Mac
