@@ -1210,6 +1210,8 @@ impl WorkbookView {
         let Some(edit) = self.edit.take() else {
             return true;
         };
+        // INFO("origin") reads the top-left cell the window shows.
+        self.book.note_view_origin(self.sheet_scroll());
         let result = self.book.set_cell(self.active(), &edit.text.text);
         if result
             .as_ref()
@@ -2216,6 +2218,7 @@ impl WorkbookView {
         self.status = SharedString::from(match result {
             Ok(()) => {
                 // Saved as, it is that file from now on.
+                self.book.set_location(&target);
                 self.path = target;
                 let key = if csv::is_csv(&name) {
                     "sheet.saved_csv"
@@ -5728,11 +5731,13 @@ impl WorkbookView {
     fn open(path: &Path, cx: &mut App) -> Result<Self, String> {
         let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
         let name = crate::shell::file_name(path);
-        let book = if csv::is_csv(&name) {
+        let mut book = if csv::is_csv(&name) {
             Workbook::open_csv(&name, &bytes, &system_time_zone(), crate::skia_backend()?)?
         } else {
             Workbook::open(&bytes, &system_time_zone(), crate::skia_backend()?)?
         };
+        // Where it is, for CELL("filename") and INFO("directory").
+        book.set_location(path);
         let sheet_names = book
             .sheet_names()
             .into_iter()

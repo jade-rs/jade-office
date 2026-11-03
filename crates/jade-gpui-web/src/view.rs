@@ -773,7 +773,7 @@ impl DocView {
                 }
             }
             Kind::Workbook => {
-                let book = if jade_web::csv::is_csv(&name) {
+                let mut book = if jade_web::csv::is_csv(&name) {
                     jade_web::Workbook::open_csv(
                         &name,
                         bytes,
@@ -783,6 +783,8 @@ impl DocView {
                 } else {
                     jade_web::Workbook::open(bytes, &fonts.time_zone, fonts.backend.clone())?
                 };
+                // Its name, for CELL("filename"); a browser has no folder.
+                book.set_location(std::path::Path::new(&*name));
                 Document::Workbook(Box::new(sheet::Sheet::open(book)))
             }
         };
