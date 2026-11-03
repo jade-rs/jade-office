@@ -1,0 +1,59 @@
+param(
+    [Parameter(Mandatory=$true)][string[]]$Documents,
+    [Parameter(Mandatory=$true)][string]$OutputDirectory
+)
+$ErrorActionPreference = 'Stop'
+$root = [IO.Path]::GetFullPath($OutputDirectory)
+$sourceNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($source in $Documents) {
+    $path = (Resolve-Path -LiteralPath $source).Path
+    if (-not $sourceNames.Add([IO.Path]::GetFileNameWithoutExtension($path))) {
+        throw "Duplicate fixture name: $path"
+    }
+}
+# A separate COM instance; never attach to or close the user's Word instance.
+$word = New-Object -ComObject Word.Application
+$word.Visible = $false
+$word.DisplayAlerts = 0
+$word.AutomationSecurity = 3
+$metadata = $null
+$manifest = $null
+try {
+    $binary = Join-Path $word.Path 'WINWORD.EXE'
+    $binaryVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($binary)
+    $productVersion = $binaryVersion.ProductVersion
+    if ($productVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "Unknown Word product version: $productVersion" }
+    $captureId = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '-' + [Guid]::NewGuid().ToString('N').Substring(0,8)
+    $output = Join-Path (Join-Path $root "word-$productVersion") $captureId
+    [void][IO.Directory]::CreateDirectory($output)
+    $binaryHash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+    $metadata = [ordered]@{
+        schema=2; platform='windows'; capture_id=$captureId; captured_at_utc=[DateTime]::UtcNow.ToString('o'); status='capturing'
+        word=[ordered]@{ product_version=$productVersion; application_version=$word.Version; application_build=$word.Build; executable_sha256=$binaryHash }
+        os=[Runtime.InteropServices.RuntimeInformation]::OSDescription
+        documents=@()
+    }
+    $manifest = Join-Path $output 'capture.json'
+    foreach ($source in $Documents) {
+        $path = (Resolve-Path -LiteralPath $source).Path
+        $sourceHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        $document = $word.Documents.Open($path, $false, $true, $false)
+        try {
+            $document.Repaginate()
+            $target = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($path)+'.pdf')
+            $document.ExportAsFixedFormat($target, 17)
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sourceHash) { throw "DOCX changed during capture: $path" }
+            $metadata.documents += [ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$document.ComputeStatistics(2) }
+        } finally { $document.Close(0); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($document) }
+    }
+    if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -ne $binaryHash) { throw 'Word binary changed during capture' }
+    $metadata.status = 'complete'
+    $metadata | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifest -Encoding utf8
+    Write-Output $manifest
+} catch {
+    if ($metadata -and $manifest) {
+        $metadata.status = 'failed'
+        $metadata | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifest -Encoding utf8
+    }
+    throw
+} finally { $word.Quit(); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($word) }
