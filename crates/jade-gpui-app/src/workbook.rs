@@ -57,6 +57,7 @@ use jade_office_model::skia::SkiaBackend;
 use jade_office_model::tables::TableDialog;
 use jade_office_model::text::TextEdit;
 use jade_office_model::validation::{PendingValidation, ValidationDialog};
+use jade_office_model::what_if::WhatIfTool;
 use jade_office_model::Backend;
 use std::cell::Cell;
 use std::ops::Range;
@@ -87,6 +88,8 @@ mod tables;
 mod text_columns;
 mod top_ten;
 mod validation;
+mod what_if;
+mod zoom_dialog;
 use crate::{
     byte_to_utf16, i18n, theme, utf16_to_byte, workspace, Copy, Cut, Paste, Print, Redo, Save,
     SaveAs, SelectAll, Undo, UI_FONT_FAMILY,
@@ -543,6 +546,15 @@ enum MenuCommand {
     /// The rows above and the columns left of the active cell.
     FreezePanes,
     UnfreezePanes,
+    /// View ▸ Freeze Panes ▸ Freeze Top Row and Freeze First Column.
+    FreezeTopRow,
+    FreezeFirstColumn,
+    /// View ▸ Gridlines and Headings, on or off.
+    Gridlines,
+    Headings,
+    /// View ▸ Zoom… and Zoom to Selection.
+    Zoom,
+    ZoomToSelection,
     /// Data ▸ Group and Outline on the selected whole rows or columns.
     Outline(OutlineChange),
     /// The selection's formats picked up for the next selection.
@@ -553,6 +565,9 @@ enum MenuCommand {
     ClearOutline,
     /// Data ▸ Subtotal over the selection with the dialog's defaults.
     Subtotal,
+    /// Data ▸ What-If Analysis and the analysis tools: a dialog of the
+    /// model's.
+    WhatIf(WhatIfTool),
     /// Data ▸ Remove Duplicates over the selection or the list round it.
     RemoveDuplicates,
     /// Data ▸ Text to Columns on the selection's column.
@@ -644,6 +659,8 @@ pub struct WorkbookView {
     /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
     shift_choice: Option<bool>,
     more_colors: Option<jade_office_model::more_colors::MoreColorsDialog>,
+    /// View ▸ Zoom's dialog.
+    zoom_dialog: Option<jade_office_model::zoom_dialog::ZoomDialog>,
     /// Insert ▸ Shapes ▸ Freeform's corners while it is drawn.
     freeform: Option<jade_office_model::freeform::FreeformDraft>,
     /// The Paste Options button after a paste from this workbook's copy:
@@ -657,6 +674,8 @@ pub struct WorkbookView {
     /// validation rule.
     circling: bool,
     duplicates_dialog: Option<jade_office_model::duplicates::DuplicatesDialog>,
+    /// Goal Seek, Data Table and the other What-If Analysis dialogs.
+    what_if: Option<jade_office_model::what_if::WhatIfDialog>,
     protection_dialog: Option<ProtectionDialog>,
     table_dialog: Option<TableDialog>,
     pivot_dialog: Option<PivotPanel>,
@@ -728,8 +747,14 @@ impl WorkbookView {
         if let Some(dialog) = self.validation_dialog.as_mut() {
             return Some(dialog.field_mut());
         }
+        if let Some(dialog) = self.what_if.as_mut() {
+            return dialog.form_mut().typing_mut();
+        }
         if let Some(dialog) = self.more_colors.as_mut() {
             return Some(&mut dialog.code);
+        }
+        if let Some(dialog) = self.zoom_dialog.as_mut() {
+            return Some(&mut dialog.custom);
         }
         if let Some(dialog) = self.insert_function.as_mut() {
             return Some(&mut dialog.search);
@@ -780,8 +805,14 @@ impl WorkbookView {
         if let Some(dialog) = self.validation_dialog.as_ref() {
             return Some(dialog.field());
         }
+        if let Some(dialog) = self.what_if.as_ref() {
+            return dialog.form().typing();
+        }
         if let Some(dialog) = self.more_colors.as_ref() {
             return Some(&dialog.code);
+        }
+        if let Some(dialog) = self.zoom_dialog.as_ref() {
+            return Some(&dialog.custom);
         }
         if let Some(dialog) = self.insert_function.as_ref() {
             return Some(&dialog.search);
@@ -881,7 +912,9 @@ impl WorkbookView {
             || self.top_ten.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
+            || self.zoom_dialog.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return;
         }
@@ -1168,7 +1201,9 @@ impl WorkbookView {
             || self.top_ten.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
+            || self.zoom_dialog.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return false;
         }
@@ -1226,6 +1261,9 @@ impl WorkbookView {
             Err(error) if error == jade_office_model::typing::FORMULA_PROBLEM => {
                 self.status = SharedString::from(i18n::text("sheet.formula_problem"))
             }
+            Err(error) if error == jade_office_model::data_table::DATA_TABLE_REFUSED => {
+                self.status = SharedString::from(i18n::text("data_table.refused"))
+            }
             // An entry a data validation refuses: the rule's words, or
             // Excel's.
             // A protected sheet: Excel's words.
@@ -1266,7 +1304,9 @@ impl WorkbookView {
             || self.top_ten.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
+            || self.zoom_dialog.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return;
         }
@@ -1414,7 +1454,9 @@ impl WorkbookView {
             || self.top_ten.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
+            || self.zoom_dialog.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return;
         }
@@ -1883,7 +1925,23 @@ impl WorkbookView {
             }
             MenuCommand::FreezePanes => self.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => self.book.freeze_panes(Freeze::Unfreeze),
+            MenuCommand::FreezeTopRow => self.book.freeze_panes(Freeze::TopRow),
+            MenuCommand::FreezeFirstColumn => self.book.freeze_panes(Freeze::FirstColumn),
+            MenuCommand::Gridlines => {
+                let on = self.book.show_grid_lines();
+                self.book.set_show_grid_lines(!on)
+            }
+            MenuCommand::Headings => {
+                let on = self.book.show_headings();
+                self.book.set_show_headings(!on)
+            }
+            MenuCommand::Zoom => return self.open_zoom_dialog(cx),
+            MenuCommand::ZoomToSelection => {
+                self.menu = None;
+                return self.zoom_to_selection(cx);
+            }
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
+            MenuCommand::WhatIf(tool) => return self.open_what_if(tool, cx),
             MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
             MenuCommand::FlashFill => return self.flash_fill(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
@@ -2291,9 +2349,17 @@ impl WorkbookView {
         if self.freeform.is_some() && self.freeform_key(key, cx) {
             return true;
         }
+        // A What-If Analysis dialog has the keys while it is open.
+        if self.what_if.is_some() {
+            return self.what_if_key(key, modifiers, cx);
+        }
         // More Colors' dialog has the keys while it is open.
         if self.more_colors.is_some() {
             return self.more_colors_key(key, modifiers, cx);
+        }
+        // So has Zoom's.
+        if self.zoom_dialog.is_some() {
+            return self.zoom_dialog_key(key, modifiers, cx);
         }
         // Top 10's dialog has the keys while it is open.
         if self.top_ten.is_some() {
@@ -2799,7 +2865,9 @@ impl WorkbookView {
             || self.top_ten.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
+            || self.zoom_dialog.is_some()
             || self.duplicates_dialog.is_some()
+            || self.what_if.is_some()
         {
             return;
         }
@@ -3801,6 +3869,10 @@ impl WorkbookView {
                 } else {
                     (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
                 });
+                items.extend(view_menu(
+                    self.book.show_grid_lines(),
+                    self.book.show_headings(),
+                ));
                 if !self.selection.is_whole_rows()
                     && !self.selection.is_whole_columns()
                     && self.selection.range().end.row > self.selection.range().start.row
@@ -3813,6 +3885,11 @@ impl WorkbookView {
                     ));
                 }
                 items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
+                items.extend(
+                    WhatIfTool::MENU
+                        .iter()
+                        .map(|&(tool, label)| (MenuCommand::WhatIf(tool), label)),
+                );
                 items.push((MenuCommand::FlashFill, "sheet.menu.flash_fill"));
                 items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
                 items.push((MenuCommand::NameManager, "sheet.menu.name_manager"));
@@ -5069,15 +5146,7 @@ impl Editor for WorkbookView {
     }
 
     fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
-        let zoom = editor::clamp_zoom(zoom);
-        // Keep the same cell at the top left: the scroll offset is in screen
-        // px, which a zoom rescales.
-        let ratio = zoom / self.zoom;
-        let offset = self.scroll.offset();
-        self.scroll
-            .set_offset(point(offset.x * ratio, offset.y * ratio));
-        self.zoom = zoom;
-        cx.notify();
+        self.zoom_sheet(editor::clamp_zoom(zoom), cx);
     }
 
     fn is_dirty(&self) -> bool {
@@ -5472,6 +5541,8 @@ impl Render for WorkbookView {
         let top_ten_panel = self.top_ten_panel(cx);
         let shift_choice_panel = self.shift_choice_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
+        let what_if_panel = self.what_if_panel(cx);
+        let zoom_dialog_panel = self.zoom_dialog_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -5644,6 +5715,8 @@ impl Render for WorkbookView {
             .children(top_ten_panel)
             .children(shift_choice_panel)
             .children(more_colors_panel)
+            .children(what_if_panel)
+            .children(zoom_dialog_panel)
             .children(duplicates_panel)
             .children(protection_panel)
             .children(validation_panel)
@@ -5700,12 +5773,14 @@ impl WorkbookView {
             top_ten: None,
             shift_choice: None,
             more_colors: None,
+            zoom_dialog: None,
             freeform: None,
             paste_options: None,
             tracing: Vec::new(),
             tracing_dependents: Vec::new(),
             circling: false,
             duplicates_dialog: None,
+            what_if: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -7416,6 +7491,60 @@ mod tests {
         });
     }
 
+    /// View ▸ Zoom… takes a preset or a typed percentage, refusing one
+    /// outside 10–400%, and the sheet keeps the zoom to be saved with it.
+    #[gpui::test]
+    fn the_zoom_dialog_zooms_the_sheet(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.menu_command(MenuCommand::Zoom, false, cx);
+            assert!(view.zoom_dialog.is_some());
+            view.zoom_dialog_action(
+                zoom_dialog::ZoomAction::Choose(
+                    jade_office_model::zoom_dialog::ZoomChoice::Percent(75),
+                ),
+                cx,
+            );
+            view.zoom_dialog_action(zoom_dialog::ZoomAction::Take, cx);
+            assert_eq!(view.zoom, 0.75);
+            assert_eq!(view.book.sheet_zoom(), 0.75);
+            view.menu_command(MenuCommand::Zoom, false, cx);
+        });
+        cx.simulate_keystrokes("backspace backspace");
+        cx.simulate_input("500");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.zoom_dialog.as_ref().unwrap().problem);
+        });
+        cx.simulate_keystrokes("backspace backspace backspace");
+        cx.simulate_input("130");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.zoom_dialog.is_none());
+            assert_eq!(view.zoom, 1.3);
+            assert!(view.book.is_dirty());
+        });
+    }
+
+    /// The View group on the grid's menu: Zoom to Selection, Gridlines and
+    /// Headings, Freeze Top Row.
+    #[gpui::test]
+    fn the_view_commands_change_the_sheet(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.viewport = (800.0, 400.0);
+            view.selection = Selection::range_from(at(0, 0), at(3, 3));
+            view.menu_command(MenuCommand::ZoomToSelection, false, cx);
+            assert!(view.zoom > 1.0);
+            view.menu_command(MenuCommand::Gridlines, false, cx);
+            assert!(!view.book.show_grid_lines());
+            view.menu_command(MenuCommand::Headings, false, cx);
+            assert!(!view.book.show_headings());
+            view.menu_command(MenuCommand::FreezeTopRow, false, cx);
+            assert_eq!(view.book.frozen_panes(), Some((0, 1)));
+        });
+    }
+
     /// A theme colour from the fill or font colour gallery goes on the
     /// selection as the colour it shows.
     #[gpui::test]
@@ -8114,6 +8243,37 @@ mod tests {
                 .map(|row| view.book.display_text(at(7, row)))
                 .collect();
             assert_eq!(branches, ["Branch", "Tokyo", "Osaka", ""]);
+        });
+    }
+
+    /// Goal Seek from the menu: the set cell starts as the active cell, the
+    /// target and the changing cell are typed (Tab between them), OK finds
+    /// the value and shows its status, and Cancel there puts it back.
+    #[gpui::test]
+    fn goal_seek_finds_a_value_and_cancel_takes_it_back(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(7, 29), "4").unwrap();
+            view.book.set_cell(at(7, 30), "=H30*3+1").unwrap();
+            view.selection = Selection::cell(at(7, 30));
+            view.menu_command(MenuCommand::WhatIf(WhatIfTool::GoalSeek), false, cx);
+            let dialog = view.what_if.as_ref().unwrap();
+            assert_eq!(dialog.form().text("set"), "$H$31");
+        });
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("31");
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input("H30");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.book.display_text(at(7, 29)), "10");
+            assert!(view.what_if.is_some(), "the status shows");
+            assert!(view.edit.is_none(), "typing went into the dialog");
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.what_if.is_none());
+            assert_eq!(view.book.display_text(at(7, 29)), "4");
         });
     }
 
