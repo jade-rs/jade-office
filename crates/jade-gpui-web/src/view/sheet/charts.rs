@@ -6,8 +6,9 @@
 
 use jade_web::chart_form::{FieldValue, Form};
 use jade_web::charts::{
-    dragged, handle_at, AskAction, AskPage, ChartAsk, ChartChange, ChartField, ChartInfo, ChartKey,
-    ChartPick, Handle, LegendPosition, SelectData, CHART_GALLERY, LEGENDS,
+    dragged, handle_at, AskAction, AskPage, AxisId, ChartAsk, ChartChange, ChartElement,
+    ChartField, ChartInfo, ChartKey, ChartPick, FormatTarget, Handle, LegendPosition, SelectData,
+    Subject, CHART_GALLERY, LEGENDS,
 };
 use jade_web::text::TextEdit;
 
@@ -296,6 +297,20 @@ impl DocView {
                 ),
                 None => Ok(false),
             },
+            ChartTool::Element(element) => match sheet.selected_chart() {
+                Some(id) => sheet.book.chart_element(id, element),
+                None => Ok(false),
+            },
+            ChartTool::Format(target) => {
+                if let Some((id, info)) = sheet
+                    .selected_chart()
+                    .and_then(|id| Some((id, sheet.book.chart(id)?)))
+                {
+                    sheet.chart_asking = ChartAsk::format(id, target, &info);
+                }
+                cx.notify();
+                return;
+            }
             ChartTool::SelectData => {
                 if let Some((id, info)) = sheet
                     .selected_chart()

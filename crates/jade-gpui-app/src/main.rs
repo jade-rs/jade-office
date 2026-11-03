@@ -43,6 +43,7 @@ mod word_draw;
 mod word_equation;
 mod word_fields;
 mod word_files;
+mod word_fit_text;
 mod word_fonts;
 mod word_form;
 mod word_hyphenation;
@@ -79,6 +80,7 @@ mod word_templates;
 mod word_thesaurus;
 mod word_tools;
 mod word_views;
+mod word_watermark;
 mod workbook;
 mod workspace;
 mod workspace_files;
@@ -3301,6 +3303,10 @@ impl DocumentView {
             return cx.notify();
         }
         self.ribbon.popup = None;
+        // 均等割り付け on text inside a paragraph: 文字の均等割り付け.
+        if matches!(action, Action::Align("distribute")) && self.open_fit_text_dialog(cx) {
+            return;
+        }
         // Page setup acts on the body's sections: an open header or footer
         // is written back first.
         if matches!(action, Action::Page(_)) {

@@ -943,7 +943,7 @@ impl ArgumentTip {
 /// the caret is inside of — not in a quoted string — when its function is
 /// one the tip knows.
 pub fn argument_tip(text: &str, caret: usize) -> Option<ArgumentTip> {
-    if !text.starts_with('=') || caret > text.len() || !text.is_char_boundary(caret) {
+    if !text.starts_with(['=', '+', '-']) || caret > text.len() || !text.is_char_boundary(caret) {
         return None;
     }
     // Each open call before the caret: where its name ends, and the commas

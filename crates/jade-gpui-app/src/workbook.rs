@@ -72,6 +72,7 @@ mod charts;
 mod conditional;
 mod custom_filter;
 mod duplicates;
+mod fill_series;
 mod find_bar;
 mod insert_function;
 mod links;
@@ -188,6 +189,9 @@ struct CellEdit {
     /// word's start, the caret and the name's place: typing on starts
     /// again from the first.
     suggested: Option<(usize, usize, usize)>,
+    /// The workbook's defined names and tables, which AutoComplete lists
+    /// with the functions.
+    names: Vec<String>,
 }
 
 /// The name AutoComplete's list has picked: the one the arrows moved to
@@ -208,7 +212,7 @@ fn completion_list(
     below: Pixels,
     cx: &mut Context<WorkbookView>,
 ) -> Option<gpui::Div> {
-    let list = formula_complete::completion(&edit.text.text, edit.text.caret)?;
+    let list = formula_complete::completion_with(&edit.text.text, edit.text.caret, &edit.names)?;
     let chosen = picked(edit, &list);
     let start = list.start;
     Some(
@@ -226,24 +230,27 @@ fn completion_list(
             .text_xs()
             .text_color(theme::text())
             .children(list.names.iter().enumerate().map(|(index, name)| {
-                let name: &'static str = name;
+                let name = name.clone();
                 div()
                     .id(("formula-complete", index))
                     .px_2()
                     .cursor_pointer()
                     .when(index == chosen, |row| row.bg(theme::selected()))
                     .hover(|row| row.bg(theme::hovered()))
-                    .child(name)
+                    .child(gpui::SharedString::from(name.clone()))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |view, _event, window, cx| {
                             window.focus(&view.focus);
                             if let Some(edit) = view.edit.as_mut() {
-                                if let Some(list) =
-                                    formula_complete::completion(&edit.text.text, edit.text.caret)
-                                        .filter(|list| list.start == start)
+                                if let Some(list) = formula_complete::completion_with(
+                                    &edit.text.text,
+                                    edit.text.caret,
+                                    &edit.names,
+                                )
+                                .filter(|list| list.start == start)
                                 {
-                                    formula_complete::accept(&mut edit.text, &list, name);
+                                    formula_complete::accept(&mut edit.text, &list, &name);
                                     edit.point = None;
                                     edit.suggested = None;
                                 }
@@ -259,7 +266,7 @@ fn completion_list(
 /// The argument tip under the cell being typed into, its current argument
 /// in bold — while AutoComplete's list is not showing there.
 fn formula_tip(edit: &CellEdit, below: Pixels) -> Option<gpui::Div> {
-    if formula_complete::completion(&edit.text.text, edit.text.caret).is_some() {
+    if formula_complete::completion_with(&edit.text.text, edit.text.caret, &edit.names).is_some() {
         return None;
     }
     let tip = formula_tips::argument_tip(&edit.text.text, edit.text.caret)?;
@@ -485,6 +492,8 @@ enum MenuCommand {
     ShiftCells(Axis, bool),
     FillDown,
     FillRight,
+    /// Home ▸ Fill ▸ Series…
+    FillSeries,
     SortAscending,
     SortDescending,
     MergeCenter,
@@ -656,6 +665,8 @@ pub struct WorkbookView {
     name_manager: Option<jade_office_model::name_manager::NameManager>,
     insert_function: Option<jade_office_model::insert_function::InsertFunctionDialog>,
     top_ten: Option<jade_office_model::top_ten::TopTenDialog>,
+    /// Home ▸ Fill ▸ Series…'s dialog.
+    series_dialog: Option<jade_office_model::fill_series::SeriesDialog>,
     /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
     shift_choice: Option<bool>,
     more_colors: Option<jade_office_model::more_colors::MoreColorsDialog>,
@@ -750,6 +761,9 @@ impl WorkbookView {
         if let Some(dialog) = self.what_if.as_mut() {
             return dialog.form_mut().typing_mut();
         }
+        if let Some(dialog) = self.series_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
         if let Some(dialog) = self.more_colors.as_mut() {
             return Some(&mut dialog.code);
         }
@@ -807,6 +821,9 @@ impl WorkbookView {
         }
         if let Some(dialog) = self.what_if.as_ref() {
             return dialog.form().typing();
+        }
+        if let Some(dialog) = self.series_dialog.as_ref() {
+            return Some(dialog.field());
         }
         if let Some(dialog) = self.more_colors.as_ref() {
             return Some(&dialog.code);
@@ -910,6 +927,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -1095,6 +1113,7 @@ impl WorkbookView {
             in_place: false,
             point,
             suggested: None,
+            names: self.book.formula_names(),
         });
         self.reveal(self.active());
         cx.notify();
@@ -1176,6 +1195,7 @@ impl WorkbookView {
             in_place,
             point: None,
             suggested: None,
+            names: self.book.formula_names(),
         });
         self.reveal(self.active());
         cx.notify();
@@ -1199,6 +1219,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -1304,6 +1325,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -1454,6 +1476,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -1767,6 +1790,7 @@ impl WorkbookView {
                 ProtectedEdit::FillRight { range },
             )
             .map(|outcome| outcome.changed),
+            MenuCommand::FillSeries => return self.open_series_dialog(cx),
             MenuCommand::SortAscending => self.book.sort(range, selection.active, false),
             MenuCommand::SortDescending => self.book.sort(range, selection.active, true),
             // Merge & Center takes in every merged cell the range touches,
@@ -2356,6 +2380,10 @@ impl WorkbookView {
         if self.what_if.is_some() {
             return self.what_if_key(key, modifiers, cx);
         }
+        // Fill ▸ Series' dialog has the keys while it is open.
+        if self.series_dialog.is_some() {
+            return self.series_key(key, modifiers, cx);
+        }
         // More Colors' dialog has the keys while it is open.
         if self.more_colors.is_some() {
             return self.more_colors_key(key, modifiers, cx);
@@ -2418,14 +2446,15 @@ impl WorkbookView {
             if edit.text.marked.is_some() {
                 return false;
             }
-            let completion = formula_complete::completion(&edit.text.text, edit.text.caret);
+            let completion =
+                formula_complete::completion_with(&edit.text.text, edit.text.caret, &edit.names);
             match key {
                 // Function AutoComplete: Tab puts the name picked in, the
                 // arrows move through the list.
                 "tab" if !shift && completion.is_some() => {
                     if let Some(list) = completion {
-                        let name = list.names[picked(edit, &list)];
-                        formula_complete::accept(&mut edit.text, &list, name);
+                        let name = list.names[picked(edit, &list)].clone();
+                        formula_complete::accept(&mut edit.text, &list, &name);
                         edit.point = None;
                         edit.suggested = None;
                     }
@@ -2866,6 +2895,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -3782,6 +3812,7 @@ impl WorkbookView {
                     (MenuCommand::ClearAll, "sheet.menu.clear_all"),
                     (MenuCommand::FillDown, "sheet.menu.fill_down"),
                     (MenuCommand::FillRight, "sheet.menu.fill_right"),
+                    (MenuCommand::FillSeries, "sheet.menu.fill_series"),
                     (MenuCommand::SortAscending, "sheet.menu.sort_ascending"),
                     (MenuCommand::SortDescending, "sheet.menu.sort_descending"),
                     (MenuCommand::MergeCenter, "sheet.menu.merge_center"),
@@ -5543,6 +5574,7 @@ impl Render for WorkbookView {
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
         let shift_choice_panel = self.shift_choice_panel(cx);
+        let series_panel = self.series_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
         let what_if_panel = self.what_if_panel(cx);
         let zoom_dialog_panel = self.zoom_dialog_panel(cx);
@@ -5717,6 +5749,7 @@ impl Render for WorkbookView {
             .children(insert_function_panel)
             .children(top_ten_panel)
             .children(shift_choice_panel)
+            .children(series_panel)
             .children(more_colors_panel)
             .children(what_if_panel)
             .children(zoom_dialog_panel)
@@ -5776,6 +5809,7 @@ impl WorkbookView {
             name_manager: None,
             insert_function: None,
             top_ten: None,
+            series_dialog: None,
             shift_choice: None,
             more_colors: None,
             zoom_dialog: None,
@@ -6169,10 +6203,11 @@ mod tests {
         cx.simulate_input("=SU");
         let second = view.read_with(cx, |view, _| {
             let edit = view.edit.as_ref().expect("typing into the cell");
-            let list = formula_complete::completion(&edit.text.text, edit.text.caret)
-                .expect("the list shows");
+            let list =
+                formula_complete::completion_with(&edit.text.text, edit.text.caret, &edit.names)
+                    .expect("the list shows");
             assert_eq!(list.names[0], "SUBSTITUTE");
-            list.names[1]
+            list.names[1].clone()
         });
         cx.simulate_keystrokes("down tab");
         view.read_with(cx, |view, _| {
@@ -6181,7 +6216,7 @@ mod tests {
             // Its arguments show, the first one current.
             let tip = formula_tips::argument_tip(&edit.text.text, edit.text.caret)
                 .expect("the argument tip shows");
-            assert_eq!((tip.name, tip.current), (second, 0));
+            assert_eq!((tip.name, tip.current), (second.as_str(), 0));
         });
         cx.simulate_input("4)");
         cx.simulate_keystrokes("escape");
@@ -7547,6 +7582,31 @@ mod tests {
             assert!(!view.book.show_headings());
             view.menu_command(MenuCommand::FreezeTopRow, false, cx);
             assert_eq!(view.book.frozen_panes(), Some((0, 1)));
+        });
+    }
+
+    /// Fill ▸ Series… fills the selection down by the step typed; one that
+    /// is not a number keeps the dialog open.
+    #[gpui::test]
+    fn the_series_dialog_fills_the_selection(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(9, 39), "1").unwrap();
+            view.selection = Selection::range_from(at(9, 39), at(9, 42));
+            view.menu_command(MenuCommand::FillSeries, false, cx);
+            assert!(view.series_dialog.is_some());
+        });
+        cx.simulate_input("x");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.series_dialog.as_ref().unwrap().problem);
+        });
+        cx.simulate_keystrokes("backspace");
+        cx.simulate_input("3");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.series_dialog.is_none());
+            assert_eq!(view.book.number(at(9, 42)), Some(10.0));
         });
     }
 

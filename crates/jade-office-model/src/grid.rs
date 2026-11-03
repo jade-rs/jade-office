@@ -300,9 +300,10 @@ pub fn size_label(range: CellRange) -> String {
 
 /// Whether a reference can go in at byte `caret` of a formula being typed —
 /// after `=`, an operator, `(`, `,` or `:` — so that an arrow key or a click
-/// points at a cell rather than leaving the cell, as Excel's Point mode.
+/// points at a cell rather than leaving the cell, as Excel's Point mode. A
+/// formula may start with `+` or `-` as well as `=`, as in Excel.
 pub fn can_point(text: &str, caret: usize) -> bool {
-    text.starts_with('=')
+    text.starts_with(['=', '+', '-'])
         && text
             .get(..caret)
             .and_then(|before| before.trim_end().chars().last())
