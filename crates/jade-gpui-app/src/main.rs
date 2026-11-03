@@ -84,6 +84,7 @@ mod word_templates;
 mod word_text_from_file;
 mod word_thesaurus;
 mod word_tools;
+mod word_versions;
 mod word_views;
 mod word_watermark;
 mod workbook;
@@ -252,6 +253,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-s", SaveAs, None),
         // コピーを保存 and テンプレートとして保存.
         KeyBinding::new("ctrl-cmd-s", word_files::SaveCopy, CONTEXT),
+        // バージョン履歴 has no key in Word; one so the menu item has one.
+        KeyBinding::new("cmd-ctrl-alt-h", word_versions::VersionHistory, CONTEXT),
         KeyBinding::new("ctrl-cmd-t", word_files::SaveAsTemplate, CONTEXT),
         // 互換性チェック and 変換 (互換モードの文書を現在の形式に).
         KeyBinding::new("ctrl-cmd-k", word_compat::CheckCompatibility, CONTEXT),
@@ -408,6 +411,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.file.save_as"), SaveAs),
                 MenuItem::action(t("menu.file.save_copy"), word_files::SaveCopy),
                 MenuItem::action(t("menu.file.save_template"), word_files::SaveAsTemplate),
+                MenuItem::action(t("versions.menu"), word_versions::VersionHistory),
                 MenuItem::separator(),
                 MenuItem::action(
                     t("menu.file.check_compatibility"),
@@ -1456,6 +1460,8 @@ struct DocumentView {
     master: word_master::Master,
     /// The 自動回復 copy of the unsaved edits.
     recovery: autorecover::Recovery,
+    /// 自動保存 and バージョン履歴 (`word_versions`).
+    versions: word_versions::Versions,
     /// The 印刷 panel, while it is open.
     printing: Option<word_print::PrintPanel>,
     /// 表示: the view, page movement, zoom fit, grid and white space.
@@ -4570,6 +4576,14 @@ impl editor::Editor for DocumentView {
         self.dirty
     }
 
+    fn autosave(&self) -> Option<bool> {
+        Some(self.versions.auto.on)
+    }
+
+    fn toggle_autosave(&mut self, cx: &mut Context<Self>) {
+        word_versions::toggle(self, cx);
+    }
+
     /// The page's width fitted to the space beside the page list.
     fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
         const PAGE_LIST_WIDTH: f32 = 168.0;
@@ -4638,6 +4652,7 @@ impl Render for DocumentView {
         let thesaurus_pane = word_thesaurus::pane(self, cx);
         let reveal_pane = word_reveal::pane(self, cx);
         let revisions_pane = word_revisions::pane(self, cx);
+        let versions_pane = word_versions::pane(self, cx);
         let restrict_pane = word_protection::pane(self, cx);
         let read_only_bar = word_protection::banner(self, cx);
         let read_aloud_bar = word_read_aloud::bar(self, cx);
@@ -4685,6 +4700,11 @@ impl Render for DocumentView {
             )
             .on_action(
                 cx.listener(|view, _: &word_files::SaveCopy, _window, cx| view.save_copy(cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_versions::VersionHistory, _window, cx| {
+                    word_versions::toggle_pane(view, cx)
+                }),
             )
             .on_action(
                 cx.listener(|view, _: &word_compat::CheckCompatibility, _window, cx| {
@@ -5122,6 +5142,7 @@ impl Render for DocumentView {
             .children(thesaurus_pane)
             .children(reveal_pane)
             .children(revisions_pane)
+            .children(versions_pane)
             .children(restrict_pane)
             .children(proofing_menu)
             // ---- a table dialog, over everything while it is open ----
@@ -5303,6 +5324,7 @@ pub(crate) fn new_document_view(
     let view = open_document_view(path, cx)?;
     Ok(cx.new(|cx| {
         autorecover::start(cx);
+        word_versions::start(cx);
         view
     }))
 }
@@ -5317,6 +5339,7 @@ pub(crate) fn untitled_document_view(
     let view = untitled_view(bytes, name, cx)?;
     Ok(cx.new(|cx| {
         autorecover::start(cx);
+        word_versions::start(cx);
         view
     }))
 }
@@ -5433,6 +5456,7 @@ fn document_view(
         files: word_files::Files::default(),
         master: word_master::Master::default(),
         recovery: autorecover::Recovery::default(),
+        versions: Default::default(),
         printing: None,
         views: word_views::Views::default(),
         scroll: ScrollHandle::new(),

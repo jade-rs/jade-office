@@ -5102,3 +5102,20 @@ frame.distance	文字列との間隔
 frame.move_with_text	文字列と一緒に移動する
 frame.remove	枠の削除
 doc.select_similar	類似した書式の文字列を選択
+versions.autosave	自動保存
+versions.autosave_tip	編集するとすぐにこのファイルに保存します
+versions.on	オン
+versions.off	オフ
+versions.autosave_default	既定で自動保存をオンにする
+versions.unsupported	自動保存は Word 形式 (.docx など) のファイルでのみ使えます。名前を付けて保存で Word 文書として保存してください。
+versions.menu	バージョン履歴
+versions.title	バージョン履歴
+versions.current	現在のバージョン
+versions.open	開く
+versions.restore	復元
+versions.none	保存されたバージョンはまだありません。
+versions.unsaved	保存するとバージョンが残ります。
+versions.kind.original	元のファイル
+versions.kind.saved	保存
+versions.kind.autosaved	自動保存
+versions.kind.restored	復元

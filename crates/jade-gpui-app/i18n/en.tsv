@@ -5102,3 +5102,20 @@ frame.distance	Distance from text
 frame.move_with_text	Move with text
 frame.remove	Remove Frame
 doc.select_similar	Select Text with Similar Formatting
+versions.autosave	AutoSave
+versions.autosave_tip	Saves to this file moments after you edit
+versions.on	On
+versions.off	Off
+versions.autosave_default	Turn on AutoSave by default
+versions.unsupported	AutoSave works only with Word files (.docx and the like). Use Save As to save this as a Word document.
+versions.menu	Version History
+versions.title	Version History
+versions.current	Current version
+versions.open	Open
+versions.restore	Restore
+versions.none	No saved versions yet.
+versions.unsaved	Save the document to start its history.
+versions.kind.original	Original file
+versions.kind.saved	Saved
+versions.kind.autosaved	AutoSaved
+versions.kind.restored	Restored

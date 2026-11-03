@@ -424,11 +424,17 @@ impl DocumentView {
             })
             .and_then(|bytes| {
                 crate::autorecover::back_up_before_writing(&target);
-                crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
+                if matches!(write, Write::Save(_)) {
+                    crate::word_versions::before_writing(self, &target);
+                }
+                crate::shell::write_in_place(&target, &bytes)
+                    .map(|()| bytes)
+                    .map_err(|error| error.to_string())
             });
         match written {
-            Ok(()) => {
+            Ok(bytes) => {
                 if let Write::Save(path) = &write {
+                    crate::word_versions::saved(self, path, &bytes);
                     self.dirty = false;
                     self.untitled = false;
                     self.path = SharedString::from(path.to_string_lossy().into_owned());
@@ -990,6 +996,17 @@ fn preferences_body(preferences: Preferences, cx: &mut Context<DocumentView>) ->
         .gap_3()
         .w(px(420.0))
         .child(caption(t("prefs.save_options")))
+        .child(
+            check(
+                "prefs-autosave",
+                t("versions.autosave_default"),
+                settings.autosave,
+            )
+            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                with_preferences(view, |p| p.settings.autosave = !p.settings.autosave);
+                cx.notify();
+            })),
+        )
         .child(
             check(
                 "prefs-backup",

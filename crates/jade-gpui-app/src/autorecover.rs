@@ -32,6 +32,9 @@ pub struct Settings {
     pub always_backup: bool,
     /// Where a new document is saved first; Documents when `None`.
     pub save_folder: Option<PathBuf>,
+    /// 既定で自動保存をオンにする: the title bar's 自動保存 switch for a
+    /// document as it opens (`word_versions`).
+    pub autosave: bool,
 }
 
 impl Default for Settings {
@@ -43,6 +46,7 @@ impl Default for Settings {
             location: None,
             always_backup: false,
             save_folder: None,
+            autosave: false,
         }
     }
 }
@@ -67,6 +71,7 @@ impl Settings {
                 "save_folder" if !value.is_empty() => {
                     settings.save_folder = Some(PathBuf::from(value))
                 }
+                "autosave" => settings.autosave = value == "on",
                 _ => {}
             }
         }
@@ -81,12 +86,13 @@ impl Settings {
                 .unwrap_or_default()
         };
         format!(
-            "autorecover={}\nminutes={}\nlocation={}\nbackup={}\nsave_folder={}\n",
+            "autorecover={}\nminutes={}\nlocation={}\nbackup={}\nsave_folder={}\nautosave={}\n",
             on(self.enabled),
             self.minutes,
             path(&self.location),
             on(self.always_backup),
             path(&self.save_folder),
+            on(self.autosave),
         )
     }
 
@@ -100,7 +106,7 @@ impl Settings {
 
 /// The app's own folder in Application Support. Tests have none, so they
 /// never read or write the user's.
-fn support() -> Option<PathBuf> {
+pub(crate) fn support() -> Option<PathBuf> {
     if cfg!(test) {
         return None;
     }
@@ -339,6 +345,7 @@ mod tests {
             location: Some(PathBuf::from("/tmp/recovery")),
             always_backup: true,
             save_folder: Some(PathBuf::from("/Users/me/Documents/Work")),
+            autosave: true,
         };
         assert_eq!(Settings::parse(&settings.format()), settings);
         // Out-of-range minutes are held to Word's range.

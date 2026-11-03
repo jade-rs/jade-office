@@ -571,6 +571,12 @@ impl Workspace {
                     )
                     .child(div().text_xs().text_color(theme::text()).child("Jade")),
             )
+            // 自動保存, where Office for Mac has it: first in the title bar.
+            .children(
+                self.active_tab()
+                    .and_then(|tab| tab.editor.autosave(cx))
+                    .map(|on| autosave_switch(on, cx)),
+            )
             // Where the IDE has its search box: what is open, and where.
             .child(
                 div().flex_1().flex().justify_center().child(
@@ -613,6 +619,14 @@ impl Workspace {
                     window.dispatch_action(Box::new(ToggleTheme), cx);
                 })),
             )
+    }
+
+    /// The active document's 自動保存, clicked.
+    pub(crate) fn toggle_autosave(&mut self, cx: &mut Context<Self>) {
+        if let Some(tab) = self.active_tab() {
+            tab.editor.toggle_autosave(cx);
+        }
+        cx.notify();
     }
 
     fn activity_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1446,6 +1460,47 @@ impl Render for Workspace {
             .child(self.status_bar(cx))
             .children(crate::word_protection::prompt(self, window))
     }
+}
+
+/// 自動保存 and its switch, as Office for Mac's title bar shows them: the
+/// knob to the right and the track filled while it is on.
+fn autosave_switch(on: bool, cx: &mut Context<Workspace>) -> impl IntoElement {
+    div()
+        .id("autosave-switch")
+        .flex()
+        .items_center()
+        .gap_1p5()
+        .px_1p5()
+        .py_0p5()
+        .rounded_md()
+        .cursor_pointer()
+        .hover(|switch| switch.bg(theme::hovered()))
+        .tooltip(Tooltip::text(i18n::text("versions.autosave_tip")))
+        .text_xs()
+        .text_color(theme::text_dim())
+        .child(i18n::text("versions.autosave"))
+        .child(
+            div()
+                .w(px(26.0))
+                .h(px(14.0))
+                .flex()
+                .items_center()
+                .px(px(2.0))
+                .rounded_full()
+                .when(on, |track| track.justify_end().bg(theme::accent()))
+                .when(!on, |track| {
+                    track.border_1().border_color(theme::text_faint())
+                })
+                .child(div().size(px(9.0)).rounded_full().bg(if on {
+                    gpui::white()
+                } else {
+                    theme::text_faint().into()
+                })),
+        )
+        .child(crate::word_versions::switch_label(on))
+        .on_click(
+            cx.listener(|workspace, _: &ClickEvent, _window, cx| workspace.toggle_autosave(cx)),
+        )
 }
 
 #[cfg(test)]
