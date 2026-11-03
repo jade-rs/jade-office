@@ -3949,6 +3949,111 @@ recent.remove	Remove from list
 recent.more	More options
 chars.color.new	New
 chars.color.current	Current
+deck.smartart	SmartArt
+deck.smartart.convert	Convert to SmartArt
+deck.smartart.design	SmartArt Design
+deck.smartart.format	Format
+deck.smartart.text_pane	Text Pane
+deck.smartart.text_pane_title	Type your text here
+deck.smartart.placeholder	[Text]
+deck.smartart.add_shape	Add Shape
+deck.smartart.add_after	Add Shape After
+deck.smartart.add_before	Add Shape Before
+deck.smartart.add_above	Add Shape Above
+deck.smartart.add_below	Add Shape Below
+deck.smartart.add_assistant	Add Assistant
+deck.smartart.promote	Promote
+deck.smartart.demote	Demote
+deck.smartart.move_up	Move Up
+deck.smartart.move_down	Move Down
+deck.smartart.delete_shape	Delete Shape
+deck.smartart.layouts	Layouts
+deck.smartart.colors	Change Colors
+deck.smartart.styles	SmartArt Styles
+deck.smartart.reset	Reset Graphic
+deck.smartart.to_shapes	Convert to Shapes
+deck.smartart.fill	Shape Fill
+deck.smartart.outline	Shape Outline
+deck.smartart.change_shape	Change Shape
+deck.smartart.picture	Picture
+deck.smartart.pick_shape	Select a shape of the SmartArt graphic
+deck.smartart.color.blue	Blue
+deck.smartart.color.orange	Orange
+deck.smartart.color.gray	Gray
+deck.smartart.color.gold	Gold
+deck.smartart.color.light_blue	Light Blue
+deck.smartart.color.green	Green
+deck.smartart.color.red	Red
+deck.smartart.color.black	Black
+deck.smartart.color.white	White
+deck.smartart.color.purple	Purple
+deck.smartart.shape.rect	Rectangle
+deck.smartart.shape.round_rect	Rectangle: Rounded Corners
+deck.smartart.shape.ellipse	Oval
+deck.smartart.shape.triangle	Isosceles Triangle
+deck.smartart.shape.diamond	Diamond
+deck.smartart.shape.hexagon	Hexagon
+deck.smartart.shape.chevron	Arrow: Chevron
+deck.smartart.shape.right_arrow	Arrow: Right
+deck.picture.format	Picture Format
+deck.picture.change	Change Picture
+deck.picture.corrections	Corrections
+deck.picture.sharpness	Sharpen/Soften
+deck.picture.brightness_contrast	Brightness/Contrast
+deck.picture.brightness	Brightness
+deck.picture.contrast	Contrast
+deck.picture.color	Color
+deck.picture.saturation	Color Saturation
+deck.picture.tone	Color Tone
+deck.picture.recolor	Recolor
+deck.picture.set_transparent	Set Transparent Color
+deck.picture.transparent_white	White
+deck.picture.transparent_black	Black
+deck.picture.transparency	Transparency
+deck.picture.artistic	Artistic Effects
+deck.picture.none	None
+deck.picture.remove_background	Remove Background
+deck.picture.keep_background	Restore Background
+deck.picture.styles	Picture Styles
+deck.picture.border	Picture Border
+deck.picture.no_border	No Outline
+deck.picture.weight	Weight
+deck.picture.effects	Picture Effects
+deck.picture.shadow	Shadow
+deck.picture.reflection	Reflection
+deck.picture.glow	Glow
+deck.picture.soft_edges	Soft Edges
+deck.picture.bevel	Bevel
+deck.picture.crop	Crop
+deck.picture.crop_to_shape	Crop to Shape
+deck.picture.aspect	Aspect Ratio
+deck.picture.crop_left	Crop Left
+deck.picture.crop_top	Crop Top
+deck.picture.crop_right	Crop Right
+deck.picture.crop_bottom	Crop Bottom
+deck.picture.uncrop	Remove Crop
+deck.picture.rotate	Rotate
+deck.picture.rotate_right	Rotate Right 90°
+deck.picture.rotate_left	Rotate Left 90°
+deck.picture.flip_vertical	Flip Vertical
+deck.picture.flip_horizontal	Flip Horizontal
+deck.picture.size	Size
+deck.picture.height	Height
+deck.picture.width	Width
+deck.picture.lock_aspect	Lock Aspect Ratio
+deck.picture.reset	Reset Picture
+deck.picture.reset_size	Reset Picture & Size
+deck.picture.compress	Compress Pictures
+deck.picture.delete_cropped	Delete cropped areas of pictures
+deck.picture.compressed	Pictures compressed: {count}
+deck.picture.graphic_fill	Graphics Fill
+deck.picture.icons	Icons
+deck.picture.screenshot	Screenshot
+deck.picture.screenshot_unsupported	Screenshots are not available here
+deck.picture.photo_album	Photo Album
+deck.picture.album_layout	{count} pictures per slide
+deck.picture.convert_to_shapes	Convert to Shape
+deck.picture.crop_handles	Crop Handles
 # What-If Analysis
 sheet.menu.group_what_if	What-If Analysis
 what_if.alert.reference	Reference is not valid.

@@ -46,6 +46,13 @@ use crate::{
     Save, SaveAs, SelectAll, StartSlideshow, Undo, UI_FONT_FAMILY,
 };
 
+#[path = "deck_picture.rs"]
+mod picture;
+#[path = "deck_picture_crop.rs"]
+mod picture_crop;
+#[path = "deck_smartart.rs"]
+mod smartart;
+
 /// The thumbnail strip's width, and the width each thumbnail is shown at.
 const SIDEBAR_WIDTH: f32 = 200.0;
 const THUMBNAIL_WIDTH: f32 = 152.0;
@@ -232,6 +239,9 @@ pub struct DeckView {
     slides_focused: bool,
     focus: FocusHandle,
     status: SharedString,
+    /// 挿入 › SmartArt and the SmartArt tools.
+    smartart: smartart::SmartArtTools,
+    pictures: picture::PictureTools,
 }
 
 impl DeckView {
@@ -450,7 +460,7 @@ impl DeckView {
     }
 
     fn insert_picture(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
-        let result = self.deck.insert_picture(self.current, bytes);
+        let result = self.deck.insert_picture_file(self.current, bytes);
         if let Err(error) = &result {
             self.status =
                 SharedString::from(i18n::format("deck.picture_failed", &[("error", error)]));
@@ -815,6 +825,16 @@ impl DeckView {
                 return;
             }
         }
+        // A second click in a selected diagram selects the shape there.
+        if hit.is_some()
+            && hit == self.selected
+            && self.more.is_empty()
+            && event.click_count < 2
+            && self.smartart_click(x, y, cx)
+        {
+            return;
+        }
+        self.smartart.node = None;
         // A press on a shape of the selection keeps it, to drag it all.
         let in_selection =
             hit.is_some_and(|id| self.more.contains(&id) || self.selected == Some(id));
@@ -874,6 +894,9 @@ impl DeckView {
             });
             return;
         }
+        if self.crop_drag_to(x, y, cx) {
+            return;
+        }
         if let Some(drag) = self.drag.as_mut() {
             drag.drag_to(x, y);
             cx.notify();
@@ -884,6 +907,9 @@ impl DeckView {
         self.selecting_text = false;
         if let (Some((from, to)), Some(insert)) = (self.drawing.take(), self.inserting) {
             self.insert_at(insert, insert.rect(from, to), cx);
+            return;
+        }
+        if self.finish_crop_drag(cx) {
             return;
         }
         let Some(drag) = self.drag.take() else {
@@ -1256,6 +1282,10 @@ impl DeckView {
             if !modifiers.platform && self.notes_key(key, cx) {
                 cx.stop_propagation();
             }
+            return;
+        }
+        if !modifiers.platform && self.smartart_key(key, modifiers.shift, cx) {
+            cx.stop_propagation();
             return;
         }
         // PowerPoint's formatting keys: ⌘B, ⌘I, ⌘U, ⌘L, ⌘E, ⌘R, ⌘J, and ⌘⇧>
@@ -1715,6 +1745,11 @@ impl DeckView {
                 .border_color(theme::accent())
                 .into_any_element(),
         );
+        // トリミング: the crop handles in place of the sizing ones.
+        if let Some(crop) = self.crop_overlay(scale, cx) {
+            out.extend(crop);
+            return out;
+        }
         // Corner handles on one shape alone, as PowerPoint's.
         if shape.can_resize && self.more.is_empty() {
             for (index, (is_left, is_top)) in
@@ -2462,6 +2497,9 @@ impl EntityInputHandler for DeckView {
             cx.notify();
             return;
         }
+        if self.smartart_text(text, cx) {
+            return;
+        }
         let mut range = range;
         if self.text_edit.is_none() && self.typing.is_none() {
             // Typing with a shape selected types into it.
@@ -2652,7 +2690,12 @@ impl Render for DeckView {
             Some(typing) => typing.geometry(&mut self.deck),
             None => None,
         };
-        let overlays = self.overlays(self.shown_scale, typed.as_ref(), cx);
+        let mut overlays = self.overlays(self.shown_scale, typed.as_ref(), cx);
+        overlays.extend(self.smartart_overlay(self.shown_scale));
+        let smartart_bar = self.smartart_bar(cx);
+        let picture_bar = self.picture_bar(cx);
+        self.play_pictures(cx);
+        let smartart_pane = self.smartart_pane(cx);
         let bounds_store = Rc::clone(&self.slide_bounds);
         let entity = cx.entity();
 
@@ -2836,6 +2879,9 @@ impl Render for DeckView {
                                     cx.listener(|view, _event, _window, cx| view.pick_picture(cx)),
                                 ),
                             )
+                            .child(self.smartart_button(cx))
+                            .children(self.convert_button(cx))
+                            .child(self.picture_insert_buttons(cx))
                             .child(div().flex_1())
                             // A table's layout, while one of its cells is
                             // typed into: PowerPoint's Layout tab.
@@ -2990,6 +3036,8 @@ impl Render for DeckView {
                             ),
                     )
                     .child(format_bar)
+                    .children(smartart_bar)
+                    .children(picture_bar)
                     .child(
                         // Scrolls once a chosen zoom makes the slide bigger
                         // than the space; while fitting there is nothing to
@@ -2997,6 +3045,8 @@ impl Render for DeckView {
                         // the selection.
                         div()
                             .id("slide-canvas")
+                            .relative()
+                            .children(smartart_pane)
                             .flex_1()
                             .min_h_0()
                             .overflow_scroll()
@@ -3143,6 +3193,8 @@ impl DeckView {
             slides_focused: false,
             focus: cx.focus_handle(),
             status: SharedString::from(""),
+            smartart: Default::default(),
+            pictures: Default::default(),
         };
         view.refresh_shapes();
         Ok(view)
