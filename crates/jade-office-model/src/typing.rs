@@ -57,8 +57,20 @@ pub fn read(text: &str, date1904: bool) -> Typed {
     if trimmed.eq_ignore_ascii_case("FALSE") {
         return Typed::plain(CellInput::Bool(false));
     }
-    read_number(trimmed, date1904)
-        .unwrap_or_else(|| Typed::plain(CellInput::Text(text.to_string())))
+    if let Some(number) = read_number(trimmed, date1904) {
+        return number;
+    }
+    if let Some(formula) = signed_formula(text) {
+        return Typed::plain(CellInput::Formula(close_parentheses(formula)));
+    }
+    Typed::plain(CellInput::Text(text.to_string()))
+}
+
+/// Text starting with `+` or `-` that is not a number, which Excel enters
+/// as a formula: `-A1` is `=-A1`, `+B2*2` is `=+B2*2`. A sign alone stays
+/// text.
+pub fn signed_formula(text: &str) -> Option<&str> {
+    (text.len() > 1 && text.starts_with(['+', '-'])).then_some(text)
 }
 
 /// What a write says when it refuses a formula, as Excel's message does.
