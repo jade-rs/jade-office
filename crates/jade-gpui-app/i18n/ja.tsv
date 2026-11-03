@@ -4957,3 +4957,17 @@ fit_text.new	新しい文字列の幅
 fit_text.unit	字
 fit_text.remove	解除
 fit_text.bad_width	文字列の幅は 0.5 字から 1584 字の間で指定してください。
+manuscript.group	原稿用紙
+manuscript.button	原稿用紙設定
+manuscript.title	原稿用紙設定
+manuscript.style	スタイル
+manuscript.style.none	なし
+manuscript.style.squares	マス目付き原稿用紙
+manuscript.style.lines	下線付き原稿用紙
+manuscript.style.frame	外枠付き原稿用紙
+manuscript.size	文字数 × 行数
+manuscript.color	罫線の色
+manuscript.paper	用紙サイズ
+manuscript.orientation	印刷の向き
+manuscript.portrait	縦
+manuscript.landscape	横
