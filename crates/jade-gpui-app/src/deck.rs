@@ -242,7 +242,12 @@ pub struct DeckView {
     /// 挿入 › SmartArt and the SmartArt tools.
     smartart: smartart::SmartArtTools,
     pictures: picture::PictureTools,
+    /// The アニメーション, 画面切り替え and ズーム panes.
+    anim: animation_tab::AnimationUi,
 }
+
+#[path = "deck_animation.rs"]
+mod animation_tab;
 
 impl DeckView {
     fn go_to(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -2646,7 +2651,7 @@ impl Render for DeckView {
         let (area_width, area_height) = workspace::editor_area(window, cx);
         let notes_height = if self.show_notes { NOTES_HEIGHT } else { 0.0 };
         let available = (
-            (area_width - SIDEBAR_WIDTH - SLIDE_MARGIN * 2.0).max(40.0),
+            (area_width - SIDEBAR_WIDTH - self.anim.width() - SLIDE_MARGIN * 2.0).max(40.0),
             (area_height - TOOLBAR_HEIGHT - FORMAT_BAR_HEIGHT - notes_height - SLIDE_MARGIN * 2.0)
                 .max(40.0),
         );
@@ -2672,6 +2677,8 @@ impl Render for DeckView {
             ));
         }
 
+        let animation_panel = self.animation_panel(window, cx);
+        let animation_buttons = self.animation_buttons(cx);
         let strip = self.format_strip();
         let format_bar = self
             .format_bar(&strip.clone().unwrap_or_default(), self.popup, cx)
@@ -2779,8 +2786,11 @@ impl Render for DeckView {
                     ),
             )
             .child(
+                // Its share of the width whatever the toolbar holds, so the
+                // slide stays put as buttons come and go.
                 div()
                     .flex_1()
+                    .min_w_0()
                     .h_full()
                     .flex()
                     .flex_col()
@@ -2788,6 +2798,7 @@ impl Render for DeckView {
                         div()
                             .h(px(TOOLBAR_HEIGHT))
                             .flex_none()
+                            .overflow_x_hidden()
                             .flex()
                             .items_center()
                             .gap_1()
@@ -2996,6 +3007,7 @@ impl Render for DeckView {
                                 )
                                 .on_click(cx.listener(|view, _event, _window, cx| view.print(cx))),
                             )
+                            .child(animation_buttons)
                             .child(
                                 toolbar_button(
                                     "from-current",
@@ -3157,6 +3169,7 @@ impl Render for DeckView {
                         )
                     }),
             )
+            .children(animation_panel)
     }
 }
 
@@ -3195,6 +3208,7 @@ impl DeckView {
             status: SharedString::from(""),
             smartart: Default::default(),
             pictures: Default::default(),
+            anim: Default::default(),
         };
         view.refresh_shapes();
         Ok(view)
@@ -3219,19 +3233,55 @@ struct SlideshowView {
     slide: Option<Painted>,
     retired: Vec<Arc<RenderImage>>,
     focus: FocusHandle,
+    playback: crate::deck_show_anim::ShowPlayback,
 }
 
 impl SlideshowView {
     /// The next slide shown, or the one before: hidden slides are skipped.
     fn step(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
-        match self.deck.next_shown(self.current, forward) {
-            Some(next) => {
-                self.current = next;
-                cx.notify();
-            }
+        use crate::deck_show_anim::ShowStep;
+        let target = match self.playback.step(&mut self.deck, self.current, forward) {
+            ShowStep::Handled => return cx.notify(),
+            ShowStep::Goto(slide) => Some(slide),
+            ShowStep::Slide => self.deck.next_shown(self.current, forward),
+        };
+        match target {
+            Some(next) => self.go(next, forward, cx),
             // Past the last slide the show is over, as in PowerPoint.
             None if forward => window.remove_window(),
             None => {}
+        }
+    }
+
+    /// Shows slide `next`, its transition and animations set going.
+    fn go(&mut self, next: usize, forward: bool, cx: &mut Context<Self>) {
+        let width = self
+            .slide
+            .as_ref()
+            .map_or(1280, |painted| painted.device_width);
+        self.playback
+            .entered(&mut self.deck, self.current, next, forward, width);
+        self.current = next;
+        cx.notify();
+    }
+
+    /// A left click: a trigger or a zoom under it, else the next step.
+    fn click(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        use crate::deck_show_anim::{slide_point, ShowStep};
+        let viewport = window.viewport_size();
+        let point = slide_point(
+            &self.deck,
+            (f32::from(viewport.width), f32::from(viewport.height)),
+            (f32::from(event.position.x), f32::from(event.position.y)),
+        );
+        let outcome = match point {
+            Some(point) => self.playback.click_at(&mut self.deck, self.current, point),
+            None => ShowStep::Slide,
+        };
+        match outcome {
+            ShowStep::Handled => cx.notify(),
+            ShowStep::Goto(slide) => self.go(slide, true, cx),
+            ShowStep::Slide => self.step(true, window, cx),
         }
     }
 
@@ -3272,12 +3322,22 @@ impl Render for SlideshowView {
             (f32::from(viewport.width), f32::from(viewport.height)),
         );
         let device_width = (width * window.scale_factor()).round() as i32;
+        if self.playback.due(&self.deck, self.current) {
+            self.step(true, window, cx);
+        }
         repaint(
             &mut self.deck,
             &mut self.slide,
             &mut self.retired,
             self.current,
             device_width,
+        );
+        let animated = self.playback.image(
+            &mut self.deck,
+            self.current,
+            device_width,
+            window,
+            &mut self.retired,
         );
         div()
             .size_full()
@@ -3288,18 +3348,15 @@ impl Render for SlideshowView {
             .track_focus(&self.focus)
             .key_context("Slideshow")
             .on_key_down(cx.listener(Self::handle_key))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|view, _event, window, cx| view.step(true, window, cx)),
-            )
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::click))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|view, _event, window, cx| view.step(false, window, cx)),
             )
             .children(
-                self.slide
-                    .as_ref()
-                    .map(|painted| img(painted.image.clone()).w(px(width)).h(px(height))),
+                animated
+                    .or_else(|| self.slide.as_ref().map(|painted| painted.image.clone()))
+                    .map(|image| img(image).w(px(width)).h(px(height))),
             )
     }
 }
@@ -3321,6 +3378,7 @@ fn open_slideshow(bytes: Vec<u8>, from: usize, cx: &mut App) -> Result<(), Strin
                     slide: None,
                     retired: Vec::new(),
                     focus: cx.focus_handle(),
+                    playback: Default::default(),
                 })
             },
         )
@@ -3945,6 +4003,7 @@ mod tests {
             slide: None,
             retired: Vec::new(),
             focus: cx.focus_handle(),
+            playback: Default::default(),
         });
         cx.update(|window, cx| window.focus(&show.focus_handle(cx)));
         cx.simulate_keystrokes("right");

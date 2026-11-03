@@ -556,16 +556,8 @@ impl DocView {
     /// The slide show's next slide, or the one before: hidden slides are
     /// skipped, and past the last one the show is over, as in PowerPoint.
     pub(super) fn step_show(&mut self, forward: bool, cx: &mut Context<Self>) {
-        let Document::Deck { deck, current, .. } = &self.document else {
-            return;
-        };
-        match deck.next_shown(*current, forward) {
-            Some(next) => self.go_to_slide(next, cx),
-            None if forward => {
-                self.slideshow = false;
-                cx.notify();
-            }
-            None => {}
+        if let Some(next) = self.show_step(forward, cx) {
+            self.show_go(next, forward, cx);
         }
     }
 
@@ -577,6 +569,7 @@ impl DocView {
             self.commit_slide_text(cx);
             self.select_shape(None);
         }
+        self.reset_show();
         self.slideshow = true;
         cx.notify();
     }
@@ -1552,9 +1545,13 @@ impl DocView {
         let fit = (area_width / slide_width as f32).min(area_height / slide_height as f32);
         let (width, height) = (slide_width as f32 * fit, slide_height as f32 * fit);
         self.paint_slide(width, window.scale_factor());
+        let device_width = (width * window.scale_factor()).round() as u32;
+        let animated = self.show_picture(device_width, window, cx);
+        let recorder = self.show_bounds_recorder();
         let Document::Deck { slide, .. } = &self.document else {
             unreachable!()
         };
+        let picture = animated.or_else(|| slide.as_ref().map(|(_, _, _, image)| image.clone()));
         div()
             .size_full()
             .flex()
@@ -1564,16 +1561,19 @@ impl DocView {
             .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|view, _event, _window, cx| view.step_show(true, cx)),
+                cx.listener(|view, event: &MouseDownEvent, _window, cx| view.show_click(event, cx)),
             )
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|view, _event, _window, cx| view.step_show(false, cx)),
             )
-            .children(
-                slide
-                    .as_ref()
-                    .map(|(_, _, _, image)| img(image.clone()).w(px(width)).h(px(height))),
+            .child(
+                div()
+                    .relative()
+                    .w(px(width))
+                    .h(px(height))
+                    .children(picture.map(|image| img(image).w(px(width)).h(px(height))))
+                    .child(recorder),
             )
     }
 

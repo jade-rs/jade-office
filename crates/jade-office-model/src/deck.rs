@@ -22,10 +22,12 @@ pub use jade_pptx_writer::{
     ParagraphAlignment, ShapeTransformInfo, SlideLayoutInfo, TableChange, TextFormat,
 };
 
+pub mod animation;
 mod format;
 mod insert;
 mod picture;
 mod selection;
+pub mod show_playback;
 mod smartart;
 mod text;
 pub use format::{step_size, FormatStrip, TextCommand, FONT_SIZES};
