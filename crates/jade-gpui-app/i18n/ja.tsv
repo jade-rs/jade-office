@@ -4828,3 +4828,6 @@ watermark.color.green	緑
 watermark.color.blue	青
 watermark.color.navy	濃い青
 watermark.color.purple	紫
+table.border.diagonal_down	斜め罫線 (右下がり)
+table.border.diagonal_up	斜め罫線 (右上がり)
+table.borders_diagonals	斜め罫線

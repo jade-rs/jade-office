@@ -4828,3 +4828,6 @@ watermark.color.green	Green
 watermark.color.blue	Blue
 watermark.color.navy	Dark Blue
 watermark.color.purple	Purple
+table.border.diagonal_down	Diagonal Down Border
+table.border.diagonal_up	Diagonal Up Border
+table.borders_diagonals	Diagonals

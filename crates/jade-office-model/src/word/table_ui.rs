@@ -343,6 +343,7 @@ impl TableTools {
             TableAction::Borders => {
                 let mut dialog = BordersDialog::new(BorderTarget::Table);
                 dialog.pen = self.pen.clone();
+                dialog.diagonals = document.cell_diagonals();
                 self.open(Some(TableDialog::Borders(dialog)))
             }
             TableAction::BorderSet(set) => edited(document.apply_border_set(set, &self.pen)),
