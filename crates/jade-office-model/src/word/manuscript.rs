@@ -131,17 +131,21 @@ impl ManuscriptDialog {
         }
     }
 
-    /// 字送り and 行送り: the body box shared out among the squares.
+    /// 字送り and 行送り: the body box shared out among the squares, rounded
+    /// down — the line pitch to the twips Word keeps it in — so that the
+    /// last square of a line and the last line still fit the body box, as
+    /// 文字数 and 行数 promise.
     pub fn pitches(&self) -> (f32, f32) {
         let (w, h) = self.page_size();
         let body_w = w - 2.0 * MANUSCRIPT_MARGIN_SIDE;
         let body_h = h - 2.0 * MANUSCRIPT_MARGIN_TOP;
         let (chars, lines) = (self.chars.max(1) as f32, self.lines.max(1) as f32);
-        let round = |value: f32| (value * 100.0).round() / 100.0;
+        let char_pitch = |value: f32| (value * 100.0).floor() / 100.0;
+        let line_pitch = |value: f32| (value * 20.0).floor() / 20.0;
         if self.vertical {
-            (round(body_h / chars), round(body_w / lines))
+            (char_pitch(body_h / chars), line_pitch(body_w / lines))
         } else {
-            (round(body_w / chars), round(body_h / lines))
+            (char_pitch(body_w / chars), line_pitch(body_h / lines))
         }
     }
 
@@ -251,8 +255,10 @@ mod tests {
         dialog.set_style(Some(ManuscriptStyle::Squares));
         assert_eq!((dialog.chars, dialog.lines), (20, 20));
         let (char_pitch, line_pitch) = dialog.pitches();
-        assert!((char_pitch - 21.27).abs() < 0.01, "{char_pitch}");
-        assert!((line_pitch - 34.9).abs() < 0.01, "{line_pitch}");
+        assert!((char_pitch - 21.26).abs() < 0.001, "{char_pitch}");
+        assert!((line_pitch - 34.85).abs() < 0.001, "{line_pitch}");
+        // Twenty of each fit the 425.3pt × 697.9pt body box.
+        assert!(20.0 * char_pitch <= 425.3 && 20.0 * line_pitch <= 697.9);
         let commands = dialog.commands();
         assert_eq!(commands.len(), 2);
         assert!(matches!(
@@ -272,6 +278,6 @@ mod tests {
         assert_eq!((dialog.chars, dialog.lines), (20, 20));
         // Vertical: squares down the page.
         let (char_pitch, line_pitch) = dialog.pitches();
-        assert!((char_pitch - 34.9).abs() < 0.01 && (line_pitch - 21.27).abs() < 0.01);
+        assert!((char_pitch - 34.89).abs() < 0.001 && (line_pitch - 21.25).abs() < 0.001);
     }
 }
