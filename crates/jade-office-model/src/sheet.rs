@@ -2637,6 +2637,7 @@ impl<B: Backend> Workbook<B> {
                 column: at.column.clamp(range.start.column, range.end.column) - range.start.column,
                 descending,
                 color: None,
+                custom_list: None,
             }],
             by_columns: false,
         };
@@ -2694,6 +2695,7 @@ impl<B: Backend> Workbook<B> {
                     column: row.clamp(&range.start.row, &range.end.row) - range.start.row,
                     descending: *descending,
                     color: color.clone(),
+                    custom_list: None,
                 })
                 .collect(),
             by_columns: true,
@@ -2735,6 +2737,7 @@ impl<B: Backend> Workbook<B> {
                             - range.start.column,
                         descending: *descending,
                         color: color.clone(),
+                        custom_list: None,
                     },
                 )
                 .collect(),
@@ -2923,6 +2926,7 @@ impl<B: Backend> Workbook<B> {
                 column: button.column,
                 descending,
                 color: None,
+                custom_list: None,
             }],
             by_columns: false,
         };

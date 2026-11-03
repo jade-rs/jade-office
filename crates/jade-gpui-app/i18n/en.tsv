@@ -4100,6 +4100,249 @@ deck.picture.photo_album	Photo Album
 deck.picture.album_layout	{count} pictures per slide
 deck.picture.convert_to_shapes	Convert to Shape
 deck.picture.crop_handles	Crop Handles
+anim.tab	Animations
+transition.tab	Transitions
+zoom.tab	Zoom
+anim.preview	Preview
+anim.gallery	Animation Styles
+anim.class.entrance	Entrance
+anim.class.emphasis	Emphasis
+anim.class.exit	Exit
+anim.class.path	Motion Paths
+anim.more_effects	More Effects
+anim.add	Add Animation
+anim.painter	Animation Painter
+anim.painter_hint	Click the object to paint the animation onto
+anim.select_object	Select an object to animate
+anim.draw_path_hint	Click on the slide preview to draw the path; double-click to finish
+anim.path_done	Finish Path
+anim.path_cancel	Cancel
+anim.effect_options	Effect Options
+anim.sequence	Sequence
+anim.seq.one_object	As One Object
+anim.seq.by_paragraph	By Paragraph
+anim.seq.by_series	By Series
+anim.seq.by_category	By Category
+anim.seq.by_series_element	By Element in Series
+anim.seq.by_category_element	By Element in Category
+anim.start	Start
+anim.start.on_click	On Click
+anim.start.with_previous	With Previous
+anim.start.after_previous	After Previous
+anim.duration	Duration
+anim.delay	Delay
+anim.move_earlier	Move Earlier
+anim.move_later	Move Later
+anim.remove	Remove
+anim.remove_all	Remove All
+anim.enhancements	Enhancements
+anim.smooth_start	Smooth Start
+anim.smooth_end	Smooth End
+anim.rewind	Rewind When Done Playing
+anim.auto_reverse	Auto-Reverse
+anim.repeat	Repeat
+anim.repeat.none	(none)
+anim.repeat.two	2
+anim.repeat.three	3
+anim.repeat.next_click	Until Next Click
+anim.repeat.end_of_slide	Until End of Slide
+anim.after	After Animation
+anim.after.none	Don't Dim
+anim.after.dim	Dim
+anim.after.hide	Hide After Animation
+anim.after.hide_on_click	Hide on Next Mouse Click
+anim.text	Animate Text
+anim.text.all_at_once	All at Once
+anim.text.by_word	By Word
+anim.text.by_letter	By Letter
+anim.trigger	Trigger
+anim.trigger.sequence	Part of Click Sequence
+anim.trigger.on_click_of	On Click of {name}
+anim.trigger.bookmark	On Bookmark {name}
+anim.trigger.heading	Trigger: {name}
+anim.pane	Animation Pane
+anim.none	No animations on this slide
+anim.media	Media
+anim.custom_effect	Custom
+anim.effect.appear	Appear
+anim.effect.fade	Fade
+anim.effect.fly_in	Fly In
+anim.effect.float_in	Float In
+anim.effect.split	Split
+anim.effect.wipe	Wipe
+anim.effect.shape	Shape
+anim.effect.wheel	Wheel
+anim.effect.random_bars	Random Bars
+anim.effect.grow_turn	Grow & Turn
+anim.effect.zoom	Zoom
+anim.effect.swivel	Swivel
+anim.effect.bounce	Bounce
+anim.effect.blinds	Blinds
+anim.effect.box	Box
+anim.effect.checkerboard	Checkerboard
+anim.effect.diamond	Diamond
+anim.effect.dissolve_in	Dissolve In
+anim.effect.plus	Plus
+anim.effect.peek_in	Peek In
+anim.effect.strips	Strips
+anim.effect.wedge	Wedge
+anim.effect.float_down	Float Down
+anim.effect.expand	Expand
+anim.effect.rise_up	Rise Up
+anim.effect.basic_zoom	Basic Zoom
+anim.effect.pulse	Pulse
+anim.effect.color_pulse	Color Pulse
+anim.effect.teeter	Teeter
+anim.effect.spin	Spin
+anim.effect.grow_shrink	Grow/Shrink
+anim.effect.desaturate	Desaturate
+anim.effect.darken	Darken
+anim.effect.lighten	Lighten
+anim.effect.transparency	Transparency
+anim.effect.object_color	Object Color
+anim.effect.complementary_color	Complementary Color
+anim.effect.line_color	Line Color
+anim.effect.fill_color	Fill Color
+anim.effect.brush_color	Brush Color
+anim.effect.font_color	Font Color
+anim.effect.underline	Underline
+anim.effect.bold_flash	Bold Flash
+anim.effect.bold_reveal	Bold Reveal
+anim.effect.wave	Wave
+anim.effect.blink	Blink
+anim.effect.disappear	Disappear
+anim.effect.fly_out	Fly Out
+anim.effect.float_out	Float Out
+anim.effect.shrink_turn	Shrink & Turn
+anim.effect.dissolve_out	Dissolve Out
+anim.effect.sink_down	Sink Down
+anim.effect.lines	Lines
+anim.effect.arcs	Arcs
+anim.effect.turns	Turns
+anim.effect.shapes	Shapes
+anim.effect.loops	Loops
+anim.effect.custom	Custom Path
+anim.effect.left	Left
+anim.effect.up	Up
+anim.effect.right	Right
+anim.effect.arc_left	Arc Left
+anim.effect.arc_right	Arc Right
+anim.effect.arc_up	Arc Up
+anim.effect.turn_right	Turn Right
+anim.effect.turn_up	Turn Up
+anim.effect.turn_up_right	Turn Up Right
+anim.effect.square	Square
+anim.effect.equal_triangle	Equal Triangle
+anim.effect.trapezoid	Trapezoid
+anim.effect.octagon	Octagon
+anim.effect.five_point_star	5 Point Star
+anim.effect.heart	Heart
+anim.effect.diagonal_down_right	Diagonal Down Right
+anim.effect.diagonal_up_right	Diagonal Up Right
+anim.effect.zigzag	Zigzag
+anim.option.from_bottom	From Bottom
+anim.option.from_bottom_left	From Bottom-Left
+anim.option.from_left	From Left
+anim.option.from_top_left	From Top-Left
+anim.option.from_top	From Top
+anim.option.from_top_right	From Top-Right
+anim.option.from_right	From Right
+anim.option.from_bottom_right	From Bottom-Right
+anim.option.horizontal_out	Horizontal Out
+anim.option.horizontal_in	Horizontal In
+anim.option.vertical_out	Vertical Out
+anim.option.vertical_in	Vertical In
+anim.option.in	In
+anim.option.out	Out
+anim.option.spoke_1	1 Spoke
+anim.option.spoke_2	2 Spokes
+anim.option.spoke_3	3 Spokes
+anim.option.spoke_4	4 Spokes
+anim.option.spoke_8	8 Spokes
+anim.option.horizontal	Horizontal
+anim.option.vertical	Vertical
+anim.option.object_center	Object Center
+anim.option.slide_center	Slide Center
+anim.option.clockwise	Clockwise
+anim.option.counterclockwise	Counterclockwise
+anim.option.both	Both
+anim.option.smoothly	Smoothly
+anim.option.through_black	Through Black
+anim.option.circle	Circle
+anim.option.diamond	Diamond
+anim.option.plus	Plus
+anim.option.objects	Objects
+anim.option.words	Words
+anim.option.characters	Characters
+transition.gallery	Transition Effects
+transition.none	None
+transition.group.subtle	Subtle
+transition.group.exciting	Exciting
+transition.group.dynamic	Dynamic Content
+transition.effect.morph	Morph
+transition.effect.fade	Fade
+transition.effect.push	Push
+transition.effect.wipe	Wipe
+transition.effect.split	Split
+transition.effect.reveal	Reveal
+transition.effect.cut	Cut
+transition.effect.random_bars	Random Bars
+transition.effect.shape	Shape
+transition.effect.uncover	Uncover
+transition.effect.cover	Cover
+transition.effect.flash	Flash
+transition.effect.fall_over	Fall Over
+transition.effect.drape	Drape
+transition.effect.curtains	Curtains
+transition.effect.wind	Wind
+transition.effect.prestige	Prestige
+transition.effect.fracture	Fracture
+transition.effect.crush	Crush
+transition.effect.peel_off	Peel Off
+transition.effect.page_curl	Page Curl
+transition.effect.airplane	Airplane
+transition.effect.origami	Origami
+transition.effect.dissolve	Dissolve
+transition.effect.checkerboard	Checkerboard
+transition.effect.blinds	Blinds
+transition.effect.clock	Clock
+transition.effect.ripple	Ripple
+transition.effect.honeycomb	Honeycomb
+transition.effect.glitter	Glitter
+transition.effect.vortex	Vortex
+transition.effect.shred	Shred
+transition.effect.switch	Switch
+transition.effect.flip	Flip
+transition.effect.gallery	Gallery
+transition.effect.cube	Cube
+transition.effect.doors	Doors
+transition.effect.box	Box
+transition.effect.comb	Comb
+transition.effect.zoom	Zoom
+transition.effect.random	Random
+transition.effect.pan	Pan
+transition.effect.ferris_wheel	Ferris Wheel
+transition.effect.conveyor	Conveyor
+transition.effect.window	Window
+transition.effect.fly_through	Fly Through
+transition.sound	Sound
+transition.sound.none	[No Sound]
+transition.sound.stop	[Stop Previous Sound]
+transition.sound.other	Other Sound...
+transition.sound.loop	Loop Until Next Sound
+transition.advance	Advance Slide
+transition.on_click	On Mouse Click
+transition.after	After
+transition.apply_all	Apply To All
+zoom.insert	Insert Zoom
+zoom.summary	Summary Zoom
+zoom.slide	Slide Zoom
+zoom.section	Section Zoom
+zoom.no_sections	This presentation has no sections
+zoom.insert_button	Insert
+zoom.options	Zoom Options
+zoom.return	Return to Zoom
+zoom.background	Zoom Background
 # What-If Analysis
 sheet.menu.group_what_if	What-If Analysis
 what_if.alert.reference	Reference is not valid.

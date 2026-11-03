@@ -22,6 +22,7 @@
 
 mod autorecover;
 mod deck;
+mod deck_show_anim;
 mod editor;
 mod i18n;
 mod keyboard_access;

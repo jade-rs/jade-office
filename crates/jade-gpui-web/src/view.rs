@@ -31,6 +31,7 @@ use crate::{i18n, palette, Fonts, Host, UI_FONT};
 use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatting};
 
 mod deck;
+mod deck_show;
 mod sheet;
 pub(crate) mod word_characters;
 mod word_context_menu;
@@ -545,6 +546,8 @@ pub struct DocView {
     shown_zoom: f32,
     show_notes: bool,
     slideshow: bool,
+    /// The slide show's animations and transitions.
+    show: deck_show::WebShow,
     /// Whether the browser's paste event came after the last ⌘V.
     paste_arrived: bool,
     /// The status bar's 文字カウント and the caret, selection and edit it
@@ -811,6 +814,7 @@ impl DocView {
             shown_zoom: 1.0,
             show_notes: true,
             slideshow: false,
+            show: Default::default(),
             paste_arrived: false,
             word_count: RefCell::new(None),
             characters: word_characters::Characters::default(),
