@@ -94,6 +94,7 @@ pub mod screen_reader;
 pub mod search;
 pub mod selection;
 pub mod shape_gallery;
+pub mod shading;
 pub mod shapes;
 pub mod signatures;
 pub mod styles;

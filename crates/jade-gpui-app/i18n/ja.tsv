@@ -4974,3 +4974,16 @@ manuscript.landscape	横
 paragraph.outline	アウトライン レベル
 paragraph.outline.body	本文
 paragraph.collapsed	既定で折りたたみ
+word.shading.horz_stripe	横縞
+word.shading.vert_stripe	縦縞
+word.shading.diag_stripe	右下がり斜線
+word.shading.reverse_diag_stripe	右上がり斜線
+word.shading.horz_cross	格子
+word.shading.diag_cross	斜め格子
+word.shading.thin_horz_stripe	横縞 (細)
+word.shading.thin_vert_stripe	縦縞 (細)
+word.shading.thin_diag_stripe	右下がり斜線 (細)
+word.shading.thin_reverse_diag_stripe	右上がり斜線 (細)
+word.shading.thin_horz_cross	格子 (細)
+word.shading.thin_diag_cross	斜め格子 (細)
+word.shading.color	色

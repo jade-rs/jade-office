@@ -4974,3 +4974,16 @@ manuscript.landscape	Landscape
 paragraph.outline	Outline level
 paragraph.outline.body	Body Text
 paragraph.collapsed	Collapsed by default
+word.shading.horz_stripe	Dark Horizontal
+word.shading.vert_stripe	Dark Vertical
+word.shading.diag_stripe	Dark Down Diagonal
+word.shading.reverse_diag_stripe	Dark Up Diagonal
+word.shading.horz_cross	Dark Grid
+word.shading.diag_cross	Dark Trellis
+word.shading.thin_horz_stripe	Light Horizontal
+word.shading.thin_vert_stripe	Light Vertical
+word.shading.thin_diag_stripe	Light Down Diagonal
+word.shading.thin_reverse_diag_stripe	Light Up Diagonal
+word.shading.thin_horz_cross	Light Grid
+word.shading.thin_diag_cross	Light Trellis
+word.shading.color	Color
