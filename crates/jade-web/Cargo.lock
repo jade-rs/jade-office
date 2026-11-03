@@ -1393,6 +1393,7 @@ dependencies = [
  "jade-docx-merge",
  "jade-docx-reader",
  "jade-docx-writer",
+ "jade-ink",
  "jade-opc",
  "jade-painter",
  "jade-pptx-layout",
@@ -1471,6 +1472,7 @@ name = "jade-docx-reader"
 version = "0.1.0"
 dependencies = [
  "encoding_rs",
+ "jade-ink",
  "jade-opc",
  "quick-xml 0.41.0",
  "serde",
@@ -1486,6 +1488,16 @@ dependencies = [
  "memchr",
  "thiserror 2.0.21",
  "zip 9.0.5",
+]
+
+[[package]]
+name = "jade-ink"
+version = "0.1.0"
+dependencies = [
+ "jade-painter",
+ "png 0.17.16",
+ "quick-xml 0.41.0",
+ "serde",
 ]
 
 [[package]]
@@ -1577,6 +1589,7 @@ dependencies = [
 name = "jade-pptx-reader"
 version = "0.1.0"
 dependencies = [
+ "jade-ink",
  "jade-opc",
  "jade-smartart",
  "quick-xml 0.39.4",
@@ -1588,6 +1601,7 @@ dependencies = [
 name = "jade-pptx-render"
 version = "0.1.0"
 dependencies = [
+ "jade-ink",
  "jade-painter",
  "jade-pptx-layout",
  "jade-pptx-reader",
@@ -1599,6 +1613,7 @@ name = "jade-pptx-writer"
 version = "0.1.0"
 dependencies = [
  "image",
+ "jade-ink",
  "jade-opc",
  "jade-picture-effects",
  "jade-pptx-layout",
