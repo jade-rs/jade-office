@@ -571,6 +571,8 @@ fn border_key(set: BorderSet) -> &'static str {
         BorderSet::Inside => "table.border.inside",
         BorderSet::InsideHorizontal => "table.border.inside_h",
         BorderSet::InsideVertical => "table.border.inside_v",
+        BorderSet::DiagonalDown => "table.border.diagonal_down",
+        BorderSet::DiagonalUp => "table.border.diagonal_up",
     }
 }
 
@@ -1683,6 +1685,21 @@ fn borders_body(dialog: &BordersDialog, cx: &mut Context<DocView>) -> AnyElement
                     .on_click(borders(cx, move |d| d.edges[index] = !d.edges[index]))
             }),
         ))
+        // 斜め罫線: the cells' diagonals, when 設定対象 is セル.
+        .when(dialog.target == BorderTarget::Cell, |body| {
+            body.child(
+                line().child(label("table.borders_diagonals")).children(
+                    ["table.border.diagonal_down", "table.border.diagonal_up"]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, key)| {
+                            chip(("diagonal", index), t(key), dialog.diagonals[index]).on_click(
+                                borders(cx, move |d| d.diagonals[index] = !d.diagonals[index]),
+                            )
+                        }),
+                ),
+            )
+        })
         .child(
             line()
                 .child(label("table.pen_style"))

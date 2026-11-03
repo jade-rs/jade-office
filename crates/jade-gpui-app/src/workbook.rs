@@ -72,6 +72,7 @@ mod charts;
 mod conditional;
 mod custom_filter;
 mod duplicates;
+mod fill_series;
 mod find_bar;
 mod insert_function;
 mod links;
@@ -491,6 +492,8 @@ enum MenuCommand {
     ShiftCells(Axis, bool),
     FillDown,
     FillRight,
+    /// Home ▸ Fill ▸ Series…
+    FillSeries,
     SortAscending,
     SortDescending,
     MergeCenter,
@@ -662,6 +665,8 @@ pub struct WorkbookView {
     name_manager: Option<jade_office_model::name_manager::NameManager>,
     insert_function: Option<jade_office_model::insert_function::InsertFunctionDialog>,
     top_ten: Option<jade_office_model::top_ten::TopTenDialog>,
+    /// Home ▸ Fill ▸ Series…'s dialog.
+    series_dialog: Option<jade_office_model::fill_series::SeriesDialog>,
     /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
     shift_choice: Option<bool>,
     more_colors: Option<jade_office_model::more_colors::MoreColorsDialog>,
@@ -756,6 +761,9 @@ impl WorkbookView {
         if let Some(dialog) = self.what_if.as_mut() {
             return dialog.form_mut().typing_mut();
         }
+        if let Some(dialog) = self.series_dialog.as_mut() {
+            return Some(dialog.field_mut());
+        }
         if let Some(dialog) = self.more_colors.as_mut() {
             return Some(&mut dialog.code);
         }
@@ -813,6 +821,9 @@ impl WorkbookView {
         }
         if let Some(dialog) = self.what_if.as_ref() {
             return dialog.form().typing();
+        }
+        if let Some(dialog) = self.series_dialog.as_ref() {
+            return Some(dialog.field());
         }
         if let Some(dialog) = self.more_colors.as_ref() {
             return Some(&dialog.code);
@@ -916,6 +927,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -1207,6 +1219,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -1312,6 +1325,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -1462,6 +1476,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -1775,6 +1790,7 @@ impl WorkbookView {
                 ProtectedEdit::FillRight { range },
             )
             .map(|outcome| outcome.changed),
+            MenuCommand::FillSeries => return self.open_series_dialog(cx),
             MenuCommand::SortAscending => self.book.sort(range, selection.active, false),
             MenuCommand::SortDescending => self.book.sort(range, selection.active, true),
             // Merge & Center takes in every merged cell the range touches,
@@ -2364,6 +2380,10 @@ impl WorkbookView {
         if self.what_if.is_some() {
             return self.what_if_key(key, modifiers, cx);
         }
+        // Fill ▸ Series' dialog has the keys while it is open.
+        if self.series_dialog.is_some() {
+            return self.series_key(key, modifiers, cx);
+        }
         // More Colors' dialog has the keys while it is open.
         if self.more_colors.is_some() {
             return self.more_colors_key(key, modifiers, cx);
@@ -2875,6 +2895,7 @@ impl WorkbookView {
             || self.name_manager.is_some()
             || self.insert_function.is_some()
             || self.top_ten.is_some()
+            || self.series_dialog.is_some()
             || self.shift_choice.is_some()
             || self.more_colors.is_some()
             || self.zoom_dialog.is_some()
@@ -3791,6 +3812,7 @@ impl WorkbookView {
                     (MenuCommand::ClearAll, "sheet.menu.clear_all"),
                     (MenuCommand::FillDown, "sheet.menu.fill_down"),
                     (MenuCommand::FillRight, "sheet.menu.fill_right"),
+                    (MenuCommand::FillSeries, "sheet.menu.fill_series"),
                     (MenuCommand::SortAscending, "sheet.menu.sort_ascending"),
                     (MenuCommand::SortDescending, "sheet.menu.sort_descending"),
                     (MenuCommand::MergeCenter, "sheet.menu.merge_center"),
@@ -5552,6 +5574,7 @@ impl Render for WorkbookView {
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
         let shift_choice_panel = self.shift_choice_panel(cx);
+        let series_panel = self.series_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
         let what_if_panel = self.what_if_panel(cx);
         let zoom_dialog_panel = self.zoom_dialog_panel(cx);
@@ -5726,6 +5749,7 @@ impl Render for WorkbookView {
             .children(insert_function_panel)
             .children(top_ten_panel)
             .children(shift_choice_panel)
+            .children(series_panel)
             .children(more_colors_panel)
             .children(what_if_panel)
             .children(zoom_dialog_panel)
@@ -5785,6 +5809,7 @@ impl WorkbookView {
             name_manager: None,
             insert_function: None,
             top_ten: None,
+            series_dialog: None,
             shift_choice: None,
             more_colors: None,
             zoom_dialog: None,
@@ -7557,6 +7582,31 @@ mod tests {
             assert!(!view.book.show_headings());
             view.menu_command(MenuCommand::FreezeTopRow, false, cx);
             assert_eq!(view.book.frozen_panes(), Some((0, 1)));
+        });
+    }
+
+    /// Fill ▸ Series… fills the selection down by the step typed; one that
+    /// is not a number keeps the dialog open.
+    #[gpui::test]
+    fn the_series_dialog_fills_the_selection(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_view(cx);
+        view.update(cx, |view, cx| {
+            view.book.set_cell(at(9, 39), "1").unwrap();
+            view.selection = Selection::range_from(at(9, 39), at(9, 42));
+            view.menu_command(MenuCommand::FillSeries, false, cx);
+            assert!(view.series_dialog.is_some());
+        });
+        cx.simulate_input("x");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.series_dialog.as_ref().unwrap().problem);
+        });
+        cx.simulate_keystrokes("backspace");
+        cx.simulate_input("3");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.series_dialog.is_none());
+            assert_eq!(view.book.number(at(9, 42)), Some(10.0));
         });
     }
 

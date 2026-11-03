@@ -503,6 +503,25 @@ sheet.paste_special.cancel	Cancel
 sheet.menu.clear	Clear Contents
 sheet.menu.fill_down	Fill Down
 sheet.menu.fill_right	Fill Right
+sheet.menu.fill_series	Series…
+sheet.series.title	Series
+sheet.series.in	Series in
+sheet.series.rows	Rows
+sheet.series.columns	Columns
+sheet.series.type	Type
+sheet.series.linear	Linear
+sheet.series.growth	Growth
+sheet.series.date	Date
+sheet.series.autofill	AutoFill
+sheet.series.unit	Date unit
+sheet.series.day	Day
+sheet.series.weekday	Weekday
+sheet.series.month	Month
+sheet.series.year	Year
+sheet.series.trend	Trend
+sheet.series.step	Step value:
+sheet.series.stop	Stop value:
+sheet.series.not_a_number	The step and stop values must be numbers.
 sheet.menu.sort_ascending	Sort A to Z
 sheet.menu.sort_descending	Sort Z to A
 sheet.menu.merge_center	Merge & Center
@@ -4929,3 +4948,12 @@ watermark.color.green	Green
 watermark.color.blue	Blue
 watermark.color.navy	Dark Blue
 watermark.color.purple	Purple
+table.border.diagonal_down	Diagonal Down Border
+table.border.diagonal_up	Diagonal Up Border
+table.borders_diagonals	Diagonals
+fit_text.title	Fit Text
+fit_text.current	Current text width
+fit_text.new	New text width
+fit_text.unit	chars
+fit_text.remove	Remove
+fit_text.bad_width	The text width must be between 0.5 and 1584 characters.

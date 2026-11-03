@@ -16,11 +16,12 @@ pub use jade_office_model::tiny::TinySkiaBackend;
 pub use jade_office_model::{
     advanced_filter, analysis, cell_styles, chart_form, charts, color_wheel,
     conditional_formatting, consolidate, csv, custom_filter, custom_lists, data_table, date_filter,
-    deck, duplicates, editable_ranges, find, forecast_sheet, form, format_cells, formula_complete,
-    formula_tips, freeform, function_help, goal_seek, grid, insert_function, links, more_colors,
-    name_manager, number_formats, page_setup_dialog, paste_special, pivots, precedents, print,
-    protected_edits, protection, recent_files, report, scenarios, sheet, solver, sort_dialog, spin,
-    subtotal, tables, text, text_columns, top_ten, typing, validation, what_if, word, zoom_dialog,
+    deck, duplicates, editable_ranges, fill_series, find, forecast_sheet, form, format_cells,
+    formula_complete, formula_tips, freeform, function_help, goal_seek, grid, insert_function,
+    links, more_colors, name_manager, number_formats, page_setup_dialog, paste_special, pivots,
+    precedents, print, protected_edits, protection, recent_files, report, scenarios, sheet, solver,
+    sort_dialog, spin, subtotal, tables, text, text_columns, top_ten, typing, validation, what_if,
+    word, zoom_dialog,
 };
 
 pub mod document;

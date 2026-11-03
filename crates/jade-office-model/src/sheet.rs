@@ -4644,7 +4644,7 @@ pub const SHEET_FONTS: [&str; 14] = [
 ];
 
 /// `B3:B3` for a single cell too, as the engine's range arguments take.
-fn range_text_full(range: CellRange) -> String {
+pub(crate) fn range_text_full(range: CellRange) -> String {
     format!(
         "{}:{}",
         reference_text(range.start),

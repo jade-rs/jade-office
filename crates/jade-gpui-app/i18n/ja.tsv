@@ -503,6 +503,25 @@ sheet.paste_special.cancel	キャンセル
 sheet.menu.clear	数式と値のクリア
 sheet.menu.fill_down	下方向へコピー
 sheet.menu.fill_right	右方向へコピー
+sheet.menu.fill_series	連続データの作成…
+sheet.series.title	連続データ
+sheet.series.in	範囲
+sheet.series.rows	行
+sheet.series.columns	列
+sheet.series.type	種類
+sheet.series.linear	加算
+sheet.series.growth	乗算
+sheet.series.date	日付
+sheet.series.autofill	オートフィル
+sheet.series.unit	増加単位
+sheet.series.day	日
+sheet.series.weekday	週日
+sheet.series.month	月
+sheet.series.year	年
+sheet.series.trend	予測
+sheet.series.step	増分値:
+sheet.series.stop	停止値:
+sheet.series.not_a_number	増分値と停止値には数値を入力してください。
 sheet.menu.sort_ascending	昇順で並べ替え
 sheet.menu.sort_descending	降順で並べ替え
 sheet.menu.merge_center	セルを結合して中央揃え
@@ -4929,3 +4948,12 @@ watermark.color.green	緑
 watermark.color.blue	青
 watermark.color.navy	濃い青
 watermark.color.purple	紫
+table.border.diagonal_down	斜め罫線 (右下がり)
+table.border.diagonal_up	斜め罫線 (右上がり)
+table.borders_diagonals	斜め罫線
+fit_text.title	文字の均等割り付け
+fit_text.current	現在の文字列の幅
+fit_text.new	新しい文字列の幅
+fit_text.unit	字
+fit_text.remove	解除
+fit_text.bad_width	文字列の幅は 0.5 字から 1584 字の間で指定してください。

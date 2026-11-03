@@ -37,6 +37,7 @@ mod charts;
 mod conditional;
 mod custom_filter;
 mod duplicates;
+mod fill_series;
 mod find_bar;
 mod flash_fill;
 mod insert_function;
@@ -139,6 +140,8 @@ pub(super) struct Sheet {
     pub(super) name_manager: Option<jade_web::name_manager::NameManager>,
     pub(super) insert_function: Option<jade_web::insert_function::InsertFunctionDialog>,
     pub(super) top_ten: Option<jade_web::top_ten::TopTenDialog>,
+    /// Home ▸ Fill ▸ Series…'s dialog.
+    pub(super) series_dialog: Option<jade_web::fill_series::SeriesDialog>,
     /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
     pub(super) shift_choice: Option<bool>,
     pub(super) more_colors: Option<jade_web::more_colors::MoreColorsDialog>,
@@ -784,6 +787,8 @@ enum MenuCommand {
     ShiftCells(Axis, bool),
     FillDown,
     FillRight,
+    /// Home ▸ Fill ▸ Series…
+    FillSeries,
     SortAscending,
     SortDescending,
     MergeCenter,
@@ -919,6 +924,7 @@ impl Sheet {
             name_manager: None,
             insert_function: None,
             top_ten: None,
+            series_dialog: None,
             shift_choice: None,
             more_colors: None,
             zoom_dialog: None,
@@ -968,6 +974,9 @@ impl Sheet {
         }
         if let Some(dialog) = self.what_if.as_mut() {
             return dialog.form_mut().typing_mut();
+        }
+        if let Some(dialog) = self.series_dialog.as_mut() {
+            return Some(dialog.field_mut());
         }
         if let Some(dialog) = self.more_colors.as_mut() {
             return Some(&mut dialog.code);
@@ -1029,6 +1038,9 @@ impl Sheet {
         }
         if let Some(dialog) = self.what_if.as_ref() {
             return dialog.form().typing();
+        }
+        if let Some(dialog) = self.series_dialog.as_ref() {
+            return Some(dialog.field());
         }
         if let Some(dialog) = self.more_colors.as_ref() {
             return Some(&dialog.code);
@@ -2024,6 +2036,7 @@ impl DocView {
             || sheet.name_manager.is_some()
             || sheet.insert_function.is_some()
             || sheet.top_ten.is_some()
+            || sheet.series_dialog.is_some()
             || sheet.shift_choice.is_some()
             || sheet.more_colors.is_some()
             || sheet.zoom_dialog.is_some()
@@ -2120,6 +2133,7 @@ impl DocView {
                 || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.series_dialog.is_some()
                 || s.shift_choice.is_some()
                 || s.more_colors.is_some()
                 || s.zoom_dialog.is_some()
@@ -2365,6 +2379,10 @@ impl DocView {
         // A What-If Analysis dialog has the keys while it is open.
         if sheet.what_if.is_some() {
             return self.what_if_key(key, modifiers, cx);
+        }
+        // Fill ▸ Series' dialog has the keys while it is open.
+        if sheet.series_dialog.is_some() {
+            return self.series_key(key, modifiers, cx);
         }
         // More Colors' dialog has the keys while it is open.
         if sheet.more_colors.is_some() {
@@ -2979,6 +2997,7 @@ impl DocView {
                 || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.series_dialog.is_some()
                 || s.shift_choice.is_some()
                 || s.more_colors.is_some()
                 || s.zoom_dialog.is_some()
@@ -3177,6 +3196,7 @@ impl DocView {
                 ProtectedEdit::FillRight { range },
             )
             .map(|outcome| outcome.changed),
+            MenuCommand::FillSeries => return self.open_series_dialog(cx),
             MenuCommand::SortAscending => sheet.book.sort(range, selection.active, false),
             MenuCommand::SortDescending => sheet.book.sort(range, selection.active, true),
             MenuCommand::MergeAcross => sheet.book.merge_across(range),
@@ -3413,6 +3433,7 @@ impl DocView {
                 || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.series_dialog.is_some()
                 || s.shift_choice.is_some()
                 || s.more_colors.is_some()
                 || s.zoom_dialog.is_some()
@@ -4215,6 +4236,7 @@ impl DocView {
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
         let shift_choice_panel = self.shift_choice_panel(cx);
+        let series_panel = self.series_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
         let what_if_panel = self.what_if_panel(cx);
         let zoom_dialog_panel = self.zoom_dialog_panel(cx);
@@ -4720,6 +4742,7 @@ impl DocView {
                         (MenuCommand::ClearAll, "sheet.menu.clear_all"),
                         (MenuCommand::FillDown, "sheet.menu.fill_down"),
                         (MenuCommand::FillRight, "sheet.menu.fill_right"),
+                        (MenuCommand::FillSeries, "sheet.menu.fill_series"),
                         (MenuCommand::SortAscending, "sheet.menu.sort_ascending"),
                         (MenuCommand::SortDescending, "sheet.menu.sort_descending"),
                         (MenuCommand::MergeCenter, "sheet.menu.merge_center"),
@@ -5624,6 +5647,7 @@ impl DocView {
                     .children(insert_function_panel)
                     .children(top_ten_panel)
                     .children(shift_choice_panel)
+                    .children(series_panel)
                     .children(more_colors_panel)
                     .children(what_if_panel)
                     .children(zoom_dialog_panel)

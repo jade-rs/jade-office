@@ -35,6 +35,7 @@ pub mod date_filter;
 pub mod deck;
 pub mod duplicates;
 pub mod editable_ranges;
+pub mod fill_series;
 pub mod find;
 pub mod flash_fill;
 pub mod forecast_sheet;

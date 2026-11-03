@@ -184,10 +184,14 @@ pub enum BorderSet {
     Inside,
     InsideHorizontal,
     InsideVertical,
+    /// 斜め罫線 (右下がり): each selected cell's `w:tl2br`.
+    DiagonalDown,
+    /// 斜め罫線 (右上がり): each selected cell's `w:tr2bl`.
+    DiagonalUp,
 }
 
 impl BorderSet {
-    pub const ALL: [BorderSet; 10] = [
+    pub const ALL: [BorderSet; 12] = [
         BorderSet::Bottom,
         BorderSet::Top,
         BorderSet::Left,
@@ -198,6 +202,8 @@ impl BorderSet {
         BorderSet::Inside,
         BorderSet::InsideHorizontal,
         BorderSet::InsideVertical,
+        BorderSet::DiagonalDown,
+        BorderSet::DiagonalUp,
     ];
 }
 
@@ -1090,6 +1096,9 @@ pub struct BordersDialog {
     pub target: BorderTarget,
     /// The fill: `None` leaves it, `Some(None)` clears it.
     pub fill: Option<Option<String>>,
+    /// 斜め罫線 右下がり (`w:tl2br`) and 右上がり (`w:tr2bl`), drawn in
+    /// every selected cell when 設定対象 is セル.
+    pub diagonals: [bool; 2],
 }
 
 impl BordersDialog {
@@ -1102,6 +1111,7 @@ impl BordersDialog {
             edges: [true; 6],
             target,
             fill: None,
+            diagonals: [false; 2],
         }
     }
 
@@ -1153,6 +1163,8 @@ impl BordersDialog {
                             bottom: edge(bottom),
                             left: edge(left),
                             right: edge(right),
+                            tl2br: edge(self.diagonals[0]),
+                            tr2bl: edge(self.diagonals[1]),
                         });
                     }
                 }
@@ -1821,6 +1833,13 @@ pub trait WordTables: WordSession {
         let span = self.cell_span().ok_or("the caret is not in a table")?;
         let mut dialog = BordersDialog::new(BorderTarget::Cell);
         dialog.pen = pen.clone();
+        if let Some(index) = match set {
+            BorderSet::DiagonalDown => Some(0),
+            BorderSet::DiagonalUp => Some(1),
+            _ => None,
+        } {
+            return self.toggle_diagonal(span, index, pen);
+        }
         let table_wide = span.rows.0 == span.rows.1 && span.columns.0 == span.columns.1;
         if table_wide
             && matches!(
@@ -1871,6 +1890,7 @@ pub trait WordTables: WordSession {
                 [false, false, false, false, false, true],
                 [false, false, false, false, false, true],
             ),
+            BorderSet::DiagonalDown | BorderSet::DiagonalUp => unreachable!("handled above"),
         };
         dialog.edges = edges;
         // Only the edges the entry names change; the others are left out.
@@ -1879,6 +1899,60 @@ pub trait WordTables: WordSession {
             .into_iter()
             .map(|command| strip_untouched(command, touched))
             .collect();
+        self.apply_commands(commands, true)
+    }
+
+    /// The caret cell's 斜め罫線: 右下がり (`w:tl2br`) and 右上がり
+    /// (`w:tr2bl`).
+    fn cell_diagonals(&self) -> [bool; 2] {
+        let Some(cell) = self.caret_table_cell() else {
+            return [false; 2];
+        };
+        let Some(table) = self.word_document().table_by_order(cell.table_order_index) else {
+            return [false; 2];
+        };
+        let Some(row) = table.rows.get(cell.row) else {
+            return [false; 2];
+        };
+        let mut start = 0usize;
+        for candidate in &row.cells {
+            let span = candidate.span.unwrap_or(1).max(1) as usize;
+            if (start..start + span).contains(&cell.column) {
+                let on = |name: &str| {
+                    candidate
+                        .style
+                        .get(&format!("border-{name}-style"))
+                        .is_some_and(|style| !matches!(style.as_str(), "none" | "nil"))
+                };
+                return [on("tl2br"), on("tr2bl")];
+            }
+            start += span;
+        }
+        [false; 2]
+    }
+
+    /// 罫線 › 斜め罫線: on in every selected cell with the pen, or — when the
+    /// caret's cell already has it, as Word's menu entry shows it checked —
+    /// off again.
+    fn toggle_diagonal(&mut self, span: CellSpan, index: usize, pen: &Pen) -> Result<(), String> {
+        let on = !self.cell_diagonals()[index];
+        let edge = Some(if on { pen.edge() } else { no_edge() });
+        let mut commands = Vec::new();
+        for row in span.rows.0..=span.rows.1 {
+            for column in span.columns.0..=span.columns.1 {
+                commands.push(HeadlessCommand::SetTableCellBorders {
+                    table_order_index: span.table_order_index,
+                    row,
+                    column,
+                    top: None,
+                    bottom: None,
+                    left: None,
+                    right: None,
+                    tl2br: if index == 0 { edge.clone() } else { None },
+                    tr2bl: if index == 1 { edge.clone() } else { None },
+                });
+            }
+        }
         self.apply_commands(commands, true)
     }
 
@@ -2522,6 +2596,7 @@ fn strip_untouched(command: HeadlessCommand, touched: [bool; 6]) -> HeadlessComm
             bottom,
             left,
             right,
+            ..
         } => HeadlessCommand::SetTableCellBorders {
             table_order_index,
             row,
@@ -2531,6 +2606,9 @@ fn strip_untouched(command: HeadlessCommand, touched: [bool; 6]) -> HeadlessComm
             bottom: bottom.filter(|_| touched[1] || touched[4]),
             left: left.filter(|_| touched[2] || touched[5]),
             right: right.filter(|_| touched[3] || touched[5]),
+            // The edge entries leave the diagonals alone.
+            tl2br: None,
+            tr2bl: None,
         },
         other => other,
     }
