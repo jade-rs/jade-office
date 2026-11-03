@@ -4831,3 +4831,9 @@ watermark.color.purple	紫
 table.border.diagonal_down	斜め罫線 (右下がり)
 table.border.diagonal_up	斜め罫線 (右上がり)
 table.borders_diagonals	斜め罫線
+fit_text.title	文字の均等割り付け
+fit_text.current	現在の文字列の幅
+fit_text.new	新しい文字列の幅
+fit_text.unit	字
+fit_text.remove	解除
+fit_text.bad_width	文字列の幅は 0.5 字から 1584 字の間で指定してください。

@@ -45,6 +45,7 @@ pub(crate) mod word_equation;
 pub(crate) mod word_fields;
 pub(crate) mod word_files;
 mod word_find;
+pub(crate) mod word_fit_text;
 mod word_form;
 pub(crate) mod word_hyphenation;
 mod word_immersive;
@@ -2067,6 +2068,13 @@ impl DocView {
         }
         // A previewed entry: kept by its click, taken back by anything else.
         if word_preview::settle(self, &action, cx) {
+            return;
+        }
+        // 均等割り付け on text inside a paragraph: 文字の均等割り付け.
+        if matches!(action, Action::Align("distribute")) && self.open_fit_text_dialog(cx) {
+            if let Document::Pages { ribbon, .. } = &mut self.document {
+                ribbon.popup = None;
+            }
             return;
         }
         let Document::Pages {

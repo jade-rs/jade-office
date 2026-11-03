@@ -49,6 +49,7 @@ pub mod embedding;
 pub mod equation;
 pub mod fields;
 pub mod find;
+pub mod fit_text;
 pub mod font;
 pub mod form_view;
 pub mod formats;
