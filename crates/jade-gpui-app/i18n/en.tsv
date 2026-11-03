@@ -4847,3 +4847,12 @@ watermark.color.green	Green
 watermark.color.blue	Blue
 watermark.color.navy	Dark Blue
 watermark.color.purple	Purple
+table.border.diagonal_down	Diagonal Down Border
+table.border.diagonal_up	Diagonal Up Border
+table.borders_diagonals	Diagonals
+fit_text.title	Fit Text
+fit_text.current	Current text width
+fit_text.new	New text width
+fit_text.unit	chars
+fit_text.remove	Remove
+fit_text.bad_width	The text width must be between 0.5 and 1584 characters.
