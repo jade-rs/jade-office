@@ -5069,4 +5069,36 @@ reveal.start.column	次の段から開始
 reveal.columns	段数
 reveal.direction	文字列の方向
 reveal.vertical	縦書き
+frame.insert	枠
+frame.insert_title	選択した文字列を枠で囲みます
+frame.format	枠の書式設定
+frame.title	枠の書式設定
+frame.keys	Enter: OK  Esc: キャンセル
+frame.wrap	文字列の折り返し
+frame.wrap_none	なし
+frame.wrap_around	周囲
+frame.width	幅
+frame.height	高さ
+frame.auto	自動
+frame.fixed	固定
+frame.at_least	最小値
+frame.exact	固定値
+frame.horizontal	水平方向 位置
+frame.vertical	垂直方向 位置
+frame.left	左
+frame.center	中央
+frame.right	右
+frame.top	上
+frame.bottom	下
+frame.inside	内側
+frame.outside	外側
+frame.offset	距離
+frame.anchor	基準
+frame.margin	余白
+frame.page	ページ
+frame.column	段
+frame.paragraph	段落
+frame.distance	文字列との間隔
+frame.move_with_text	文字列と一緒に移動する
+frame.remove	枠の削除
 doc.select_similar	類似した書式の文字列を選択

@@ -54,6 +54,7 @@ pub mod fit_text;
 pub mod font;
 pub mod form_view;
 pub mod formats;
+pub mod frame;
 pub mod group;
 pub mod handles;
 pub mod html_clip;

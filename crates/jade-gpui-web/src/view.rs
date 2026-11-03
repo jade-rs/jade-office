@@ -36,6 +36,7 @@ mod word_alignment_tab;
 pub(crate) mod word_text_from_file;
 pub(crate) mod word_reveal;
 mod word_similar;
+mod word_frame;
 mod deck_show;
 mod sheet;
 pub(crate) mod word_characters;

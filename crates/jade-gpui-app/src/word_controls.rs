@@ -277,6 +277,7 @@ impl DocumentView {
                         )
                         .into_any_element(),
                     ]),
+                    Self::ribbon_row(crate::word_frame::buttons(self, cx)),
                 ],
             )
             .into_any_element(),

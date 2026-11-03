@@ -5069,4 +5069,36 @@ reveal.start.column	New column
 reveal.columns	Columns
 reveal.direction	Text direction
 reveal.vertical	Vertical
+frame.insert	Frame
+frame.insert_title	Put the selected text in a frame
+frame.format	Format Frame
+frame.title	Frame
+frame.keys	Enter: OK  Esc: Cancel
+frame.wrap	Text wrapping
+frame.wrap_none	None
+frame.wrap_around	Around
+frame.width	Width
+frame.height	Height
+frame.auto	Auto
+frame.fixed	Exactly
+frame.at_least	At least
+frame.exact	Exactly
+frame.horizontal	Horizontal position
+frame.vertical	Vertical position
+frame.left	Left
+frame.center	Center
+frame.right	Right
+frame.top	Top
+frame.bottom	Bottom
+frame.inside	Inside
+frame.outside	Outside
+frame.offset	Distance
+frame.anchor	Relative to
+frame.margin	Margin
+frame.page	Page
+frame.column	Column
+frame.paragraph	Paragraph
+frame.distance	Distance from text
+frame.move_with_text	Move with text
+frame.remove	Remove Frame
 doc.select_similar	Select Text with Similar Formatting

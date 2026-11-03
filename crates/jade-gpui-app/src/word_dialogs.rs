@@ -25,6 +25,8 @@ pub enum Dialog {
     Paragraph(Box<ParagraphForm>),
     /// 位置合わせタブの挿入 (`word_alignment_tab`).
     AlignmentTab(jade_office_model::word::alignment_tab::AlignmentTabForm),
+    /// 枠の書式設定 (`word_frame`).
+    Frame(jade_office_model::word::frame::FrameForm),
 }
 
 impl Dialog {
@@ -34,7 +36,7 @@ impl Dialog {
             Dialog::Link(form) => Some(form.field()),
             Dialog::Note(form) => Some(&form.text),
             // Its numbers are spin boxes, which take their own typing.
-            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) | Dialog::Frame(_) => None,
         }
     }
 
@@ -42,7 +44,7 @@ impl Dialog {
         match self {
             Dialog::Link(form) => Some(form.field_mut()),
             Dialog::Note(form) => Some(&mut form.text),
-            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) | Dialog::Frame(_) => None,
         }
     }
 }
@@ -293,7 +295,7 @@ impl DocumentView {
                     let field = form.focus;
                     self.focus_paragraph_field(field);
                 }
-                Dialog::AlignmentTab(_) => {}
+                Dialog::AlignmentTab(_) | Dialog::Frame(_) => {}
             },
             _ => {
                 let edited = dialog.field_mut().is_some_and(|field| field.edit_key(key));
@@ -318,6 +320,11 @@ impl DocumentView {
                 // The caret, or the selection, stays where it is.
                 let kept = self.insert_at;
                 form.submit(&mut self.document).map(|()| kept)
+            }
+            Dialog::Frame(form) => {
+                use jade_office_model::word::frame::WordFrames;
+                let kept = self.insert_at;
+                self.document.apply_frame(form).map(|()| kept)
             }
             Dialog::AlignmentTab(form) => form.submit(&mut self.document).map(|()| {
                 self.document
@@ -374,6 +381,7 @@ impl DocumentView {
             ),
             Dialog::Paragraph(form) => self.paragraph_dialog(form, cx),
             Dialog::AlignmentTab(form) => crate::word_alignment_tab::bar(form, cx),
+            Dialog::Frame(form) => crate::word_frame::dialog_bar(form, cx),
         })
     }
 
