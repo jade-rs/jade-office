@@ -4816,6 +4816,107 @@ tool.residuals	Residuals
 tool.standard_residuals	Standard Residuals
 tool.probability_output	PROBABILITY OUTPUT
 tool.percentile	Percentile
+# Consolidate
+sheet.menu.consolidate	Consolidate…
+consolidate.dialog	Consolidate
+consolidate.function	Function
+consolidate.reference	Reference
+consolidate.all	All references
+consolidate.top_row	Use labels in Top row
+consolidate.left_column	Use labels in Left column
+consolidate.links	Create links to source data
+consolidate.add	Add
+consolidate.delete	Delete
+consolidate.fn.sum	Sum
+consolidate.fn.count	Count
+consolidate.fn.average	Average
+consolidate.fn.max	Max
+consolidate.fn.min	Min
+consolidate.fn.product	Product
+consolidate.fn.count_numbers	Count Numbers
+consolidate.fn.stddev	StdDev
+consolidate.fn.stddevp	StdDevp
+consolidate.fn.var	Var
+consolidate.fn.varp	Varp
+consolidate.alert.reference	Reference is not valid.
+consolidate.alert.no_source	Add at least one reference to consolidate.
+consolidate.alert.links_same_sheet	Cannot add links to source data on the same sheet as the destination.
+consolidate.alert.overlap	Source references overlap the destination area.
+# Advanced Filter
+sheet.menu.advanced_filter	Advanced Filter…
+advanced_filter.dialog	Advanced Filter
+advanced_filter.action	Action
+advanced_filter.in_place	Filter the list, in-place
+advanced_filter.copy	Copy to another location
+advanced_filter.list	List range
+advanced_filter.criteria	Criteria range
+advanced_filter.copy_to	Copy to
+advanced_filter.unique	Unique records only
+advanced_filter.show_all	Show All
+advanced_filter.alert.list	The list range is not valid.
+advanced_filter.alert.criteria	The criteria range is not valid.
+advanced_filter.alert.extract	The extract range has a missing or illegal field name.
+advanced_filter.alert.overlap	The extract range overlaps the list range.
+advanced_filter.alert.active_sheet	You can only copy filtered data to the active sheet.
+# Custom lists
+sheet.menu.custom_lists	Edit Custom Lists…
+custom_lists.dialog	Custom Lists
+custom_lists.lists	Custom lists
+custom_lists.new	NEW LIST
+custom_lists.entries	List entries
+custom_lists.import	Import list from cells
+custom_lists.add	Add
+custom_lists.delete	Delete
+custom_lists.import_button	Import
+custom_lists.alert.built_in	A built-in list cannot be deleted.
+custom_lists.alert.import	Select cells that hold the list to import.
+sort.custom_list	Custom List…
+# Forecast Sheet
+sheet.menu.forecast_sheet	Forecast Sheet…
+forecast.dialog	Create Forecast Worksheet
+forecast.chart	Chart
+forecast.line	Line
+forecast.column	Column
+forecast.end	Forecast End
+forecast.start	Forecast Start
+forecast.confidence	Confidence Interval
+forecast.seasonality	Seasonality
+forecast.season_auto	Detect Automatically
+forecast.season_manual	Set Manually
+forecast.season	Season length
+forecast.statistics	Include forecast statistics
+forecast.timeline	Timeline Range
+forecast.values	Values Range
+forecast.missing	Fill Missing Points Using
+forecast.interpolation	Interpolation
+forecast.zeros	Zeros
+forecast.aggregate	Aggregate Duplicates Using
+forecast.agg.average	Average
+forecast.agg.count	Count
+forecast.agg.counta	CountA
+forecast.agg.max	Max
+forecast.agg.median	Median
+forecast.agg.min	Min
+forecast.agg.sum	Sum
+forecast.create	Create
+forecast.alert.ranges	The timeline and values ranges must be single columns of the same size, with headers.
+forecast.alert.timeline	The timeline must hold numbers or dates at a regular step.
+forecast.alert.end	Forecast End must come after Forecast Start.
+forecast.alert.start	Forecast Start is not valid.
+forecast.alert.confidence	Confidence Interval must be between 0% and 100%.
+forecast.alert.season	Season length must be a whole number up to 8760.
+forecast.word.forecast	Forecast({})
+forecast.word.lower	Lower Confidence Bound({})
+forecast.word.upper	Upper Confidence Bound({})
+forecast.word.statistic	Statistic
+forecast.word.value	Value
+forecast.word.alpha	Alpha
+forecast.word.beta	Beta
+forecast.word.gamma	Gamma
+forecast.word.mase	MASE
+forecast.word.smape	SMAPE
+forecast.word.mae	MAE
+forecast.word.rmse	RMSE
 watermark.button	Watermark
 watermark.title	Custom Watermark
 watermark.custom	Custom Watermark...
