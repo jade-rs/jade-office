@@ -88,6 +88,50 @@ class VersionCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Incomplete'):
             archiver.archive(self.manifest, self.evidence, [])
 
+    def add_metafile(self):
+        data = b'raw drawing bytes (extraction is tested independently in jade-core)'
+        (self.source/'probe.page-001.emf').write_bytes(data)
+        page = dict(page=1, file='probe.page-001.emf', sha256=hashlib.sha256(data).hexdigest(),
+                    width_pt=612, height_pt=792)
+        self.capture['documents'][0]['metafiles'] = [page]
+        self.write(self.manifest, self.capture)
+        reference = json.loads((self.source/'word-reference.json').read_text(encoding='utf-8'))
+        reference['coordinate_source'] = 'Word Page.EnhMetaFileBits / MS-EMF'
+        reference['fixtures'][0]['metafiles'] = [page]
+        self.write(self.source/'word-emf-reference.json', reference)
+        comparison = [dict(self.comparison[0], metafile_sha256=[page['sha256']])]
+        self.write(self.source/'emf-comparison.json', comparison)
+        return reference, comparison
+
+    def test_metafiles_and_separate_strict_reference_are_preserved(self):
+        reference, _ = self.add_metafile()
+        with patch.object(archiver, 'extract_emf_capture', return_value=reference), \
+                patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+            target = archiver.archive(self.manifest, self.evidence, ['probe'], 'emf')
+        self.assertEqual((target/'probe.page-001.emf').read_bytes(),
+                         (self.source/'probe.page-001.emf').read_bytes())
+        entry = json.loads((self.evidence/'index.json').read_text(encoding='utf-8'))['references'][0]
+        self.assertEqual(entry['reference'], 'strict-emf.json')
+        self.assertTrue((target/'word-reference.json').exists(), 'retain independent PDF evidence')
+
+    def test_changed_metafile_cannot_be_archived(self):
+        self.add_metafile()
+        (self.source/'probe.page-001.emf').write_bytes(b'changed drawing')
+        with self.assertRaisesRegex(ValueError, 'metafile changed'):
+            archiver.archive(self.manifest, self.evidence, ['probe'], 'emf')
+
+    def test_stale_drawing_comparison_and_forged_origins_cannot_promote(self):
+        reference, comparison = self.add_metafile()
+        comparison[0]['metafile_sha256'] = ['stale drawing hash']
+        self.write(self.source/'emf-comparison.json', comparison)
+        with self.assertRaisesRegex(ValueError, 'different Word metafiles'):
+            archiver.archive(self.manifest, self.evidence, ['probe'], 'emf')
+        comparison[0]['metafile_sha256'] = [reference['fixtures'][0]['metafiles'][0]['sha256']]
+        self.write(self.source/'emf-comparison.json', comparison)
+        with patch.object(archiver, 'extract_emf_capture', return_value=dict(reference, fixtures=[])):
+            with self.assertRaisesRegex(ValueError, 'differs from raw Word'):
+                archiver.archive(self.manifest, self.evidence, ['probe'], 'emf')
+
     def test_partial_capture_or_short_version_cannot_be_extracted(self):
         self.capture['status'] = 'failed'
         self.write(self.manifest, self.capture)

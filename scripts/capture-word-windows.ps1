@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string[]]$Documents,
-    [Parameter(Mandatory=$true)][string]$OutputDirectory
+    [Parameter(Mandatory=$true)][string]$OutputDirectory,
+    [switch]$CaptureMetafiles
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($OutputDirectory)
@@ -42,8 +43,27 @@ try {
             $document.Repaginate()
             $target = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($path)+'.pdf')
             $document.ExportAsFixedFormat($target, 17)
+            $pages=$document.ComputeStatistics(2)
+            $metafiles=@()
+            if ($CaptureMetafiles) {
+                $document.ActiveWindow.View.Type=3
+                $document.Repaginate()
+                for ($pageNumber=1; $pageNumber -le $pages; $pageNumber++) {
+                    $page=$document.ActiveWindow.Panes.Item(1).Pages.Item($pageNumber)
+                    $pageRange=$document.GoTo(1,1,$pageNumber)
+                    if ($pageRange.Information(3) -ne $pageNumber) { throw 'Word returned a different physical page' }
+                    $pageSetup=$pageRange.Sections.Item(1).PageSetup
+                    if ([Math]::Abs($pageSetup.PageWidth-$page.Width) -gt 0.51 -or [Math]::Abs($pageSetup.PageHeight-$page.Height) -gt 0.51) { throw 'Word page geometry differs from its section setup' }
+                    $metafileName=([IO.Path]::GetFileNameWithoutExtension($path))+('.page-{0:D3}.emf' -f $pageNumber)
+                    $metafilePath=Join-Path $output $metafileName
+                    [IO.File]::WriteAllBytes($metafilePath, [byte[]]$page.EnhMetaFileBits)
+                    $metafiles += [ordered]@{ page=$pageNumber; file=$metafileName; sha256=(Get-FileHash -LiteralPath $metafilePath -Algorithm SHA256).Hash.ToLowerInvariant(); width_pt=$pageSetup.PageWidth; height_pt=$pageSetup.PageHeight }
+                }
+            }
             if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sourceHash) { throw "DOCX changed during capture: $path" }
-            $metadata.documents += [ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$document.ComputeStatistics(2) }
+            $item=[ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$pages }
+            if ($CaptureMetafiles) { $item.metafiles=$metafiles }
+            $metadata.documents += $item
         } finally { $document.Close(0); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($document) }
     }
     if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -ne $binaryHash) { throw 'Word binary changed during capture' }
