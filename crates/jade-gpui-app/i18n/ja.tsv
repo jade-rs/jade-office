@@ -3995,6 +3995,111 @@ recent.remove	一覧から削除
 recent.more	その他のオプション
 chars.color.new	新規
 chars.color.current	現在の色
+deck.smartart	SmartArt
+deck.smartart.convert	SmartArt グラフィックに変換
+deck.smartart.design	SmartArt のデザイン
+deck.smartart.format	書式
+deck.smartart.text_pane	テキスト ウィンドウ
+deck.smartart.text_pane_title	テキストをここに入力してください
+deck.smartart.placeholder	[テキスト]
+deck.smartart.add_shape	図形の追加
+deck.smartart.add_after	後に図形を追加
+deck.smartart.add_before	前に図形を追加
+deck.smartart.add_above	上に図形を追加
+deck.smartart.add_below	下に図形を追加
+deck.smartart.add_assistant	アシスタントの追加
+deck.smartart.promote	レベル上げ
+deck.smartart.demote	レベル下げ
+deck.smartart.move_up	上へ移動
+deck.smartart.move_down	下へ移動
+deck.smartart.delete_shape	図形の削除
+deck.smartart.layouts	レイアウト
+deck.smartart.colors	色の変更
+deck.smartart.styles	SmartArt のスタイル
+deck.smartart.reset	グラフィックのリセット
+deck.smartart.to_shapes	図形に変換
+deck.smartart.fill	図形の塗りつぶし
+deck.smartart.outline	図形の枠線
+deck.smartart.change_shape	図形の変更
+deck.smartart.picture	図
+deck.smartart.pick_shape	SmartArt の図形を選択してください
+deck.smartart.color.blue	青
+deck.smartart.color.orange	オレンジ
+deck.smartart.color.gray	灰色
+deck.smartart.color.gold	ゴールド
+deck.smartart.color.light_blue	薄い青
+deck.smartart.color.green	緑
+deck.smartart.color.red	赤
+deck.smartart.color.black	黒
+deck.smartart.color.white	白
+deck.smartart.color.purple	紫
+deck.smartart.shape.rect	正方形/長方形
+deck.smartart.shape.round_rect	四角形: 角を丸くする
+deck.smartart.shape.ellipse	楕円
+deck.smartart.shape.triangle	二等辺三角形
+deck.smartart.shape.diamond	ひし形
+deck.smartart.shape.hexagon	六角形
+deck.smartart.shape.chevron	矢印: 山形
+deck.smartart.shape.right_arrow	矢印: 右
+deck.picture.format	図の形式
+deck.picture.change	図の変更
+deck.picture.corrections	修整
+deck.picture.sharpness	シャープネス
+deck.picture.brightness_contrast	明るさ/コントラスト
+deck.picture.brightness	明るさ
+deck.picture.contrast	コントラスト
+deck.picture.color	色
+deck.picture.saturation	彩度
+deck.picture.tone	トーン
+deck.picture.recolor	色の変更
+deck.picture.set_transparent	透明色を指定
+deck.picture.transparent_white	白
+deck.picture.transparent_black	黒
+deck.picture.transparency	透明度
+deck.picture.artistic	アート効果
+deck.picture.none	なし
+deck.picture.remove_background	背景の削除
+deck.picture.keep_background	背景の削除を解除
+deck.picture.styles	図のスタイル
+deck.picture.border	図の枠線
+deck.picture.no_border	枠線なし
+deck.picture.weight	太さ
+deck.picture.effects	図の効果
+deck.picture.shadow	影
+deck.picture.reflection	反射
+deck.picture.glow	光彩
+deck.picture.soft_edges	ぼかし
+deck.picture.bevel	面取り
+deck.picture.crop	トリミング
+deck.picture.crop_to_shape	図形に合わせてトリミング
+deck.picture.aspect	縦横比
+deck.picture.crop_left	左をトリミング
+deck.picture.crop_top	上をトリミング
+deck.picture.crop_right	右をトリミング
+deck.picture.crop_bottom	下をトリミング
+deck.picture.uncrop	トリミングの解除
+deck.picture.rotate	回転
+deck.picture.rotate_right	右へ 90 度回転
+deck.picture.rotate_left	左へ 90 度回転
+deck.picture.flip_vertical	上下反転
+deck.picture.flip_horizontal	左右反転
+deck.picture.size	サイズ
+deck.picture.height	高さ
+deck.picture.width	幅
+deck.picture.lock_aspect	縦横比を固定
+deck.picture.reset	図のリセット
+deck.picture.reset_size	図とサイズのリセット
+deck.picture.compress	図の圧縮
+deck.picture.delete_cropped	図のトリミング部分を削除する
+deck.picture.compressed	圧縮した図: {count}
+deck.picture.graphic_fill	グラフィックの塗りつぶし
+deck.picture.icons	アイコン
+deck.picture.screenshot	スクリーンショット
+deck.picture.screenshot_unsupported	この環境ではスクリーンショットを撮れません
+deck.picture.photo_album	フォト アルバム
+deck.picture.album_layout	{count} 枚の図/スライド
+deck.picture.convert_to_shapes	図形に変換
+deck.picture.crop_handles	トリミング ハンドル
 # What-If Analysis
 sheet.menu.group_what_if	What-If 分析
 what_if.alert.reference	参照が正しくありません。
