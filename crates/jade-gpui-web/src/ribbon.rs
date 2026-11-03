@@ -1414,6 +1414,15 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         Action::Indent(true),
                         cx,
                     ),
+                    icon_button(
+                        "paragraph-sort",
+                        "icons/sort-a-z.svg",
+                        i18n::text("doc.sort_title"),
+                        false,
+                        true,
+                        Action::Tables(crate::word_table::TableAction::Sort),
+                        cx,
+                    ),
                     dropdown(
                         menu_button(
                             "line-spacing",

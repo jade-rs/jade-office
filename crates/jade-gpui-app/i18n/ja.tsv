@@ -5000,3 +5000,5 @@ word.ptab.margin	余白
 word.ptab.indent	インデント
 word.ptab.leader	リーダー
 word.ptab.leader_none	なし
+doc.sort_title	並べ替え
+table.sort.paragraphs	段落
