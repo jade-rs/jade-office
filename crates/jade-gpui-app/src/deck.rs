@@ -2786,8 +2786,11 @@ impl Render for DeckView {
                     ),
             )
             .child(
+                // Its share of the width whatever the toolbar holds, so the
+                // slide stays put as buttons come and go.
                 div()
                     .flex_1()
+                    .min_w_0()
                     .h_full()
                     .flex()
                     .flex_col()
@@ -2795,6 +2798,7 @@ impl Render for DeckView {
                         div()
                             .h(px(TOOLBAR_HEIGHT))
                             .flex_none()
+                            .overflow_x_hidden()
                             .flex()
                             .items_center()
                             .gap_1()
