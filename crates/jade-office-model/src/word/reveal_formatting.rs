@@ -21,7 +21,11 @@ pub enum RevealGroup {
 }
 
 impl RevealGroup {
-    pub const ALL: [RevealGroup; 3] = [RevealGroup::Font, RevealGroup::Paragraph, RevealGroup::Section];
+    pub const ALL: [RevealGroup; 3] = [
+        RevealGroup::Font,
+        RevealGroup::Paragraph,
+        RevealGroup::Section,
+    ];
 
     /// The heading's i18n key.
     pub fn label(self) -> &'static str {
@@ -110,7 +114,10 @@ pub trait WordRevealFormatting: WordFormatting + WordParagraphs + WordPageSetup 
             (state.italic, "reveal.italic"),
             (state.underline, "reveal.underline"),
             (state.strike, "reveal.strike"),
-            (character.double_strike == Some(true), "reveal.double_strike"),
+            (
+                character.double_strike == Some(true),
+                "reveal.double_strike",
+            ),
             (state.superscript, "reveal.superscript"),
             (state.subscript, "reveal.subscript"),
             (character.small_caps == Some(true), "reveal.small_caps"),
@@ -174,7 +181,10 @@ pub trait WordRevealFormatting: WordFormatting + WordParagraphs + WordPageSetup 
             SpecialIndent::Hanging => rows.push(text("reveal.hanging", indent(format.special_by))),
             SpecialIndent::None => {}
         }
-        rows.push(text("reveal.before", format!("{} pt", number(format.before))));
+        rows.push(text(
+            "reveal.before",
+            format!("{} pt", number(format.before)),
+        ));
         rows.push(text("reveal.after", format!("{} pt", number(format.after))));
         rows.push(match format.line {
             LineSpacing::Single => key("reveal.line", "reveal.line.single"),

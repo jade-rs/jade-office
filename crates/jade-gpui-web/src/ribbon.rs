@@ -2196,7 +2196,10 @@ fn view_groups(ribbon: &Ribbon, shown: &TabState, cx: &mut Context<DocView>) -> 
     if let Some(references) = &shown.references {
         show.extend(crate::view::word_references::view_buttons(references, cx));
     }
-    show.push(crate::view::word_reveal::button(shown.reveal_formatting, cx));
+    show.push(crate::view::word_reveal::button(
+        shown.reveal_formatting,
+        cx,
+    ));
     // イマーシブ リーダー and 並べて比較 (`word_review`), in the groups Word
     // puts them in; the ruler (`view::word_ruler`).
     let (reader, window_side) = match &shown.review {

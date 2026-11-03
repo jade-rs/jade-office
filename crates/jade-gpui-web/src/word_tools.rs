@@ -554,16 +554,16 @@ pub fn drop_cap_group(ribbon: &Ribbon, tools: &ToolState, cx: &mut Context<DocVi
         i18n::text("word.group.text"),
         vec![
             row(vec![dropdown(
-            text_button(
-                "drop-cap",
-                "word.drop_cap.title",
-                open,
-                ToolMenu::DropCap,
-                cx,
-            ),
-            menu,
-        )]),
-        row(vec![crate::view::word_text_from_file::button(cx)]),
+                text_button(
+                    "drop-cap",
+                    "word.drop_cap.title",
+                    open,
+                    ToolMenu::DropCap,
+                    cx,
+                ),
+                menu,
+            )]),
+            row(vec![crate::view::word_text_from_file::button(cx)]),
         ],
     )
 }

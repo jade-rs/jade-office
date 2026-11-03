@@ -6,7 +6,9 @@
 use jade_docx_editor::canvas_renderer::HyperlinkRegion;
 use jade_docx_editor::commands::Command;
 use jade_docx_editor::word_document::WordDocument;
-use jade_docx_headless_api::{HeadlessCommand, HeadlessQuery, HeadlessQueryResult, HeadlessRunStyle};
+use jade_docx_headless_api::{
+    HeadlessCommand, HeadlessQuery, HeadlessQueryResult, HeadlessRunStyle,
+};
 
 use jade_selection::{SelectionRange, TextPosition};
 
@@ -17,8 +19,14 @@ pub type Range = (Position, Position);
 
 /// The runs of body paragraph `paragraph`, with their formatting, as the
 /// engine reports them.
-fn runs<S: WordSession + ?Sized>(session: &S, paragraph: usize) -> Vec<(usize, usize, HeadlessRunStyle)> {
-    match query(session.word_document(), HeadlessQuery::Paragraph { paragraph }) {
+fn runs<S: WordSession + ?Sized>(
+    session: &S,
+    paragraph: usize,
+) -> Vec<(usize, usize, HeadlessRunStyle)> {
+    match query(
+        session.word_document(),
+        HeadlessQuery::Paragraph { paragraph },
+    ) {
         Some(HeadlessQueryResult::Paragraph {
             value: Some(snapshot),
             ..
@@ -102,9 +110,7 @@ pub fn still_selected<S: WordSession + ?Sized>(session: &S, ranges: &[Range]) ->
         return false;
     };
     let (from, to) = range.normalized();
-    ranges.len() > 1
-        && (from.paragraph, from.offset) == start
-        && (to.paragraph, to.offset) == end
+    ranges.len() > 1 && (from.paragraph, from.offset) == start && (to.paragraph, to.offset) == end
 }
 
 /// A session that records the commands a formatting call would apply, for
@@ -129,7 +135,11 @@ impl<S: WordSession + ?Sized> WordSession for Recorder<'_, S> {
         self.commands.push(command);
         Ok(())
     }
-    fn apply_commands(&mut self, commands: Vec<HeadlessCommand>, _keep: bool) -> Result<(), String> {
+    fn apply_commands(
+        &mut self,
+        commands: Vec<HeadlessCommand>,
+        _keep: bool,
+    ) -> Result<(), String> {
         self.commands.extend(commands);
         Ok(())
     }

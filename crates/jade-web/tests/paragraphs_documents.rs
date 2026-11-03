@@ -261,7 +261,12 @@ fn text_with_similar_formatting_is_selected_and_formatted_together() {
     assert!(still_selected(&document, &ranges));
 
     // Italic goes on both, not between them, as one undo step.
-    format(&mut document, &ranges, RangeFormat::Toggle(CharacterFormat::Italic)).unwrap();
+    format(
+        &mut document,
+        &ranges,
+        RangeFormat::Toggle(CharacterFormat::Italic),
+    )
+    .unwrap();
     assert!(italic(&document, 1) && italic(&document, 5));
     assert!(!italic(&document, 3));
     assert!(still_selected(&document, &ranges));
@@ -271,6 +276,11 @@ fn text_with_similar_formatting_is_selected_and_formatted_together() {
     // Selecting elsewhere ends it: the command takes the selection alone.
     document.select((0, 2), (0, 4)).unwrap();
     assert!(!still_selected(&document, &ranges));
-    format(&mut document, &ranges, RangeFormat::Toggle(CharacterFormat::Italic)).unwrap();
+    format(
+        &mut document,
+        &ranges,
+        RangeFormat::Toggle(CharacterFormat::Italic),
+    )
+    .unwrap();
     assert!(italic(&document, 3) && !italic(&document, 1));
 }

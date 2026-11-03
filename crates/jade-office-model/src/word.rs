@@ -96,11 +96,11 @@ pub mod ruler;
 pub mod screen_reader;
 pub mod search;
 pub mod selection;
-pub mod shape_gallery;
 pub mod shading;
+pub mod shape_gallery;
 pub mod shapes;
-pub mod similar;
 pub mod signatures;
+pub mod similar;
 pub mod styles;
 pub mod table;
 pub mod table_ui;
@@ -122,8 +122,7 @@ pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
 pub use painter::{CopiedFormat, WordFormatPainter};
 pub use paragraph::{
     IndentUnit, LineSpacing, ParagraphField, ParagraphForm, ParagraphFormat, SpecialIndent,
-    BODY_TEXT, OUTLINE_LEVELS,
-    WordParagraphs,
+    WordParagraphs, BODY_TEXT, OUTLINE_LEVELS,
 };
 pub use references::{NoteForm, NoteKind, WordReferences};
 

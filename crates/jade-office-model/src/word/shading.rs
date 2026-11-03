@@ -41,7 +41,10 @@ pub const SHADING_PATTERNS: [(&str, &str); 37] = [
     ("thinHorzStripe", "word.shading.thin_horz_stripe"),
     ("thinVertStripe", "word.shading.thin_vert_stripe"),
     ("thinDiagStripe", "word.shading.thin_diag_stripe"),
-    ("thinReverseDiagStripe", "word.shading.thin_reverse_diag_stripe"),
+    (
+        "thinReverseDiagStripe",
+        "word.shading.thin_reverse_diag_stripe",
+    ),
     ("thinHorzCross", "word.shading.thin_horz_cross"),
     ("thinDiagCross", "word.shading.thin_diag_cross"),
 ];
@@ -130,11 +133,18 @@ mod tests {
         assert_eq!(red.color.as_deref(), Some("C00000"));
         let filled = with_fill(Some(&red), Some("FFFF00")).unwrap();
         assert_eq!(
-            (filled.pattern.as_str(), filled.color.as_deref(), filled.fill.as_deref()),
+            (
+                filled.pattern.as_str(),
+                filled.color.as_deref(),
+                filled.fill.as_deref()
+            ),
             ("diagCross", Some("C00000"), Some("FFFF00"))
         );
         let cleared = with_pattern(Some(&filled), "clear").unwrap();
-        assert_eq!((cleared.color.clone(), cleared.fill.as_deref()), (None, Some("FFFF00")));
+        assert_eq!(
+            (cleared.color.clone(), cleared.fill.as_deref()),
+            (None, Some("FFFF00"))
+        );
         assert_eq!(with_fill(Some(&cleared), None), None);
         assert!(with_pattern(None, "clear").is_none());
         assert!(with_color(None, Some("000000")).is_none());

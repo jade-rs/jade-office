@@ -126,7 +126,9 @@ impl DocView {
                                 .cursor_pointer()
                                 .hover(|close| close.bg(palette::hovered()))
                                 .child("×")
-                                .on_click(cx.listener(|view, _: &ClickEvent, _, cx| toggle(view, cx))),
+                                .on_click(
+                                    cx.listener(|view, _: &ClickEvent, _, cx| toggle(view, cx)),
+                                ),
                         ),
                 )
                 .child(body)

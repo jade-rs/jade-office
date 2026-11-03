@@ -98,7 +98,11 @@ fn offset_step(
 ) -> impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static {
     on(cx, move |view: &mut DocumentView, cx| {
         view.edit_frame(cx, |form| {
-            let now = if horizontal { form.horizontal } else { form.vertical };
+            let now = if horizontal {
+                form.horizontal
+            } else {
+                form.vertical
+            };
             if let FramePosition::Offset(value) = now {
                 let next = FramePosition::Offset(((value + delta) * 10.0).round() / 10.0);
                 if horizontal {
@@ -206,15 +210,23 @@ fn axis(
     );
     if let Some(offset) = offset {
         children.push(
-            chip(SharedString::from(format!("{prefix}-offset-less")), "−", false)
-                .on_click(offset_step(cx, horizontal, -1.0))
-                .into_any_element(),
+            chip(
+                SharedString::from(format!("{prefix}-offset-less")),
+                "−",
+                false,
+            )
+            .on_click(offset_step(cx, horizontal, -1.0))
+            .into_any_element(),
         );
         children.push(div().text_xs().child(length(offset)).into_any_element());
         children.push(
-            chip(SharedString::from(format!("{prefix}-offset-more")), "+", false)
-                .on_click(offset_step(cx, horizontal, 1.0))
-                .into_any_element(),
+            chip(
+                SharedString::from(format!("{prefix}-offset-more")),
+                "+",
+                false,
+            )
+            .on_click(offset_step(cx, horizontal, 1.0))
+            .into_any_element(),
         );
     }
     children.push(caption("frame.anchor"));
@@ -278,7 +290,9 @@ pub fn bar_body(form: &FrameForm, cx: &mut Context<DocumentView>) -> Vec<AnyElem
     let mut size = vec![caption("frame.width")];
     size.push(
         chip("frame-width-auto", t("frame.auto"), form.width.is_none())
-            .on_click(on(cx, |view, cx| view.edit_frame(cx, |form| form.width = None)))
+            .on_click(on(cx, |view, cx| {
+                view.edit_frame(cx, |form| form.width = None)
+            }))
             .into_any_element(),
     );
     size.push(

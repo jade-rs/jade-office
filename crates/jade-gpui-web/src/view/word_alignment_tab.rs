@@ -17,7 +17,11 @@ impl DocView {
         self.open_dialog(Dialog::AlignmentTab(AlignmentTabForm::default()), cx);
     }
 
-    fn edit_alignment_tab(&mut self, cx: &mut Context<Self>, edit: impl FnOnce(&mut AlignmentTabForm)) {
+    fn edit_alignment_tab(
+        &mut self,
+        cx: &mut Context<Self>,
+        edit: impl FnOnce(&mut AlignmentTabForm),
+    ) {
         if let Document::Pages {
             dialog: Some(dialog),
             ..
@@ -46,11 +50,15 @@ impl DocView {
         let mut body = vec![caption("word.ptab.alignment")];
         for (index, align) in TabAlign::ALL.into_iter().enumerate() {
             body.push(
-                chip(("ptab-align", index), t(align.label()), form.alignment == align)
-                    .on_click(on(cx, move |view, cx| {
-                        view.edit_alignment_tab(cx, |form| form.alignment = align)
-                    }))
-                    .into_any_element(),
+                chip(
+                    ("ptab-align", index),
+                    t(align.label()),
+                    form.alignment == align,
+                )
+                .on_click(on(cx, move |view, cx| {
+                    view.edit_alignment_tab(cx, |form| form.alignment = align)
+                }))
+                .into_any_element(),
             );
         }
         body.push(caption("word.ptab.relative_to"));
@@ -59,11 +67,15 @@ impl DocView {
             .enumerate()
         {
             body.push(
-                chip(("ptab-base", index), t(key), form.relative_to_indent == indent)
-                    .on_click(on(cx, move |view, cx| {
-                        view.edit_alignment_tab(cx, |form| form.relative_to_indent = indent)
-                    }))
-                    .into_any_element(),
+                chip(
+                    ("ptab-base", index),
+                    t(key),
+                    form.relative_to_indent == indent,
+                )
+                .on_click(on(cx, move |view, cx| {
+                    view.edit_alignment_tab(cx, |form| form.relative_to_indent = indent)
+                }))
+                .into_any_element(),
             );
         }
         body.push(caption("word.ptab.leader"));

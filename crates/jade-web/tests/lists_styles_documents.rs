@@ -837,7 +837,10 @@ fn shading_patterns_are_picked_written_and_read_back() {
         assert_eq!(state.shading.as_ref(), Some(&picked));
     }
     // The whole list round-trips under its own spelling.
-    for (token, _) in SHADING_PATTERNS.iter().filter(|(token, _)| *token != "clear") {
+    for (token, _) in SHADING_PATTERNS
+        .iter()
+        .filter(|(token, _)| *token != "clear")
+    {
         let spec = with_pattern(None, token).unwrap();
         document.set_shading_spec(Some(&spec)).unwrap();
         assert_eq!(

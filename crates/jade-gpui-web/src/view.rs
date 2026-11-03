@@ -32,13 +32,9 @@ use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatt
 use jade_web::word::similar::RangeFormat;
 
 mod deck;
-mod word_alignment_tab;
-pub(crate) mod word_text_from_file;
-pub(crate) mod word_reveal;
-mod word_similar;
-mod word_frame;
 mod deck_show;
 mod sheet;
+mod word_alignment_tab;
 pub(crate) mod word_characters;
 mod word_context_menu;
 pub(crate) mod word_controls;
@@ -53,6 +49,7 @@ pub(crate) mod word_files;
 mod word_find;
 pub(crate) mod word_fit_text;
 mod word_form;
+mod word_frame;
 pub(crate) mod word_hyphenation;
 mod word_immersive;
 mod word_inspect;
@@ -68,15 +65,18 @@ mod word_print;
 mod word_read_aloud;
 pub(crate) mod word_recover;
 pub(crate) mod word_references;
+pub(crate) mod word_reveal;
 mod word_review;
 pub(crate) mod word_ruler;
 mod word_screen_reader;
 pub(crate) mod word_setup;
 mod word_signatures;
+mod word_similar;
 pub(crate) mod word_spin;
 pub(crate) mod word_story;
 pub(crate) mod word_styles;
 mod word_table;
+pub(crate) mod word_text_from_file;
 mod word_thesaurus;
 pub(crate) mod word_tools_ui;
 pub(crate) mod word_views;
@@ -2296,7 +2296,9 @@ impl DocView {
             Action::FontSize(points) => on_similar(document, RangeFormat::FontSize(points)),
             Action::StepFontSize(grow) => on_similar(document, RangeFormat::StepFontSize(grow)),
             Action::FontColor(color) => on_similar(document, RangeFormat::FontColor(color)),
-            Action::Highlight(color) => on_similar(document, RangeFormat::Highlight(color.to_string())),
+            Action::Highlight(color) => {
+                on_similar(document, RangeFormat::Highlight(color.to_string()))
+            }
             Action::List(bullets) => document.toggle_list(bullets),
             Action::Indent(increase) => document.step_indent(increase),
             Action::Align(alignment) => document.set_alignment(alignment),

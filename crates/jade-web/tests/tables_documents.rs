@@ -628,14 +628,15 @@ fn paragraphs_sort_from_the_sort_dialog() {
     document.select((0, 0), (3, 5)).unwrap();
     let mut tools = TableTools::default();
     tools.action(&mut document, TableAction::Sort);
-    let Some(TableDialog::Sort {
-        headings, keys, ..
-    }) = tools.dialog.as_mut()
-    else {
+    let Some(TableDialog::Sort { headings, keys, .. }) = tools.dialog.as_mut() else {
         panic!("the sort dialog opens outside a table");
     };
     assert!(headings.is_empty(), "the 段落 key, not columns");
-    keys[0] = Some((0, jade_docx_headless_api::HeadlessTableSortKind::Text, false));
+    keys[0] = Some((
+        0,
+        jade_docx_headless_api::HeadlessTableSortKind::Text,
+        false,
+    ));
     if let Some(TableDialog::Sort { header, .. }) = tools.dialog.as_mut() {
         *header = true;
     }

@@ -23,7 +23,10 @@ fn a_right_alignment_tab_puts_the_text_after_it_at_the_right_margin() {
     };
     form.submit(&mut document).unwrap();
     let after_tab = document.selection_range().unwrap().focus;
-    assert_eq!((after_tab.paragraph, after_tab.offset), (0, "Chapter\t".len()));
+    assert_eq!(
+        (after_tab.paragraph, after_tab.offset),
+        (0, "Chapter\t".len())
+    );
     document.insert_text("12").unwrap();
 
     let layout = document.word_document().section_layout(Some(0));
@@ -64,8 +67,9 @@ fn a_centre_alignment_tab_centres_what_follows_between_the_margins() {
     form.submit(&mut document).unwrap();
     document.insert_text("Title").unwrap();
     let layout = document.word_document().section_layout(Some(0));
-    let centre = f64::from(layout.margin_left + (layout.width - layout.margin_left - layout.margin_right) / 2.0)
-        * PX_PER_PT;
+    let centre = f64::from(
+        layout.margin_left + (layout.width - layout.margin_left - layout.margin_right) / 2.0,
+    ) * PX_PER_PT;
     let start = document.place_caret(0, 1).unwrap().x;
     let end = document.place_caret(0, 1 + "Title".len()).unwrap().x;
     assert!(

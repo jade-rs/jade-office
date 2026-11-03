@@ -78,7 +78,10 @@ pub fn decode_text(bytes: &[u8]) -> String {
     text.strip_suffix('\n').unwrap_or(&text).to_string()
 }
 
-fn insert_docx<S: WordSession + ?Sized>(session: &mut S, source: &[u8]) -> Result<Position, String> {
+fn insert_docx<S: WordSession + ?Sized>(
+    session: &mut S,
+    source: &[u8],
+) -> Result<Position, String> {
     let range = session.selection_range().ok_or("no caret")?;
     let (start, end) = range.normalized();
     let before = session
@@ -88,11 +91,15 @@ fn insert_docx<S: WordSession + ?Sized>(session: &mut S, source: &[u8]) -> Resul
     let paragraph_length = |document: &jade_docx_editor::word_document::WordDocument,
                             index: usize| {
         document.paragraph(index).map_or(0, |paragraph| {
-            paragraph.runs.iter().map(|run| run.text.len()).sum::<usize>()
+            paragraph
+                .runs
+                .iter()
+                .map(|run| run.text.len())
+                .sum::<usize>()
         })
     };
-    let after_length = paragraph_length(session.word_document(), end.paragraph)
-        .saturating_sub(end.offset);
+    let after_length =
+        paragraph_length(session.word_document(), end.paragraph).saturating_sub(end.offset);
     let paragraphs_before = session.word_document().paragraph_count();
 
     // The document with the mark in place of the selection, made on a copy
@@ -118,8 +125,7 @@ fn insert_docx<S: WordSession + ?Sized>(session: &mut S, source: &[u8]) -> Resul
     let added = replacement.paragraph_count() as isize - paragraphs_before as isize
         + (end.paragraph - start.paragraph) as isize;
     let caret_paragraph = (start.paragraph as isize + added).max(0) as usize;
-    let caret_offset =
-        paragraph_length(&replacement, caret_paragraph).saturating_sub(after_length);
+    let caret_offset = paragraph_length(&replacement, caret_paragraph).saturating_sub(after_length);
     let snapshot = replacement
         .snapshot_for_replacement()
         .ok_or("the edited document is empty")?;
@@ -354,7 +360,11 @@ fn merge(paragraph: &str, content: &str) -> Result<String, String> {
         ));
         middle = rest;
     } else if !master::plain_text(&split.before).is_empty() {
-        out.push_str(&format!("<w:p>{}{}</w:p>", without_section(own), split.before));
+        out.push_str(&format!(
+            "<w:p>{}{}</w:p>",
+            without_section(own),
+            split.before
+        ));
     }
     let last = middle.last().filter(|block| is_paragraph(block));
     let middle = if last.is_some() {
@@ -384,8 +394,14 @@ mod tests {
         );
         let split = split(&paragraph).unwrap();
         assert_eq!(split.open_tag, r#"<w:p w14:paraId="1">"#);
-        assert_eq!(split.properties.as_deref(), Some(r#"<w:pPr><w:jc w:val="center"/></w:pPr>"#));
-        assert_eq!(split.before, "<w:r><w:rPr><w:b/></w:rPr><w:t>ab</w:t></w:r>");
+        assert_eq!(
+            split.properties.as_deref(),
+            Some(r#"<w:pPr><w:jc w:val="center"/></w:pPr>"#)
+        );
+        assert_eq!(
+            split.before,
+            "<w:r><w:rPr><w:b/></w:rPr><w:t>ab</w:t></w:r>"
+        );
         assert_eq!(split.after, "<w:r><w:rPr><w:b/></w:rPr><w:t>cd</w:t></w:r>");
     }
 
@@ -422,7 +438,9 @@ mod tests {
     #[test]
     fn note_and_comment_marks_stay_behind() {
         assert_eq!(
-            strip_references(r#"<w:r><w:footnoteReference w:id="2"/></w:r><w:commentRangeStart w:id="0"/>"#),
+            strip_references(
+                r#"<w:r><w:footnoteReference w:id="2"/></w:r><w:commentRangeStart w:id="0"/>"#
+            ),
             "<w:r></w:r>"
         );
     }

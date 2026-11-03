@@ -692,7 +692,11 @@ fn blank_like(master: &OpcPackage) -> Result<Vec<u8>, String> {
 /// `content`, blocks of `from`'s body, made to work in `to`'s: the parts
 /// its relationships name copied over, and the styles and lists it uses
 /// that `to` does not have.
-pub(super) fn import(content: &str, from: &OpcPackage, to: &mut OpcPackage) -> Result<String, String> {
+pub(super) fn import(
+    content: &str,
+    from: &OpcPackage,
+    to: &mut OpcPackage,
+) -> Result<String, String> {
     let content = import_relationships(content, from, to)?;
     let content = import_numbering(&content, from, to)?;
     import_styles(&content, from, to);

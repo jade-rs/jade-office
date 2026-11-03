@@ -118,7 +118,11 @@ impl Default for FrameForm {
     }
 }
 
-fn token(list: &[(&'static str, &'static str)], value: Option<&str>, default: &'static str) -> &'static str {
+fn token(
+    list: &[(&'static str, &'static str)],
+    value: Option<&str>,
+    default: &'static str,
+) -> &'static str {
     value
         .and_then(|value| list.iter().find(|(token, _)| *token == value))
         .map_or(default, |(token, _)| token)
@@ -127,12 +131,13 @@ fn token(list: &[(&'static str, &'static str)], value: Option<&str>, default: &'
 impl FrameForm {
     /// The form on an existing frame.
     pub fn from_headless(frame: &HeadlessParagraphFrame) -> Self {
-        let position = |align: Option<&str>, offset: Option<f32>, list: &[(&'static str, &'static str)]| {
-            match align.and_then(|align| list.iter().find(|(token, _)| *token == align)) {
-                Some((token, _)) => FramePosition::Align(token),
-                None => FramePosition::Offset(mm(offset.unwrap_or(0.0))),
-            }
-        };
+        let position =
+            |align: Option<&str>, offset: Option<f32>, list: &[(&'static str, &'static str)]| {
+                match align.and_then(|align| list.iter().find(|(token, _)| *token == align)) {
+                    Some((token, _)) => FramePosition::Align(token),
+                    None => FramePosition::Offset(mm(offset.unwrap_or(0.0))),
+                }
+            };
         Self {
             wrap_around: frame.wrap.as_deref() != Some("none"),
             width: frame.width.map(mm),
@@ -188,7 +193,11 @@ impl FrameForm {
     }
 
     pub fn toggle_moves_with_text(&mut self) {
-        self.v_anchor = if self.moves_with_text() { "margin" } else { "text" };
+        self.v_anchor = if self.moves_with_text() {
+            "margin"
+        } else {
+            "text"
+        };
     }
 
     /// A length stepped by `delta` mm, never below 0.
