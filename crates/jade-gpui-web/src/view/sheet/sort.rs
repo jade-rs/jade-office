@@ -1,6 +1,7 @@
 use super::super::DocView;
 use crate::{i18n, palette as theme};
 use gpui::{div, prelude::*, px, Context, MouseButton};
+use jade_web::custom_lists;
 use jade_web::sort_dialog::{SortDialog, SortOn};
 type View = DocView;
 include!(concat!(

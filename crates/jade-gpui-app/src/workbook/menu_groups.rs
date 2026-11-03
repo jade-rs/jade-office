@@ -64,6 +64,7 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
         | C::Outline(_)
         | C::AutoOutline
         | C::ClearOutline => MenuGroup::Data,
+        C::WhatIf(tool) if tool.is_data_tool() => MenuGroup::Data,
         C::WhatIf(_) => MenuGroup::WhatIf,
         C::CreatePivot
         | C::RefreshAllPivots

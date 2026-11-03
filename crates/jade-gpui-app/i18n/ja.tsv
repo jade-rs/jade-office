@@ -4676,3 +4676,104 @@ tool.residuals	残差
 tool.standard_residuals	標準残差
 tool.probability_output	確率出力
 tool.percentile	百分位数
+# Consolidate
+sheet.menu.consolidate	統合…
+consolidate.dialog	統合の設定
+consolidate.function	集計の方法
+consolidate.reference	統合元範囲
+consolidate.all	統合元
+consolidate.top_row	統合の基準: 上端行
+consolidate.left_column	統合の基準: 左端列
+consolidate.links	統合元データとリンクする
+consolidate.add	追加
+consolidate.delete	削除
+consolidate.fn.sum	合計
+consolidate.fn.count	個数
+consolidate.fn.average	平均
+consolidate.fn.max	最大値
+consolidate.fn.min	最小値
+consolidate.fn.product	積
+consolidate.fn.count_numbers	数値の個数
+consolidate.fn.stddev	標本標準偏差
+consolidate.fn.stddevp	標準偏差
+consolidate.fn.var	標本分散
+consolidate.fn.varp	分散
+consolidate.alert.reference	参照が正しくありません。
+consolidate.alert.no_source	統合元範囲を追加してください。
+consolidate.alert.links_same_sheet	統合先と同じシートの統合元データにはリンクできません。
+consolidate.alert.overlap	統合元範囲と統合先の範囲が重なっています。
+# Advanced Filter
+sheet.menu.advanced_filter	詳細設定…
+advanced_filter.dialog	フィルター オプションの設定
+advanced_filter.action	抽出先
+advanced_filter.in_place	選択範囲内
+advanced_filter.copy	指定した範囲
+advanced_filter.list	リスト範囲
+advanced_filter.criteria	検索条件範囲
+advanced_filter.copy_to	抽出範囲
+advanced_filter.unique	重複するレコードは無視する
+advanced_filter.show_all	すべて表示
+advanced_filter.alert.list	リスト範囲が正しくありません。
+advanced_filter.alert.criteria	検索条件範囲が正しくありません。
+advanced_filter.alert.extract	抽出範囲に、存在しないフィールド名または不正なフィールド名があります。
+advanced_filter.alert.overlap	抽出範囲がリスト範囲と重なっています。
+advanced_filter.alert.active_sheet	抽出したデータはアクティブなシートにのみコピーできます。
+# Custom lists
+sheet.menu.custom_lists	ユーザー設定リストの編集…
+custom_lists.dialog	ユーザー設定リスト
+custom_lists.lists	ユーザー設定リスト
+custom_lists.new	新しいリスト
+custom_lists.entries	リストの項目
+custom_lists.import	リストの取り込み元範囲
+custom_lists.add	追加
+custom_lists.delete	削除
+custom_lists.import_button	インポート
+custom_lists.alert.built_in	組み込みのリストは削除できません。
+custom_lists.alert.import	取り込むリストのあるセルを指定してください。
+sort.custom_list	ユーザー設定リスト…
+# Forecast Sheet
+sheet.menu.forecast_sheet	予測シート…
+forecast.dialog	予測ワークシートの作成
+forecast.chart	グラフ
+forecast.line	折れ線
+forecast.column	縦棒
+forecast.end	予測終了
+forecast.start	予測開始
+forecast.confidence	信頼区間
+forecast.seasonality	季節性
+forecast.season_auto	自動検出
+forecast.season_manual	手動設定
+forecast.season	季節の長さ
+forecast.statistics	予測統計を含める
+forecast.timeline	タイムライン範囲
+forecast.values	値の範囲
+forecast.missing	欠測値の補完方法
+forecast.interpolation	補間
+forecast.zeros	ゼロ
+forecast.aggregate	重複の集計方法
+forecast.agg.average	平均
+forecast.agg.count	数値の個数
+forecast.agg.counta	個数
+forecast.agg.max	最大値
+forecast.agg.median	中央値
+forecast.agg.min	最小値
+forecast.agg.sum	合計
+forecast.create	作成
+forecast.alert.ranges	タイムライン範囲と値の範囲は、見出しを含む同じ大きさの 1 列にしてください。
+forecast.alert.timeline	タイムラインには一定の間隔の数値か日付が必要です。
+forecast.alert.end	予測終了は予測開始より後にしてください。
+forecast.alert.start	予測開始が正しくありません。
+forecast.alert.confidence	信頼区間は 0% から 100% の間にしてください。
+forecast.alert.season	季節の長さは 8760 以下の整数にしてください。
+forecast.word.forecast	予測({})
+forecast.word.lower	信頼下限({})
+forecast.word.upper	信頼上限({})
+forecast.word.statistic	統計
+forecast.word.value	値
+forecast.word.alpha	Alpha
+forecast.word.beta	Beta
+forecast.word.gamma	Gamma
+forecast.word.mase	MASE
+forecast.word.smape	SMAPE
+forecast.word.mae	MAE
+forecast.word.rmse	RMSE

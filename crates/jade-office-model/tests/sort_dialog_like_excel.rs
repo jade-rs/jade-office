@@ -84,6 +84,7 @@ fn the_dialog_opens_on_the_list_with_one_level_and_adds_others() {
             column: 1,
             descending: false,
             on: SortOn::Values,
+            custom: None,
         }]
     );
     dialog.add_level();
