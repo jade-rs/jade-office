@@ -3,6 +3,14 @@ use std::collections::BTreeSet;
 
 use jade_xlsx_reader::{Axis, CellRange, CellRef, PageSetup, SheetVisibility};
 
+/// A zoom factor as the whole percent Excel keeps, 10–400.
+pub(crate) fn zoom_percent(zoom: f32) -> u32 {
+    if !zoom.is_finite() {
+        return 100;
+    }
+    ((zoom * 100.0).round() as i64).clamp(10, 400) as u32
+}
+
 impl<B: Backend> Workbook<B> {
     pub fn hidden_sheets(&self) -> Vec<usize> {
         self.engine()
@@ -84,13 +92,107 @@ impl<B: Backend> Workbook<B> {
         Ok(true)
     }
 
-    /// The zoom the active sheet was saved at, as a factor (0.85 for 85%):
-    /// the one Excel opens it at.
+    /// The zoom the active sheet shows at, as a factor (0.85 for 85%): the
+    /// one it was last zoomed to, or else the one it was saved at — the
+    /// one Excel opens it at.
     pub fn sheet_zoom(&self) -> f32 {
-        let percent = self.engine().workbook().sheets[self.sheet_index()]
-            .zoom_percent
+        let sheet = &self.engine().workbook().sheets[self.sheet_index()];
+        let percent = self
+            .zooms
+            .iter()
+            .find(|(part, _)| *part == sheet.part_name)
+            .map(|&(_, percent)| percent)
+            .or(sheet.zoom_percent)
             .unwrap_or(100);
         percent as f32 / 100.0
+    }
+
+    /// The active sheet zoomed to `zoom` (a factor, held to Excel's 10–400%
+    /// and rounded to a whole percent), saved with it as Excel saves the
+    /// zoom a sheet was last shown at. Not an undo step, though it is a
+    /// change to save, as in Excel; `false` when it already is so.
+    pub fn set_sheet_zoom(&mut self, zoom: f32) -> bool {
+        let percent = zoom_percent(zoom);
+        if zoom_percent(self.sheet_zoom()) == percent {
+            return false;
+        }
+        let part = self.engine().workbook().sheets[self.sheet_index()]
+            .part_name
+            .clone();
+        self.zooms.retain(|(other, _)| *other != part);
+        self.zooms.push((part, percent));
+        self.dirty = true;
+        true
+    }
+
+    /// View ▸ Zoom to Selection: the zoom at which `range` fills a grid of
+    /// `size` (screen px, headers included), as Excel works it out — the
+    /// headers and frozen panes scale with it — held to 10–400%.
+    pub fn zoom_to_selection(&self, range: CellRange, size: (f64, f64)) -> f32 {
+        let metrics = self.header_metrics();
+        let (frozen_width, frozen_height) = self.frozen_size();
+        let first = self.sheet_position(range.start);
+        let last = self.sheet_position(range.end);
+        let (Some(first), Some(last)) = (first, last) else {
+            return self.sheet_zoom();
+        };
+        let width = (last.0 + last.2 - first.0).max(1.0);
+        let height = (last.1 + last.3 - first.1).max(1.0);
+        let across = size.0 / (width + metrics.row_width + frozen_width);
+        let down = size.1 / (height + metrics.column_height + frozen_height);
+        zoom_percent(across.min(down) as f32) as f32 / 100.0
+    }
+
+    /// The scroll (sheet px) that puts `at` at the top left of the part of
+    /// the grid that scrolls: where Zoom to Selection leaves the range.
+    pub fn scroll_to_corner(&self, at: CellRef) -> (f64, f64) {
+        let (frozen_width, frozen_height) = self.frozen_size();
+        match self.sheet_position(at) {
+            Some((x, y, _, _)) => ((x - frozen_width).max(0.0), (y - frozen_height).max(0.0)),
+            None => (0.0, 0.0),
+        }
+    }
+
+    /// View ▸ Gridlines: whether the active sheet shows the lines between
+    /// its cells.
+    pub fn show_grid_lines(&self) -> bool {
+        self.engine().workbook().sheets[self.sheet_index()].show_grid_lines
+    }
+
+    /// Gridlines on the active sheet shown or hidden, saved with it. One
+    /// undo step; `false` when it already was.
+    pub fn set_show_grid_lines(&mut self, on: bool) -> Result<bool, String> {
+        let name = self.sheet_name();
+        if !self
+            .engine_mut()
+            .set_show_grid_lines(&name, on)
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(false);
+        }
+        self.wrote(1)?;
+        Ok(true)
+    }
+
+    /// View ▸ Headings: whether the active sheet shows its row numbers and
+    /// column letters.
+    pub fn show_headings(&self) -> bool {
+        self.engine().workbook().sheets[self.sheet_index()].show_headers
+    }
+
+    /// Headings on the active sheet shown or hidden, saved with it. One
+    /// undo step; `false` when it already was.
+    pub fn set_show_headings(&mut self, on: bool) -> Result<bool, String> {
+        let name = self.sheet_name();
+        if !self
+            .engine_mut()
+            .set_show_headers(&name, on)
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(false);
+        }
+        self.wrote(1)?;
+        Ok(true)
     }
 
     /// Whether the active sheet shows a zero in cells worth zero, as Excel

@@ -3818,6 +3818,20 @@ sheet.shape.rounded_rectangle	四角形: 角を丸くする
 sheet.shape.right_arrow	矢印: 右
 filter.date.day	{day}日
 sheet.menu.group_cell_styles	セルのスタイル
+sheet.menu.group_view	表示
+sheet.menu.freeze_top_row	先頭行の固定
+sheet.menu.freeze_first_column	先頭列の固定
+sheet.menu.hide_gridlines	枠線を表示しない
+sheet.menu.show_gridlines	枠線を表示する
+sheet.menu.hide_headings	見出しを表示しない
+sheet.menu.show_headings	見出しを表示する
+sheet.menu.zoom	ズーム…
+sheet.menu.zoom_selection	選択範囲に合わせて拡大/縮小
+sheet.zoom.title	ズーム
+sheet.zoom.magnification	倍率
+sheet.zoom.fit_selection	選択範囲に合わせる
+sheet.zoom.custom	指定:
+sheet.zoom.out_of_range	10 から 400 までの整数を入力してください。
 cell_style.normal	標準
 cell_style.good	良い
 cell_style.bad	悪い
@@ -4040,3 +4054,336 @@ deck.picture.photo_album	フォト アルバム
 deck.picture.album_layout	{count} 枚の図/スライド
 deck.picture.convert_to_shapes	図形に変換
 deck.picture.crop_handles	トリミング ハンドル
+# What-If Analysis
+sheet.menu.group_what_if	What-If 分析
+what_if.alert.reference	参照が正しくありません。
+sheet.menu.goal_seek	ゴール シーク…
+goal_seek.dialog	ゴール シーク
+goal_seek.set	数式入力セル
+goal_seek.to	目標値
+goal_seek.changing	変化させるセル
+goal_seek.status	ゴール シーク
+goal_seek.found	セル {cell} の収束値を探索しています。解答が見つかりました。
+goal_seek.not_found	セル {cell} の収束値を探索しています。解答が見つからない可能性があります。
+goal_seek.target	目標値: {value}
+goal_seek.current	現在値: {value}
+goal_seek.alert.formula	数式入力セルには数式を入力してください。
+goal_seek.alert.value	変化させるセルには値を入力してください。
+goal_seek.alert.number	目標値には数値を入力してください。
+sheet.menu.data_table	データ テーブル…
+data_table.dialog	データ テーブル
+data_table.row	行の代入セル
+data_table.column	列の代入セル
+data_table.alert.input	代入セルの参照が正しくありません。
+data_table.alert.selection	代入する値、数式、結果を入れるセルを含む範囲を選択してください。
+data_table.refused	データ テーブルの一部を変更することはできません。
+sheet.menu.scenario_manager	シナリオの登録と管理…
+scenario.manager	シナリオの登録と管理
+scenario.list	シナリオ:
+scenario.none	シナリオが定義されていません。[追加] をクリックしてシナリオを追加してください。
+scenario.changing_cells	変化させるセル: {cells}
+scenario.comment_is	コメント: {comment}
+scenario.show	表示
+scenario.close	閉じる
+scenario.add	追加…
+scenario.delete	削除
+scenario.edit	編集…
+scenario.merge	統合…
+scenario.summary	情報…
+scenario.add_dialog	シナリオの追加
+scenario.edit_dialog	シナリオの編集
+scenario.name	シナリオ名:
+scenario.cells	変化させるセル:
+scenario.comment	コメント:
+scenario.locked	変更できないようにする
+scenario.hidden	表示しない
+scenario.values	シナリオの値
+scenario.values_prompt	変化させるセルの値を入力してください。
+scenario.merge_dialog	シナリオの統合
+scenario.merge_from	統合元のワークシート:
+scenario.summary_dialog	シナリオの情報
+scenario.report_type	レポートの種類
+scenario.report_summary	シナリオの概要
+scenario.report_pivot	シナリオ ピボットテーブル レポート
+scenario.result_cells	結果を出力するセル:
+scenario.alert.name	シナリオ名を入力してください。
+scenario.alert.taken	同じ名前のシナリオが既にあります。
+scenario.alert.cells	変化させるセルは、このシートの 32 個以内のセルを指定してください。
+scenario.alert.results	このシートの結果を出力するセルを入力してください。
+scenario.alert.locked	このシナリオは保護されているため、シートの保護中は変更できません。
+scenario.word.sheet	シナリオの情報
+scenario.word.pivot_sheet	シナリオ ピボットテーブル
+scenario.word.title	シナリオの情報
+scenario.word.current	現在の値:
+scenario.word.changing	変化させるセル:
+scenario.word.results	結果のセル:
+scenario.word.note1	注: 現在の値 列は、シナリオ情報レポートが作成された時点での
+scenario.word.note2	変化させるセルの値を表します。
+scenario.word.note3	各シナリオの変化させるセルは、灰色で表示されます。
+scenario.word.by	ごとの
+scenario.word.all	(すべて)
+scenario.word.row_labels	行ラベル
+sheet.menu.solver	ソルバー…
+solver.dialog	ソルバーのパラメーター
+solver.objective	目的セルの設定:
+solver.to	目標値:
+solver.max	最大値
+solver.min	最小値
+solver.value_of	指定値:
+solver.value	値:
+solver.variables	変数セルの変更:
+solver.constraints	制約条件の対象:
+solver.non_negative	制約のない変数を非負数にする
+solver.method	解決方法の選択:
+solver.method.grg	GRG 非線形
+solver.method.simplex	シンプレックス LP
+solver.method.evolutionary	エボリューショナリー
+solver.solve	解決
+solver.close	閉じる
+solver.add	追加
+solver.change	変更
+solver.delete	削除
+solver.reset	すべてリセット
+solver.options	オプション
+solver.add_constraint	制約条件の追加
+solver.change_constraint	制約条件の変更
+solver.cell_reference	セル参照:
+solver.relation	関係
+solver.constraint	制約条件:
+solver.options_dialog	オプション
+solver.precision	制約条件の精度:
+solver.ignore_integer	整数制約条件を無視する
+solver.integer_optimality	整数の最適性 (%):
+solver.max_time	最大時間 (秒):
+solver.iterations	反復回数:
+solver.convergence	収束:
+solver.population	母集団のサイズ:
+solver.seed	乱数シード:
+solver.results	ソルバーの結果
+solver.keep	ソルバーの解の保持
+solver.restore	計算前の値に戻す
+solver.answer_report	解答レポート
+solver.ending.optimal	ソルバーによって解が見つかりました。すべての制約条件と最適化条件を満たしています。
+solver.ending.converged	ソルバーは現在の解に収束しました。すべての制約条件を満たしています。
+solver.ending.infeasible	ソルバーで実行可能解が見つかりませんでした。
+solver.ending.unbounded	目的セルの値が収束しません。
+solver.ending.linear	この LP ソルバーに必要な線形性の条件が満たされていません。
+solver.ending.limit	反復回数または時間の上限でソルバーが停止しました。
+solver.ending.number	ソルバーで目的セルまたは制約条件セルにエラー値が見つかりました。
+solver.alert.objective	目的セルには、アクティブ シートの 1 つのセルを指定してください。
+solver.alert.variables	変数セルは、アクティブ シートのセルを指定してください。
+solver.alert.variable_formula	変数セルには数式ではなく定数を指定してください。
+solver.alert.constraint	制約条件には、数値、単純な参照、または数値を返す数式を指定してください。
+solver.alert.cell_reference	セル参照には、アクティブ シートのセルまたは範囲を指定してください。
+solver.alert.integer	整数、バイナリ、AllDifferent の制約条件は変数セルにのみ指定できます。
+solver.alert.sizes	制約条件の左辺と右辺は同じサイズにしてください。
+solver.alert.value	指定値には数値を入力してください。
+solver.alert.option	オプションの値が範囲外です。
+solver.word.sheet	解答レポート 1
+solver.word.title	解答レポート
+solver.word.objective_max	目的セル (最大値)
+solver.word.objective_min	目的セル (最小値)
+solver.word.objective_value	目的セル (指定値)
+solver.word.variable_cells	変数セル
+solver.word.constraints	制約条件
+solver.word.cell	セル
+solver.word.name	名前
+solver.word.original	元の値
+solver.word.final	最終値
+solver.word.integer	整数
+solver.word.contin	連続
+solver.word.cell_value	セルの値
+solver.word.formula	数式
+solver.word.status	状態
+solver.word.slack	ダブり
+solver.word.binding	制約あり
+solver.word.not_binding	制約なし
+solver.word.result	結果: {ending}
+solver.word.engine	エンジン: {engine}
+solver.word.time	解決時間: {seconds} 秒。
+solver.word.worksheet	ワークシート: {sheet}
+sheet.menu.data_analysis	データ分析…
+tool.dialog	データ分析
+tool.tools	分析ツール
+tool.anova_single	分散分析: 一元配置
+tool.anova_replication	分散分析: 繰り返しのある二元配置
+tool.anova_two	分散分析: 繰り返しのない二元配置
+tool.correlation	相関
+tool.covariance	共分散
+tool.descriptive	基本統計量
+tool.exponential	指数平滑
+tool.f_test	F 検定: 2 標本を使った分散の検定
+tool.fourier	フーリエ解析
+tool.histogram	ヒストグラム
+tool.moving_average	移動平均
+tool.random	乱数発生
+tool.rank_percentile	順位と百分位数
+tool.regression	回帰分析
+tool.sampling	サンプリング
+tool.t_paired	t 検定: 一対の標本による平均の検定
+tool.t_equal	t 検定: 等分散を仮定した 2 標本による検定
+tool.t_unequal	t 検定: 分散が等しくないと仮定した 2 標本による検定
+tool.z_test	z 検定: 2 標本による平均の検定
+tool.input	入力範囲:
+tool.variable1	変数 1 の入力範囲:
+tool.variable2	変数 2 の入力範囲:
+tool.y_range	入力 Y 範囲:
+tool.x_range	入力 X 範囲:
+tool.grouped	データ方向:
+tool.by_columns	列
+tool.by_rows	行
+tool.labels	ラベル
+tool.labels_first	先頭行 (列) をラベルとして使用
+tool.rows_per_sample	1 標本あたりの行数:
+tool.difference	仮説平均との差異:
+tool.variance1	変数 1 の分散 (既知):
+tool.variance2	変数 2 の分散 (既知):
+tool.damping	減衰率:
+tool.bins	データ区間:
+tool.interval	区間:
+tool.inverse	逆変換
+tool.number_of_variables	変数の数:
+tool.number_of_numbers	乱数の数:
+tool.distribution	分布:
+tool.uniform	均一
+tool.normal	正規
+tool.bernoulli	ベルヌーイ
+tool.binomial	二項
+tool.poisson	ポワソン
+tool.patterned	パターン
+tool.discrete	離散
+tool.uniform_between	最小値
+tool.and	最大値
+tool.p_value_probability	p 値 =
+tool.trials	試行回数 =
+tool.lambda	λ =
+tool.from	開始値
+tool.to	終了値
+tool.in_steps_of	ステップ
+tool.repeat_each	各値の繰り返し回数
+tool.repeat_sequence	数列の繰り返し回数
+tool.value_probability_range	値と確率の入力範囲:
+tool.seed	ランダム シード:
+tool.sampling_method	標本の採取方法
+tool.periodic	周期
+tool.at_random	ランダム
+tool.period	間隔:
+tool.number_of_samples	標本数:
+tool.alpha	α:
+tool.output	出力オプション
+tool.output_range	出力先:
+tool.new_sheet	新規ワークシート:
+tool.sheet_name	新規ワークシート名:
+tool.summary_statistics	統計情報
+tool.confidence_for_mean	平均の信頼度の出力
+tool.level	信頼度 (%):
+tool.kth_largest	K 番目に大きな値
+tool.kth_smallest	K 番目に小さな値
+tool.k	K:
+tool.standard_errors	標準誤差の表示
+tool.pareto	パレート図
+tool.cumulative_percentage	累積度数分布の表示
+tool.constant_zero	定数に 0 を使用
+tool.confidence_level_check	有意水準
+tool.normal_probability	正規確率
+tool.alert.alpha	α には 0 より大きく 1 より小さい値を指定してください。
+tool.alert.choose	出力オプションを 1 つ以上選んでください。
+tool.alert.complex	入力範囲に数値以外のデータが含まれています。
+tool.alert.damping	減衰率には 0 から 1 までの値を指定してください。
+tool.alert.discrete	値と確率の入力範囲には、確率の合計が 1 になる 2 列の数値を指定してください。
+tool.alert.input	入力範囲には、連続した参照を指定してください。
+tool.alert.interval	区間には、データ数以下の整数を指定してください。
+tool.alert.number	正しい数値を入力してください。
+tool.alert.one_column	入力範囲には 1 行または 1 列を指定してください。
+tool.alert.output	出力先には、アクティブ シートの参照を指定してください。
+tool.alert.power_of_two	入力範囲には 2、4、8 … 4096 個の値を指定してください。
+tool.alert.rows_per_sample	入力範囲は、ラベルを含み、1 標本あたりの行数の整数倍にしてください。
+tool.alert.same_count	入力範囲のデータ数は同じにしてください。
+tool.alert.singular	X の値が線形従属のため、回帰分析を計算できません。
+tool.alert.text	入力範囲に数値以外のデータが含まれています。
+tool.alert.too_few	入力範囲のデータが少なすぎます。
+tool.alert.variance	0 より大きい既知の分散を入力してください。
+tool.anova	分散分析表
+tool.summary	概要
+tool.groups	グループ
+tool.count	データの個数
+tool.sum	合計
+tool.average	平均
+tool.variance	分散
+tool.source	変動要因
+tool.ss	変動
+tool.df	自由度
+tool.ms	分散
+tool.f	観測された分散比
+tool.p_value	P-値
+tool.f_crit	F 境界値
+tool.between	グループ間
+tool.within	グループ内
+tool.total	合計
+tool.rows	行
+tool.columns	列
+tool.error	誤差
+tool.sample	標本
+tool.interaction	交互作用
+tool.column	列
+tool.row	行
+tool.mean	平均
+tool.standard_error	標準誤差
+tool.median	中央値 (メジアン)
+tool.mode	最頻値 (モード)
+tool.standard_deviation	標準偏差
+tool.sample_variance	分散
+tool.kurtosis	尖度
+tool.skewness	歪度
+tool.range	範囲
+tool.minimum	最小
+tool.maximum	最大
+tool.largest	最大値
+tool.smallest	最小値
+tool.confidence_level	信頼度
+tool.observations	観測数
+tool.p_f_one	P(F<=f) 片側
+tool.f_critical_one	F 境界値 片側
+tool.pearson	ピアソン相関
+tool.pooled	プールされた分散
+tool.hypothesized	仮説平均との差異
+tool.t_stat	t
+tool.p_t_one	P(T<=t) 片側
+tool.t_critical_one	t 境界値 片側
+tool.p_t_two	P(T<=t) 両側
+tool.t_critical_two	t 境界値 両側
+tool.known_variance	既知の分散
+tool.z	z
+tool.p_z_one	P(Z<=z) 片側
+tool.z_critical_one	z 境界値 片側
+tool.p_z_two	P(Z<=z) 両側
+tool.z_critical_two	z 境界値 両側
+tool.bin	データ区間
+tool.frequency	頻度
+tool.cumulative	累積 %
+tool.more	次の級
+tool.point	順位
+tool.rank	順位
+tool.percent	百分率
+tool.summary_output	概要
+tool.regression_statistics	回帰統計
+tool.multiple_r	重相関 R
+tool.r_square	重決定 R2
+tool.adjusted_r_square	補正 R2
+tool.significance_f	有意 F
+tool.residual	残差
+tool.coefficients	係数
+tool.lower	下限
+tool.upper	上限
+tool.intercept	切片
+tool.x_variable	X 値
+tool.y	Y
+tool.variable_1	変数 1
+tool.variable_2	変数 2
+tool.residual_output	残差出力
+tool.observation	観測値
+tool.predicted	予測値:
+tool.residuals	残差
+tool.standard_residuals	標準残差
+tool.probability_output	確率出力
+tool.percentile	百分位数
