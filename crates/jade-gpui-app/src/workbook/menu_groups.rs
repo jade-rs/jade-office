@@ -13,6 +13,7 @@ enum MenuGroup {
     Protection,
     PageLayout,
     CellStyles,
+    View,
 }
 
 impl MenuGroup {
@@ -28,6 +29,7 @@ impl MenuGroup {
             MenuGroup::Protection => "sheet.menu.group_protection",
             MenuGroup::PageLayout => "sheet.menu.group_page_layout",
             MenuGroup::CellStyles => "sheet.menu.group_cell_styles",
+            MenuGroup::View => "sheet.menu.group_view",
         }
     }
 }
@@ -81,8 +83,42 @@ fn menu_group(command: MenuCommand) -> Option<MenuGroup> {
             MenuGroup::PageLayout
         }
         C::CellStyle(_) => MenuGroup::CellStyles,
+        C::FreezeTopRow
+        | C::FreezeFirstColumn
+        | C::Gridlines
+        | C::Headings
+        | C::Zoom
+        | C::ZoomToSelection => MenuGroup::View,
         _ => return None,
     })
+}
+
+/// Excel's View tab on the grid's menu: Freeze Top Row and First Column,
+/// Gridlines and Headings (labelled with what a click does to them), Zoom…
+/// and Zoom to Selection.
+fn view_menu(grid_lines: bool, headings: bool) -> [(MenuCommand, &'static str); 6] {
+    [
+        (MenuCommand::FreezeTopRow, "sheet.menu.freeze_top_row"),
+        (MenuCommand::FreezeFirstColumn, "sheet.menu.freeze_first_column"),
+        (
+            MenuCommand::Gridlines,
+            if grid_lines {
+                "sheet.menu.hide_gridlines"
+            } else {
+                "sheet.menu.show_gridlines"
+            },
+        ),
+        (
+            MenuCommand::Headings,
+            if headings {
+                "sheet.menu.hide_headings"
+            } else {
+                "sheet.menu.show_headings"
+            },
+        ),
+        (MenuCommand::Zoom, "sheet.menu.zoom"),
+        (MenuCommand::ZoomToSelection, "sheet.menu.zoom_selection"),
+    ]
 }
 
 /// The menu's rows: each command not in a group where it was, each group's

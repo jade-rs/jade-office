@@ -3818,6 +3818,20 @@ sheet.shape.rounded_rectangle	四角形: 角を丸くする
 sheet.shape.right_arrow	矢印: 右
 filter.date.day	{day}日
 sheet.menu.group_cell_styles	セルのスタイル
+sheet.menu.group_view	表示
+sheet.menu.freeze_top_row	先頭行の固定
+sheet.menu.freeze_first_column	先頭列の固定
+sheet.menu.hide_gridlines	枠線を表示しない
+sheet.menu.show_gridlines	枠線を表示する
+sheet.menu.hide_headings	見出しを表示しない
+sheet.menu.show_headings	見出しを表示する
+sheet.menu.zoom	ズーム…
+sheet.menu.zoom_selection	選択範囲に合わせて拡大/縮小
+sheet.zoom.title	ズーム
+sheet.zoom.magnification	倍率
+sheet.zoom.fit_selection	選択範囲に合わせる
+sheet.zoom.custom	指定:
+sheet.zoom.out_of_range	10 から 400 までの整数を入力してください。
 cell_style.normal	標準
 cell_style.good	良い
 cell_style.bad	悪い
