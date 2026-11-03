@@ -274,6 +274,127 @@ chart.series.y_values	Series Y values
 chart.series.sizes	Series bubble size
 chart.series.type	Chart type
 chart.series.secondary	Secondary Axis
+chart.elements	Chart Elements
+chart.element.gridlines	Gridlines
+chart.element.minor_gridlines	Minor Gridlines
+chart.element.data_table	Data Table
+chart.styles	Chart Styles
+chart.format_axis_menu	Format Axis…
+chart.format_series_menu	Format Data Series…
+chart.data_labels_menu	Data Labels…
+chart.chart_area_menu	Format Chart Area…
+chart.plot_area_menu	Format Plot Area…
+chart.blanks_menu	Hidden and Empty Cells…
+chart.previous	◀
+chart.next	▶
+chart.format_axis	Format Axis
+chart.format_series	Format Data Series
+chart.format_chart_area	Format Chart Area
+chart.format_plot_area	Format Plot Area
+chart.chart_area	Chart Area
+chart.plot_area	Plot Area
+chart.data_labels	Data Labels
+chart.data_labels.all	Every series
+chart.blanks	Hidden and Empty Cell Settings
+chart.blanks.subject	Empty cells and hidden rows and columns
+chart.blanks.show_as	Show empty cells as
+chart.blanks.gaps	Gaps
+chart.blanks.zero	Zero
+chart.blanks.connect	Connect data points with line
+chart.blanks.hidden	Show data in hidden rows and columns
+chart.fill.automatic	Automatic
+chart.fill.none	None
+chart.fill.solid	Solid fill
+chart.fill.gradient	Gradient fill
+chart.fill.pattern	Pattern fill
+chart.line.solid	Solid line
+chart.format.fill	Fill
+chart.format.color	Color (RRGGBB)
+chart.format.color2	Second color (RRGGBB)
+chart.format.line	Line
+chart.format.line_width	Width (pt)
+chart.format.dash	Dash type
+chart.dash.solid	Solid
+chart.dash.round_dot	Round Dot
+chart.dash.square_dot	Square Dot
+chart.dash.dash	Dash
+chart.dash.dash_dot	Dash Dot
+chart.dash.long_dash	Long Dash
+chart.format.marker	Marker
+chart.format.marker_size	Marker size
+chart.marker.circle	Circle
+chart.marker.square	Square
+chart.marker.diamond	Diamond
+chart.marker.triangle	Triangle
+chart.marker.x	X
+chart.marker.star	Star
+chart.marker.plus	Plus
+chart.marker.dash	Dash
+chart.marker.dot	Dot
+chart.format.smooth	Smoothed line
+chart.format.gap_width	Gap width (%)
+chart.format.overlap	Series overlap (%)
+chart.labels.value	Value
+chart.labels.category	Category name
+chart.labels.series	Series name
+chart.labels.percent	Percentage
+chart.labels.position	Label position
+chart.labels.center	Center
+chart.labels.inside_end	Inside End
+chart.labels.inside_base	Inside Base
+chart.labels.outside_end	Outside End
+chart.labels.above	Above
+chart.labels.below	Below
+chart.labels.left	Left
+chart.labels.right	Right
+chart.labels.best_fit	Best Fit
+chart.trend.type	Trendline
+chart.trend.exponential	Exponential
+chart.trend.linear	Linear
+chart.trend.logarithmic	Logarithmic
+chart.trend.polynomial	Polynomial
+chart.trend.power	Power
+chart.trend.moving_average	Moving Average
+chart.trend.order	Order / Period
+chart.trend.forward	Forecast forward
+chart.trend.backward	Forecast backward
+chart.trend.equation	Display Equation on chart
+chart.trend.r_squared	Display R-squared value on chart
+chart.error.amount	Error Bars
+chart.error.fixed	Fixed value
+chart.error.percentage	Percentage
+chart.error.std_dev	Standard deviation
+chart.error.std_err	Standard error
+chart.error.value	Error amount
+chart.error.direction	Direction
+chart.error.both	Both
+chart.error.minus	Minus
+chart.error.plus	Plus
+chart.error.cap	Cap
+chart.axis.title	Axis title
+chart.axis.visible	Show axis
+chart.axis.minimum	Minimum (blank: Auto)
+chart.axis.maximum	Maximum (blank: Auto)
+chart.axis.major_unit	Major unit
+chart.axis.minor_unit	Minor unit
+chart.axis.log	Logarithmic scale
+chart.axis.log_base	Base
+chart.axis.type	Axis Type
+chart.axis.text	Text axis
+chart.axis.date	Date axis
+chart.axis.crosses	The other axis crosses
+chart.axis.crosses_max	At maximum
+chart.axis.crosses_value	At value
+chart.axis.crosses_at	Crosses at
+chart.axis.reverse	Values in reverse order
+chart.axis.number_format	Number format (blank: linked to source)
+chart.axis.major_gridlines	Major gridlines
+chart.axis.minor_gridlines	Minor gridlines
+chart.axis.horizontal	Horizontal (Category) Axis
+chart.axis.horizontal_value	Horizontal (Value) Axis
+chart.axis.vertical	Vertical (Value) Axis
+chart.axis.secondary_vertical	Secondary Vertical (Value) Axis
+chart.axis.secondary_horizontal	Secondary Horizontal Axis
 sheet.tool.chart	Chart
 sheet.format.general_name	General
 sheet.format.general	General
@@ -4777,3 +4898,34 @@ forecast.word.mase	MASE
 forecast.word.smape	SMAPE
 forecast.word.mae	MAE
 forecast.word.rmse	RMSE
+watermark.button	Watermark
+watermark.title	Custom Watermark
+watermark.custom	Custom Watermark...
+watermark.remove	Remove Watermark
+watermark.none	No watermark
+watermark.text	Text watermark
+watermark.language	Language
+watermark.language.japanese	Japanese
+watermark.language.english	English (United States)
+watermark.text_field	Text
+watermark.font	Font
+watermark.size	Size
+watermark.size.auto	Auto
+watermark.color	Color
+watermark.semitransparent	Semitransparent
+watermark.layout	Layout
+watermark.diagonal	Diagonal
+watermark.horizontal	Horizontal
+watermark.no_text	Type the watermark text.
+watermark.no_font	Choose a font.
+watermark.bad_size	The size must be between 1 and 1638 points.
+watermark.color.silver	Silver
+watermark.color.gray	Gray
+watermark.color.black	Black
+watermark.color.dark_red	Dark Red
+watermark.color.red	Red
+watermark.color.orange	Orange
+watermark.color.green	Green
+watermark.color.blue	Blue
+watermark.color.navy	Dark Blue
+watermark.color.purple	Purple

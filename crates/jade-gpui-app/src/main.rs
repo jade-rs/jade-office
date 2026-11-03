@@ -79,6 +79,7 @@ mod word_templates;
 mod word_thesaurus;
 mod word_tools;
 mod word_views;
+mod word_watermark;
 mod workbook;
 mod workspace;
 mod workspace_files;

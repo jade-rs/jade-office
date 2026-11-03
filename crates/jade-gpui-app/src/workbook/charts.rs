@@ -7,8 +7,9 @@
 use gpui::{div, prelude::*, px, Context, Modifiers, MouseButton, SharedString};
 use jade_office_model::chart_form::{FieldValue, Form};
 use jade_office_model::charts::{
-    dragged, handle_at, AskAction, AskPage, ChartAsk, ChartField, ChartInfo, ChartKey, ChartPick,
-    Handle, LegendPosition, SelectData, CHART_GALLERY, LEGENDS,
+    dragged, handle_at, AskAction, AskPage, AxisId, ChartAsk, ChartElement, ChartField, ChartInfo,
+    ChartKey, ChartPick, FormatTarget, Handle, LegendPosition, SelectData, Subject, CHART_GALLERY,
+    LEGENDS,
 };
 use jade_office_model::text::TextEdit;
 
@@ -267,6 +268,20 @@ impl WorkbookView {
                 ),
                 None => Ok(false),
             },
+            ChartTool::Element(element) => match self.selected_chart() {
+                Some(id) => self.book.chart_element(id, element),
+                None => Ok(false),
+            },
+            ChartTool::Format(target) => {
+                if let Some((id, info)) = self
+                    .selected_chart()
+                    .and_then(|id| Some((id, self.book.chart(id)?)))
+                {
+                    self.chart_asking = ChartAsk::format(id, target, &info);
+                }
+                cx.notify();
+                return;
+            }
             ChartTool::SelectData => {
                 if let Some((id, info)) = self
                     .selected_chart()

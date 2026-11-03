@@ -72,6 +72,7 @@ mod word_table;
 mod word_thesaurus;
 pub(crate) mod word_tools_ui;
 pub(crate) mod word_views;
+pub(crate) mod word_watermark;
 
 /// The deck's slide list, as in the native app.
 const DECK_SIDEBAR_WIDTH: f32 = 200.0;

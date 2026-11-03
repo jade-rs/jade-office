@@ -274,6 +274,127 @@ chart.series.y_values	系列 Y の値
 chart.series.sizes	系列のバブル サイズ
 chart.series.type	グラフの種類
 chart.series.secondary	第 2 軸
+chart.elements	グラフ要素
+chart.element.gridlines	目盛線
+chart.element.minor_gridlines	補助目盛線
+chart.element.data_table	データ テーブル
+chart.styles	グラフ スタイル
+chart.format_axis_menu	軸の書式設定…
+chart.format_series_menu	データ系列の書式設定…
+chart.data_labels_menu	データ ラベル…
+chart.chart_area_menu	グラフ エリアの書式設定…
+chart.plot_area_menu	プロット エリアの書式設定…
+chart.blanks_menu	非表示および空白のセル…
+chart.previous	◀
+chart.next	▶
+chart.format_axis	軸の書式設定
+chart.format_series	データ系列の書式設定
+chart.format_chart_area	グラフ エリアの書式設定
+chart.format_plot_area	プロット エリアの書式設定
+chart.chart_area	グラフ エリア
+chart.plot_area	プロット エリア
+chart.data_labels	データ ラベル
+chart.data_labels.all	すべての系列
+chart.blanks	非表示および空白のセルの設定
+chart.blanks.subject	空白セルと非表示の行と列
+chart.blanks.show_as	空白セルの表示方法
+chart.blanks.gaps	空白
+chart.blanks.zero	ゼロ
+chart.blanks.connect	データ要素を線で結ぶ
+chart.blanks.hidden	非表示の行と列のデータを表示する
+chart.fill.automatic	自動
+chart.fill.none	なし
+chart.fill.solid	塗りつぶし (単色)
+chart.fill.gradient	塗りつぶし (グラデーション)
+chart.fill.pattern	塗りつぶし (パターン)
+chart.line.solid	線 (単色)
+chart.format.fill	塗りつぶし
+chart.format.color	色 (RRGGBB)
+chart.format.color2	2 番目の色 (RRGGBB)
+chart.format.line	線
+chart.format.line_width	幅 (pt)
+chart.format.dash	実線/点線
+chart.dash.solid	実線
+chart.dash.round_dot	丸点線
+chart.dash.square_dot	角点線
+chart.dash.dash	破線
+chart.dash.dash_dot	一点鎖線
+chart.dash.long_dash	長破線
+chart.format.marker	マーカー
+chart.format.marker_size	マーカーのサイズ
+chart.marker.circle	円
+chart.marker.square	四角
+chart.marker.diamond	ひし形
+chart.marker.triangle	三角
+chart.marker.x	X
+chart.marker.star	星
+chart.marker.plus	プラス
+chart.marker.dash	ダッシュ
+chart.marker.dot	ドット
+chart.format.smooth	スムージング
+chart.format.gap_width	要素の間隔 (%)
+chart.format.overlap	系列の重なり (%)
+chart.labels.value	値
+chart.labels.category	分類名
+chart.labels.series	系列名
+chart.labels.percent	パーセンテージ
+chart.labels.position	ラベルの位置
+chart.labels.center	中央
+chart.labels.inside_end	内部外側
+chart.labels.inside_base	内部内側
+chart.labels.outside_end	外側
+chart.labels.above	上
+chart.labels.below	下
+chart.labels.left	左
+chart.labels.right	右
+chart.labels.best_fit	自動調整
+chart.trend.type	近似曲線
+chart.trend.exponential	指数近似
+chart.trend.linear	線形近似
+chart.trend.logarithmic	対数近似
+chart.trend.polynomial	多項式近似
+chart.trend.power	累乗近似
+chart.trend.moving_average	移動平均
+chart.trend.order	次数 / 区間
+chart.trend.forward	前方補外
+chart.trend.backward	後方補外
+chart.trend.equation	グラフに数式を表示する
+chart.trend.r_squared	グラフに R-2 乗値を表示する
+chart.error.amount	誤差範囲
+chart.error.fixed	固定値
+chart.error.percentage	パーセンテージ
+chart.error.std_dev	標準偏差
+chart.error.std_err	標準誤差
+chart.error.value	誤差量
+chart.error.direction	方向
+chart.error.both	両方向
+chart.error.minus	負方向
+chart.error.plus	正方向
+chart.error.cap	キャップあり
+chart.axis.title	軸ラベル
+chart.axis.visible	軸を表示する
+chart.axis.minimum	最小値 (空欄: 自動)
+chart.axis.maximum	最大値 (空欄: 自動)
+chart.axis.major_unit	主
+chart.axis.minor_unit	補助
+chart.axis.log	対数目盛を表示する
+chart.axis.log_base	基数
+chart.axis.type	軸の種類
+chart.axis.text	テキスト軸
+chart.axis.date	日付軸
+chart.axis.crosses	交点
+chart.axis.crosses_max	最大
+chart.axis.crosses_value	軸の値
+chart.axis.crosses_at	交点の値
+chart.axis.reverse	軸を反転する
+chart.axis.number_format	表示形式 (空欄: ソースにリンク)
+chart.axis.major_gridlines	目盛線
+chart.axis.minor_gridlines	補助目盛線
+chart.axis.horizontal	横 (項目) 軸
+chart.axis.horizontal_value	横 (値) 軸
+chart.axis.vertical	縦 (値) 軸
+chart.axis.secondary_vertical	第 2 縦 (値) 軸
+chart.axis.secondary_horizontal	第 2 横軸
 sheet.tool.chart	グラフ
 sheet.format.general_name	標準
 sheet.format.general	General
@@ -4777,3 +4898,34 @@ forecast.word.mase	MASE
 forecast.word.smape	SMAPE
 forecast.word.mae	MAE
 forecast.word.rmse	RMSE
+watermark.button	透かし
+watermark.title	ユーザー設定の透かし
+watermark.custom	ユーザー設定の透かし...
+watermark.remove	透かしの削除
+watermark.none	なし
+watermark.text	テキスト
+watermark.language	言語
+watermark.language.japanese	日本語
+watermark.language.english	英語 (米国)
+watermark.text_field	テキスト
+watermark.font	フォント
+watermark.size	サイズ
+watermark.size.auto	自動
+watermark.color	色
+watermark.semitransparent	半透明にする
+watermark.layout	レイアウト
+watermark.diagonal	対角線上
+watermark.horizontal	水平
+watermark.no_text	透かしのテキストを入力してください。
+watermark.no_font	フォントを選んでください。
+watermark.bad_size	サイズは 1 から 1638 ポイントの間で指定してください。
+watermark.color.silver	銀色
+watermark.color.gray	灰色
+watermark.color.black	黒
+watermark.color.dark_red	濃い赤
+watermark.color.red	赤
+watermark.color.orange	オレンジ
+watermark.color.green	緑
+watermark.color.blue	青
+watermark.color.navy	濃い青
+watermark.color.purple	紫

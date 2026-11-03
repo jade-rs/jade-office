@@ -329,6 +329,8 @@ pub struct LayoutState {
     pub snap: bool,
     /// The page colour, `RRGGBB`.
     pub page_color: Option<String>,
+    /// The 透かし gallery entry the document's watermark is.
+    pub watermark: Option<usize>,
 }
 
 impl LayoutState {
@@ -339,6 +341,7 @@ impl LayoutState {
             rtl: document.paragraph_rtl(),
             snap: document.snap_to_grid(),
             page_color: document.page_color(),
+            watermark: jade_web::word::watermark::WordWatermark::watermark_preset(document),
         }
     }
 }
@@ -525,6 +528,7 @@ pub fn background_groups(
     vec![group(
         t("setup.group.background"),
         vec![row(vec![
+            super::word_watermark::watermark_button(open, state.watermark, cx),
             dropdown(
                 list_button(
                     "page-color",

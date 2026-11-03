@@ -590,3 +590,164 @@ fn deleting_a_pivot_keeps_its_actual_chart_pixels_and_restores_binding_with_undo
     assert_eq!(b.save_bytes().unwrap(), saved);
     assert_eq!(colors(&b), expected);
 }
+
+/// Format Axis: bounds, a title and minor gridlines typed in; only what
+/// was changed is written, and Cancel writes nothing.
+#[test]
+fn format_axis_changes_what_was_typed() {
+    use jade_office_model::charts::{AxisId, FormatTarget};
+    let mut book = book();
+    let id = book.insert_chart(data(), ChartKind::Column).unwrap();
+    let before = book.save_bytes().unwrap();
+    let info = book.chart(id).unwrap();
+    let mut ask = ChartAsk::format(id, FormatTarget::Axis(AxisId::Value), &info).unwrap();
+    let at = |ask: &ChartAsk, key: &str| match &ask.page {
+        AskPage::Format(page) => page.form.fields.iter().position(|f| f.key == key).unwrap(),
+        _ => panic!("Format Axis"),
+    };
+    // Nothing changed: OK writes nothing.
+    assert!(!ask.clone().act(&mut book, AskAction::Take).unwrap().wrote);
+    let maximum = at(&ask, "chart.axis.maximum");
+    ask.act(&mut book, AskAction::Field(maximum)).unwrap();
+    ask.typing().unwrap().replace(None, "100", false);
+    let title = at(&ask, "chart.axis.title");
+    ask.act(&mut book, AskAction::Field(title)).unwrap();
+    ask.typing().unwrap().replace(None, "Amount", false);
+    let minor = at(&ask, "chart.axis.minor_gridlines");
+    ask.act(&mut book, AskAction::Field(minor)).unwrap();
+    // Cancel leaves the chart as it was.
+    assert!(
+        ask.clone()
+            .act(&mut book, AskAction::Cancel)
+            .unwrap()
+            .closed
+    );
+    assert_eq!(book.save_bytes().unwrap(), before);
+    let done = ask.act(&mut book, AskAction::Take).unwrap();
+    assert!(done.wrote && done.closed);
+    let axis = book.chart(id).unwrap().parsed.value_axis;
+    assert_eq!(axis.maximum.as_deref(), Some("100"));
+    assert_eq!(axis.title.as_deref(), Some("Amount"));
+    assert!(axis.minor_gridlines && axis.gridlines);
+    assert_eq!(axis.minimum, None);
+    // A minimum over the maximum is refused, the dialog kept.
+    let mut ask = ChartAsk::format(
+        id,
+        FormatTarget::Axis(AxisId::Value),
+        &book.chart(id).unwrap(),
+    )
+    .unwrap();
+    let minimum = at(&ask, "chart.axis.minimum");
+    ask.act(&mut book, AskAction::Field(minimum)).unwrap();
+    ask.typing().unwrap().replace(None, "500", false);
+    assert!(ask.act(&mut book, AskAction::Take).is_err());
+    assert!(book.undo().unwrap());
+    assert_eq!(book.chart(id).unwrap().parsed.value_axis.maximum, None);
+}
+
+/// Format Data Series: a gradient, a dashed line, a trendline with its
+/// equation and percentage error bars; ▶ goes on to the next series.
+#[test]
+fn format_data_series_fills_and_adds_a_trendline() {
+    use jade_office_model::charts::{FormatTarget, Subject, FILL_KINDS};
+    let mut book = book();
+    let id = book.insert_chart(data(), ChartKind::Column).unwrap();
+    let mut ask = ChartAsk::format(id, FormatTarget::Series(0), &book.chart(id).unwrap()).unwrap();
+    let at = |ask: &ChartAsk, key: &str| match &ask.page {
+        AskPage::Format(page) => page.form.fields.iter().position(|f| f.key == key).unwrap(),
+        _ => panic!("Format Data Series"),
+    };
+    let gradient = FILL_KINDS
+        .iter()
+        .position(|key| *key == "chart.fill.gradient")
+        .unwrap();
+    ask.act(
+        &mut book,
+        AskAction::Choose(at(&ask, "chart.format.fill"), gradient),
+    )
+    .unwrap();
+    ask.act(&mut book, AskAction::Field(at(&ask, "chart.format.color")))
+        .unwrap();
+    ask.typing().unwrap().replace(None, "#ff0000", false);
+    ask.act(
+        &mut book,
+        AskAction::Field(at(&ask, "chart.format.line_width")),
+    )
+    .unwrap();
+    ask.typing().unwrap().replace(None, "2.25", false);
+    ask.act(
+        &mut book,
+        AskAction::Choose(at(&ask, "chart.trend.type"), 2),
+    )
+    .unwrap();
+    ask.act(
+        &mut book,
+        AskAction::Field(at(&ask, "chart.trend.equation")),
+    )
+    .unwrap();
+    ask.act(
+        &mut book,
+        AskAction::Choose(at(&ask, "chart.error.amount"), 2),
+    )
+    .unwrap();
+    ask.act(
+        &mut book,
+        AskAction::Field(at(&ask, "chart.format.gap_width")),
+    )
+    .unwrap();
+    ask.typing().unwrap().replace(None, "60", false);
+    // ▶: this series' changes made, the next series shown.
+    let done = ask.act(&mut book, AskAction::Move(false)).unwrap();
+    assert!(done.wrote && !done.closed);
+    match &ask.page {
+        AskPage::Format(page) => assert_eq!(page.subject, Subject::Text("Double".into())),
+        _ => panic!("Format Data Series"),
+    }
+    let parsed = book.chart(id).unwrap().parsed;
+    let first = &parsed.series[0];
+    assert!(matches!(
+        &first.fill,
+        Some(jade_xlsx_reader::chart::AreaFill::Gradient(stops, _))
+            if stops[0].1.rgb == Some([255, 0, 0])
+    ));
+    assert_eq!(first.line.width, Some(28_575));
+    assert_eq!(first.trendlines[0].kind, "linear");
+    assert!(first.trendlines[0].display_equation);
+    assert_eq!(first.error_bars[0].value_type, "percentage");
+    assert_eq!(parsed.gap_width, 60);
+    assert!(ask.act(&mut book, AskAction::Take).unwrap().closed);
+}
+
+/// Chart Elements: gridlines off and on, the data table, a chart style;
+/// Data Labels and Hidden and Empty Cells through their dialogs.
+#[test]
+fn chart_elements_styles_labels_and_empty_cells() {
+    use jade_office_model::charts::{ChartElement, FormatTarget};
+    let mut book = book();
+    let id = book.insert_chart(data(), ChartKind::Line).unwrap();
+    assert!(book.chart(id).unwrap().parsed.value_axis.gridlines);
+    assert!(book.chart_element(id, ChartElement::Gridlines).unwrap());
+    assert!(!book.chart(id).unwrap().parsed.value_axis.gridlines);
+    assert!(book.chart_element(id, ChartElement::DataTable).unwrap());
+    assert!(book.chart(id).unwrap().parsed.data_table.is_some());
+    assert!(book.chart_element(id, ChartElement::Style(5)).unwrap());
+    assert_eq!(book.chart(id).unwrap().parsed.style, Some(5));
+    assert!(!book.chart_element(id, ChartElement::Style(5)).unwrap());
+    let info = book.chart(id).unwrap();
+    let mut ask = ChartAsk::format(id, FormatTarget::Labels, &info).unwrap();
+    ask.act(&mut book, AskAction::Field(0)).unwrap();
+    assert!(ask.act(&mut book, AskAction::Take).unwrap().wrote);
+    let parsed = book.chart(id).unwrap().parsed;
+    assert!(parsed.data_labels.is_some_and(|labels| labels.show_value));
+    let mut ask = ChartAsk::format(id, FormatTarget::Blanks, &book.chart(id).unwrap()).unwrap();
+    ask.act(&mut book, AskAction::Choose(0, 2)).unwrap();
+    ask.act(&mut book, AskAction::Field(1)).unwrap();
+    ask.act(&mut book, AskAction::Take).unwrap();
+    let parsed = book.chart(id).unwrap().parsed;
+    assert_eq!(parsed.blank_mode, "span");
+    assert!(!parsed.visible_only);
+    for _ in 0..5 {
+        assert!(book.undo().unwrap());
+    }
+    assert!(book.chart(id).unwrap().parsed.value_axis.gridlines);
+}

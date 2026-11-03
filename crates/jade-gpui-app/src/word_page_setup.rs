@@ -1242,6 +1242,7 @@ impl DocumentView {
         vec![group(
             t("setup.group.background"),
             vec![row(vec![
+                crate::word_watermark::watermark_button(self, cx),
                 dropdown(
                     list_button(
                         "page-color",
