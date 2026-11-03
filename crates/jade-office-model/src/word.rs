@@ -72,6 +72,7 @@ pub mod markup;
 pub mod master;
 pub mod new;
 pub mod objects;
+pub mod ole_objects;
 pub mod outline;
 pub mod package;
 pub mod page;

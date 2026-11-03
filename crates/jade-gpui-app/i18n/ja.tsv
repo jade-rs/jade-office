@@ -5119,3 +5119,11 @@ versions.kind.original	元のファイル
 versions.kind.saved	保存
 versions.kind.autosaved	自動保存
 versions.kind.restored	復元
+object.menu	オブジェクト...
+object.title	オブジェクト
+object.detail	ファイルを文書に埋め込みます。ダブルクリックすると、そのファイルを開くアプリで開きます。
+object.icon	アイコンで表示
+object.from_file	ファイルから...
+object.group	オブジェクト
+object.button	オブジェクト
+object.tooltip	ファイルをオブジェクトとして文書に埋め込みます

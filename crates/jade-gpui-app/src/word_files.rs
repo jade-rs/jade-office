@@ -130,6 +130,8 @@ pub enum FileDialog {
     Templates(crate::word_templates::TemplatesDialog),
     /// ファイル サイズの圧縮.
     Compress(crate::word_save_options::CompressDialog),
+    /// 挿入 › オブジェクト….
+    Object(jade_office_model::word::ole_objects::ObjectDialog),
 }
 
 /// The 保存 preferences as the dialog holds them until OK.
@@ -621,6 +623,7 @@ fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         FileDialog::Compatibility(checker) => crate::word_compat::confirm(view, checker, cx),
         FileDialog::Templates(_) => {}
         FileDialog::Compress(dialog) => view.compress_now(dialog, cx),
+        FileDialog::Object(dialog) => crate::word_ole::confirm(view, dialog, cx),
         FileDialog::PdfOptions { target, tagged } => view.write_pdf_with(
             &target,
             jade_docx_native_render::PdfExportOptions {
@@ -667,6 +670,7 @@ pub fn overlay(
         }
         FileDialog::Templates(state) => crate::word_templates::dialog(&state.clone(), cx),
         FileDialog::Compress(state) => crate::word_save_options::dialog(*state, cx),
+        FileDialog::Object(state) => crate::word_ole::dialog(*state, cx),
         FileDialog::PdfOptions { tagged, .. } => {
             let tagged = *tagged;
             let choices = [

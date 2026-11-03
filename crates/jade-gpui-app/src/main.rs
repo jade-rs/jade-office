@@ -59,6 +59,7 @@ mod word_objects;
 mod word_objects_diagrams;
 mod word_objects_panels;
 mod word_objects_ribbon;
+mod word_ole;
 mod word_page;
 mod word_page_setup;
 mod word_paragraph;
@@ -255,6 +256,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-cmd-s", word_files::SaveCopy, CONTEXT),
         // バージョン履歴 has no key in Word; one so the menu item has one.
         KeyBinding::new("cmd-ctrl-alt-h", word_versions::VersionHistory, CONTEXT),
+        // 挿入 › オブジェクト…: Word for Mac has no key for it.
+        KeyBinding::new("cmd-ctrl-alt-o", word_ole::InsertObject, CONTEXT),
         KeyBinding::new("ctrl-cmd-t", word_files::SaveAsTemplate, CONTEXT),
         // 互換性チェック and 変換 (互換モードの文書を現在の形式に).
         KeyBinding::new("ctrl-cmd-k", word_compat::CheckCompatibility, CONTEXT),
@@ -494,6 +497,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.insert.symbol"), InsertSymbol),
                 MenuItem::action(t("menu.insert.date_time"), InsertDateTime),
+                MenuItem::action(t("object.menu"), word_ole::InsertObject),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.insert.field"), InsertField),
                 MenuItem::action(t("menu.insert.edit_field"), EditField),
@@ -2327,6 +2331,7 @@ impl DocumentView {
                 self.quick_parts_group(cx),
                 self.picture_group(cx),
                 word_signatures::insert_group(self, cx),
+                word_ole::insert_group(self, cx),
                 Self::ribbon_group(
                     t("link.group"),
                     vec![Self::ribbon_row(vec![self
@@ -4704,6 +4709,11 @@ impl Render for DocumentView {
             .on_action(
                 cx.listener(|view, _: &word_versions::VersionHistory, _window, cx| {
                     word_versions::toggle_pane(view, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_ole::InsertObject, _window, cx| {
+                    word_ole::open_dialog(view, cx)
                 }),
             )
             .on_action(

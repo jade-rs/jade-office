@@ -5119,3 +5119,11 @@ versions.kind.original	Original file
 versions.kind.saved	Saved
 versions.kind.autosaved	AutoSaved
 versions.kind.restored	Restored
+object.menu	Object...
+object.title	Object
+object.detail	Embeds a file in the document. Double-click it to open it in its app.
+object.icon	Display as icon
+object.from_file	From File...
+object.group	Object
+object.button	Object
+object.tooltip	Embed a file in the document as an object

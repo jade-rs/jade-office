@@ -34,6 +34,7 @@ use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, 
 
 mod autocorrect;
 mod formatting;
+mod objects;
 mod print;
 mod story;
 pub use formatting::{
