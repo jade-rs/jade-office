@@ -9,7 +9,7 @@ use jade_office_model::spin::{specs, Metrics};
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::{
     IndentUnit, LineSpacing, LinkForm, LinkTarget, NoteForm, NoteKind, ParagraphField,
-    ParagraphForm, SpecialIndent, WordLinks, WordParagraphs,
+    ParagraphForm, SpecialIndent, WordLinks, WordParagraphs, BODY_TEXT, OUTLINE_LEVELS,
 };
 
 use crate::word_spin::{spin_field, Spin, SpinOwner};
@@ -550,6 +550,41 @@ impl DocumentView {
         if format.line.amount().is_some() {
             spacing.push(self.number(form, ParagraphField::LineAmount, t("paragraph.by"), cx));
         }
+        // アウトライン レベル, greyed out (just what it is) while the style
+        // sets it, and 既定で折りたたみ.
+        let mut outline = vec![caption(t("paragraph.outline"))];
+        for (level, key) in OUTLINE_LEVELS {
+            let label = if level == BODY_TEXT { t(key) } else { key };
+            let active = format.outline_level == level;
+            if format.outline_locked {
+                if active {
+                    outline.push(
+                        div()
+                            .text_xs()
+                            .text_color(theme::text_faint())
+                            .child(label)
+                            .into_any_element(),
+                    );
+                }
+                continue;
+            }
+            outline.push(self.choice(
+                ElementId::Name(format!("paragraph-outline-{level}").into()),
+                label,
+                active,
+                cx,
+                move |form| form.set_outline_level(level),
+            ));
+        }
+        if format.outline_level < BODY_TEXT {
+            outline.push(self.check(
+                "paragraph-collapsed",
+                t("paragraph.collapsed"),
+                format.collapsed,
+                cx,
+                |form| form.toggle_collapsed(),
+            ));
+        }
         let pagination = vec![
             caption(t("paragraph.pagination")),
             self.check(
@@ -636,6 +671,7 @@ impl DocumentView {
             .child(row(alignment))
             .child(row(indent))
             .child(row(spacing))
+            .child(row(outline))
             .child(row(pagination))
             .child(row(buttons))
             .into_any_element()

@@ -116,6 +116,7 @@ pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
 pub use painter::{CopiedFormat, WordFormatPainter};
 pub use paragraph::{
     IndentUnit, LineSpacing, ParagraphField, ParagraphForm, ParagraphFormat, SpecialIndent,
+    BODY_TEXT, OUTLINE_LEVELS,
     WordParagraphs,
 };
 pub use references::{NoteForm, NoteKind, WordReferences};

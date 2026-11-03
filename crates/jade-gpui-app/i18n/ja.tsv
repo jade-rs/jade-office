@@ -4971,3 +4971,6 @@ manuscript.paper	用紙サイズ
 manuscript.orientation	印刷の向き
 manuscript.portrait	縦
 manuscript.landscape	横
+paragraph.outline	アウトライン レベル
+paragraph.outline.body	本文
+paragraph.collapsed	既定で折りたたみ

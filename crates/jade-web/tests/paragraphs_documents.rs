@@ -128,3 +128,66 @@ fn the_ribbon_line_spacing_reads_back() {
         LineSpacing::Multiple(1.15)
     );
 }
+
+/// アウトライン レベル and 既定で折りたたみ: a body paragraph given レベル 2
+/// joins the navigation pane and アウトライン at that level, saved as
+/// `w:outlineLvl` and `w15:collapsed`; the reopened document collapses it.
+/// 本文 takes both away again, and a 見出し style's level is greyed out.
+#[test]
+fn the_outline_level_is_written_and_followed() {
+    use jade_web::word::outline::level_of;
+    use jade_web::word::references::navigation::WordNavigation;
+    use jade_web::word::BODY_TEXT;
+
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "概要");
+    document.place_caret(paragraph, 0);
+    let was = document.paragraph_format();
+    assert_eq!((was.outline_level, was.outline_locked), (BODY_TEXT, false));
+
+    let mut form = ParagraphForm::new(was.clone());
+    form.toggle_collapsed();
+    assert!(!form.format.collapsed, "本文 does not collapse");
+    form.set_outline_level(1);
+    form.toggle_collapsed();
+    form.submit(&mut document).unwrap();
+
+    let now = document.paragraph_format();
+    assert_eq!((now.outline_level, now.collapsed), (1, true));
+    assert_eq!(level_of(document.word_document(), paragraph), Some(2));
+    assert!(document
+        .outline()
+        .iter()
+        .any(|heading| heading.paragraph == paragraph && heading.level == 2));
+
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    assert!(xml.contains(r#"<w:outlineLvl w:val="1"/>"#), "the level");
+    assert!(xml.contains("<w15:collapsed/>"), "collapsed by default");
+    assert!(xml.contains("xmlns:w15="), "its namespace is declared");
+    let reopened = common::open_bytes(&saved);
+    assert!(reopened.collapsed_by_default().contains(&paragraph));
+
+    // 本文 again: neither is left behind.
+    let mut form = ParagraphForm::new(now);
+    form.set_outline_level(BODY_TEXT);
+    assert!(!form.format.collapsed);
+    form.submit(&mut document).unwrap();
+    assert_eq!(level_of(document.word_document(), paragraph), Some(10));
+    let xml = jade_opc::OpcPackage::open(&document.export_docx().unwrap())
+        .unwrap()
+        .part_str("word/document.xml")
+        .unwrap()
+        .unwrap();
+    assert!(!xml.contains("<w:outlineLvl") && !xml.contains("<w15:collapsed"));
+
+    // A 見出し 1 paragraph's level is its style's: the list does nothing.
+    use jade_web::word::styles::WordStyles;
+    WordStyles::apply_style(&mut document, "Heading1").unwrap();
+    let heading = document.paragraph_format();
+    assert_eq!((heading.outline_level, heading.outline_locked), (0, true));
+    let mut form = ParagraphForm::new(heading.clone());
+    form.set_outline_level(4);
+    assert_eq!(form.format.outline_level, 0);
+}

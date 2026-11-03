@@ -4971,3 +4971,6 @@ manuscript.paper	Paper Size
 manuscript.orientation	Orientation
 manuscript.portrait	Portrait
 manuscript.landscape	Landscape
+paragraph.outline	Outline level
+paragraph.outline.body	Body Text
+paragraph.collapsed	Collapsed by default

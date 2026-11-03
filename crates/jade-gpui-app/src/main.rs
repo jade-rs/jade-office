@@ -5341,6 +5341,16 @@ fn document_view(
     // frame rather than only after the first click.
     // DATE and TIME show today, as Word updates them on opening.
     word_fields::set_clock_on_open(&mut document);
+    // Headings saved 既定で折りたたみ open collapsed, as in Word.
+    let collapsed = {
+        use jade_office_model::word::references::navigation::WordNavigation;
+        let collapsed = document.collapsed_by_default();
+        if !collapsed.is_empty() {
+            let blocks = document.hidden_by_collapse(&collapsed);
+            let _ = document.set_collapsed_blocks(blocks);
+        }
+        collapsed
+    };
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
     let images: Vec<_> = (0..document.page_count())
         .filter_map(|index| page_image(&document, index))
@@ -5384,7 +5394,11 @@ fn document_view(
         characters: word_characters::Characters::default(),
         spin: None,
         tools: word_tools::WordTools::default(),
-        references: word_references::References::default(),
+        references: {
+            let mut references = word_references::References::default();
+            references.collapsed = collapsed;
+            references
+        },
         controls: word_controls::ControlsUi::default(),
         mailings,
         equation: Default::default(),

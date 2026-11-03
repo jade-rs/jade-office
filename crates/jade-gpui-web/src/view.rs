@@ -687,6 +687,7 @@ impl DocView {
             return Err(i18n::format("workspace.protected", &[("name", &name)]));
         }
         let mut mailings = None;
+        let mut collapsed = std::collections::BTreeSet::new();
         let document = match kind {
             Kind::Document => {
                 // The first pages only, as pixels: the view keeps the ones on
@@ -709,6 +710,15 @@ impl DocView {
                 ));
                 let mut ribbon = Box::<ribbon::Ribbon>::default();
                 ribbon.read_styles(&opened);
+                // Headings saved 既定で折りたたみ open collapsed, as in Word.
+                {
+                    use jade_web::word::references::navigation::WordNavigation;
+                    collapsed = opened.collapsed_by_default();
+                    if !collapsed.is_empty() {
+                        let blocks = opened.hidden_by_collapse(&collapsed);
+                        opened.set_collapsed_blocks(blocks)?;
+                    }
+                }
                 Document::Pages {
                     ribbon,
                     format: None,
@@ -822,7 +832,11 @@ impl DocView {
             word_count: RefCell::new(None),
             characters: word_characters::Characters::default(),
             spin: None,
-            references: word_references::References::default(),
+            references: {
+                let mut references = word_references::References::default();
+                references.collapsed = collapsed;
+                references
+            },
             controls: word_controls::ControlsUi::default(),
             fields: word_fields::FieldsUi::default(),
             tools: word_tools_ui::WordTools::default(),
