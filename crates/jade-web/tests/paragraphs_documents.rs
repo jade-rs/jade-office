@@ -137,7 +137,7 @@ fn the_ribbon_line_spacing_reads_back() {
 fn the_outline_level_is_written_and_followed() {
     use jade_web::word::outline::level_of;
     use jade_web::word::references::navigation::WordNavigation;
-    use jade_web::word::BODY_TEXT;
+    use jade_web::word::{WordSession, BODY_TEXT};
 
     let mut document = common::contract();
     let paragraph = common::typed(&mut document, "概要");
