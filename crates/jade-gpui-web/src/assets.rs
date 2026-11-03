@@ -74,6 +74,7 @@ impl gpui::AssetSource for Assets {
             "settings-2",
             "shapes",
             "sort-a-z",
+            "text-select",
             "sheet",
             "split",
             "square",

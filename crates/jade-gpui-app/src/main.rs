@@ -1161,6 +1161,7 @@ impl gpui::AssetSource for Assets {
             "settings-2",
             "shapes",
             "sort-a-z",
+            "text-select",
             "sheet",
             "split",
             "square",
@@ -3345,6 +3346,7 @@ impl DocumentView {
         let done = match action {
             Action::Undo => return self.step_history(true, cx),
             Action::Redo => return self.step_history(false, cx),
+            Action::SelectSimilar => return word_views::select::select_similar(self, cx),
             Action::InsertTable(rows, columns) => {
                 let moved = WordFormatting::insert_table(document, rows, columns);
                 return self.ribbon_moved(moved, cx);

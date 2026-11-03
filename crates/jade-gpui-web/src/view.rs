@@ -29,9 +29,11 @@ use jade_web::text::{byte_to_utf16, utf16_to_byte, TextEdit};
 use crate::ribbon::{self, Action};
 use crate::{i18n, palette, Fonts, Host, UI_FONT};
 use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatting};
+use jade_web::word::similar::RangeFormat;
 
 mod deck;
 mod word_alignment_tab;
+mod word_similar;
 mod deck_show;
 mod sheet;
 pub(crate) mod word_characters;
@@ -579,6 +581,8 @@ pub struct DocView {
     /// The 差し込み文書 tab's merge, for a Word document.
     mailings: Option<word_mailings::Mailings>,
     host: Host,
+    /// 類似した書式の文字列を選択's ranges, the selection's first.
+    similar: Vec<jade_web::word::similar::Range>,
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
     page_dialog: Option<Box<word_setup::PageDialogState>>,
@@ -844,6 +848,7 @@ impl DocView {
             objects_ui: word_objects_ui::ObjectsUi::default(),
             mailings,
             host,
+            similar: Vec::new(),
             page_dialog: None,
             equation: None,
             equation_symbols: 0,
@@ -2234,6 +2239,9 @@ impl DocView {
         if let Action::Word(command) = action {
             return self.run_tool(command, cx);
         }
+        if let Action::SelectSimilar = action {
+            return self.select_similar(cx);
+        }
         if let Action::Object(crate::word_objects::ObjectAction::Ui(ui)) = action {
             return self.object_ui_action(ui, cx);
         }
@@ -2270,14 +2278,19 @@ impl DocView {
             self.refresh_repainted();
             return self.word_result(result, cx);
         }
+        // 類似した書式の文字列を選択's ranges take the font commands together.
+        let similar = self.similar.clone();
+        let on_similar = move |document: &mut jade_web::editing::WordDoc, format| {
+            jade_web::word::similar::format(document, &similar, format)
+        };
         self.word_edit(cx, move |document| match action {
-            Action::Toggle(format) => document.toggle_format(format),
-            Action::ClearFormatting => document.clear_formatting(),
-            Action::FontFamilyName(family) => document.set_font_family(&family),
-            Action::FontSize(points) => document.set_font_size(points),
-            Action::StepFontSize(grow) => document.step_font_size(grow),
-            Action::FontColor(color) => document.set_font_color(&color),
-            Action::Highlight(color) => document.set_highlight(color),
+            Action::Toggle(format) => on_similar(document, RangeFormat::Toggle(format)),
+            Action::ClearFormatting => on_similar(document, RangeFormat::ClearFormatting),
+            Action::FontFamilyName(family) => on_similar(document, RangeFormat::FontFamily(family)),
+            Action::FontSize(points) => on_similar(document, RangeFormat::FontSize(points)),
+            Action::StepFontSize(grow) => on_similar(document, RangeFormat::StepFontSize(grow)),
+            Action::FontColor(color) => on_similar(document, RangeFormat::FontColor(color)),
+            Action::Highlight(color) => on_similar(document, RangeFormat::Highlight(color.to_string())),
             Action::List(bullets) => document.toggle_list(bullets),
             Action::Indent(increase) => document.step_indent(increase),
             Action::Align(alignment) => document.set_alignment(alignment),
@@ -2322,6 +2335,7 @@ impl DocView {
             | Action::Style(_)
             | Action::Tables(_)
             | Action::Word(_)
+            | Action::SelectSimilar
             | Action::Tab(_)
             | Action::Popup(_)
             | Action::ClosePopup
@@ -2682,7 +2696,9 @@ impl DocView {
         // the text changed.
         let key = (document.caret(), document.selection(), self.generation);
         if highlight.as_ref().is_none_or(|(cached, _)| *cached != key) {
-            *highlight = Some((key, document.selection_rects()));
+            let mut rects = document.selection_rects();
+            rects.extend(word_similar::extra_rects(document, &self.similar));
+            *highlight = Some((key, rects));
         }
         let highlight = highlight
             .as_ref()

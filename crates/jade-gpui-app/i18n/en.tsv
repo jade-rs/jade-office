@@ -5002,3 +5002,4 @@ word.ptab.leader	Leader
 word.ptab.leader_none	None
 doc.sort_title	Sort
 table.sort.paragraphs	Paragraphs
+doc.select_similar	Select Text with Similar Formatting

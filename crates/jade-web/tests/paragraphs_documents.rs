@@ -191,3 +191,42 @@ fn the_outline_level_is_written_and_followed() {
     form.set_outline_level(4);
     assert_eq!(form.format.outline_level, 0);
 }
+
+#[test]
+fn text_with_similar_formatting_is_selected_and_formatted_together() {
+    use jade_web::editing::CharacterFormat;
+    use jade_web::word::similar::{format, still_selected, RangeFormat, WordSimilar};
+    let mut document = common::open_bytes(&blank_document(Blank::Japanese));
+    document.place_caret(0, 0);
+    document.insert_text("AAbbAAcc").unwrap();
+    for start in [0, 4] {
+        document.select((0, start), (0, start + 2)).unwrap();
+        WordFormatting::toggle_format(&mut document, CharacterFormat::Bold).unwrap();
+    }
+    let italic = |document: &jade_web::editing::EditableDocument, at: usize| {
+        WordFormatting::run_style_at(document, (0, at))
+            .and_then(|style| style.italic)
+            .unwrap_or(false)
+    };
+
+    // A caret in the first bold run finds both.
+    document.place_caret(0, 1);
+    let ranges = document.select_similar_formatting();
+    assert_eq!(ranges, vec![((0, 0), (0, 2)), ((0, 4), (0, 6))]);
+    assert_eq!(document.selection(), Some(((0, 0), (0, 2))));
+    assert!(still_selected(&document, &ranges));
+
+    // Italic goes on both, not between them, as one undo step.
+    format(&mut document, &ranges, RangeFormat::Toggle(CharacterFormat::Italic)).unwrap();
+    assert!(italic(&document, 1) && italic(&document, 5));
+    assert!(!italic(&document, 3));
+    assert!(still_selected(&document, &ranges));
+    document.undo().unwrap();
+    assert!(!italic(&document, 1) && !italic(&document, 5));
+
+    // Selecting elsewhere ends it: the command takes the selection alone.
+    document.select((0, 2), (0, 4)).unwrap();
+    assert!(!still_selected(&document, &ranges));
+    format(&mut document, &ranges, RangeFormat::Toggle(CharacterFormat::Italic)).unwrap();
+    assert!(italic(&document, 3) && !italic(&document, 1));
+}

@@ -244,6 +244,8 @@ pub enum Action {
     Tab(Tab),
     Popup(Popup),
     ClosePopup,
+    /// 類似した書式の文字列を選択.
+    SelectSimilar,
     /// The table picker's pointer moved onto a size.
     Grid(usize, usize),
     Undo,
@@ -1521,6 +1523,15 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                     false,
                     true,
                     Action::Redo,
+                    cx,
+                ),
+                icon_button(
+                    "select-similar",
+                    "icons/text-select.svg",
+                    i18n::text("doc.select_similar"),
+                    false,
+                    true,
+                    Action::SelectSimilar,
                     cx,
                 ),
                 painter_button(ribbon.painter.is_some(), cx),

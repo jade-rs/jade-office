@@ -5002,3 +5002,4 @@ word.ptab.leader	リーダー
 word.ptab.leader_none	なし
 doc.sort_title	並べ替え
 table.sort.paragraphs	段落
+doc.select_similar	類似した書式の文字列を選択

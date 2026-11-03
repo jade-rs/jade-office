@@ -97,6 +97,7 @@ pub mod selection;
 pub mod shape_gallery;
 pub mod shading;
 pub mod shapes;
+pub mod similar;
 pub mod signatures;
 pub mod styles;
 pub mod table;
