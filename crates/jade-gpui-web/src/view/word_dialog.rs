@@ -94,6 +94,7 @@ pub enum WordDialog {
     DefineList(DefineListDialog),
     Style(StyleDialog),
     QuickPart(QuickPartDialog),
+    Watermark(super::word_watermark::WatermarkDialogState),
 }
 
 impl WordDialog {
@@ -107,6 +108,7 @@ impl WordDialog {
             WordDialog::DefineList(dialog) => &dialog.inputs,
             WordDialog::Style(dialog) => &dialog.inputs,
             WordDialog::QuickPart(dialog) => &dialog.inputs,
+            WordDialog::Watermark(dialog) => &dialog.inputs,
         }
     }
 
@@ -120,6 +122,7 @@ impl WordDialog {
             WordDialog::DefineList(dialog) => &mut dialog.inputs,
             WordDialog::Style(dialog) => &mut dialog.inputs,
             WordDialog::QuickPart(dialog) => &mut dialog.inputs,
+            WordDialog::Watermark(dialog) => &mut dialog.inputs,
         }
     }
 }
@@ -197,6 +200,7 @@ impl DocumentView {
             WordDialog::DefineList(dialog) => self.apply_define_list_dialog(dialog),
             WordDialog::Style(dialog) => self.apply_style_dialog(dialog),
             WordDialog::QuickPart(dialog) => self.apply_quick_part_dialog(dialog),
+            WordDialog::Watermark(dialog) => self.apply_watermark_dialog(dialog),
         };
         match result {
             // A dialog that is not done (a value it cannot take) stays open.
@@ -265,6 +269,11 @@ impl DocumentView {
                 i18n::text("word.quick_part.title"),
                 420.0,
                 self.quick_part_dialog_body(dialog, cx),
+            ),
+            WordDialog::Watermark(dialog) => (
+                i18n::text("watermark.title"),
+                560.0,
+                self.watermark_dialog_body(dialog, cx),
             ),
         };
         let status = self.tools.status.clone();

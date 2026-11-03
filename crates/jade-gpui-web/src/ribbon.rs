@@ -176,6 +176,8 @@ pub enum Popup {
     Equation(crate::view::word_equation::EquationPopup),
     /// レイアウト's ハイフネーション (`view::word_hyphenation`).
     Hyphenation,
+    /// ページの背景's 透かし (`view::word_watermark`).
+    Watermark,
     /// 描画's lists (`view::word_draw`).
     Draw(crate::view::word_draw::DrawPopup),
     /// The 校閲 tab's lists (`word_review`).

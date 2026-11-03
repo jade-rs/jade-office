@@ -101,6 +101,7 @@ pub mod templates;
 pub mod thesaurus;
 pub mod typography;
 pub mod view;
+pub mod watermark;
 pub mod xml;
 
 pub use count::{WordCount, WordCounting};
