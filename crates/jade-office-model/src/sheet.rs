@@ -2546,6 +2546,7 @@ impl<B: Backend> Workbook<B> {
             legend,
             data: bounds.map(range_text_full),
             series,
+            parsed: chart.clone(),
         })
     }
 

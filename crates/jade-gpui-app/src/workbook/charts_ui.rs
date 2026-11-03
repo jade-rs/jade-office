@@ -1,5 +1,6 @@
 // Shared native/browser chart menu and dialogs: Insert ▸ Chart's gallery,
-// Chart Design's items, Chart Title, Select Data Source and Edit Series.
+// Chart Design's items, Chart Elements, Chart Styles, Chart Title, Select
+// Data Source and Edit Series, and the Format dialogs.
 // Each shell gives `chart_selection`, `chart_info`, `chart_ask`,
 // `chart_dialog_top`, `tool` and `chart_act`.
 
@@ -24,8 +25,27 @@ pub(super) enum ChartTool {
     SelectData,
     /// Switch Row/Column.
     SwitchRows,
+    /// A Format dialog, or Data Labels or Hidden and Empty Cells.
+    Format(FormatTarget),
+    /// Chart Elements' switches, and Chart Styles.
+    Element(ChartElement),
     Delete,
 }
+
+/// Chart Elements' and Format's items, as the menu lists them.
+const CHART_FORMATS: [(&str, ChartTool); 6] = [
+    ("chart.format_axis_menu", ChartTool::Format(FormatTarget::Axis(AxisId::Value))),
+    ("chart.format_series_menu", ChartTool::Format(FormatTarget::Series(0))),
+    ("chart.data_labels_menu", ChartTool::Format(FormatTarget::Labels)),
+    ("chart.chart_area_menu", ChartTool::Format(FormatTarget::Area(false))),
+    ("chart.plot_area_menu", ChartTool::Format(FormatTarget::Area(true))),
+    ("chart.blanks_menu", ChartTool::Format(FormatTarget::Blanks)),
+];
+const CHART_ELEMENTS: [(&str, ChartElement); 3] = [
+    ("chart.element.gridlines", ChartElement::Gridlines),
+    ("chart.element.minor_gridlines", ChartElement::MinorGridlines),
+    ("chart.element.data_table", ChartElement::DataTable),
+];
 
 impl View {
     /// The chart button's dropdown: Insert ▸ Chart's gallery, pictures and
@@ -60,9 +80,8 @@ impl View {
                 )
         };
         let selected = self.chart_selection();
-        let current = selected
-            .and_then(|id| self.chart_info(id))
-            .and_then(|info| info.kind);
+        let info = selected.and_then(|id| self.chart_info(id));
+        let current = info.as_ref().and_then(|info| info.kind);
         // The gallery: a box for each family, three to a row.
         let mut gallery = div().w(px(480.0)).flex().flex_wrap().text_xs();
         let mut at = 0;
@@ -114,6 +133,39 @@ impl View {
                     false,
                     cx,
                 ))
+                .child(separator())
+                .child(heading("chart.elements"))
+                .children(CHART_ELEMENTS.into_iter().enumerate().map(|(index, (label, element))| {
+                    let on = info.as_ref().is_some_and(|info| match element {
+                        ChartElement::Gridlines => info.parsed.value_axis.gridlines,
+                        ChartElement::MinorGridlines => info.parsed.value_axis.minor_gridlines,
+                        ChartElement::DataTable => info.parsed.data_table.is_some(),
+                        ChartElement::Style(_) => false,
+                    });
+                    item(("chart-element", index), label, ChartTool::Element(element), on, cx)
+                }))
+                .children(CHART_FORMATS.into_iter().enumerate().map(|(index, (label, tool))| {
+                    item(("chart-format", index), label, tool, false, cx)
+                }))
+                .child(heading("chart.styles"))
+                .child(div().flex().flex_wrap().px_2().gap_1().children((1..=48u32).map(|style| {
+                    let chosen = info.as_ref().and_then(|info| info.parsed.style) == Some(style);
+                    div()
+                        .id(("chart-style", style as usize))
+                        .w(px(20.0))
+                        .text_center()
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(if chosen { theme::accent() } else { theme::border() })
+                        .when(chosen, |chip| chip.bg(theme::selected()))
+                        .cursor_pointer()
+                        .hover(|chip| chip.bg(theme::hovered()))
+                        .child(style.to_string())
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(move |view, _event, _window, cx| {
+                            view.tool(Tool::Chart(ChartTool::Element(ChartElement::Style(style))), cx)
+                        }))
+                })))
                 .child(separator())
                 .child(item(
                     ("chart-delete", 0),
@@ -243,8 +295,13 @@ impl View {
     }
 
     /// A form's fields, a row each: a text, a choice's options, a tick box.
-    fn chart_form_rows(&self, form: &Form, cx: &mut Context<Self>) -> gpui::Div {
-        let mut rows = div().flex().flex_col().gap_2();
+    /// In `columns`, three to a row.
+    fn chart_form_rows(&self, form: &Form, columns: bool, cx: &mut Context<Self>) -> gpui::Div {
+        let mut rows = if columns {
+            div().flex().flex_wrap().gap_2()
+        } else {
+            div().flex().flex_col().gap_2()
+        };
         for (index, field) in form.fields.iter().enumerate() {
             let label = div()
                 .text_color(theme::text_dim())
@@ -310,7 +367,7 @@ impl View {
                     })),
                 ),
             };
-            rows = rows.child(row);
+            rows = rows.child(if columns { row.w(px(200.0)) } else { row });
         }
         rows
     }
@@ -336,6 +393,36 @@ impl View {
                     .child(div().text_sm().child(i18n::text(field.label_key())))
                     .child(self.chart_text_box(("chart-text", 0), text, true, AskAction::FocusRange, cx)),
             ),
+            AskPage::Format(page) => {
+                let subject = match &page.subject {
+                    Subject::Key(key) => i18n::text(key).to_string(),
+                    Subject::Text(text) => text.clone(),
+                };
+                let mut head = div().flex().items_center().gap_2();
+                if page.steps {
+                    head = head.child(self.chart_button(("chart-step", 0), "chart.previous", false, AskAction::Move(true), cx));
+                }
+                head = head.child(div().flex_1().truncate().text_color(theme::text_dim()).child(subject));
+                if page.steps {
+                    head = head.child(self.chart_button(("chart-step", 1), "chart.next", false, AskAction::Move(false), cx));
+                }
+                (
+                    if page.form.fields.len() > 8 { 660.0 } else { 340.0 },
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(div().text_sm().child(i18n::text(page.form.title)))
+                        .child(head)
+                        .child(
+                            div()
+                                .id("chart-format-fields")
+                                .max_h(px(420.0))
+                                .overflow_y_scroll()
+                                .child(self.chart_form_rows(&page.form, page.form.fields.len() > 8, cx)),
+                        ),
+                )
+            }
             AskPage::Data(SelectData {
                 editing: Some((_, form)),
                 ..
@@ -346,7 +433,7 @@ impl View {
                     .flex_col()
                     .gap_2()
                     .child(div().text_sm().child(i18n::text(form.title)))
-                    .child(self.chart_form_rows(form, cx)),
+                    .child(self.chart_form_rows(form, false, cx)),
             ),
             AskPage::Data(data) => {
                 let rows = data.series.iter().enumerate().map(|(index, series)| {
