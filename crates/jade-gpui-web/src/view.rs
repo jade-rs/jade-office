@@ -33,6 +33,7 @@ use jade_web::word::similar::RangeFormat;
 
 mod deck;
 mod word_alignment_tab;
+pub(crate) mod word_reveal;
 mod word_similar;
 mod deck_show;
 mod sheet;
@@ -581,6 +582,8 @@ pub struct DocView {
     /// The 差し込み文書 tab's merge, for a Word document.
     mailings: Option<word_mailings::Mailings>,
     host: Host,
+    /// 書式の詳細 is open beside the pages (`word_reveal`).
+    reveal_formatting: bool,
     /// 類似した書式の文字列を選択's ranges, the selection's first.
     similar: Vec<jade_web::word::similar::Range>,
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
@@ -848,6 +851,7 @@ impl DocView {
             objects_ui: word_objects_ui::ObjectsUi::default(),
             mailings,
             host,
+            reveal_formatting: false,
             similar: Vec::new(),
             page_dialog: None,
             equation: None,
@@ -2461,6 +2465,7 @@ impl DocView {
                 references: matches!(ribbon.tab, ribbon::Tab::References | ribbon::Tab::View)
                     .then(|| word_references::ribbon_state(document, &self.references)),
                 marks: document.formatting_marks(),
+                reveal_formatting: self.reveal_formatting,
                 story,
                 field_codes: document.field_code_view().all,
                 styles_pane: self.tools.styles_pane,
@@ -2613,6 +2618,7 @@ impl DocView {
         let restrict_pane = self.restrict_pane(cx);
         let signatures_pane = self.signatures_pane(cx);
         let thesaurus_pane = self.thesaurus_pane(cx);
+        let reveal_pane = self.reveal_pane(cx);
         let inspect_pane = self.inspect_pane(cx);
         let read_only_bar = self.read_only_bar(cx);
         let styles_pane = self.styles_pane(cx);
@@ -3038,6 +3044,7 @@ impl DocView {
                     .children(restrict_pane)
                     .children(signatures_pane)
                     .children(thesaurus_pane)
+                    .children(reveal_pane)
                     .children(inspect_pane)
                     .children(styles_pane)
                     .children(selection_pane)

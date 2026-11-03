@@ -33,6 +33,7 @@ mod shell;
 mod tooltip;
 mod word_accessibility;
 mod word_alignment_tab;
+mod word_reveal;
 mod word_characters;
 mod word_compare;
 mod word_compat;
@@ -1441,6 +1442,8 @@ struct DocumentView {
     current_page: usize,
     /// Whether the details panel on the right is open.
     show_inspector: bool,
+    /// 書式の詳細 is open beside the pages (`word_reveal`).
+    reveal_formatting: bool,
     /// Whether there are edits since the document was opened or saved.
     dirty: bool,
     /// The Field, prompt and Properties dialogs, and the user information.
@@ -4631,6 +4634,7 @@ impl Render for DocumentView {
         let inspect_pane = word_inspect::pane(self, cx);
         let signatures_pane = word_signatures::pane(self, cx);
         let thesaurus_pane = word_thesaurus::pane(self, cx);
+        let reveal_pane = word_reveal::pane(self, cx);
         let revisions_pane = word_revisions::pane(self, cx);
         let restrict_pane = word_protection::pane(self, cx);
         let read_only_bar = word_protection::banner(self, cx);
@@ -5114,6 +5118,7 @@ impl Render for DocumentView {
             .children(inspect_pane)
             .children(signatures_pane)
             .children(thesaurus_pane)
+            .children(reveal_pane)
             .children(revisions_pane)
             .children(restrict_pane)
             .children(proofing_menu)
@@ -5420,6 +5425,7 @@ fn document_view(
         typed: 0,
         current_page: 0,
         show_inspector: false,
+        reveal_formatting: false,
         dirty: false,
         fields: word_fields::FieldsUi::default(),
         files: word_files::Files::default(),

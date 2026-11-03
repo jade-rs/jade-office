@@ -192,6 +192,50 @@ fn the_outline_level_is_written_and_followed() {
     assert_eq!(form.format.outline_level, 0);
 }
 
+/// 書式の詳細: the caret's フォント, 段落 and セクション as the pane lists
+/// them, following what was just set.
+#[test]
+fn reveal_formatting_lists_the_font_paragraph_and_section() {
+    use jade_web::word::reveal_formatting::{
+        RevealGroup, RevealRow, RevealValue, WordRevealFormatting,
+    };
+    let mut document = common::open_bytes(&blank_document(Blank::Japanese));
+    document.place_caret(0, 0);
+    document.insert_text("書式").unwrap();
+    document.select((0, 0), (0, "書式".len())).unwrap();
+    WordFormatting::toggle_format(&mut document, jade_web::editing::CharacterFormat::Bold).unwrap();
+    WordFormatting::set_alignment(&mut document, "center").unwrap();
+    document.select((0, 0), (0, "書".len())).unwrap();
+
+    let font = document.reveal(RevealGroup::Font);
+    assert!(
+        font.contains(&RevealRow {
+            label: "reveal.effect",
+            value: RevealValue::Key("reveal.bold"),
+        }),
+        "{font:?}"
+    );
+    assert!(font.iter().any(|row| row.label == "reveal.size"));
+    let paragraph = document.reveal(RevealGroup::Paragraph);
+    assert!(paragraph.contains(&RevealRow {
+        label: "reveal.alignment",
+        value: RevealValue::Key("reveal.align.center"),
+    }));
+    assert!(paragraph.iter().any(|row| row.label == "reveal.style"));
+    let section = document.reveal(RevealGroup::Section);
+    assert!(
+        section.contains(&RevealRow {
+            label: "reveal.paper",
+            value: RevealValue::Text("210 × 297 mm".to_string()),
+        }),
+        "{section:?}"
+    );
+    assert!(section.contains(&RevealRow {
+        label: "reveal.orientation",
+        value: RevealValue::Key("reveal.portrait"),
+    }));
+}
+
 #[test]
 fn text_with_similar_formatting_is_selected_and_formatted_together() {
     use jade_web::editing::CharacterFormat;

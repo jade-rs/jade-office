@@ -772,6 +772,8 @@ pub struct TabState {
     pub equation: Option<crate::view::word_equation::EquationTabState>,
     /// Whether the formatting marks show.
     pub marks: bool,
+    /// Whether 書式の詳細 is open.
+    pub reveal_formatting: bool,
     /// What the ヘッダーとフッター tab shows, while a story is open.
     pub story: Option<crate::view::word_story::StoryTabState>,
     /// ⌥F9: whether every field shows its code.
@@ -2194,6 +2196,7 @@ fn view_groups(ribbon: &Ribbon, shown: &TabState, cx: &mut Context<DocView>) -> 
     if let Some(references) = &shown.references {
         show.extend(crate::view::word_references::view_buttons(references, cx));
     }
+    show.push(crate::view::word_reveal::button(shown.reveal_formatting, cx));
     // イマーシブ リーダー and 並べて比較 (`word_review`), in the groups Word
     // puts them in; the ruler (`view::word_ruler`).
     let (reader, window_side) = match &shown.review {

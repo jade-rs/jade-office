@@ -5002,4 +5002,68 @@ word.ptab.leader	Leader
 word.ptab.leader_none	None
 doc.sort_title	Sort
 table.sort.paragraphs	Paragraphs
+reveal.title	Reveal Formatting
+reveal.tooltip	Show the formatting of the selection
+reveal.font	Font
+reveal.paragraph	Paragraph
+reveal.section	Section
+reveal.east_asia_font	Asian text
+reveal.latin_font	Latin text
+reveal.size	Size
+reveal.effect	Effect
+reveal.bold	Bold
+reveal.italic	Italic
+reveal.underline	Underline
+reveal.strike	Strikethrough
+reveal.double_strike	Double strikethrough
+reveal.superscript	Superscript
+reveal.subscript	Subscript
+reveal.small_caps	Small caps
+reveal.hidden	Hidden
+reveal.color	Color
+reveal.automatic	Automatic
+reveal.spacing	Spacing
+reveal.style	Style
+reveal.alignment	Alignment
+reveal.align.left	Left
+reveal.align.center	Centered
+reveal.align.right	Right
+reveal.align.both	Justified
+reveal.align.distribute	Distributed
+reveal.indent_left	Indent left
+reveal.indent_right	Indent right
+reveal.first_line	First line
+reveal.hanging	Hanging
+reveal.before	Spacing before
+reveal.after	Spacing after
+reveal.line	Line spacing
+reveal.line.single	Single
+reveal.line.one_and_half	1.5 lines
+reveal.line.double	Double
+reveal.line_at_least	Line spacing at least
+reveal.line_exactly	Line spacing exactly
+reveal.line_multiple	Line spacing multiple
+reveal.outline	Outline
+reveal.outline_level	Outline level
+reveal.pagination	Pagination
+reveal.keep_next	Keep with next
+reveal.keep_lines	Keep lines together
+reveal.page_break_before	Page break before
+reveal.paper	Paper size
+reveal.orientation	Orientation
+reveal.portrait	Portrait
+reveal.landscape	Landscape
+reveal.margin_top	Top margin
+reveal.margin_bottom	Bottom margin
+reveal.margin_left	Left margin
+reveal.margin_right	Right margin
+reveal.section_start	Section start
+reveal.start.next_page	New page
+reveal.start.continuous	Continuous
+reveal.start.even	Even page
+reveal.start.odd	Odd page
+reveal.start.column	New column
+reveal.columns	Columns
+reveal.direction	Text direction
+reveal.vertical	Vertical
 doc.select_similar	Select Text with Similar Formatting

@@ -1047,6 +1047,7 @@ pub fn view_tab(view: &mut DocumentView, cx: &mut Context<DocumentView>) -> Vec<
                 view.field_codes_button(cx),
                 grid,
                 white_space,
+                crate::word_reveal::button(view, cx),
             ]),
             row(crate::word_references::view_buttons(view, cx)),
         ],

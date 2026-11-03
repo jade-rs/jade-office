@@ -88,6 +88,7 @@ pub mod read_aloud;
 pub mod recovery;
 pub mod references;
 pub mod repair;
+pub mod reveal_formatting;
 pub mod review;
 pub mod reviewer;
 pub mod ruler;
