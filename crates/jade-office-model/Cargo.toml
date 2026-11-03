@@ -52,6 +52,8 @@ jade-pptx-layout = { path = "../../jade-core/crates/jade-pptx-layout" }
 jade-pptx-reader = { path = "../../jade-core/crates/jade-pptx-reader" }
 jade-pptx-render = { path = "../../jade-core/crates/jade-pptx-render" }
 jade-pptx-writer = { path = "../../jade-core/crates/jade-pptx-writer" }
+jade-smartart = { path = "../../jade-core/crates/jade-smartart" }
+jade-picture-effects = { path = "../../jade-core/crates/jade-picture-effects" }
 jade-xlsx-headless-api = { path = "../../jade-core/crates/jade-xlsx-headless-api" }
 jade-xlsx-calc = { path = "../../jade-core/crates/jade-xlsx-calc" }
 ironcalc_base = { package = "jade-xlsx-calc-engine", path = "../../jade-core/third_party/ironcalc-base" }
@@ -76,7 +78,7 @@ encoding_rs = "0.8"
 # document's archive still has (word::repair).
 flate2 = "1"
 # Bringing pictures down to a resolution (word::compress).
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
 
 [dev-dependencies]
 png = "0.17"

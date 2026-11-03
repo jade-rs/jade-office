@@ -3818,6 +3818,20 @@ sheet.shape.rounded_rectangle	Rounded Rectangle
 sheet.shape.right_arrow	Right Arrow
 filter.date.day	{day}
 sheet.menu.group_cell_styles	Cell Styles
+sheet.menu.group_view	View
+sheet.menu.freeze_top_row	Freeze Top Row
+sheet.menu.freeze_first_column	Freeze First Column
+sheet.menu.hide_gridlines	Hide Gridlines
+sheet.menu.show_gridlines	Show Gridlines
+sheet.menu.hide_headings	Hide Headings
+sheet.menu.show_headings	Show Headings
+sheet.menu.zoom	Zoom…
+sheet.menu.zoom_selection	Zoom to Selection
+sheet.zoom.title	Zoom
+sheet.zoom.magnification	Magnification
+sheet.zoom.fit_selection	Fit selection
+sheet.zoom.custom	Custom:
+sheet.zoom.out_of_range	Enter a whole number from 10 to 400.
 cell_style.normal	Normal
 cell_style.good	Good
 cell_style.bad	Bad
@@ -3935,3 +3949,441 @@ recent.remove	Remove from list
 recent.more	More options
 chars.color.new	New
 chars.color.current	Current
+deck.smartart	SmartArt
+deck.smartart.convert	Convert to SmartArt
+deck.smartart.design	SmartArt Design
+deck.smartart.format	Format
+deck.smartart.text_pane	Text Pane
+deck.smartart.text_pane_title	Type your text here
+deck.smartart.placeholder	[Text]
+deck.smartart.add_shape	Add Shape
+deck.smartart.add_after	Add Shape After
+deck.smartart.add_before	Add Shape Before
+deck.smartart.add_above	Add Shape Above
+deck.smartart.add_below	Add Shape Below
+deck.smartart.add_assistant	Add Assistant
+deck.smartart.promote	Promote
+deck.smartart.demote	Demote
+deck.smartart.move_up	Move Up
+deck.smartart.move_down	Move Down
+deck.smartart.delete_shape	Delete Shape
+deck.smartart.layouts	Layouts
+deck.smartart.colors	Change Colors
+deck.smartart.styles	SmartArt Styles
+deck.smartart.reset	Reset Graphic
+deck.smartart.to_shapes	Convert to Shapes
+deck.smartart.fill	Shape Fill
+deck.smartart.outline	Shape Outline
+deck.smartart.change_shape	Change Shape
+deck.smartart.picture	Picture
+deck.smartart.pick_shape	Select a shape of the SmartArt graphic
+deck.smartart.color.blue	Blue
+deck.smartart.color.orange	Orange
+deck.smartart.color.gray	Gray
+deck.smartart.color.gold	Gold
+deck.smartart.color.light_blue	Light Blue
+deck.smartart.color.green	Green
+deck.smartart.color.red	Red
+deck.smartart.color.black	Black
+deck.smartart.color.white	White
+deck.smartart.color.purple	Purple
+deck.smartart.shape.rect	Rectangle
+deck.smartart.shape.round_rect	Rectangle: Rounded Corners
+deck.smartart.shape.ellipse	Oval
+deck.smartart.shape.triangle	Isosceles Triangle
+deck.smartart.shape.diamond	Diamond
+deck.smartart.shape.hexagon	Hexagon
+deck.smartart.shape.chevron	Arrow: Chevron
+deck.smartart.shape.right_arrow	Arrow: Right
+deck.picture.format	Picture Format
+deck.picture.change	Change Picture
+deck.picture.corrections	Corrections
+deck.picture.sharpness	Sharpen/Soften
+deck.picture.brightness_contrast	Brightness/Contrast
+deck.picture.brightness	Brightness
+deck.picture.contrast	Contrast
+deck.picture.color	Color
+deck.picture.saturation	Color Saturation
+deck.picture.tone	Color Tone
+deck.picture.recolor	Recolor
+deck.picture.set_transparent	Set Transparent Color
+deck.picture.transparent_white	White
+deck.picture.transparent_black	Black
+deck.picture.transparency	Transparency
+deck.picture.artistic	Artistic Effects
+deck.picture.none	None
+deck.picture.remove_background	Remove Background
+deck.picture.keep_background	Restore Background
+deck.picture.styles	Picture Styles
+deck.picture.border	Picture Border
+deck.picture.no_border	No Outline
+deck.picture.weight	Weight
+deck.picture.effects	Picture Effects
+deck.picture.shadow	Shadow
+deck.picture.reflection	Reflection
+deck.picture.glow	Glow
+deck.picture.soft_edges	Soft Edges
+deck.picture.bevel	Bevel
+deck.picture.crop	Crop
+deck.picture.crop_to_shape	Crop to Shape
+deck.picture.aspect	Aspect Ratio
+deck.picture.crop_left	Crop Left
+deck.picture.crop_top	Crop Top
+deck.picture.crop_right	Crop Right
+deck.picture.crop_bottom	Crop Bottom
+deck.picture.uncrop	Remove Crop
+deck.picture.rotate	Rotate
+deck.picture.rotate_right	Rotate Right 90°
+deck.picture.rotate_left	Rotate Left 90°
+deck.picture.flip_vertical	Flip Vertical
+deck.picture.flip_horizontal	Flip Horizontal
+deck.picture.size	Size
+deck.picture.height	Height
+deck.picture.width	Width
+deck.picture.lock_aspect	Lock Aspect Ratio
+deck.picture.reset	Reset Picture
+deck.picture.reset_size	Reset Picture & Size
+deck.picture.compress	Compress Pictures
+deck.picture.delete_cropped	Delete cropped areas of pictures
+deck.picture.compressed	Pictures compressed: {count}
+deck.picture.graphic_fill	Graphics Fill
+deck.picture.icons	Icons
+deck.picture.screenshot	Screenshot
+deck.picture.screenshot_unsupported	Screenshots are not available here
+deck.picture.photo_album	Photo Album
+deck.picture.album_layout	{count} pictures per slide
+deck.picture.convert_to_shapes	Convert to Shape
+deck.picture.crop_handles	Crop Handles
+# What-If Analysis
+sheet.menu.group_what_if	What-If Analysis
+what_if.alert.reference	Reference is not valid.
+sheet.menu.goal_seek	Goal Seek…
+goal_seek.dialog	Goal Seek
+goal_seek.set	Set cell
+goal_seek.to	To value
+goal_seek.changing	By changing cell
+goal_seek.status	Goal Seek Status
+goal_seek.found	Goal Seeking with Cell {cell} found a solution.
+goal_seek.not_found	Goal Seeking with Cell {cell} may not have found a solution.
+goal_seek.target	Target value: {value}
+goal_seek.current	Current value: {value}
+goal_seek.alert.formula	Cell must contain a formula.
+goal_seek.alert.value	Cell must contain a value.
+goal_seek.alert.number	Invalid value.
+sheet.menu.data_table	Data Table…
+data_table.dialog	Data Table
+data_table.row	Row input cell
+data_table.column	Column input cell
+data_table.alert.input	Input cell reference is not valid.
+data_table.alert.selection	Select the input values, the formulas and the cells for the results first.
+data_table.refused	Cannot change part of a data table.
+sheet.menu.scenario_manager	Scenario Manager…
+scenario.manager	Scenario Manager
+scenario.list	Scenarios:
+scenario.none	No Scenarios defined. Choose Add to add scenarios.
+scenario.changing_cells	Changing cells: {cells}
+scenario.comment_is	Comment: {comment}
+scenario.show	Show
+scenario.close	Close
+scenario.add	Add…
+scenario.delete	Delete
+scenario.edit	Edit…
+scenario.merge	Merge…
+scenario.summary	Summary…
+scenario.add_dialog	Add Scenario
+scenario.edit_dialog	Edit Scenario
+scenario.name	Scenario name:
+scenario.cells	Changing cells:
+scenario.comment	Comment:
+scenario.locked	Prevent changes
+scenario.hidden	Hide
+scenario.values	Scenario Values
+scenario.values_prompt	Enter values for each of the changing cells.
+scenario.merge_dialog	Merge Scenarios
+scenario.merge_from	Merge scenarios from sheet:
+scenario.summary_dialog	Scenario Summary
+scenario.report_type	Report type
+scenario.report_summary	Scenario summary
+scenario.report_pivot	Scenario PivotTable report
+scenario.result_cells	Result cells:
+scenario.alert.name	Enter a scenario name.
+scenario.alert.taken	A scenario with this name already exists.
+scenario.alert.cells	The changing cells must be up to 32 cells on this sheet.
+scenario.alert.results	Enter result cells on this sheet.
+scenario.alert.locked	This scenario is protected and cannot be changed while the sheet is protected.
+scenario.word.sheet	Scenario Summary
+scenario.word.pivot_sheet	Scenario PivotTable
+scenario.word.title	Scenario Summary
+scenario.word.current	Current Values:
+scenario.word.changing	Changing Cells:
+scenario.word.results	Result Cells:
+scenario.word.note1	Notes:  Current Values column represents values of changing cells at
+scenario.word.note2	time Scenario Summary Report was created.  Changing cells for each
+scenario.word.note3	scenario are highlighted in gray.
+scenario.word.by	by
+scenario.word.all	(All)
+scenario.word.row_labels	Row Labels
+sheet.menu.solver	Solver…
+solver.dialog	Solver Parameters
+solver.objective	Set Objective:
+solver.to	To:
+solver.max	Max
+solver.min	Min
+solver.value_of	Value Of:
+solver.value	Value:
+solver.variables	By Changing Variable Cells:
+solver.constraints	Subject to the Constraints:
+solver.non_negative	Make Unconstrained Variables Non-Negative
+solver.method	Select a Solving Method:
+solver.method.grg	GRG Nonlinear
+solver.method.simplex	Simplex LP
+solver.method.evolutionary	Evolutionary
+solver.solve	Solve
+solver.close	Close
+solver.add	Add
+solver.change	Change
+solver.delete	Delete
+solver.reset	Reset All
+solver.options	Options
+solver.add_constraint	Add Constraint
+solver.change_constraint	Change Constraint
+solver.cell_reference	Cell Reference:
+solver.relation	Relation
+solver.constraint	Constraint:
+solver.options_dialog	Options
+solver.precision	Constraint Precision:
+solver.ignore_integer	Ignore Integer Constraints
+solver.integer_optimality	Integer Optimality (%):
+solver.max_time	Max Time (Seconds):
+solver.iterations	Iterations:
+solver.convergence	Convergence:
+solver.population	Population Size:
+solver.seed	Random Seed:
+solver.results	Solver Results
+solver.keep	Keep Solver Solution
+solver.restore	Restore Original Values
+solver.answer_report	Answer Report
+solver.ending.optimal	Solver found a solution. All Constraints and optimality conditions are satisfied.
+solver.ending.converged	Solver has converged to the current solution. All Constraints are satisfied.
+solver.ending.infeasible	Solver could not find a feasible solution.
+solver.ending.unbounded	The Objective Cell values do not converge.
+solver.ending.linear	The linearity conditions required by this LP Solver are not satisfied.
+solver.ending.limit	Solver stopped at the maximum iteration or time limit.
+solver.ending.number	Solver encountered an error value in the Objective Cell or a Constraint cell.
+solver.alert.objective	The Objective Cell must be a single cell on the active sheet.
+solver.alert.variables	Variable Cells must be on the active sheet.
+solver.alert.variable_formula	Variable Cells must be constants, not formulas.
+solver.alert.constraint	The constraint must be a number, a simple reference, or a formula with a numeric value.
+solver.alert.cell_reference	Cell Reference must be a cell or range on the active sheet.
+solver.alert.integer	Integer, binary and alldifferent constraints can only be on Variable Cells.
+solver.alert.sizes	The two sides of a constraint must be the same size.
+solver.alert.value	Value Of must be a number.
+solver.alert.option	An option value is out of range.
+solver.word.sheet	Answer Report 1
+solver.word.title	Answer Report
+solver.word.objective_max	Objective Cell (Max)
+solver.word.objective_min	Objective Cell (Min)
+solver.word.objective_value	Objective Cell (Value Of)
+solver.word.variable_cells	Variable Cells
+solver.word.constraints	Constraints
+solver.word.cell	Cell
+solver.word.name	Name
+solver.word.original	Original Value
+solver.word.final	Final Value
+solver.word.integer	Integer
+solver.word.contin	Contin
+solver.word.cell_value	Cell Value
+solver.word.formula	Formula
+solver.word.status	Status
+solver.word.slack	Slack
+solver.word.binding	Binding
+solver.word.not_binding	Not Binding
+solver.word.result	Result: {ending}
+solver.word.engine	Engine: {engine}
+solver.word.time	Solution Time: {seconds} Seconds.
+solver.word.worksheet	Worksheet: {sheet}
+sheet.menu.data_analysis	Data Analysis…
+tool.dialog	Data Analysis
+tool.tools	Analysis Tools
+tool.anova_single	Anova: Single Factor
+tool.anova_replication	Anova: Two-Factor With Replication
+tool.anova_two	Anova: Two-Factor Without Replication
+tool.correlation	Correlation
+tool.covariance	Covariance
+tool.descriptive	Descriptive Statistics
+tool.exponential	Exponential Smoothing
+tool.f_test	F-Test Two-Sample for Variances
+tool.fourier	Fourier Analysis
+tool.histogram	Histogram
+tool.moving_average	Moving Average
+tool.random	Random Number Generation
+tool.rank_percentile	Rank and Percentile
+tool.regression	Regression
+tool.sampling	Sampling
+tool.t_paired	t-Test: Paired Two Sample for Means
+tool.t_equal	t-Test: Two-Sample Assuming Equal Variances
+tool.t_unequal	t-Test: Two-Sample Assuming Unequal Variances
+tool.z_test	z-Test: Two Sample for Means
+tool.input	Input Range:
+tool.variable1	Variable 1 Range:
+tool.variable2	Variable 2 Range:
+tool.y_range	Input Y Range:
+tool.x_range	Input X Range:
+tool.grouped	Grouped By:
+tool.by_columns	Columns
+tool.by_rows	Rows
+tool.labels	Labels
+tool.labels_first	Labels in First Row (Column)
+tool.rows_per_sample	Rows per sample:
+tool.difference	Hypothesized Mean Difference:
+tool.variance1	Variable 1 Variance (known):
+tool.variance2	Variable 2 Variance (known):
+tool.damping	Damping factor:
+tool.bins	Bin Range:
+tool.interval	Interval:
+tool.inverse	Inverse
+tool.number_of_variables	Number of Variables:
+tool.number_of_numbers	Number of Random Numbers:
+tool.distribution	Distribution:
+tool.uniform	Uniform
+tool.normal	Normal
+tool.bernoulli	Bernoulli
+tool.binomial	Binomial
+tool.poisson	Poisson
+tool.patterned	Patterned
+tool.discrete	Discrete
+tool.uniform_between	Between
+tool.and	and
+tool.p_value_probability	p Value =
+tool.trials	Number of trials =
+tool.lambda	Lambda =
+tool.from	From
+tool.to	to
+tool.in_steps_of	in steps of
+tool.repeat_each	repeating each number
+tool.repeat_sequence	repeating each sequence
+tool.value_probability_range	Value and Probability Input Range:
+tool.seed	Random Seed:
+tool.sampling_method	Sampling Method
+tool.periodic	Periodic
+tool.at_random	Random
+tool.period	Period:
+tool.number_of_samples	Number of Samples:
+tool.alpha	Alpha:
+tool.output	Output options
+tool.output_range	Output Range:
+tool.new_sheet	New Worksheet Ply:
+tool.sheet_name	New sheet name:
+tool.summary_statistics	Summary statistics
+tool.confidence_for_mean	Confidence Level for Mean
+tool.level	Level (%):
+tool.kth_largest	Kth Largest
+tool.kth_smallest	Kth Smallest
+tool.k	K:
+tool.standard_errors	Standard Errors
+tool.pareto	Pareto (sorted histogram)
+tool.cumulative_percentage	Cumulative Percentage
+tool.constant_zero	Constant is Zero
+tool.confidence_level_check	Confidence Level
+tool.normal_probability	Normal Probability
+tool.alert.alpha	Alpha must be greater than 0 and less than 1.
+tool.alert.choose	Choose at least one output option.
+tool.alert.complex	Input range contains non-numeric data.
+tool.alert.damping	Damping factor must be between 0 and 1.
+tool.alert.discrete	Value and Probability Input Range must have two columns of numbers whose probabilities total 1.
+tool.alert.input	Input range must be a contiguous reference.
+tool.alert.interval	Interval must be a whole number no larger than the data.
+tool.alert.number	Enter a valid number.
+tool.alert.one_column	Input range must be a single row or column.
+tool.alert.output	Output Range must be a reference on the active sheet.
+tool.alert.power_of_two	Input range must have 2, 4, 8 … 4096 values.
+tool.alert.rows_per_sample	Input range must be a whole number of samples of the rows per sample, with labels.
+tool.alert.same_count	The input ranges must have the same number of values.
+tool.alert.singular	Regression could not be calculated: the X values are linearly dependent.
+tool.alert.text	Input range contains non-numeric data.
+tool.alert.too_few	Input range has too few values.
+tool.alert.variance	Enter known variances greater than 0.
+tool.anova	ANOVA
+tool.summary	SUMMARY
+tool.groups	Groups
+tool.count	Count
+tool.sum	Sum
+tool.average	Average
+tool.variance	Variance
+tool.source	Source of Variation
+tool.ss	SS
+tool.df	df
+tool.ms	MS
+tool.f	F
+tool.p_value	P-value
+tool.f_crit	F crit
+tool.between	Between Groups
+tool.within	Within Groups
+tool.total	Total
+tool.rows	Rows
+tool.columns	Columns
+tool.error	Error
+tool.sample	Sample
+tool.interaction	Interaction
+tool.column	Column
+tool.row	Row
+tool.mean	Mean
+tool.standard_error	Standard Error
+tool.median	Median
+tool.mode	Mode
+tool.standard_deviation	Standard Deviation
+tool.sample_variance	Sample Variance
+tool.kurtosis	Kurtosis
+tool.skewness	Skewness
+tool.range	Range
+tool.minimum	Minimum
+tool.maximum	Maximum
+tool.largest	Largest
+tool.smallest	Smallest
+tool.confidence_level	Confidence Level
+tool.observations	Observations
+tool.p_f_one	P(F<=f) one-tail
+tool.f_critical_one	F Critical one-tail
+tool.pearson	Pearson Correlation
+tool.pooled	Pooled Variance
+tool.hypothesized	Hypothesized Mean Difference
+tool.t_stat	t Stat
+tool.p_t_one	P(T<=t) one-tail
+tool.t_critical_one	t Critical one-tail
+tool.p_t_two	P(T<=t) two-tail
+tool.t_critical_two	t Critical two-tail
+tool.known_variance	Known Variance
+tool.z	z
+tool.p_z_one	P(Z<=z) one-tail
+tool.z_critical_one	z Critical one-tail
+tool.p_z_two	P(Z<=z) two-tail
+tool.z_critical_two	z Critical two-tail
+tool.bin	Bin
+tool.frequency	Frequency
+tool.cumulative	Cumulative %
+tool.more	More
+tool.point	Point
+tool.rank	Rank
+tool.percent	Percent
+tool.summary_output	SUMMARY OUTPUT
+tool.regression_statistics	Regression Statistics
+tool.multiple_r	Multiple R
+tool.r_square	R Square
+tool.adjusted_r_square	Adjusted R Square
+tool.significance_f	Significance F
+tool.residual	Residual
+tool.coefficients	Coefficients
+tool.lower	Lower
+tool.upper	Upper
+tool.intercept	Intercept
+tool.x_variable	X Variable
+tool.y	Y
+tool.variable_1	Variable 1
+tool.variable_2	Variable 2
+tool.residual_output	RESIDUAL OUTPUT
+tool.observation	Observation
+tool.predicted	Predicted
+tool.residuals	Residuals
+tool.standard_residuals	Standard Residuals
+tool.probability_output	PROBABILITY OUTPUT
+tool.percentile	Percentile

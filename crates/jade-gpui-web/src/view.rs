@@ -934,12 +934,19 @@ impl DocView {
     }
 
     pub fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
-        let zoom = clamp_zoom(zoom);
-        if let Document::Workbook(sheet) = &self.document {
+        // A sheet goes down to Excel's 10% (View ▸ Zoom).
+        let zoom = match &self.document {
+            Document::Workbook(_) if zoom.is_finite() => zoom.clamp(0.1, ZOOM_MAX),
+            _ => clamp_zoom(zoom),
+        };
+        let shown = self.zoom().max(0.01);
+        if let Document::Workbook(sheet) = &mut self.document {
+            // Saved with the sheet, as Excel saves the zoom it was last at.
+            sheet.book.set_sheet_zoom(zoom);
             let scroll = &sheet.scroll;
             // Keep the same cell at the top left: the offset is in screen
             // px, which a zoom rescales.
-            let ratio = zoom / self.zoom().max(0.01);
+            let ratio = zoom / shown;
             let offset = scroll.offset();
             scroll.set_offset(point(offset.x * ratio, offset.y * ratio));
         }
@@ -1016,6 +1023,9 @@ impl DocView {
             // A formula Excel would refuse: its words, not a write error.
             Err(error) if error == jade_web::typing::FORMULA_PROBLEM => {
                 self.status = i18n::text("sheet.formula_problem").into();
+            }
+            Err(error) if error == jade_web::data_table::DATA_TABLE_REFUSED => {
+                self.status = i18n::text("data_table.refused").into();
             }
             // An entry a data validation refuses: the rule's words, or
             // Excel's.
@@ -1226,6 +1236,7 @@ impl DocView {
                     || sheet.top_ten.is_some()
                     || sheet.shift_choice.is_some()
                     || sheet.more_colors.is_some()
+                    || sheet.zoom_dialog.is_some()
                     || sheet.duplicates_dialog.is_some()
                 {
                     return;

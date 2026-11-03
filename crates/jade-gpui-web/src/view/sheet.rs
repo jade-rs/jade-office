@@ -18,6 +18,7 @@ use jade_web::pivots::PivotPanel;
 use jade_web::protected_edits::{attempt, ProtectedEdit};
 use jade_web::protection::ProtectionDialog;
 use jade_web::tables::TableDialog;
+use jade_web::what_if::WhatIfTool;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -54,6 +55,8 @@ mod tables;
 mod text_columns;
 mod top_ten;
 mod validation;
+mod what_if;
+mod zoom_dialog;
 use charts::ChartTool;
 use conditional::Conditional;
 use jade_web::charts::{ChartAsk, Handle};
@@ -139,6 +142,8 @@ pub(super) struct Sheet {
     /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
     pub(super) shift_choice: Option<bool>,
     pub(super) more_colors: Option<jade_web::more_colors::MoreColorsDialog>,
+    /// View ▸ Zoom's dialog.
+    pub(super) zoom_dialog: Option<jade_web::zoom_dialog::ZoomDialog>,
     /// Insert ▸ Shapes ▸ Freeform's corners while it is drawn.
     pub(super) freeform: Option<jade_web::freeform::FreeformDraft>,
     /// The Paste Options button after a paste from this workbook's copy:
@@ -152,6 +157,8 @@ pub(super) struct Sheet {
     /// validation rule.
     pub(super) circling: bool,
     pub(super) duplicates_dialog: Option<jade_web::duplicates::DuplicatesDialog>,
+    /// Goal Seek, Data Table and the other What-If Analysis dialogs.
+    pub(super) what_if: Option<jade_web::what_if::WhatIfDialog>,
     pub(super) protection_dialog: Option<ProtectionDialog>,
     pub(super) table_dialog: Option<TableDialog>,
     pub(super) pivot_dialog: Option<PivotPanel>,
@@ -796,11 +803,23 @@ enum MenuCommand {
     Unhide,
     FreezePanes,
     UnfreezePanes,
+    /// View ▸ Freeze Panes ▸ Freeze Top Row and Freeze First Column.
+    FreezeTopRow,
+    FreezeFirstColumn,
+    /// View ▸ Gridlines and Headings, on or off.
+    Gridlines,
+    Headings,
+    /// View ▸ Zoom… and Zoom to Selection.
+    Zoom,
+    ZoomToSelection,
     Outline(OutlineChange),
     FormatPainter,
     AutoOutline,
     ClearOutline,
     Subtotal,
+    /// Data ▸ What-If Analysis and the analysis tools: a dialog of the
+    /// model's.
+    WhatIf(WhatIfTool),
     RemoveDuplicates,
     TextToColumns,
     /// Data ▸ Flash Fill in the active cell's column.
@@ -896,12 +915,14 @@ impl Sheet {
             top_ten: None,
             shift_choice: None,
             more_colors: None,
+            zoom_dialog: None,
             freeform: None,
             paste_options: None,
             tracing: Vec::new(),
             tracing_dependents: Vec::new(),
             circling: false,
             duplicates_dialog: None,
+            what_if: None,
             protection_dialog: None,
             table_dialog: None,
             pivot_dialog: None,
@@ -939,8 +960,14 @@ impl Sheet {
         if let Some(dialog) = self.validation_dialog.as_mut() {
             return Some(dialog.field_mut());
         }
+        if let Some(dialog) = self.what_if.as_mut() {
+            return dialog.form_mut().typing_mut();
+        }
         if let Some(dialog) = self.more_colors.as_mut() {
             return Some(&mut dialog.code);
+        }
+        if let Some(dialog) = self.zoom_dialog.as_mut() {
+            return Some(&mut dialog.custom);
         }
         if let Some(dialog) = self.insert_function.as_mut() {
             return Some(&mut dialog.search);
@@ -994,8 +1021,14 @@ impl Sheet {
         if let Some(dialog) = self.validation_dialog.as_ref() {
             return Some(dialog.field());
         }
+        if let Some(dialog) = self.what_if.as_ref() {
+            return dialog.form().typing();
+        }
         if let Some(dialog) = self.more_colors.as_ref() {
             return Some(&dialog.code);
+        }
+        if let Some(dialog) = self.zoom_dialog.as_ref() {
+            return Some(&dialog.custom);
         }
         if let Some(dialog) = self.insert_function.as_ref() {
             return Some(&dialog.search);
@@ -1985,7 +2018,9 @@ impl DocView {
             || sheet.top_ten.is_some()
             || sheet.shift_choice.is_some()
             || sheet.more_colors.is_some()
+            || sheet.zoom_dialog.is_some()
             || sheet.duplicates_dialog.is_some()
+            || sheet.what_if.is_some()
         {
             return false;
         }
@@ -2077,7 +2112,9 @@ impl DocView {
                 || s.top_ten.is_some()
                 || s.shift_choice.is_some()
                 || s.more_colors.is_some()
+                || s.zoom_dialog.is_some()
                 || s.duplicates_dialog.is_some()
+                || s.what_if.is_some()
         }) {
             return;
         }
@@ -2315,9 +2352,17 @@ impl DocView {
         let Some(sheet) = self.sheet_mut() else {
             return false;
         };
+        // A What-If Analysis dialog has the keys while it is open.
+        if sheet.what_if.is_some() {
+            return self.what_if_key(key, modifiers, cx);
+        }
         // More Colors' dialog has the keys while it is open.
         if sheet.more_colors.is_some() {
             return self.more_colors_key(key, modifiers, cx);
+        }
+        // So has Zoom's.
+        if sheet.zoom_dialog.is_some() {
+            return self.zoom_dialog_key(key, modifiers, cx);
         }
         // Top 10's dialog has the keys while it is open.
         if sheet.top_ten.is_some() {
@@ -2925,7 +2970,9 @@ impl DocView {
                 || s.top_ten.is_some()
                 || s.shift_choice.is_some()
                 || s.more_colors.is_some()
+                || s.zoom_dialog.is_some()
                 || s.duplicates_dialog.is_some()
+                || s.what_if.is_some()
         }) {
             return;
         }
@@ -3178,7 +3225,20 @@ impl DocView {
             }
             MenuCommand::FreezePanes => sheet.book.freeze_panes(Freeze::Panes(selection.active)),
             MenuCommand::UnfreezePanes => sheet.book.freeze_panes(Freeze::Unfreeze),
+            MenuCommand::FreezeTopRow => sheet.book.freeze_panes(Freeze::TopRow),
+            MenuCommand::FreezeFirstColumn => sheet.book.freeze_panes(Freeze::FirstColumn),
+            MenuCommand::Gridlines => {
+                let on = sheet.book.show_grid_lines();
+                sheet.book.set_show_grid_lines(!on)
+            }
+            MenuCommand::Headings => {
+                let on = sheet.book.show_headings();
+                sheet.book.set_show_headings(!on)
+            }
+            MenuCommand::Zoom => return self.open_zoom_dialog(cx),
+            MenuCommand::ZoomToSelection => return self.zoom_to_selection(cx),
             MenuCommand::Subtotal => return self.open_subtotal_dialog(cx),
+            MenuCommand::WhatIf(tool) => return self.open_what_if(tool, cx),
             MenuCommand::RemoveDuplicates => return self.open_duplicates_dialog(cx),
             MenuCommand::FlashFill => return self.sheet_flash_fill(cx),
             MenuCommand::TextToColumns => return self.open_text_columns_dialog(cx),
@@ -3344,7 +3404,9 @@ impl DocView {
                 || s.top_ten.is_some()
                 || s.shift_choice.is_some()
                 || s.more_colors.is_some()
+                || s.zoom_dialog.is_some()
                 || s.duplicates_dialog.is_some()
+                || s.what_if.is_some()
         }) {
             return;
         }
@@ -4143,6 +4205,8 @@ impl DocView {
         let top_ten_panel = self.top_ten_panel(cx);
         let shift_choice_panel = self.shift_choice_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
+        let what_if_panel = self.what_if_panel(cx);
+        let zoom_dialog_panel = self.zoom_dialog_panel(cx);
         let duplicates_panel = self.duplicates_panel(cx);
         let protection_panel = self.protection_panel(cx);
         let validation_panel = self.validation_panel(cx);
@@ -4735,6 +4799,10 @@ impl DocView {
                     } else {
                         (MenuCommand::FreezePanes, "sheet.menu.freeze_panes")
                     });
+                    items.extend(view_menu(
+                        sheet.book.show_grid_lines(),
+                        sheet.book.show_headings(),
+                    ));
                     if !sheet.selection.is_whole_rows()
                         && !sheet.selection.is_whole_columns()
                         && sheet.selection.range().end.row > sheet.selection.range().start.row
@@ -4748,6 +4816,11 @@ impl DocView {
                     }
                     let selected = sheet.selection.range();
                     items.push((MenuCommand::SortDialog, "sheet.menu.sort_dialog"));
+                    items.extend(
+                        WhatIfTool::MENU
+                            .iter()
+                            .map(|&(tool, label)| (MenuCommand::WhatIf(tool), label)),
+                    );
                     items.push((MenuCommand::FlashFill, "sheet.menu.flash_fill"));
                     items.push((MenuCommand::ShowFormulas, "sheet.menu.show_formulas"));
                     items.push((MenuCommand::NameManager, "sheet.menu.name_manager"));
@@ -5541,6 +5614,8 @@ impl DocView {
                     .children(top_ten_panel)
                     .children(shift_choice_panel)
                     .children(more_colors_panel)
+                    .children(what_if_panel)
+                    .children(zoom_dialog_panel)
                     .children(duplicates_panel)
                     .children(protection_panel)
                     .children(validation_panel)

@@ -349,11 +349,9 @@ impl NativeDeck {
     /// Draws a picture's bitmap where the renderer asks, under the transform
     /// it has already applied for the shape's rotation and flips.
     fn draw_picture(&self, painter: &SkiaPainter, shape: &PlacedShape) -> bool {
-        let Some(bytes) = shape
-            .image_part
-            .as_deref()
-            .and_then(|part| self.parts.get(part))
-        else {
+        let Some(bytes) = shape.image_part.as_deref().and_then(|key| {
+            jade_picture_effects::image_bytes(key, |part| self.parts.get(part).map(Vec::as_slice))
+        }) else {
             return false;
         };
         // The crop is expressed against the bitmap's own size; normalising it
@@ -363,7 +361,7 @@ impl NativeDeck {
             return false;
         };
         painter.draw_encoded_image_rect(
-            bytes,
+            &bytes,
             Some([source.x, source.y, source.width, source.height]),
             destination.x,
             destination.y,
@@ -378,7 +376,10 @@ fn collect_media_parts(shapes: &[jade_pptx_reader::ShapeItem], out: &mut Vec<Str
     use jade_pptx_reader::ShapeItem;
     for item in shapes {
         let part = match item {
-            ShapeItem::Picture(picture) => picture.image_part.as_deref(),
+            ShapeItem::Picture(picture) => picture
+                .svg_part
+                .as_deref()
+                .or(picture.image_part.as_deref()),
             ShapeItem::Shape(shape) => shape.image_part.as_deref(),
             ShapeItem::Group(group) => {
                 collect_media_parts(&group.children, out);
