@@ -4987,3 +4987,16 @@ word.shading.thin_reverse_diag_stripe	Light Up Diagonal
 word.shading.thin_horz_cross	Light Grid
 word.shading.thin_diag_cross	Light Trellis
 word.shading.color	Color
+word.ptab.insert	Insert Alignment Tab
+word.ptab.insert_title	Insert a tab that aligns text to the margin or indent, whatever the tab stops
+word.ptab.title	Alignment Tab
+word.ptab.keys	⏎ insert · esc cancel
+word.ptab.alignment	Alignment
+word.ptab.left	Left
+word.ptab.center	Center
+word.ptab.right	Right
+word.ptab.relative_to	Align relative to
+word.ptab.margin	Margin
+word.ptab.indent	Indent
+word.ptab.leader	Leader
+word.ptab.leader_none	None

@@ -4987,3 +4987,16 @@ word.shading.thin_reverse_diag_stripe	右上がり斜線 (細)
 word.shading.thin_horz_cross	格子 (細)
 word.shading.thin_diag_cross	斜め格子 (細)
 word.shading.color	色
+word.ptab.insert	位置合わせタブの挿入
+word.ptab.insert_title	余白やインデントを基準に、タブ位置に関係なく文字列を揃えるタブを挿入します
+word.ptab.title	位置合わせタブ
+word.ptab.keys	⏎ 挿入 · esc キャンセル
+word.ptab.alignment	配置
+word.ptab.left	左揃え
+word.ptab.center	中央揃え
+word.ptab.right	右揃え
+word.ptab.relative_to	基準
+word.ptab.margin	余白
+word.ptab.indent	インデント
+word.ptab.leader	リーダー
+word.ptab.leader_none	なし

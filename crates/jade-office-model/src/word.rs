@@ -30,6 +30,7 @@ pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
 pub mod accessibility;
+pub mod alignment_tab;
 pub mod asian;
 pub mod autocorrect;
 pub mod borders;

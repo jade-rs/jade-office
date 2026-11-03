@@ -23,6 +23,8 @@ pub enum Dialog {
     Note(NoteForm),
     /// 段落: indents, spacing, line spacing, pagination.
     Paragraph(Box<ParagraphForm>),
+    /// 位置合わせタブの挿入 (`word_alignment_tab`).
+    AlignmentTab(jade_office_model::word::alignment_tab::AlignmentTabForm),
 }
 
 impl Dialog {
@@ -32,7 +34,7 @@ impl Dialog {
             Dialog::Link(form) => Some(form.field()),
             Dialog::Note(form) => Some(&form.text),
             // Its numbers are spin boxes, which take their own typing.
-            Dialog::Paragraph(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) => None,
         }
     }
 
@@ -40,7 +42,7 @@ impl Dialog {
         match self {
             Dialog::Link(form) => Some(form.field_mut()),
             Dialog::Note(form) => Some(&mut form.text),
-            Dialog::Paragraph(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) => None,
         }
     }
 }
@@ -127,7 +129,7 @@ pub fn bar(title: &str, keys: &str, body: Vec<AnyElement>) -> AnyElement {
 }
 
 impl DocumentView {
-    fn open_dialog(&mut self, dialog: Dialog, cx: &mut Context<Self>) {
+    pub(crate) fn open_dialog(&mut self, dialog: Dialog, cx: &mut Context<Self>) {
         self.find_bar = None;
         self.story_bar = None;
         self.comment_bar = None;
@@ -138,7 +140,7 @@ impl DocumentView {
 
     /// The selection the shell holds, handed to the document so a dialog
     /// reads and writes the text the user sees selected.
-    fn sync_selection(&mut self) {
+    pub(crate) fn sync_selection(&mut self) {
         if self.document.selection().is_none() {
             self.document
                 .place_caret(self.insert_at.0, self.insert_at.1);
@@ -291,6 +293,7 @@ impl DocumentView {
                     let field = form.focus;
                     self.focus_paragraph_field(field);
                 }
+                Dialog::AlignmentTab(_) => {}
             },
             _ => {
                 let edited = dialog.field_mut().is_some_and(|field| field.edit_key(key));
@@ -316,6 +319,13 @@ impl DocumentView {
                 let kept = self.insert_at;
                 form.submit(&mut self.document).map(|()| kept)
             }
+            Dialog::AlignmentTab(form) => form.submit(&mut self.document).map(|()| {
+                self.document
+                    .selection_range()
+                    .map_or(self.insert_at, |range| {
+                        (range.focus.paragraph, range.focus.offset)
+                    })
+            }),
         };
         match result {
             Ok(caret) => {
@@ -363,6 +373,7 @@ impl DocumentView {
                 vec![field_box(t("note.text"), &form.text, true, 360.0)],
             ),
             Dialog::Paragraph(form) => self.paragraph_dialog(form, cx),
+            Dialog::AlignmentTab(form) => crate::word_alignment_tab::bar(form, cx),
         })
     }
 

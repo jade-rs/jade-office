@@ -31,6 +31,7 @@ use crate::{i18n, palette, Fonts, Host, UI_FONT};
 use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatting};
 
 mod deck;
+mod word_alignment_tab;
 mod deck_show;
 mod sheet;
 pub(crate) mod word_characters;

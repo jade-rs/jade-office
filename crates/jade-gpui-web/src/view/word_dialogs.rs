@@ -43,6 +43,8 @@ pub(super) enum Dialog {
     Protect(Box<jade_web::word::protection::ProtectForm>),
     /// 署名欄の設定: who is to sign (Tab between the fields).
     SignatureLine(Box<jade_web::word::signatures::SignatureLineForm>),
+    /// 位置合わせタブの挿入 (`word_alignment_tab`).
+    AlignmentTab(jade_web::word::alignment_tab::AlignmentTabForm),
 }
 
 impl Dialog {
@@ -51,7 +53,7 @@ impl Dialog {
             Dialog::Link(form) => Some(form.field()),
             Dialog::Note(form) => Some(&form.text),
             // Its numbers are spin boxes, which take their own typing.
-            Dialog::Paragraph(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) => None,
             Dialog::Reviewer(form) => Some(form.focused()),
             Dialog::AltText(form) => Some(&form.description),
             Dialog::Compare { author, .. } => Some(author),
@@ -65,7 +67,7 @@ impl Dialog {
         match self {
             Dialog::Link(form) => Some(form.field_mut()),
             Dialog::Note(form) => Some(&mut form.text),
-            Dialog::Paragraph(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) => None,
             Dialog::Reviewer(form) => Some(form.focused_mut()),
             Dialog::AltText(form) => Some(&mut form.description),
             Dialog::Compare { author, .. } => Some(author),
@@ -356,6 +358,7 @@ impl DocView {
                     form.next_field();
                 }
                 Dialog::SignatureLine(form) => form.next_field(),
+                Dialog::AlignmentTab(_) => {}
             },
             _ => {
                 if !open.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -471,7 +474,7 @@ impl DocView {
     }
 
     /// OK: what the dialog says, done to the document as one undo step.
-    fn submit_dialog(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(super) fn submit_dialog(&mut self, cx: &mut Context<Self>) -> bool {
         let Document::Pages {
             document, dialog, ..
         } = &mut self.document
@@ -517,6 +520,13 @@ impl DocView {
             Dialog::Note(form) => form.submit(document.as_mut()).map(Some),
             // The caret, or the selection, stays where it is.
             Dialog::Paragraph(form) => form.submit(document.as_mut()).map(|()| None),
+            // The caret goes after the tab.
+            Dialog::AlignmentTab(form) => form.submit(document.as_mut()).map(|()| {
+                use jade_web::word::WordSession;
+                document
+                    .selection_range()
+                    .map(|range| (range.focus.paragraph, range.focus.offset))
+            }),
             Dialog::Compare { .. }
             | Dialog::Restrict { .. }
             | Dialog::Protect(_)
