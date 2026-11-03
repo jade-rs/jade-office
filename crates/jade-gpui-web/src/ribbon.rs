@@ -953,6 +953,7 @@ pub fn ribbon(
                 shown.hyphenation,
                 cx,
             ));
+            groups.push(crate::view::word_manuscript::layout_group(cx));
             groups
         }
         Tab::References => {

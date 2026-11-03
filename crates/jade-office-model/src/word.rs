@@ -65,6 +65,7 @@ pub mod language;
 pub mod links;
 pub mod lists;
 pub mod mailings;
+pub mod manuscript;
 pub mod markup;
 pub mod master;
 pub mod new;

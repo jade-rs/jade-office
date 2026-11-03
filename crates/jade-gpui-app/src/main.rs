@@ -51,6 +51,7 @@ mod word_immersive;
 mod word_inspect;
 mod word_lists;
 mod word_mailings;
+mod word_manuscript;
 mod word_master;
 mod word_objects;
 mod word_objects_diagrams;
@@ -2375,6 +2376,7 @@ impl DocumentView {
             .into_iter()
             .chain(self.page_setup_groups(cx))
             .chain([word_hyphenation::layout_group(self, cx)])
+            .chain([word_manuscript::layout_group(cx)])
             .chain([
                 Self::ribbon_group(
                     t("doc.group.paragraph"),

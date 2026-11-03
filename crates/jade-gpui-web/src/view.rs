@@ -53,6 +53,7 @@ mod word_inspect;
 pub(crate) mod word_kit;
 pub(crate) mod word_lists;
 pub(crate) mod word_mailings;
+pub(crate) mod word_manuscript;
 pub(crate) mod word_object_tab;
 pub(crate) mod word_objects_ui;
 pub(crate) mod word_paragraph;
