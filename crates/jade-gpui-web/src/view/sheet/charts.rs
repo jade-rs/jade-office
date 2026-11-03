@@ -4,34 +4,23 @@
 //! the selection, or — with a chart selected — changes its type, legend,
 //! title and data, as Excel's Chart Design does.
 
+use jade_web::chart_form::{FieldValue, Form};
 use jade_web::charts::{
-    dragged, handle_at, ChartAsk, ChartChange, ChartField, ChartKey, ChartKind, Handle,
-    LegendPosition, CHART_KINDS, LEGENDS,
+    dragged, handle_at, AskAction, AskPage, ChartAsk, ChartChange, ChartField, ChartInfo, ChartKey,
+    ChartPick, Handle, LegendPosition, SelectData, CHART_GALLERY, LEGENDS,
 };
+use jade_web::text::TextEdit;
 
 use super::*;
 use jade_web::freeform::{FreeformDraft, FreeformStep};
 use jade_web::sheet::SHAPES;
 
-/// What the chart button's items do.
-#[derive(Clone, Copy)]
-pub(super) enum ChartTool {
-    /// Insert ▸ Chart over the selection.
-    Insert(ChartKind),
-    /// Insert ▸ Pictures from a file, at the active cell.
-    Picture,
-    /// Insert ▸ Shapes, at the active cell: its preset geometry.
-    Shape(&'static str),
-    /// Insert ▸ Shapes ▸ Freeform: drawn on the sheet a click at a time.
-    Freeform,
-    /// Insert ▸ Shapes ▸ Scribble: drawn freehand, dragged.
-    Scribble,
-    /// Chart Design, on the selected chart.
-    Kind(ChartKind),
-    Legend(Option<LegendPosition>),
-    Ask(ChartField),
-    Delete,
-}
+type View = DocView;
+use crate::palette as theme;
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../jade-gpui-app/src/workbook/charts_ui.rs"
+));
 
 /// How far a press has to travel before it drags an object, in px.
 const DRAG_SLOP: f64 = 2.0;
@@ -270,8 +259,8 @@ impl DocView {
         };
         let result = match tool {
             ChartTool::Freeform | ChartTool::Scribble => return,
-            ChartTool::Insert(kind) => {
-                match sheet.book.insert_chart(sheet.selection.range(), kind) {
+            ChartTool::Insert(pick) => {
+                match sheet.book.insert_chart_as(sheet.selection.range(), pick) {
                     Ok(id) => {
                         sheet.object = Some(id);
                         Ok(true)
@@ -293,16 +282,30 @@ impl DocView {
                 Some(id) => sheet.book.delete_object(id),
                 None => Ok(false),
             },
-            ChartTool::Kind(kind) => match sheet.selected_chart() {
+            ChartTool::Kind(pick) => match sheet.selected_chart() {
+                Some(id) => sheet.book.set_chart_type(id, pick),
+                None => Ok(false),
+            },
+            ChartTool::SwitchRows => match sheet.selected_chart() {
                 Some(id) => sheet.book.set_chart(
                     id,
                     &ChartChange {
-                        kind: Some(kind),
+                        switch_rows: true,
                         ..Default::default()
                     },
                 ),
                 None => Ok(false),
             },
+            ChartTool::SelectData => {
+                if let Some((id, info)) = sheet
+                    .selected_chart()
+                    .and_then(|id| Some((id, sheet.book.chart(id)?)))
+                {
+                    sheet.chart_asking = Some(ChartAsk::select_data(id, &info));
+                }
+                cx.notify();
+                return;
+            }
             ChartTool::Legend(legend) => match sheet.selected_chart() {
                 Some(id) => sheet.book.set_chart(
                     id,
@@ -343,16 +346,43 @@ impl DocView {
         self.edited(result, cx);
     }
 
-    /// The chart dialog's OK.
-    pub(super) fn take_chart_text(&mut self, cx: &mut Context<Self>) {
+    /// A click, Enter or Escape in the chart dialog.
+    pub(super) fn chart_act(&mut self, action: AskAction, cx: &mut Context<Self>) {
         let Some(sheet) = self.sheet_mut() else {
             return;
         };
-        let Some(ask) = sheet.chart_asking.take() else {
+        let Some(mut ask) = sheet.chart_asking.take() else {
             return;
         };
-        let result = sheet.book.set_chart(ask.id, &ask.change());
+        let result = match ask.act(&mut sheet.book, action) {
+            Ok(done) => {
+                if !done.closed {
+                    sheet.chart_asking = Some(ask);
+                }
+                Ok(done.wrote)
+            }
+            Err(error) => {
+                sheet.chart_asking = Some(ask);
+                Err(error)
+            }
+        };
         self.edited(result, cx);
+    }
+
+    fn chart_selection(&self) -> Option<u32> {
+        self.sheet_ref().and_then(Sheet::selected_chart)
+    }
+
+    fn chart_info(&self, id: u32) -> Option<ChartInfo> {
+        self.sheet_ref()?.book.chart(id)
+    }
+
+    fn chart_ask(&self) -> Option<&ChartAsk> {
+        self.sheet_ref()?.chart_asking.as_ref()
+    }
+
+    fn chart_dialog_top(&self) -> f32 {
+        40.0
     }
 
     /// Keys while the chart dialog is open.
@@ -371,130 +401,18 @@ impl DocView {
         };
         match ask.key(key, command) {
             ChartKey::Take => {
-                self.take_chart_text(cx);
+                self.chart_act(AskAction::Take, cx);
                 return true;
             }
-            ChartKey::Close => sheet.chart_asking = None,
+            ChartKey::Close => {
+                self.chart_act(AskAction::Cancel, cx);
+                return true;
+            }
             ChartKey::Handled => {}
             ChartKey::Unhandled => return false,
         }
         cx.notify();
         true
-    }
-
-    /// The chart button's dropdown: Insert ▸ Chart's types, or — with a
-    /// chart selected — Chart Design's.
-    pub(super) fn chart_menu(&self, cx: &mut Context<Self>) -> gpui::Div {
-        let heading = |key: &'static str| {
-            div()
-                .px_3()
-                .pt_2()
-                .pb_1()
-                .text_color(palette::dim())
-                .child(i18n::text(key))
-        };
-        let item = |id: (&'static str, usize),
-                    label: &'static str,
-                    tool: ChartTool,
-                    cx: &mut Context<Self>| {
-            div()
-                .id(id)
-                .px_3()
-                .py_1()
-                .cursor_pointer()
-                .hover(|item| item.bg(palette::hovered()))
-                .child(i18n::text(label))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(
-                    cx.listener(move |view, _event, _window, cx| view.tool(Tool::Chart(tool), cx)),
-                )
-        };
-        let mut menu = div().w(px(220.0)).py_1();
-        if self.sheet_ref().and_then(Sheet::selected_chart).is_some() {
-            menu = menu.child(heading("chart.change_type"));
-            for (index, (kind, label)) in CHART_KINDS.into_iter().enumerate() {
-                menu = menu.child(item(
-                    ("chart-kind", index),
-                    label,
-                    ChartTool::Kind(kind),
-                    cx,
-                ));
-            }
-            menu = menu.child(heading("chart.legend"));
-            for (index, (legend, label)) in LEGENDS.into_iter().enumerate() {
-                menu = menu.child(item(
-                    ("chart-legend", index),
-                    label,
-                    ChartTool::Legend(legend),
-                    cx,
-                ));
-            }
-            menu = menu
-                .child(div().h(px(1.0)).my_1().bg(palette::border()))
-                .child(item(
-                    ("chart-title", 0),
-                    "chart.title_menu",
-                    ChartTool::Ask(ChartField::Title),
-                    cx,
-                ))
-                .child(item(
-                    ("chart-data", 0),
-                    "chart.data_menu",
-                    ChartTool::Ask(ChartField::Data),
-                    cx,
-                ))
-                .child(item(
-                    ("chart-delete", 0),
-                    "chart.delete",
-                    ChartTool::Delete,
-                    cx,
-                ));
-        } else {
-            menu = menu.child(heading("chart.insert"));
-            for (index, (kind, label)) in CHART_KINDS.into_iter().enumerate() {
-                menu = menu.child(item(
-                    ("chart-insert", index),
-                    label,
-                    ChartTool::Insert(kind),
-                    cx,
-                ));
-            }
-            menu = menu
-                .child(div().h(px(1.0)).my_1().bg(palette::border()))
-                .child(item(
-                    ("chart-picture", 0),
-                    "sheet.insert_picture",
-                    ChartTool::Picture,
-                    cx,
-                ))
-                .child(heading("sheet.shapes"))
-                .child(item(
-                    ("chart-freeform", 0),
-                    "sheet.freeform",
-                    ChartTool::Freeform,
-                    cx,
-                ))
-                .child(item(
-                    ("chart-scribble", 0),
-                    "sheet.scribble",
-                    ChartTool::Scribble,
-                    cx,
-                ))
-                .child(
-                    div().flex().flex_wrap().text_xs().children(
-                        SHAPES
-                            .into_iter()
-                            .enumerate()
-                            .map(|(index, (preset, label))| {
-                                item(("chart-shape", index), label, ChartTool::Shape(preset), cx)
-                                    .w(px(110.0))
-                                    .px_2()
-                                    .truncate()
-                            }),
-                    ),
-                );
-        }
-        menu
     }
 
     /// The selected object's frame and handles, over the grid — where a
@@ -537,85 +455,6 @@ impl DocView {
                 .border_1()
                 .border_color(palette::accent())
                 .children(handles),
-        )
-    }
-
-    /// Chart Title… and Select Data…: the text, OK and Cancel.
-    pub(super) fn chart_dialog(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
-        let ask = self.sheet_ref()?.chart_asking.as_ref()?;
-        let button = |id: &'static str,
-                      label: &'static str,
-                      primary: bool,
-                      cx: &mut Context<Self>,
-                      take: bool| {
-            div()
-                .id(id)
-                .px_3()
-                .py_1()
-                .rounded_sm()
-                .border_1()
-                .border_color(palette::border())
-                .cursor_pointer()
-                .when(primary, |button| {
-                    button.bg(palette::accent()).text_color(gpui::white())
-                })
-                .hover(|button| button.opacity(0.85))
-                .child(i18n::text(label))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(cx.listener(move |view, _event, _window, cx| {
-                    if take {
-                        view.take_chart_text(cx);
-                    } else {
-                        if let Some(sheet) = view.sheet_mut() {
-                            sheet.chart_asking = None;
-                        }
-                        cx.notify();
-                    }
-                }))
-        };
-        let panel = div()
-            .w(px(320.0))
-            .flex()
-            .flex_col()
-            .gap_2()
-            .p_3()
-            .rounded_md()
-            .border_1()
-            .border_color(palette::border())
-            .bg(palette::panel())
-            .shadow_lg()
-            .text_xs()
-            .text_color(palette::text())
-            .occlude()
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .child(div().text_sm().child(i18n::text(ask.field.label_key())))
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(palette::accent())
-                    .bg(palette::canvas())
-                    .child(caret_line(&ask.text, palette::accent().into(), false)),
-            )
-            .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .gap_2()
-                    .child(button("chart-cancel", "cf.cancel", false, cx, false))
-                    .child(button("chart-ok", "cf.ok", true, cx, true)),
-            );
-        Some(
-            div()
-                .absolute()
-                .top(px(40.0))
-                .left_0()
-                .right_0()
-                .flex()
-                .justify_center()
-                .child(panel),
         )
     }
 }

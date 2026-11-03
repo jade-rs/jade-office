@@ -766,7 +766,7 @@ impl WorkbookView {
             return Some(dialog.field_mut());
         }
         if let Some(ask) = self.chart_asking.as_mut() {
-            return Some(&mut ask.text);
+            return ask.typing();
         }
         if let Some(ask) = self.asking.as_mut() {
             return ask.typing();
@@ -824,7 +824,7 @@ impl WorkbookView {
             return Some(dialog.field());
         }
         if let Some(ask) = self.chart_asking.as_ref() {
-            return Some(&ask.text);
+            return ask.typed();
         }
         if let Some(ask) = self.asking.as_ref() {
             return ask.typed();
@@ -7882,12 +7882,15 @@ mod tests {
     /// asks for its title; Delete removes it.
     #[gpui::test]
     fn a_chart_is_inserted_moved_retitled_and_deleted(cx: &mut gpui::TestAppContext) {
-        use jade_office_model::charts::{ChartField, ChartKind};
+        use jade_office_model::charts::{ChartField, ChartKind, ChartPick};
         let (view, cx) = open_view(cx);
         cx.simulate_keystrokes("shift-down shift-down shift-down shift-right shift-right");
         let id = view.update(cx, |view, cx| {
             view.tool(Tool::Open(Popup::Chart), cx);
-            view.tool(Tool::Chart(ChartTool::Insert(ChartKind::Column)), cx);
+            view.tool(
+                Tool::Chart(ChartTool::Insert(ChartPick::Kind(ChartKind::Column))),
+                cx,
+            );
             let id = view.object.expect("the new chart is selected");
             assert_eq!(view.book.chart(id).unwrap().data.as_deref(), Some("A1:C4"));
             id
@@ -7936,6 +7939,45 @@ mod tests {
         view.read_with(cx, |view, _| {
             assert!(view.object.is_none());
             assert!(view.book.chart(id).is_none());
+        });
+    }
+
+    /// Select Data… opens Select Data Source on the selected chart; Add
+    /// asks for a series in Edit Series, typed into, and Enter puts it in;
+    /// Escape closes the dialog and takes it back.
+    #[gpui::test]
+    fn select_data_adds_a_series_typed_in_and_cancel_takes_it_back(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::charts::{AskAction, ChartKind, ChartPick};
+        let (view, cx) = open_view(cx);
+        cx.simulate_keystrokes("shift-down shift-down shift-down shift-right shift-right");
+        let id = view.update(cx, |view, cx| {
+            view.tool(Tool::Open(Popup::Chart), cx);
+            view.tool(
+                Tool::Chart(ChartTool::Insert(ChartPick::Kind(ChartKind::Line))),
+                cx,
+            );
+            let id = view.object.expect("the new chart is selected");
+            view.chart_tool(ChartTool::SelectData, cx);
+            assert!(view.chart_asking.is_some());
+            view.chart_act(AskAction::Add, cx);
+            id
+        });
+        cx.simulate_input("=B2:B4");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |view, _| {
+            assert!(view.edit.is_none(), "typing went into the dialog");
+            assert!(view.chart_asking.is_some(), "Select Data Source stays open");
+            assert_eq!(view.book.chart(id).unwrap().series.len(), 3);
+        });
+        cx.simulate_keystrokes("escape");
+        view.read_with(cx, |view, _| {
+            assert!(view.chart_asking.is_none());
+            assert_eq!(view.book.chart(id).unwrap().series.len(), 2);
+        });
+        view.update(cx, |view, cx| {
+            view.chart_tool(ChartTool::Kind(ChartPick::Kind(ChartKind::Bubble)), cx);
+            assert_eq!(view.book.chart(id).unwrap().kind, Some(ChartKind::Bubble));
+            view.chart_tool(ChartTool::SwitchRows, cx);
         });
     }
 

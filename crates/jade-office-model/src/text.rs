@@ -72,6 +72,7 @@ fn floor_boundary(text: &str, offset: usize) -> usize {
 }
 
 /// Text being typed: into a cell or into a shape.
+#[derive(Debug, Clone, PartialEq)]
 pub struct TextEdit {
     pub text: String,
     /// The IME's composition, as a byte range of `text`.
