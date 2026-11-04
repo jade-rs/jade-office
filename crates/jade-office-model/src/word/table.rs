@@ -346,6 +346,8 @@ pub struct TableProperties {
     pub spacing: Option<f32>,
     /// 自動的にセルのサイズを変更する.
     pub autofit: bool,
+    /// 表の方向: 右から左 (`w:bidiVisual`).
+    pub right_to_left: bool,
     // 行
     pub row_height: Option<f32>,
     pub row_exact: bool,
@@ -467,6 +469,7 @@ impl TableProperties {
             // Word stores half the spacing its dialog shows.
             spacing: table.cell_spacing.map(|value| value * 2.0),
             autofit: table.table_layout != Some(TableLayoutMode::Fixed),
+            right_to_left: table.bidi_visual,
             row_height: row
                 .and_then(|row| row.height)
                 .filter(|_| row.and_then(|row| row.height_rule) != Some(TableRowHeightRule::Auto)),
@@ -592,6 +595,7 @@ pub struct TablePropertiesDialog {
     pub options_open: bool,
     pub spacing_on: bool,
     pub autofit: bool,
+    pub right_to_left: bool,
     // 行
     pub row_height_on: bool,
     pub row_exact: bool,
@@ -680,6 +684,7 @@ impl TablePropertiesDialog {
             options_open: false,
             spacing_on: properties.spacing.is_some(),
             autofit: properties.autofit,
+            right_to_left: properties.right_to_left,
             row_height_on: properties.row_height.is_some(),
             row_exact: properties.row_exact,
             allow_break: properties.allow_break,
@@ -1031,6 +1036,14 @@ impl TablePropertiesDialog {
             commands.push(HeadlessCommand::SetTableColumnWidths {
                 table_order_index,
                 widths: grid,
+            });
+        }
+
+        // 表の方向.
+        if self.right_to_left != original.right_to_left {
+            commands.push(HeadlessCommand::SetTableDirection {
+                table_order_index,
+                right_to_left: self.right_to_left,
             });
         }
 
@@ -2717,6 +2730,7 @@ mod tests {
             margins: [0.0, 0.0, 5.4, 5.4],
             spacing: None,
             autofit: true,
+            right_to_left: false,
             row_height: None,
             row_exact: false,
             allow_break: true,
@@ -2774,6 +2788,16 @@ mod tests {
         assert!(!commands
             .iter()
             .any(|command| matches!(command, HeadlessCommand::SetTableCellFitText { .. })));
+        assert!(!commands
+            .iter()
+            .any(|command| matches!(command, HeadlessCommand::SetTableDirection { .. })));
+        dialog.right_to_left = true;
+        assert!(dialog.commands(span, 2, &[100.0, 100.0], 450.0).contains(
+            &HeadlessCommand::SetTableDirection {
+                table_order_index: 0,
+                right_to_left: true,
+            }
+        ));
         // セル › オプション › 文字列をセル幅に合わせる.
         dialog.fit_text = true;
         let commands = dialog.commands(span, 2, &[100.0, 100.0], 450.0);

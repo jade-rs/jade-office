@@ -1494,6 +1494,18 @@ fn properties_body(
                 )))
                 .child(
                     line()
+                        .child(label("table.prop.direction"))
+                        .child(
+                            chip("direction-rtl", t("table.prop.rtl"), dialog.right_to_left)
+                                .on_click(props(cx, |dialog| dialog.right_to_left = true)),
+                        )
+                        .child(
+                            chip("direction-ltr", t("table.prop.ltr"), !dialog.right_to_left)
+                                .on_click(props(cx, |dialog| dialog.right_to_left = false)),
+                        ),
+                )
+                .child(
+                    line()
                         .child(label("table.prop.wrapping"))
                         .child(
                             chip("wrap-none", t("table.prop.wrap_none"), !dialog.floating)
@@ -2485,6 +2497,32 @@ mod tests {
             assert!(view.tables.dialog.is_none());
             let properties = view.document.table_properties().unwrap();
             assert!((properties.row_height.unwrap() - 21.0 / MM_PER_PT).abs() < 0.5);
+        });
+    }
+
+    /// 表 › 表の方向: 右から左 is drawn as a chip and OK mirrors the table.
+    #[gpui::test]
+    fn the_table_direction_runs_right_to_left(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = with_table(cx);
+        view.update(cx, |view, cx| {
+            assert!(!view.document.table_properties().unwrap().right_to_left);
+            view.run_ribbon(
+                Action::Tables(TableAction::Properties(PropertiesTab::Table)),
+                cx,
+            );
+            let Some(TableDialog::Properties(dialog)) = view.tables.dialog.as_mut() else {
+                panic!("the properties dialog is open");
+            };
+            dialog.right_to_left = true;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, _| {
+            assert!(view.tables.dialog.is_none());
+            assert!(view.document.table_properties().unwrap().right_to_left);
+            view.document.undo().unwrap();
+            assert!(!view.document.table_properties().unwrap().right_to_left);
         });
     }
 

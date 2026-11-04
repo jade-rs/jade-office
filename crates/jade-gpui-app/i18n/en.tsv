@@ -5131,3 +5131,6 @@ paragraph.mirror_indents	Mirror indents
 paragraph.inside	Inside
 paragraph.outside	Outside
 table.prop.fit_text	Fit text
+table.prop.direction	Table direction
+table.prop.rtl	Right-to-left
+table.prop.ltr	Left-to-right

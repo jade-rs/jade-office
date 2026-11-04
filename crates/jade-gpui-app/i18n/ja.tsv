@@ -5131,3 +5131,6 @@ paragraph.mirror_indents	見開きページのインデント設定
 paragraph.inside	内側
 paragraph.outside	外側
 table.prop.fit_text	文字列をセル幅に合わせる
+table.prop.direction	表の方向
+table.prop.rtl	右から左
+table.prop.ltr	左から右

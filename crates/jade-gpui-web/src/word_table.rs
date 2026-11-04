@@ -1238,6 +1238,18 @@ fn properties_body(
                 )))
                 .child(
                     line()
+                        .child(label("table.prop.direction"))
+                        .child(
+                            chip("direction-rtl", t("table.prop.rtl"), dialog.right_to_left)
+                                .on_click(props(cx, |dialog| dialog.right_to_left = true)),
+                        )
+                        .child(
+                            chip("direction-ltr", t("table.prop.ltr"), !dialog.right_to_left)
+                                .on_click(props(cx, |dialog| dialog.right_to_left = false)),
+                        ),
+                )
+                .child(
+                    line()
                         .child(label("table.prop.wrapping"))
                         .child(
                             chip("wrap-none", t("table.prop.wrap_none"), !dialog.floating)

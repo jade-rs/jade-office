@@ -700,3 +700,42 @@ fn fit_text_spreads_a_cell_and_is_saved() {
     reopened.place_caret(cell_paragraph(&reopened, 0, 0, 1), 0);
     assert!(!reopened.table_properties().unwrap().fit_text);
 }
+
+/// 表 › 表の方向 › 右から左: the first column moves to the right edge of the
+/// page, saved as `w:bidiVisual` and read back.
+#[test]
+fn table_direction_mirrors_the_columns_and_is_saved() {
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["一", "二"]]);
+    let first_left = |document: &EditableDocument| {
+        let left = |column: usize| {
+            document
+                .cell_layouts()
+                .iter()
+                .find(|cell| cell.row == 0 && cell.column == column)
+                .map(|cell| cell.left)
+                .unwrap()
+        };
+        left(0) < left(1)
+    };
+    assert!(first_left(&document));
+    document.place_caret(cell_paragraph(&document, 0, 0, 0), 0);
+    let properties = document.table_properties().unwrap();
+    assert!(!properties.right_to_left);
+    let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Table);
+    dialog.right_to_left = true;
+    document.apply_table_properties(&dialog).unwrap();
+
+    assert!(
+        !first_left(&document),
+        "the first column is drawn at the right"
+    );
+    document.place_caret(cell_paragraph(&document, 0, 0, 0), 0);
+    assert!(document.table_properties().unwrap().right_to_left);
+    let bytes = document.export_docx().unwrap();
+    assert!(document_xml(&bytes).contains("<w:bidiVisual/>"));
+    let mut reopened = open_bytes(&bytes);
+    reopened.place_caret(cell_paragraph(&reopened, 0, 0, 0), 0);
+    assert!(reopened.table_properties().unwrap().right_to_left);
+    assert!(!first_left(&reopened));
+}
