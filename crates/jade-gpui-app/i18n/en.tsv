@@ -5127,3 +5127,6 @@ object.from_file	From File...
 object.group	Object
 object.button	Object
 object.tooltip	Embed a file in the document as an object
+paragraph.mirror_indents	Mirror indents
+paragraph.inside	Inside
+paragraph.outside	Outside

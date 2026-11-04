@@ -103,6 +103,8 @@ pub struct ParagraphFormat {
     pub outline_locked: bool,
     /// 既定で折りたたみ.
     pub collapsed: bool,
+    /// 見開きページのインデント設定: 左 and 右 are 内側 and 外側.
+    pub mirror_indents: bool,
 }
 
 /// 本文 as an outline level.
@@ -245,6 +247,7 @@ pub trait WordParagraphs: WordSession {
             outline_level: outline.level,
             outline_locked: outline.style_level < BODY_TEXT,
             collapsed: outline.collapsed,
+            mirror_indents: props.mirror_indents.unwrap_or(false),
         }
     }
 
@@ -375,6 +378,19 @@ pub trait WordParagraphs: WordSession {
                 end_paragraph,
                 level,
                 collapsed,
+            });
+        }
+        if now.mirror_indents != was.mirror_indents {
+            commands.push(HeadlessCommand::SetParagraphOptions {
+                start_paragraph,
+                end_paragraph,
+                tabs: None,
+                contextual_spacing: None,
+                suppress_line_numbers: None,
+                suppress_auto_hyphens: None,
+                borders: None,
+                shading: None,
+                mirror_indents: Some(now.mirror_indents),
             });
         }
         Ok(commands)
@@ -628,6 +644,7 @@ mod tests {
             outline_level: BODY_TEXT,
             outline_locked: false,
             collapsed: false,
+            mirror_indents: false,
         };
         let mut form = ParagraphForm::new(format);
         assert_eq!(form.number(ParagraphField::Left), Some(1.0));

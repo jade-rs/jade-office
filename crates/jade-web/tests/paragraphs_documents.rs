@@ -129,6 +129,43 @@ fn the_ribbon_line_spacing_reads_back() {
     );
 }
 
+/// 見開きページのインデント設定: the paragraph's left indent is its inside
+/// one, so on an even page it is taken from the right, as Word lays it out.
+#[test]
+fn mirror_indents_put_the_left_indent_inside() {
+    let mut document = common::open_bytes(&blank_document(Blank::English));
+    document.place_caret(0, 0);
+    document.insert_text("Page one").unwrap();
+    document.insert_paragraph_break().unwrap();
+    document
+        .insert_text("Page two, indented from the inside of the spread")
+        .unwrap();
+    let was = document.paragraph_format();
+    let mut form = ParagraphForm::new(was.clone());
+    type_into(&mut form, ParagraphField::Left, "50");
+    form.format.page_break_before = true;
+    form.submit(&mut document).unwrap();
+    let plain = document.page(1).expect("page two").rgba_premultiplied();
+
+    let was = document.paragraph_format();
+    assert!(!was.mirror_indents);
+    let mut form = ParagraphForm::new(was.clone());
+    form.format.mirror_indents = true;
+    form.submit(&mut document).unwrap();
+    assert!(document.paragraph_format().mirror_indents);
+    assert!(
+        document.page(1).unwrap().rgba_premultiplied() != plain,
+        "on an even page the inside indent is on the right"
+    );
+
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    assert!(xml.contains("<w:mirrorIndents/>"), "{xml}");
+    document.undo().unwrap();
+    assert!(!document.paragraph_format().mirror_indents);
+}
+
 /// アウトライン レベル and 既定で折りたたみ: a body paragraph given レベル 2
 /// joins the navigation pane and アウトライン at that level, saved as
 /// `w:outlineLvl` and `w15:collapsed`; the reopened document collapses it.

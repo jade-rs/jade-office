@@ -510,10 +510,16 @@ impl DocumentView {
                 move |form| form.format.alignment = value.to_string(),
             ));
         }
+        // 見開きページのインデント設定: 左 and 右 become 内側 and 外側.
+        let (left, right) = if format.mirror_indents {
+            ("paragraph.inside", "paragraph.outside")
+        } else {
+            ("paragraph.left", "paragraph.right")
+        };
         let mut indent = vec![
             caption(t("paragraph.indent")),
-            self.number(form, ParagraphField::Left, t("paragraph.left"), cx),
-            self.number(form, ParagraphField::Right, t("paragraph.right"), cx),
+            self.number(form, ParagraphField::Left, t(left), cx),
+            self.number(form, ParagraphField::Right, t(right), cx),
             div()
                 .text_xs()
                 .text_color(theme::text_dim())
@@ -539,6 +545,13 @@ impl DocumentView {
             ));
         }
         indent.push(self.number(form, ParagraphField::SpecialBy, t("paragraph.by"), cx));
+        indent.push(self.check(
+            "paragraph-mirror-indents",
+            t("paragraph.mirror_indents"),
+            format.mirror_indents,
+            cx,
+            |form| form.format.mirror_indents = !form.format.mirror_indents,
+        ));
         let mut spacing = vec![
             caption(t("paragraph.spacing")),
             self.number(form, ParagraphField::Before, t("paragraph.before"), cx),

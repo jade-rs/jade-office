@@ -5127,3 +5127,6 @@ object.from_file	ファイルから...
 object.group	オブジェクト
 object.button	オブジェクト
 object.tooltip	ファイルをオブジェクトとして文書に埋め込みます
+paragraph.mirror_indents	見開きページのインデント設定
+paragraph.inside	内側
+paragraph.outside	外側
