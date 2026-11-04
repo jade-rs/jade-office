@@ -1465,6 +1465,31 @@ impl EditableDocument {
         &self.field_shading
     }
 
+    /// トリムマーク and 文字列の範囲 (Word 環境設定 › 表示): the corner marks
+    /// and the dotted line round each page's text area. Repaints when they
+    /// changed; whether they did.
+    pub fn set_page_guides(
+        &mut self,
+        crop_marks: bool,
+        text_boundaries: bool,
+    ) -> Result<bool, String> {
+        if self.page_guides() == (crop_marks, text_boundaries) {
+            return Ok(false);
+        }
+        self.options.show_crop_marks = crop_marks;
+        self.options.show_text_boundaries = text_boundaries;
+        self.repaint_all()?;
+        Ok(true)
+    }
+
+    /// Whether the crop marks and the text boundaries are drawn.
+    pub fn page_guides(&self) -> (bool, bool) {
+        (
+            self.options.show_crop_marks,
+            self.options.show_text_boundaries,
+        )
+    }
+
     /// Which fields show their codes.
     pub fn field_code_view(&self) -> &jade_docx_editor::fields::FieldCodeView {
         &self.field_codes
@@ -1587,6 +1612,8 @@ impl EditableDocument {
         fresh.renderer.set_field_shading(self.field_shading.clone());
         fresh.field_datetime = self.field_datetime;
         fresh.options.show_formatting_marks = self.options.show_formatting_marks;
+        fresh.options.show_crop_marks = self.options.show_crop_marks;
+        fresh.options.show_text_boundaries = self.options.show_text_boundaries;
         fresh
             .options
             .set_formatting_mark_kinds(self.options.formatting_mark_kinds());

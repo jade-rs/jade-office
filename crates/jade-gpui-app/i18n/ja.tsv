@@ -5142,3 +5142,5 @@ options.field_shading	フィールドの網かけ
 options.field_shading.never	表示しない
 options.field_shading.always	常に表示する
 options.field_shading.selected	選択時に表示する
+options.text_boundaries	文字列の範囲
+options.crop_marks	トリムマーク

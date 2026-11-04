@@ -52,3 +52,25 @@ fn field_shading_follows_the_setting_and_the_caret() {
     let saved = common::open_bytes(&document.export_docx().unwrap());
     assert!(page_pixels(&saved) == plain);
 }
+
+/// トリムマーク and 文字列の範囲: the corner marks go and the dotted line
+/// round the text area comes, on the page only.
+#[test]
+fn crop_marks_and_text_boundaries_are_view_settings() {
+    let mut document = common::open_bytes(&blank_document(Blank::English));
+    assert_eq!(document.page_guides(), (true, false), "Word's defaults");
+    let marked = page_pixels(&document);
+    assert!(document.set_page_guides(false, false).unwrap());
+    let bare = page_pixels(&document);
+    assert!(marked != bare, "the crop marks are drawn");
+    assert!(document.set_page_guides(false, true).unwrap());
+    let bounded = page_pixels(&document);
+    assert!(
+        bounded != bare && bounded != marked,
+        "the text area is outlined"
+    );
+    assert!(!document.set_page_guides(false, true).unwrap(), "unchanged");
+    let saved = common::open_bytes(&document.export_docx().unwrap());
+    assert_eq!(saved.page_guides(), (true, false));
+    assert!(page_pixels(&saved) == marked);
+}

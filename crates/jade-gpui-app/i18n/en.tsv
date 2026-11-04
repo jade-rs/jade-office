@@ -5142,3 +5142,5 @@ options.field_shading	Field shading
 options.field_shading.never	Never
 options.field_shading.always	Always
 options.field_shading.selected	When selected
+options.text_boundaries	Text boundaries
+options.crop_marks	Crop marks

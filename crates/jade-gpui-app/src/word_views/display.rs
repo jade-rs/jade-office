@@ -1,5 +1,5 @@
 //! Word 環境設定 › 表示's settings for how the page is shown: フィールドの
-//! 網かけ. Kept in the options file for every document, never written into
+//! 網かけ, トリムマーク and 文字列の範囲. Kept in the options file for every document, never written into
 //! one, and left out of a PDF.
 
 use std::cell::RefCell;
@@ -10,7 +10,7 @@ use jade_office_model::word::fields::SelectionRange;
 use jade_office_model::word::WordSession;
 
 use super::settings;
-use crate::word_dialog::{chip, on};
+use crate::word_dialog::{check, chip, on};
 use crate::{i18n, theme, DocumentView};
 
 const OPTIONS: &str = "options.txt";
@@ -38,9 +38,35 @@ thread_local! {
     static SHADED: RefCell<Option<ShadingKey>> = const { RefCell::new(None) };
 }
 
+/// トリムマーク (on unless switched off) and 文字列の範囲 (off unless
+/// switched on).
+pub fn page_guides() -> (bool, bool) {
+    let flag = |key: &str, default: bool| {
+        settings::value(OPTIONS, key).map_or(default, |value| value == "1")
+    };
+    (flag("crop_marks", true), flag("text_boundaries", false))
+}
+
+fn set_page_guide(key: &str, on: bool) {
+    settings::set_value(OPTIONS, key, if on { "1" } else { "0" });
+}
+
 /// Gives the document the shading the setting asks for — with 選択時に表示
 /// する, of the field the caret is in — repainting when it changed.
 pub fn apply(view: &mut DocumentView) {
+    let (crop_marks, text_boundaries) = page_guides();
+    if (view.document.crop_marks(), view.document.text_boundaries())
+        != (crop_marks, text_boundaries)
+    {
+        let shown = view
+            .document
+            .set_crop_marks(crop_marks)
+            .and_then(|()| view.document.set_text_boundaries(text_boundaries));
+        match shown {
+            Ok(()) => view.rebuild_all_images(),
+            Err(error) => view.table_status = Some(error.into()),
+        }
+    }
     let mode = field_shading();
     let key = (
         view as *const DocumentView as usize,
@@ -68,11 +94,34 @@ pub fn apply(view: &mut DocumentView) {
 /// The 表示 page's part for them.
 pub fn settings_section(cx: &Context<DocumentView>) -> AnyElement {
     let now = field_shading();
+    let (crop_marks, text_boundaries) = page_guides();
     div()
         .flex()
         .flex_col()
         .gap_1()
         .pt_2()
+        .child(
+            check(
+                "options-text-boundaries",
+                t("options.text_boundaries"),
+                text_boundaries,
+            )
+            .on_click(on(cx, move |view, cx| {
+                set_page_guide("text_boundaries", !text_boundaries);
+                apply(view);
+                cx.notify();
+            })),
+        )
+        .child(
+            check("options-crop-marks", t("options.crop_marks"), crop_marks).on_click(on(
+                cx,
+                move |view, cx| {
+                    set_page_guide("crop_marks", !crop_marks);
+                    apply(view);
+                    cx.notify();
+                },
+            )),
+        )
         .child(
             div()
                 .text_color(theme::text_dim())
@@ -126,6 +175,15 @@ mod tests {
             apply(view);
             assert_eq!(view.document.field_shading(), &FieldShading::Never);
             set_field_shading(FieldShadingMode::default());
+            // トリムマーク off, 文字列の範囲 on, and back.
+            set_page_guide("crop_marks", false);
+            set_page_guide("text_boundaries", true);
+            apply(view);
+            assert!(!view.document.crop_marks() && view.document.text_boundaries());
+            set_page_guide("crop_marks", true);
+            set_page_guide("text_boundaries", false);
+            apply(view);
+            assert!(view.document.crop_marks() && !view.document.text_boundaries());
         });
         // Drawn in 環境設定 › 表示.
         view.update(cx, |view, cx| {
