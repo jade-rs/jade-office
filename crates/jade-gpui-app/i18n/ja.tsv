@@ -5138,3 +5138,7 @@ table.tab.alt_text	代替テキスト
 table.prop.alt_title	タイトル
 table.prop.alt_description	説明
 table.prop.alt_hint	タイトルと説明は、表の内容を読み上げ機能などで伝えるために使われます。
+options.field_shading	フィールドの網かけ
+options.field_shading.never	表示しない
+options.field_shading.always	常に表示する
+options.field_shading.selected	選択時に表示する

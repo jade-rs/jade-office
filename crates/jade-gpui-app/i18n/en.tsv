@@ -5138,3 +5138,7 @@ table.tab.alt_text	Alt Text
 table.prop.alt_title	Title
 table.prop.alt_description	Description
 table.prop.alt_hint	The title and description tell people who use screen readers what the table holds.
+options.field_shading	Field shading
+options.field_shading.never	Never
+options.field_shading.always	Always
+options.field_shading.selected	When selected

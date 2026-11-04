@@ -129,6 +129,8 @@ pub struct EditableDocument {
     deferred_repaint: Option<usize>,
     /// Which fields show their codes (⌥F9, ⇧F9).
     field_codes: jade_docx_editor::fields::FieldCodeView,
+    /// フィールドの網かけ, on screen only.
+    field_shading: jade_docx_editor::canvas_renderer::FieldShading,
     /// The clock DATE and TIME show; without one, the result Word saved.
     field_datetime: Option<jade_office_model::word::fields::FieldDateTime>,
     /// A view's page box and アウトライン's indents: see
@@ -244,6 +246,7 @@ impl EditableDocument {
             deferred_repaint: None,
             repainted_pages: std::collections::BTreeSet::new(),
             field_codes: Default::default(),
+            field_shading: Default::default(),
             field_datetime: None,
             view: ViewLayout::default(),
         })
@@ -1442,6 +1445,26 @@ impl EditableDocument {
         self.field_datetime = datetime;
     }
 
+    /// フィールドの網かけ: which fields' text is drawn on Word's grey (on
+    /// screen only). Repaints when it changed; whether it did.
+    pub fn set_field_shading(
+        &mut self,
+        shading: jade_docx_editor::canvas_renderer::FieldShading,
+    ) -> Result<bool, String> {
+        if self.field_shading == shading {
+            return Ok(false);
+        }
+        self.field_shading = shading.clone();
+        self.renderer.set_field_shading(shading);
+        self.repaint_all()?;
+        Ok(true)
+    }
+
+    /// Which fields are drawn shaded.
+    pub fn field_shading(&self) -> &jade_docx_editor::canvas_renderer::FieldShading {
+        &self.field_shading
+    }
+
     /// Which fields show their codes.
     pub fn field_code_view(&self) -> &jade_docx_editor::fields::FieldCodeView {
         &self.field_codes
@@ -1560,6 +1583,8 @@ impl EditableDocument {
         )?;
         fresh.dirty = true;
         fresh.field_codes = self.field_codes.clone();
+        fresh.field_shading = self.field_shading.clone();
+        fresh.renderer.set_field_shading(self.field_shading.clone());
         fresh.field_datetime = self.field_datetime;
         fresh.options.show_formatting_marks = self.options.show_formatting_marks;
         fresh
@@ -1750,6 +1775,7 @@ impl EditableDocument {
         )?;
         let dark = self.dark_paper.get();
         self.renderer = renderer;
+        self.renderer.set_field_shading(self.field_shading.clone());
         self.pages = host.pages;
         self.rendered_pages = host.rendered;
         self.pass_covers_whole_document = host.whole;

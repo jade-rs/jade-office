@@ -48,6 +48,7 @@ pub mod design;
 pub mod diagrams;
 pub mod embedding;
 pub mod equation;
+pub mod field_shading;
 pub mod fields;
 pub mod find;
 pub mod fit_text;

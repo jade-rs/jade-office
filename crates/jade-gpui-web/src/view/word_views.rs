@@ -20,6 +20,7 @@ use jade_web::word::view::{
 };
 
 pub mod customize;
+pub mod display;
 pub mod mini;
 pub mod modes;
 pub mod options;
@@ -406,6 +407,7 @@ impl DocumentView {
                 Err(error) => self.set_status(error.into()),
             }
         }
+        display::apply(self);
         changed
     }
 
