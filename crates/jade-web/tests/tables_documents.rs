@@ -739,3 +739,37 @@ fn table_direction_mirrors_the_columns_and_is_saved() {
     assert!(reopened.table_properties().unwrap().right_to_left);
     assert!(!first_left(&reopened));
 }
+
+/// 代替テキスト: typed into the tab's boxes, saved as `w:tblCaption` and
+/// `w:tblDescription`, read back into the dialog.
+#[test]
+fn alt_text_is_typed_saved_and_read_back() {
+    let mut document = with_table(2, 2);
+    let properties = document.table_properties().unwrap();
+    assert_eq!(properties.alt_title, "");
+    let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::AltText);
+    dialog.type_text("社員名簿");
+    dialog.next_alt_field();
+    dialog.type_text("氏名と部署の一覧");
+    document.apply_table_properties(&dialog).unwrap();
+
+    let bytes = document.export_docx().unwrap();
+    let xml = document_xml(&bytes);
+    assert!(xml.contains(r#"<w:tblCaption w:val="社員名簿"/>"#), "{xml}");
+    assert!(
+        xml.contains(r#"<w:tblDescription w:val="氏名と部署の一覧"/>"#),
+        "{xml}"
+    );
+    let mut reopened = open_bytes(&bytes);
+    reopened.place_caret(cell_paragraph(&reopened, 0, 0, 0), 0);
+    let read = reopened.table_properties().unwrap();
+    assert_eq!(read.alt_title, "社員名簿");
+    assert_eq!(read.alt_description, "氏名と部署の一覧");
+    // Emptied, it is taken off.
+    let mut dialog = TablePropertiesDialog::new(read, PropertiesTab::AltText);
+    dialog.alt_title.text.clear();
+    reopened.apply_table_properties(&dialog).unwrap();
+    let xml = document_xml(&reopened.export_docx().unwrap());
+    assert!(!xml.contains("tblCaption"), "{xml}");
+    assert!(xml.contains("tblDescription"), "{xml}");
+}

@@ -364,6 +364,11 @@ pub struct TableProperties {
     pub text_direction: String,
     /// オプション › 文字列をセル幅に合わせる (`w:tcFitText`).
     pub fit_text: bool,
+    // 代替テキスト
+    /// タイトル (`w:tblCaption`).
+    pub alt_title: String,
+    /// 説明 (`w:tblDescription`).
+    pub alt_description: String,
 }
 
 /// 表の位置.
@@ -505,26 +510,39 @@ impl TableProperties {
                 .unwrap_or("lrTb")
                 .to_string(),
             fit_text: cell_model.is_some_and(|cell| cell.style.contains_key("fit-text")),
+            // Kept in the package, not the reader's table: filled in by
+            // `WordTables::table_properties`.
+            alt_title: String::new(),
+            alt_description: String::new(),
         }
     }
 }
 
-/// 表のプロパティ's four tabs.
+/// 表のプロパティ's tabs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PropertiesTab {
     Table,
     Row,
     Column,
     Cell,
+    AltText,
 }
 
 impl PropertiesTab {
-    pub const ALL: [PropertiesTab; 4] = [
+    pub const ALL: [PropertiesTab; 5] = [
         PropertiesTab::Table,
         PropertiesTab::Row,
         PropertiesTab::Column,
         PropertiesTab::Cell,
+        PropertiesTab::AltText,
     ];
+}
+
+/// 代替テキスト's two boxes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AltField {
+    Title,
+    Description,
 }
 
 /// A number box of the dialog.
@@ -609,6 +627,11 @@ pub struct TablePropertiesDialog {
     pub cell_options_open: bool,
     pub cell_margins_same: bool,
     pub fit_text: bool,
+    // 代替テキスト
+    pub alt_title: crate::text::TextEdit,
+    pub alt_description: crate::text::TextEdit,
+    /// The box with the keyboard while the tab shows.
+    pub alt_focus: AltField,
 }
 
 impl TablePropertiesDialog {
@@ -695,6 +718,9 @@ impl TablePropertiesDialog {
             cell_options_open: false,
             cell_margins_same: properties.cell_margins.is_none(),
             fit_text: properties.fit_text,
+            alt_title: crate::text::TextEdit::new(properties.alt_title.clone()),
+            alt_description: crate::text::TextEdit::new(properties.alt_description.clone()),
+            alt_focus: AltField::Title,
             original: properties,
         }
     }
@@ -704,8 +730,39 @@ impl TablePropertiesDialog {
         self.text.get(&field).map(String::as_str).unwrap_or("")
     }
 
-    /// Typing into the focused box: digits, a point, Backspace.
+    /// 代替テキスト's box with the keyboard, while that tab shows.
+    pub fn alt_field(&self) -> Option<&crate::text::TextEdit> {
+        (self.tab == PropertiesTab::AltText).then_some(match self.alt_focus {
+            AltField::Title => &self.alt_title,
+            AltField::Description => &self.alt_description,
+        })
+    }
+
+    pub fn alt_field_mut(&mut self) -> Option<&mut crate::text::TextEdit> {
+        if self.tab != PropertiesTab::AltText {
+            return None;
+        }
+        Some(match self.alt_focus {
+            AltField::Title => &mut self.alt_title,
+            AltField::Description => &mut self.alt_description,
+        })
+    }
+
+    /// Tab moves between 代替テキスト's boxes.
+    pub fn next_alt_field(&mut self) {
+        self.alt_focus = match self.alt_focus {
+            AltField::Title => AltField::Description,
+            AltField::Description => AltField::Title,
+        };
+    }
+
+    /// Typing into the focused box: digits, a point, Backspace — or any
+    /// text in 代替テキスト's boxes.
     pub fn type_text(&mut self, typed: &str) {
+        if let Some(field) = self.alt_field_mut() {
+            field.insert(typed);
+            return;
+        }
         let Some(field) = self.focus else {
             return;
         };
@@ -727,6 +784,10 @@ impl TablePropertiesDialog {
     }
 
     pub fn backspace(&mut self) {
+        if let Some(field) = self.alt_field_mut() {
+            field.edit_key("backspace");
+            return;
+        }
         if let Some(field) = self.focus {
             self.text.entry(field).or_default().pop();
         }
@@ -1036,6 +1097,19 @@ impl TablePropertiesDialog {
             commands.push(HeadlessCommand::SetTableColumnWidths {
                 table_order_index,
                 widths: grid,
+            });
+        }
+
+        // 代替テキスト: only the box that changed.
+        let title =
+            (self.alt_title.text != original.alt_title).then(|| self.alt_title.text.clone());
+        let description = (self.alt_description.text != original.alt_description)
+            .then(|| self.alt_description.text.clone());
+        if title.is_some() || description.is_some() {
+            commands.push(HeadlessCommand::SetTableAltText {
+                table_order_index,
+                title,
+                description,
             });
         }
 
@@ -1815,7 +1889,12 @@ pub trait WordTables: WordSession {
         let table = self
             .word_document()
             .table_by_order(cell.table_order_index)?;
-        Some(TableProperties::read(table, cell))
+        let order = cell.table_order_index;
+        let mut properties = TableProperties::read(table, cell);
+        let (title, description) = self.word_document().table_alt_text(order);
+        properties.alt_title = title.unwrap_or_default();
+        properties.alt_description = description.unwrap_or_default();
+        Some(properties)
     }
 
     /// 表のプロパティ's OK.
@@ -2740,6 +2819,8 @@ mod tests {
             cell_margins: None,
             text_direction: "lrTb".to_string(),
             fit_text: false,
+            alt_title: String::new(),
+            alt_description: String::new(),
         };
         let span = CellSpan {
             table_order_index: 0,
@@ -2796,6 +2877,22 @@ mod tests {
             &HeadlessCommand::SetTableDirection {
                 table_order_index: 0,
                 right_to_left: true,
+            }
+        ));
+        // 代替テキスト: typed text, Backspace, Tab to the next box.
+        dialog.tab = PropertiesTab::AltText;
+        dialog.focus = Some(Field::RowHeight);
+        let row_height = dialog.value(Field::RowHeight).to_string();
+        dialog.type_text("社員名簿x");
+        dialog.backspace();
+        dialog.next_alt_field();
+        dialog.type_text("一覧");
+        assert_eq!(dialog.value(Field::RowHeight), row_height);
+        assert!(dialog.commands(span, 2, &[100.0, 100.0], 450.0).contains(
+            &HeadlessCommand::SetTableAltText {
+                table_order_index: 0,
+                title: Some("社員名簿".to_string()),
+                description: Some("一覧".to_string()),
             }
         ));
         // セル › オプション › 文字列をセル幅に合わせる.

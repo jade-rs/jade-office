@@ -13,9 +13,9 @@ use gpui::{
     MouseMoveEvent, SharedString, Window,
 };
 use jade_office_model::word::table::{
-    AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field, LookOption, Pen,
-    PropertiesTab, SortKind as HeadlessTableSortKind, TablePart, TablePropertiesDialog, WordTables,
-    MM_PER_PT,
+    AltField, AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field,
+    LookOption, Pen, PropertiesTab, SortKind as HeadlessTableSortKind, TablePart,
+    TablePropertiesDialog, WordTables, MM_PER_PT,
 };
 use jade_office_model::word::{FormatState, TableCommand, WordSession};
 
@@ -1080,6 +1080,21 @@ impl DocumentView {
         if keystroke.modifiers.platform || keystroke.modifiers.control {
             return false;
         }
+        // 代替テキスト's boxes edit as text fields do; what is typed comes
+        // through the input handler (`alt_text_field_mut`).
+        if let Some(field) = alt_text_field_mut(self) {
+            if field.marked.is_some() {
+                return false;
+            }
+            let key = keystroke.key.as_str();
+            if !matches!(key, "enter" | "return" | "escape" | "tab") {
+                let edited = field.edit_key(key);
+                if edited {
+                    cx.notify();
+                }
+                return edited;
+            }
+        }
         let Some(outcome) = self.tables.dialog_key(
             &mut self.document,
             keystroke.key.as_str(),
@@ -1403,6 +1418,23 @@ pub(crate) fn table_spin(dialog: &TablePropertiesDialog, field: Field) -> Spin {
     .width(80.0)
 }
 
+/// 代替テキスト's box with the keyboard, when 表のプロパティ shows that tab.
+pub(crate) fn alt_text_field(view: &DocumentView) -> Option<&jade_office_model::text::TextEdit> {
+    match view.tables.dialog.as_ref()? {
+        TableDialog::Properties(dialog) => dialog.alt_field(),
+        _ => None,
+    }
+}
+
+pub(crate) fn alt_text_field_mut(
+    view: &mut DocumentView,
+) -> Option<&mut jade_office_model::text::TextEdit> {
+    match view.tables.dialog.as_mut()? {
+        TableDialog::Properties(dialog) => dialog.alt_field_mut(),
+        _ => None,
+    }
+}
+
 fn number_box(
     view: &DocumentView,
     dialog: &TablePropertiesDialog,
@@ -1429,6 +1461,7 @@ fn properties_body(
                     PropertiesTab::Row => "table.tab.row",
                     PropertiesTab::Column => "table.tab.column",
                     PropertiesTab::Cell => "table.tab.cell",
+                    PropertiesTab::AltText => "table.tab.alt_text",
                 }),
                 dialog.tab == tab,
             )
@@ -1659,6 +1692,38 @@ fn properties_body(
                         })),
                     )
                     .child(number_box(view, dialog, Field::ColumnWidth, cx)),
+            ),
+        PropertiesTab::AltText => div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .id("alt-title")
+                    .child(crate::word_dialogs::field_box(
+                        t("table.prop.alt_title"),
+                        &dialog.alt_title,
+                        dialog.alt_focus == AltField::Title,
+                        320.0,
+                    ))
+                    .on_click(props(cx, |dialog| dialog.alt_focus = AltField::Title)),
+            )
+            .child(
+                div()
+                    .id("alt-description")
+                    .child(crate::word_dialogs::field_box(
+                        t("table.prop.alt_description"),
+                        &dialog.alt_description,
+                        dialog.alt_focus == AltField::Description,
+                        320.0,
+                    ))
+                    .on_click(props(cx, |dialog| dialog.alt_focus = AltField::Description)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme::text_dim())
+                    .child(t("table.prop.alt_hint")),
             ),
         PropertiesTab::Cell => {
             let mut body = div()
@@ -2497,6 +2562,37 @@ mod tests {
             assert!(view.tables.dialog.is_none());
             let properties = view.document.table_properties().unwrap();
             assert!((properties.row_height.unwrap() - 21.0 / MM_PER_PT).abs() < 0.5);
+        });
+    }
+
+    /// 代替テキスト: the tab is drawn, typing (through the input handler, as
+    /// the IME sends it) fills タイトル, Tab moves to 説明, OK saves both.
+    #[gpui::test]
+    fn the_alt_text_tab_takes_a_title_and_description(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = with_table(cx);
+        view.update(cx, |view, cx| {
+            view.run_ribbon(
+                Action::Tables(TableAction::Properties(PropertiesTab::AltText)),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        cx.simulate_input("社員名簿x");
+        cx.simulate_keystrokes("backspace tab");
+        cx.simulate_input("氏名と部署");
+        view.read_with(cx, |view, _| {
+            let Some(TableDialog::Properties(dialog)) = view.tables.dialog.as_ref() else {
+                panic!("the properties dialog is open");
+            };
+            assert_eq!(dialog.alt_title.text, "社員名簿");
+            assert_eq!(dialog.alt_description.text, "氏名と部署");
+        });
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, _| {
+            assert!(view.tables.dialog.is_none());
+            let properties = view.document.table_properties().unwrap();
+            assert_eq!(properties.alt_title, "社員名簿");
+            assert_eq!(properties.alt_description, "氏名と部署");
         });
     }
 

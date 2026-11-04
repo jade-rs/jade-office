@@ -5134,3 +5134,7 @@ table.prop.fit_text	Fit text
 table.prop.direction	Table direction
 table.prop.rtl	Right-to-left
 table.prop.ltr	Left-to-right
+table.tab.alt_text	Alt Text
+table.prop.alt_title	Title
+table.prop.alt_description	Description
+table.prop.alt_hint	The title and description tell people who use screen readers what the table holds.

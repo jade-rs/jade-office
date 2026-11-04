@@ -5134,3 +5134,7 @@ table.prop.fit_text	文字列をセル幅に合わせる
 table.prop.direction	表の方向
 table.prop.rtl	右から左
 table.prop.ltr	左から右
+table.tab.alt_text	代替テキスト
+table.prop.alt_title	タイトル
+table.prop.alt_description	説明
+table.prop.alt_hint	タイトルと説明は、表の内容を読み上げ機能などで伝えるために使われます。

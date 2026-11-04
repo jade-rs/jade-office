@@ -81,7 +81,12 @@ impl Dialog {
 }
 
 /// A labelled one-line field, its caret drawn when it has the keyboard.
-fn field_box(label: &'static str, field: &TextEdit, focused: bool, width: f32) -> gpui::AnyElement {
+pub(crate) fn field_box(
+    label: &'static str,
+    field: &TextEdit,
+    focused: bool,
+    width: f32,
+) -> gpui::AnyElement {
     div()
         .flex()
         .items_center()

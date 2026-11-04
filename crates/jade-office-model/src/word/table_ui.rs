@@ -527,6 +527,13 @@ impl TableTools {
                 dialog.backspace();
                 TableOutcome::Redraw
             }
+            "tab" if matches!(&*dialog, TableDialog::Properties(properties) if properties.alt_field().is_some()) =>
+            {
+                if let TableDialog::Properties(properties) = dialog {
+                    properties.next_alt_field();
+                }
+                TableOutcome::Redraw
+            }
             _ => {
                 if let Some(text) = text {
                     dialog.type_text(text);

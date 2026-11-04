@@ -8,8 +8,9 @@ use gpui::{
     Window,
 };
 use jade_web::word::table::{
-    AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field, LookOption, Pen,
-    PropertiesTab, SortKind as HeadlessTableSortKind, TablePart, TablePropertiesDialog, MM_PER_PT,
+    AltField, AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field,
+    LookOption, Pen, PropertiesTab, SortKind as HeadlessTableSortKind, TablePart,
+    TablePropertiesDialog, MM_PER_PT,
 };
 use jade_web::word::{FormatState, TableCommand};
 
@@ -1177,6 +1178,7 @@ fn properties_body(
                     PropertiesTab::Row => "table.tab.row",
                     PropertiesTab::Column => "table.tab.column",
                     PropertiesTab::Cell => "table.tab.cell",
+                    PropertiesTab::AltText => "table.tab.alt_text",
                 }),
                 dialog.tab == tab,
             )
@@ -1403,6 +1405,38 @@ fn properties_body(
                         })),
                     )
                     .child(number_box(view, dialog, Field::ColumnWidth, cx)),
+            ),
+        PropertiesTab::AltText => div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .id("alt-title")
+                    .child(crate::view::word_dialogs::field_box(
+                        t("table.prop.alt_title"),
+                        &dialog.alt_title,
+                        dialog.alt_focus == AltField::Title,
+                        320.0,
+                    ))
+                    .on_click(props(cx, |dialog| dialog.alt_focus = AltField::Title)),
+            )
+            .child(
+                div()
+                    .id("alt-description")
+                    .child(crate::view::word_dialogs::field_box(
+                        t("table.prop.alt_description"),
+                        &dialog.alt_description,
+                        dialog.alt_focus == AltField::Description,
+                        320.0,
+                    ))
+                    .on_click(props(cx, |dialog| dialog.alt_focus = AltField::Description)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(palette::dim())
+                    .child(t("table.prop.alt_hint")),
             ),
         PropertiesTab::Cell => {
             let mut body = div()

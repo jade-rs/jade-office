@@ -1737,6 +1737,10 @@ impl DocumentView {
             cx.stop_propagation();
             return;
         }
+        // 代替テキスト's boxes: typing goes on to the input handler.
+        if word_table::alt_text_field(self).is_some() {
+            return;
+        }
         if self.fields.dialog.is_some() {
             if self.handle_fields_key(event, cx) {
                 cx.stop_propagation();
@@ -2688,6 +2692,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = word_table::alt_text_field(self) {
+            return Some(field);
+        }
         if let Some(field) = self.spin_text() {
             return Some(field);
         }
@@ -2732,6 +2739,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if word_table::alt_text_field(self).is_some() {
+            return word_table::alt_text_field_mut(self);
+        }
         if self.spin_text().is_some() {
             return self.spin_text_mut();
         }

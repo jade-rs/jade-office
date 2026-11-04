@@ -40,7 +40,7 @@ mod word_context_menu;
 pub(crate) mod word_controls;
 pub(crate) mod word_design;
 pub(crate) mod word_dialog;
-mod word_dialogs;
+pub(crate) mod word_dialogs;
 pub(crate) mod word_download;
 pub(crate) mod word_draw;
 pub(crate) mod word_equation;
