@@ -77,6 +77,7 @@ pub mod ole_objects;
 pub mod outline;
 pub mod package;
 pub mod page;
+pub mod page_fill;
 pub mod page_setup;
 pub mod painter;
 pub mod paragraph;

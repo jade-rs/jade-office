@@ -5144,3 +5144,43 @@ options.field_shading.always	Always
 options.field_shading.selected	When selected
 options.text_boundaries	Text boundaries
 options.crop_marks	Crop marks
+setup.fill.open	Fill Effects...
+setup.fill.title	Fill Effects
+setup.fill.tab.gradient	Gradient
+setup.fill.tab.texture	Texture
+setup.fill.tab.pattern	Pattern
+setup.fill.tab.picture	Picture
+setup.fill.color1	Color 1
+setup.fill.color2	Color 2
+setup.fill.black	Black
+setup.fill.style	Shading styles
+setup.fill.style.horizontal	Horizontal
+setup.fill.style.vertical	Vertical
+setup.fill.style.diagonal_up	Diagonal up
+setup.fill.style.diagonal_down	Diagonal down
+setup.fill.variant	Variants
+setup.fill.texture.newsprint	Newsprint
+setup.fill.texture.recycled_paper	Recycled paper
+setup.fill.texture.paper_bag	Paper bag
+setup.fill.texture.canvas	Canvas
+setup.fill.texture.denim	Denim
+setup.fill.texture.cork	Cork
+setup.fill.texture.sand	Sand
+setup.fill.texture.granite	Granite
+setup.fill.other_texture	Other Texture...
+setup.fill.pattern.pct5	5%
+setup.fill.pattern.pct10	10%
+setup.fill.pattern.pct25	25%
+setup.fill.pattern.pct50	50%
+setup.fill.pattern.pct75	75%
+setup.fill.pattern.horizontal	Horizontal
+setup.fill.pattern.vertical	Vertical
+setup.fill.pattern.down_diagonal	Downward diagonal
+setup.fill.pattern.up_diagonal	Upward diagonal
+setup.fill.pattern.cross	Cross
+setup.fill.pattern.diagonal_cross	Diagonal cross
+setup.fill.pattern.checker	Checker board
+setup.fill.foreground	Foreground
+setup.fill.background	Background
+setup.fill.choose_picture	Select Picture...
+setup.fill.no_picture	No picture selected
