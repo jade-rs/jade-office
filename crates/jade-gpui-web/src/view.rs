@@ -40,7 +40,7 @@ mod word_context_menu;
 pub(crate) mod word_controls;
 pub(crate) mod word_design;
 pub(crate) mod word_dialog;
-mod word_dialogs;
+pub(crate) mod word_dialogs;
 pub(crate) mod word_download;
 pub(crate) mod word_draw;
 pub(crate) mod word_equation;
@@ -59,6 +59,7 @@ pub(crate) mod word_mailings;
 pub(crate) mod word_manuscript;
 pub(crate) mod word_object_tab;
 pub(crate) mod word_objects_ui;
+pub(crate) mod word_ole;
 pub(crate) mod word_paragraph;
 pub(crate) mod word_preview;
 mod word_print;
@@ -1593,6 +1594,18 @@ impl DocView {
                 return;
             }
         }
+        // オブジェクト: a double click hands over the file it embeds.
+        if event.click_count >= 2 {
+            let found = match &self.document {
+                Document::Pages { document, .. } => {
+                    document.object_at(x, y).filter(|found| found.page == index)
+                }
+                _ => None,
+            };
+            if found.is_some_and(|found| self.open_object(&found)) {
+                return cx.notify();
+            }
+        }
         // A picture is over the text: a press on one takes hold of it rather
         // than putting the caret behind it. Its bottom-right corner resizes.
         if let Document::Pages {
@@ -2162,6 +2175,9 @@ impl DocView {
         if let Action::Equation(action) = action {
             return self.equation_action(action, cx);
         }
+        if let Action::Ole(action) = action {
+            return self.ole_action(action, cx);
+        }
 
         if matches!(action, Action::Undo | Action::Redo) && self.equation.is_some() {
             // A paragraph whose style updates itself takes the format into the
@@ -2332,6 +2348,7 @@ impl DocView {
             | Action::Views(_)
             | Action::ObjectFormat(_)
             | Action::Files(_)
+            | Action::Ole(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink

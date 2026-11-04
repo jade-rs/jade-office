@@ -18,6 +18,10 @@ use crate::ribbon::{dropdown, group, listener, menu_panel, menu_row, row, Action
 use crate::tooltip::Tooltip;
 use crate::word_spin::{spin_field, Spin, SpinOwner};
 use crate::{i18n, theme, DocumentView};
+use jade_office_model::word::page_fill::{PageFillDialog, WordPageFill};
+
+#[path = "word_page_fill.rs"]
+mod page_fill;
 
 /// What the レイアウト tab's page controls do beyond `PageCommand`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -41,6 +45,8 @@ pub enum SetupAction {
     OpenBorders,
     /// ページの色, `RRGGBB`, or 色なし.
     PageColor(Option<&'static str>),
+    /// ページの色 › 塗りつぶし効果….
+    OpenFill,
     /// 表紙.
     Cover(CoverPage),
 }
@@ -62,6 +68,7 @@ pub enum PageDialog {
     Columns(ColumnsDialog),
     PageNumbers(PageNumberDialog),
     Borders(PageBorderDialog),
+    Fill(Box<PageFillDialog>),
 }
 
 /// The open dialog. Its number fields are spin boxes (`word_spin`).
@@ -503,6 +510,10 @@ impl DocumentView {
                 Ok(())
             }
             SetupAction::PageColor(color) => document.set_page_color(color),
+            SetupAction::OpenFill => {
+                self.open_page_fill(cx);
+                Ok(())
+            }
             SetupAction::Cover(cover) => {
                 let japanese = i18n::language() == i18n::Language::Japanese;
                 let done = document.insert_cover_page(cover, japanese);
@@ -531,6 +542,7 @@ impl DocumentView {
             PageDialog::Columns(dialog) => self.document.apply_columns(dialog),
             PageDialog::PageNumbers(dialog) => self.document.apply_page_numbering(dialog),
             PageDialog::Borders(dialog) => self.document.apply_page_borders(dialog),
+            PageDialog::Fill(dialog) => self.document.apply_page_fill(dialog),
         };
         match result {
             Ok(()) => {
@@ -660,6 +672,7 @@ impl DocumentView {
                     self.borders_body(dialog, cx),
                     Some((dialog.apply_to, dialog.apply_choices.clone())),
                 ),
+                PageDialog::Fill(dialog) => ("setup.fill.title", self.fill_body(dialog, cx), None),
             };
         let apply_row = apply_to.map(|(current, choices)| {
             line("setup.apply").children(choices.into_iter().enumerate().map(|(index, choice)| {
@@ -674,7 +687,7 @@ impl DocumentView {
                         PageDialog::Setup(dialog) => dialog.apply_to = choice,
                         PageDialog::Columns(dialog) => dialog.apply_to = choice,
                         PageDialog::Borders(dialog) => dialog.apply_to = choice,
-                        PageDialog::PageNumbers(_) => {}
+                        PageDialog::PageNumbers(_) | PageDialog::Fill(_) => {}
                     })
                 }))
             }))
@@ -1235,6 +1248,13 @@ impl DocumentView {
                     t("setup.color.none"),
                     current.is_none(),
                     Action::Setup(SetupAction::PageColor(None)),
+                    cx,
+                ))
+                .child(menu_row(
+                    "page-fill",
+                    t("setup.fill.open"),
+                    false,
+                    Action::Setup(SetupAction::OpenFill),
                     cx,
                 ))
                 .into_any_element()

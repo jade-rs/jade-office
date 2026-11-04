@@ -13,9 +13,9 @@ use gpui::{
     MouseMoveEvent, SharedString, Window,
 };
 use jade_office_model::word::table::{
-    AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field, LookOption, Pen,
-    PropertiesTab, SortKind as HeadlessTableSortKind, TablePart, TablePropertiesDialog, WordTables,
-    MM_PER_PT,
+    AltField, AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field,
+    LookOption, Pen, PropertiesTab, SortKind as HeadlessTableSortKind, TablePart,
+    TablePropertiesDialog, WordTables, MM_PER_PT,
 };
 use jade_office_model::word::{FormatState, TableCommand, WordSession};
 
@@ -1080,6 +1080,21 @@ impl DocumentView {
         if keystroke.modifiers.platform || keystroke.modifiers.control {
             return false;
         }
+        // 代替テキスト's boxes edit as text fields do; what is typed comes
+        // through the input handler (`alt_text_field_mut`).
+        if let Some(field) = alt_text_field_mut(self) {
+            if field.marked.is_some() {
+                return false;
+            }
+            let key = keystroke.key.as_str();
+            if !matches!(key, "enter" | "return" | "escape" | "tab") {
+                let edited = field.edit_key(key);
+                if edited {
+                    cx.notify();
+                }
+                return edited;
+            }
+        }
         let Some(outcome) = self.tables.dialog_key(
             &mut self.document,
             keystroke.key.as_str(),
@@ -1403,6 +1418,23 @@ pub(crate) fn table_spin(dialog: &TablePropertiesDialog, field: Field) -> Spin {
     .width(80.0)
 }
 
+/// 代替テキスト's box with the keyboard, when 表のプロパティ shows that tab.
+pub(crate) fn alt_text_field(view: &DocumentView) -> Option<&jade_office_model::text::TextEdit> {
+    match view.tables.dialog.as_ref()? {
+        TableDialog::Properties(dialog) => dialog.alt_field(),
+        _ => None,
+    }
+}
+
+pub(crate) fn alt_text_field_mut(
+    view: &mut DocumentView,
+) -> Option<&mut jade_office_model::text::TextEdit> {
+    match view.tables.dialog.as_mut()? {
+        TableDialog::Properties(dialog) => dialog.alt_field_mut(),
+        _ => None,
+    }
+}
+
 fn number_box(
     view: &DocumentView,
     dialog: &TablePropertiesDialog,
@@ -1429,6 +1461,7 @@ fn properties_body(
                     PropertiesTab::Row => "table.tab.row",
                     PropertiesTab::Column => "table.tab.column",
                     PropertiesTab::Cell => "table.tab.cell",
+                    PropertiesTab::AltText => "table.tab.alt_text",
                 }),
                 dialog.tab == tab,
             )
@@ -1492,6 +1525,18 @@ fn properties_body(
                     Field::Indent,
                     cx,
                 )))
+                .child(
+                    line()
+                        .child(label("table.prop.direction"))
+                        .child(
+                            chip("direction-rtl", t("table.prop.rtl"), dialog.right_to_left)
+                                .on_click(props(cx, |dialog| dialog.right_to_left = true)),
+                        )
+                        .child(
+                            chip("direction-ltr", t("table.prop.ltr"), !dialog.right_to_left)
+                                .on_click(props(cx, |dialog| dialog.right_to_left = false)),
+                        ),
+                )
                 .child(
                     line()
                         .child(label("table.prop.wrapping"))
@@ -1648,6 +1693,38 @@ fn properties_body(
                     )
                     .child(number_box(view, dialog, Field::ColumnWidth, cx)),
             ),
+        PropertiesTab::AltText => div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .id("alt-title")
+                    .child(crate::word_dialogs::field_box(
+                        t("table.prop.alt_title"),
+                        &dialog.alt_title,
+                        dialog.alt_focus == AltField::Title,
+                        320.0,
+                    ))
+                    .on_click(props(cx, |dialog| dialog.alt_focus = AltField::Title)),
+            )
+            .child(
+                div()
+                    .id("alt-description")
+                    .child(crate::word_dialogs::field_box(
+                        t("table.prop.alt_description"),
+                        &dialog.alt_description,
+                        dialog.alt_focus == AltField::Description,
+                        320.0,
+                    ))
+                    .on_click(props(cx, |dialog| dialog.alt_focus = AltField::Description)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme::text_dim())
+                    .child(t("table.prop.alt_hint")),
+            ),
         PropertiesTab::Cell => {
             let mut body = div()
                 .flex()
@@ -1728,6 +1805,10 @@ fn properties_body(
                                 .child(number_box(view, dialog, Field::CellMarginBottom, cx))
                                 .child(label("table.prop.right_margin"))
                                 .child(number_box(view, dialog, Field::CellMarginRight, cx)),
+                        )
+                        .child(
+                            checkbox("cell-fit-text", t("table.prop.fit_text"), dialog.fit_text)
+                                .on_click(props(cx, |dialog| dialog.fit_text = !dialog.fit_text)),
                         ),
                 );
             }
@@ -2481,6 +2562,89 @@ mod tests {
             assert!(view.tables.dialog.is_none());
             let properties = view.document.table_properties().unwrap();
             assert!((properties.row_height.unwrap() - 21.0 / MM_PER_PT).abs() < 0.5);
+        });
+    }
+
+    /// 代替テキスト: the tab is drawn, typing (through the input handler, as
+    /// the IME sends it) fills タイトル, Tab moves to 説明, OK saves both.
+    #[gpui::test]
+    fn the_alt_text_tab_takes_a_title_and_description(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = with_table(cx);
+        view.update(cx, |view, cx| {
+            view.run_ribbon(
+                Action::Tables(TableAction::Properties(PropertiesTab::AltText)),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        cx.simulate_input("社員名簿x");
+        cx.simulate_keystrokes("backspace tab");
+        cx.simulate_input("氏名と部署");
+        view.read_with(cx, |view, _| {
+            let Some(TableDialog::Properties(dialog)) = view.tables.dialog.as_ref() else {
+                panic!("the properties dialog is open");
+            };
+            assert_eq!(dialog.alt_title.text, "社員名簿");
+            assert_eq!(dialog.alt_description.text, "氏名と部署");
+        });
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, _| {
+            assert!(view.tables.dialog.is_none());
+            let properties = view.document.table_properties().unwrap();
+            assert_eq!(properties.alt_title, "社員名簿");
+            assert_eq!(properties.alt_description, "氏名と部署");
+        });
+    }
+
+    /// 表 › 表の方向: 右から左 is drawn as a chip and OK mirrors the table.
+    #[gpui::test]
+    fn the_table_direction_runs_right_to_left(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = with_table(cx);
+        view.update(cx, |view, cx| {
+            assert!(!view.document.table_properties().unwrap().right_to_left);
+            view.run_ribbon(
+                Action::Tables(TableAction::Properties(PropertiesTab::Table)),
+                cx,
+            );
+            let Some(TableDialog::Properties(dialog)) = view.tables.dialog.as_mut() else {
+                panic!("the properties dialog is open");
+            };
+            dialog.right_to_left = true;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, _| {
+            assert!(view.tables.dialog.is_none());
+            assert!(view.document.table_properties().unwrap().right_to_left);
+            view.document.undo().unwrap();
+            assert!(!view.document.table_properties().unwrap().right_to_left);
+        });
+    }
+
+    /// セル › オプション › 文字列をセル幅に合わせる: the check is drawn in the
+    /// options box and OK writes it on the cell.
+    #[gpui::test]
+    fn the_cell_options_fit_text(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = with_table(cx);
+        view.update(cx, |view, cx| {
+            assert!(!view.document.table_properties().unwrap().fit_text);
+            view.run_ribbon(
+                Action::Tables(TableAction::Properties(PropertiesTab::Cell)),
+                cx,
+            );
+            let Some(TableDialog::Properties(dialog)) = view.tables.dialog.as_mut() else {
+                panic!("the properties dialog is open");
+            };
+            dialog.cell_options_open = true;
+            dialog.fit_text = true;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, _| {
+            assert!(view.tables.dialog.is_none());
+            assert!(view.document.table_properties().unwrap().fit_text);
         });
     }
 

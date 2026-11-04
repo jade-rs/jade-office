@@ -130,6 +130,8 @@ pub enum FileDialog {
     Templates(crate::word_templates::TemplatesDialog),
     /// ファイル サイズの圧縮.
     Compress(crate::word_save_options::CompressDialog),
+    /// 挿入 › オブジェクト….
+    Object(jade_office_model::word::ole_objects::ObjectDialog),
 }
 
 /// The 保存 preferences as the dialog holds them until OK.
@@ -424,11 +426,17 @@ impl DocumentView {
             })
             .and_then(|bytes| {
                 crate::autorecover::back_up_before_writing(&target);
-                crate::shell::write_in_place(&target, &bytes).map_err(|error| error.to_string())
+                if matches!(write, Write::Save(_)) {
+                    crate::word_versions::before_writing(self, &target);
+                }
+                crate::shell::write_in_place(&target, &bytes)
+                    .map(|()| bytes)
+                    .map_err(|error| error.to_string())
             });
         match written {
-            Ok(()) => {
+            Ok(bytes) => {
                 if let Write::Save(path) = &write {
+                    crate::word_versions::saved(self, path, &bytes);
                     self.dirty = false;
                     self.untitled = false;
                     self.path = SharedString::from(path.to_string_lossy().into_owned());
@@ -615,6 +623,7 @@ fn confirm(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
         FileDialog::Compatibility(checker) => crate::word_compat::confirm(view, checker, cx),
         FileDialog::Templates(_) => {}
         FileDialog::Compress(dialog) => view.compress_now(dialog, cx),
+        FileDialog::Object(dialog) => crate::word_ole::confirm(view, dialog, cx),
         FileDialog::PdfOptions { target, tagged } => view.write_pdf_with(
             &target,
             jade_docx_native_render::PdfExportOptions {
@@ -661,6 +670,7 @@ pub fn overlay(
         }
         FileDialog::Templates(state) => crate::word_templates::dialog(&state.clone(), cx),
         FileDialog::Compress(state) => crate::word_save_options::dialog(*state, cx),
+        FileDialog::Object(state) => crate::word_ole::dialog(*state, cx),
         FileDialog::PdfOptions { tagged, .. } => {
             let tagged = *tagged;
             let choices = [
@@ -990,6 +1000,17 @@ fn preferences_body(preferences: Preferences, cx: &mut Context<DocumentView>) ->
         .gap_3()
         .w(px(420.0))
         .child(caption(t("prefs.save_options")))
+        .child(
+            check(
+                "prefs-autosave",
+                t("versions.autosave_default"),
+                settings.autosave,
+            )
+            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                with_preferences(view, |p| p.settings.autosave = !p.settings.autosave);
+                cx.notify();
+            })),
+        )
         .child(
             check(
                 "prefs-backup",

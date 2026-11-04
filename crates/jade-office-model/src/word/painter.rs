@@ -39,6 +39,7 @@ fn unlike(now: &ParagraphFormat) -> ParagraphFormat {
         outline_level: now.outline_level,
         outline_locked: now.outline_locked,
         collapsed: now.collapsed,
+        mirror_indents: !now.mirror_indents,
     }
 }
 

@@ -316,6 +316,8 @@ pub enum Action {
     /// 互換性チェック, 変換, テンプレートとアドイン, ファイル サイズの圧縮
     /// (`view::word_files`).
     Files(crate::view::word_files::FilesAction),
+    /// 挿入 › オブジェクト (`view::word_ole`).
+    Ole(crate::view::word_ole::OleAction),
 }
 
 /// What the 表示 tab's own buttons do.
@@ -922,6 +924,7 @@ pub fn ribbon(
             groups.push(crate::word_page::header_footer(ribbon, cx));
             groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
             groups.push(crate::view::word_characters::insert_group(cx));
+            groups.push(crate::view::word_ole::insert_group(cx));
             groups.push(crate::view::word_fields::fields_group(
                 shown.field_codes,
                 cx,

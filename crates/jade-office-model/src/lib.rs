@@ -77,6 +77,7 @@ pub mod text_columns;
 pub mod top_ten;
 pub mod typing;
 pub mod validation;
+pub mod versions;
 pub mod what_if;
 pub mod word;
 pub mod zoom_dialog;

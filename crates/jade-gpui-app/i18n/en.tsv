@@ -5102,3 +5102,85 @@ frame.distance	Distance from text
 frame.move_with_text	Move with text
 frame.remove	Remove Frame
 doc.select_similar	Select Text with Similar Formatting
+versions.autosave	AutoSave
+versions.autosave_tip	Saves to this file moments after you edit
+versions.on	On
+versions.off	Off
+versions.autosave_default	Turn on AutoSave by default
+versions.unsupported	AutoSave works only with Word files (.docx and the like). Use Save As to save this as a Word document.
+versions.menu	Version History
+versions.title	Version History
+versions.current	Current version
+versions.open	Open
+versions.restore	Restore
+versions.none	No saved versions yet.
+versions.unsaved	Save the document to start its history.
+versions.kind.original	Original file
+versions.kind.saved	Saved
+versions.kind.autosaved	AutoSaved
+versions.kind.restored	Restored
+object.menu	Object...
+object.title	Object
+object.detail	Embeds a file in the document. Double-click it to open it in its app.
+object.icon	Display as icon
+object.from_file	From File...
+object.group	Object
+object.button	Object
+object.tooltip	Embed a file in the document as an object
+paragraph.mirror_indents	Mirror indents
+paragraph.inside	Inside
+paragraph.outside	Outside
+table.prop.fit_text	Fit text
+table.prop.direction	Table direction
+table.prop.rtl	Right-to-left
+table.prop.ltr	Left-to-right
+table.tab.alt_text	Alt Text
+table.prop.alt_title	Title
+table.prop.alt_description	Description
+table.prop.alt_hint	The title and description tell people who use screen readers what the table holds.
+options.field_shading	Field shading
+options.field_shading.never	Never
+options.field_shading.always	Always
+options.field_shading.selected	When selected
+options.text_boundaries	Text boundaries
+options.crop_marks	Crop marks
+setup.fill.open	Fill Effects...
+setup.fill.title	Fill Effects
+setup.fill.tab.gradient	Gradient
+setup.fill.tab.texture	Texture
+setup.fill.tab.pattern	Pattern
+setup.fill.tab.picture	Picture
+setup.fill.color1	Color 1
+setup.fill.color2	Color 2
+setup.fill.black	Black
+setup.fill.style	Shading styles
+setup.fill.style.horizontal	Horizontal
+setup.fill.style.vertical	Vertical
+setup.fill.style.diagonal_up	Diagonal up
+setup.fill.style.diagonal_down	Diagonal down
+setup.fill.variant	Variants
+setup.fill.texture.newsprint	Newsprint
+setup.fill.texture.recycled_paper	Recycled paper
+setup.fill.texture.paper_bag	Paper bag
+setup.fill.texture.canvas	Canvas
+setup.fill.texture.denim	Denim
+setup.fill.texture.cork	Cork
+setup.fill.texture.sand	Sand
+setup.fill.texture.granite	Granite
+setup.fill.other_texture	Other Texture...
+setup.fill.pattern.pct5	5%
+setup.fill.pattern.pct10	10%
+setup.fill.pattern.pct25	25%
+setup.fill.pattern.pct50	50%
+setup.fill.pattern.pct75	75%
+setup.fill.pattern.horizontal	Horizontal
+setup.fill.pattern.vertical	Vertical
+setup.fill.pattern.down_diagonal	Downward diagonal
+setup.fill.pattern.up_diagonal	Upward diagonal
+setup.fill.pattern.cross	Cross
+setup.fill.pattern.diagonal_cross	Diagonal cross
+setup.fill.pattern.checker	Checker board
+setup.fill.foreground	Foreground
+setup.fill.background	Background
+setup.fill.choose_picture	Select Picture...
+setup.fill.no_picture	No picture selected
