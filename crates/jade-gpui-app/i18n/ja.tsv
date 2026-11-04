@@ -5130,3 +5130,4 @@ object.tooltip	ファイルをオブジェクトとして文書に埋め込み�
 paragraph.mirror_indents	見開きページのインデント設定
 paragraph.inside	内側
 paragraph.outside	外側
+table.prop.fit_text	文字列をセル幅に合わせる

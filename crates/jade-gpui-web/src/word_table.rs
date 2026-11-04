@@ -1472,6 +1472,10 @@ fn properties_body(
                                 .child(number_box(view, dialog, Field::CellMarginBottom, cx))
                                 .child(label("table.prop.right_margin"))
                                 .child(number_box(view, dialog, Field::CellMarginRight, cx)),
+                        )
+                        .child(
+                            checkbox("cell-fit-text", t("table.prop.fit_text"), dialog.fit_text)
+                                .on_click(props(cx, |dialog| dialog.fit_text = !dialog.fit_text)),
                         ),
                 );
             }

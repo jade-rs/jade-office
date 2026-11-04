@@ -672,4 +672,31 @@ fn paragraphs_sort_from_the_sort_dialog() {
         .unwrap();
     assert_eq!(document.paragraph_text(0).as_deref(), Some("10 件"));
     assert_eq!(document.paragraph_text(2).as_deref(), Some("2 件"));
+/// セル › オプション › 文字列をセル幅に合わせる: the cell's text is spread
+/// to the cell's width on the page, saved as `w:tcFitText` and read back.
+#[test]
+fn fit_text_spreads_a_cell_and_is_saved() {
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["氏名", ""]]);
+    document.place_caret(cell_paragraph(&document, 0, 0, 0), 0);
+    let before = document.page(0).unwrap().encode_png().unwrap();
+    let properties = document.table_properties().unwrap();
+    assert!(!properties.fit_text);
+    let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Cell);
+    dialog.fit_text = true;
+    document.apply_table_properties(&dialog).unwrap();
+
+    document.place_caret(cell_paragraph(&document, 0, 0, 0), 0);
+    assert!(document.table_properties().unwrap().fit_text);
+    let after = document.page(0).unwrap().encode_png().unwrap();
+    assert_ne!(before, after, "the cell's text is spread on the page");
+    let bytes = document.export_docx().unwrap();
+    let xml = document_xml(&bytes);
+    assert_eq!(xml.matches("<w:tcFitText/>").count(), 1, "{xml}");
+
+    let mut reopened = open_bytes(&bytes);
+    reopened.place_caret(cell_paragraph(&reopened, 0, 0, 0), 0);
+    assert!(reopened.table_properties().unwrap().fit_text);
+    reopened.place_caret(cell_paragraph(&reopened, 0, 0, 1), 0);
+    assert!(!reopened.table_properties().unwrap().fit_text);
 }

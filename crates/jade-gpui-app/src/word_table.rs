@@ -1728,6 +1728,10 @@ fn properties_body(
                                 .child(number_box(view, dialog, Field::CellMarginBottom, cx))
                                 .child(label("table.prop.right_margin"))
                                 .child(number_box(view, dialog, Field::CellMarginRight, cx)),
+                        )
+                        .child(
+                            checkbox("cell-fit-text", t("table.prop.fit_text"), dialog.fit_text)
+                                .on_click(props(cx, |dialog| dialog.fit_text = !dialog.fit_text)),
                         ),
                 );
             }
@@ -2481,6 +2485,32 @@ mod tests {
             assert!(view.tables.dialog.is_none());
             let properties = view.document.table_properties().unwrap();
             assert!((properties.row_height.unwrap() - 21.0 / MM_PER_PT).abs() < 0.5);
+        });
+    }
+
+    /// セル › オプション › 文字列をセル幅に合わせる: the check is drawn in the
+    /// options box and OK writes it on the cell.
+    #[gpui::test]
+    fn the_cell_options_fit_text(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = with_table(cx);
+        view.update(cx, |view, cx| {
+            assert!(!view.document.table_properties().unwrap().fit_text);
+            view.run_ribbon(
+                Action::Tables(TableAction::Properties(PropertiesTab::Cell)),
+                cx,
+            );
+            let Some(TableDialog::Properties(dialog)) = view.tables.dialog.as_mut() else {
+                panic!("the properties dialog is open");
+            };
+            dialog.cell_options_open = true;
+            dialog.fit_text = true;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, _| {
+            assert!(view.tables.dialog.is_none());
+            assert!(view.document.table_properties().unwrap().fit_text);
         });
     }
 

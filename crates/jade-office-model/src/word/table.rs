@@ -360,6 +360,8 @@ pub struct TableProperties {
     pub cell_margins: Option<[f32; 4]>,
     /// `lrTb`, `tbRlV` (縦書き), `tbRl`, `btLr`.
     pub text_direction: String,
+    /// オプション › 文字列をセル幅に合わせる (`w:tcFitText`).
+    pub fit_text: bool,
 }
 
 /// 表の位置.
@@ -499,6 +501,7 @@ impl TableProperties {
                 })
                 .unwrap_or("lrTb")
                 .to_string(),
+            fit_text: cell_model.is_some_and(|cell| cell.style.contains_key("fit-text")),
         }
     }
 }
@@ -601,6 +604,7 @@ pub struct TablePropertiesDialog {
     pub vertical_align: String,
     pub cell_options_open: bool,
     pub cell_margins_same: bool,
+    pub fit_text: bool,
 }
 
 impl TablePropertiesDialog {
@@ -685,6 +689,7 @@ impl TablePropertiesDialog {
             vertical_align: properties.vertical_align.clone(),
             cell_options_open: false,
             cell_margins_same: properties.cell_margins.is_none(),
+            fit_text: properties.fit_text,
             original: properties,
         }
     }
@@ -1053,6 +1058,14 @@ impl TablePropertiesDialog {
                         row,
                         column,
                         alignment: self.vertical_align.clone(),
+                    });
+                }
+                if self.fit_text != original.fit_text {
+                    commands.push(HeadlessCommand::SetTableCellFitText {
+                        table_order_index,
+                        row,
+                        column,
+                        fit: self.fit_text,
                     });
                 }
                 if self.cell_margins_same && original.cell_margins.is_some() {
@@ -2712,6 +2725,7 @@ mod tests {
             vertical_align: "top".to_string(),
             cell_margins: None,
             text_direction: "lrTb".to_string(),
+            fit_text: false,
         };
         let span = CellSpan {
             table_order_index: 0,
@@ -2757,6 +2771,18 @@ mod tests {
         )));
         assert!(commands.iter().any(|command| matches!(command,
             HeadlessCommand::SetTableCellSpacing { spacing: Some(spacing), .. } if (spacing - 1.417).abs() < 0.01)));
+        assert!(!commands
+            .iter()
+            .any(|command| matches!(command, HeadlessCommand::SetTableCellFitText { .. })));
+        // セル › オプション › 文字列をセル幅に合わせる.
+        dialog.fit_text = true;
+        let commands = dialog.commands(span, 2, &[100.0, 100.0], 450.0);
+        assert!(commands.contains(&HeadlessCommand::SetTableCellFitText {
+            table_order_index: 0,
+            row: 1,
+            column: 0,
+            fit: true,
+        }));
     }
 
     #[test]

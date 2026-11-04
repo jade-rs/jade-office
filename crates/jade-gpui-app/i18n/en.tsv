@@ -5130,3 +5130,4 @@ object.tooltip	Embed a file in the document as an object
 paragraph.mirror_indents	Mirror indents
 paragraph.inside	Inside
 paragraph.outside	Outside
+table.prop.fit_text	Fit text
