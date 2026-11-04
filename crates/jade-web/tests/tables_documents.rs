@@ -672,6 +672,8 @@ fn paragraphs_sort_from_the_sort_dialog() {
         .unwrap();
     assert_eq!(document.paragraph_text(0).as_deref(), Some("10 件"));
     assert_eq!(document.paragraph_text(2).as_deref(), Some("2 件"));
+}
+
 /// セル › オプション › 文字列をセル幅に合わせる: the cell's text is spread
 /// to the cell's width on the page, saved as `w:tcFitText` and read back.
 #[test]
