@@ -96,7 +96,32 @@ pub struct ParagraphFormat {
     pub keep_next: bool,
     pub keep_lines: bool,
     pub page_break_before: bool,
+    /// アウトライン レベル: 0–8 for レベル 1–9, [`BODY_TEXT`] for 本文.
+    pub outline_level: u8,
+    /// Whether the style sets the level (見出し 1–9), so the list is greyed
+    /// out as Word greys it.
+    pub outline_locked: bool,
+    /// 既定で折りたたみ.
+    pub collapsed: bool,
 }
+
+/// 本文 as an outline level.
+pub const BODY_TEXT: u8 = 9;
+
+/// アウトライン レベル's list: 本文, then レベル 1–9, with their labels (the
+/// i18n key for 本文, the digit for a level).
+pub const OUTLINE_LEVELS: [(u8, &str); 10] = [
+    (BODY_TEXT, "paragraph.outline.body"),
+    (0, "1"),
+    (1, "2"),
+    (2, "3"),
+    (3, "4"),
+    (4, "5"),
+    (5, "6"),
+    (6, "7"),
+    (7, "8"),
+    (8, "9"),
+];
 
 const POINTS_PER_MM: f32 = 72.0 / 25.4;
 
@@ -186,6 +211,7 @@ pub trait WordParagraphs: WordSession {
         } else {
             (SpecialIndent::None, 0.0)
         };
+        let outline = self.word_document().paragraph_outline(paragraph);
         let spacing = props.spacing.clone().unwrap_or_default();
         let line = match (spacing.line_rule.as_deref(), spacing.line) {
             (Some("atLeast"), Some(points)) => LineSpacing::AtLeast(round2(points)),
@@ -216,6 +242,9 @@ pub trait WordParagraphs: WordSession {
             keep_next: props.keep_next.unwrap_or(false),
             keep_lines: props.keep_lines.unwrap_or(false),
             page_break_before: props.page_break_before.unwrap_or(false),
+            outline_level: outline.level,
+            outline_locked: outline.style_level < BODY_TEXT,
+            collapsed: outline.collapsed,
         }
     }
 
@@ -331,6 +360,21 @@ pub trait WordParagraphs: WordSession {
                 keep_lines,
                 page_break_before,
                 widow_control,
+            });
+        }
+
+        let level = (now.outline_level != was.outline_level && !now.outline_locked)
+            .then_some(now.outline_level.min(BODY_TEXT));
+        // Only a heading level collapses.
+        let collapsed = now.collapsed && now.outline_level < BODY_TEXT;
+        let was_collapsed = was.collapsed && was.outline_level < BODY_TEXT;
+        let collapsed = (collapsed != was_collapsed).then_some(collapsed);
+        if level.is_some() || collapsed.is_some() {
+            commands.push(HeadlessCommand::SetParagraphOutlineLevel {
+                start_paragraph,
+                end_paragraph,
+                level,
+                collapsed,
             });
         }
         Ok(commands)
@@ -495,6 +539,26 @@ impl ParagraphForm {
         self.format.line = line;
     }
 
+    /// アウトライン レベル chosen from its list: nothing while the style
+    /// sets the level (Word greys the list out); 本文 clears 既定で折りたたみ,
+    /// which only a heading level has.
+    pub fn set_outline_level(&mut self, level: u8) {
+        if self.format.outline_locked {
+            return;
+        }
+        self.format.outline_level = level.min(BODY_TEXT);
+        if self.format.outline_level == BODY_TEXT {
+            self.format.collapsed = false;
+        }
+    }
+
+    /// 既定で折りたたみ: only a heading level (or a heading style) takes it.
+    pub fn toggle_collapsed(&mut self) {
+        if self.format.outline_level < BODY_TEXT {
+            self.format.collapsed = !self.format.collapsed;
+        }
+    }
+
     /// What the dialog says, its fields read: an error names a field that is
     /// not a number.
     pub fn read(&self) -> Result<ParagraphFormat, String> {
@@ -561,6 +625,9 @@ mod tests {
             keep_next: false,
             keep_lines: false,
             page_break_before: false,
+            outline_level: BODY_TEXT,
+            outline_locked: false,
+            collapsed: false,
         };
         let mut form = ParagraphForm::new(format);
         assert_eq!(form.number(ParagraphField::Left), Some(1.0));

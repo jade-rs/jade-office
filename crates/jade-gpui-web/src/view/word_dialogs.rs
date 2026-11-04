@@ -7,7 +7,7 @@
 use gpui::ElementId;
 use jade_web::word::{
     IndentUnit, LineSpacing, LinkForm, LinkTarget, NoteForm, NoteKind, ParagraphField,
-    ParagraphForm, SpecialIndent, WordLinks, WordParagraphs,
+    ParagraphForm, SpecialIndent, WordLinks, WordParagraphs, BODY_TEXT, OUTLINE_LEVELS,
 };
 
 use super::sheet::caret_line;
@@ -43,6 +43,10 @@ pub(super) enum Dialog {
     Protect(Box<jade_web::word::protection::ProtectForm>),
     /// 署名欄の設定: who is to sign (Tab between the fields).
     SignatureLine(Box<jade_web::word::signatures::SignatureLineForm>),
+    /// 位置合わせタブの挿入 (`word_alignment_tab`).
+    AlignmentTab(jade_web::word::alignment_tab::AlignmentTabForm),
+    /// 枠の書式設定 (`word_frame`).
+    Frame(jade_web::word::frame::FrameForm),
 }
 
 impl Dialog {
@@ -51,7 +55,7 @@ impl Dialog {
             Dialog::Link(form) => Some(form.field()),
             Dialog::Note(form) => Some(&form.text),
             // Its numbers are spin boxes, which take their own typing.
-            Dialog::Paragraph(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) | Dialog::Frame(_) => None,
             Dialog::Reviewer(form) => Some(form.focused()),
             Dialog::AltText(form) => Some(&form.description),
             Dialog::Compare { author, .. } => Some(author),
@@ -65,7 +69,7 @@ impl Dialog {
         match self {
             Dialog::Link(form) => Some(form.field_mut()),
             Dialog::Note(form) => Some(&mut form.text),
-            Dialog::Paragraph(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) | Dialog::Frame(_) => None,
             Dialog::Reviewer(form) => Some(form.focused_mut()),
             Dialog::AltText(form) => Some(&mut form.description),
             Dialog::Compare { author, .. } => Some(author),
@@ -356,6 +360,7 @@ impl DocView {
                     form.next_field();
                 }
                 Dialog::SignatureLine(form) => form.next_field(),
+                Dialog::AlignmentTab(_) | Dialog::Frame(_) => {}
             },
             _ => {
                 if !open.field_mut().is_some_and(|field| field.edit_key(key)) {
@@ -471,7 +476,7 @@ impl DocView {
     }
 
     /// OK: what the dialog says, done to the document as one undo step.
-    fn submit_dialog(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(super) fn submit_dialog(&mut self, cx: &mut Context<Self>) -> bool {
         let Document::Pages {
             document, dialog, ..
         } = &mut self.document
@@ -517,6 +522,17 @@ impl DocView {
             Dialog::Note(form) => form.submit(document.as_mut()).map(Some),
             // The caret, or the selection, stays where it is.
             Dialog::Paragraph(form) => form.submit(document.as_mut()).map(|()| None),
+            Dialog::Frame(form) => {
+                use jade_web::word::frame::WordFrames;
+                document.apply_frame(form).map(|()| None)
+            }
+            // The caret goes after the tab.
+            Dialog::AlignmentTab(form) => form.submit(document.as_mut()).map(|()| {
+                use jade_web::word::WordSession;
+                document
+                    .selection_range()
+                    .map(|range| (range.focus.paragraph, range.focus.offset))
+            }),
             Dialog::Compare { .. }
             | Dialog::Restrict { .. }
             | Dialog::Protect(_)
@@ -600,6 +616,16 @@ impl DocView {
                 vec![field_box(i18n::text("note.text"), &form.text, true, 360.0)],
             ),
             Dialog::Paragraph(form) => self.paragraph_dialog(form, cx),
+            Dialog::Frame(form) => bar(
+                i18n::text("frame.title"),
+                i18n::text("frame.keys"),
+                self.frame_body(form, cx),
+            ),
+            Dialog::AlignmentTab(form) => bar(
+                i18n::text("word.ptab.title"),
+                i18n::text("word.ptab.keys"),
+                self.alignment_tab_body(form, cx),
+            ),
             Dialog::Restrict { stopping, password } => bar(
                 i18n::text(if *stopping {
                     "restrict.stop_title"
@@ -961,6 +987,44 @@ impl DocView {
                 cx,
             ));
         }
+        // アウトライン レベル, greyed out (just what it is) while the style
+        // sets it, and 既定で折りたたみ.
+        let mut outline = vec![caption(i18n::text("paragraph.outline"))];
+        for (level, key) in OUTLINE_LEVELS {
+            let text = if level == BODY_TEXT {
+                i18n::text(key)
+            } else {
+                key
+            };
+            let active = format.outline_level == level;
+            if format.outline_locked {
+                if active {
+                    outline.push(
+                        div()
+                            .text_color(palette::faint())
+                            .child(text)
+                            .into_any_element(),
+                    );
+                }
+                continue;
+            }
+            outline.push(self.choice(
+                ElementId::Name(format!("paragraph-outline-{level}").into()),
+                text,
+                active,
+                cx,
+                move |form| form.set_outline_level(level),
+            ));
+        }
+        if format.outline_level < BODY_TEXT {
+            outline.push(self.check(
+                "paragraph-collapsed",
+                i18n::text("paragraph.collapsed"),
+                format.collapsed,
+                cx,
+                |form| form.toggle_collapsed(),
+            ));
+        }
         let pagination = vec![
             caption(i18n::text("paragraph.pagination")),
             self.check(
@@ -1040,6 +1104,7 @@ impl DocView {
             .child(row(alignment))
             .child(row(indent))
             .child(row(spacing))
+            .child(row(outline))
             .child(row(pagination))
             .child(row(buttons))
             .into_any_element()

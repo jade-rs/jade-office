@@ -2204,12 +2204,37 @@ pub trait WordTables: WordSession {
 
     // ---- data ------------------------------------------------------------
 
-    /// 並べ替え of the caret's table.
+    /// 並べ替え of the caret's table — or, outside a table, of the selected
+    /// paragraphs by their text (the 段落 key; only the first key counts).
     fn sort_table(&mut self, spec: &SortSpec) -> Result<(), String> {
-        let cell = self
-            .caret_table_cell()
-            .ok_or("the caret is not in a table")?;
         let caret = self.selection_range();
+        let Some(cell) = self.caret_table_cell() else {
+            let range = caret.ok_or("nothing is selected")?;
+            let (start, end) = range.normalized();
+            let key = spec.keys.first().ok_or("sort needs a key")?;
+            self.apply_command(
+                HeadlessCommand::SortParagraphs {
+                    start_paragraph: start.paragraph,
+                    end_paragraph: end.paragraph,
+                    kind: key.kind,
+                    descending: key.descending,
+                    header: spec.header_row,
+                },
+                false,
+            )?;
+            self.set_selection_range(Some(jade_selection::SelectionRange::new(
+                jade_selection::TextPosition::new(start.paragraph, 0),
+                jade_selection::TextPosition::new(
+                    end.paragraph,
+                    self.word_document()
+                        .paragraph(end.paragraph)
+                        .map_or(0, |paragraph| {
+                            paragraph.runs.iter().map(|run| run.text.len()).sum()
+                        }),
+                ),
+            )));
+            return Ok(());
+        };
         self.apply_command(
             HeadlessCommand::SortTable {
                 table_order_index: cell.table_order_index,

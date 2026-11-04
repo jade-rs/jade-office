@@ -576,6 +576,29 @@ impl EditableDocument {
         self.highlight_rects()
     }
 
+    /// The highlight a range would have were it selected, page by page, in
+    /// CSS px of its page: the ranges of a multi-range selection beside the
+    /// document's own (類似した書式の文字列を選択).
+    pub fn range_rects(&self, start: (usize, usize), end: (usize, usize)) -> Vec<HighlightRect> {
+        jade_office_model::word::selection::range_rects(
+            self.renderer.selection_manager(),
+            start,
+            end,
+        )
+        .into_iter()
+        .map(|(x, y, width, height)| {
+            let (page, y) = self.page_and_offset(y);
+            HighlightRect {
+                page,
+                x,
+                y,
+                width,
+                height,
+            }
+        })
+        .collect()
+    }
+
     /// The line marking the composition, page by page, in CSS px of its
     /// page: under the text, or down the right of its column in vertical
     /// text (縦書き). Empty when no composition is open.

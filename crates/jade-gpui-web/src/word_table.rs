@@ -1977,9 +1977,17 @@ fn sort_body(
         })
     };
     let mut body = div().flex().flex_col().gap_2();
+    // Outside a table there are no columns: one key, 段落.
+    let paragraphs = headings.is_empty();
     for (slot, name) in key_names.into_iter().enumerate() {
+        if paragraphs && slot > 0 {
+            break;
+        }
         let key = keys[slot];
         let mut columns = line().child(label(name));
+        if paragraphs {
+            columns = columns.child(chip("sort-paragraphs", t("table.sort.paragraphs"), true));
+        }
         if slot > 0 {
             columns =
                 columns.child(

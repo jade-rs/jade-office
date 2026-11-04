@@ -810,3 +810,45 @@ fn theme_effects_reach_the_shapes_that_name_them() {
     document.apply_effect_scheme(&EFFECT_SCHEMES[2]).unwrap();
     assert!(shapes(&document)[0].shadow.is_none());
 }
+
+/// 網かけ's 種類, 色 and 背景の色 as both shells' dialogs pick them: every
+/// stripe and cross pattern (the 細 ones too) is written as Word writes it
+/// and reads back under the list's own spelling, its lines in the colour
+/// picked over the fill.
+#[test]
+fn shading_patterns_are_picked_written_and_read_back() {
+    use jade_office_model::word::shading::{with_color, with_fill, with_pattern, SHADING_PATTERNS};
+
+    let mut document = document(&["網かけの段落"]);
+    document.place_caret(0, 0);
+    let picked = with_pattern(None, "thinDiagCross");
+    let picked = with_color(picked.as_ref(), Some("C00000"));
+    let picked = with_fill(picked.as_ref(), Some("FFFF00")).unwrap();
+    document.set_shading_spec(Some(&picked)).unwrap();
+    let xml = part(&mut document, "document");
+    assert!(
+        xml.contains(r#"w:val="thinDiagCross""#)
+            && xml.contains(r#"w:color="C00000""#)
+            && xml.contains(r#"w:fill="FFFF00""#),
+        "{xml}"
+    );
+    let reopened = reopen(&mut document);
+    for state in [document.paragraph_options(), reopened.paragraph_options()] {
+        assert_eq!(state.shading.as_ref(), Some(&picked));
+    }
+    // The whole list round-trips under its own spelling.
+    for (token, _) in SHADING_PATTERNS
+        .iter()
+        .filter(|(token, _)| *token != "clear")
+    {
+        let spec = with_pattern(None, token).unwrap();
+        document.set_shading_spec(Some(&spec)).unwrap();
+        assert_eq!(
+            reopen(&mut document)
+                .paragraph_options()
+                .shading
+                .map(|shading| shading.pattern),
+            Some(token.to_string())
+        );
+    }
+}

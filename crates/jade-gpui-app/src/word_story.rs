@@ -579,6 +579,8 @@ pub enum StoryAction {
     Distance(bool),
     /// A field at the caret.
     Field(HeadlessFieldKind),
+    /// 位置合わせタブの挿入: its dialog.
+    AlignmentTab,
     Close,
 }
 
@@ -781,6 +783,10 @@ impl DocumentView {
             }
             StoryAction::GoTo(target) => {
                 self.open_story(page, target, cx);
+                Ok(())
+            }
+            StoryAction::AlignmentTab => {
+                self.open_alignment_tab_dialog(cx);
                 Ok(())
             }
             StoryAction::Section(next) => {
@@ -1117,6 +1123,15 @@ impl DocumentView {
                         false,
                         true,
                         StoryAction::Distance(true),
+                        cx,
+                    ),
+                    button(
+                        "story-alignment-tab",
+                        t("word.ptab.insert"),
+                        t("word.ptab.insert_title"),
+                        false,
+                        true,
+                        StoryAction::AlignmentTab,
                         cx,
                     ),
                 ])],

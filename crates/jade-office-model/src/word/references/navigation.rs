@@ -211,6 +211,17 @@ pub trait WordNavigation: WordSession {
         Some((start, end.max(start)))
     }
 
+    /// The headings that open collapsed: 段落's 既定で折りたたみ
+    /// (`w15:collapsed`), as Word collapses them when the document opens.
+    fn collapsed_by_default(&self) -> BTreeSet<usize> {
+        let document = self.word_document();
+        self.outline()
+            .into_iter()
+            .map(|heading| heading.paragraph)
+            .filter(|&paragraph| document.paragraph_collapsed_by_default(paragraph))
+            .collect()
+    }
+
     /// The top-level body elements the collapsed headings hide: everything
     /// in each one's section but its own paragraph.
     fn hidden_by_collapse(&self, collapsed: &BTreeSet<usize>) -> Vec<usize> {

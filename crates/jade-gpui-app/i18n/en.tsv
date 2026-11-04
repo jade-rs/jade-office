@@ -4971,3 +4971,134 @@ manuscript.paper	Paper Size
 manuscript.orientation	Orientation
 manuscript.portrait	Portrait
 manuscript.landscape	Landscape
+paragraph.outline	Outline level
+paragraph.outline.body	Body Text
+paragraph.collapsed	Collapsed by default
+word.shading.horz_stripe	Dark Horizontal
+word.shading.vert_stripe	Dark Vertical
+word.shading.diag_stripe	Dark Down Diagonal
+word.shading.reverse_diag_stripe	Dark Up Diagonal
+word.shading.horz_cross	Dark Grid
+word.shading.diag_cross	Dark Trellis
+word.shading.thin_horz_stripe	Light Horizontal
+word.shading.thin_vert_stripe	Light Vertical
+word.shading.thin_diag_stripe	Light Down Diagonal
+word.shading.thin_reverse_diag_stripe	Light Up Diagonal
+word.shading.thin_horz_cross	Light Grid
+word.shading.thin_diag_cross	Light Trellis
+word.shading.color	Color
+word.ptab.insert	Insert Alignment Tab
+word.ptab.insert_title	Insert a tab that aligns text to the margin or indent, whatever the tab stops
+word.ptab.title	Alignment Tab
+word.ptab.keys	⏎ insert · esc cancel
+word.ptab.alignment	Alignment
+word.ptab.left	Left
+word.ptab.center	Center
+word.ptab.right	Right
+word.ptab.relative_to	Align relative to
+word.ptab.margin	Margin
+word.ptab.indent	Indent
+word.ptab.leader	Leader
+word.ptab.leader_none	None
+doc.sort_title	Sort
+table.sort.paragraphs	Paragraphs
+word.text_from_file	Text from File…
+word.text_from_file.title	Insert the text of another file at the insertion point
+word.text_from_file.prompt	Insert
+reveal.title	Reveal Formatting
+reveal.tooltip	Show the formatting of the selection
+reveal.font	Font
+reveal.paragraph	Paragraph
+reveal.section	Section
+reveal.east_asia_font	Asian text
+reveal.latin_font	Latin text
+reveal.size	Size
+reveal.effect	Effect
+reveal.bold	Bold
+reveal.italic	Italic
+reveal.underline	Underline
+reveal.strike	Strikethrough
+reveal.double_strike	Double strikethrough
+reveal.superscript	Superscript
+reveal.subscript	Subscript
+reveal.small_caps	Small caps
+reveal.hidden	Hidden
+reveal.color	Color
+reveal.automatic	Automatic
+reveal.spacing	Spacing
+reveal.style	Style
+reveal.alignment	Alignment
+reveal.align.left	Left
+reveal.align.center	Centered
+reveal.align.right	Right
+reveal.align.both	Justified
+reveal.align.distribute	Distributed
+reveal.indent_left	Indent left
+reveal.indent_right	Indent right
+reveal.first_line	First line
+reveal.hanging	Hanging
+reveal.before	Spacing before
+reveal.after	Spacing after
+reveal.line	Line spacing
+reveal.line.single	Single
+reveal.line.one_and_half	1.5 lines
+reveal.line.double	Double
+reveal.line_at_least	Line spacing at least
+reveal.line_exactly	Line spacing exactly
+reveal.line_multiple	Line spacing multiple
+reveal.outline	Outline
+reveal.outline_level	Outline level
+reveal.pagination	Pagination
+reveal.keep_next	Keep with next
+reveal.keep_lines	Keep lines together
+reveal.page_break_before	Page break before
+reveal.paper	Paper size
+reveal.orientation	Orientation
+reveal.portrait	Portrait
+reveal.landscape	Landscape
+reveal.margin_top	Top margin
+reveal.margin_bottom	Bottom margin
+reveal.margin_left	Left margin
+reveal.margin_right	Right margin
+reveal.section_start	Section start
+reveal.start.next_page	New page
+reveal.start.continuous	Continuous
+reveal.start.even	Even page
+reveal.start.odd	Odd page
+reveal.start.column	New column
+reveal.columns	Columns
+reveal.direction	Text direction
+reveal.vertical	Vertical
+frame.insert	Frame
+frame.insert_title	Put the selected text in a frame
+frame.format	Format Frame
+frame.title	Frame
+frame.keys	Enter: OK  Esc: Cancel
+frame.wrap	Text wrapping
+frame.wrap_none	None
+frame.wrap_around	Around
+frame.width	Width
+frame.height	Height
+frame.auto	Auto
+frame.fixed	Exactly
+frame.at_least	At least
+frame.exact	Exactly
+frame.horizontal	Horizontal position
+frame.vertical	Vertical position
+frame.left	Left
+frame.center	Center
+frame.right	Right
+frame.top	Top
+frame.bottom	Bottom
+frame.inside	Inside
+frame.outside	Outside
+frame.offset	Distance
+frame.anchor	Relative to
+frame.margin	Margin
+frame.page	Page
+frame.column	Column
+frame.paragraph	Paragraph
+frame.distance	Distance from text
+frame.move_with_text	Move with text
+frame.remove	Remove Frame
+doc.select_similar	Select Text with Similar Formatting

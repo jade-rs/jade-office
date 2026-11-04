@@ -32,6 +32,7 @@ mod screen_reader;
 mod shell;
 mod tooltip;
 mod word_accessibility;
+mod word_alignment_tab;
 mod word_characters;
 mod word_compare;
 mod word_compat;
@@ -46,6 +47,7 @@ mod word_files;
 mod word_fit_text;
 mod word_fonts;
 mod word_form;
+mod word_frame;
 mod word_hyphenation;
 mod word_immersive;
 mod word_inspect;
@@ -65,6 +67,7 @@ mod word_proofing;
 mod word_protection;
 mod word_read_aloud;
 mod word_references;
+mod word_reveal;
 mod word_review;
 mod word_review_tools;
 mod word_revisions;
@@ -78,6 +81,7 @@ mod word_story;
 mod word_styles;
 mod word_table;
 mod word_templates;
+mod word_text_from_file;
 mod word_thesaurus;
 mod word_tools;
 mod word_views;
@@ -1159,6 +1163,8 @@ impl gpui::AssetSource for Assets {
             "redo",
             "settings-2",
             "shapes",
+            "sort-a-z",
+            "text-select",
             "sheet",
             "split",
             "square",
@@ -1438,6 +1444,8 @@ struct DocumentView {
     current_page: usize,
     /// Whether the details panel on the right is open.
     show_inspector: bool,
+    /// 書式の詳細 is open beside the pages (`word_reveal`).
+    reveal_formatting: bool,
     /// Whether there are edits since the document was opened or saved.
     dirty: bool,
     /// The Field, prompt and Properties dialogs, and the user information.
@@ -3343,6 +3351,7 @@ impl DocumentView {
         let done = match action {
             Action::Undo => return self.step_history(true, cx),
             Action::Redo => return self.step_history(false, cx),
+            Action::SelectSimilar => return word_views::select::select_similar(self, cx),
             Action::InsertTable(rows, columns) => {
                 let moved = WordFormatting::insert_table(document, rows, columns);
                 return self.ribbon_moved(moved, cx);
@@ -4627,6 +4636,7 @@ impl Render for DocumentView {
         let inspect_pane = word_inspect::pane(self, cx);
         let signatures_pane = word_signatures::pane(self, cx);
         let thesaurus_pane = word_thesaurus::pane(self, cx);
+        let reveal_pane = word_reveal::pane(self, cx);
         let revisions_pane = word_revisions::pane(self, cx);
         let restrict_pane = word_protection::pane(self, cx);
         let read_only_bar = word_protection::banner(self, cx);
@@ -5110,6 +5120,7 @@ impl Render for DocumentView {
             .children(inspect_pane)
             .children(signatures_pane)
             .children(thesaurus_pane)
+            .children(reveal_pane)
             .children(revisions_pane)
             .children(restrict_pane)
             .children(proofing_menu)
@@ -5341,6 +5352,16 @@ fn document_view(
     // frame rather than only after the first click.
     // DATE and TIME show today, as Word updates them on opening.
     word_fields::set_clock_on_open(&mut document);
+    // Headings saved 既定で折りたたみ open collapsed, as in Word.
+    let collapsed = {
+        use jade_office_model::word::references::navigation::WordNavigation;
+        let collapsed = document.collapsed_by_default();
+        if !collapsed.is_empty() {
+            let blocks = document.hidden_by_collapse(&collapsed);
+            let _ = document.set_collapsed_blocks(blocks);
+        }
+        collapsed
+    };
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
     let images: Vec<_> = (0..document.page_count())
         .filter_map(|index| page_image(&document, index))
@@ -5384,7 +5405,11 @@ fn document_view(
         characters: word_characters::Characters::default(),
         spin: None,
         tools: word_tools::WordTools::default(),
-        references: word_references::References::default(),
+        references: {
+            let mut references = word_references::References::default();
+            references.collapsed = collapsed;
+            references
+        },
         controls: word_controls::ControlsUi::default(),
         mailings,
         equation: Default::default(),
@@ -5402,6 +5427,7 @@ fn document_view(
         typed: 0,
         current_page: 0,
         show_inspector: false,
+        reveal_formatting: false,
         dirty: false,
         fields: word_fields::FieldsUi::default(),
         files: word_files::Files::default(),

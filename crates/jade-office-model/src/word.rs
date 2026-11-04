@@ -30,6 +30,7 @@ pub use jade_docx_layout::selection::CellLayout;
 use jade_selection::{SelectionRange, TextPosition};
 
 pub mod accessibility;
+pub mod alignment_tab;
 pub mod asian;
 pub mod autocorrect;
 pub mod borders;
@@ -53,6 +54,7 @@ pub mod fit_text;
 pub mod font;
 pub mod form_view;
 pub mod formats;
+pub mod frame;
 pub mod group;
 pub mod handles;
 pub mod html_clip;
@@ -87,19 +89,23 @@ pub mod read_aloud;
 pub mod recovery;
 pub mod references;
 pub mod repair;
+pub mod reveal_formatting;
 pub mod review;
 pub mod reviewer;
 pub mod ruler;
 pub mod screen_reader;
 pub mod search;
 pub mod selection;
+pub mod shading;
 pub mod shape_gallery;
 pub mod shapes;
 pub mod signatures;
+pub mod similar;
 pub mod styles;
 pub mod table;
 pub mod table_ui;
 pub mod templates;
+pub mod text_from_file;
 pub mod thesaurus;
 pub mod typography;
 pub mod view;
@@ -116,7 +122,7 @@ pub use links::{Hyperlink, LinkDraft, LinkForm, LinkTarget, WordLinks};
 pub use painter::{CopiedFormat, WordFormatPainter};
 pub use paragraph::{
     IndentUnit, LineSpacing, ParagraphField, ParagraphForm, ParagraphFormat, SpecialIndent,
-    WordParagraphs,
+    WordParagraphs, BODY_TEXT, OUTLINE_LEVELS,
 };
 pub use references::{NoteForm, NoteKind, WordReferences};
 

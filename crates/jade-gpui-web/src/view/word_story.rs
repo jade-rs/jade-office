@@ -29,6 +29,8 @@ pub enum StoryAction {
     Change(StoryChange),
     /// A field at the caret.
     Field(HeadlessFieldKind),
+    /// 位置合わせタブの挿入: its dialog.
+    AlignmentTab,
     Close,
 }
 
@@ -203,6 +205,7 @@ impl DocView {
         match action {
             StoryAction::Close => self.close_story(cx),
             StoryAction::GoTo(target) => self.open_story_on(page, target, cx),
+            StoryAction::AlignmentTab => self.open_alignment_tab_dialog(cx),
             StoryAction::Section(next) => {
                 if let Some(target) = document.story_section_page(next) {
                     self.open_story_on(target, role, cx);
@@ -481,6 +484,15 @@ pub fn story_groups(state: &StoryTabState, cx: &mut Context<DocView>) -> Vec<gpu
                     false,
                     true,
                     StoryAction::Change(StoryChange::Distance(true)),
+                    cx,
+                ),
+                button(
+                    "story-alignment-tab",
+                    t("word.ptab.insert"),
+                    t("word.ptab.insert_title"),
+                    false,
+                    true,
+                    StoryAction::AlignmentTab,
                     cx,
                 ),
             ])],
