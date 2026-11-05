@@ -8,8 +8,9 @@ use gpui::{
     Window,
 };
 use jade_web::word::table::{
-    AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field, LookOption, Pen,
-    PropertiesTab, SortKind as HeadlessTableSortKind, TablePart, TablePropertiesDialog, MM_PER_PT,
+    AltField, AutoFit, BorderSet, BorderTarget, BordersDialog, CellShift, DrawTool, Field,
+    LookOption, Pen, PropertiesTab, SortKind as HeadlessTableSortKind, TablePart,
+    TablePropertiesDialog, MM_PER_PT,
 };
 use jade_web::word::{FormatState, TableCommand};
 
@@ -1177,6 +1178,7 @@ fn properties_body(
                     PropertiesTab::Row => "table.tab.row",
                     PropertiesTab::Column => "table.tab.column",
                     PropertiesTab::Cell => "table.tab.cell",
+                    PropertiesTab::AltText => "table.tab.alt_text",
                 }),
                 dialog.tab == tab,
             )
@@ -1236,6 +1238,18 @@ fn properties_body(
                     Field::Indent,
                     cx,
                 )))
+                .child(
+                    line()
+                        .child(label("table.prop.direction"))
+                        .child(
+                            chip("direction-rtl", t("table.prop.rtl"), dialog.right_to_left)
+                                .on_click(props(cx, |dialog| dialog.right_to_left = true)),
+                        )
+                        .child(
+                            chip("direction-ltr", t("table.prop.ltr"), !dialog.right_to_left)
+                                .on_click(props(cx, |dialog| dialog.right_to_left = false)),
+                        ),
+                )
                 .child(
                     line()
                         .child(label("table.prop.wrapping"))
@@ -1392,6 +1406,38 @@ fn properties_body(
                     )
                     .child(number_box(view, dialog, Field::ColumnWidth, cx)),
             ),
+        PropertiesTab::AltText => div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .id("alt-title")
+                    .child(crate::view::word_dialogs::field_box(
+                        t("table.prop.alt_title"),
+                        &dialog.alt_title,
+                        dialog.alt_focus == AltField::Title,
+                        320.0,
+                    ))
+                    .on_click(props(cx, |dialog| dialog.alt_focus = AltField::Title)),
+            )
+            .child(
+                div()
+                    .id("alt-description")
+                    .child(crate::view::word_dialogs::field_box(
+                        t("table.prop.alt_description"),
+                        &dialog.alt_description,
+                        dialog.alt_focus == AltField::Description,
+                        320.0,
+                    ))
+                    .on_click(props(cx, |dialog| dialog.alt_focus = AltField::Description)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(palette::dim())
+                    .child(t("table.prop.alt_hint")),
+            ),
         PropertiesTab::Cell => {
             let mut body = div()
                 .flex()
@@ -1472,6 +1518,10 @@ fn properties_body(
                                 .child(number_box(view, dialog, Field::CellMarginBottom, cx))
                                 .child(label("table.prop.right_margin"))
                                 .child(number_box(view, dialog, Field::CellMarginRight, cx)),
+                        )
+                        .child(
+                            checkbox("cell-fit-text", t("table.prop.fit_text"), dialog.fit_text)
+                                .on_click(props(cx, |dialog| dialog.fit_text = !dialog.fit_text)),
                         ),
                 );
             }
@@ -1977,9 +2027,17 @@ fn sort_body(
         })
     };
     let mut body = div().flex().flex_col().gap_2();
+    // Outside a table there are no columns: one key, 段落.
+    let paragraphs = headings.is_empty();
     for (slot, name) in key_names.into_iter().enumerate() {
+        if paragraphs && slot > 0 {
+            break;
+        }
         let key = keys[slot];
         let mut columns = line().child(label(name));
+        if paragraphs {
+            columns = columns.child(chip("sort-paragraphs", t("table.sort.paragraphs"), true));
+        }
         if slot > 0 {
             columns =
                 columns.child(

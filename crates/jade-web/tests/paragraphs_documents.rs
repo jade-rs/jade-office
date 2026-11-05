@@ -128,3 +128,196 @@ fn the_ribbon_line_spacing_reads_back() {
         LineSpacing::Multiple(1.15)
     );
 }
+
+/// 見開きページのインデント設定: the paragraph's left indent is its inside
+/// one, so on an even page it is taken from the right, as Word lays it out.
+#[test]
+fn mirror_indents_put_the_left_indent_inside() {
+    let mut document = common::open_bytes(&blank_document(Blank::English));
+    document.place_caret(0, 0);
+    document.insert_text("Page one").unwrap();
+    document.insert_paragraph_break().unwrap();
+    document
+        .insert_text("Page two, indented from the inside of the spread")
+        .unwrap();
+    let was = document.paragraph_format();
+    let mut form = ParagraphForm::new(was.clone());
+    type_into(&mut form, ParagraphField::Left, "50");
+    form.format.page_break_before = true;
+    form.submit(&mut document).unwrap();
+    let plain = document.page(1).expect("page two").rgba_premultiplied();
+
+    let was = document.paragraph_format();
+    assert!(!was.mirror_indents);
+    let mut form = ParagraphForm::new(was.clone());
+    form.format.mirror_indents = true;
+    form.submit(&mut document).unwrap();
+    assert!(document.paragraph_format().mirror_indents);
+    assert!(
+        document.page(1).unwrap().rgba_premultiplied() != plain,
+        "on an even page the inside indent is on the right"
+    );
+
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    assert!(xml.contains("<w:mirrorIndents/>"), "{xml}");
+    document.undo().unwrap();
+    assert!(!document.paragraph_format().mirror_indents);
+}
+
+/// アウトライン レベル and 既定で折りたたみ: a body paragraph given レベル 2
+/// joins the navigation pane and アウトライン at that level, saved as
+/// `w:outlineLvl` and `w15:collapsed`; the reopened document collapses it.
+/// 本文 takes both away again, and a 見出し style's level is greyed out.
+#[test]
+fn the_outline_level_is_written_and_followed() {
+    use jade_web::word::outline::level_of;
+    use jade_web::word::references::navigation::WordNavigation;
+    use jade_web::word::{WordSession, BODY_TEXT};
+
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "概要");
+    document.place_caret(paragraph, 0);
+    let was = document.paragraph_format();
+    assert_eq!((was.outline_level, was.outline_locked), (BODY_TEXT, false));
+
+    let mut form = ParagraphForm::new(was.clone());
+    form.toggle_collapsed();
+    assert!(!form.format.collapsed, "本文 does not collapse");
+    form.set_outline_level(1);
+    form.toggle_collapsed();
+    form.submit(&mut document).unwrap();
+
+    let now = document.paragraph_format();
+    assert_eq!((now.outline_level, now.collapsed), (1, true));
+    assert_eq!(level_of(document.word_document(), paragraph), Some(2));
+    assert!(document
+        .outline()
+        .iter()
+        .any(|heading| heading.paragraph == paragraph && heading.level == 2));
+
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    assert!(xml.contains(r#"<w:outlineLvl w:val="1"/>"#), "the level");
+    assert!(xml.contains("<w15:collapsed/>"), "collapsed by default");
+    assert!(xml.contains("xmlns:w15="), "its namespace is declared");
+    let reopened = common::open_bytes(&saved);
+    assert!(reopened.collapsed_by_default().contains(&paragraph));
+
+    // 本文 again: neither is left behind.
+    let mut form = ParagraphForm::new(now);
+    form.set_outline_level(BODY_TEXT);
+    assert!(!form.format.collapsed);
+    form.submit(&mut document).unwrap();
+    assert_eq!(level_of(document.word_document(), paragraph), Some(10));
+    let xml = jade_opc::OpcPackage::open(&document.export_docx().unwrap())
+        .unwrap()
+        .part_str("word/document.xml")
+        .unwrap()
+        .unwrap();
+    assert!(!xml.contains("<w:outlineLvl") && !xml.contains("<w15:collapsed"));
+
+    // A 見出し 1 paragraph's level is its style's: the list does nothing.
+    use jade_web::word::styles::WordStyles;
+    WordStyles::apply_style(&mut document, "Heading1").unwrap();
+    let heading = document.paragraph_format();
+    assert_eq!((heading.outline_level, heading.outline_locked), (0, true));
+    let mut form = ParagraphForm::new(heading.clone());
+    form.set_outline_level(4);
+    assert_eq!(form.format.outline_level, 0);
+}
+
+/// 書式の詳細: the caret's フォント, 段落 and セクション as the pane lists
+/// them, following what was just set.
+#[test]
+fn reveal_formatting_lists_the_font_paragraph_and_section() {
+    use jade_web::word::reveal_formatting::{
+        RevealGroup, RevealRow, RevealValue, WordRevealFormatting,
+    };
+    let mut document = common::open_bytes(&blank_document(Blank::Japanese));
+    document.place_caret(0, 0);
+    document.insert_text("書式").unwrap();
+    document.select((0, 0), (0, "書式".len())).unwrap();
+    WordFormatting::toggle_format(&mut document, jade_web::editing::CharacterFormat::Bold).unwrap();
+    WordFormatting::set_alignment(&mut document, "center").unwrap();
+    document.select((0, 0), (0, "書".len())).unwrap();
+
+    let font = document.reveal(RevealGroup::Font);
+    assert!(
+        font.contains(&RevealRow {
+            label: "reveal.effect",
+            value: RevealValue::Key("reveal.bold"),
+        }),
+        "{font:?}"
+    );
+    assert!(font.iter().any(|row| row.label == "reveal.size"));
+    let paragraph = document.reveal(RevealGroup::Paragraph);
+    assert!(paragraph.contains(&RevealRow {
+        label: "reveal.alignment",
+        value: RevealValue::Key("reveal.align.center"),
+    }));
+    assert!(paragraph.iter().any(|row| row.label == "reveal.style"));
+    let section = document.reveal(RevealGroup::Section);
+    assert!(
+        section.contains(&RevealRow {
+            label: "reveal.paper",
+            value: RevealValue::Text("210 × 297 mm".to_string()),
+        }),
+        "{section:?}"
+    );
+    assert!(section.contains(&RevealRow {
+        label: "reveal.orientation",
+        value: RevealValue::Key("reveal.portrait"),
+    }));
+}
+
+#[test]
+fn text_with_similar_formatting_is_selected_and_formatted_together() {
+    use jade_web::editing::CharacterFormat;
+    use jade_web::word::similar::{format, still_selected, RangeFormat, WordSimilar};
+    let mut document = common::open_bytes(&blank_document(Blank::Japanese));
+    document.place_caret(0, 0);
+    document.insert_text("AAbbAAcc").unwrap();
+    for start in [0, 4] {
+        document.select((0, start), (0, start + 2)).unwrap();
+        WordFormatting::toggle_format(&mut document, CharacterFormat::Bold).unwrap();
+    }
+    let italic = |document: &jade_web::editing::EditableDocument, at: usize| {
+        WordFormatting::run_style_at(document, (0, at))
+            .and_then(|style| style.italic)
+            .unwrap_or(false)
+    };
+
+    // A caret in the first bold run finds both.
+    document.place_caret(0, 1);
+    let ranges = document.select_similar_formatting();
+    assert_eq!(ranges, vec![((0, 0), (0, 2)), ((0, 4), (0, 6))]);
+    assert_eq!(document.selection(), Some(((0, 0), (0, 2))));
+    assert!(still_selected(&document, &ranges));
+
+    // Italic goes on both, not between them, as one undo step.
+    format(
+        &mut document,
+        &ranges,
+        RangeFormat::Toggle(CharacterFormat::Italic),
+    )
+    .unwrap();
+    assert!(italic(&document, 1) && italic(&document, 5));
+    assert!(!italic(&document, 3));
+    assert!(still_selected(&document, &ranges));
+    document.undo().unwrap();
+    assert!(!italic(&document, 1) && !italic(&document, 5));
+
+    // Selecting elsewhere ends it: the command takes the selection alone.
+    document.select((0, 2), (0, 4)).unwrap();
+    assert!(!still_selected(&document, &ranges));
+    format(
+        &mut document,
+        &ranges,
+        RangeFormat::Toggle(CharacterFormat::Italic),
+    )
+    .unwrap();
+    assert!(italic(&document, 3) && !italic(&document, 1));
+}

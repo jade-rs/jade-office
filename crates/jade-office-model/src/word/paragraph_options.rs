@@ -329,7 +329,10 @@ pub fn options_of(props: &ParagraphProperties) -> ParagraphOptionsState {
     };
     let shading = props.shading.as_ref().and_then(|shading| {
         let spec = ShadingSpec {
-            pattern: shading.val.clone().unwrap_or_else(|| "clear".to_string()),
+            pattern: shading
+                .val
+                .as_deref()
+                .map_or_else(|| "clear".to_string(), super::shading::canonical_pattern),
             color: hex(shading.color.as_deref()),
             fill: hex(shading.fill.as_deref()),
         };
@@ -445,6 +448,7 @@ pub trait WordParagraphOptions: WordSession {
                 suppress_auto_hyphens: command.suppress_auto_hyphens,
                 borders: command.borders,
                 shading: command.shading,
+                mirror_indents: None,
             },
             true,
         )

@@ -51,3 +51,52 @@ fn a_template_attached_and_detached_goes_through_a_reload() {
         None
     );
 }
+
+/// 挿入 › ファイルからテキスト: a .docx's body at the caret — its first
+/// paragraph joining the text before the caret, its last the text after —
+/// its heading style kept, as one undo step; a .txt a paragraph a line.
+#[test]
+fn text_from_a_file_comes_in_at_the_caret() {
+    use jade_web::editing::WordSession;
+    use jade_web::word::new::{blank_document, Blank};
+    use jade_web::word::styles::WordStyles;
+    use jade_web::word::text_from_file::insert_text_from_file;
+
+    let mut source = open_bytes(&blank_document(Blank::Japanese));
+    source.place_caret(0, 0);
+    source.insert_text("見出し").unwrap();
+    WordStyles::apply_style(&mut source, "Heading1").unwrap();
+    source.insert_paragraph_break().unwrap();
+    WordStyles::apply_style(&mut source, "Normal").unwrap();
+    source.insert_text("本文").unwrap();
+    let source = source.export_docx().unwrap();
+
+    let mut document = open_bytes(&blank_document(Blank::Japanese));
+    document.place_caret(0, 0);
+    document.insert_text("前後").unwrap();
+    document.place_caret(0, "前".len());
+    let caret = insert_text_from_file(&mut document, &source).unwrap();
+    let texts: Vec<String> = (0..document.paragraph_count())
+        .filter_map(|index| document.paragraph_text(index))
+        .collect();
+    assert_eq!(texts[..2], ["前見出し".to_string(), "本文後".to_string()]);
+    assert_eq!(caret, (1, "本文".len()));
+    let style = |document: &jade_web::editing::EditableDocument, index: usize| {
+        document
+            .word_document()
+            .paragraph(index)
+            .and_then(|paragraph| paragraph.properties.as_ref())
+            .and_then(|props| props.style.as_deref().map(str::to_string))
+    };
+    assert_eq!(style(&document, 0).as_deref(), Some("Heading1"));
+    let reopened = open_bytes(&document.export_docx().unwrap());
+    assert_eq!(reopened.paragraph_text(0).as_deref(), Some("前見出し"));
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("前後"));
+
+    // A text file: a paragraph a line, in place of the selection.
+    document.select((0, 0), (0, "前".len())).unwrap();
+    insert_text_from_file(&mut document, "一行目\r\n二行目\r\n".as_bytes()).unwrap();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("一行目"));
+    assert_eq!(document.paragraph_text(1).as_deref(), Some("二行目後"));
+}

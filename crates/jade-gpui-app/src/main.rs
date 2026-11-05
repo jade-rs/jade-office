@@ -32,6 +32,7 @@ mod screen_reader;
 mod shell;
 mod tooltip;
 mod word_accessibility;
+mod word_alignment_tab;
 mod word_characters;
 mod word_compare;
 mod word_compat;
@@ -46,16 +47,19 @@ mod word_files;
 mod word_fit_text;
 mod word_fonts;
 mod word_form;
+mod word_frame;
 mod word_hyphenation;
 mod word_immersive;
 mod word_inspect;
 mod word_lists;
 mod word_mailings;
+mod word_manuscript;
 mod word_master;
 mod word_objects;
 mod word_objects_diagrams;
 mod word_objects_panels;
 mod word_objects_ribbon;
+mod word_ole;
 mod word_page;
 mod word_page_setup;
 mod word_paragraph;
@@ -64,6 +68,7 @@ mod word_proofing;
 mod word_protection;
 mod word_read_aloud;
 mod word_references;
+mod word_reveal;
 mod word_review;
 mod word_review_tools;
 mod word_revisions;
@@ -77,8 +82,10 @@ mod word_story;
 mod word_styles;
 mod word_table;
 mod word_templates;
+mod word_text_from_file;
 mod word_thesaurus;
 mod word_tools;
+mod word_versions;
 mod word_views;
 mod word_watermark;
 mod workbook;
@@ -247,6 +254,10 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-s", SaveAs, None),
         // コピーを保存 and テンプレートとして保存.
         KeyBinding::new("ctrl-cmd-s", word_files::SaveCopy, CONTEXT),
+        // バージョン履歴 has no key in Word; one so the menu item has one.
+        KeyBinding::new("cmd-ctrl-alt-h", word_versions::VersionHistory, CONTEXT),
+        // 挿入 › オブジェクト…: Word for Mac has no key for it.
+        KeyBinding::new("cmd-ctrl-alt-o", word_ole::InsertObject, CONTEXT),
         KeyBinding::new("ctrl-cmd-t", word_files::SaveAsTemplate, CONTEXT),
         // 互換性チェック and 変換 (互換モードの文書を現在の形式に).
         KeyBinding::new("ctrl-cmd-k", word_compat::CheckCompatibility, CONTEXT),
@@ -403,6 +414,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.file.save_as"), SaveAs),
                 MenuItem::action(t("menu.file.save_copy"), word_files::SaveCopy),
                 MenuItem::action(t("menu.file.save_template"), word_files::SaveAsTemplate),
+                MenuItem::action(t("versions.menu"), word_versions::VersionHistory),
                 MenuItem::separator(),
                 MenuItem::action(
                     t("menu.file.check_compatibility"),
@@ -485,6 +497,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(t("menu.insert.symbol"), InsertSymbol),
                 MenuItem::action(t("menu.insert.date_time"), InsertDateTime),
+                MenuItem::action(t("object.menu"), word_ole::InsertObject),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.insert.field"), InsertField),
                 MenuItem::action(t("menu.insert.edit_field"), EditField),
@@ -1158,6 +1171,8 @@ impl gpui::AssetSource for Assets {
             "redo",
             "settings-2",
             "shapes",
+            "sort-a-z",
+            "text-select",
             "sheet",
             "split",
             "square",
@@ -1437,6 +1452,8 @@ struct DocumentView {
     current_page: usize,
     /// Whether the details panel on the right is open.
     show_inspector: bool,
+    /// 書式の詳細 is open beside the pages (`word_reveal`).
+    reveal_formatting: bool,
     /// Whether there are edits since the document was opened or saved.
     dirty: bool,
     /// The Field, prompt and Properties dialogs, and the user information.
@@ -1447,6 +1464,8 @@ struct DocumentView {
     master: word_master::Master,
     /// The 自動回復 copy of the unsaved edits.
     recovery: autorecover::Recovery,
+    /// 自動保存 and バージョン履歴 (`word_versions`).
+    versions: word_versions::Versions,
     /// The 印刷 panel, while it is open.
     printing: Option<word_print::PrintPanel>,
     /// 表示: the view, page movement, zoom fit, grid and white space.
@@ -1716,6 +1735,10 @@ impl DocumentView {
         }
         if self.tables.dialog.is_some() && self.handle_table_dialog_key(event, cx) {
             cx.stop_propagation();
+            return;
+        }
+        // 代替テキスト's boxes: typing goes on to the input handler.
+        if word_table::alt_text_field(self).is_some() {
             return;
         }
         if self.fields.dialog.is_some() {
@@ -2312,6 +2335,7 @@ impl DocumentView {
                 self.quick_parts_group(cx),
                 self.picture_group(cx),
                 word_signatures::insert_group(self, cx),
+                word_ole::insert_group(self, cx),
                 Self::ribbon_group(
                     t("link.group"),
                     vec![Self::ribbon_row(vec![self
@@ -2375,6 +2399,7 @@ impl DocumentView {
             .into_iter()
             .chain(self.page_setup_groups(cx))
             .chain([word_hyphenation::layout_group(self, cx)])
+            .chain([word_manuscript::layout_group(cx)])
             .chain([
                 Self::ribbon_group(
                     t("doc.group.paragraph"),
@@ -2667,6 +2692,9 @@ impl DocumentView {
     /// The field a bar over the pages is taking typing into — a header's or
     /// a footer's — while one is open.
     fn text_bar(&self) -> Option<&jade_office_model::text::TextEdit> {
+        if let Some(field) = word_table::alt_text_field(self) {
+            return Some(field);
+        }
         if let Some(field) = self.spin_text() {
             return Some(field);
         }
@@ -2711,6 +2739,9 @@ impl DocumentView {
     }
 
     fn text_bar_mut(&mut self) -> Option<&mut jade_office_model::text::TextEdit> {
+        if word_table::alt_text_field(self).is_some() {
+            return word_table::alt_text_field_mut(self);
+        }
         if self.spin_text().is_some() {
             return self.spin_text_mut();
         }
@@ -3341,6 +3372,7 @@ impl DocumentView {
         let done = match action {
             Action::Undo => return self.step_history(true, cx),
             Action::Redo => return self.step_history(false, cx),
+            Action::SelectSimilar => return word_views::select::select_similar(self, cx),
             Action::InsertTable(rows, columns) => {
                 let moved = WordFormatting::insert_table(document, rows, columns);
                 return self.ribbon_moved(moved, cx);
@@ -4559,6 +4591,14 @@ impl editor::Editor for DocumentView {
         self.dirty
     }
 
+    fn autosave(&self) -> Option<bool> {
+        Some(self.versions.auto.on)
+    }
+
+    fn toggle_autosave(&mut self, cx: &mut Context<Self>) {
+        word_versions::toggle(self, cx);
+    }
+
     /// The page's width fitted to the space beside the page list.
     fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
         const PAGE_LIST_WIDTH: f32 = 168.0;
@@ -4625,7 +4665,9 @@ impl Render for DocumentView {
         let inspect_pane = word_inspect::pane(self, cx);
         let signatures_pane = word_signatures::pane(self, cx);
         let thesaurus_pane = word_thesaurus::pane(self, cx);
+        let reveal_pane = word_reveal::pane(self, cx);
         let revisions_pane = word_revisions::pane(self, cx);
+        let versions_pane = word_versions::pane(self, cx);
         let restrict_pane = word_protection::pane(self, cx);
         let read_only_bar = word_protection::banner(self, cx);
         let read_aloud_bar = word_read_aloud::bar(self, cx);
@@ -4673,6 +4715,16 @@ impl Render for DocumentView {
             )
             .on_action(
                 cx.listener(|view, _: &word_files::SaveCopy, _window, cx| view.save_copy(cx)),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_versions::VersionHistory, _window, cx| {
+                    word_versions::toggle_pane(view, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|view, _: &word_ole::InsertObject, _window, cx| {
+                    word_ole::open_dialog(view, cx)
+                }),
             )
             .on_action(
                 cx.listener(|view, _: &word_compat::CheckCompatibility, _window, cx| {
@@ -5108,7 +5160,9 @@ impl Render for DocumentView {
             .children(inspect_pane)
             .children(signatures_pane)
             .children(thesaurus_pane)
+            .children(reveal_pane)
             .children(revisions_pane)
+            .children(versions_pane)
             .children(restrict_pane)
             .children(proofing_menu)
             // ---- a table dialog, over everything while it is open ----
@@ -5290,6 +5344,7 @@ pub(crate) fn new_document_view(
     let view = open_document_view(path, cx)?;
     Ok(cx.new(|cx| {
         autorecover::start(cx);
+        word_versions::start(cx);
         view
     }))
 }
@@ -5304,6 +5359,7 @@ pub(crate) fn untitled_document_view(
     let view = untitled_view(bytes, name, cx)?;
     Ok(cx.new(|cx| {
         autorecover::start(cx);
+        word_versions::start(cx);
         view
     }))
 }
@@ -5339,6 +5395,16 @@ fn document_view(
     // frame rather than only after the first click.
     // DATE and TIME show today, as Word updates them on opening.
     word_fields::set_clock_on_open(&mut document);
+    // Headings saved 既定で折りたたみ open collapsed, as in Word.
+    let collapsed = {
+        use jade_office_model::word::references::navigation::WordNavigation;
+        let collapsed = document.collapsed_by_default();
+        if !collapsed.is_empty() {
+            let blocks = document.hidden_by_collapse(&collapsed);
+            let _ = document.set_collapsed_blocks(blocks);
+        }
+        collapsed
+    };
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
     let images: Vec<_> = (0..document.page_count())
         .filter_map(|index| page_image(&document, index))
@@ -5382,7 +5448,11 @@ fn document_view(
         characters: word_characters::Characters::default(),
         spin: None,
         tools: word_tools::WordTools::default(),
-        references: word_references::References::default(),
+        references: {
+            let mut references = word_references::References::default();
+            references.collapsed = collapsed;
+            references
+        },
         controls: word_controls::ControlsUi::default(),
         mailings,
         equation: Default::default(),
@@ -5400,11 +5470,13 @@ fn document_view(
         typed: 0,
         current_page: 0,
         show_inspector: false,
+        reveal_formatting: false,
         dirty: false,
         fields: word_fields::FieldsUi::default(),
         files: word_files::Files::default(),
         master: word_master::Master::default(),
         recovery: autorecover::Recovery::default(),
+        versions: Default::default(),
         printing: None,
         views: word_views::Views::default(),
         scroll: ScrollHandle::new(),

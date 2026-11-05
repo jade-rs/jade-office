@@ -101,7 +101,10 @@ impl DocView {
         let keystroke = &event.keystroke;
         let key = keystroke.key.clone();
         let modifiers = keystroke.modifiers;
-        if !matches!(key.as_str(), "escape" | "enter" | "return" | "backspace") {
+        if !matches!(
+            key.as_str(),
+            "escape" | "enter" | "return" | "backspace" | "tab"
+        ) {
             // Text goes to the box through the input handler; the arrows and
             // the shortcuts do nothing to the pages behind the dialog.
             return keystroke.key_char.is_none() || modifiers.platform || modifiers.control;

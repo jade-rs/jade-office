@@ -28,6 +28,9 @@ pub struct SortLevel {
     pub column: usize,
     pub descending: bool,
     pub on: SortOn,
+    /// Order ▸ Custom List: the list whose order the values sort in (turned
+    /// round, descending).
+    pub custom: Option<Vec<String>>,
 }
 
 /// What the Sort dialog asks for.
@@ -106,6 +109,7 @@ impl SortDialog {
                 column: column as usize,
                 descending: false,
                 on: SortOn::Values,
+                custom: None,
             }],
             left_to_right: false,
             headers,
@@ -155,6 +159,7 @@ impl SortDialog {
             column: line as usize,
             descending: false,
             on: SortOn::Values,
+            custom: None,
         }];
     }
 
@@ -197,6 +202,18 @@ impl SortDialog {
         }
     }
 
+    /// Order ▸ Custom List for level `level`: the list at `list` among
+    /// [`crate::custom_lists::all`], or (`None`) A to Z again.
+    pub fn set_custom_list(&mut self, level: usize, list: Option<usize>) {
+        let lists = crate::custom_lists::all();
+        if let Some(level) = self.levels.get_mut(level) {
+            level.custom = list.and_then(|index| lists.get(index).cloned());
+            if level.custom.is_some() {
+                level.on = SortOn::Values;
+            }
+        }
+    }
+
     /// The colour level `level` puts on top or bottom.
     pub fn set_color(&mut self, level: usize, color: String) {
         if let Some(level) = self.levels.get_mut(level) {
@@ -233,6 +250,7 @@ impl SortDialog {
             column,
             descending: false,
             on: SortOn::Values,
+            custom: None,
         });
     }
 
@@ -257,7 +275,7 @@ impl SortDialog {
     }
 
     /// The keys with what each sorts on: a colour, or the values.
-    pub fn color_keys(&self) -> Vec<(u32, bool, Option<SortColor>)> {
+    pub fn color_keys(&self) -> Vec<crate::sheet::SortSpec> {
         self.levels
             .iter()
             .map(|level| {
@@ -277,7 +295,11 @@ impl SortDialog {
                 } else {
                     self.range.start.column
                 };
-                (start + level.column as u32, level.descending, color)
+                let custom = match level.on {
+                    SortOn::Values => level.custom.clone(),
+                    _ => None,
+                };
+                (start + level.column as u32, level.descending, color, custom)
             })
             .collect()
     }

@@ -251,6 +251,10 @@ impl DocumentView {
                 return true;
             }
         }
+        // オブジェクト: a double click opens the file it embeds.
+        if click_count >= 2 && crate::word_ole::open_object(self, &object) {
+            return true;
+        }
         // In a text box, a second click (or a double click) is in its text.
         if object.kind == FloatingObjectKind::TextBox
             && (click_count >= 2 || self.selected_object == Some(object))

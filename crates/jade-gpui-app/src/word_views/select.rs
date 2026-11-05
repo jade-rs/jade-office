@@ -14,6 +14,7 @@ use jade_office_model::word::clipboard::WordClipboard;
 use jade_office_model::word::selection::{
     block_ranges, caret_rect, composition_marks_in, range_rects, ranges_text,
 };
+use jade_office_model::word::similar::WordSimilar;
 use jade_office_model::word::Position;
 
 use crate::ribbon::Action;
@@ -150,6 +151,18 @@ pub fn set_ranges(view: &mut DocumentView, ranges: Vec<(Position, Position)>) {
         }
         view.rebuild_all_images();
     }
+}
+
+/// ホーム › 編集 › 類似した書式の文字列を選択: every run of the body formatted
+/// as the selection is, selected together; formatting then goes on each
+/// ([`run_on_ranges`]).
+pub fn select_similar(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
+    view.sync_selection();
+    let ranges = WordSimilar::similar_formatting(&view.document);
+    if !ranges.is_empty() {
+        set_ranges(view, ranges);
+    }
+    cx.notify();
 }
 
 /// The button came up: a drag drops its text, a click that never moved

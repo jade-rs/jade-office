@@ -35,6 +35,11 @@ fn unlike(now: &ParagraphFormat) -> ParagraphFormat {
         keep_next: !now.keep_next,
         keep_lines: !now.keep_lines,
         page_break_before: !now.page_break_before,
+        // The level and 既定で折りたたみ are the heading's, not a format.
+        outline_level: now.outline_level,
+        outline_locked: now.outline_locked,
+        collapsed: now.collapsed,
+        mirror_indents: !now.mirror_indents,
     }
 }
 

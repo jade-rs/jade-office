@@ -30,6 +30,16 @@ pub use jade_xlsx_layout::resize::{ResizeGesture, ResizeHit};
 pub use jade_xlsx_layout::{column_label, HeaderMetrics};
 use jade_xlsx_layout::{layout_workbook_sheet, LayoutOptions, Rect, SheetLayout};
 pub use jade_xlsx_reader::Axis;
+
+/// A sort key as the Sort dialog gives it: a column (or, left to right, a
+/// row) of the sheet, descending, the colour it puts first, and the custom
+/// list whose order it sorts in.
+pub type SortSpec = (
+    u32,
+    bool,
+    Option<jade_xlsx_headless_api::SortColor>,
+    Option<Vec<String>>,
+);
 use jade_xlsx_reader::{translate_formula, CellValue};
 pub use jade_xlsx_reader::{CellRange, CellRef};
 pub use jade_xlsx_reader::{DefinedName, PageSetup, SheetVisibility};
@@ -1045,7 +1055,7 @@ impl<B: Backend> Workbook<B> {
     }
 
     /// The cell's number format code, if it has one other than General.
-    fn number_format(&self, reference: CellRef) -> Option<String> {
+    pub(crate) fn number_format(&self, reference: CellRef) -> Option<String> {
         self.number_format_on(self.index, reference)
     }
 
@@ -2672,7 +2682,7 @@ impl<B: Backend> Workbook<B> {
     ) -> Result<bool, String> {
         let keys: Vec<_> = keys
             .iter()
-            .map(|&(column, descending)| (column, descending, None))
+            .map(|&(column, descending)| (column, descending, None, None))
             .collect();
         self.sort_by_colors(range, header, &keys, case_sensitive)
     }
@@ -2684,7 +2694,7 @@ impl<B: Backend> Workbook<B> {
         &mut self,
         range: CellRange,
         header: bool,
-        keys: &[(u32, bool, Option<jade_xlsx_headless_api::SortColor>)],
+        keys: &[SortSpec],
         case_sensitive: bool,
     ) -> Result<bool, String> {
         if keys.is_empty() || range.end.column <= range.start.column + u32::from(header) {
@@ -2698,12 +2708,14 @@ impl<B: Backend> Workbook<B> {
             phonetic: None,
             keys: keys
                 .iter()
-                .map(|(row, descending, color)| jade_xlsx_headless_api::SortKey {
-                    column: row.clamp(&range.start.row, &range.end.row) - range.start.row,
-                    descending: *descending,
-                    color: color.clone(),
-                    custom_list: None,
-                })
+                .map(
+                    |(row, descending, color, list)| jade_xlsx_headless_api::SortKey {
+                        column: row.clamp(&range.start.row, &range.end.row) - range.start.row,
+                        descending: *descending,
+                        color: color.clone(),
+                        custom_list: list.clone(),
+                    },
+                )
                 .collect(),
             by_columns: true,
         };
@@ -2724,7 +2736,7 @@ impl<B: Backend> Workbook<B> {
         &mut self,
         range: CellRange,
         header: bool,
-        keys: &[(u32, bool, Option<jade_xlsx_headless_api::SortColor>)],
+        keys: &[SortSpec],
         case_sensitive: bool,
     ) -> Result<bool, String> {
         if keys.is_empty() || range.end.row <= range.start.row + u32::from(header) {
@@ -2739,12 +2751,12 @@ impl<B: Backend> Workbook<B> {
             keys: keys
                 .iter()
                 .map(
-                    |(column, descending, color)| jade_xlsx_headless_api::SortKey {
+                    |(column, descending, color, list)| jade_xlsx_headless_api::SortKey {
                         column: column.clamp(&range.start.column, &range.end.column)
                             - range.start.column,
                         descending: *descending,
                         color: color.clone(),
-                        custom_list: None,
+                        custom_list: list.clone(),
                     },
                 )
                 .collect(),

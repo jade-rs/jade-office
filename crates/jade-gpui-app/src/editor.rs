@@ -67,6 +67,14 @@ pub trait Editor: Render + Focusable {
         None
     }
 
+    /// The title bar's 自動保存 switch, for a view that has one.
+    fn autosave(&self) -> Option<bool> {
+        None
+    }
+
+    /// The switch clicked.
+    fn toggle_autosave(&mut self, _cx: &mut Context<Self>) {}
+
     /// Zooms so the content fits the space it has. A view with nothing to fit
     /// goes back to 100%.
     fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
@@ -82,6 +90,8 @@ pub trait EditorHandle {
     fn zoom(&self, cx: &App) -> f32;
     fn is_dirty(&self, cx: &App) -> bool;
     fn title_badge(&self, cx: &App) -> Option<SharedString>;
+    fn autosave(&self, cx: &App) -> Option<bool>;
+    fn toggle_autosave(&self, cx: &mut App);
     fn set_zoom(&self, zoom: f32, cx: &mut App);
     fn zoom_to_fit(&self, cx: &mut App);
 }
@@ -109,6 +119,14 @@ impl<T: Editor> EditorHandle for Entity<T> {
 
     fn title_badge(&self, cx: &App) -> Option<SharedString> {
         self.read(cx).title_badge()
+    }
+
+    fn autosave(&self, cx: &App) -> Option<bool> {
+        self.read(cx).autosave()
+    }
+
+    fn toggle_autosave(&self, cx: &mut App) {
+        self.update(cx, |editor, cx| editor.toggle_autosave(cx));
     }
 
     fn set_zoom(&self, zoom: f32, cx: &mut App) {

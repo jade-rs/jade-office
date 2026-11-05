@@ -4816,6 +4816,107 @@ tool.residuals	Residuals
 tool.standard_residuals	Standard Residuals
 tool.probability_output	PROBABILITY OUTPUT
 tool.percentile	Percentile
+# Consolidate
+sheet.menu.consolidate	Consolidate…
+consolidate.dialog	Consolidate
+consolidate.function	Function
+consolidate.reference	Reference
+consolidate.all	All references
+consolidate.top_row	Use labels in Top row
+consolidate.left_column	Use labels in Left column
+consolidate.links	Create links to source data
+consolidate.add	Add
+consolidate.delete	Delete
+consolidate.fn.sum	Sum
+consolidate.fn.count	Count
+consolidate.fn.average	Average
+consolidate.fn.max	Max
+consolidate.fn.min	Min
+consolidate.fn.product	Product
+consolidate.fn.count_numbers	Count Numbers
+consolidate.fn.stddev	StdDev
+consolidate.fn.stddevp	StdDevp
+consolidate.fn.var	Var
+consolidate.fn.varp	Varp
+consolidate.alert.reference	Reference is not valid.
+consolidate.alert.no_source	Add at least one reference to consolidate.
+consolidate.alert.links_same_sheet	Cannot add links to source data on the same sheet as the destination.
+consolidate.alert.overlap	Source references overlap the destination area.
+# Advanced Filter
+sheet.menu.advanced_filter	Advanced Filter…
+advanced_filter.dialog	Advanced Filter
+advanced_filter.action	Action
+advanced_filter.in_place	Filter the list, in-place
+advanced_filter.copy	Copy to another location
+advanced_filter.list	List range
+advanced_filter.criteria	Criteria range
+advanced_filter.copy_to	Copy to
+advanced_filter.unique	Unique records only
+advanced_filter.show_all	Show All
+advanced_filter.alert.list	The list range is not valid.
+advanced_filter.alert.criteria	The criteria range is not valid.
+advanced_filter.alert.extract	The extract range has a missing or illegal field name.
+advanced_filter.alert.overlap	The extract range overlaps the list range.
+advanced_filter.alert.active_sheet	You can only copy filtered data to the active sheet.
+# Custom lists
+sheet.menu.custom_lists	Edit Custom Lists…
+custom_lists.dialog	Custom Lists
+custom_lists.lists	Custom lists
+custom_lists.new	NEW LIST
+custom_lists.entries	List entries
+custom_lists.import	Import list from cells
+custom_lists.add	Add
+custom_lists.delete	Delete
+custom_lists.import_button	Import
+custom_lists.alert.built_in	A built-in list cannot be deleted.
+custom_lists.alert.import	Select cells that hold the list to import.
+sort.custom_list	Custom List…
+# Forecast Sheet
+sheet.menu.forecast_sheet	Forecast Sheet…
+forecast.dialog	Create Forecast Worksheet
+forecast.chart	Chart
+forecast.line	Line
+forecast.column	Column
+forecast.end	Forecast End
+forecast.start	Forecast Start
+forecast.confidence	Confidence Interval
+forecast.seasonality	Seasonality
+forecast.season_auto	Detect Automatically
+forecast.season_manual	Set Manually
+forecast.season	Season length
+forecast.statistics	Include forecast statistics
+forecast.timeline	Timeline Range
+forecast.values	Values Range
+forecast.missing	Fill Missing Points Using
+forecast.interpolation	Interpolation
+forecast.zeros	Zeros
+forecast.aggregate	Aggregate Duplicates Using
+forecast.agg.average	Average
+forecast.agg.count	Count
+forecast.agg.counta	CountA
+forecast.agg.max	Max
+forecast.agg.median	Median
+forecast.agg.min	Min
+forecast.agg.sum	Sum
+forecast.create	Create
+forecast.alert.ranges	The timeline and values ranges must be single columns of the same size, with headers.
+forecast.alert.timeline	The timeline must hold numbers or dates at a regular step.
+forecast.alert.end	Forecast End must come after Forecast Start.
+forecast.alert.start	Forecast Start is not valid.
+forecast.alert.confidence	Confidence Interval must be between 0% and 100%.
+forecast.alert.season	Season length must be a whole number up to 8760.
+forecast.word.forecast	Forecast({})
+forecast.word.lower	Lower Confidence Bound({})
+forecast.word.upper	Upper Confidence Bound({})
+forecast.word.statistic	Statistic
+forecast.word.value	Value
+forecast.word.alpha	Alpha
+forecast.word.beta	Beta
+forecast.word.gamma	Gamma
+forecast.word.mase	MASE
+forecast.word.smape	SMAPE
+forecast.word.mae	MAE
+forecast.word.rmse	RMSE
 watermark.button	Watermark
 watermark.title	Custom Watermark
 watermark.custom	Custom Watermark...
@@ -4856,3 +4957,230 @@ fit_text.new	New text width
 fit_text.unit	chars
 fit_text.remove	Remove
 fit_text.bad_width	The text width must be between 0.5 and 1584 characters.
+manuscript.group	Manuscript
+manuscript.button	Manuscript Settings
+manuscript.title	Manuscript Settings
+manuscript.style	Style
+manuscript.style.none	None
+manuscript.style.squares	Grid Paper
+manuscript.style.lines	Lined Paper
+manuscript.style.frame	Framed Paper
+manuscript.size	Characters × Lines
+manuscript.color	Grid Color
+manuscript.paper	Paper Size
+manuscript.orientation	Orientation
+manuscript.portrait	Portrait
+manuscript.landscape	Landscape
+paragraph.outline	Outline level
+paragraph.outline.body	Body Text
+paragraph.collapsed	Collapsed by default
+word.shading.horz_stripe	Dark Horizontal
+word.shading.vert_stripe	Dark Vertical
+word.shading.diag_stripe	Dark Down Diagonal
+word.shading.reverse_diag_stripe	Dark Up Diagonal
+word.shading.horz_cross	Dark Grid
+word.shading.diag_cross	Dark Trellis
+word.shading.thin_horz_stripe	Light Horizontal
+word.shading.thin_vert_stripe	Light Vertical
+word.shading.thin_diag_stripe	Light Down Diagonal
+word.shading.thin_reverse_diag_stripe	Light Up Diagonal
+word.shading.thin_horz_cross	Light Grid
+word.shading.thin_diag_cross	Light Trellis
+word.shading.color	Color
+word.ptab.insert	Insert Alignment Tab
+word.ptab.insert_title	Insert a tab that aligns text to the margin or indent, whatever the tab stops
+word.ptab.title	Alignment Tab
+word.ptab.keys	⏎ insert · esc cancel
+word.ptab.alignment	Alignment
+word.ptab.left	Left
+word.ptab.center	Center
+word.ptab.right	Right
+word.ptab.relative_to	Align relative to
+word.ptab.margin	Margin
+word.ptab.indent	Indent
+word.ptab.leader	Leader
+word.ptab.leader_none	None
+doc.sort_title	Sort
+table.sort.paragraphs	Paragraphs
+word.text_from_file	Text from File…
+word.text_from_file.title	Insert the text of another file at the insertion point
+word.text_from_file.prompt	Insert
+reveal.title	Reveal Formatting
+reveal.tooltip	Show the formatting of the selection
+reveal.font	Font
+reveal.paragraph	Paragraph
+reveal.section	Section
+reveal.east_asia_font	Asian text
+reveal.latin_font	Latin text
+reveal.size	Size
+reveal.effect	Effect
+reveal.bold	Bold
+reveal.italic	Italic
+reveal.underline	Underline
+reveal.strike	Strikethrough
+reveal.double_strike	Double strikethrough
+reveal.superscript	Superscript
+reveal.subscript	Subscript
+reveal.small_caps	Small caps
+reveal.hidden	Hidden
+reveal.color	Color
+reveal.automatic	Automatic
+reveal.spacing	Spacing
+reveal.style	Style
+reveal.alignment	Alignment
+reveal.align.left	Left
+reveal.align.center	Centered
+reveal.align.right	Right
+reveal.align.both	Justified
+reveal.align.distribute	Distributed
+reveal.indent_left	Indent left
+reveal.indent_right	Indent right
+reveal.first_line	First line
+reveal.hanging	Hanging
+reveal.before	Spacing before
+reveal.after	Spacing after
+reveal.line	Line spacing
+reveal.line.single	Single
+reveal.line.one_and_half	1.5 lines
+reveal.line.double	Double
+reveal.line_at_least	Line spacing at least
+reveal.line_exactly	Line spacing exactly
+reveal.line_multiple	Line spacing multiple
+reveal.outline	Outline
+reveal.outline_level	Outline level
+reveal.pagination	Pagination
+reveal.keep_next	Keep with next
+reveal.keep_lines	Keep lines together
+reveal.page_break_before	Page break before
+reveal.paper	Paper size
+reveal.orientation	Orientation
+reveal.portrait	Portrait
+reveal.landscape	Landscape
+reveal.margin_top	Top margin
+reveal.margin_bottom	Bottom margin
+reveal.margin_left	Left margin
+reveal.margin_right	Right margin
+reveal.section_start	Section start
+reveal.start.next_page	New page
+reveal.start.continuous	Continuous
+reveal.start.even	Even page
+reveal.start.odd	Odd page
+reveal.start.column	New column
+reveal.columns	Columns
+reveal.direction	Text direction
+reveal.vertical	Vertical
+frame.insert	Frame
+frame.insert_title	Put the selected text in a frame
+frame.format	Format Frame
+frame.title	Frame
+frame.keys	Enter: OK  Esc: Cancel
+frame.wrap	Text wrapping
+frame.wrap_none	None
+frame.wrap_around	Around
+frame.width	Width
+frame.height	Height
+frame.auto	Auto
+frame.fixed	Exactly
+frame.at_least	At least
+frame.exact	Exactly
+frame.horizontal	Horizontal position
+frame.vertical	Vertical position
+frame.left	Left
+frame.center	Center
+frame.right	Right
+frame.top	Top
+frame.bottom	Bottom
+frame.inside	Inside
+frame.outside	Outside
+frame.offset	Distance
+frame.anchor	Relative to
+frame.margin	Margin
+frame.page	Page
+frame.column	Column
+frame.paragraph	Paragraph
+frame.distance	Distance from text
+frame.move_with_text	Move with text
+frame.remove	Remove Frame
+doc.select_similar	Select Text with Similar Formatting
+versions.autosave	AutoSave
+versions.autosave_tip	Saves to this file moments after you edit
+versions.on	On
+versions.off	Off
+versions.autosave_default	Turn on AutoSave by default
+versions.unsupported	AutoSave works only with Word files (.docx and the like). Use Save As to save this as a Word document.
+versions.menu	Version History
+versions.title	Version History
+versions.current	Current version
+versions.open	Open
+versions.restore	Restore
+versions.none	No saved versions yet.
+versions.unsaved	Save the document to start its history.
+versions.kind.original	Original file
+versions.kind.saved	Saved
+versions.kind.autosaved	AutoSaved
+versions.kind.restored	Restored
+object.menu	Object...
+object.title	Object
+object.detail	Embeds a file in the document. Double-click it to open it in its app.
+object.icon	Display as icon
+object.from_file	From File...
+object.group	Object
+object.button	Object
+object.tooltip	Embed a file in the document as an object
+paragraph.mirror_indents	Mirror indents
+paragraph.inside	Inside
+paragraph.outside	Outside
+table.prop.fit_text	Fit text
+table.prop.direction	Table direction
+table.prop.rtl	Right-to-left
+table.prop.ltr	Left-to-right
+table.tab.alt_text	Alt Text
+table.prop.alt_title	Title
+table.prop.alt_description	Description
+table.prop.alt_hint	The title and description tell people who use screen readers what the table holds.
+options.field_shading	Field shading
+options.field_shading.never	Never
+options.field_shading.always	Always
+options.field_shading.selected	When selected
+options.text_boundaries	Text boundaries
+options.crop_marks	Crop marks
+setup.fill.open	Fill Effects...
+setup.fill.title	Fill Effects
+setup.fill.tab.gradient	Gradient
+setup.fill.tab.texture	Texture
+setup.fill.tab.pattern	Pattern
+setup.fill.tab.picture	Picture
+setup.fill.color1	Color 1
+setup.fill.color2	Color 2
+setup.fill.black	Black
+setup.fill.style	Shading styles
+setup.fill.style.horizontal	Horizontal
+setup.fill.style.vertical	Vertical
+setup.fill.style.diagonal_up	Diagonal up
+setup.fill.style.diagonal_down	Diagonal down
+setup.fill.variant	Variants
+setup.fill.texture.newsprint	Newsprint
+setup.fill.texture.recycled_paper	Recycled paper
+setup.fill.texture.paper_bag	Paper bag
+setup.fill.texture.canvas	Canvas
+setup.fill.texture.denim	Denim
+setup.fill.texture.cork	Cork
+setup.fill.texture.sand	Sand
+setup.fill.texture.granite	Granite
+setup.fill.other_texture	Other Texture...
+setup.fill.pattern.pct5	5%
+setup.fill.pattern.pct10	10%
+setup.fill.pattern.pct25	25%
+setup.fill.pattern.pct50	50%
+setup.fill.pattern.pct75	75%
+setup.fill.pattern.horizontal	Horizontal
+setup.fill.pattern.vertical	Vertical
+setup.fill.pattern.down_diagonal	Downward diagonal
+setup.fill.pattern.up_diagonal	Upward diagonal
+setup.fill.pattern.cross	Cross
+setup.fill.pattern.diagonal_cross	Diagonal cross
+setup.fill.pattern.checker	Checker board
+setup.fill.foreground	Foreground
+setup.fill.background	Background
+setup.fill.choose_picture	Select Picture...
+setup.fill.no_picture	No picture selected

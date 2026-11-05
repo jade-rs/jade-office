@@ -383,6 +383,7 @@ impl DocumentView {
                     menu,
                 )]),
                 crate::ribbon::row(vec![drop_cap]),
+                crate::ribbon::row(vec![crate::word_text_from_file::button(cx)]),
             ],
         )
     }

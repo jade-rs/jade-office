@@ -127,6 +127,7 @@ fn view_page(cx: &Context<DocumentView>) -> AnyElement {
                         .into_any_element()
                 }),
         )
+        .child(super::display::settings_section(cx))
         .into_any_element()
 }
 

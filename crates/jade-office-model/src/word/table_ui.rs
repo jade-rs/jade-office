@@ -394,6 +394,15 @@ impl TableTools {
                 edited(document.align_cells(horizontal, vertical))
             }
             TableAction::TextDirection(direction) => edited(document.set_text_direction(direction)),
+            TableAction::Sort if document.caret_table_cell().is_none() => {
+                // Outside a table: the selected paragraphs, by 段落 (no
+                // headings to pick from).
+                self.open(Some(TableDialog::Sort {
+                    keys: [Some((0, SortKind::Text, false)), None, None],
+                    header: false,
+                    headings: Vec::new(),
+                }))
+            }
             TableAction::Sort => {
                 let header = document
                     .table_properties()
@@ -516,6 +525,13 @@ impl TableTools {
             "enter" | "return" => self.apply_dialog(document),
             "backspace" => {
                 dialog.backspace();
+                TableOutcome::Redraw
+            }
+            "tab" if matches!(&*dialog, TableDialog::Properties(properties) if properties.alt_field().is_some()) =>
+            {
+                if let TableDialog::Properties(properties) = dialog {
+                    properties.next_alt_field();
+                }
                 TableOutcome::Redraw
             }
             _ => {

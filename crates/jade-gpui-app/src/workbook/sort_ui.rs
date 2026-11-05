@@ -3,6 +3,9 @@
 pub(super) enum SortAction {
     Column(usize, usize),
     Order(usize, bool),
+    /// Order ▸ Custom List for a level: a list by its place among the
+    /// lists, or (`None`) the values' own order again.
+    CustomList(usize, Option<usize>),
     /// Sort On for a level: the values (`None`), or the cell (`false`) or
     /// font (`true`) colour.
     On(usize, Option<bool>),
@@ -138,6 +141,30 @@ impl View {
                     SortAction::Order(index, true),
                     cx,
                 ));
+            // Order ▸ Custom List…, on the values: the lists to pick from.
+            let mut lists = None;
+            if font.is_none() {
+                order = order.child(self.sort_chip(
+                    ("sort-custom", index),
+                    i18n::text("sort.custom_list").into(),
+                    level.custom.is_some(),
+                    SortAction::CustomList(index, level.custom.is_none().then_some(0)),
+                    cx,
+                ));
+                if let Some(chosen) = &level.custom {
+                    let mut row = div().flex().flex_wrap().gap_1();
+                    for (place, list) in custom_lists::all().iter().enumerate() {
+                        row = row.child(self.sort_chip(
+                            ("sort-list", index * 1000 + place),
+                            custom_lists::line(list),
+                            list == chosen,
+                            SortAction::CustomList(index, Some(place)),
+                            cx,
+                        ));
+                    }
+                    lists = Some(row);
+                }
+            }
             if dialog.levels.len() > 1 {
                 order = order.child(self.sort_chip(
                     ("sort-remove", index),
@@ -163,7 +190,8 @@ impl View {
                     .child(columns)
                     .child(div().mt_1().child(on))
                     .when_some(swatches, |level, swatches| level.child(div().mt_1().child(swatches)))
-                    .child(div().mt_1().child(order)),
+                    .child(div().mt_1().child(order))
+                    .when_some(lists, |level, lists| level.child(div().mt_1().child(lists))),
             );
         }
         let panel = div()
@@ -287,6 +315,7 @@ fn change_sort_dialog(dialog: &mut SortDialog, action: SortAction) {
             }
         }
         SortAction::On(level, kind) => dialog.sort_on(level, kind),
+        SortAction::CustomList(level, list) => dialog.set_custom_list(level, list),
         SortAction::Color(level, place) => {
             let font = dialog
                 .levels
