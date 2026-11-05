@@ -26,20 +26,25 @@ fn book() -> Workbook<TinySkiaBackend> {
 #[test]
 fn cell_and_info_know_where_the_book_is() {
     let mut book = book();
-    book.set_location(Path::new("/Users/me/Documents/Budget.xlsx"));
+    let (location, directory) = if cfg!(windows) {
+        (
+            r"C:\Users\me\Documents\Budget.xlsx",
+            r"C:\Users\me\Documents\",
+        )
+    } else {
+        ("/Users/me/Documents/Budget.xlsx", "/Users/me/Documents/")
+    };
+    book.set_location(Path::new(location));
     let sheet = book.sheet_name();
     book.set_cell(CellRef::new(7, 29), "=CELL(\"filename\",A1)")
         .unwrap();
     assert_eq!(
         book.display_text(CellRef::new(7, 29)),
-        format!("/Users/me/Documents/[Budget.xlsx]{sheet}")
+        format!("{directory}[Budget.xlsx]{sheet}")
     );
     book.set_cell(CellRef::new(7, 30), "=INFO(\"directory\")")
         .unwrap();
-    assert_eq!(
-        book.display_text(CellRef::new(7, 30)),
-        "/Users/me/Documents/"
-    );
+    assert_eq!(book.display_text(CellRef::new(7, 30)), directory);
     // The window scrolled to show C5 at its top left.
     book.set_view_origin(4, 2);
     book.set_cell(CellRef::new(7, 31), "=INFO(\"origin\")")

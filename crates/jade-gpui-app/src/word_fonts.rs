@@ -13,6 +13,8 @@ use jade_office_model::word::embedding::{self, Face};
 fn cache() -> Option<PathBuf> {
     let base = if cfg!(test) {
         std::env::temp_dir().join(format!("jade-embedded-fonts-{}", std::process::id()))
+    } else if cfg!(target_os = "windows") {
+        PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("jade-office/embedded-fonts")
     } else {
         PathBuf::from(std::env::var_os("HOME")?).join("Library/Caches/jade-office/embedded-fonts")
     };
