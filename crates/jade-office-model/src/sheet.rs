@@ -980,10 +980,31 @@ impl<B: Backend> Workbook<B> {
             })
     }
 
-    /// The formula with its `=`, or the stored value: what the formula bar
-    /// shows and what an edit starts from.
+    /// Editable formula text with its `=`, or the stored value. Display-only
+    /// CSE braces are supplied by [`Self::formula_bar_text`].
     pub fn edit_text(&self, reference: CellRef) -> String {
         self.edit_text_on(self.index, reference)
+    }
+
+    /// The selected cell's formula-bar text, including legacy CSE braces.
+    /// Editing starts from [`Self::edit_text`] so those display braces do not
+    /// become literal input when the user starts editing a formula.
+    pub fn formula_bar_text(&self, reference: CellRef) -> String {
+        let text = self.edit_text(reference);
+        let sheet = &self.book.workbook().sheets[self.index];
+        let legacy = sheet
+            .formula_source_at(reference)
+            .is_some_and(|(owner, _)| {
+                sheet.array_formulas.iter().any(|array| {
+                    array.anchor == owner
+                        && array.kind == jade_xlsx_reader::ArrayFormulaKind::Legacy
+                })
+            });
+        if legacy && text.starts_with('=') {
+            format!("{{{text}}}")
+        } else {
+            text
+        }
     }
 
     /// [`Self::edit_text`] for a cell on the sheet at `index`.
@@ -994,23 +1015,15 @@ impl<B: Backend> Workbook<B> {
         if let Some(table) = self.data_table_on(index, reference) {
             return crate::data_table::table_formula(&table);
         }
-        let Some(cell) = self.book.workbook().sheets[index]
-            .rows
-            .iter()
-            .find(|row| row.index == reference.row)
-            .and_then(|row| {
-                row.cells
-                    .iter()
-                    .find(|cell| cell.reference.column == reference.column)
-            })
-        else {
-            return String::new();
-        };
-        if let Some(formula) = &cell.formula {
+        let sheet = &self.book.workbook().sheets[index];
+        if let Some((_, formula)) = sheet.formula_source_at(reference) {
             // As Excel shows it: the file's `_xlfn.` prefixes are not what
             // anybody typed.
             return format!("={}", formula_text::to_display_formula(formula));
         }
+        let Some(cell) = sheet.cell_at(reference) else {
+            return String::new();
+        };
         match &cell.value {
             CellValue::Empty => String::new(),
             CellValue::Number(number) => self.edit_number(index, reference, *number),
