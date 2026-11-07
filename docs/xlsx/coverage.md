@@ -336,7 +336,7 @@ This checkpoint fixes scoped round-trip and calculation differences:
   tokens and conditional negative fractions. Private-use text cannot collide
   with the internal repeat delimiter, including when real repeats are present.
 
-The latest complete selected package runs pass 204 calculation cases /9 targets
+The latest complete selected package runs pass 205 calculation cases /9 targets
 and 210 layout cases /31 targets. The selected model CSV, Paste Special and
 scenario run passes 30 cases /3 targets; these counts describe separate runs,
 not a fresh execution of every XLSX or application test. Maintained reader,
@@ -2317,3 +2317,21 @@ replay verifies 500 source/build files and 480 upstream hashes
 The preceding scalar-temperature checkpoint passed 203 calc /67 selected
 editor cases. Native exceptional coercion, full unit-family accuracy, complex
 range aggregates, broader numerical captures and workbook/UI gaps remain open.
+
+2026-11-07 fractional-dollar conversion checkpoint: DOLLARDE/DOLLARFR now
+broadcast values and denominators with matching static shapes. Existing scalar
+conversion, denominator truncation, negative/zero errors, no-Boolean coercion
+and source-error precedence are retained. Oversized outer-axis outputs are
+guarded. References:
+https://support.microsoft.com/en-gb/excel/functions/dollarde-function and
+https://support.microsoft.com/en-us/excel/functions/dollarfr-function .
+The pre-change array regression returns NIMPL (`tmp/xlsx-dollar-array-before.log`).
+Calc: 205 passed /9 targets; selected editor: 69 passed; engine: 2,329 passed /
+4 existing ignored (`tmp/xlsx-dollar-array-{calc,editor,engine}.log`). Editor
+coverage includes operand/denominator edits, undo/redo and error-first matrices
+through cached/recalculated reopen. Strict native Clippy, Rust 1.99 wasm32,
+formatting and diff checks pass. Canonical replay verifies 500 source/build
+files and 480 upstream hashes (`tmp/xlsx-dollar-array-patch.log`); patch SHA-256:
+`19f4cec6b289529f57593d73ac548f73d44861cb43165a6981f6481bf074a706`.
+Native exceptional coercion, high-magnitude precision, other financial-function
+arrays and the broader workbook/UI/application-oracle gaps remain open.
