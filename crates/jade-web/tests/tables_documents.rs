@@ -609,3 +609,169 @@ fn borders_text_direction_and_autofit() {
         assert!(xml.contains(expected), "{expected} in {xml}");
     }
 }
+
+/// ホーム › 並べ替え outside a table: the selected paragraphs by 段落, with a
+/// 見出し行, through the same dialog the table sorts with; one undo.
+#[test]
+fn paragraphs_sort_from_the_sort_dialog() {
+    use jade_office_model::word::table_ui::{TableAction, TableDialog, TableTools};
+    let mut document = blank();
+    document.place_caret(0, 0);
+    for (index, text) in ["果物", "みかん", "Banana", "apple"].iter().enumerate() {
+        if index > 0 {
+            document.insert_paragraph_break().unwrap();
+        }
+        document.insert_text(text).unwrap();
+    }
+    document.insert_paragraph_break().unwrap();
+    document.insert_text("おわり").unwrap();
+    document.select((0, 0), (3, 5)).unwrap();
+    let mut tools = TableTools::default();
+    tools.action(&mut document, TableAction::Sort);
+    let Some(TableDialog::Sort { headings, keys, .. }) = tools.dialog.as_mut() else {
+        panic!("the sort dialog opens outside a table");
+    };
+    assert!(headings.is_empty(), "the 段落 key, not columns");
+    keys[0] = Some((
+        0,
+        jade_docx_headless_api::HeadlessTableSortKind::Text,
+        false,
+    ));
+    if let Some(TableDialog::Sort { header, .. }) = tools.dialog.as_mut() {
+        *header = true;
+    }
+    tools.apply_dialog(&mut document);
+    let texts: Vec<String> = (0..5)
+        .map(|index| document.paragraph_text(index).unwrap_or_default())
+        .collect();
+    assert_eq!(texts, vec!["果物", "apple", "Banana", "みかん", "おわり"]);
+    let reopened = open_bytes(&document.export_docx().unwrap());
+    assert_eq!(reopened.paragraph_text(1).as_deref(), Some("apple"));
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(1).as_deref(), Some("みかん"));
+
+    // 降順 by number.
+    let mut document = blank();
+    document.place_caret(0, 0);
+    for (index, text) in ["2 件", "10 件", "7 件"].iter().enumerate() {
+        if index > 0 {
+            document.insert_paragraph_break().unwrap();
+        }
+        document.insert_text(text).unwrap();
+    }
+    document.select((0, 0), (2, 3)).unwrap();
+    document
+        .sort_table(&SortSpec {
+            keys: vec![jade_docx_headless_api::HeadlessTableSortKey {
+                column: 0,
+                kind: jade_docx_headless_api::HeadlessTableSortKind::Number,
+                descending: true,
+            }],
+            header_row: false,
+        })
+        .unwrap();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("10 件"));
+    assert_eq!(document.paragraph_text(2).as_deref(), Some("2 件"));
+}
+
+/// セル › オプション › 文字列をセル幅に合わせる: the cell's text is spread
+/// to the cell's width on the page, saved as `w:tcFitText` and read back.
+#[test]
+fn fit_text_spreads_a_cell_and_is_saved() {
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["氏名", ""]]);
+    document.place_caret(cell_paragraph(&document, 0, 0, 0), 0);
+    let before = document.page(0).unwrap().encode_png().unwrap();
+    let properties = document.table_properties().unwrap();
+    assert!(!properties.fit_text);
+    let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Cell);
+    dialog.fit_text = true;
+    document.apply_table_properties(&dialog).unwrap();
+
+    document.place_caret(cell_paragraph(&document, 0, 0, 0), 0);
+    assert!(document.table_properties().unwrap().fit_text);
+    let after = document.page(0).unwrap().encode_png().unwrap();
+    assert_ne!(before, after, "the cell's text is spread on the page");
+    let bytes = document.export_docx().unwrap();
+    let xml = document_xml(&bytes);
+    assert_eq!(xml.matches("<w:tcFitText/>").count(), 1, "{xml}");
+
+    let mut reopened = open_bytes(&bytes);
+    reopened.place_caret(cell_paragraph(&reopened, 0, 0, 0), 0);
+    assert!(reopened.table_properties().unwrap().fit_text);
+    reopened.place_caret(cell_paragraph(&reopened, 0, 0, 1), 0);
+    assert!(!reopened.table_properties().unwrap().fit_text);
+}
+
+/// 表 › 表の方向 › 右から左: the first column moves to the right edge of the
+/// page, saved as `w:bidiVisual` and read back.
+#[test]
+fn table_direction_mirrors_the_columns_and_is_saved() {
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["一", "二"]]);
+    let first_left = |document: &EditableDocument| {
+        let left = |column: usize| {
+            document
+                .cell_layouts()
+                .iter()
+                .find(|cell| cell.row == 0 && cell.column == column)
+                .map(|cell| cell.left)
+                .unwrap()
+        };
+        left(0) < left(1)
+    };
+    assert!(first_left(&document));
+    document.place_caret(cell_paragraph(&document, 0, 0, 0), 0);
+    let properties = document.table_properties().unwrap();
+    assert!(!properties.right_to_left);
+    let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::Table);
+    dialog.right_to_left = true;
+    document.apply_table_properties(&dialog).unwrap();
+
+    assert!(
+        !first_left(&document),
+        "the first column is drawn at the right"
+    );
+    document.place_caret(cell_paragraph(&document, 0, 0, 0), 0);
+    assert!(document.table_properties().unwrap().right_to_left);
+    let bytes = document.export_docx().unwrap();
+    assert!(document_xml(&bytes).contains("<w:bidiVisual/>"));
+    let mut reopened = open_bytes(&bytes);
+    reopened.place_caret(cell_paragraph(&reopened, 0, 0, 0), 0);
+    assert!(reopened.table_properties().unwrap().right_to_left);
+    assert!(!first_left(&reopened));
+}
+
+/// 代替テキスト: typed into the tab's boxes, saved as `w:tblCaption` and
+/// `w:tblDescription`, read back into the dialog.
+#[test]
+fn alt_text_is_typed_saved_and_read_back() {
+    let mut document = with_table(2, 2);
+    let properties = document.table_properties().unwrap();
+    assert_eq!(properties.alt_title, "");
+    let mut dialog = TablePropertiesDialog::new(properties, PropertiesTab::AltText);
+    dialog.type_text("社員名簿");
+    dialog.next_alt_field();
+    dialog.type_text("氏名と部署の一覧");
+    document.apply_table_properties(&dialog).unwrap();
+
+    let bytes = document.export_docx().unwrap();
+    let xml = document_xml(&bytes);
+    assert!(xml.contains(r#"<w:tblCaption w:val="社員名簿"/>"#), "{xml}");
+    assert!(
+        xml.contains(r#"<w:tblDescription w:val="氏名と部署の一覧"/>"#),
+        "{xml}"
+    );
+    let mut reopened = open_bytes(&bytes);
+    reopened.place_caret(cell_paragraph(&reopened, 0, 0, 0), 0);
+    let read = reopened.table_properties().unwrap();
+    assert_eq!(read.alt_title, "社員名簿");
+    assert_eq!(read.alt_description, "氏名と部署の一覧");
+    // Emptied, it is taken off.
+    let mut dialog = TablePropertiesDialog::new(read, PropertiesTab::AltText);
+    dialog.alt_title.text.clear();
+    reopened.apply_table_properties(&dialog).unwrap();
+    let xml = document_xml(&reopened.export_docx().unwrap());
+    assert!(!xml.contains("tblCaption"), "{xml}");
+    assert!(xml.contains("tblDescription"), "{xml}");
+}

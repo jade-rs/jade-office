@@ -1512,12 +1512,17 @@ pub trait WordPageSetup: WordSession {
 
     /// ページの色: `RRGGBB`, or none.
     fn set_page_color(&mut self, color: Option<&str>) -> Result<(), String> {
-        self.apply_command(
-            HeadlessCommand::SetPageBackgroundColor {
-                color: color.map(|color| format!("#{}", color.trim_start_matches('#'))),
-            },
-            true,
-        )
+        let color = HeadlessCommand::SetPageBackgroundColor {
+            color: color.map(|color| format!("#{}", color.trim_start_matches('#'))),
+        };
+        // A plain colour takes the place of a fill effect.
+        if self.word_document().page_fill().is_some() {
+            return self.apply_commands(
+                vec![HeadlessCommand::SetPageFill { fill: None }, color],
+                true,
+            );
+        }
+        self.apply_command(color, true)
     }
 
     /// The page colour, `RRGGBB`.

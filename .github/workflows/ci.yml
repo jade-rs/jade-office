@@ -18,6 +18,24 @@ env:
   CARGO_PROFILE_TEST_DEBUG: 0
 
 jobs:
+  # Submodule workflows do not run for a jade-office PR. Keep the engine's
+  # Mac coordinate gate explicit here as well; never refresh its snapshots.
+  word-mac-coordinates:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: jade-core/crates/jade-docx-native-render
+      - name: Verify unadjusted Word for Mac probe coordinates
+        run: cargo test --manifest-path jade-core/crates/jade-docx-native-render/Cargo.toml --locked --test word_mac_coordinates --test word_windows_coordinates -- --test-threads=1
+
   # The native app and the crates that paint through Skia.
   native:
     runs-on: macos-latest

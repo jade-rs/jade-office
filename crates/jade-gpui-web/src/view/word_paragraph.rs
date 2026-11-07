@@ -14,6 +14,7 @@ use jade_web::word::paragraph_options::{
     WordParagraphOptions,
 };
 use jade_web::word::ruler::{format_length, parse_length};
+use jade_web::word::shading;
 
 use super::word_dialog::{button, chip, labeled, on, section, DialogError, Inputs, WordDialog};
 use super::DocView as DocumentView;
@@ -53,16 +54,6 @@ const FILLS: [Option<&str>; 9] = [
     Some("FCE4D6"),
     Some("EDEDED"),
     Some("FFFF00"),
-];
-const PATTERNS: [(&str, &str); 8] = [
-    ("clear", "word.shading.clear"),
-    ("pct10", "10%"),
-    ("pct25", "25%"),
-    ("pct50", "50%"),
-    ("solid", "word.shading.solid"),
-    ("horzStripe", "word.shading.horizontal"),
-    ("vertStripe", "word.shading.vertical"),
-    ("diagStripe", "word.shading.diagonal"),
 ];
 
 /// タブとリーダー: a working copy of the paragraph's tab stops, which OK
@@ -608,18 +599,7 @@ impl DocumentView {
                     move |view, cx| {
                         view.edit_dialog(cx, |dialog| {
                             if let WordDialog::Borders(dialog) = dialog {
-                                let pattern = dialog
-                                    .shading
-                                    .as_ref()
-                                    .map_or("clear".to_string(), |shading| shading.pattern.clone());
-                                dialog.shading = match (fill, pattern.as_str()) {
-                                    (None, "clear") => None,
-                                    _ => Some(ShadingSpec {
-                                        pattern,
-                                        color: None,
-                                        fill: fill.map(str::to_string),
-                                    }),
-                                };
+                                dialog.shading = shading::with_fill(dialog.shading.as_ref(), fill);
                             }
                         })
                     },
@@ -630,7 +610,7 @@ impl DocumentView {
             .shading
             .as_ref()
             .map_or("clear".to_string(), |shading| shading.pattern.clone());
-        let patterns = PATTERNS
+        let patterns = shading::SHADING_PATTERNS
             .iter()
             .enumerate()
             .map(|(index, (token, label))| {
@@ -645,20 +625,36 @@ impl DocumentView {
                     move |view, cx| {
                         view.edit_dialog(cx, |dialog| {
                             if let WordDialog::Borders(dialog) = dialog {
-                                let fill = dialog
-                                    .shading
-                                    .as_ref()
-                                    .and_then(|shading| shading.fill.clone());
                                 dialog.shading =
-                                    (token != "clear" || fill.is_some()).then(|| ShadingSpec {
-                                        pattern: token.to_string(),
-                                        color: (token != "clear").then(|| "000000".to_string()),
-                                        fill,
-                                    });
+                                    shading::with_pattern(dialog.shading.as_ref(), token);
                             }
                         })
                     },
                 ))
+            })
+            .collect::<Vec<_>>();
+        // 色: the pattern's, 自動 first.
+        let color_now = dialog
+            .shading
+            .as_ref()
+            .and_then(|shading| shading.color.clone());
+        let pattern_colors = shading::PATTERN_COLORS
+            .iter()
+            .enumerate()
+            .map(|(index, color)| {
+                let color = *color;
+                color_cell(
+                    ("shading-color", index),
+                    color,
+                    pattern_now != "clear" && color_now.as_deref() == color,
+                )
+                .on_click(on(cx, move |view, cx| {
+                    view.edit_dialog(cx, |dialog| {
+                        if let WordDialog::Borders(dialog) = dialog {
+                            dialog.shading = shading::with_color(dialog.shading.as_ref(), color);
+                        }
+                    })
+                }))
             })
             .collect::<Vec<_>>();
         div()
@@ -716,6 +712,7 @@ impl DocumentView {
             .child(section(i18n::text("word.shading.section")))
             .child(labeled(i18n::text("word.shading.fill")).children(fills))
             .child(labeled(i18n::text("word.shading.pattern")).children(patterns))
+            .child(labeled(i18n::text("word.shading.color")).children(pattern_colors))
             .into_any_element()
     }
 

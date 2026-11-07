@@ -253,6 +253,7 @@ pub fn developer(state: &DeveloperState, cx: &mut Context<DocView>) -> Vec<AnyEl
                         cx,
                     ),
                 ]),
+                row(super::word_frame::buttons(cx)),
             ],
         ),
         group(

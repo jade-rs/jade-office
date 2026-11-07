@@ -27,6 +27,13 @@ pub enum Pick {
     PictureBullet,
     /// 図の形式 → 図の変更: it replaces the selected picture.
     ChangePicture,
+    /// 挿入 → ファイルからテキスト: its text goes in at the caret.
+    TextFromFile,
+    /// 挿入 → オブジェクト: it is embedded (`word_ole`).
+    Object,
+    /// 塗りつぶし効果 → その他のテクスチャ… and 図の選択….
+    FillTexture,
+    FillPicture,
 }
 
 /// The tools' state, kept with the document view.
@@ -191,6 +198,10 @@ impl DocView {
         match self.tools.picking.take() {
             Some(Pick::Template) => self.attach_template_file(name, bytes, cx),
             Some(Pick::ChangePicture) => self.change_selected_picture(bytes.to_vec(), cx),
+            Some(Pick::TextFromFile) => self.insert_text_from_bytes(bytes, cx),
+            Some(Pick::Object) => self.insert_object_file(name, bytes, cx),
+            Some(Pick::FillTexture) => self.take_fill_file(false, name, bytes, cx),
+            Some(Pick::FillPicture) => self.take_fill_file(true, name, bytes, cx),
             Some(Pick::PictureBullet) => {
                 let extension = name.rsplit_once('.').map_or("", |(_, extension)| extension);
                 self.set_picture_bullet(bytes, extension, cx)

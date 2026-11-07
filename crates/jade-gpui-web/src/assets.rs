@@ -73,6 +73,8 @@ impl gpui::AssetSource for Assets {
             "redo",
             "settings-2",
             "shapes",
+            "sort-a-z",
+            "text-select",
             "sheet",
             "split",
             "square",

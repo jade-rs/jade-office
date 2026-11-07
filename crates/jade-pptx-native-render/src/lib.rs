@@ -385,6 +385,7 @@ fn collect_media_parts(shapes: &[jade_pptx_reader::ShapeItem], out: &mut Vec<Str
                 collect_media_parts(&group.children, out);
                 None
             }
+            // InkML is decoded into the slide model, not an image bitmap.
             ShapeItem::Table(_) | ShapeItem::Chart(_) | ShapeItem::Ink(_) => None,
         };
         if let Some(part) = part {

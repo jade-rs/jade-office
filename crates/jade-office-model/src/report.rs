@@ -62,6 +62,25 @@ impl<B: Backend> Workbook<B> {
     /// sheet it went on.
     pub fn write_report(&mut self, output: &Output, report: &Report) -> Result<usize, String> {
         self.atomic_edit(|book| {
+            let (index, steps) = book.write_report_steps(output, report)?;
+            book.wrote(steps)?;
+            if index != book.sheet_index() {
+                book.select_sheet(index)?;
+            }
+            Ok(index)
+        })
+    }
+
+    /// [`Self::write_report`] without noting the write: the sheet it went
+    /// on and the engine steps it took, for a command that writes more in
+    /// the same undo step.
+    pub(crate) fn write_report_steps(
+        &mut self,
+        output: &Output,
+        report: &Report,
+    ) -> Result<(usize, usize), String> {
+        let book = self;
+        {
             let mut steps = 0;
             let (index, name, origin) = match output {
                 Output::At(origin) => (book.sheet_index(), book.sheet_name(), *origin),
@@ -133,11 +152,7 @@ impl<B: Backend> Workbook<B> {
                     .map_err(|error| error.to_string())?;
                 steps += 1;
             }
-            book.wrote(steps)?;
-            if index != book.sheet_index() {
-                book.select_sheet(index)?;
-            }
-            Ok(index)
-        })
+            Ok((index, steps))
+        }
     }
 }

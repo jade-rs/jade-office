@@ -1,6 +1,7 @@
 use super::WorkbookView;
 use crate::{i18n, theme};
 use gpui::{div, prelude::*, px, Context, MouseButton};
+use jade_office_model::custom_lists;
 use jade_office_model::sort_dialog::{SortDialog, SortOn};
 type View = WorkbookView;
 include!("sort_ui.rs");

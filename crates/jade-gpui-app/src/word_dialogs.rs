@@ -9,7 +9,7 @@ use jade_office_model::spin::{specs, Metrics};
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::{
     IndentUnit, LineSpacing, LinkForm, LinkTarget, NoteForm, NoteKind, ParagraphField,
-    ParagraphForm, SpecialIndent, WordLinks, WordParagraphs,
+    ParagraphForm, SpecialIndent, WordLinks, WordParagraphs, BODY_TEXT, OUTLINE_LEVELS,
 };
 
 use crate::word_spin::{spin_field, Spin, SpinOwner};
@@ -23,6 +23,10 @@ pub enum Dialog {
     Note(NoteForm),
     /// 段落: indents, spacing, line spacing, pagination.
     Paragraph(Box<ParagraphForm>),
+    /// 位置合わせタブの挿入 (`word_alignment_tab`).
+    AlignmentTab(jade_office_model::word::alignment_tab::AlignmentTabForm),
+    /// 枠の書式設定 (`word_frame`).
+    Frame(jade_office_model::word::frame::FrameForm),
 }
 
 impl Dialog {
@@ -32,7 +36,7 @@ impl Dialog {
             Dialog::Link(form) => Some(form.field()),
             Dialog::Note(form) => Some(&form.text),
             // Its numbers are spin boxes, which take their own typing.
-            Dialog::Paragraph(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) | Dialog::Frame(_) => None,
         }
     }
 
@@ -40,7 +44,7 @@ impl Dialog {
         match self {
             Dialog::Link(form) => Some(form.field_mut()),
             Dialog::Note(form) => Some(&mut form.text),
-            Dialog::Paragraph(_) => None,
+            Dialog::Paragraph(_) | Dialog::AlignmentTab(_) | Dialog::Frame(_) => None,
         }
     }
 }
@@ -127,7 +131,7 @@ pub fn bar(title: &str, keys: &str, body: Vec<AnyElement>) -> AnyElement {
 }
 
 impl DocumentView {
-    fn open_dialog(&mut self, dialog: Dialog, cx: &mut Context<Self>) {
+    pub(crate) fn open_dialog(&mut self, dialog: Dialog, cx: &mut Context<Self>) {
         self.find_bar = None;
         self.story_bar = None;
         self.comment_bar = None;
@@ -138,7 +142,7 @@ impl DocumentView {
 
     /// The selection the shell holds, handed to the document so a dialog
     /// reads and writes the text the user sees selected.
-    fn sync_selection(&mut self) {
+    pub(crate) fn sync_selection(&mut self) {
         if self.document.selection().is_none() {
             self.document
                 .place_caret(self.insert_at.0, self.insert_at.1);
@@ -291,6 +295,7 @@ impl DocumentView {
                     let field = form.focus;
                     self.focus_paragraph_field(field);
                 }
+                Dialog::AlignmentTab(_) | Dialog::Frame(_) => {}
             },
             _ => {
                 let edited = dialog.field_mut().is_some_and(|field| field.edit_key(key));
@@ -316,6 +321,18 @@ impl DocumentView {
                 let kept = self.insert_at;
                 form.submit(&mut self.document).map(|()| kept)
             }
+            Dialog::Frame(form) => {
+                use jade_office_model::word::frame::WordFrames;
+                let kept = self.insert_at;
+                self.document.apply_frame(form).map(|()| kept)
+            }
+            Dialog::AlignmentTab(form) => form.submit(&mut self.document).map(|()| {
+                self.document
+                    .selection_range()
+                    .map_or(self.insert_at, |range| {
+                        (range.focus.paragraph, range.focus.offset)
+                    })
+            }),
         };
         match result {
             Ok(caret) => {
@@ -363,6 +380,8 @@ impl DocumentView {
                 vec![field_box(t("note.text"), &form.text, true, 360.0)],
             ),
             Dialog::Paragraph(form) => self.paragraph_dialog(form, cx),
+            Dialog::AlignmentTab(form) => crate::word_alignment_tab::bar(form, cx),
+            Dialog::Frame(form) => crate::word_frame::dialog_bar(form, cx),
         })
     }
 
@@ -491,10 +510,16 @@ impl DocumentView {
                 move |form| form.format.alignment = value.to_string(),
             ));
         }
+        // 見開きページのインデント設定: 左 and 右 become 内側 and 外側.
+        let (left, right) = if format.mirror_indents {
+            ("paragraph.inside", "paragraph.outside")
+        } else {
+            ("paragraph.left", "paragraph.right")
+        };
         let mut indent = vec![
             caption(t("paragraph.indent")),
-            self.number(form, ParagraphField::Left, t("paragraph.left"), cx),
-            self.number(form, ParagraphField::Right, t("paragraph.right"), cx),
+            self.number(form, ParagraphField::Left, t(left), cx),
+            self.number(form, ParagraphField::Right, t(right), cx),
             div()
                 .text_xs()
                 .text_color(theme::text_dim())
@@ -520,6 +545,13 @@ impl DocumentView {
             ));
         }
         indent.push(self.number(form, ParagraphField::SpecialBy, t("paragraph.by"), cx));
+        indent.push(self.check(
+            "paragraph-mirror-indents",
+            t("paragraph.mirror_indents"),
+            format.mirror_indents,
+            cx,
+            |form| form.format.mirror_indents = !form.format.mirror_indents,
+        ));
         let mut spacing = vec![
             caption(t("paragraph.spacing")),
             self.number(form, ParagraphField::Before, t("paragraph.before"), cx),
@@ -549,6 +581,41 @@ impl DocumentView {
         }
         if format.line.amount().is_some() {
             spacing.push(self.number(form, ParagraphField::LineAmount, t("paragraph.by"), cx));
+        }
+        // アウトライン レベル, greyed out (just what it is) while the style
+        // sets it, and 既定で折りたたみ.
+        let mut outline = vec![caption(t("paragraph.outline"))];
+        for (level, key) in OUTLINE_LEVELS {
+            let label = if level == BODY_TEXT { t(key) } else { key };
+            let active = format.outline_level == level;
+            if format.outline_locked {
+                if active {
+                    outline.push(
+                        div()
+                            .text_xs()
+                            .text_color(theme::text_faint())
+                            .child(label)
+                            .into_any_element(),
+                    );
+                }
+                continue;
+            }
+            outline.push(self.choice(
+                ElementId::Name(format!("paragraph-outline-{level}").into()),
+                label,
+                active,
+                cx,
+                move |form| form.set_outline_level(level),
+            ));
+        }
+        if format.outline_level < BODY_TEXT {
+            outline.push(self.check(
+                "paragraph-collapsed",
+                t("paragraph.collapsed"),
+                format.collapsed,
+                cx,
+                |form| form.toggle_collapsed(),
+            ));
         }
         let pagination = vec![
             caption(t("paragraph.pagination")),
@@ -636,6 +703,7 @@ impl DocumentView {
             .child(row(alignment))
             .child(row(indent))
             .child(row(spacing))
+            .child(row(outline))
             .child(row(pagination))
             .child(row(buttons))
             .into_any_element()

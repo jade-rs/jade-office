@@ -4,8 +4,12 @@
 
 use jade_xlsx_reader::{CellRange, CellRef};
 
+use crate::advanced_filter::AdvancedFilterDialog;
 use crate::analysis::AnalysisDialog;
+use crate::consolidate::ConsolidateDialog;
+use crate::custom_lists::CustomListsDialog;
 use crate::data_table::DataTableDialog;
+use crate::forecast_sheet::ForecastDialog;
 use crate::form::Form;
 use crate::goal_seek::GoalSeekDialog;
 use crate::scenarios::ScenarioManager;
@@ -79,17 +83,35 @@ pub enum WhatIfTool {
     ScenarioManager,
     Solver,
     DataAnalysis,
+    ForecastSheet,
+    Consolidate,
+    AdvancedFilter,
+    CustomLists,
 }
 
 impl WhatIfTool {
-    /// The grid menu's What-If Analysis group, with each one's i18n key.
-    pub const MENU: [(WhatIfTool, &'static str); 5] = [
+    /// The grid menu's entries for these dialogs, with each one's i18n key:
+    /// the What-If Analysis group, and the data tools the Data group holds.
+    pub const MENU: [(WhatIfTool, &'static str); 9] = [
         (WhatIfTool::GoalSeek, "sheet.menu.goal_seek"),
         (WhatIfTool::DataTable, "sheet.menu.data_table"),
         (WhatIfTool::ScenarioManager, "sheet.menu.scenario_manager"),
         (WhatIfTool::Solver, "sheet.menu.solver"),
         (WhatIfTool::DataAnalysis, "sheet.menu.data_analysis"),
+        (WhatIfTool::ForecastSheet, "sheet.menu.forecast_sheet"),
+        (WhatIfTool::Consolidate, "sheet.menu.consolidate"),
+        (WhatIfTool::AdvancedFilter, "sheet.menu.advanced_filter"),
+        (WhatIfTool::CustomLists, "sheet.menu.custom_lists"),
     ];
+
+    /// Whether the grid menu lists it with the data tools (Consolidate,
+    /// Advanced Filter, Custom Lists) rather than under What-If Analysis.
+    pub fn is_data_tool(self) -> bool {
+        matches!(
+            self,
+            WhatIfTool::Consolidate | WhatIfTool::AdvancedFilter | WhatIfTool::CustomLists
+        )
+    }
 }
 
 /// One of the dialogs, open: each boxed, as they differ a lot in size.
@@ -99,6 +121,10 @@ pub enum WhatIfDialog {
     ScenarioManager(Box<ScenarioManager>),
     Solver(Box<SolverDialog>),
     DataAnalysis(Box<AnalysisDialog>),
+    ForecastSheet(Box<ForecastDialog>),
+    Consolidate(Box<ConsolidateDialog>),
+    AdvancedFilter(Box<AdvancedFilterDialog>),
+    CustomLists(Box<CustomListsDialog>),
 }
 
 /// `$body` with `$dialog` bound to whichever dialog is open.
@@ -110,6 +136,10 @@ macro_rules! each {
             WhatIfDialog::DataAnalysis($dialog) => $body,
             WhatIfDialog::Solver($dialog) => $body,
             WhatIfDialog::ScenarioManager($dialog) => $body,
+            WhatIfDialog::ForecastSheet($dialog) => $body,
+            WhatIfDialog::Consolidate($dialog) => $body,
+            WhatIfDialog::AdvancedFilter($dialog) => $body,
+            WhatIfDialog::CustomLists($dialog) => $body,
         }
     };
 }
@@ -133,6 +163,18 @@ impl WhatIfDialog {
             WhatIfTool::Solver => WhatIfDialog::Solver(Box::new(SolverDialog::open(book, at))),
             WhatIfTool::ScenarioManager => {
                 WhatIfDialog::ScenarioManager(Box::new(ScenarioManager::open(book, selected)))
+            }
+            WhatIfTool::ForecastSheet => {
+                WhatIfDialog::ForecastSheet(Box::new(ForecastDialog::open(book, selected)))
+            }
+            WhatIfTool::Consolidate => {
+                WhatIfDialog::Consolidate(Box::new(ConsolidateDialog::open(selected)))
+            }
+            WhatIfTool::AdvancedFilter => {
+                WhatIfDialog::AdvancedFilter(Box::new(AdvancedFilterDialog::open(book, selected)))
+            }
+            WhatIfTool::CustomLists => {
+                WhatIfDialog::CustomLists(Box::new(CustomListsDialog::open(selected)))
             }
         }
     }

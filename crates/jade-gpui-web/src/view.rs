@@ -29,46 +29,55 @@ use jade_web::text::{byte_to_utf16, utf16_to_byte, TextEdit};
 use crate::ribbon::{self, Action};
 use crate::{i18n, palette, Fonts, Host, UI_FONT};
 use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatting};
+use jade_web::word::similar::RangeFormat;
 
 mod deck;
 mod deck_show;
 mod sheet;
+mod word_alignment_tab;
 pub(crate) mod word_characters;
 mod word_context_menu;
 pub(crate) mod word_controls;
 pub(crate) mod word_design;
 pub(crate) mod word_dialog;
-mod word_dialogs;
+pub(crate) mod word_dialogs;
 pub(crate) mod word_download;
 pub(crate) mod word_draw;
 pub(crate) mod word_equation;
 pub(crate) mod word_fields;
 pub(crate) mod word_files;
 mod word_find;
+pub(crate) mod word_fit_text;
 mod word_form;
+mod word_frame;
 pub(crate) mod word_hyphenation;
 mod word_immersive;
 mod word_inspect;
 pub(crate) mod word_kit;
 pub(crate) mod word_lists;
 pub(crate) mod word_mailings;
+pub(crate) mod word_manuscript;
 pub(crate) mod word_object_tab;
 pub(crate) mod word_objects_ui;
+pub(crate) mod word_ole;
 pub(crate) mod word_paragraph;
 pub(crate) mod word_preview;
 mod word_print;
 mod word_read_aloud;
 pub(crate) mod word_recover;
 pub(crate) mod word_references;
+pub(crate) mod word_reveal;
 mod word_review;
 pub(crate) mod word_ruler;
 mod word_screen_reader;
 pub(crate) mod word_setup;
 mod word_signatures;
+mod word_similar;
 pub(crate) mod word_spin;
 pub(crate) mod word_story;
 pub(crate) mod word_styles;
 mod word_table;
+pub(crate) mod word_text_from_file;
 mod word_thesaurus;
 pub(crate) mod word_tools_ui;
 pub(crate) mod word_views;
@@ -576,6 +585,10 @@ pub struct DocView {
     /// The 差し込み文書 tab's merge, for a Word document.
     mailings: Option<word_mailings::Mailings>,
     host: Host,
+    /// 書式の詳細 is open beside the pages (`word_reveal`).
+    reveal_formatting: bool,
+    /// 類似した書式の文字列を選択's ranges, the selection's first.
+    similar: Vec<jade_web::word::similar::Range>,
     /// A ページ設定, 段組み, ページ番号の書式 or ページ罫線 dialog over a Word
     /// document, while one is open (`word_setup`).
     page_dialog: Option<Box<word_setup::PageDialogState>>,
@@ -685,6 +698,7 @@ impl DocView {
             return Err(i18n::format("workspace.protected", &[("name", &name)]));
         }
         let mut mailings = None;
+        let mut collapsed = std::collections::BTreeSet::new();
         let document = match kind {
             Kind::Document => {
                 // The first pages only, as pixels: the view keeps the ones on
@@ -707,6 +721,15 @@ impl DocView {
                 ));
                 let mut ribbon = Box::<ribbon::Ribbon>::default();
                 ribbon.read_styles(&opened);
+                // Headings saved 既定で折りたたみ open collapsed, as in Word.
+                {
+                    use jade_web::word::references::navigation::WordNavigation;
+                    collapsed = opened.collapsed_by_default();
+                    if !collapsed.is_empty() {
+                        let blocks = opened.hidden_by_collapse(&collapsed);
+                        opened.set_collapsed_blocks(blocks)?;
+                    }
+                }
                 Document::Pages {
                     ribbon,
                     format: None,
@@ -820,13 +843,19 @@ impl DocView {
             word_count: RefCell::new(None),
             characters: word_characters::Characters::default(),
             spin: None,
-            references: word_references::References::default(),
+            references: {
+                let mut references = word_references::References::default();
+                references.collapsed = collapsed;
+                references
+            },
             controls: word_controls::ControlsUi::default(),
             fields: word_fields::FieldsUi::default(),
             tools: word_tools_ui::WordTools::default(),
             objects_ui: word_objects_ui::ObjectsUi::default(),
             mailings,
             host,
+            reveal_formatting: false,
+            similar: Vec::new(),
             page_dialog: None,
             equation: None,
             equation_symbols: 0,
@@ -1240,6 +1269,7 @@ impl DocView {
                     || sheet.insert_function.is_some()
                     || sheet.top_ten.is_some()
                     || sheet.calculation_options.is_some()
+                    || sheet.series_dialog.is_some()
                     || sheet.shift_choice.is_some()
                     || sheet.more_colors.is_some()
                     || sheet.zoom_dialog.is_some()
@@ -1563,6 +1593,18 @@ impl DocView {
             let page_y = y - document.document_y(index, 0.0);
             if self.object_ui_press(index, (x, page_y), y, cx) {
                 return;
+            }
+        }
+        // オブジェクト: a double click hands over the file it embeds.
+        if event.click_count >= 2 {
+            let found = match &self.document {
+                Document::Pages { document, .. } => {
+                    document.object_at(x, y).filter(|found| found.page == index)
+                }
+                _ => None,
+            };
+            if found.is_some_and(|found| self.open_object(&found)) {
+                return cx.notify();
             }
         }
         // A picture is over the text: a press on one takes hold of it rather
@@ -2070,6 +2112,13 @@ impl DocView {
         if word_preview::settle(self, &action, cx) {
             return;
         }
+        // 均等割り付け on text inside a paragraph: 文字の均等割り付け.
+        if matches!(action, Action::Align("distribute")) && self.open_fit_text_dialog(cx) {
+            if let Document::Pages { ribbon, .. } = &mut self.document {
+                ribbon.popup = None;
+            }
+            return;
+        }
         let Document::Pages {
             ribbon, document, ..
         } = &mut self.document
@@ -2126,6 +2175,9 @@ impl DocView {
         }
         if let Action::Equation(action) = action {
             return self.equation_action(action, cx);
+        }
+        if let Action::Ole(action) = action {
+            return self.ole_action(action, cx);
         }
 
         if matches!(action, Action::Undo | Action::Redo) && self.equation.is_some() {
@@ -2210,6 +2262,9 @@ impl DocView {
         if let Action::Word(command) = action {
             return self.run_tool(command, cx);
         }
+        if let Action::SelectSimilar = action {
+            return self.select_similar(cx);
+        }
         if let Action::Object(crate::word_objects::ObjectAction::Ui(ui)) = action {
             return self.object_ui_action(ui, cx);
         }
@@ -2246,14 +2301,21 @@ impl DocView {
             self.refresh_repainted();
             return self.word_result(result, cx);
         }
+        // 類似した書式の文字列を選択's ranges take the font commands together.
+        let similar = self.similar.clone();
+        let on_similar = move |document: &mut jade_web::editing::WordDoc, format| {
+            jade_web::word::similar::format(document, &similar, format)
+        };
         self.word_edit(cx, move |document| match action {
-            Action::Toggle(format) => document.toggle_format(format),
-            Action::ClearFormatting => document.clear_formatting(),
-            Action::FontFamilyName(family) => document.set_font_family(&family),
-            Action::FontSize(points) => document.set_font_size(points),
-            Action::StepFontSize(grow) => document.step_font_size(grow),
-            Action::FontColor(color) => document.set_font_color(&color),
-            Action::Highlight(color) => document.set_highlight(color),
+            Action::Toggle(format) => on_similar(document, RangeFormat::Toggle(format)),
+            Action::ClearFormatting => on_similar(document, RangeFormat::ClearFormatting),
+            Action::FontFamilyName(family) => on_similar(document, RangeFormat::FontFamily(family)),
+            Action::FontSize(points) => on_similar(document, RangeFormat::FontSize(points)),
+            Action::StepFontSize(grow) => on_similar(document, RangeFormat::StepFontSize(grow)),
+            Action::FontColor(color) => on_similar(document, RangeFormat::FontColor(color)),
+            Action::Highlight(color) => {
+                on_similar(document, RangeFormat::Highlight(color.to_string()))
+            }
             Action::List(bullets) => document.toggle_list(bullets),
             Action::Indent(increase) => document.step_indent(increase),
             Action::Align(alignment) => document.set_alignment(alignment),
@@ -2287,6 +2349,7 @@ impl DocView {
             | Action::Views(_)
             | Action::ObjectFormat(_)
             | Action::Files(_)
+            | Action::Ole(_)
             | Action::Review(_)
             | Action::InsertPicture
             | Action::InsertLink
@@ -2298,6 +2361,7 @@ impl DocView {
             | Action::Style(_)
             | Action::Tables(_)
             | Action::Word(_)
+            | Action::SelectSimilar
             | Action::Tab(_)
             | Action::Popup(_)
             | Action::ClosePopup
@@ -2423,6 +2487,7 @@ impl DocView {
                 references: matches!(ribbon.tab, ribbon::Tab::References | ribbon::Tab::View)
                     .then(|| word_references::ribbon_state(document, &self.references)),
                 marks: document.formatting_marks(),
+                reveal_formatting: self.reveal_formatting,
                 story,
                 field_codes: document.field_code_view().all,
                 styles_pane: self.tools.styles_pane,
@@ -2575,6 +2640,7 @@ impl DocView {
         let restrict_pane = self.restrict_pane(cx);
         let signatures_pane = self.signatures_pane(cx);
         let thesaurus_pane = self.thesaurus_pane(cx);
+        let reveal_pane = self.reveal_pane(cx);
         let inspect_pane = self.inspect_pane(cx);
         let read_only_bar = self.read_only_bar(cx);
         let styles_pane = self.styles_pane(cx);
@@ -2658,7 +2724,9 @@ impl DocView {
         // the text changed.
         let key = (document.caret(), document.selection(), self.generation);
         if highlight.as_ref().is_none_or(|(cached, _)| *cached != key) {
-            *highlight = Some((key, document.selection_rects()));
+            let mut rects = document.selection_rects();
+            rects.extend(word_similar::extra_rects(document, &self.similar));
+            *highlight = Some((key, rects));
         }
         let highlight = highlight
             .as_ref()
@@ -2998,6 +3066,7 @@ impl DocView {
                     .children(restrict_pane)
                     .children(signatures_pane)
                     .children(thesaurus_pane)
+                    .children(reveal_pane)
                     .children(inspect_pane)
                     .children(styles_pane)
                     .children(selection_pane)

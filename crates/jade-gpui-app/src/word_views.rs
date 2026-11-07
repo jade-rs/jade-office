@@ -16,6 +16,7 @@ use jade_office_model::word::view::{
 
 pub mod context;
 pub mod customize;
+pub mod display;
 pub mod find;
 pub mod input;
 pub mod language;
@@ -373,6 +374,7 @@ pub fn before_render(view: &mut DocumentView, window: &Window, cx: &mut Context<
     layout::follow(view);
     // The marks Word のオプション shows by kind, in every document.
     marks::apply(view);
+    display::apply(view);
 }
 
 /// What the status bar adds: the caret's language, and 上書き while typing
@@ -1047,6 +1049,7 @@ pub fn view_tab(view: &mut DocumentView, cx: &mut Context<DocumentView>) -> Vec<
                 view.field_codes_button(cx),
                 grid,
                 white_space,
+                crate::word_reveal::button(view, cx),
             ]),
             row(crate::word_references::view_buttons(view, cx)),
         ],

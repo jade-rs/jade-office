@@ -133,6 +133,30 @@ fn a_word_typed_a_key_at_a_time_is_rejected_whole() {
 const INSERTED: [u8; 3] = [0x1b, 0x5e, 0x20];
 const DELETED: [u8; 3] = [0xb7, 0x1c, 0x1c];
 
+/// Detect the markup hue even when a subpixel rule is blended with white.
+/// Require at least 25% ink and matching coverage in all three channels;
+/// black/grey text and the other revision colour must not count as a rule.
+fn is_markup_color(rgb: [u8; 3], color: [u8; 3]) -> bool {
+    let coverage = std::array::from_fn::<_, 3, _>(|i| {
+        (255.0 - f64::from(rgb[i])) / (255.0 - f64::from(color[i]))
+    });
+    let min = coverage.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = coverage.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    min >= 0.25 && max <= 1.05 && max - min <= 0.05
+}
+
+#[test]
+fn markup_rule_detection_handles_antialiasing_without_accepting_other_ink() {
+    assert!(is_markup_color([141, 175, 144], INSERTED));
+    assert!(is_markup_color([219, 142, 142], DELETED));
+    for rgb in [[255, 255, 255], [0, 0, 0], [150, 150, 150]] {
+        assert!(!is_markup_color(rgb, INSERTED));
+        assert!(!is_markup_color(rgb, DELETED));
+    }
+    assert!(!is_markup_color(DELETED, INSERTED));
+    assert!(!is_markup_color(INSERTED, DELETED));
+}
+
 /// How many pixels of the document's pages are drawn in `color`, and the
 /// longest horizontal line of them — an underline or a strikethrough is far
 /// longer than any stroke of a glyph.
@@ -144,10 +168,7 @@ fn painted_in(document: &jade_web::editing::EditableDocument, color: [u8; 3]) ->
         for row in page.rgba_premultiplied().chunks(width * 4) {
             let mut run = 0;
             for pixel in row.chunks(4) {
-                let close = pixel[..3]
-                    .iter()
-                    .zip(color)
-                    .all(|(&have, want)| have.abs_diff(want) <= 24);
+                let close = is_markup_color([pixel[0], pixel[1], pixel[2]], color);
                 if close {
                     count += 1;
                     run += 1;

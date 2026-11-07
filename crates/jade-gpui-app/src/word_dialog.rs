@@ -91,6 +91,8 @@ pub enum WordDialog {
     QuickPart(QuickPartDialog),
     Hyphenation(crate::word_hyphenation::HyphenationDialogState),
     Watermark(crate::word_watermark::WatermarkDialogState),
+    Manuscript(crate::word_manuscript::ManuscriptDialogState),
+    FitText(crate::word_fit_text::FitTextDialogState),
 }
 
 impl WordDialog {
@@ -106,6 +108,8 @@ impl WordDialog {
             WordDialog::QuickPart(dialog) => &dialog.inputs,
             WordDialog::Hyphenation(dialog) => &dialog.inputs,
             WordDialog::Watermark(dialog) => &dialog.inputs,
+            WordDialog::FitText(dialog) => &dialog.inputs,
+            WordDialog::Manuscript(dialog) => &dialog.inputs,
         }
     }
 
@@ -121,6 +125,8 @@ impl WordDialog {
             WordDialog::QuickPart(dialog) => &mut dialog.inputs,
             WordDialog::Hyphenation(dialog) => &mut dialog.inputs,
             WordDialog::Watermark(dialog) => &mut dialog.inputs,
+            WordDialog::FitText(dialog) => &mut dialog.inputs,
+            WordDialog::Manuscript(dialog) => &mut dialog.inputs,
         }
     }
 }
@@ -202,6 +208,8 @@ impl DocumentView {
             WordDialog::QuickPart(dialog) => self.apply_quick_part_dialog(dialog),
             WordDialog::Hyphenation(dialog) => self.apply_hyphenation_dialog(dialog),
             WordDialog::Watermark(dialog) => self.apply_watermark_dialog(dialog),
+            WordDialog::FitText(dialog) => self.apply_fit_text_dialog(dialog),
+            WordDialog::Manuscript(dialog) => self.apply_manuscript_dialog(dialog),
         };
         match result {
             // A dialog that is not done (a value it cannot take) stays open.
@@ -276,6 +284,16 @@ impl DocumentView {
                 i18n::text("watermark.title"),
                 560.0,
                 self.watermark_dialog_body(dialog, cx),
+            ),
+            WordDialog::FitText(dialog) => (
+                i18n::text("fit_text.title"),
+                380.0,
+                self.fit_text_dialog_body(dialog, cx),
+            ),
+            WordDialog::Manuscript(dialog) => (
+                i18n::text("manuscript.title"),
+                520.0,
+                self.manuscript_dialog_body(dialog, cx),
             ),
         };
         let status = self.tools.status.clone();

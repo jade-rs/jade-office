@@ -518,6 +518,25 @@ sheet.paste_special.cancel	キャンセル
 sheet.menu.clear	数式と値のクリア
 sheet.menu.fill_down	下方向へコピー
 sheet.menu.fill_right	右方向へコピー
+sheet.menu.fill_series	連続データの作成…
+sheet.series.title	連続データ
+sheet.series.in	範囲
+sheet.series.rows	行
+sheet.series.columns	列
+sheet.series.type	種類
+sheet.series.linear	加算
+sheet.series.growth	乗算
+sheet.series.date	日付
+sheet.series.autofill	オートフィル
+sheet.series.unit	増加単位
+sheet.series.day	日
+sheet.series.weekday	週日
+sheet.series.month	月
+sheet.series.year	年
+sheet.series.trend	予測
+sheet.series.step	増分値:
+sheet.series.stop	停止値:
+sheet.series.not_a_number	増分値と停止値には数値を入力してください。
 sheet.menu.sort_ascending	昇順で並べ替え
 sheet.menu.sort_descending	降順で並べ替え
 sheet.menu.merge_center	セルを結合して中央揃え
@@ -4812,6 +4831,107 @@ tool.residuals	残差
 tool.standard_residuals	標準残差
 tool.probability_output	確率出力
 tool.percentile	百分位数
+# Consolidate
+sheet.menu.consolidate	統合…
+consolidate.dialog	統合の設定
+consolidate.function	集計の方法
+consolidate.reference	統合元範囲
+consolidate.all	統合元
+consolidate.top_row	統合の基準: 上端行
+consolidate.left_column	統合の基準: 左端列
+consolidate.links	統合元データとリンクする
+consolidate.add	追加
+consolidate.delete	削除
+consolidate.fn.sum	合計
+consolidate.fn.count	個数
+consolidate.fn.average	平均
+consolidate.fn.max	最大値
+consolidate.fn.min	最小値
+consolidate.fn.product	積
+consolidate.fn.count_numbers	数値の個数
+consolidate.fn.stddev	標本標準偏差
+consolidate.fn.stddevp	標準偏差
+consolidate.fn.var	標本分散
+consolidate.fn.varp	分散
+consolidate.alert.reference	参照が正しくありません。
+consolidate.alert.no_source	統合元範囲を追加してください。
+consolidate.alert.links_same_sheet	統合先と同じシートの統合元データにはリンクできません。
+consolidate.alert.overlap	統合元範囲と統合先の範囲が重なっています。
+# Advanced Filter
+sheet.menu.advanced_filter	詳細設定…
+advanced_filter.dialog	フィルター オプションの設定
+advanced_filter.action	抽出先
+advanced_filter.in_place	選択範囲内
+advanced_filter.copy	指定した範囲
+advanced_filter.list	リスト範囲
+advanced_filter.criteria	検索条件範囲
+advanced_filter.copy_to	抽出範囲
+advanced_filter.unique	重複するレコードは無視する
+advanced_filter.show_all	すべて表示
+advanced_filter.alert.list	リスト範囲が正しくありません。
+advanced_filter.alert.criteria	検索条件範囲が正しくありません。
+advanced_filter.alert.extract	抽出範囲に、存在しないフィールド名または不正なフィールド名があります。
+advanced_filter.alert.overlap	抽出範囲がリスト範囲と重なっています。
+advanced_filter.alert.active_sheet	抽出したデータはアクティブなシートにのみコピーできます。
+# Custom lists
+sheet.menu.custom_lists	ユーザー設定リストの編集…
+custom_lists.dialog	ユーザー設定リスト
+custom_lists.lists	ユーザー設定リスト
+custom_lists.new	新しいリスト
+custom_lists.entries	リストの項目
+custom_lists.import	リストの取り込み元範囲
+custom_lists.add	追加
+custom_lists.delete	削除
+custom_lists.import_button	インポート
+custom_lists.alert.built_in	組み込みのリストは削除できません。
+custom_lists.alert.import	取り込むリストのあるセルを指定してください。
+sort.custom_list	ユーザー設定リスト…
+# Forecast Sheet
+sheet.menu.forecast_sheet	予測シート…
+forecast.dialog	予測ワークシートの作成
+forecast.chart	グラフ
+forecast.line	折れ線
+forecast.column	縦棒
+forecast.end	予測終了
+forecast.start	予測開始
+forecast.confidence	信頼区間
+forecast.seasonality	季節性
+forecast.season_auto	自動検出
+forecast.season_manual	手動設定
+forecast.season	季節の長さ
+forecast.statistics	予測統計を含める
+forecast.timeline	タイムライン範囲
+forecast.values	値の範囲
+forecast.missing	欠測値の補完方法
+forecast.interpolation	補間
+forecast.zeros	ゼロ
+forecast.aggregate	重複の集計方法
+forecast.agg.average	平均
+forecast.agg.count	数値の個数
+forecast.agg.counta	個数
+forecast.agg.max	最大値
+forecast.agg.median	中央値
+forecast.agg.min	最小値
+forecast.agg.sum	合計
+forecast.create	作成
+forecast.alert.ranges	タイムライン範囲と値の範囲は、見出しを含む同じ大きさの 1 列にしてください。
+forecast.alert.timeline	タイムラインには一定の間隔の数値か日付が必要です。
+forecast.alert.end	予測終了は予測開始より後にしてください。
+forecast.alert.start	予測開始が正しくありません。
+forecast.alert.confidence	信頼区間は 0% から 100% の間にしてください。
+forecast.alert.season	季節の長さは 8760 以下の整数にしてください。
+forecast.word.forecast	予測({})
+forecast.word.lower	信頼下限({})
+forecast.word.upper	信頼上限({})
+forecast.word.statistic	統計
+forecast.word.value	値
+forecast.word.alpha	Alpha
+forecast.word.beta	Beta
+forecast.word.gamma	Gamma
+forecast.word.mase	MASE
+forecast.word.smape	SMAPE
+forecast.word.mae	MAE
+forecast.word.rmse	RMSE
 watermark.button	透かし
 watermark.title	ユーザー設定の透かし
 watermark.custom	ユーザー設定の透かし...
@@ -4843,3 +4963,239 @@ watermark.color.green	緑
 watermark.color.blue	青
 watermark.color.navy	濃い青
 watermark.color.purple	紫
+table.border.diagonal_down	斜め罫線 (右下がり)
+table.border.diagonal_up	斜め罫線 (右上がり)
+table.borders_diagonals	斜め罫線
+fit_text.title	文字の均等割り付け
+fit_text.current	現在の文字列の幅
+fit_text.new	新しい文字列の幅
+fit_text.unit	字
+fit_text.remove	解除
+fit_text.bad_width	文字列の幅は 0.5 字から 1584 字の間で指定してください。
+manuscript.group	原稿用紙
+manuscript.button	原稿用紙設定
+manuscript.title	原稿用紙設定
+manuscript.style	スタイル
+manuscript.style.none	なし
+manuscript.style.squares	マス目付き原稿用紙
+manuscript.style.lines	下線付き原稿用紙
+manuscript.style.frame	外枠付き原稿用紙
+manuscript.size	文字数 × 行数
+manuscript.color	罫線の色
+manuscript.paper	用紙サイズ
+manuscript.orientation	印刷の向き
+manuscript.portrait	縦
+manuscript.landscape	横
+paragraph.outline	アウトライン レベル
+paragraph.outline.body	本文
+paragraph.collapsed	既定で折りたたみ
+word.shading.horz_stripe	横縞
+word.shading.vert_stripe	縦縞
+word.shading.diag_stripe	右下がり斜線
+word.shading.reverse_diag_stripe	右上がり斜線
+word.shading.horz_cross	格子
+word.shading.diag_cross	斜め格子
+word.shading.thin_horz_stripe	横縞 (細)
+word.shading.thin_vert_stripe	縦縞 (細)
+word.shading.thin_diag_stripe	右下がり斜線 (細)
+word.shading.thin_reverse_diag_stripe	右上がり斜線 (細)
+word.shading.thin_horz_cross	格子 (細)
+word.shading.thin_diag_cross	斜め格子 (細)
+word.shading.color	色
+word.ptab.insert	位置合わせタブの挿入
+word.ptab.insert_title	余白やインデントを基準に、タブ位置に関係なく文字列を揃えるタブを挿入します
+word.ptab.title	位置合わせタブ
+word.ptab.keys	⏎ 挿入 · esc キャンセル
+word.ptab.alignment	配置
+word.ptab.left	左揃え
+word.ptab.center	中央揃え
+word.ptab.right	右揃え
+word.ptab.relative_to	基準
+word.ptab.margin	余白
+word.ptab.indent	インデント
+word.ptab.leader	リーダー
+word.ptab.leader_none	なし
+doc.sort_title	並べ替え
+table.sort.paragraphs	段落
+word.text_from_file	ファイルからテキスト…
+word.text_from_file.title	別のファイルの文字列をカーソル位置に挿入します
+word.text_from_file.prompt	挿入
+reveal.title	書式の詳細
+reveal.tooltip	選択範囲の書式の詳細を表示します
+reveal.font	フォント
+reveal.paragraph	段落
+reveal.section	セクション
+reveal.east_asia_font	日本語用
+reveal.latin_font	英数字用
+reveal.size	サイズ
+reveal.effect	効果
+reveal.bold	太字
+reveal.italic	斜体
+reveal.underline	下線
+reveal.strike	取り消し線
+reveal.double_strike	二重取り消し線
+reveal.superscript	上付き
+reveal.subscript	下付き
+reveal.small_caps	小型英大文字
+reveal.hidden	隠し文字
+reveal.color	色
+reveal.automatic	自動
+reveal.spacing	文字間隔
+reveal.style	スタイル
+reveal.alignment	配置
+reveal.align.left	左揃え
+reveal.align.center	中央揃え
+reveal.align.right	右揃え
+reveal.align.both	両端揃え
+reveal.align.distribute	均等割り付け
+reveal.indent_left	インデント 左
+reveal.indent_right	インデント 右
+reveal.first_line	字下げ
+reveal.hanging	ぶら下げ
+reveal.before	間隔 段落前
+reveal.after	間隔 段落後
+reveal.line	行間
+reveal.line.single	1 行
+reveal.line.one_and_half	1.5 行
+reveal.line.double	2 行
+reveal.line_at_least	行間 最小値
+reveal.line_exactly	行間 固定値
+reveal.line_multiple	行間 倍数
+reveal.outline	アウトライン
+reveal.outline_level	アウトライン レベル
+reveal.pagination	改ページ
+reveal.keep_next	次の段落と分離しない
+reveal.keep_lines	段落を分割しない
+reveal.page_break_before	段落前で改ページする
+reveal.paper	用紙サイズ
+reveal.orientation	印刷の向き
+reveal.portrait	縦
+reveal.landscape	横
+reveal.margin_top	余白 上
+reveal.margin_bottom	余白 下
+reveal.margin_left	余白 左
+reveal.margin_right	余白 右
+reveal.section_start	開始位置
+reveal.start.next_page	次のページから開始
+reveal.start.continuous	現在の位置から開始
+reveal.start.even	偶数ページから開始
+reveal.start.odd	奇数ページから開始
+reveal.start.column	次の段から開始
+reveal.columns	段数
+reveal.direction	文字列の方向
+reveal.vertical	縦書き
+frame.insert	枠
+frame.insert_title	選択した文字列を枠で囲みます
+frame.format	枠の書式設定
+frame.title	枠の書式設定
+frame.keys	Enter: OK  Esc: キャンセル
+frame.wrap	文字列の折り返し
+frame.wrap_none	なし
+frame.wrap_around	周囲
+frame.width	幅
+frame.height	高さ
+frame.auto	自動
+frame.fixed	固定
+frame.at_least	最小値
+frame.exact	固定値
+frame.horizontal	水平方向 位置
+frame.vertical	垂直方向 位置
+frame.left	左
+frame.center	中央
+frame.right	右
+frame.top	上
+frame.bottom	下
+frame.inside	内側
+frame.outside	外側
+frame.offset	距離
+frame.anchor	基準
+frame.margin	余白
+frame.page	ページ
+frame.column	段
+frame.paragraph	段落
+frame.distance	文字列との間隔
+frame.move_with_text	文字列と一緒に移動する
+frame.remove	枠の削除
+doc.select_similar	類似した書式の文字列を選択
+versions.autosave	自動保存
+versions.autosave_tip	編集するとすぐにこのファイルに保存します
+versions.on	オン
+versions.off	オフ
+versions.autosave_default	既定で自動保存をオンにする
+versions.unsupported	自動保存は Word 形式 (.docx など) のファイルでのみ使えます。名前を付けて保存で Word 文書として保存してください。
+versions.menu	バージョン履歴
+versions.title	バージョン履歴
+versions.current	現在のバージョン
+versions.open	開く
+versions.restore	復元
+versions.none	保存されたバージョンはまだありません。
+versions.unsaved	保存するとバージョンが残ります。
+versions.kind.original	元のファイル
+versions.kind.saved	保存
+versions.kind.autosaved	自動保存
+versions.kind.restored	復元
+object.menu	オブジェクト...
+object.title	オブジェクト
+object.detail	ファイルを文書に埋め込みます。ダブルクリックすると、そのファイルを開くアプリで開きます。
+object.icon	アイコンで表示
+object.from_file	ファイルから...
+object.group	オブジェクト
+object.button	オブジェクト
+object.tooltip	ファイルをオブジェクトとして文書に埋め込みます
+paragraph.mirror_indents	見開きページのインデント設定
+paragraph.inside	内側
+paragraph.outside	外側
+table.prop.fit_text	文字列をセル幅に合わせる
+table.prop.direction	表の方向
+table.prop.rtl	右から左
+table.prop.ltr	左から右
+table.tab.alt_text	代替テキスト
+table.prop.alt_title	タイトル
+table.prop.alt_description	説明
+table.prop.alt_hint	タイトルと説明は、表の内容を読み上げ機能などで伝えるために使われます。
+options.field_shading	フィールドの網かけ
+options.field_shading.never	表示しない
+options.field_shading.always	常に表示する
+options.field_shading.selected	選択時に表示する
+options.text_boundaries	文字列の範囲
+options.crop_marks	トリムマーク
+setup.fill.open	塗りつぶし効果...
+setup.fill.title	塗りつぶし効果
+setup.fill.tab.gradient	グラデーション
+setup.fill.tab.texture	テクスチャ
+setup.fill.tab.pattern	パターン
+setup.fill.tab.picture	図
+setup.fill.color1	色 1
+setup.fill.color2	色 2
+setup.fill.black	黒
+setup.fill.style	グラデーションの種類
+setup.fill.style.horizontal	横
+setup.fill.style.vertical	縦
+setup.fill.style.diagonal_up	斜め (右上がり)
+setup.fill.style.diagonal_down	斜め (右下がり)
+setup.fill.variant	バリエーション
+setup.fill.texture.newsprint	新聞紙
+setup.fill.texture.recycled_paper	再生紙
+setup.fill.texture.paper_bag	紙袋
+setup.fill.texture.canvas	キャンバス
+setup.fill.texture.denim	デニム
+setup.fill.texture.cork	コルク
+setup.fill.texture.sand	砂
+setup.fill.texture.granite	みかげ石
+setup.fill.other_texture	その他のテクスチャ...
+setup.fill.pattern.pct5	5%
+setup.fill.pattern.pct10	10%
+setup.fill.pattern.pct25	25%
+setup.fill.pattern.pct50	50%
+setup.fill.pattern.pct75	75%
+setup.fill.pattern.horizontal	横線
+setup.fill.pattern.vertical	縦線
+setup.fill.pattern.down_diagonal	右下がり対角線
+setup.fill.pattern.up_diagonal	右上がり対角線
+setup.fill.pattern.cross	格子
+setup.fill.pattern.diagonal_cross	斜め格子
+setup.fill.pattern.checker	市松模様
+setup.fill.foreground	前景
+setup.fill.background	背景
+setup.fill.choose_picture	図の選択...
+setup.fill.no_picture	図が選択されていません

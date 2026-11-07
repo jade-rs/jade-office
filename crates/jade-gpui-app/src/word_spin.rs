@@ -468,6 +468,27 @@ mod tests {
         });
     }
 
+    /// 見開きページのインデント設定: the check turns 左 and 右 into 内側 and
+    /// 外側 and OK writes it on the paragraph, as one undo step.
+    #[gpui::test]
+    fn the_paragraph_dialog_mirrors_indents(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        cx.simulate_keystrokes("cmd-alt-m");
+        view.update(cx, |view, cx| {
+            assert!(!view.document.paragraph_format().mirror_indents);
+            view.edit_paragraph_form(|form| form.format.mirror_indents = true, cx);
+        });
+        // Drawn with the labels it now has.
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, _| {
+            assert!(view.dialog.is_none(), "{:?}", view.table_status);
+            assert!(view.document.paragraph_format().mirror_indents);
+            view.document.undo().unwrap();
+            assert!(!view.document.paragraph_format().mirror_indents);
+        });
+    }
+
     /// The フォント dialog's サイズ: typed in another unit it is converted to
     /// points on OK; its arrows step a point.
     #[gpui::test]
