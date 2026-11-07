@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -62,6 +63,24 @@ class VersionCaptureTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             archiver.archive(self.manifest, self.evidence, ['probe'])
         self.assertEqual((self.evidence/'index.json').read_bytes(), original)
+
+    def test_relative_parent_segments_are_normalized_before_copying_long_names(self):
+        # Reproduce a deep Windows checkout with ../core as the destination.
+        # The canonical path fits MAX_PATH; the unresolved path does not.
+        original = Path.cwd()
+        working = self.root / ("worktree-" + "x" * 90)
+        working.mkdir()
+        try:
+            os.chdir(working)
+            relative = Path("..") / ("core-" + "y" * 40) / "word-oracle"
+            with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+                target = archiver.archive(self.manifest, relative, ['probe'])
+            self.assertTrue(target.is_absolute())
+            self.assertNotIn('..', target.parts)
+            self.assertEqual((target/'inputs/probe.docx').read_bytes(), (self.source/'probe.docx').read_bytes())
+            self.assertTrue((target.parent.parent/'index.json').exists())
+        finally:
+            os.chdir(original)
 
     def test_another_word_build_accumulates_without_replacing_old_evidence(self):
         with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
