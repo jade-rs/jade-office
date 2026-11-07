@@ -4285,7 +4285,7 @@ impl DocView {
         let editing = sheet.edit.is_some();
         let formula = match &sheet.edit {
             Some(edit) => caret_line(&edit.text, palette::accent().into(), true),
-            None => div().child(sheet.book.edit_text(active)),
+            None => div().child(sheet.book.formula_bar_text(active)),
         };
         // The name box: the active cell, the size of a range being dragged,
         // or what is being typed into it.
