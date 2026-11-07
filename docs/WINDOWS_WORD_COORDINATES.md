@@ -61,6 +61,13 @@ version and build, executable hash, OS and original DOCX/PDF/EMF hashes;
 `verification.json` records the engine commit and matching/pending fixtures.
 Failed captures are kept separately from the registered passing references.
 
+New captures additionally record Word's file version, the OS architecture and
+each document's actual `Document.CompatibilityMode` reported by Word. This
+distinguishes old document layout modes from the installed Word product build.
+Original manifests remain unchanged. The archive tests verify that captures
+from another complete Word build accumulate in a separate directory while
+preserving the previous manifest and its metadata byte for byte.
+
 The follow-up capture `20261107T035930893Z-61ca197b` adds five documents,
 eight pages and 2,303 complete drawing origins, all also matching PDF origins.
 It covers numeric tab suffixes/separators with tracking and split source runs,
@@ -71,3 +78,12 @@ commas remain numeric). Modern tables reserve their border frame and the
 bottom border below exact rows; Mac and legacy Windows policies are preserved.
 The installed-Arial Windows gate now checks 13,199 full X/Y origins across
 14 documents; all 25,067 indexed EMF origins reconstruct from the original files.
+
+Capture `20261107T050204006Z-600bbfab` adds six documents and 3,086 complete
+drawing origins for compatibility modes 12 and 14, all also matching PDF origins.
+It covers table alignment/borders and omitted, zero, positive and negative
+indentation with asymmetric cell margins. The Windows adjustment is limited
+to measured ordinary inline body tables with positive leading padding; Mac
+keeps its existing placement. The full index now contains 37 documents,
+178 pages and 34,384 characters. The required installed-Arial gate checks
+16,285 full X/Y origins in 20 documents; 28,153 EMF origins reconstruct exactly.
