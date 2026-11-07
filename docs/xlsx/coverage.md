@@ -336,7 +336,7 @@ This checkpoint fixes scoped round-trip and calculation differences:
   tokens and conditional negative fractions. Private-use text cannot collide
   with the internal repeat delimiter, including when real repeats are present.
 
-The latest complete selected package runs pass 196 calculation cases /9 targets
+The latest complete selected package runs pass 199 calculation cases /9 targets
 and 210 layout cases /31 targets. The selected model CSV, Paste Special and
 scenario run passes 30 cases /3 targets; these counts describe separate runs,
 not a fresh execution of every XLSX or application test. Maintained reader,
@@ -2233,3 +2233,27 @@ replay verifies 500 source/build files and 480 upstream hashes
 `7394a29ad1f28b32d734da6de7f364a363046588e7c6ec04876ad0dbdee22ad2`.
 DECIMAL arrays/range limits, native coercion/precision captures and broader
 workbook/UI compatibility remain open; complete Excel parity is not claimed.
+
+2026-11-07 engineering-conversion checkpoint: DECIMAL now parses up to 255
+radix digits with exact bounded integer limbs and a single nearest-even
+binary64 rounding step. Valid unsigned values beyond i64 are accepted;
+excessive length and unrepresentable results return NUM. Signed text and
+invalid-text error policies are retained pending native captures. All twelve
+BIN2/DEC2/HEX2/OCT2 conversions and BESSELI/J/K/Y now broadcast typed operands,
+preserving per-element errors, singleton shapes and existing scalar policies.
+Bessel numerical routines and order truncation are unchanged. Oversized
+outer-axis results are guarded before output allocation.
+
+Calc: 199 passed across 9 targets (`tmp/xlsx-bessel-array-calc.log`). Selected
+editor conversion suites: 63 passed (`tmp/xlsx-bessel-array-editor.log`),
+including corrections, undo/redo, cached/recalculated reopen and saved number
+versus text types. Engine: 2,328 passed / 4 existing ignored
+(`tmp/xlsx-bessel-array-engine.log`), including 4,760 exact u128 comparison
+cases spanning radices 2..36 and separate wider-value, rounding-tie, length
+and overflow cases. Strict engine Clippy, Rust 1.99 wasm32, formatting and
+diff checks pass. Canonical replay verifies 500 source/build files and 480
+upstream hashes (`tmp/xlsx-bessel-array-patch.log`); patch SHA-256:
+`ece8b44508e9dc0e43c1f740cad70ac7c2fe775fe2ad1ca4d43c93aece73df5d`.
+This supersedes the preceding DECIMAL array/range gap. Native exceptional
+coercion, high-magnitude precision, very-large Bessel orders, remaining complex
+functions and broader workbook/UI compatibility still need work.
