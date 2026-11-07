@@ -3630,7 +3630,7 @@ impl WorkbookView {
         let editing = self.edit.is_some();
         let formula = match &self.edit {
             Some(edit) => caret_line(&edit.text, theme::accent().into(), true),
-            None => div().child(self.book.edit_text(self.active())),
+            None => div().child(self.book.formula_bar_text(self.active())),
         };
         // The name box: the active cell, the size of a range being dragged,
         // or what is being typed into it.

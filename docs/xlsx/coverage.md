@@ -336,7 +336,7 @@ This checkpoint fixes scoped round-trip and calculation differences:
   tokens and conditional negative fractions. Private-use text cannot collide
   with the internal repeat delimiter, including when real repeats are present.
 
-The latest complete selected package runs pass 205 calculation cases /9 targets
+The latest complete selected package runs pass 218 calculation cases /9 targets
 and 210 layout cases /31 targets. The selected model CSV, Paste Special and
 scenario run passes 30 cases /3 targets; these counts describe separate runs,
 not a fresh execution of every XLSX or application test. Maintained reader,
@@ -2336,10 +2336,88 @@ files and 480 upstream hashes (`tmp/xlsx-dollar-array-patch.log`); patch SHA-256
 Native exceptional coercion, high-magnitude precision, other financial-function
 arrays and the broader workbook/UI/application-oracle gaps remain open.
 
-The integration pin `da321d0e` includes these merged Excel changes and the
+The engineering integration checkpoint `da321d0e` includes these Excel changes and the
 concurrent core main changes (including Word #519 and #525), and resolves the
 submodule conflict with office #270. Excel production and test sources match
 the `601122d1` checkpoint used for the 205-case calculation and 69-case selected
 editor runs above. The editor profiling example additionally gains Windows CPU
 time support from core main. The vendored engine and canonical replay inputs
 remain identical to the previously verified `286c4c5b` integration.
+
+
+2026-11-08 formula-source, numeric-criteria and financial checkpoint (core #531):
+FORMULATEXT retains parsed source spacing and structured references through
+parsed caches, kept recalculation, what-if restoration, edits and saved reopen.
+Numeric conditional-aggregation criteria trim ASCII spaces for numeric parsing
+only, preserving literal text and wildcard spacing. SLN, SYD, EFFECT, NOMINAL,
+RRI and PDURATION broadcast typed operands while retaining scalar domains and
+Boolean policies. The complete selected calculator run passes 209 cases across
+9 targets; selected editor conversion/protection suites pass 73 cases across
+4 targets; the engine passes 2,331 with 4 existing ignored. Strict calculator
+Clippy, Rust 1.99 wasm32, format/diff checks and canonical replay (500 files /
+480 upstream hashes) pass. Canonical patch SHA-256:
+`8bcfdf44ac3f46b735e7dce4cc2e96a867c5915436e578e96ed40249131c531e`.
+
+At this checkpoint, 35 of 39 formula anchors match stored results in Microsoft's
+published counting workbook, up from 32; no formulas are skipped. This is a
+published saved-result reference, not a fresh native Excel application capture.
+The external binary is an ignored local audit input and is not redistributed.
+Three legacy CSE brace cases and one legacy-array/cache ambiguity remain here;
+subsequent array-identity and fixed-range follow-ups are tracked separately.
+Unicode criterion spaces, broader financial functions, numerical coercion and
+precision, workbook/UI behavior and native application validation remain open.
+
+
+2026-11-08 legacy-array follow-ups (core #532, #534, #535, #537 and #538):
+XLDAPR reuse follows the actual future-metadata record and explicit dynamic
+flag, with namespace/parent ownership and ambiguity checks. Reader arrays keep
+Legacy/Dynamic/Unknown identity. Legacy calculation uses the declared CSE area:
+excess results are truncated, scalar results repeat, and missing array values
+are #N/A. Held and over-budget arrays retain their caches and fixed ranges.
+The eager CSE calculation budget is 1,048,576 cells; larger declarations remain
+reported as unsupported calculation, with sparse source identity preserved.
+Partial value edits to multi-cell legacy arrays are refused atomically; whole
+replacement/deletion, per-cell formatting and single-cell arrays remain allowed.
+
+FORMULATEXT and ISFORMULA resolve legacy members to the original anchor without
+relative translation or dense area expansion, including held and huge arrays.
+Temporary literal probes restore that identity. Cell/range views expose the
+original member formula while retaining the member's own value and freshness.
+Dynamic and unknown output cells are kept distinct. Formula search/replace and
+structural CSE operations still require group-aware compatibility work.
+
+The complete calculator checkpoint at `fc9c076c` passes 218 cases /9 targets;
+selected editor suites pass 84 cases /6 targets; the engine passes 2,332 with
+4 existing ignored. The cell-view checkpoint `c69fba64` additionally passes
+29 reader library and 6 selected legacy editor cases. Strict native Clippy,
+Rust 1.99 wasm32 and formatting/diff checks pass. Canonical replay verifies
+500 files /480 upstream hashes; engine patch SHA-256:
+`d7d867f97447ccf9171f81f718850a0d05ad0b994b07cdc26f17cb568e45560d`.
+
+The shared sheet model now supplies separate formula-bar and editable text:
+a selected legacy member displays `{=SEQUENCE(D1, 1)}`, while editing starts
+with `=SEQUENCE(D1, 1)`. Native and web non-editing formula bars use that display
+getter. Hidden protected members remain blank. All 6 typing-model cases pass,
+including the new legacy selection/input/source-protection/save/reopen case.
+The pre-change runtime test shows the missing CSE display braces. Strict
+TinySkia model library/typing-test Clippy and Rust 1.99 TinySkia model wasm32
+checks pass; local debug symbols were disabled to fit the build environment.
+These checks exercise the shared model, not a fresh native Excel GUI session.
+
+A fresh saved-reference comparison on the combined UI/core test content matches
+38 of 39 formula anchors in the published Microsoft counting workbook, with
+zero skipped formulas (`tmp/xlsx-cse-ui-final-sample.log`). The remaining
+legacy-array/cache VALUE-versus-37 case is unresolved; no cached result is
+forced to make the comparison match. Broader financial/coercion/precision,
+UI/rendering, structural operations and native-application oracles remain open.
+
+The app integration pins published core main `5db65c85308476741bfd9c5cf3a96b64d4a9bc0e`
+after #538, preserving the concurrent Word changes. Its complete source tree
+matches the local combined core used for the model and saved-reference checks
+above. Final-pin canonical replay passes 500 source/build files and 480 upstream
+hashes (`tmp/xlsx-cse-ui-final-patch.log`). The committed LF patch SHA-256 is
+`d7d867f97447ccf9171f81f718850a0d05ad0b994b07cdc26f17cb568e45560d`;
+the Windows CRLF checkout reports
+`3e4f19d0bef151884c76865aaf033cc2d09fae65aca28111d67c862cf49d8dc1`
+and matches that committed patch after CRLF normalization. Structural-editor
+and clipboard follow-ups after #538 are separate from this integration pin.

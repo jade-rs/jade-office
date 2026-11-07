@@ -34,6 +34,68 @@ fn book() -> Workbook<TinySkiaBackend> {
 }
 
 #[test]
+fn legacy_array_members_show_the_original_formula_in_the_formula_bar() {
+    let directory = core().join("fonts/Noto_Sans_JP/static");
+    let faces = aliased_faces(
+        Arc::new(std::fs::read(directory.join("NotoSansJP-Regular.ttf")).unwrap()),
+        None,
+    );
+    let backend = TinySkiaBackend::new(&faces).unwrap();
+    let mut package = jade_opc::OpcPackage::open(
+        &std::fs::read(core().join("public/fixtures/grid-operations-workbook.xlsx")).unwrap(),
+    )
+    .unwrap();
+    package.replace("xl/worksheets/sheet1.xml", br#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><f t="array" ref="A1:A3">_xlfn.SEQUENCE(D1, 1)</f><v>1</v></c><c r="D1"><v>3</v></c></row><row r="2"><c r="A2"><v>2</v></c></row><row r="3"><c r="A3"><v>3</v></c></row></sheetData></worksheet>"#.to_vec());
+    let mut book = Workbook::open(&package.write().unwrap(), "UTC", backend).unwrap();
+    for row in 0..3 {
+        let at = CellRef::new(0, row);
+        assert_eq!(book.formula_bar_text(at), "{=SEQUENCE(D1, 1)}");
+        assert_eq!(book.edit_text(at), "=SEQUENCE(D1, 1)");
+        assert_eq!(book.number(at), Some(f64::from(row + 1)));
+    }
+    assert!(book.set_cell(CellRef::new(0, 1), "42").is_err());
+    book.set_cell(CellRef::new(3, 0), "4").unwrap();
+    assert_eq!(
+        book.formula_bar_text(CellRef::new(0, 1)),
+        "{=SEQUENCE(D1, 1)}"
+    );
+    let saved = book.save_bytes().unwrap();
+    let reopened = Workbook::open(&saved, "UTC", TinySkiaBackend::new(&faces).unwrap()).unwrap();
+    assert_eq!(
+        reopened.formula_bar_text(CellRef::new(0, 1)),
+        "{=SEQUENCE(D1, 1)}"
+    );
+    assert_eq!(reopened.edit_text(CellRef::new(0, 1)), "=SEQUENCE(D1, 1)");
+    book.format(
+        jade_xlsx_reader::CellRange::parse("A2").unwrap(),
+        &jade_xlsx_headless_editor::FormatChange {
+            formula_hidden: Some(true),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        book.formula_bar_text(CellRef::new(0, 1)),
+        "{=SEQUENCE(D1, 1)}"
+    );
+    assert!(book.protect_sheet("", Default::default()).unwrap());
+    assert_eq!(book.formula_bar_text(CellRef::new(0, 1)), "");
+    assert_eq!(book.edit_text(CellRef::new(0, 1)), "");
+    assert_eq!(
+        book.formula_bar_text(CellRef::new(0, 0)),
+        "{=SEQUENCE(D1, 1)}"
+    );
+    let saved = book.save_bytes().unwrap();
+    let reopened = Workbook::open(&saved, "UTC", TinySkiaBackend::new(&faces).unwrap()).unwrap();
+    assert_eq!(reopened.formula_bar_text(CellRef::new(0, 1)), "");
+    assert!(book.unprotect_sheet("").unwrap());
+    assert_eq!(
+        book.formula_bar_text(CellRef::new(0, 1)),
+        "{=SEQUENCE(D1, 1)}"
+    );
+}
+
+#[test]
 fn compatibility_calls_type_recalculate_validate_and_save_through_the_shared_model() {
     let mut book = book();
     let at = CellRef::new(15, 0);
