@@ -54,6 +54,120 @@ class VersionCaptureTests(unittest.TestCase):
     def write(path, value):
         path.write_text(json.dumps(value), encoding='utf-8')
 
+    def prepare_unclipped_capture(self):
+        import pymupdf
+        doc = pymupdf.open()
+        page = doc.new_page(width=100, height=100)
+        page.insert_text((20,40), 'A', fontsize=12)
+        page.insert_text((20,90), 'B', fontsize=12)
+        stream = page.get_contents()[-1]
+        doc.update_stream(stream, b'q\n0 40 100 60 re W n\n' + doc.xref_stream(stream) + b'\nQ\n')
+        pdf = doc.tobytes()
+        (self.source/'probe.pdf').write_bytes(pdf)
+        self.capture['documents'][0]['pdf_sha256'] = hashlib.sha256(pdf).hexdigest()
+        self.capture['captured_at_utc'] = '2026-11-01T01:02:03Z'
+        self.capture['table_glyph_projection'] = 'unclipped'
+        self.write(self.manifest, self.capture)
+        raw = extractor.extract(self.manifest)
+        visible = extractor.extract(self.manifest, 'visible')
+        self.write(self.source/'word-reference.json', raw)
+        self.write(self.source/'word-visible-reference.json', visible)
+        rows = [dict(self.comparison[0], word_glyphs=2, native_glyphs=2, matched=2,
+                     within_0_375pt=2, table_glyph_projection='unclipped',
+                     pdf_sha256=self.capture['documents'][0]['pdf_sha256'])]
+        visible_rows = [dict(rows[0], word_glyphs=1, native_glyphs=1, matched=1,
+                             within_0_375pt=1, table_glyph_projection='visible')]
+        self.write(self.source/'comparison.json', rows)
+        self.write(self.source/'visible-comparison.json', visible_rows)
+        native_doc = pymupdf.open(stream=pdf, filetype='pdf')
+        native_doc.set_metadata(dict(producer='synthetic native renderer'))
+        native_pdf = native_doc.tobytes()
+        (self.source/'probe.native.pdf').write_bytes(native_pdf)
+        self.write(self.source/'painted-comparison.json', [dict(visible_rows[0], coordinate_source='Native vector PDF', native_pdf_sha256=hashlib.sha256(native_pdf).hexdigest())])
+        for suffix, reference in [('.json', raw), ('.visible.json', visible)]:
+            self.write(self.source/('probe'+suffix), dict(page_count=1,
+                       table_glyph_projection=reference['table_glyph_projection'],
+                       glyphs=reference['fixtures'][0]['glyphs']))
+        return raw, visible, rows, visible_rows
+
+    def test_unclipped_and_visible_pdf_origins_are_preserved_separately(self):
+        raw, visible, _, _ = self.prepare_unclipped_capture()
+        self.assertEqual(''.join(g[1] for g in raw['fixtures'][0]['glyphs']), 'AB')
+        self.assertEqual(''.join(g[1] for g in visible['fixtures'][0]['glyphs']), 'A')
+        self.assertEqual(raw['pdf_text_flags'], 135)
+        self.assertEqual(visible['pdf_text_flags'], 199)
+        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+            target = archiver.archive(self.manifest, self.evidence, ['probe'])
+        index = json.loads((self.evidence/'index.json').read_text(encoding='utf-8'))['references'][0]
+        self.assertEqual(index['glyph_count'], 2)
+        self.assertEqual(index['visible_glyph_count'], 1)
+        self.assertEqual(index['visible_reference'], 'strict-visible.json')
+        self.assertTrue((target/'probe.visible.json').exists())
+        self.assertTrue((target/'word-visible-reference.json').exists())
+
+    def test_unclipped_success_cannot_hide_visible_coordinate_failure(self):
+        _, _, _, visible_rows = self.prepare_unclipped_capture()
+        visible_rows[0]['within_0_375pt'] = 0
+        self.write(self.source/'visible-comparison.json', visible_rows)
+        with self.assertRaisesRegex(ValueError, 'mismatching'):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse(self.evidence.exists())
+
+    def test_projection_mismatch_and_missing_visible_proof_cannot_promote(self):
+        _, _, rows, _ = self.prepare_unclipped_capture()
+        rows[0]['table_glyph_projection'] = 'visible'
+        self.write(self.source/'comparison.json', rows)
+        with self.assertRaisesRegex(ValueError, 'projection'):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+        rows[0]['table_glyph_projection'] = 'unclipped'
+        self.write(self.source/'comparison.json', rows)
+        self.write(self.source/'visible-comparison.json', [])
+        with self.assertRaisesRegex(ValueError, 'every visible fixture'):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+
+    def test_visible_origins_are_reconstructed_from_original_pdf(self):
+        _, visible, _, _ = self.prepare_unclipped_capture()
+        visible['fixtures'][0]['glyphs'][0][2] += 1
+        self.write(self.source/'word-visible-reference.json', visible)
+        with self.assertRaisesRegex(ValueError, 'original Word PDF'):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse(self.evidence.exists())
+
+    def test_painted_pdf_failure_cannot_be_hidden_by_matching_snapshots(self):
+        self.prepare_unclipped_capture()
+        path = self.source/'painted-comparison.json'
+        rows = json.loads(path.read_text(encoding='utf-8'))
+        rows[0]['within_0_375pt'] = 0
+        self.write(path, rows)
+        with self.assertRaisesRegex(ValueError, 'mismatching'):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse(self.evidence.exists())
+
+    def test_changed_native_pdf_cannot_use_a_stale_painted_comparison(self):
+        self.prepare_unclipped_capture()
+        (self.source/'probe.native.pdf').write_bytes(b'changed native PDF')
+        with self.assertRaisesRegex(ValueError, 'actual native PDF'):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse(self.evidence.exists())
+
+    def test_copying_word_as_native_pdf_cannot_create_a_self_comparison(self):
+        self.prepare_unclipped_capture()
+        pdf = (self.source/'probe.pdf').read_bytes()
+        (self.source/'probe.native.pdf').write_bytes(pdf)
+        path = self.source/'painted-comparison.json'
+        rows = json.loads(path.read_text(encoding='utf-8'))
+        rows[0]['native_pdf_sha256'] = hashlib.sha256(pdf).hexdigest()
+        self.write(path, rows)
+        with self.assertRaisesRegex(ValueError, 'actual native PDF'):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse(self.evidence.exists())
+
+    def test_unknown_projection_cannot_be_extracted(self):
+        self.capture['table_glyph_projection'] = 'unknown'
+        self.write(self.manifest, self.capture)
+        with self.assertRaisesRegex(ValueError, 'Unknown'):
+            extractor.extract(self.manifest)
+
     def test_full_version_directory_and_no_overwrite(self):
         with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
             target = archiver.archive(self.manifest, self.evidence, ['probe'])

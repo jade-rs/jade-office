@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory=$true)][string[]]$Documents,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
-    [switch]$CaptureMetafiles
+    [switch]$CaptureMetafiles,
+    [switch]$UnclippedTableGlyphs
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($OutputDirectory)
@@ -35,6 +36,7 @@ try {
         os_architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
         documents=@()
     }
+    if ($UnclippedTableGlyphs) { $metadata['table_glyph_projection'] = 'unclipped' }
     $manifest = Join-Path $output 'capture.json'
     foreach ($source in $Documents) {
         $path = (Resolve-Path -LiteralPath $source).Path
