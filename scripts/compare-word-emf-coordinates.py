@@ -25,13 +25,16 @@ def compare(directory):
     report = []
     for fixture in reference['fixtures']:
         actual = json.loads((directory/(fixture['name']+'.json')).read_text(encoding='utf-8'))
+        projection = reference.get('table_glyph_projection', 'visible')
+        if projection not in ('visible', 'unclipped') or actual.get('table_glyph_projection', 'visible') != projection:
+            raise ValueError('Native table glyph projection differs from Word drawing reference')
         expected = spatial_order(fixture['glyphs'])
         observed = spatial_order([g for g in actual['glyphs'] if not g[1].isspace()])
         pairs = list(zip(expected, observed))
         same_text = len(expected) == len(observed) and all(e[:2] == o[:2] for e, o in pairs)
         errors = [(abs(e[2]-o[2]), abs(e[3]-o[3]), e, o) for e, o in pairs]
         percentile = lambda values, p: sorted(values)[min(len(values)-1, int((len(values)-1)*p))] if values else None
-        row = dict(fixture=fixture['name'], coordinate_source=reference['coordinate_source'],
+        row = dict(fixture=fixture['name'], table_glyph_projection=projection, coordinate_source=reference['coordinate_source'],
                    word_pages=fixture['page_count'], native_pages=actual['page_count'],
                    word_glyphs=len(expected), native_glyphs=len(observed),
                    matched=len(expected) if same_text else 0,
