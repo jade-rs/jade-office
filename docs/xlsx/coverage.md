@@ -2407,7 +2407,7 @@ These checks exercise the shared model, not a fresh native Excel GUI session.
 A fresh saved-reference comparison on the combined UI/core test content matches
 38 of 39 formula anchors in the published Microsoft counting workbook, with
 zero skipped formulas (`tmp/xlsx-cse-ui-final-sample.log`). The remaining
-legacy-array/cache VALUE-versus-37 case is unresolved; no cached result is
+ordinary-formula VALUE-versus-37 evaluation-mode case is unresolved; no cached result is
 forced to make the comparison match. Broader financial/coercion/precision,
 UI/rendering, structural operations and native-application oracles remain open.
 
@@ -2421,3 +2421,40 @@ the Windows CRLF checkout reports
 `3e4f19d0bef151884c76865aaf033cc2d09fae65aca28111d67c862cf49d8dc1`
 and matches that committed patch after CRLF normalization. Structural-editor
 and clipboard follow-ups after #538 are separate from this integration pin.
+
+2026-11-08 array editing and metadata integration (core #541, #542, #544, #546):
+The app now pins published core main `b8f9b95075940c42892da17c0bfb2f0cc362fc5d`.
+Row/column insertion cannot split a proven legacy array or clip its unstored
+tail beyond the worksheet edge; partial deletion is refused atomically.
+Whole-area movement/deletion remains allowed. Both direct writer entry points
+and the editor use the same sparse bounds check, and partial-array errors are
+classified as caller input errors.
+
+Whole legacy-array clipboard copies and moves preserve their fixed ranges,
+including overlapping moves, cross-sheet moves, historical copied snapshots
+and dependent CSE formula rewrites after a cut. Partial destination writes and
+partial source cuts are refused before writing. Dynamic/unknown metadata and
+partial-source copying remain separate clipboard compatibility work.
+
+New dynamic spills can append the required type, future record and cell record
+to an existing metadata part without renumbering existing entries. Empty and
+qualified containers, strict namespaces and unrelated/foreign content are
+covered. Existing proven dynamic links are reused unchanged. Dangling t/v/cm
+references, duplicate containers and inconsistent counts are not silently
+activated by appending; unsupported malformed metadata retains the pre-existing
+fallback and remains a compatibility limit.
+
+The combined Excel checkpoint `5cd7397a` passes the selected legacy-array,
+spill-writer and structural-writer suites plus the shared typing-model suite;
+detailed counts are recorded in the integration PR. Final pin `b8f9b950`
+also preserves the concurrent Windows spacing core #543 and app #273 changes.
+Its reader/calculator/writer/editor and vendored engine sources match that
+Excel checkpoint. Final-pin canonical replay passes 500 source/build
+files and 480 upstream hashes (`tmp/xlsx-array-edit-integration-patch.log`). The
+committed LF engine patch remains `d7d867f97447ccf9171f81f718850a0d05ad0b994b07cdc26f17cb568e45560d`
+(Windows CRLF checkout hash `3e4f19d0bef151884c76865aaf033cc2d09fae65aca28111d67c862cf49d8dc1`).
+The formula-evaluation-mode follow-up core #549 is separate from this pin.
+The remaining counting-sample cell is persisted as an ordinary formula rather
+than a CSE declaration; its IIE/AE distinction is tracked in that follow-up.
+Fresh native Excel application validation and broader table/clipboard,
+coercion/precision and rendering gaps remain open.
