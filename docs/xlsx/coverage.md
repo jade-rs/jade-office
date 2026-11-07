@@ -2335,3 +2335,9 @@ files and 480 upstream hashes (`tmp/xlsx-dollar-array-patch.log`); patch SHA-256
 `19f4cec6b289529f57593d73ac548f73d44861cb43165a6981f6481bf074a706`.
 Native exceptional coercion, high-magnitude precision, other financial-function
 arrays and the broader workbook/UI/application-oracle gaps remain open.
+
+The integration pin `286c4c5b` includes these merged Excel changes and the
+concurrent core main changes (including Word #519). Its Excel calculator,
+reader, writer, headless editor and vendored engine sources match the
+`601122d1` checkpoint used for the 205-case calculation and 69-case selected
+editor runs above. Canonical patch replay is also checked at the integration.
