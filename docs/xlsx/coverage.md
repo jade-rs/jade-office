@@ -2483,3 +2483,31 @@ ownership (#552), named-formula intersection (#554) and table spill bounds
 (#555) are separate follow-ups and are not included in this app pin. Fresh
 native Excel application validation, broader tables, unknown/composite
 metadata, precision/coercion and rendering compatibility remain open.
+
+2026-11-08 dynamic clipboard and metadata integration (core #550, #551, #552):
+The app pins published core main `dea05cd055d3a3cab66eb35a45b7f1e48f0b5c4a`.
+Copying and moving proven dynamic formulas preserve array evaluation, including
+single-cell aggregates. Historical snapshots can restore the required metadata.
+Paste destinations keep explicit values/formulas; stale stored spill tails are
+cleared without deleting unrelated formulas. Output-only cuts are refused.
+
+Creating a metadata part preserves orphan parts and refuses collisions with
+existing unresolved cell links. Spill marking uses the reader's selected XML
+ownership so foreign lookalikes, inactive choices and extension payloads remain
+unchanged. New readable-branch metadata checks in core #556 remain separate.
+
+Final-pin selected checks pass 44 core cases (clipboard, legacy arrays, dynamic
+arrays and spill writing) plus 7 shared-model clipboard/dynamic cases. The new
+model regression copies and cuts a scalar array aggregate through clipboard
+text normalization, undo/redo and save, preserving its formula and dynamic
+identity. Canonical replay verifies 500 source/build files and 480 upstream
+hashes. The reader/calculator/engine sources match the verified counting-sample
+checkpoint with 39/39 saved answers; this is not a fresh native Excel capture.
+The committed LF engine patch remains
+`810ef161e2a891527c93bfa30be02cf2842cf0c7231048ee746989df47c13c60`
+(Windows CRLF checkout hash `de02d776910a4ed5bbe1c47abd56a30bfda4466340a4504e6654066b0cae95a0`).
+
+Named-formula intersection #554, table/merged-cell spill constraints #555 and
+readable-branch metadata protection #556 remain outside this pin. Opaque and
+composite metadata, broader tables, precision/coercion, rendering and native
+application comparisons remain open.

@@ -74,6 +74,34 @@ fn copying_a_formula_pastes_it_adjusted_as_in_excel() {
 }
 
 #[test]
+fn clipboard_keeps_scalar_array_evaluation_through_model_history_and_save() {
+    let mut book = book();
+    for (reference, text) in [("I1", "a"), ("I2", "bb"), ("I3", "ccc")] {
+        book.set_cell(at(reference), text).unwrap();
+    }
+    let formula = "=SUM(LEN($I$1:$I$3))";
+    book.set_cell(at("J5"), formula).unwrap();
+    assert_eq!(book.display_text(at("J5")), "6");
+    assert_eq!(book.copy(span(at("J5"), at("J5")), false), "6\n");
+    book.paste(at("L5"), "6\r\n").unwrap();
+    assert_eq!(book.display_text(at("L5")), "6");
+    assert_eq!(book.edit_text(at("L5")), formula);
+    assert!(book.undo().unwrap());
+    assert_eq!(book.display_text(at("L5")), "");
+    assert!(book.redo().unwrap());
+    let text = book.copy(span(at("L5"), at("L5")), true);
+    book.paste(at("N5"), &text).unwrap();
+    assert_eq!(book.display_text(at("L5")), "");
+    assert_eq!(book.display_text(at("N5")), "6");
+    assert_eq!(book.edit_text(at("N5")), formula);
+    let saved = book.save_bytes().unwrap();
+    let reopened = jade_xlsx_reader::read_xlsx(&saved).unwrap();
+    assert!(reopened.sheets[0].array_formulas.iter().any(|array| {
+        array.anchor == at("N5") && array.kind == jade_xlsx_reader::ArrayFormulaKind::Dynamic
+    }));
+}
+
+#[test]
 fn a_cut_moves_the_cells_when_pasted_and_references_follow() {
     let mut book = book();
     book.set_cell(at("I2"), "5").unwrap();
