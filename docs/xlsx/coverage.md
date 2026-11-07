@@ -2423,7 +2423,7 @@ and matches that committed patch after CRLF normalization. Structural-editor
 and clipboard follow-ups after #538 are separate from this integration pin.
 
 2026-11-08 array editing and metadata integration (core #541, #542, #544, #546):
-The app now pins published core main `5cd7397abc0bd8591875c8eb392aec5e75715da5`.
+The app now pins published core main `b8f9b95075940c42892da17c0bfb2f0cc362fc5d`.
 Row/column insertion cannot split a proven legacy array or clip its unstored
 tail beyond the worksheet edge; partial deletion is refused atomically.
 Whole-area movement/deletion remains allowed. Both direct writer entry points
@@ -2444,9 +2444,12 @@ references, duplicate containers and inconsistent counts are not silently
 activated by appending; unsupported malformed metadata retains the pre-existing
 fallback and remains a compatibility limit.
 
-The combined published pin passes the selected legacy-array, spill-writer and
-structural-writer suites plus the shared typing-model suite; detailed counts
-are recorded in the integration PR. Canonical replay passes 500 source/build
+The combined Excel checkpoint `5cd7397a` passes the selected legacy-array,
+spill-writer and structural-writer suites plus the shared typing-model suite;
+detailed counts are recorded in the integration PR. Final pin `b8f9b950`
+also preserves the concurrent Windows spacing core #543 and app #273 changes.
+Its reader/calculator/writer/editor and vendored engine sources match that
+Excel checkpoint. Final-pin canonical replay passes 500 source/build
 files and 480 upstream hashes (`tmp/xlsx-array-edit-integration-patch.log`). The
 committed LF engine patch remains `d7d867f97447ccf9171f81f718850a0d05ad0b994b07cdc26f17cb568e45560d`
 (Windows CRLF checkout hash `3e4f19d0bef151884c76865aaf033cc2d09fae65aca28111d67c862cf49d8dc1`).
