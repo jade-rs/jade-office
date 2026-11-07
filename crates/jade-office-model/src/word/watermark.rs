@@ -375,6 +375,7 @@ mod tests {
         let style = WatermarkStyle {
             font: Some("Arial".into()),
             size_pt: Some(72.0),
+            fit_shape: Some(false),
             color: "#FF0000".into(),
             semitransparent: false,
             horizontal: true,

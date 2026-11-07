@@ -4,7 +4,7 @@ The installed reference application is **Word 16.0.19127.20860**. Captures open
 DOCX files read-only and preserve source/application/PDF/EMF hashes. Different
 Word builds and repeated runs get distinct version/capture directories.
 
-The indexed corpus covers **17 unique documents, 133 pages and 18,099 visible
+The indexed corpus covers **26 unique documents, 158 pages and 28,995 visible
 non-whitespace characters**. Both absolute axes must match within 0.375pt;
 text, order and page count must also match. No origin alignment, fitted scale
 or relaxed tolerance is used. See
@@ -44,3 +44,19 @@ snapshots. Final-head remote CI/performance results must be checked separately.
 
 Only the installed Word build has been measured; other full product versions
 will be retained when captured rather than inferred from this version.
+
+November 7 adds nine deterministic edge fixtures and 10,896 full X/Y drawing
+origins: paragraph indents/alignment, decimal tabs, contextual spacing,
+run position/width, and all four Arial faces' super/subscripts at 49 sizes.
+Windows-only fixes exclude trailing spaces from alignment, anchor decimal
+tabs on the decimal point (or text end), preserve contextual-after collapse,
+and use Arial's measured script sizes/moves without inflating line pitch.
+The Windows Actions gate checks these complete origins using the runner's
+installed Arial; the separate Mac gate remains mandatory and unchanged.
+
+All captures are under the full product-version directory
+`jade-core/tests/word-oracle/windows/word-16.0.19127.20860/`, each with its
+own immutable timestamp/ID. `capture.json` records Word's product/application
+version and build, executable hash, OS and original DOCX/PDF/EMF hashes;
+`verification.json` records the engine commit and matching/pending fixtures.
+Failed captures are kept separately from the registered passing references.
