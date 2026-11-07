@@ -336,7 +336,7 @@ This checkpoint fixes scoped round-trip and calculation differences:
   tokens and conditional negative fractions. Private-use text cannot collide
   with the internal repeat delimiter, including when real repeats are present.
 
-The latest complete selected package runs pass 196 calculation cases /9 targets
+The latest complete selected package runs pass 205 calculation cases /9 targets
 and 210 layout cases /31 targets. The selected model CSV, Paste Special and
 scenario run passes 30 cases /3 targets; these counts describe separate runs,
 not a fresh execution of every XLSX or application test. Maintained reader,
@@ -2233,3 +2233,113 @@ replay verifies 500 source/build files and 480 upstream hashes
 `7394a29ad1f28b32d734da6de7f364a363046588e7c6ec04876ad0dbdee22ad2`.
 DECIMAL arrays/range limits, native coercion/precision captures and broader
 workbook/UI compatibility remain open; complete Excel parity is not claimed.
+
+2026-11-07 engineering-conversion checkpoint: DECIMAL now parses up to 255
+radix digits with exact bounded integer limbs and a single nearest-even
+binary64 rounding step. Valid unsigned values beyond i64 are accepted;
+excessive length and unrepresentable results return NUM. Signed text and
+invalid-text error policies are retained pending native captures. All twelve
+BIN2/DEC2/HEX2/OCT2 conversions and BESSELI/J/K/Y now broadcast typed operands,
+preserving per-element errors, singleton shapes and existing scalar policies.
+Bessel numerical routines and order truncation are unchanged. Oversized
+outer-axis results are guarded before output allocation.
+
+Calc: 199 passed across 9 targets (`tmp/xlsx-bessel-array-calc.log`). Selected
+editor conversion suites: 63 passed (`tmp/xlsx-bessel-array-editor.log`),
+including corrections, undo/redo, cached/recalculated reopen and saved number
+versus text types. Engine: 2,328 passed / 4 existing ignored
+(`tmp/xlsx-bessel-array-engine.log`), including 4,760 exact u128 comparison
+cases spanning radices 2..36 and separate wider-value, rounding-tie, length
+and overflow cases. Strict engine Clippy, Rust 1.99 wasm32, formatting and
+diff checks pass. Canonical replay verifies 500 source/build files and 480
+upstream hashes (`tmp/xlsx-bessel-array-patch.log`); patch SHA-256:
+`ece8b44508e9dc0e43c1f740cad70ac7c2fe775fe2ad1ca4d43c93aece73df5d`.
+This supersedes the preceding DECIMAL array/range gap. Native exceptional
+coercion, high-magnitude precision, very-large Bessel orders, remaining complex
+functions and broader workbook/UI compatibility still need work.
+
+2026-11-07 complex-function checkpoint: COMPLEX and the five component functions
+IMABS/IMREAL/IMAGINARY/IMARGUMENT/IMCONJUGATE now broadcast typed operands.
+The eighteen remaining scalar complex operations also broadcast, including
+IMDIV/IMSUB/IMPOWER outer axes. Shared complex-number casts retain existing
+parsing, suffixes, scalar coercion, numerical routines and string formatting;
+source/domain errors remain per element and singleton arrays retain shape.
+Existing IMSUM/IMPRODUCT aggregation behavior is unchanged. Oversized COMPLEX
+and binary complex results use the existing allocation guard.
+
+The new array regressions fail with NIMPL before each fix. Calc: 201 passed
+across 9 targets (`tmp/xlsx-complex-transcendentals-calc.log`). Selected editor
+conversion suites: 65 passed (`tmp/xlsx-complex-transcendentals-editor.log`),
+covering all 24 changed functions through range edits, undo/redo and cached/
+recalculated reopen with saved text versus number types. Engine: 2,328 passed /
+4 existing ignored (`tmp/xlsx-complex-transcendentals-engine.log`). Strict
+native Clippy, Rust 1.99 wasm32, formatting and diff checks pass. Canonical
+replay verifies 500 source/build files and 480 upstream hashes
+(`tmp/xlsx-complex-transcendentals-patch.log`); patch SHA-256:
+`cedc1a740bd536484646aa2bdb71e25ef1327c512e749b6df2d989c40c1fd457`.
+The earlier six-function checkpoint passed 200 calc / 64 selected editor
+cases (`tmp/xlsx-complex-calc.log`, `tmp/xlsx-complex-editor.log`). Native
+exceptional coercion, extreme-magnitude numerical behavior, aggregate complex
+semantics and broader application oracles remain open.
+
+2026-11-07 complex aggregate arity checkpoint: IMSUM/IMPRODUCT now accept
+1..255 scalar arguments in runtime and static signatures, replacing the old
+exactly-two restriction. Existing scalar casts, suffix checks, formatting and
+left-to-right error order are retained. References:
+https://support.microsoft.com/en-us/excel/functions/imsum-function and
+https://support.microsoft.com/en-gb/excel/functions/improduct-function .
+Calc: 202 passed /9 targets; selected editor: 66 passed; engine: 2,329 passed /
+4 existing ignored (`tmp/xlsx-complex-variadic-{calc,editor,engine}.log`).
+Tests include zero/one/255/256 arguments and reference edits/history/save.
+Range/array aggregation, real-only suffix interactions, exceptional coercion
+and extreme-value arithmetic remain open.
+
+2026-11-07 CONVERT checkpoint: Celsius conversion used a 273.5 Kelvin offset
+instead of 273.15. CONVERT(68,"F","C") now returns 20 instead of 19.65;
+Celsius identity and negative-temperature round trips are corrected too.
+Reference: https://support.microsoft.com/en-us/excel/functions/convert-function .
+CONVERT also broadcasts values and both unit operands with matching static
+shapes, per-element source errors, unknown/incompatible-unit failures and
+singleton shapes. Existing unit tables and scalar conversion policies are
+retained; tables are built once per call and reused across output elements.
+Oversized outer-axis results are guarded before output allocation.
+
+The scalar temperature regression and array NIMPL regression were reproduced
+before their fixes (`tmp/xlsx-convert-{celsius,array}-before.log`). Calc:
+204 passed /9 targets (`tmp/xlsx-convert-array-calc.log`); selected editor:
+68 passed (`tmp/xlsx-convert-array-editor.log`), including value/unit edits,
+undo/redo and error-first matrices through cached/recalculated reopen. Engine:
+2,329 passed /4 existing ignored (`tmp/xlsx-convert-array-engine.log`). Strict
+native Clippy, Rust 1.99 wasm32, formatting and diff checks pass. Canonical
+replay verifies 500 source/build files and 480 upstream hashes
+(`tmp/xlsx-convert-array-patch.log`); patch SHA-256:
+`b016b70cfffb6f525d33afd3bbf23aaabc49ab0af4553841aa7f78a6072812e7`.
+The preceding scalar-temperature checkpoint passed 203 calc /67 selected
+editor cases. Native exceptional coercion, full unit-family accuracy, complex
+range aggregates, broader numerical captures and workbook/UI gaps remain open.
+
+2026-11-07 fractional-dollar conversion checkpoint: DOLLARDE/DOLLARFR now
+broadcast values and denominators with matching static shapes. Existing scalar
+conversion, denominator truncation, negative/zero errors, no-Boolean coercion
+and source-error precedence are retained. Oversized outer-axis outputs are
+guarded. References:
+https://support.microsoft.com/en-gb/excel/functions/dollarde-function and
+https://support.microsoft.com/en-us/excel/functions/dollarfr-function .
+The pre-change array regression returns NIMPL (`tmp/xlsx-dollar-array-before.log`).
+Calc: 205 passed /9 targets; selected editor: 69 passed; engine: 2,329 passed /
+4 existing ignored (`tmp/xlsx-dollar-array-{calc,editor,engine}.log`). Editor
+coverage includes operand/denominator edits, undo/redo and error-first matrices
+through cached/recalculated reopen. Strict native Clippy, Rust 1.99 wasm32,
+formatting and diff checks pass. Canonical replay verifies 500 source/build
+files and 480 upstream hashes (`tmp/xlsx-dollar-array-patch.log`); patch SHA-256:
+`19f4cec6b289529f57593d73ac548f73d44861cb43165a6981f6481bf074a706`.
+Native exceptional coercion, high-magnitude precision, other financial-function
+arrays and the broader workbook/UI/application-oracle gaps remain open.
+
+The integration pin `da321d0e` includes these merged Excel changes and the
+concurrent core main changes (including Word #519 and #525), and resolves the
+submodule conflict with office #270. Excel production and test sources match
+the `601122d1` checkpoint used for the 205-case calculation and 69-case selected
+editor runs above. The editor profiling example additionally gains Windows CPU
+time support from core main. The vendored engine and canonical replay inputs
+remain identical to the previously verified `286c4c5b` integration.
