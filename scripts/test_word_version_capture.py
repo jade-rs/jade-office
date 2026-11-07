@@ -32,8 +32,11 @@ class VersionCaptureTests(unittest.TestCase):
         pdf.write_bytes(b'synthetic pdf for integrity checks')
         self.capture = dict(schema=2, platform='windows', status='complete',
                             capture_id='20261101T010203456Z-1234abcd',
-                            word=dict(product_version='16.0.19127.20860'), documents=[dict(
+                            word=dict(product_version='16.0.19127.20860', file_version='16.0.19127.20860',
+                                      application_version='16.0', application_build='16.0.19127'),
+                            os='Windows test host', os_architecture='X64', documents=[dict(
                                 name='probe', source=str(docx), pdf='probe.pdf', pages=1,
+                                compatibility_mode=12,
                                 sha256=hashlib.sha256(docx.read_bytes()).hexdigest(),
                                 pdf_sha256=hashlib.sha256(pdf.read_bytes()).hexdigest())])
         self.manifest = self.source/'capture.json'
@@ -54,10 +57,32 @@ class VersionCaptureTests(unittest.TestCase):
         with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
             target = archiver.archive(self.manifest, self.evidence, ['probe'])
         self.assertEqual(target.parent.name, 'word-16.0.19127.20860')
+        self.assertEqual((target/'capture.json').read_bytes(), self.manifest.read_bytes())
         original = (self.evidence/'index.json').read_bytes()
         with self.assertRaises(FileExistsError):
             archiver.archive(self.manifest, self.evidence, ['probe'])
         self.assertEqual((self.evidence/'index.json').read_bytes(), original)
+
+    def test_another_word_build_accumulates_without_replacing_old_evidence(self):
+        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+            first = archiver.archive(self.manifest, self.evidence, ['probe'])
+        original = (first/'capture.json').read_bytes()
+        version = '16.0.20000.10000'
+        self.capture['word']['product_version'] = version
+        self.capture['word']['file_version'] = version
+        self.write(self.manifest, self.capture)
+        reference_path = self.source/'word-reference.json'
+        reference = json.loads(reference_path.read_text(encoding='utf-8'))
+        reference['word_product_version'] = version
+        self.write(reference_path, reference)
+        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+            second = archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertNotEqual(first, second)
+        self.assertEqual(second.parent.name, 'word-'+version)
+        self.assertEqual((first/'capture.json').read_bytes(), original)
+        index = json.loads((self.evidence/'index.json').read_text(encoding='utf-8'))
+        self.assertEqual({entry['word_product_version'] for entry in index['references']},
+                         {'16.0.19127.20860', version})
 
     def test_mismatch_cannot_be_promoted(self):
         self.comparison[0]['within_0_375pt'] = 0

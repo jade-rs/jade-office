@@ -30,8 +30,9 @@ try {
     $binaryHash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
     $metadata = [ordered]@{
         schema=2; platform='windows'; capture_id=$captureId; captured_at_utc=[DateTime]::UtcNow.ToString('o'); status='capturing'
-        word=[ordered]@{ product_version=$productVersion; application_version=$word.Version; application_build=$word.Build; executable_sha256=$binaryHash }
+        word=[ordered]@{ product_version=$productVersion; file_version=$binaryVersion.FileVersion; application_version=$word.Version; application_build=$word.Build; executable_sha256=$binaryHash }
         os=[Runtime.InteropServices.RuntimeInformation]::OSDescription
+        os_architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
         documents=@()
     }
     $manifest = Join-Path $output 'capture.json'
@@ -61,7 +62,7 @@ try {
                 }
             }
             if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sourceHash) { throw "DOCX changed during capture: $path" }
-            $item=[ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$pages }
+            $item=[ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$pages; compatibility_mode=[int]$document.CompatibilityMode }
             if ($CaptureMetafiles) { $item.metafiles=$metafiles }
             $metadata.documents += $item
         } finally { $document.Close(0); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($document) }
