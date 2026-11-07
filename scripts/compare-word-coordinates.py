@@ -59,14 +59,20 @@ for pdf in sorted(root.glob('*.pdf')):
     # align repeated list bodies with a different paragraph when debug glyphs
     # omit separately painted numbering labels. No coordinate shift is applied.
     def keys(glyphs):
-        glyphs.sort(key=lambda g: (g[0], g[3], g[2]))
-        result, page, baseline, line = [], None, None, -1
-        for g in glyphs:
-            if page != g[0]:
-                page, baseline, line = g[0], g[3], 0
-            elif abs(g[3] - baseline) > .25:
-                baseline, line = g[3], line + 1
-            result.append((page, line, g[1]))
+        glyphs.sort(key=lambda g: (g[0], g[3]))
+        result, page, line, start = [], None, -1, 0
+        while start < len(glyphs):
+            first = glyphs[start]
+            page, line = first[0], 0 if page != first[0] else line + 1
+            end = start + 1
+            while end < len(glyphs) and glyphs[end][0] == page and abs(glyphs[end][3] - first[3]) <= .25:
+                end += 1
+            # PDF text matrices can put the same row on baselines differing by
+            # a few floating-point ulps. Order the whole physical line by X;
+            # retain every original coordinate for the strict distance check.
+            glyphs[start:end] = sorted(glyphs[start:end], key=lambda g: g[2])
+            result.extend((page, line, g[1]) for g in glyphs[start:end])
+            start = end
         return result
     a, b = keys(expected), keys(observed)
     matcher = difflib.SequenceMatcher(a=a, b=b, autojunk=False)
