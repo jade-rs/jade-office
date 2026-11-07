@@ -433,6 +433,21 @@ sheet.menu.text_to_columns	区切り位置
 sheet.menu.calculate_now	再計算実行 (F9)
 sheet.menu.manual_calculation	計算方法: 手動
 sheet.menu.automatic_calculation	計算方法: 自動
+sheet.menu.calculation_options	計算方法の設定…
+calculation.dialog	計算方法の設定
+calculation.workbook	ブックの計算
+calculation.automatic	自動
+calculation.automatic_except_tables	データ テーブル以外自動
+calculation.manual	手動
+calculation.recalculate_before_save	ブックの保存前に再計算を行う
+calculation.iteration_section	反復計算
+calculation.enable_iteration	反復計算を行う
+calculation.maximum_iterations	最大反復回数:
+calculation.maximum_change	変化の最大値:
+calculation.precision_section	次のブックを計算するとき
+calculation.precision_as_displayed	表示桁数で計算する
+calculation.precision_warning	数式は、セルに表示されている桁数だけを保持します。
+calculation.invalid_numbers	最大反復回数は 1 から 32767、変化の最大値は 0 以上で指定してください。
 text_columns.dialog	区切り位置指定ウィザード
 text_columns.delimiters	区切り文字
 text_columns.tab	タブ

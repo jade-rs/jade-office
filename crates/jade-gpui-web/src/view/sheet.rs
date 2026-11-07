@@ -33,6 +33,7 @@ use jade_web::sheet::{
 
 use super::*;
 
+mod calculation_options;
 mod charts;
 mod conditional;
 mod custom_filter;
@@ -140,6 +141,8 @@ pub(super) struct Sheet {
     pub(super) name_manager: Option<jade_web::name_manager::NameManager>,
     pub(super) insert_function: Option<jade_web::insert_function::InsertFunctionDialog>,
     pub(super) top_ten: Option<jade_web::top_ten::TopTenDialog>,
+    /// Formulas ▸ Calculation Options, while open.
+    pub(super) calculation_options: Option<jade_web::calculation_options::CalculationOptionsDialog>,
     /// Home ▸ Fill ▸ Series…'s dialog.
     pub(super) series_dialog: Option<jade_web::fill_series::SeriesDialog>,
     /// ⌘+ or ⌃- on cells: the Insert (`true`) or Delete dialog asking how.
@@ -847,6 +850,8 @@ enum MenuCommand {
     ResetPageBreaks,
     ManualCalculation(bool),
     CalculateNow,
+    /// Formulas ▸ Calculation Options…: the dialog.
+    CalculationOptions,
     DeleteSheet(usize),
     HideSheet(usize),
     UnhideSheet(usize),
@@ -924,6 +929,7 @@ impl Sheet {
             name_manager: None,
             insert_function: None,
             top_ten: None,
+            calculation_options: None,
             series_dialog: None,
             shift_choice: None,
             more_colors: None,
@@ -2036,6 +2042,7 @@ impl DocView {
             || sheet.name_manager.is_some()
             || sheet.insert_function.is_some()
             || sheet.top_ten.is_some()
+            || sheet.calculation_options.is_some()
             || sheet.series_dialog.is_some()
             || sheet.shift_choice.is_some()
             || sheet.more_colors.is_some()
@@ -2133,6 +2140,7 @@ impl DocView {
                 || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.calculation_options.is_some()
                 || s.series_dialog.is_some()
                 || s.shift_choice.is_some()
                 || s.more_colors.is_some()
@@ -2395,6 +2403,9 @@ impl DocView {
         // Top 10's dialog has the keys while it is open.
         if sheet.top_ten.is_some() {
             return self.top_ten_key(key, cx);
+        }
+        if sheet.calculation_options.is_some() {
+            return self.calculation_options_key(key, cx);
         }
         if sheet.shift_choice.is_some() {
             return self.shift_choice_key(key, cx);
@@ -2997,6 +3008,7 @@ impl DocView {
                 || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.calculation_options.is_some()
                 || s.series_dialog.is_some()
                 || s.shift_choice.is_some()
                 || s.more_colors.is_some()
@@ -3282,6 +3294,7 @@ impl DocView {
             MenuCommand::ResetPageBreaks => sheet.book.reset_page_breaks(),
             MenuCommand::ManualCalculation(manual) => sheet.book.set_manual_calculation(manual),
             MenuCommand::CalculateNow => sheet.book.calculate_now(),
+            MenuCommand::CalculationOptions => return self.open_calculation_options(cx),
             MenuCommand::AutoOutline => sheet.book.auto_outline(),
             MenuCommand::ClearOutline => {
                 sheet.book.clear_outline(if selection.is_whole_columns() {
@@ -3433,6 +3446,7 @@ impl DocView {
                 || s.name_manager.is_some()
                 || s.insert_function.is_some()
                 || s.top_ten.is_some()
+                || s.calculation_options.is_some()
                 || s.series_dialog.is_some()
                 || s.shift_choice.is_some()
                 || s.more_colors.is_some()
@@ -4235,6 +4249,7 @@ impl DocView {
         let name_manager_panel = self.name_manager_panel(cx);
         let insert_function_panel = self.insert_function_panel(cx);
         let top_ten_panel = self.top_ten_panel(cx);
+        let calculation_options_panel = self.calculation_options_panel(cx);
         let shift_choice_panel = self.shift_choice_panel(cx);
         let series_panel = self.series_panel(cx);
         let more_colors_panel = self.more_colors_panel(cx);
@@ -4893,6 +4908,10 @@ impl DocView {
                             "sheet.menu.manual_calculation",
                         ));
                     }
+                    items.push((
+                        MenuCommand::CalculationOptions,
+                        "sheet.menu.calculation_options",
+                    ));
                     items.push((MenuCommand::InsertFunction, "insert_function.menu"));
                     items.push((MenuCommand::FormatPainter, "sheet.menu.format_painter"));
                     items.push((MenuCommand::FormatCells, "sheet.menu.format_cells"));
@@ -5646,6 +5665,7 @@ impl DocView {
                     .children(name_manager_panel)
                     .children(insert_function_panel)
                     .children(top_ten_panel)
+                    .children(calculation_options_panel)
                     .children(shift_choice_panel)
                     .children(series_panel)
                     .children(more_colors_panel)

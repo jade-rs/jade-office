@@ -20,6 +20,7 @@ use jade_painter::Painter;
 
 pub mod advanced_filter;
 pub mod analysis;
+pub mod calculation_options;
 pub mod cell_styles;
 pub mod chart_form;
 pub mod charts;

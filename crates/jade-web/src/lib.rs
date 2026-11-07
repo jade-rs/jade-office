@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 pub use jade_office_model::tiny::TinySkiaBackend;
 pub use jade_office_model::{
-    advanced_filter, analysis, cell_styles, chart_form, charts, color_wheel,
+    advanced_filter, analysis, calculation_options, cell_styles, chart_form, charts, color_wheel,
     conditional_formatting, consolidate, csv, custom_filter, custom_lists, data_table, date_filter,
     deck, duplicates, editable_ranges, fill_series, find, forecast_sheet, form, format_cells,
     formula_complete, formula_tips, freeform, function_help, goal_seek, grid, insert_function,
