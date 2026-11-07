@@ -84,6 +84,37 @@ class VersionCaptureTests(unittest.TestCase):
         self.assertEqual({entry['word_product_version'] for entry in index['references']},
                          {'16.0.19127.20860', version})
 
+    def test_original_input_survives_working_source_changes(self):
+        original = (self.source/'probe.docx').read_bytes()
+        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+            target = archiver.archive(self.manifest, self.evidence, ['probe'])
+        (self.source/'probe.docx').write_bytes(b'a later edit')
+        self.assertEqual((target/'inputs/probe.docx').read_bytes(), original)
+        inputs = json.loads((target/'inputs.json').read_text(encoding='utf-8'))
+        self.assertEqual(inputs, dict(schema=1, documents=[dict(
+            name='probe', file='inputs/probe.docx', sha256=hashlib.sha256(original).hexdigest())]))
+
+    def test_input_changed_during_copy_cannot_be_registered(self):
+        copy = archiver.shutil.copyfile
+        def change_during_copy(source, target):
+            if Path(source) == self.source/'probe.docx':
+                Path(source).write_bytes(b'changed during archive')
+            return copy(source, target)
+        with patch.object(archiver.shutil, 'copyfile', side_effect=change_during_copy):
+            with self.assertRaisesRegex(ValueError, 'changed while archiving'):
+                archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse((self.evidence/'index.json').exists())
+
+    def test_fixture_name_cannot_escape_archived_input_directory(self):
+        for name in ('../escape', 'a/b', 'a\\b', 'C:escape', '..', ''):
+            with self.subTest(name=name):
+                self.capture['documents'][0]['name'] = name
+                self.comparison[0]['fixture'] = name
+                self.write(self.manifest, self.capture)
+                self.write(self.source/'comparison.json', self.comparison)
+                with self.assertRaisesRegex(ValueError, 'plain filename'):
+                    archiver.archive(self.manifest, self.evidence, [name])
+
     def test_mismatch_cannot_be_promoted(self):
         self.comparison[0]['within_0_375pt'] = 0
         self.write(self.source/'comparison.json', self.comparison)

@@ -50,6 +50,9 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
     if not set(strict) <= passed:
         raise ValueError(f'Refusing to promote mismatching fixtures: {set(strict)-passed}')
     for item in capture['documents']:
+        name = item['name']
+        if name in ('', '.', '..') or any(ch in name for ch in '/\\:'):
+            raise ValueError('Fixture name must be a plain filename stem')
         pdf_name = item['pdf']
         if '/' in pdf_name or '\\' in pdf_name:
             raise ValueError('PDF must belong to the capture directory')
@@ -79,6 +82,20 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
         shutil.copyfile(source/item['pdf'], target/item['pdf'])
         for page in item.get('metafiles', []):
             shutil.copyfile(source/page['file'], target/page['file'])
+    # A failed probe may not yet belong to the public fixture corpus. Keep its
+    # actual input bytes with this versioned capture so later cleanup or edits
+    # to the working source cannot make the original coordinates irreproducible.
+    input_root = target/'inputs'
+    input_root.mkdir()
+    inputs = []
+    for item in capture['documents']:
+        filename = item['name']+'.docx'
+        destination = input_root/filename
+        shutil.copyfile(Path(item['source']), destination)
+        if hashlib.sha256(destination.read_bytes()).hexdigest() != item['sha256']:
+            raise ValueError(f'Source DOCX changed while archiving: {item["name"]}')
+        inputs.append(dict(name=item['name'], file='inputs/'+filename, sha256=item['sha256']))
+    (target/'inputs.json').write_bytes((json.dumps(dict(schema=1, documents=inputs), indent=2)+'\n').encode('utf-8'))
     core = Path(__file__).resolve().parents[1]/'jade-core'
     engine = subprocess.check_output(['git', '-C', str(core), 'rev-parse', 'HEAD'], text=True).strip()
     engine_dirty = bool(subprocess.check_output(['git', '-C', str(core), 'status', '--porcelain', '--', 'crates'], text=True).strip())
