@@ -336,7 +336,7 @@ This checkpoint fixes scoped round-trip and calculation differences:
   tokens and conditional negative fractions. Private-use text cannot collide
   with the internal repeat delimiter, including when real repeats are present.
 
-The latest complete selected package runs pass 201 calculation cases /9 targets
+The latest complete selected package runs pass 204 calculation cases /9 targets
 and 210 layout cases /31 targets. The selected model CSV, Paste Special and
 scenario run passes 30 cases /3 targets; these counts describe separate runs,
 not a fresh execution of every XLSX or application test. Maintained reader,
@@ -2281,3 +2281,39 @@ The earlier six-function checkpoint passed 200 calc / 64 selected editor
 cases (`tmp/xlsx-complex-calc.log`, `tmp/xlsx-complex-editor.log`). Native
 exceptional coercion, extreme-magnitude numerical behavior, aggregate complex
 semantics and broader application oracles remain open.
+
+2026-11-07 complex aggregate arity checkpoint: IMSUM/IMPRODUCT now accept
+1..255 scalar arguments in runtime and static signatures, replacing the old
+exactly-two restriction. Existing scalar casts, suffix checks, formatting and
+left-to-right error order are retained. References:
+https://support.microsoft.com/en-us/excel/functions/imsum-function and
+https://support.microsoft.com/en-gb/excel/functions/improduct-function .
+Calc: 202 passed /9 targets; selected editor: 66 passed; engine: 2,329 passed /
+4 existing ignored (`tmp/xlsx-complex-variadic-{calc,editor,engine}.log`).
+Tests include zero/one/255/256 arguments and reference edits/history/save.
+Range/array aggregation, real-only suffix interactions, exceptional coercion
+and extreme-value arithmetic remain open.
+
+2026-11-07 CONVERT checkpoint: Celsius conversion used a 273.5 Kelvin offset
+instead of 273.15. CONVERT(68,"F","C") now returns 20 instead of 19.65;
+Celsius identity and negative-temperature round trips are corrected too.
+Reference: https://support.microsoft.com/en-us/excel/functions/convert-function .
+CONVERT also broadcasts values and both unit operands with matching static
+shapes, per-element source errors, unknown/incompatible-unit failures and
+singleton shapes. Existing unit tables and scalar conversion policies are
+retained; tables are built once per call and reused across output elements.
+Oversized outer-axis results are guarded before output allocation.
+
+The scalar temperature regression and array NIMPL regression were reproduced
+before their fixes (`tmp/xlsx-convert-{celsius,array}-before.log`). Calc:
+204 passed /9 targets (`tmp/xlsx-convert-array-calc.log`); selected editor:
+68 passed (`tmp/xlsx-convert-array-editor.log`), including value/unit edits,
+undo/redo and error-first matrices through cached/recalculated reopen. Engine:
+2,329 passed /4 existing ignored (`tmp/xlsx-convert-array-engine.log`). Strict
+native Clippy, Rust 1.99 wasm32, formatting and diff checks pass. Canonical
+replay verifies 500 source/build files and 480 upstream hashes
+(`tmp/xlsx-convert-array-patch.log`); patch SHA-256:
+`b016b70cfffb6f525d33afd3bbf23aaabc49ab0af4553841aa7f78a6072812e7`.
+The preceding scalar-temperature checkpoint passed 203 calc /67 selected
+editor cases. Native exceptional coercion, full unit-family accuracy, complex
+range aggregates, broader numerical captures and workbook/UI gaps remain open.
