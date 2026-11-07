@@ -23,7 +23,9 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
     reference_name = 'word-reference.json' if reference_kind == 'pdf' else 'word-emf-reference.json'
     comparison_name = 'comparison.json' if reference_kind == 'pdf' else 'emf-comparison.json'
     strict_name = 'strict.json' if reference_kind == 'pdf' else 'strict-emf.json'
-    manifest, evidence_root = Path(manifest), Path(evidence_root)
+    # Resolve before appending long fixture names: Win32 still caps relative
+    # paths containing parent segments even when their absolute path is valid.
+    manifest, evidence_root = Path(manifest).resolve(), Path(evidence_root).resolve()
     capture = json.loads(manifest.read_text(encoding='utf-8-sig'))
     if capture.get('status') != 'complete' or capture.get('schema') != 2:
         raise ValueError('Capture must be complete')
