@@ -1427,7 +1427,7 @@ impl<B: Backend> Workbook<B> {
                             CellValue::Number(number) => CellInput::Number(*number),
                             CellValue::Text(text) => CellInput::Text(text.clone()),
                             CellValue::Bool(flag) => CellInput::Bool(*flag),
-                            CellValue::Error(error) => CellInput::Text(error.clone()),
+                            CellValue::Error(error) => CellInput::Error(error.clone()),
                         },
                     },
                     None => CellInput::Blank,

@@ -57,6 +57,9 @@ pub fn read(text: &str, date1904: bool) -> Typed {
     if trimmed.eq_ignore_ascii_case("FALSE") {
         return Typed::plain(CellInput::Bool(false));
     }
+    if let error @ CellInput::Error(_) = CellInput::parse(trimmed) {
+        return Typed::plain(error);
+    }
     if let Some(number) = read_number(trimmed, date1904) {
         return number;
     }
@@ -82,42 +85,53 @@ pub const FORMULA_PROBLEM: &str = "There's a problem with this formula";
 /// the engine reads a formula it cannot evaluate as an error value, and
 /// Excel may well know what it means.
 pub fn formula_problem(formula: &str) -> bool {
-    let mut depth = 0usize;
-    let mut quote: Option<char> = None;
-    for c in formula.chars() {
-        match (quote, c) {
-            (Some(open), _) if c == open => quote = None,
-            (Some(_), _) => {}
-            (None, '"' | '\'') => quote = Some(c),
-            (None, '(') => depth += 1,
-            (None, ')') if depth == 0 => return true,
-            (None, ')') => depth -= 1,
-            (None, _) => {}
-        }
-    }
-    quote.is_some()
+    let (_, malformed) = formula_balance(formula);
+    malformed
         || formula
             .trim_end()
             .ends_with(['+', '-', '*', '/', '^', '&', '=', '<', '>'])
 }
 
-/// `formula` with the parentheses it leaves open closed at its end — those
-/// inside a string (`"("`) or a quoted sheet name (`'a(b'!A1`) not counted.
-fn close_parentheses(formula: &str) -> String {
+/// Parentheses in strings, sheet names and table selectors are literal text.
+fn formula_balance(formula: &str) -> (usize, bool) {
     let mut depth = 0usize;
     let mut quote: Option<char> = None;
-    for c in formula.chars() {
+    let mut brackets = 0usize;
+    let mut malformed = false;
+    let mut chars = formula.chars().peekable();
+    while let Some(c) = chars.next() {
+        if brackets > 0 {
+            match c {
+                '\'' if chars
+                    .peek()
+                    .is_some_and(|c| matches!(c, '[' | ']' | '#' | '@' | '\'')) =>
+                {
+                    chars.next();
+                }
+                '[' => brackets += 1,
+                ']' => brackets -= 1,
+                _ => {}
+            }
+            continue;
+        }
         match (quote, c) {
-            // A doubled quote inside a quoted run reads as one quote; leaving
-            // and re-entering the run gives the same result.
             (Some(open), _) if c == open => quote = None,
             (Some(_), _) => {}
             (None, '"' | '\'') => quote = Some(c),
+            (None, '[') => brackets = 1,
             (None, '(') => depth += 1,
-            (None, ')') => depth = depth.saturating_sub(1),
+            (None, ')') if depth == 0 => malformed = true,
+            (None, ')') => depth -= 1,
             (None, _) => {}
         }
     }
+    (depth, malformed || quote.is_some())
+}
+
+/// `formula` with the parentheses it leaves open closed at its end — those
+/// inside a string (`"("`) or a quoted sheet name (`'a(b'!A1`) not counted.
+fn close_parentheses(formula: &str) -> String {
+    let (depth, _) = formula_balance(formula);
     let mut closed = formula.to_string();
     closed.extend(std::iter::repeat_n(')', depth));
     closed
@@ -155,7 +169,7 @@ fn read_number(text: &str, date1904: bool) -> Option<Typed> {
     ] {
         let (sign, rest) = match text.strip_prefix('-') {
             Some(rest) => (-1.0, rest),
-            None => (1.0, text),
+            None => (1.0, text.strip_prefix('+').unwrap_or(text)),
         };
         if let Some(amount) = rest.strip_prefix(symbol) {
             let (value, decimals) = grouped(amount)?;
@@ -191,7 +205,7 @@ fn plain(text: &str) -> Option<f64> {
 fn grouped(text: &str) -> Option<(f64, bool)> {
     let (sign, digits) = match text.strip_prefix('-') {
         Some(rest) => ("-", rest),
-        None => ("", text),
+        None => ("", text.strip_prefix('+').unwrap_or(text)),
     };
     let (whole, fraction) = match digits.split_once('.') {
         Some((whole, fraction)) => (whole, Some(fraction)),
@@ -208,8 +222,9 @@ fn grouped(text: &str) -> Option<(f64, bool)> {
         && groups[1..]
             .iter()
             .all(|group| group.len() == 3 && group.chars().all(|c| c.is_ascii_digit()));
-    let ungrouped =
-        groups.len() == 1 && whole.chars().all(|c| c.is_ascii_digit()) && !whole.is_empty();
+    let ungrouped = groups.len() == 1
+        && whole.chars().all(|c| c.is_ascii_digit())
+        && (!whole.is_empty() || fraction.is_some_and(|fraction| !fraction.is_empty()));
     if !(well_grouped || ungrouped) {
         return None;
     }
@@ -218,7 +233,10 @@ fn grouped(text: &str) -> Option<(f64, bool)> {
         number.push('.');
         number.push_str(fraction);
     }
-    let value = number.parse::<f64>().ok()?;
+    let value = number
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())?;
     Some((value, fraction.is_some_and(|fraction| !fraction.is_empty())))
 }
 
@@ -226,9 +244,9 @@ fn grouped(text: &str) -> Option<(f64, bool)> {
 /// (`h:mm`, `h:mm:ss`): its serial and the format Excel gives it.
 fn date_time(text: &str, date1904: bool) -> Option<Typed> {
     let (date_part, time_part) = match text.split_once(' ') {
-        Some((date, time)) => (Some(date), Some(time.trim())),
-        None if text.contains(':') => (None, Some(text)),
-        None => (Some(text), None),
+        Some((date, time)) if !date.contains(':') => (Some(date), Some(time.trim())),
+        _ if text.contains(':') => (None, Some(text)),
+        _ => (Some(text), None),
     };
     let time = match time_part {
         Some(time) => Some(time_of_day(time)?),
@@ -238,21 +256,31 @@ fn date_time(text: &str, date1904: bool) -> Option<Typed> {
         Some(date) => Some(serial(date, date1904)?),
         None => None,
     };
-    let seconds_shown = time.is_some_and(|(_, seconds)| seconds);
-    let fraction = time.map_or(0.0, |(fraction, _)| fraction);
+    let seconds_shown = time.is_some_and(|(_, seconds, _)| seconds);
+    let meridiem = time.is_some_and(|(_, _, meridiem)| meridiem);
+    let fraction = time.map_or(0.0, |(fraction, _, _)| fraction);
+    if date.is_some() && fraction >= 1.0 {
+        return None;
+    }
     Some(match (date, time) {
         (Some(day), Some(_)) => Typed::number(
             day + fraction,
-            Some(if seconds_shown {
-                "yyyy/m/d h:mm:ss"
-            } else {
-                "yyyy/m/d h:mm"
+            Some(match (seconds_shown, meridiem) {
+                (true, true) => "yyyy/m/d h:mm:ss AM/PM",
+                (false, true) => "yyyy/m/d h:mm AM/PM",
+                (true, false) => "yyyy/m/d h:mm:ss",
+                (false, false) => "yyyy/m/d h:mm",
             }),
         ),
         (Some(day), None) => Typed::number(day, Some("yyyy/m/d")),
         (None, Some(_)) => Typed::number(
             fraction,
-            Some(if seconds_shown { "h:mm:ss" } else { "h:mm" }),
+            Some(match (seconds_shown, meridiem) {
+                (true, true) => "h:mm:ss AM/PM",
+                (false, true) => "h:mm AM/PM",
+                (true, false) => "h:mm:ss",
+                (false, false) => "h:mm",
+            }),
         ),
         (None, None) => return None,
     })
@@ -260,23 +288,48 @@ fn date_time(text: &str, date1904: bool) -> Option<Typed> {
 
 /// `h:mm` or `h:mm:ss` as a fraction of a day, and whether seconds were
 /// written.
-fn time_of_day(text: &str) -> Option<(f64, bool)> {
+fn time_of_day(text: &str) -> Option<(f64, bool, bool)> {
+    let period = text
+        .get(text.len().saturating_sub(2)..)
+        .filter(|suffix| {
+            ["am", "pm", " a", " p"]
+                .iter()
+                .any(|period| suffix.eq_ignore_ascii_case(period))
+        })
+        .map(|suffix| suffix.eq_ignore_ascii_case("pm") || suffix.eq_ignore_ascii_case(" p"));
+    let text = if period.is_some() {
+        text[..text.len() - 2].trim_end()
+    } else {
+        text
+    };
     let parts: Vec<&str> = text.split(':').collect();
     if !(2..=3).contains(&parts.len())
-        || parts.iter().any(|part| {
-            part.is_empty() || part.len() > 2 || !part.chars().all(|c| c.is_ascii_digit())
+        || parts.iter().enumerate().any(|(index, part)| {
+            part.is_empty()
+                || part.len() > if index == 0 { 4 } else { 2 }
+                || !part.chars().all(|c| c.is_ascii_digit())
         })
     {
         return None;
     }
-    let hours: u32 = parts[0].parse().ok()?;
+    let mut hours: u32 = parts[0].parse().ok()?;
     let minutes: u32 = parts[1].parse().ok()?;
     let seconds: u32 = parts.get(2).map_or(Some(0), |part| part.parse().ok())?;
-    if hours >= 24 || minutes >= 60 || seconds >= 60 {
+    if minutes >= 60 || seconds >= 60 {
         return None;
     }
+    if let Some(pm) = period {
+        if hours > 12 {
+            return None;
+        }
+        hours = hours % 12 + if pm { 12 } else { 0 };
+    }
     let total = hours * 3600 + minutes * 60 + seconds;
-    Some((f64::from(total) / 86_400.0, parts.len() == 3))
+    Some((
+        f64::from(total) / 86_400.0,
+        parts.len() == 3,
+        period.is_some(),
+    ))
 }
 
 /// A `yyyy/m/d` or `yyyy-m-d` date's serial in the workbook's system.
@@ -342,6 +395,85 @@ fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meridiem_times_keep_midnight_noon_and_date_components() {
+        for (text, value, format) in [
+            ("1:30 PM", 13.5 / 24.0, "h:mm AM/PM"),
+            ("9:00 p", 21.0 / 24.0, "h:mm AM/PM"),
+            ("12:00 a", 0.0, "h:mm AM/PM"),
+            ("12:00 AM", 0.0, "h:mm AM/PM"),
+            ("12:00 PM", 0.5, "h:mm AM/PM"),
+            ("1:30:15 pm", 48_615.0 / 86_400.0, "h:mm:ss AM/PM"),
+            (
+                "2024/1/15 1:30 PM",
+                45306.0 + 13.5 / 24.0,
+                "yyyy/m/d h:mm AM/PM",
+            ),
+        ] {
+            assert_eq!(
+                read(text, false),
+                Typed::number(value, Some(format)),
+                "{text}"
+            );
+        }
+        assert!(matches!(read("25:00 PM", false).input, CellInput::Text(_)));
+    }
+
+    #[test]
+    fn elapsed_time_input_keeps_complete_days_in_its_numeric_value() {
+        for (text, value, format) in [
+            ("25:00", 25.0 / 24.0, "h:mm"),
+            ("24:00:00", 1.0, "h:mm:ss"),
+            ("9999:59:59", 35_999_999.0 / 86_400.0, "h:mm:ss"),
+        ] {
+            assert_eq!(read(text, false), Typed::number(value, Some(format)));
+            assert_eq!(read(text, true), Typed::number(value, Some(format)));
+        }
+        for text in ["10000:00", "25:60", "24:00:60", "2024/1/15 25:00"] {
+            assert!(
+                matches!(read(text, false).input, CellInput::Text(_)),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn positive_signs_and_fractional_percentages_are_typed_numbers() {
+        for (text, value, format) in [
+            ("+1,234", 1234.0, "#,##0"),
+            ("+$1,234.50", 1234.5, "$#,##0.00"),
+            ("+10%", 0.1, "0%"),
+            (".5%", 0.005, "0.00%"),
+            ("-.5%", -0.005, "0.00%"),
+            ("$.50", 0.5, "$#,##0.00"),
+        ] {
+            let typed = read(text, false);
+            assert_eq!(typed.input, CellInput::Number(value), "{text}");
+            assert_eq!(typed.format, Some(format), "{text}");
+        }
+        assert!(matches!(read(".%", false).input, CellInput::Text(_)));
+        assert!(matches!(read("+1,23", false).input, CellInput::Formula(_)));
+    }
+
+    #[test]
+    fn table_headers_do_not_change_formula_parenthesis_or_quote_balance() {
+        for formula in [
+            "SUM(Table1[[Count(]])",
+            "SUM(Table1[[Count)]])",
+            "SUM(Table1[[Bob's]])",
+            "SUM(Table1[[part'](]])",
+        ] {
+            assert!(!formula_problem(formula), "{formula}");
+            assert_eq!(close_parentheses(formula), formula);
+        }
+        assert_eq!(
+            close_parentheses("SUM(Table1[[Count(]]"),
+            "SUM(Table1[[Count(]])"
+        );
+        assert!(formula_problem("SUM(Table1[Count]))"));
+        assert!(formula_problem("SUM(\"unterminated)"));
+    }
 
     #[test]
     fn dates_count_as_excel_counts_them() {

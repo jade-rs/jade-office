@@ -293,7 +293,7 @@ fn input_of(value: &CellValue) -> CellInput {
         CellValue::Number(number) => CellInput::Number(*number),
         CellValue::Text(text) => CellInput::Text(text.clone()),
         CellValue::Bool(flag) => CellInput::Bool(*flag),
-        CellValue::Error(error) => CellInput::Text(error.clone()),
+        CellValue::Error(error) => CellInput::Error(error.clone()),
         CellValue::Empty => CellInput::Blank,
     }
 }
@@ -303,6 +303,7 @@ fn typed_value(text: &str, date1904: bool) -> CellValue {
     match crate::typing::read(text, date1904).input {
         CellInput::Number(number) => CellValue::Number(number),
         CellInput::Bool(flag) => CellValue::Bool(flag),
+        CellInput::Error(error) => CellValue::Error(error),
         CellInput::Blank => CellValue::Empty,
         CellInput::Text(text) => CellValue::Text(text),
         CellInput::Formula(_) => CellValue::Text(text.to_string()),
