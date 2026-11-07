@@ -43,6 +43,26 @@ fn special(what: PasteWhat) -> PasteSpecial {
     }
 }
 
+#[test]
+fn pasting_an_error_as_a_value_keeps_an_error_constant_and_one_history_step() {
+    let mut book = book();
+    book.set_cell(at(0, 19), "=NA()").unwrap();
+    book.set_cell(at(1, 19), "=ISNA(D20)").unwrap();
+    book.set_cell(at(2, 19), "=ISFORMULA(D20)").unwrap();
+    book.copy(one(at(0, 19)), false);
+    book.paste_special(at(3, 19), None, special(PasteWhat::Values))
+        .unwrap();
+    assert_eq!(book.edit_text(at(3, 19)), "#N/A");
+    assert_eq!(book.display_text(at(1, 19)), "TRUE");
+    assert_eq!(book.display_text(at(2, 19)), "FALSE");
+    book.undo().unwrap();
+    assert_eq!(book.edit_text(at(3, 19)), "");
+    assert_eq!(book.display_text(at(1, 19)), "FALSE");
+    book.redo().unwrap();
+    assert_eq!(book.display_text(at(1, 19)), "TRUE");
+    assert_eq!(book.display_text(at(2, 19)), "FALSE");
+}
+
 fn bold(book: &mut Workbook<TinySkiaBackend>, range: CellRange) {
     let change = CellFormat {
         bold: Some(true),

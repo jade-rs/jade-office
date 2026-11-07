@@ -34,6 +34,26 @@ fn book() -> Workbook<TinySkiaBackend> {
 }
 
 #[test]
+fn special_table_headers_can_be_entered_in_formulas_without_extra_parentheses() {
+    for (header, selector) in [
+        ("Count(", "[[Count(]]"),
+        ("Count)", "[[Count)]]"),
+        ("Bob's", "[[Bob''s]]"),
+    ] {
+        let mut book = book();
+        let expected: f64 = (1..=4)
+            .filter_map(|row| book.number(CellRef::new(1, row)))
+            .sum();
+        book.set_cell(CellRef::new(1, 0), header).unwrap();
+        let formula = format!("=SUM(Table1{selector})");
+        let at = CellRef::new(25, 0);
+        book.set_cell(at, &formula).unwrap();
+        assert_eq!(book.number(at), Some(expected), "{header}");
+        assert_eq!(book.edit_text(at), formula);
+    }
+}
+
+#[test]
 fn an_entry_starting_with_a_sign_becomes_a_formula_and_is_saved_as_one() {
     let mut book = book();
     let value = CellRef::parse("Z1").unwrap();
