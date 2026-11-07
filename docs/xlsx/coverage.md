@@ -336,7 +336,7 @@ This checkpoint fixes scoped round-trip and calculation differences:
   tokens and conditional negative fractions. Private-use text cannot collide
   with the internal repeat delimiter, including when real repeats are present.
 
-The latest complete selected package runs pass 199 calculation cases /9 targets
+The latest complete selected package runs pass 201 calculation cases /9 targets
 and 210 layout cases /31 targets. The selected model CSV, Paste Special and
 scenario run passes 30 cases /3 targets; these counts describe separate runs,
 not a fresh execution of every XLSX or application test. Maintained reader,
@@ -2257,3 +2257,27 @@ upstream hashes (`tmp/xlsx-bessel-array-patch.log`); patch SHA-256:
 This supersedes the preceding DECIMAL array/range gap. Native exceptional
 coercion, high-magnitude precision, very-large Bessel orders, remaining complex
 functions and broader workbook/UI compatibility still need work.
+
+2026-11-07 complex-function checkpoint: COMPLEX and the five component functions
+IMABS/IMREAL/IMAGINARY/IMARGUMENT/IMCONJUGATE now broadcast typed operands.
+The eighteen remaining scalar complex operations also broadcast, including
+IMDIV/IMSUB/IMPOWER outer axes. Shared complex-number casts retain existing
+parsing, suffixes, scalar coercion, numerical routines and string formatting;
+source/domain errors remain per element and singleton arrays retain shape.
+Existing IMSUM/IMPRODUCT aggregation behavior is unchanged. Oversized COMPLEX
+and binary complex results use the existing allocation guard.
+
+The new array regressions fail with NIMPL before each fix. Calc: 201 passed
+across 9 targets (`tmp/xlsx-complex-transcendentals-calc.log`). Selected editor
+conversion suites: 65 passed (`tmp/xlsx-complex-transcendentals-editor.log`),
+covering all 24 changed functions through range edits, undo/redo and cached/
+recalculated reopen with saved text versus number types. Engine: 2,328 passed /
+4 existing ignored (`tmp/xlsx-complex-transcendentals-engine.log`). Strict
+native Clippy, Rust 1.99 wasm32, formatting and diff checks pass. Canonical
+replay verifies 500 source/build files and 480 upstream hashes
+(`tmp/xlsx-complex-transcendentals-patch.log`); patch SHA-256:
+`cedc1a740bd536484646aa2bdb71e25ef1327c512e749b6df2d989c40c1fd457`.
+The earlier six-function checkpoint passed 200 calc / 64 selected editor
+cases (`tmp/xlsx-complex-calc.log`, `tmp/xlsx-complex-editor.log`). Native
+exceptional coercion, extreme-magnitude numerical behavior, aggregate complex
+semantics and broader application oracles remain open.
