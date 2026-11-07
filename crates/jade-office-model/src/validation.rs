@@ -141,6 +141,7 @@ impl<B: Backend> Workbook<B> {
             CellInput::Number(n) => Candidate::Value(CellValue::Number(n)),
             CellInput::Text(s) => Candidate::Value(CellValue::Text(s)),
             CellInput::Bool(b) => Candidate::Value(CellValue::Bool(b)),
+            CellInput::Error(e) => Candidate::Value(CellValue::Error(e)),
             CellInput::Formula(f) => Candidate::Formula(f),
             CellInput::Blank => Candidate::Value(CellValue::Empty),
         };

@@ -140,10 +140,105 @@ fn names_and_extensions() {
     assert_eq!(sheet_name(&format!("{}.csv", "x".repeat(40))).len(), 31);
 }
 
+#[test]
+fn explicit_separator_metadata_is_not_imported_as_a_data_row() {
+    for ending in ["\r\n", "\n", "\r"] {
+        let text = format!("\u{feff}sep=|{ending}Name|Amount{ending}\"a|b\"|12{ending}");
+        assert_eq!(separator("data.csv", &text), '|');
+        let book = Workbook::open_csv("data.csv", text.as_bytes(), "UTC", backend()).unwrap();
+        assert_eq!(book.display_text(at(0, 0)), "Name");
+        assert_eq!(book.display_text(at(0, 1)), "a|b");
+        assert_eq!(book.number(at(1, 1)), Some(12.0));
+        assert_eq!(book.csv_text(), "Name,Amount\r\na|b,12\r\n");
+    }
+    assert_eq!(separator("data.csv", "SEP=;\r\nx;y"), ';');
+    assert_eq!(separator("data.tsv", "sep=|\r\nx\ty"), '\t');
+    let quoted = Workbook::open_csv("data.csv", b"\"sep=|\",data\r\n", "UTC", backend()).unwrap();
+    assert_eq!(quoted.display_text(at(0, 0)), "sep=|");
+    assert_eq!(quoted.display_text(at(1, 0)), "data");
+}
+
+#[test]
+fn signed_grouped_numbers_and_fractional_percentages_import_as_numbers() {
+    let book = Workbook::open_csv(
+        "numbers.csv",
+        b"\"+1,234\",.5%,+$1.50,$.50\r\n",
+        "UTC",
+        backend(),
+    )
+    .unwrap();
+    for (column, value) in [(0, 1234.0), (1, 0.005), (2, 1.5), (3, 0.5)] {
+        assert_eq!(book.number(at(column, 0)), Some(value));
+    }
+    assert_eq!(book.display_text(at(1, 0)), "0.50%");
+    assert_eq!(book.display_text(at(2, 0)), "$1.50");
+    assert_eq!(book.display_text(at(3, 0)), "$0.50");
+}
+
+#[test]
+fn am_pm_times_import_as_numeric_values_with_their_display_format() {
+    let mut book = Workbook::open_csv(
+        "times.csv",
+        b"1:30 PM,12:00 AM,12:00 PM,2024/1/15 1:30 PM\r\n",
+        "UTC",
+        backend(),
+    )
+    .unwrap();
+    for (column, value) in [(0, 0.5625), (1, 0.0), (2, 0.5), (3, 45306.5625)] {
+        assert_eq!(book.number(at(column, 0)), Some(value));
+    }
+    assert_eq!(book.display_text(at(0, 0)), "1:30 PM");
+    assert_eq!(book.display_text(at(1, 0)), "12:00 AM");
+    assert_eq!(book.display_text(at(2, 0)), "12:00 PM");
+    let saved = book.save_bytes_as("times.csv").unwrap();
+    let reopened = Workbook::open_csv("times.csv", &saved, "UTC", backend()).unwrap();
+    assert_eq!(reopened.number(at(3, 0)), Some(45306.5625));
+}
+
+#[test]
+fn abbreviated_meridiem_times_support_entry_and_saved_xlsx_values() {
+    let mut book = Workbook::open_csv(
+        "times.csv",
+        b"9:00 p,12:00 a,12:00 P,2024/1/15 1:30 p\r\n",
+        "UTC",
+        backend(),
+    )
+    .unwrap();
+    for (column, value) in [(0, 0.875), (1, 0.0), (2, 0.5), (3, 45306.5625)] {
+        assert_eq!(book.number(at(column, 0)), Some(value));
+    }
+    book.set_cell(at(0, 1), "9:00 a").unwrap();
+    book.set_cell(at(1, 1), "=A1-A2").unwrap();
+    assert_eq!(book.number(at(1, 1)), Some(0.5));
+    assert_eq!(book.display_text(at(0, 0)), "9:00 PM");
+    let saved = book.save_bytes_as("times.xlsx").unwrap();
+    let reopened = Workbook::open(&saved, "UTC", backend()).unwrap();
+    assert_eq!(reopened.number(at(0, 0)), Some(0.875));
+    assert_eq!(reopened.number(at(1, 1)), Some(0.5));
+}
+
+#[test]
+fn csv_error_literals_are_errors_while_apostrophe_prefixed_values_stay_text() {
+    let mut book = Workbook::open_csv("errors.csv", b"#N/A,'#N/A\r\n", "UTC", backend()).unwrap();
+    book.set_cell(at(0, 1), "=ISNA(A1)").unwrap();
+    book.set_cell(at(1, 1), "=ISNA(B1)").unwrap();
+    book.set_cell(at(2, 1), "=ISFORMULA(A1)").unwrap();
+    assert_eq!(book.display_text(at(0, 1)), "TRUE");
+    assert_eq!(book.display_text(at(1, 1)), "FALSE");
+    assert_eq!(book.display_text(at(2, 1)), "FALSE");
+    assert_eq!(book.edit_text(at(0, 0)), "#N/A");
+    let saved = book.save_bytes_as("errors.xlsx").unwrap();
+    let reopened = Workbook::open(&saved, "UTC", backend()).unwrap();
+    assert_eq!(reopened.display_text(at(0, 1)), "TRUE");
+    assert_eq!(reopened.display_text(at(1, 1)), "FALSE");
+    assert_eq!(reopened.display_text(at(2, 1)), "FALSE");
+}
+
 /// A `.tsv` splits at tabs, a European CSV at its semicolons, and UTF-16
 /// *Unicode Text* reads by its BOM; a `.tsv` saves tab-separated.
 #[test]
 fn tabs_semicolons_and_utf16_read_as_excel_reads_them() {
+    assert_eq!(decode(b"\xef\xbb\xbfName,\xff\r\n"), "Name,\u{fffd}\r\n");
     assert_eq!(separator("a.tsv", "x,y\tz"), '\t');
     assert_eq!(separator("a.csv", "x;y;\"1,5\"\n1,2"), ';');
     assert_eq!(separator("a.csv", "x;y,z"), ',');

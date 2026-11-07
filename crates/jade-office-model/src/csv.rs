@@ -47,6 +47,9 @@ pub fn separator(name: &str, text: &str) -> char {
     if is_tsv(name) {
         return '\t';
     }
+    if let Some((separator, _)) = separator_directive(text) {
+        return separator;
+    }
     let mut quoted = false;
     let (mut semicolons, mut tabs) = (0, 0);
     for c in text.chars() {
@@ -68,14 +71,33 @@ pub fn separator(name: &str, text: &str) -> char {
     }
 }
 
+/// Excel's first-line delimiter hint is metadata, not a worksheet row.
+fn separator_directive(text: &str) -> Option<(char, &str)> {
+    let text = text.strip_prefix(BOM).unwrap_or(text);
+    let end = text.find(['\r', '\n']).unwrap_or(text.len());
+    let line = &text[..end];
+    if !line.get(..4)?.eq_ignore_ascii_case("sep=") {
+        return None;
+    }
+    let mut chars = line[4..].chars();
+    let separator = chars.next()?;
+    if chars.next().is_some() || separator == '"' {
+        return None;
+    }
+    let rest = &text[end..];
+    let rest = rest
+        .strip_prefix("\r\n")
+        .or_else(|| rest.strip_prefix(['\r', '\n']))
+        .unwrap_or(rest);
+    Some((separator, rest))
+}
+
 /// CSV bytes as text: UTF-8 (its BOM dropped), UTF-16 with a BOM, else
 /// Shift_JIS.
 pub fn decode(bytes: &[u8]) -> String {
     if let Some((encoding, _)) = encoding_rs::Encoding::for_bom(bytes) {
-        if encoding != encoding_rs::UTF_8 {
-            let (text, _) = encoding.decode_with_bom_removal(bytes);
-            return text.into_owned();
-        }
+        let (text, _) = encoding.decode_with_bom_removal(bytes);
+        return text.into_owned();
     }
     if let Ok(text) = std::str::from_utf8(bytes) {
         return text.strip_prefix(BOM).unwrap_or(text).to_string();
@@ -117,7 +139,13 @@ impl<B: Backend> Workbook<B> {
     /// nothing to undo and nothing unsaved.
     pub fn open_csv(name: &str, bytes: &[u8], time_zone: &str, backend: B) -> Result<Self, String> {
         let text = decode(bytes);
-        let xlsx = csv_to_xlsx(name, &text, separator(name, &text))?;
+        let delimiter = separator(name, &text);
+        let data = if is_tsv(name) {
+            text.as_str()
+        } else {
+            separator_directive(&text).map_or(text.as_str(), |(_, data)| data)
+        };
+        let xlsx = csv_to_xlsx(name, data, delimiter)?;
         Self::open(&xlsx, time_zone, backend)
     }
 

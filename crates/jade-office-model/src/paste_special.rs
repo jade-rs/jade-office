@@ -569,7 +569,7 @@ impl<B: Backend> Workbook<B> {
                             CellValue::Number(number) => CellInput::Number(*number),
                             CellValue::Text(text) => CellInput::Text(text.clone()),
                             CellValue::Bool(flag) => CellInput::Bool(*flag),
-                            CellValue::Error(error) => CellInput::Text(error.clone()),
+                            CellValue::Error(error) => CellInput::Error(error.clone()),
                         };
                         let blank = formula.is_none() && matches!(value, CellInput::Blank);
                         Copied {
@@ -630,7 +630,7 @@ impl<B: Backend> Workbook<B> {
             Some(CellValue::Number(number)) => CellInput::Number(number),
             Some(CellValue::Text(text)) => CellInput::Text(text),
             Some(CellValue::Bool(flag)) => CellInput::Bool(flag),
-            Some(CellValue::Error(error)) => CellInput::Text(error),
+            Some(CellValue::Error(error)) => CellInput::Error(error),
             Some(CellValue::Empty) | None => CellInput::Blank,
         }
     }
