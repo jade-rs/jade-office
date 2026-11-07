@@ -4,7 +4,7 @@ The installed reference application is **Word 16.0.19127.20860**. Captures open
 DOCX files read-only and preserve source/application/PDF/EMF hashes. Different
 Word builds and repeated runs get distinct version/capture directories.
 
-The indexed corpus covers **26 unique documents, 158 pages and 28,995 visible
+The indexed corpus covers **31 unique documents, 166 pages and 31,298 visible
 non-whitespace characters**. Both absolute axes must match within 0.375pt;
 text, order and page count must also match. No origin alignment, fitted scale
 or relaxed tolerance is used. See
@@ -60,3 +60,14 @@ own immutable timestamp/ID. `capture.json` records Word's product/application
 version and build, executable hash, OS and original DOCX/PDF/EMF hashes;
 `verification.json` records the engine commit and matching/pending fixtures.
 Failed captures are kept separately from the registered passing references.
+
+The follow-up capture `20261107T035930893Z-61ca197b` adds five documents,
+eight pages and 2,303 complete drawing origins, all also matching PDF origins.
+It covers numeric tab suffixes/separators with tracking and split source runs,
+and modern table alignment, cell vertical alignment, exact rows, 0–3pt borders,
+0/4pt vertical padding and following text/page breaks. Windows numeric tabs
+stop at the first point or first nonnumeric character after a digit (grouping
+commas remain numeric). Modern tables reserve their border frame and the
+bottom border below exact rows; Mac and legacy Windows policies are preserved.
+The installed-Arial Windows gate now checks 13,199 full X/Y origins across
+14 documents; all 25,067 indexed EMF origins reconstruct from the original files.
