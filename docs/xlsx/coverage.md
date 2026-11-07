@@ -2458,3 +2458,28 @@ The remaining counting-sample cell is persisted as an ordinary formula rather
 than a CSE declaration; its IIE/AE distinction is tracked in that follow-up.
 Fresh native Excel application validation and broader table/clipboard,
 coercion/precision and rendering gaps remain open.
+
+2026-11-08 ordinary and array evaluation integration (core #549):
+The app pins published core main `677f7601a60a5711241c3fc829aef5f2e45cad0c`.
+Imported ordinary formulas apply implicit intersection at scalar argument
+boundaries. Proven fixed legacy arrays retain their declared CSE area, and
+dynamic arrays retain array evaluation. Newly entered modern formulas persist
+their array identity when required, including aggregates that return one value.
+For example, an ordinary `SUM(LEN(A1:A3))` outside the input rows returns
+`#VALUE!`, while a fixed CSE formula or a newly entered array-evaluated aggregate
+returns the sum of the three lengths. Displayed original source remains intact.
+
+The published Microsoft counting workbook comparison at this core checkpoint
+matches all 39 saved formula anchors, with zero skipped formulas. This resolves
+the earlier 38/39 ordinary-formula mismatch without forcing cached results.
+It compares Microsoft's stored workbook answers, not a fresh native Excel run.
+The final pin's reader, calculator and vendored engine sources match #549's
+verified head. Canonical patch replay verifies 500 source/build files and
+480 upstream hashes. The committed LF engine patch SHA-256 is
+`810ef161e2a891527c93bfa30be02cf2842cf0c7231048ee746989df47c13c60`.
+
+Clipboard mode propagation (#550), metadata preservation (#551), spill XML
+ownership (#552), named-formula intersection (#554) and table spill bounds
+(#555) are separate follow-ups and are not included in this app pin. Fresh
+native Excel application validation, broader tables, unknown/composite
+metadata, precision/coercion and rendering compatibility remain open.
