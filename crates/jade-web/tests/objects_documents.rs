@@ -862,15 +862,15 @@ fn copied_text_box_imports_style_dependencies_without_changing_destination_style
             let rels = rels
                 .split("<Relationship ")
                 .enumerate()
-                .filter_map(|(index, fragment)| {
+                .map(|(index, fragment)| {
                     if index == 0 {
-                        return Some(fragment.to_owned());
+                        return fragment.to_owned();
                     }
                     let end = fragment.find("/>").unwrap() + 2;
                     if fragment[..end].contains("/styles\"") {
-                        Some(fragment[end..].to_owned())
+                        fragment[end..].to_owned()
                     } else {
-                        Some(format!("<Relationship {fragment}"))
+                        format!("<Relationship {fragment}")
                     }
                 })
                 .collect::<String>();
@@ -1082,16 +1082,16 @@ fn copied_text_box_preserves_numbered_lists_overrides_and_picture_bullets() {
             let rels = rels
                 .split("<Relationship ")
                 .enumerate()
-                .filter_map(|(i, part)| {
+                .map(|(i, part)| {
                     if i == 0 {
-                        return Some(part.to_owned());
+                        return part.to_owned();
                     }
                     let end = part.find("/>").unwrap() + 2;
-                    Some(if part[..end].contains(&format!("{R}/numbering")) {
+                    if part[..end].contains(&format!("{R}/numbering")) {
                         part[end..].into()
                     } else {
                         format!("<Relationship {part}")
-                    })
+                    }
                 })
                 .collect::<String>();
             package.replace("word/_rels/document.xml.rels", rels.into_bytes());
@@ -1243,13 +1243,13 @@ fn object_theme(package: &mut jade_opc::OpcPackage, accent: &str, face: &str) {
     // Point at a known theme part, irrespective of the blank document's defaults.
     let rels = rels
         .split("<Relationship ")
-        .filter_map(|fragment| {
+        .map(|fragment| {
             if fragment.contains("/theme\"") {
-                Some(fragment.split_once("/>").unwrap().1.to_owned())
+                fragment.split_once("/>").unwrap().1.to_owned()
             } else if fragment.starts_with('<') {
-                Some(fragment.to_owned())
+                fragment.to_owned()
             } else {
-                Some(format!("<Relationship {fragment}"))
+                format!("<Relationship {fragment}")
             }
         })
         .collect::<String>();
