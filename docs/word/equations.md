@@ -59,6 +59,16 @@ Sources: [preSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms
 [interSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/2294400c-b0fb-499d-aa04-c38fc4028c88),
 [intraSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/0c50cee0-a9b4-4139-8e36-b86a8a290208).
 
+### Literal run compatibility
+
+The OOXML `m:lit` definition suppresses operator interpretation, but the
+published Word implementation note says Word 2007, SP1 and SP2 do not change
+operator interpretation for this property. Current Word captures are needed
+before treating literal-run spacing as a confirmed compatibility gap; jade
+currently preserves the property without applying it to layout.
+
+Source: [Word implementation note for lit](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/e941fac0-a989-49a8-a8f0-766a141b73a1).
+
 ## Structures
 
 Every structure's properties element (`…Pr`) may end with `m:ctrlPr`, the
@@ -93,6 +103,12 @@ past the column's width, before a binary or relation operator at the top
 level (`brkBin`), continuation lines indented by `wrapIndent` or set flush
 right with `wrapRight`. Runs with `m:aln` align their lines on that point.
 Inline equations do not break.
+
+Equation-array distribution remains unimplemented. The published Word
+implementation note for [`maxDist`](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4a8c035c-c930-4e87-aabf-32715949ba48)
+limits its effect to arrays with alignment points. Future Word comparisons
+must include arrays with and without these points, rather than assuming
+that every array expands when the setting is enabled.
 
 ### Faces and metrics
 
@@ -244,7 +260,8 @@ enclosed characters and distributed text keep their own handling.
 - Ink Equation, user Math AutoCorrect entries, and Math AutoCorrect outside
   equations.
 - `m:mathPr` margins (`lMargin`, `rMargin`), `brkBin` `repeat` (breaks as `before`),
-  `brkBinSub`, `eqArr` `maxDist`/`objDist`, `m:lit`.
+  `brkBinSub`, `eqArr` `maxDist`/`objDist`.
+- Current Word behavior for `m:lit` (see the implementation-note caveat above).
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
 - Selecting a range inside an equation (the caret is a point; a structure
