@@ -114,11 +114,12 @@ that every array expands when the setting is enabled.
 
 The document's `mathFont` setting selects the math face, with Cambria Math
 as the fallback. Normal-text (`m:nor`) runs without an explicit run font
-resolve the document text defaults, including the default paragraph style
-and theme font. Explicit run fonts remain authoritative. Custom paragraph
-styles for normal-text runs and fresh Word captures for these font and
-display-default changes remain pending; renderer regression tests establish
-implementation behavior, not Word equivalence.
+resolve the containing paragraph style, its base styles, document text
+defaults, and theme font. Explicit run fonts remain authoritative. The
+`normal_math_text_inherits_the_equation_paragraph_style` regression covers
+this cascade for display, inline, and text-box equation plans. Fresh Word
+captures for these font and display-default changes remain pending; renderer
+regression tests establish implementation behavior, not Word equivalence.
 
 By default, Word sets equations in Cambria Math and lays them out from its OpenType
 MATH table. The native shell binds Cambria Math from Office's own fonts
