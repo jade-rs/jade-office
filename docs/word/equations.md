@@ -112,6 +112,13 @@ right alignment for paragraphs containing only an equation. The
 `text_box_inline_math_wraps_paints_and_registers_object_positions` and
 `text_box_math_only_paragraph_keeps_alignment_on_repaint` regressions cover
 these paths; fresh Word capture comparisons remain pending.
+Inline equations in text-box paragraphs also use the equation editor's
+existing replacement command. The
+`a_text_box_inline_equation_saves_reopens_undoes_and_redoes_in_its_story`
+regression checks that editing the target equation preserves the body and
+neighbouring equations, text, paragraph alignment and shape attributes
+through save/reopen and undo/redo. Display-equation editing inside text
+boxes remains unsupported.
 
 Equation-array distribution remains unimplemented. The published Word
 implementation note for [`maxDist`](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4a8c035c-c930-4e87-aabf-32715949ba48)
