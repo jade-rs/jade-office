@@ -104,6 +104,15 @@ level (`brkBin`), continuation lines indented by `wrapIndent` or set flush
 right with `wrapRight`. Runs with `m:aln` align their lines on that point.
 Inline equations do not break.
 
+Text-box paragraphs keep inline equations as measured objects in the same
+wrap engine as their text. The renderer paints their equation plans,
+reserves ascent and descent, and registers caret fragments and equation hit
+zones. This includes manual line breaks, narrow boxes, and left, centre or
+right alignment for paragraphs containing only an equation. The
+`text_box_inline_math_wraps_paints_and_registers_object_positions` and
+`text_box_math_only_paragraph_keeps_alignment_on_repaint` regressions cover
+these paths; fresh Word capture comparisons remain pending.
+
 Equation-array distribution remains unimplemented. The published Word
 implementation note for [`maxDist`](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4a8c035c-c930-4e87-aabf-32715949ba48)
 limits its effect to arrays with alignment points. Future Word comparisons
