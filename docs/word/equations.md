@@ -43,7 +43,7 @@ input and conversion layers:
 |---|---|---|---|
 | `m:oMath` | an equation; inline when it shares its paragraph with text | — | read; drawn as an object in its line, as tall and deep as its structure; edited in place; saved as written |
 | `m:oMathPara` | display math: one or more `m:oMath` on lines of their own, alone in a `w:p` | `m:oMathParaPr/m:jc`: `left`, `right`, `center`, `centerGroup` (default) | read; each `m:oMath` on its own lines, justified as a group (`centerGroup`) or line by line (`center`); edited and saved |
-| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after) and `defJc` used by the layout; the margins are read but not applied; the four equation-spacing settings are preserved without affecting layout, consistent with the Word implementation notes below; saved as written |
+| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `mathFont` applies to inline, display and text-box equations; `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after), margins and `defJc` used by the layout; `dispDef=false` disables math margins and continuation settings and uses the paragraph alignment cascade; explicit equation alignment still wins; the four equation-spacing settings are preserved without affecting layout, consistent with the Word implementation notes below; saved as written |
 
 ### Equation spacing compatibility
 
@@ -112,7 +112,15 @@ that every array expands when the setting is enabled.
 
 ### Faces and metrics
 
-Word sets equations in Cambria Math and lays them out from its OpenType
+The document's `mathFont` setting selects the math face, with Cambria Math
+as the fallback. Normal-text (`m:nor`) runs without an explicit run font
+resolve the document text defaults, including the default paragraph style
+and theme font. Explicit run fonts remain authoritative. Custom paragraph
+styles for normal-text runs and fresh Word captures for these font and
+display-default changes remain pending; renderer regression tests establish
+implementation behavior, not Word equivalence.
+
+By default, Word sets equations in Cambria Math and lays them out from its OpenType
 MATH table. The native shell binds Cambria Math from Office's own fonts
 (face 1 of `Cambria.ttc` in Word's `DFonts`) and draws glyph outlines,
 variants and assemblies from the face; with no face bound (the browser
@@ -259,8 +267,8 @@ enclosed characters and distributed text keep their own handling.
 
 - Ink Equation, user Math AutoCorrect entries, and Math AutoCorrect outside
   equations.
-- `m:mathPr` margins (`lMargin`, `rMargin`), `brkBin` `repeat` (breaks as `before`),
-  `brkBinSub`, `eqArr` `maxDist`/`objDist`.
+- `brkBin` `repeat` (breaks as `before`), `brkBinSub`,
+  `eqArr` `maxDist`/`objDist`.
 - Current Word behavior for `m:lit` (see the implementation-note caveat above).
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
