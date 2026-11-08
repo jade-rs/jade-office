@@ -122,9 +122,12 @@ captures for these font and display-default changes remain pending; renderer
 regression tests establish implementation behavior, not Word equivalence.
 
 By default, Word sets equations in Cambria Math and lays them out from its OpenType
-MATH table. The native shell binds Cambria Math from Office's own fonts
-(face 1 of `Cambria.ttc` in Word's `DFonts`) and draws glyph outlines,
-variants and assemblies from the face; with no face bound (the browser
+MATH table. The native shell discovers `m:mathFont` in document settings
+and binds the configured family's MATH table and glyph outlines, keeping
+Cambria Math as the default fallback (face 1 of Office's `Cambria.ttc`).
+The selected faces survive page-geometry rebuilds, PDF output and DOCX
+reopen; `a_custom_math_face_survives_page_rebuild_and_pdf_export` covers
+this with a bundled synthetic MATH font. With no face bound (the browser
 build, or a machine without Office) the same placement rules run on Cambria
 Math's published constants with the painter's glyphs, and stretched
 characters are drawn as paths. Calibrated against Word for Mac's `math`
