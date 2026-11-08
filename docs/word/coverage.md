@@ -31,8 +31,8 @@ Paths: `jade-web/…`, `jade-office-model/…`, `jade-gpui-app/…` are under
 
 | | rows |
 |---|---|
-| with at least one test | 384 |
-| without a test | 122 |
+| with at least one test | 385 |
+| without a test | 121 |
 
 Counts recomputed from the 506 rows below on 2026-11-09. These counts
 measure named test coverage, not feature completeness or Word equivalence.
@@ -493,7 +493,7 @@ quality stream).
 | 428 | LaTeX input | **none** |
 | 429 | linear ↔ professional | **none** |
 | 430 | Math AutoCorrect | **none** |
-| 431 | math line breaks | **none** |
+| 431 | math line breaks | `core/jade-docx-layout/src/math_layout/styled/tests.rs::manual_break_on_a_run_that_does_not_start_with_an_operator_is_ignored` <br> `core/jade-docx-layout/src/math_layout/styled/tests.rs::display_lines_break_where_asked_and_where_they_overflow` |
 | 432 | OMML round trip | `jade-docx-reader/src/parser.rs::parses_inline_math_as_raw_omml` <br> `jade-docx-editor/src/canvas_renderer/math.rs::block_alignment_honors_omml_justification` |
 | 433 | math version matrix | **none** |
 | 434 | Print Layout | `jade-web/tests/opens_every_document.rs::every_document_opens_and_its_pages_paint` |

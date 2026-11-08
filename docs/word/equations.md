@@ -97,9 +97,13 @@ it on save and reads its formatting where the structure draws characters.
 
 ### Line breaking and alignment
 
-Display equations break where a run carries `m:brk` (aligned under the
-`alnAt`-th operator of the first line, else under its first relation) and,
-past the column's width, at a binary or relation operator at the top level.
+Display equations break where an operator starts a run carrying `m:brk`
+(aligned under the `alnAt`-th operator of the first line, else under its
+first relation). A break on a run starting with an operand or without text
+is ignored, as described in the [Word implementation
+note](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/9742c999-b065-4a70-91b5-09d6a6cf99f7).
+Past the column's width, display equations can still break at a binary or
+relation operator at the top level.
 With `brkBin=repeat`, an automatic break at a binary operator displays the
 operator at both the end of the first line and the start of the next line
 without changing the equation text. For subtraction, `brkBinSub` sets the
