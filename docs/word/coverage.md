@@ -31,8 +31,8 @@ Paths: `jade-web/…`, `jade-office-model/…`, `jade-gpui-app/…` are under
 
 | | rows |
 |---|---|
-| with at least one test | 383 |
-| without a test | 123 |
+| with at least one test | 384 |
+| without a test | 122 |
 
 Counts recomputed from the 506 rows below on 2026-11-09. These counts
 measure named test coverage, not feature completeness or Word equivalence.
@@ -486,7 +486,7 @@ quality stream).
 | 421 | limits | `core/jade-docx-editor/tests/math_font_plan.rs::long_stacked_limits_reserve_left_and_right_advance` |
 | 422 | accents & bars | **none** |
 | 423 | matrices | **none** |
-| 424 | equation arrays | **none** |
+| 424 | equation arrays | `core/jade-docx-layout/src/math_layout/styled/tests.rs::display_equation_array_distributes_space_between_aligned_column_pairs` <br> `core/jade-docx-layout/src/math_layout/styled/tests.rs::distribution_does_not_expand_arrays_without_alignment_or_their_own_display_line` |
 | 425 | normal text in math | **none** |
 | 426 | math fonts | `jade-docx-layout/tests/math_font.rs::math_font_line_box_prefers_os2_typographic_metrics_and_falls_back_to_hhea` <br> `jade-docx-editor/src/canvas_renderer/math.rs::styled_math_font_preserves_authored_family_before_math_fallbacks` |
 | 427 | UnicodeMath input | **none** |

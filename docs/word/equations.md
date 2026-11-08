@@ -91,7 +91,7 @@ it on save and reads its formatting where the structure draws characters.
 | `m:borderBox` | 囲み / Border Box | `hideTop`, `hideBot`, `hideLeft`, `hideRight`, `strikeH`, `strikeV`, `strikeBLTR`, `strikeTLBR` (all off) | `e` | the four sides less the hidden ones, the strikes through the box, padding round the base |
 | `m:box` | ボックス / Box | `opEmu`, `noBreak`, `diff`, `brk`, `aln` (off) | `e` | groups its base; `opEmu` spaces it as the operator it holds, `diff` puts a thin space before a differential |
 | `m:phant` | ファントム / Phantom | `show` (on), `zeroWid`, `zeroAsc`, `zeroDesc`, `transp` (off) | `e` | hidden content keeps its room; the zero switches take its width, ascent or depth away |
-| `m:eqArr` | 数式配列 / Equation Array | `baseJc` (`center`), `maxDist`, `objDist`, `rSpRule` (0 single, 1 1.5×, 2 double, 3 exact `rSp`, 4 multiple), `rSp` | one `e` per row | rows aligned on their `&` marks (odd marks right-align the column before them, even marks left-align the one after, as `&` pairs do in Word), rows spaced by `rSpRule`, centred on the axis or aligned on the top or bottom row; `maxDist`/`objDist` are read and not applied |
+| `m:eqArr` | 数式配列 / Equation Array | `baseJc` (`center`), `maxDist`, `objDist`, `rSpRule` (0 single, 1 1.5×, 2 double, 3 exact `rSp`, 4 multiple), `rSp` | one `e` per row | rows aligned on their `&` marks (odd marks right-align the column before them, even marks left-align the one after, as `&` pairs do in Word), rows spaced by `rSpRule`, centred on the axis or aligned on the top or bottom row; standalone display arrays with alignment marks distribute spare width per `maxDist`/`objDist` |
 | `m:m` | 行列 / Matrix | `baseJc` (`center`), `plcHide`, `rSpRule`, `rSp`, `cGpRule`, `cGp`, `cSp`, `mcs/mc/mcPr` (`count`, `mcJc`: `center`, `left`, `right`) | `mr` rows of `e` cells | column widths from the widest cell, each column justified by `mcJc`, column gap by `cGpRule`/`cGp` (one em by default), minimum spacing `cSp`, rows like an equation array; empty cells keep a placeholder's room unless `plcHide` |
 | `m:r` | — | `m:rPr`: `lit`, `nor` (normal text), `scr` (`roman`, `script`, `fraktur`, `double-struck`, `sans-serif`, `monospace`), `sty` (`p`, `b`, `i` default, `bi`), `brk` (`alnAt`), `aln`; and the run's `w:rPr` | `m:t` (and Word run content) | letters from the Mathematical Alphanumeric Symbols in the run's style and alphabet (Word's italic default: Latin letters and lowercase Greek; capital Greek upright), hyphen shown as minus, atoms spaced by class as TeX spaces them, italic correction before an upright glyph; `nor` text in the document's text face with no operator spacing; `brk` and `aln` break and align display lines |
 
@@ -169,11 +169,13 @@ its rendered object, including immediately after its three-byte U+FFFC
 placeholder. Regressions cover Japanese prefixes and adjacent equations;
 carets in neighbouring text or other paragraphs do not select that object.
 
-Equation-array distribution remains unimplemented. The published Word
-implementation note for [`maxDist`](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4a8c035c-c930-4e87-aabf-32715949ba48)
-limits its effect to arrays with alignment points. Future Word comparisons
-must include arrays with and without these points, rather than assuming
-that every array expands when the setting is enabled.
+For a standalone display equation array, `maxDist` uses the available
+formatting width when the rows have alignment marks. The [Word implementation
+note](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4a8c035c-c930-4e87-aabf-32715949ba48)
+limits distribution to these arrays. The [documented Word 2007 example](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/d8d37e2b-532d-49db-9cba-2ef4bd8d9baa)
+places spare room between column pairs when `objDist` is on; otherwise
+it divides the room between the pairs and the outer margins. Arrays stay
+compact when inline, nested, or accompanied by other math on the line.
 
 ### Faces and metrics
 
@@ -336,8 +338,9 @@ enclosed characters and distributed text keep their own handling.
 
 - Ink Equation, user Math AutoCorrect entries, and Math AutoCorrect outside
   equations.
-- `eqArr` `maxDist`/`objDist`.
+- Current Word comparisons for `eqArr` `maxDist`/`objDist`, including inline and nested arrays.
 - Current Word behavior for `m:lit` (see the implementation-note caveat above).
+- Drawing display equations in tables and notes; these surfaces currently show a text preview.
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
 - Selecting a range inside an equation (the caret is a point; a structure
