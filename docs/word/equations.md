@@ -43,7 +43,21 @@ input and conversion layers:
 |---|---|---|---|
 | `m:oMath` | an equation; inline when it shares its paragraph with text | — | read; drawn as an object in its line, as tall and deep as its structure; edited in place; saved as written |
 | `m:oMathPara` | display math: one or more `m:oMath` on lines of their own, alone in a `w:p` | `m:oMathParaPr/m:jc`: `left`, `right`, `center`, `centerGroup` (default) | read; each `m:oMath` on its own lines, justified as a group (`centerGroup`) or line by line (`center`); edited and saved |
-| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after) and `defJc` used by the layout; the margins and spacings are read but not applied; saved as written |
+| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after) and `defJc` used by the layout; the margins are read but not applied; the four equation-spacing settings are preserved without affecting layout, consistent with the Word implementation notes below; saved as written |
+
+### Equation spacing compatibility
+
+The published Word implementation notes say Word ignores `preSp`, `postSp`,
+`interSp`, and `intraSp` (and does not write them back). jade preserves these
+settings on save but also leaves them out of layout. Their presence in the
+OOXML schema alone does not establish a missing Word layout feature. New Word
+captures are still needed to check whether current Word releases differ from
+these implementation notes.
+
+Sources: [preSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/e03f7edc-179c-4017-8869-2a9930c37c68),
+[postSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/2ec60dcb-1daf-4437-9ec0-729017b3dc21),
+[interSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/2294400c-b0fb-499d-aa04-c38fc4028c88),
+[intraSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/0c50cee0-a9b4-4139-8e36-b86a8a290208).
 
 ## Structures
 
@@ -229,8 +243,7 @@ enclosed characters and distributed text keep their own handling.
 
 - Ink Equation, user Math AutoCorrect entries, and Math AutoCorrect outside
   equations.
-- `m:mathPr` margins and spacings (`lMargin`, `rMargin`, `preSp`, `postSp`,
-  `interSp`, `intraSp`), `brkBin` `repeat` (breaks as `before`),
+- `m:mathPr` margins (`lMargin`, `rMargin`), `brkBin` `repeat` (breaks as `before`),
   `brkBinSub`, `eqArr` `maxDist`/`objDist`, `m:lit`.
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
