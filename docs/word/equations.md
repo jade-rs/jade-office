@@ -156,6 +156,8 @@ regression covers both note kinds and table cells with preceding display
 math, preserves note reference markers and surrounding content, and checks
 save/reopen plus exact undo/redo. Editable note paragraphs are mapped to
 their current XML so display-math wrappers do not shift the target paragraph.
+A wrapper with a comment range can also own an editable paragraph even when
+it has no Word runs; the XML mapper keeps it separate from the next paragraph.
 
 The equation toolbar recognizes an inline equation at either boundary of
 its rendered object, including immediately after its three-byte U+FFFC
