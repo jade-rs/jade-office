@@ -120,6 +120,11 @@ neighbouring equations, text, paragraph alignment and shape attributes
 through save/reopen and undo/redo. Display-equation editing inside text
 boxes remains unsupported.
 
+The equation toolbar recognizes an inline equation at either boundary of
+its rendered object, including immediately after its three-byte U+FFFC
+placeholder. Regressions cover Japanese prefixes and adjacent equations;
+carets in neighbouring text or other paragraphs do not select that object.
+
 Equation-array distribution remains unimplemented. The published Word
 implementation note for [`maxDist`](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4a8c035c-c930-4e87-aabf-32715949ba48)
 limits its effect to arrays with alignment points. Future Word comparisons
