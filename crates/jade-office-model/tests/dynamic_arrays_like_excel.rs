@@ -79,6 +79,53 @@ fn processed_cells_and_metadata_keep_calculation_history_and_reopen() {
 }
 
 #[test]
+fn supported_dynamic_choices_keep_spills_through_app_history_and_reopen() {
+    let at = |cell: &str| CellRef::parse(cell).unwrap();
+    let mut seed = book();
+    seed.set_cell(at("J1"), "=SEQUENCE(3)").unwrap();
+    let source = seed.save_bytes().unwrap();
+    let part = jade_xlsx_reader::read_xlsx(&source).unwrap().sheets[0]
+        .part_name
+        .clone();
+    let mut package = jade_opc::OpcPackage::open(&source).unwrap();
+    let sheet = package.part_str(&part).unwrap().unwrap();
+    let cells = jade_xlsx_reader::cell_content::compatible_cells(
+        &sheet,
+        &std::collections::HashSet::from([jade_xlsx_reader::CellRef::parse("J1").unwrap()]),
+    )
+    .unwrap();
+    let cell = cells.into_iter().find(|cell| cell.selected).unwrap();
+    let wrapped = format!("<mc:AlternateContent xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\" xmlns:d=\"http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray\"><mc:Choice Requires=\"d\">{}</mc:Choice><mc:Fallback><c r=\"J1\"><v>0</v></c></mc:Fallback></mc:AlternateContent>", &sheet[cell.range.clone()]);
+    let mut sheet = sheet.to_string();
+    sheet.replace_range(cell.range, &wrapped);
+    package.replace(&part, sheet.into_bytes());
+    let mut book = open(&package.write().unwrap());
+    assert_eq!(shown(&book, &["J1", "J2", "J3"]), ["1", "2", "3"]);
+    book.set_cell(at("J1"), "=SEQUENCE(4)").unwrap();
+    assert_eq!(shown(&book, &["J1", "J4"]), ["1", "4"]);
+    assert!(book.undo().unwrap());
+    assert_eq!(shown(&book, &["J1", "J4"]), ["1", ""]);
+    assert!(book.redo().unwrap());
+    assert!(book.insert_rows(0, 1).unwrap());
+    assert_eq!(shown(&book, &["J2", "J5"]), ["1", "4"]);
+    let saved = book.save_bytes().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let sheet = package.part_str(&part).unwrap().unwrap();
+    assert!(sheet.contains("<mc:Choice Requires=\"d\">"));
+    assert!(sheet.contains("<mc:Fallback>"));
+    let parsed = jade_xlsx_reader::read_xlsx(&saved).unwrap();
+    let array = &parsed.sheets[0].array_formulas[0];
+    assert_eq!(array.kind, jade_xlsx_reader::ArrayFormulaKind::Dynamic);
+    assert_eq!(
+        array.range,
+        jade_xlsx_reader::CellRange::parse("J2:J5").unwrap()
+    );
+    let mut reopened = open(&saved);
+    reopened.set_cell(at("J2"), "=SEQUENCE(5)").unwrap();
+    assert_eq!(shown(&reopened, &["J2", "J6"]), ["1", "5"]);
+}
+
+#[test]
 fn unmerging_a_spill_obstruction_recalculates_and_restores_with_history() {
     let mut book = book();
     let at = |cell: &str| CellRef::parse(cell).unwrap();
