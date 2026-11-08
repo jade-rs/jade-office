@@ -150,7 +150,12 @@ and endnote paragraphs, including table cells. The
 `inline_equations_insert_in_note_tables_with_utf8_carets_and_history`
 regression checks Japanese text boundaries, the caret after the equation,
 note reference markers, neighbouring content, save/reopen and exact undo/redo.
-Display equation insertion in notes remains unsupported.
+Display equations can also be inserted by splitting a note paragraph at the
+caret. The `block_equations_split_note_table_paragraphs_and_restore_history`
+regression covers both note kinds and table cells with preceding display
+math, preserves note reference markers and surrounding content, and checks
+save/reopen plus exact undo/redo. Editable note paragraphs are mapped to
+their current XML so display-math wrappers do not shift the target paragraph.
 
 The equation toolbar recognizes an inline equation at either boundary of
 its rendered object, including immediately after its three-byte U+FFFC
