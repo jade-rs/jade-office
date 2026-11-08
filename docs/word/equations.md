@@ -140,8 +140,12 @@ Inline equations in footnotes and endnotes also use the replacement command.
 The `inline_equations_in_footnotes_and_endnotes_keep_their_story_and_history`
 regression edits the second equation in a note table cell, preserving body
 XML, neighbouring note text/equations, other notes and paragraph alignment
-through save/reopen and exact undo/redo. Display equation editing and
-insertion in notes remain unsupported.
+through save/reopen and exact undo/redo. Display equations retain their
+note kind, ID and block path, so the same editor can address them inside
+note table cells. The
+`display_equations_in_note_tables_keep_their_location_and_history`
+regression covers both note kinds, other equations and text, save/reopen
+and exact undo/redo. Equation insertion in notes remains unsupported.
 
 The equation toolbar recognizes an inline equation at either boundary of
 its rendered object, including immediately after its three-byte U+FFFC
