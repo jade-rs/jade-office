@@ -299,6 +299,7 @@ impl EditableDocument {
 
     /// Lays `word_document` out on pages of `width` × `height` and paints
     /// the `resident` ones.
+    #[allow(clippy::too_many_arguments)]
     fn render(
         word_document: &WordDocument,
         options: &Options,

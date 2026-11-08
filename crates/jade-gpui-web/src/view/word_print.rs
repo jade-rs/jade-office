@@ -102,11 +102,11 @@ impl DocView {
                 return;
             }
             self.retired.extend(panel.image.take());
-            match &mut panel.preview {
-                Ok(preview) => match preview.render_sheet(panel.sheet) {
+            if let Ok(preview) = &mut panel.preview {
+                match preview.render_sheet(panel.sheet) {
                     Ok(mut page) => {
                         // GPUI's image upload expects BGRA premultiplied pixels.
-                        for pixel in page.rgba.chunks_exact_mut(4) {
+                        for pixel in page.rgba.as_chunks_mut::<4>().0 {
                             pixel.swap(0, 2);
                         }
                         if let Some(buffer) = image::ImageBuffer::from_raw(
@@ -119,8 +119,7 @@ impl DocView {
                         }
                     }
                     Err(error) => panel.problem = Some(error.into()),
-                },
-                Err(_) => {}
+                }
             }
             panel.painted_sheet = Some(panel.sheet);
         }

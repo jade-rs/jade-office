@@ -121,9 +121,8 @@ async fn read_browser_clipboard() -> Option<(Option<String>, Option<String>)> {
 fn resolve(read: Option<(Option<String>, Option<String>)>) -> Option<Clipboard> {
     let object = crate::view::OBJECT_CLIP.with(|kept| kept.borrow().clone());
     if let Some(object) = object.filter(|copy| {
-        read.as_ref().map_or(true, |(html, text)| {
-            copy.matches(text.as_deref().unwrap_or(""), html.as_deref())
-        })
+        read.as_ref()
+            .is_none_or(|(html, text)| copy.matches(text.as_deref().unwrap_or(""), html.as_deref()))
     }) {
         return Some(Clipboard {
             clip: RichClip::from_text("\u{fffc}"),

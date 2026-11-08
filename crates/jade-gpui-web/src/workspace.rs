@@ -126,7 +126,10 @@ impl Workspace {
                             continue;
                         }
                         workspace.files.insert(name.clone(), Rc::new(bytes));
-                        workspace.recent.push(name);
+                        workspace.recent.push(RecentEntry {
+                            key: name,
+                            pinned: false,
+                        });
                     }
                     let open: Vec<String> = workspace
                         .tabs
