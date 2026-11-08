@@ -31,11 +31,11 @@ Paths: `jade-web/…`, `jade-office-model/…`, `jade-gpui-app/…` are under
 
 | | rows |
 |---|---|
-| with at least one test | 362 |
-| without a test | 144 |
-| — of which jade marks *full* | 0 |
-| — of which *partial* / *render* / *roundtrip* | 61 |
-| — of which *missing* (nothing to test yet) | 83 |
+| with at least one test | 383 |
+| without a test | 123 |
+
+Counts recomputed from the 506 rows below on 2026-11-09. These counts
+measure named test coverage, not feature completeness or Word equivalence.
 
 Every row jade counts as full now names a test (rows 11–483 in the list
 that once had none were mapped to existing tests or given one by the
@@ -93,7 +93,7 @@ quality stream).
 | 28 | character spacing | `jade-docx-pdf-renderer/tests/pdf_fixtures.rs::render_pdf_draws_run_character_spacing` <br> `jade-docx-native-render/tests/style_context.rs::a_style_character_spacing_sets_the_glyphs_closer` |
 | 29 | raised / lowered | `jade-docx-layout/src/line_wrap.rs::inline_object_keeps_authored_lowered_baseline_in_shared_layout` |
 | 30 | kerning | `jade-docx-layout/src/line_wrap.rs::benchmark_kerning_pair_cache_hot_path` <br> `jade-docx-reader/src/styles.rs::parses_run_kerning_and_text_scale_in_styles` |
-| 31 | ligatures, OpenType | **none** |
+| 31 | ligatures, OpenType | `core/jade-docx-layout/tests/opentype_features.rs::ligature_features_reach_the_shaper` <br> `core/jade-docx-editor/src/canvas_renderer/opentype_features_tests.rs::ligature_runs_are_drawn_shaped_with_their_features` |
 | 32 | outline, shadow, glow | `jade-docx-reader/src/parser.rs::parses_text_effect_run_property` <br> `jade-docx-editor/src/canvas_renderer.rs::glow_and_text_outline_paint_a_halo_and_a_stroke` |
 | 33 | clear formatting | `jade-docx-editor/src/headless_api.rs::clear_formatting_keeps_the_fonts_the_styles_give` <br> `jade-docx-editor/src/commands/clear_formatting.rs::clear_formatting_exports_and_reopens_without_direct_font_size` |
 | 34 | paragraph alignment | `core/jade-docx-native-render/tests/search_and_paragraph_format.rs::alignment_reaches_the_page_and_can_be_undone` |
@@ -476,12 +476,12 @@ quality stream).
 | 411 | inline equations | `jade-docx-editor/tests/math_font_plan.rs::formula_exact_spacing_keeps_authored_height_and_unbound_plan_has_no_math_leading` <br> `jade-docx-reader/src/parser.rs::parses_inline_math_as_raw_omml` |
 | 412 | display equations | `jade-docx-reader/src/parser.rs::parses_math_paragraph_as_block_element` <br> `jade-docx-reader/src/document/math.rs::math_paragraph_preview_truncates_long_text` |
 | 413 | built-in equations | `core/jade-docx-editor/src/commands/insert_equation.rs::inline_equation_round_trips_across_arbitrary_unicode_run_boundaries` <br> `core/jade-docx-editor/src/commands/insert_equation.rs::block_equation_splits_paragraph_and_reopens_without_phantom_coordinate` |
-| 414 | fractions | `core/jade-docx-editor/src/canvas_renderer/math.rs::fraction_metrics_contain_painted_numerator_and_denominator` <br> `core/jade-docx-layout/src/math_layout/styled.rs::styled_fraction_rules_and_children_fit_bounds_and_errors_propagate` |
+| 414 | fractions | `core/jade-docx-editor/tests/math_font_plan.rs::painter_consumes_quadratic_and_cubic_commands_and_keeps_existing_fraction_rules` <br> `core/jade-docx-layout/src/math_layout/styled/tests.rs::styled_fraction_rules_and_children_fit_bounds_and_errors_propagate` |
 | 415 | radicals | `jade-docx-layout/src/math_layout.rs::radical_fallback_keeps_existing_base_only_preview` |
 | 416 | scripts & prescripts | **none** |
 | 417 | integrals | `jade-docx-editor/tests/math_font_plan.rs::hidden_nary_limits_skip_layout_without_mutating_source` <br> `jade-docx-layout/tests/math_script_font.rs::display_style_keeps_nested_integrals_in_script_forms_without_display_stretch` |
-| 418 | large operators | `core/jade-docx-layout/src/math_layout/styled.rs::structured_nary_delimiters_and_scripts_have_measured_utf8_glyph_ranges` |
-| 419 | delimiters | `core/jade-docx-layout/src/math_layout/styled.rs::structured_nary_delimiters_and_scripts_have_measured_utf8_glyph_ranges` |
+| 418 | large operators | `core/jade-docx-layout/src/math_layout/styled/tests.rs::structured_nary_delimiters_and_scripts_have_measured_utf8_glyph_ranges` |
+| 419 | delimiters | `core/jade-docx-layout/src/math_layout/styled/tests.rs::structured_nary_delimiters_and_scripts_have_measured_utf8_glyph_ranges` |
 | 420 | function names | **none** |
 | 421 | limits | `core/jade-docx-editor/tests/math_font_plan.rs::long_stacked_limits_reserve_left_and_right_advance` |
 | 422 | accents & bars | **none** |
@@ -519,7 +519,7 @@ quality stream).
 | 454 | new blank document | `jade-web/tests/new_documents.rs::a_blank_document_opens_and_takes_typing` <br> `jade-office-model/src/word/new.rs::a_blank_document_is_a_package_word_reads` |
 | 455 | new from template | `jade-office-model/src/word/new.rs::a_template_opens_as_a_document` <br> `jade-web/tests/new_documents.rs::a_template_opens_as_a_document` |
 | 456 | open | `jade-web/tests/opens_every_document.rs::every_document_opens_and_its_pages_paint` |
-| 457 | recent files | `jade-gpui-app/src/shell.rs::a_reopened_file_moves_to_the_front_once` <br> `jade-gpui-app/src/shell.rs::the_list_is_capped` |
+| 457 | recent files | `jade-gpui-app/src/shell.rs::a_reopened_file_moves_to_the_front_once` <br> `jade-gpui-app/src/shell.rs::the_list_is_capped_but_pinned_files_stay` |
 | 458 | save / save as | `jade-web/tests/edits_documents.rs::a_save_carries_the_edits` <br> `jade-web/tests/section_setup_documents.rs::columns_line_numbers_and_page_numbers_are_saved` |
 | 459 | save a copy | **none** |
 | 460 | save as .dotx | **none** |
