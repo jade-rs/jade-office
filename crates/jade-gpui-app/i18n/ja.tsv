@@ -5199,3 +5199,7 @@ setup.fill.foreground	前景
 setup.fill.background	背景
 setup.fill.choose_picture	図の選択...
 setup.fill.no_picture	図が選択されていません
+
+workspace.close_unsaved	「{name}」への変更を保存しますか？
+workspace.close_download	コピーをダウンロード
+workspace.close_discard	保存せずに閉じる

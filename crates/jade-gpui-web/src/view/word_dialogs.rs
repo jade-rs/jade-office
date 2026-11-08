@@ -411,7 +411,7 @@ impl DocView {
             return;
         };
         form.original = document
-            .export_docx()
+            .word_docx()
             .ok()
             .map(|bytes| (self.name.to_string(), bytes));
         let author = TextEdit::new(form.options.author.clone());

@@ -892,7 +892,7 @@ fn word_and_document_moves_go_where_a_mac_takes_them() {
     document.move_caret(Motion::WordLeft, false).unwrap();
     assert_eq!(document.caret(), Some((paragraph, typed.len())));
 
-    // ⌘↓ and ⌘↑: the body's last and first positions.
+    // ⌘End and ⌘Home: the body's last and first positions.
     document.move_caret(Motion::DocumentEnd, false).unwrap();
     let (last, offset) = document.caret().unwrap();
     assert!(last > paragraph);
@@ -1170,4 +1170,89 @@ fn formatting_marks_toggle_from_the_view_tab() {
     assert!(page_rgba(&document, 0) != with, "the marks are gone");
     document.set_formatting_marks(true).unwrap();
     assert!(page_rgba(&document, 0) == with, "and back");
+}
+
+#[test]
+fn consecutive_character_input_is_one_undo_step_and_cursor_movement_splits_it() {
+    let mut document = open("contract.docx");
+    let (paragraph, before) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0).unwrap();
+    for ch in ["A", "日", "😀", "z"] {
+        document.insert_text(ch).unwrap();
+    }
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("A日😀z{before}")
+    );
+    assert!(document.undo().unwrap());
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+    assert!(document.redo().unwrap());
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("A日😀z{before}")
+    );
+    document.place_caret(paragraph, 0).unwrap();
+    document.insert_text("B").unwrap();
+    document.move_caret(Motion::Right, false).unwrap();
+    document.move_caret(Motion::Left, false).unwrap();
+    document.insert_text("C").unwrap();
+    document.undo().unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("BA日😀z{before}")
+    );
+    document.undo().unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("A日😀z{before}")
+    );
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+}
+
+#[test]
+fn paste_composition_and_history_actions_separate_typing_runs() {
+    let mut document = open("contract.docx");
+    let (paragraph, before) = first_text_paragraph(&document);
+    document.place_caret(paragraph, 0).unwrap();
+    document.insert_text("a").unwrap();
+    document.insert_text("b").unwrap();
+    document.insert_text("paste").unwrap();
+    document.insert_text("c").unwrap();
+    document.insert_text("d").unwrap();
+    document.undo().unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("abpaste{before}")
+    );
+    document.undo().unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("ab{before}")
+    );
+    document.insert_text("e").unwrap();
+    document.undo().unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("ab{before}")
+    );
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+    document.place_caret(paragraph, 0).unwrap();
+    document.insert_text("x").unwrap();
+    document.set_composition("に").unwrap();
+    document.commit_composition("日").unwrap();
+    document.insert_text("y").unwrap();
+    document.undo().unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("x日{before}")
+    );
+    document.undo().unwrap();
+    assert_eq!(
+        document.paragraph_text(paragraph).unwrap(),
+        format!("x{before}")
+    );
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
 }

@@ -17,15 +17,30 @@
 <body>
   <div id="loading">gpui を起動中…</div>
   <script>
+    // Warn on reload/navigation while any editor tab has unsaved changes.
+    // Register only while needed so clean pages remain eligible for bfcache.
+    globalThis.jadeSetUnsavedChanges = (() => {
+      let unsaved = false;
+      const warn = (event) => {
+        event.preventDefault();
+        event.returnValue = "";
+      };
+      return (value) => {
+        if (unsaved === value) return;
+        unsaved = value;
+        if (unsaved) addEventListener("beforeunload", warn);
+        else removeEventListener("beforeunload", warn);
+      };
+    })();
     // The app's own store in the browser (IndexedDB): 自動回復's copies and
-    // the Normal template — files, which localStorage cannot hold. Each call
+    // the Normal template and recent files — bytes localStorage cannot hold. Each call
     // answers with a promise.
     globalThis.jadeStore = (() => {
       let opened;
       const db = () => opened ??= new Promise((resolve, reject) => {
-        const request = indexedDB.open("jade-office", 1);
+        const request = indexedDB.open("jade-office", 2);
         request.onupgradeneeded = () => {
-          for (const name of ["recovery", "templates"]) {
+          for (const name of ["recovery", "templates", "recent"]) {
             if (!request.result.objectStoreNames.contains(name)) {
               request.result.createObjectStore(name);
             }
@@ -33,23 +48,61 @@
         };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
+      }).catch((error) => {
+        opened = undefined;
+        throw error;
       });
       const run = (store, mode, act) => db().then((base) => new Promise((resolve, reject) => {
-        const request = act(base.transaction(store, mode).objectStore(store));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        const transaction = base.transaction(store, mode);
+        const request = act(transaction.objectStore(store));
+        // A request succeeding does not mean its transaction committed:
+        // quota/disk errors or an abort can still roll the write back.
+        transaction.oncomplete = () => resolve(request.result);
+        transaction.onabort = () => reject(transaction.error ?? new Error("Storage transaction aborted"));
+        transaction.onerror = () => reject(transaction.error ?? request.error);
       }));
       return {
+        // Update the recent file and evict older entries in one transaction.
+        // Readwrite transactions serialize across windows, including saves.
+        remember: (name, bytes) => db().then((base) => new Promise((resolve, reject) => {
+          const transaction = base.transaction("recent", "readwrite");
+          const recent = transaction.objectStore("recent");
+          const entries = [];
+          transaction.oncomplete = () => resolve();
+          transaction.onabort = () => reject(transaction.error ?? new Error("Recent files transaction aborted"));
+          transaction.onerror = () => reject(transaction.error);
+          const request = recent.openCursor();
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (cursor) {
+              entries.push({ key: cursor.key, time: cursor.value.time });
+              cursor.continue();
+              return;
+            }
+            // Keep access order even when several opens share a millisecond
+            // or the system clock has moved backwards.
+            const time = Math.max(Date.now(), ...entries.map((entry) =>
+              Number.isFinite(entry.time) ? entry.time + 1 : 0));
+            recent.put({ name, time, bytes }, name);
+            entries.filter((entry) => entry.key !== name)
+              .sort((a, b) => b.time - a.time).slice(7)
+              .forEach((entry) => recent.delete(entry.key));
+          };
+        })),
         put: (store, key, value) => run(store, "readwrite", (s) => s.put(value, key)),
         get: (store, key) => run(store, "readonly", (s) => s.get(key)),
         remove: (store, key) => run(store, "readwrite", (s) => s.delete(key)),
         // Every record with its key.
         all: (store) => db().then((base) => new Promise((resolve, reject) => {
           const out = [];
-          const request = base.transaction(store, "readonly").objectStore(store).openCursor();
+          const transaction = base.transaction(store, "readonly");
+          transaction.oncomplete = () => resolve(out);
+          transaction.onabort = () => reject(transaction.error ?? new Error("Storage transaction aborted"));
+          transaction.onerror = () => reject(transaction.error);
+          const request = transaction.objectStore(store).openCursor();
           request.onsuccess = () => {
             const cursor = request.result;
-            if (!cursor) return resolve(out);
+            if (!cursor) return;
             out.push({ key: cursor.key, ...cursor.value });
             cursor.continue();
           };

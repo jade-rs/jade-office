@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use jade_web::editing::EditableDocument;
+use jade_web::editing::{EditableDocument, WordSession};
 use jade_web::word::page::Paper;
 use jade_web::word::printing::{PrintRange, PrintSettings};
 
@@ -79,4 +79,221 @@ fn the_sheets_follow_the_settings() {
             0
         )
         .is_err());
+}
+
+#[test]
+fn selection_printing_requires_selected_content() {
+    let mut document = contract();
+    let settings = PrintSettings {
+        range: PrintRange::Selection,
+        ..Default::default()
+    };
+    assert!(document.print_pdf(&settings, 0).is_err());
+    assert!(document.print_preview(&settings, 0).is_err());
+    document.place_caret(3, 0);
+    assert!(document.print_pdf(&settings, 0).is_err());
+    assert!(document.print_preview(&settings, 0).is_err());
+    document.select((3, 0), (3, 3)).unwrap();
+    assert!(document.print_pdf(&settings, 0).is_ok());
+}
+
+#[test]
+fn pdf_export_uses_paper_layout_without_changing_the_editor() {
+    use jade_docx_editor::canvas_renderer::ViewGeometry;
+
+    let mut document = contract();
+    document.set_formatting_marks(false).unwrap();
+    let expected = document.export_pdf().unwrap();
+    let expected_pages = sheets(&expected);
+    document.place_caret(0, 0);
+    document.insert_text("保存前の変更").unwrap();
+    let edited_pdf = document.export_pdf().unwrap();
+    assert_ne!(edited_pdf, expected, "PDF includes unsaved edits");
+    let bytes = document.word_docx().unwrap();
+    let caret = document.caret();
+    let geometry = ViewGeometry {
+        page_width: 360.0,
+        page_height: 480.0,
+        margin_top: 12.0,
+        margin_right: 12.0,
+        margin_bottom: 12.0,
+        margin_left: 12.0,
+        hide_page_chrome: true,
+    };
+    document.set_view_geometry(Some(geometry)).unwrap();
+    document.set_collapsed_blocks(vec![1]).unwrap();
+    document.set_formatting_marks(true).unwrap();
+    document.set_dark_paper(true).unwrap();
+    document.set_resident_pages(0..1).unwrap();
+    let page_count = document.page_count();
+    let pixels = document.page(0).unwrap().rgba_premultiplied();
+    document.take_repainted_pages();
+
+    let actual = document.export_pdf().unwrap();
+    assert_eq!(sheets(&actual), expected_pages);
+    assert_eq!(actual, edited_pdf, "view settings never enter the PDF");
+    assert_eq!(document.view_geometry(), Some(geometry));
+    assert_eq!(document.collapsed_blocks(), &[1]);
+    assert!(document.formatting_marks());
+    assert!(document.is_dirty());
+    assert_eq!(document.caret(), caret);
+    assert_eq!(document.word_docx().unwrap(), bytes);
+    assert_eq!(document.page_count(), page_count);
+    assert_eq!(document.page(0).unwrap().rgba_premultiplied(), pixels);
+    assert!(document.take_repainted_pages().is_empty());
+    document.undo().unwrap();
+    assert_eq!(document.export_pdf().unwrap(), expected);
+}
+
+#[test]
+fn pdf_export_does_not_print_editing_marks() {
+    let mut document = contract();
+    assert!(document.formatting_marks());
+    let with_marks_on_screen = document.export_pdf().unwrap();
+    document.set_formatting_marks(false).unwrap();
+    assert_eq!(document.export_pdf().unwrap(), with_marks_on_screen);
+    // Both output paths use the same clean paper layout at print resolution.
+    assert_eq!(
+        document.print_pdf(&PrintSettings::default(), 0).unwrap(),
+        with_marks_on_screen
+    );
+}
+
+#[test]
+fn preview_uses_output_pagination_and_preserves_editor_state() {
+    use jade_docx_editor::canvas_renderer::ViewGeometry;
+    let mut document = contract();
+    document.select((3, 0), (3, 3)).unwrap();
+    document
+        .set_view_geometry(Some(ViewGeometry {
+            page_width: 360.0,
+            page_height: 480.0,
+            margin_top: 12.0,
+            margin_right: 12.0,
+            margin_bottom: 12.0,
+            margin_left: 12.0,
+            hide_page_chrome: true,
+        }))
+        .unwrap();
+    let bytes = document.word_docx().unwrap();
+    let selection = document.selection_range();
+    let dirty = document.is_dirty();
+    for settings in [
+        PrintSettings::default(),
+        PrintSettings {
+            range: PrintRange::Selection,
+            ..Default::default()
+        },
+        PrintSettings {
+            pages_per_sheet: 2,
+            scale_to: Some(Paper::A3),
+            ..Default::default()
+        },
+        PrintSettings {
+            range: PrintRange::Custom("2".into()),
+            ..Default::default()
+        },
+    ] {
+        let preview = document.print_preview(&settings, 0).unwrap();
+        let pdf = document.print_pdf(&settings, 0).unwrap();
+        let output = sheets(&pdf);
+        assert_eq!(preview.sheets.len(), output.len());
+        for (sheet, (width, height)) in preview.sheets.iter().zip(output) {
+            assert!((sheet.width - width).abs() < 0.01);
+            assert!((sheet.height - height).abs() < 0.01);
+        }
+        if settings.range == PrintRange::Selection {
+            assert_eq!(preview.page_sizes.len(), 1);
+        }
+    }
+    assert_eq!(document.word_docx().unwrap(), bytes);
+    assert_eq!(document.selection_range(), selection);
+    assert_eq!(document.is_dirty(), dirty);
+}
+
+#[test]
+fn preview_retains_each_sections_paper_dimensions() {
+    use jade_web::word::page::{SectionBreak, WordPage};
+    use jade_web::word::page_setup::{SetupTab, WordPageSetup};
+    let mut document = contract();
+    document.place_caret(3, 0);
+    document
+        .insert_section_break(SectionBreak::NextPage)
+        .unwrap();
+    document.place_caret(4, 0);
+    let mut dialog = document.page_setup_dialog(SetupTab::Margins);
+    dialog.set_landscape(true);
+    document.apply_page_setup(&dialog).unwrap();
+    let preview = document
+        .print_preview(&PrintSettings::default(), 0)
+        .unwrap();
+    assert!(preview.page_sizes.iter().any(|(w, h)| w < h));
+    assert!(preview.page_sizes.iter().any(|(w, h)| w > h));
+    let output = sheets(&document.print_pdf(&PrintSettings::default(), 0).unwrap());
+    assert_eq!(preview.page_sizes.len(), output.len());
+    for ((w, h), (ow, oh)) in preview.page_sizes.iter().zip(output) {
+        assert!((w - ow).abs() < 0.01 && (h - oh).abs() < 0.01);
+    }
+}
+
+#[test]
+fn preview_sheet_images_match_pdf_printing() {
+    let mut document = contract();
+    document.select((3, 0), (3, 3)).unwrap();
+    document.set_dark_paper(true).unwrap();
+    let before = document.word_docx().unwrap();
+    let selection = document.selection_range();
+    let dirty = document.is_dirty();
+    for settings in [
+        PrintSettings::default(),
+        PrintSettings {
+            range: PrintRange::Selection,
+            ..Default::default()
+        },
+        PrintSettings {
+            pages_per_sheet: 2,
+            scale_to: Some(Paper::A3),
+            ..Default::default()
+        },
+        PrintSettings {
+            range: PrintRange::Custom("2,1,2".into()),
+            ..Default::default()
+        },
+    ] {
+        let mut preview = document.prepare_print_preview(&settings, 0).unwrap();
+        let count = preview.layout().sheets.len();
+        assert!(preview.render_sheet(count).is_err());
+        let mut pages = Vec::new();
+        for index in 0..count {
+            let page = preview.render_sheet(index).unwrap();
+            assert_eq!(
+                page.rgba.len(),
+                (page.pixel_width * page.pixel_height * 4) as usize
+            );
+            assert!(
+                page.rgba
+                    .chunks_exact(4)
+                    .any(|pixel| pixel[0] < 200 && pixel[1] < 200 && pixel[2] < 200),
+                "page contains printed content"
+            );
+            assert_eq!(
+                &page.rgba[..4],
+                &[255, 255, 255, 255],
+                "white paper despite the dark editor"
+            );
+            pages.push(page);
+        }
+        assert_eq!(
+            preview.render_sheet(0).unwrap().rgba,
+            pages[0].rgba,
+            "navigation repaints the same snapshot"
+        );
+        assert_eq!(
+            jade_web::pdf::pdf_of_pages(&pages).unwrap(),
+            document.print_pdf(&settings, 0).unwrap()
+        );
+    }
+    assert_eq!(document.word_docx().unwrap(), before);
+    assert_eq!(document.selection_range(), selection);
+    assert_eq!(document.is_dirty(), dirty);
 }

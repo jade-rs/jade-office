@@ -12,6 +12,13 @@ pub fn core() -> PathBuf {
 }
 
 pub fn open_bytes(bytes: &[u8]) -> EditableDocument {
+    open_bytes_with_datetime(bytes, None)
+}
+
+pub fn open_bytes_with_datetime(
+    bytes: &[u8],
+    datetime: Option<jade_web::word::fields::FieldDateTime>,
+) -> EditableDocument {
     let fonts_dir = core().join("fonts/Noto_Sans_JP/static");
     let regular = std::fs::read(fonts_dir.join("NotoSansJP-Regular.ttf")).unwrap();
     let bold = std::fs::read(fonts_dir.join("NotoSansJP-Bold.ttf")).unwrap();
@@ -19,7 +26,15 @@ pub fn open_bytes(bytes: &[u8]) -> EditableDocument {
         .unwrap()
         .fonts();
     let measurer = jade_web::document::measurer(&regular, Some(&bold)).unwrap();
-    EditableDocument::open(bytes, 1.0, fonts, measurer).unwrap()
+    EditableDocument::open_resident_with_datetime(
+        bytes,
+        1.0,
+        fonts,
+        measurer,
+        0..usize::MAX,
+        datetime,
+    )
+    .unwrap()
 }
 
 pub fn contract() -> EditableDocument {

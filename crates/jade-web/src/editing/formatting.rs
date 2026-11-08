@@ -25,6 +25,7 @@ impl WordSession for EditableDocument {
     }
 
     fn set_selection_range(&mut self, range: Option<SelectionRange>) {
+        self.typing_run = None;
         self.selection = range;
         self.renderer.set_selection_range(range);
     }
@@ -34,6 +35,7 @@ impl WordSession for EditableDocument {
         command: HeadlessCommand,
         keep_selection: bool,
     ) -> Result<(), String> {
+        self.typing_run = None;
         let before = self.selection;
         let after = apply_headless_commands_with_executor_to_document(
             &mut self.word_document,
@@ -61,6 +63,7 @@ impl WordSession for EditableDocument {
         if commands.is_empty() {
             return Ok(());
         }
+        self.typing_run = None;
         let before = self.selection;
         self.executor.begin_group();
         let after = apply_headless_commands_with_executor_to_document(
@@ -92,6 +95,7 @@ impl WordSession for EditableDocument {
         command: Box<dyn Command>,
         keep_selection: bool,
     ) -> Result<(), String> {
+        self.typing_run = None;
         let before = self.selection;
         let mut selection = self.selection;
         let mut context = CommandContext::new(&mut self.word_document, &mut selection);

@@ -266,6 +266,12 @@ impl WordDoc {
         &mut self.main
     }
 
+    /// Print-time updates belong to the body even while a header/footer is
+    /// being edited. Keep the open story and its independent undo history.
+    pub fn update_fields_for_print(&mut self) -> Result<(), String> {
+        jade_office_model::word::printing::update_fields(&mut self.main)
+    }
+
     /// The header or footer open, if one is.
     pub fn story(&self) -> Option<&StoryEdit> {
         self.story.as_deref()
@@ -279,6 +285,10 @@ impl WordDoc {
 
     pub fn page_count(&self) -> usize {
         self.main.page_count()
+    }
+
+    pub fn page_labels(&self) -> Vec<(usize, usize)> {
+        self.main.page_labels()
     }
 
     pub fn page_size(&self) -> (f64, f64) {
@@ -490,6 +500,15 @@ impl WordDoc {
         Some(self.to_main(rect))
     }
 
+    /// A viewport target uses the main document's coordinate system.
+    pub fn move_caret_to_y(&mut self, document_y: f64, extend: bool) -> Result<(), String> {
+        let offset = self
+            .story
+            .as_deref()
+            .map_or(0.0, |story| story.offset(self.page_height()));
+        (**self).move_caret_to_y(document_y - offset, extend)
+    }
+
     /// The page (0-based) `paragraph` starts on: the story's page for a
     /// story paragraph.
     pub fn paragraph_start_page(&mut self, paragraph: usize) -> Option<usize> {
@@ -580,7 +599,7 @@ impl WordDoc {
             || self
                 .story
                 .as_deref()
-                .is_some_and(|story| story.document.can_undo())
+                .is_some_and(|story| story.document.is_dirty())
     }
 
     pub fn set_dark_paper(&mut self, on: bool) -> Result<bool, String> {
@@ -592,15 +611,15 @@ impl WordDoc {
 
     /// The main document as it would be saved: with the open story's edits
     /// in it.
-    pub fn export_docx(&mut self) -> Result<Vec<u8>, String> {
+    pub fn word_docx(&self) -> Result<Vec<u8>, String> {
         let Some(story) = self
             .story
-            .as_deref_mut()
+            .as_deref()
             .filter(|story| story.document.can_undo())
         else {
-            return self.main.export_docx();
+            return self.main.word_docx();
         };
-        let bytes = story.document.export_docx()?;
+        let bytes = story.document.word_docx()?;
         let mut document = self.main.word_document.clone();
         document.replace_story_from_docx(
             story.section,
@@ -613,8 +632,72 @@ impl WordDoc {
             .map_err(|error| format!("cannot save: {error:?}"))
     }
 
+    pub fn export_docx(&mut self) -> Result<Vec<u8>, String> {
+        self.export_docx_with(Ok)
+    }
+
+    /// Save the whole document, including an open story, and mark both
+    /// editors saved only after conversion/protection succeeds.
+    pub fn export_docx_with(
+        &mut self,
+        finish: impl FnOnce(Vec<u8>) -> Result<Vec<u8>, String>,
+    ) -> Result<Vec<u8>, String> {
+        let bytes = finish(self.word_docx()?)?;
+        self.main.dirty = false;
+        if let Some(story) = self.story.as_deref_mut() {
+            story.document.dirty = false;
+        }
+        Ok(bytes)
+    }
+
     pub fn export_pdf(&mut self) -> Result<Vec<u8>, String> {
-        self.main.export_pdf()
+        self.main.export_pdf_from_docx(&self.word_docx()?)
+    }
+
+    /// Page ranges print the whole document; selection printing uses the
+    /// active story's content and coordinates, just like other editing tools.
+    pub fn print_pdf(
+        &mut self,
+        settings: &jade_office_model::word::printing::PrintSettings,
+        current: usize,
+    ) -> Result<Vec<u8>, String> {
+        if settings.range == jade_office_model::word::printing::PrintRange::Selection {
+            if let Some(story) = self.story.as_deref_mut() {
+                return story.document.print_pdf(settings, 0);
+            }
+        }
+        self.main
+            .print_pdf_from_docx(&self.word_docx()?, settings, current)
+    }
+
+    /// Preview follows the same active-story selection rules as printing.
+    pub fn print_preview(
+        &self,
+        settings: &jade_office_model::word::printing::PrintSettings,
+        current: usize,
+    ) -> Result<super::PrintPreview, String> {
+        Ok(self
+            .prepare_print_preview(settings, current)?
+            .layout()
+            .clone())
+    }
+
+    pub fn prepare_print_preview(
+        &self,
+        settings: &jade_office_model::word::printing::PrintSettings,
+        current: usize,
+    ) -> Result<super::PrintPreviewSession, String> {
+        if settings.range == jade_office_model::word::printing::PrintRange::Selection {
+            if let Some(story) = self.story.as_deref() {
+                // Printing updates body fields, never those in the active
+                // story. Its selected content is therefore previewed as-is.
+                let mut settings = settings.clone();
+                settings.update_fields = false;
+                return story.document.prepare_print_preview(&settings, 0);
+            }
+        }
+        self.main
+            .prepare_print_preview_from_docx(&self.word_docx()?, settings, current)
     }
 
     // ---- opening and closing -------------------------------------------------
@@ -681,6 +764,7 @@ impl WordDoc {
     /// the main document when it was changed. The main document's caret
     /// goes back to where it was before the story opened.
     pub fn close_story(&mut self) -> Result<bool, String> {
+        let was_dirty = self.is_dirty();
         let Some(mut story) = self.story.take() else {
             return Ok(false);
         };
@@ -702,6 +786,11 @@ impl WordDoc {
         }
         if let Some((paragraph, offset)) = story.main_caret {
             self.main.place_caret(paragraph, offset);
+        }
+        // Committing a story already saved is still one body undo step,
+        // but does not turn the saved document dirty again.
+        if !was_dirty {
+            self.main.dirty = false;
         }
         self.redraw_page(story.page);
         Ok(true)

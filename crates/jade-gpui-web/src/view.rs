@@ -36,6 +36,7 @@ mod deck_show;
 mod sheet;
 mod word_alignment_tab;
 pub(crate) mod word_characters;
+mod word_clipboard;
 mod word_context_menu;
 pub(crate) mod word_controls;
 pub(crate) mod word_design;
@@ -518,9 +519,10 @@ struct ObjectGrab {
 }
 
 thread_local! {
-    /// The last copy's formatting, for a paste — in any tab — that finds the
-    /// copy's text still on the clipboard.
-    pub(crate) static RICH_CLIP: RefCell<Option<jade_web::word::clipboard::RichClip>> =
+    /// The last copy's formatting and identity, shared across document tabs.
+    pub(crate) static RICH_CLIP: RefCell<Option<word_clipboard::RichCopy>> =
+        const { RefCell::new(None) };
+    pub(crate) static OBJECT_CLIP: RefCell<Option<word_clipboard::ObjectCopy>> =
         const { RefCell::new(None) };
 }
 
@@ -620,6 +622,8 @@ pub struct DocView {
     files: word_files::FilesUi,
     /// 自動回復 and the backups (`word_recover`).
     recovery: word_recover::Recovery,
+    /// The last successful save, also used by the workspace's recent files.
+    pub(crate) saved_bytes: Option<Rc<Vec<u8>>>,
 }
 
 impl DocView {
@@ -703,12 +707,13 @@ impl DocView {
             Kind::Document => {
                 // The first pages only, as pixels: the view keeps the ones on
                 // screen as it scrolls (see `follow_scroll`).
-                let mut opened = jade_web::editing::EditableDocument::open_resident(
+                let mut opened = jade_web::editing::EditableDocument::open_resident_with_datetime(
                     bytes,
                     fonts.scale,
                     fonts.backend.fonts(),
                     Rc::clone(&fonts.measurer),
                     0..RESIDENT_PAGES,
+                    Some(word_fields::browser_now().0),
                 )?;
                 let (width, height) = opened.page_size();
                 mailings = Some(word_mailings::Mailings::new(
@@ -867,6 +872,7 @@ impl DocView {
             word_menu: None,
             views: word_views::Views::default(),
             files: word_files::FilesUi::default(),
+            saved_bytes: None,
             recovery: word_recover::Recovery {
                 saved: (kind == Kind::Document).then(|| Rc::new(original.to_vec())),
                 ..Default::default()
@@ -1022,6 +1028,15 @@ impl DocView {
         true
     }
 
+    /// Finish editors before deciding whether closing would lose changes.
+    pub(crate) fn prepare_close(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.commit_cell(cx) {
+            return false;
+        }
+        self.commit_slide_text(cx);
+        true
+    }
+
     pub fn in_slideshow(&self) -> bool {
         self.slideshow
     }
@@ -1104,7 +1119,7 @@ impl DocView {
                 document,
                 protection,
                 ..
-            } => document.export_docx().and_then(|docx| {
+            } => document.export_docx_with(|docx| {
                 use jade_web::word::formats::{save_from_docx, SaveOptions, WordFormat};
                 // ファイル サイズの圧縮 on every save.
                 let docx = match self.files.compress_on_save {
@@ -1149,9 +1164,13 @@ impl DocView {
         self.status = match bytes {
             Ok(bytes) => {
                 self.host.save(&self.name, &bytes);
+                word_recover::store::remember(&self.name, &bytes);
                 // The 自動回復 copy goes; a backup of what this replaces.
                 if matches!(self.document, Document::Pages { .. }) {
                     self.recovery_saved(&bytes);
+                    self.saved_bytes = self.recovery.saved.clone();
+                } else {
+                    self.saved_bytes = Some(Rc::new(bytes));
                 }
                 i18n::format("web.downloaded", &[("name", &self.name)]).into()
             }
@@ -1225,6 +1244,7 @@ impl DocView {
                     document.redo()
                 };
                 self.refresh_repainted();
+                self.refresh_selected_object();
                 // To where the step put the caret, as Word scrolls to what
                 // it undid.
                 self.reveal_caret();
@@ -1490,19 +1510,80 @@ impl DocView {
     /// The selected text onto the clipboard; with `cut`, out of the
     /// document too.
     fn word_copy(&mut self, cut: bool, cx: &mut Context<Self>) {
+        if let Document::Pages {
+            document,
+            object: Some(grab),
+            ..
+        } = &self.document
+        {
+            use jade_web::word::objects::WordObjects;
+            let target = grab.object.target;
+            let clip = match document.copy_object(target) {
+                Ok(clip) => word_clipboard::ObjectCopy::new(clip),
+                Err(error) => {
+                    self.status = error.into();
+                    cx.notify();
+                    return;
+                }
+            };
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string_with_json_metadata(
+                "\u{fffc}".to_string(),
+                std::collections::BTreeMap::from([("text/html", clip.html())]),
+            ));
+            OBJECT_CLIP.with(|kept| *kept.borrow_mut() = Some(clip));
+            RICH_CLIP.with(|kept| *kept.borrow_mut() = None);
+            if cut {
+                let mut deleted = false;
+                self.word_edit(cx, |document| {
+                    document.delete_object(target)?;
+                    deleted = true;
+                    Ok(())
+                });
+                if deleted {
+                    if let Document::Pages { object, .. } = &mut self.document {
+                        *object = None;
+                    }
+                }
+            }
+            cx.notify();
+            return;
+        }
         let Document::Pages { document, .. } = &self.document else {
             return;
         };
         let Some(text) = document.selected_text() else {
             return;
         };
-        let clip = jade_web::word::clipboard::WordClipboard::copy_rich(document.as_ref());
+        let clip = jade_web::word::clipboard::WordClipboard::copy_rich(document.as_ref())
+            .map(word_clipboard::RichCopy::new);
+        let item = if let Some(clip) = &clip {
+            gpui::ClipboardItem::new_string_with_json_metadata(
+                text,
+                std::collections::BTreeMap::from([("text/html", clip.html())]),
+            )
+        } else {
+            gpui::ClipboardItem::new_string(text)
+        };
         RICH_CLIP.with(|kept| *kept.borrow_mut() = clip);
+        OBJECT_CLIP.with(|kept| *kept.borrow_mut() = None);
         word_views::prefs::note_copy(&self.name);
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        cx.write_to_clipboard(item);
         if cut {
             self.word_edit(cx, |document| document.delete(true));
         }
+    }
+
+    fn paste_object_copy(&mut self, clip: &word_clipboard::ObjectCopy, cx: &mut Context<Self>) {
+        use jade_web::word::objects::WordObjects;
+        let target = match &self.document {
+            Document::Pages { object, .. } => object.map(|grab| grab.object.target),
+            _ => None,
+        };
+        self.word_edit(cx, |document| match target {
+            Some(target) => document.paste_object_beside(&clip.clip, target),
+            None => document.paste_object(&clip.clip),
+        });
+        self.refresh_selected_object();
     }
 
     fn word_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
@@ -1549,6 +1630,8 @@ impl DocView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        use jade_web::editing::WordSession;
+
         // A click in the pages takes the keyboard back from the pane's
         // search box.
         self.references.searching = false;
@@ -1607,14 +1690,31 @@ impl DocView {
                 return cx.notify();
             }
         }
-        // A picture is over the text: a press on one takes hold of it rather
-        // than putting the caret behind it. Its bottom-right corner resizes.
+        // A picture is over the text. Text-box content accepts a caret;
+        // its border still takes hold of the object for moving/resizing.
         if let Document::Pages {
             document, object, ..
         } = &mut self.document
         {
             let page_y = y - document.document_y(index, 0.0);
-            let grabbed = document.object_at(x, y).filter(|found| found.page == index);
+            let grabbed = document.object_at(x, y).filter(|found| {
+                if found.page != index {
+                    return false;
+                }
+                const BORDER: f64 = 6.0;
+                const HANDLE: f64 = 12.0;
+                let resize_corner = x >= found.x + found.width - HANDLE
+                    && page_y >= found.y + found.height - HANDLE;
+                let text_content = document
+                    .word_document()
+                    .text_box_contains_paragraph(found.target, target.0)
+                    && x > found.x + BORDER
+                    && x < found.x + found.width - BORDER
+                    && page_y > found.y + BORDER
+                    && page_y < found.y + found.height - BORDER
+                    && !resize_corner;
+                !text_content
+            });
             *object = grabbed.map(|found| {
                 const HANDLE: f64 = 12.0;
                 ObjectGrab {
@@ -1938,14 +2038,31 @@ impl DocView {
     }
 
     /// The long moves of ⌘ (a Mac) and Ctrl (elsewhere) with an arrow, Home
-    /// or End: to the document's start or end, a line's ends, or a word
+    /// or End: to paragraph or document boundaries, a line's ends, or a word
     /// along — Shift extending the selection, as the plain arrows do.
     fn pages_jump(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
         use jade_web::editing::Motion;
         let modifiers = event.keystroke.modifiers;
+        if matches!(event.keystroke.key.as_str(), "pageup" | "pagedown") && !modifiers.alt {
+            let Document::Pages { document, .. } = &self.document else {
+                return false;
+            };
+            if document.composition().is_some() || document.caret().is_none() {
+                return false;
+            }
+            let down = event.keystroke.key == "pagedown";
+            self.word_move(cx, |document| {
+                document.move_caret_page(down, modifiers.shift)
+            });
+            self.reveal_caret();
+            return true;
+        }
         let motion = match (event.keystroke.key.as_str(), modifiers.platform) {
-            ("up" | "home", _) => Motion::DocumentStart,
-            ("down" | "end", _) => Motion::DocumentEnd,
+            ("home", _) => Motion::DocumentStart,
+            ("end", _) => Motion::DocumentEnd,
+            ("up", _) => Motion::ParagraphStart,
+            ("down", true) if modifiers.shift => Motion::ParagraphTextEnd,
+            ("down", _) => Motion::ParagraphEnd,
             ("left", true) => Motion::LineStart,
             ("right", true) => Motion::LineEnd,
             ("left", false) => Motion::WordLeft,
@@ -1974,6 +2091,103 @@ impl DocView {
         true
     }
 
+    /// PageUp/PageDown use the laid-out viewport, including zoom and page grids.
+    /// Shift selects to the visible edge rather than moving by a whole screen.
+    fn pages_screen(&mut self, down: bool, extend: bool, cx: &mut Context<Self>) -> bool {
+        let zoom = self.zoom.unwrap_or(1.0).max(0.01);
+        let Document::Pages { page_size, .. } = &self.document else {
+            return false;
+        };
+        let arrangement = self.arrangement(*page_size, zoom);
+        let grid = arrangement.grid;
+        let Document::Pages {
+            document, scroll, ..
+        } = &mut self.document
+        else {
+            return false;
+        };
+        if document.composition().is_some() {
+            return false;
+        }
+        let Some(caret) = document.focus_rect() else {
+            return false;
+        };
+        let height = f32::from(scroll.bounds().size.height);
+        if height <= 1.0 {
+            return false;
+        }
+        let (page, local_y) = document.page_and_offset(caret.document_y + caret.height / 2.0);
+        let (origin_x, origin_y) = grid.origin(page);
+        let crop_top = arrangement
+            .crops
+            .get(page)
+            .copied()
+            .flatten()
+            .map_or(0.0, |crop| crop.top);
+        let shown_y = -f32::from(scroll.offset().y);
+        let caret_y = origin_y + (local_y as f32 - crop_top) * zoom;
+        let target_y = if extend {
+            if down {
+                shown_y + height - 1.0
+            } else {
+                shown_y + 1.0
+            }
+        } else {
+            caret_y + if down { height } else { -height }
+        };
+        let count = document.page_count();
+        let target_page = if grid.horizontal {
+            let width = f32::from(scroll.bounds().size.width);
+            let x = origin_x + caret.x as f32 * zoom + if down { width } else { -width };
+            if extend {
+                page
+            } else {
+                (((x - grid.padding) / (grid.page.0 + grid.gap).max(1.0))
+                    .floor()
+                    .max(0.0) as usize)
+                    .min(count.saturating_sub(1))
+            }
+        } else {
+            let row = ((target_y - grid.padding) / (grid.page.1 + grid.gap).max(1.0))
+                .floor()
+                .max(0.0) as usize;
+            (row * grid.per_row.max(1) + page % grid.per_row.max(1)).min(count.saturating_sub(1))
+        };
+        let (_, target_origin_y) = grid.origin(target_page);
+        let target_crop = arrangement
+            .crops
+            .get(target_page)
+            .copied()
+            .flatten()
+            .map_or(0.0, |crop| crop.top);
+        let y = if grid.horizontal && !extend {
+            local_y as f32
+        } else {
+            ((target_y - target_origin_y) / zoom).clamp(0.0, grid.page.1 / zoom) + target_crop
+        };
+        let document_y = document.document_y(target_page, f64::from(y));
+        self.word_move(cx, |document| document.move_caret_to_y(document_y, extend));
+        if !extend {
+            if let Document::Pages { scroll, .. } = &mut self.document {
+                let max = scroll.max_offset();
+                let offset = scroll.offset();
+                let direction = if down { 1.0 } else { -1.0 };
+                if grid.horizontal {
+                    let width = f32::from(scroll.bounds().size.width);
+                    let x = (-f32::from(offset.x) + direction * width)
+                        .clamp(0.0, f32::from(max.x).max(0.0));
+                    scroll.set_offset(point(px(-x), offset.y));
+                } else {
+                    let y = (shown_y + direction * height).clamp(0.0, f32::from(max.y).max(0.0));
+                    scroll.set_offset(point(offset.x, px(-y)));
+                }
+            }
+            self.follow_scroll(gpui::Size::default());
+        }
+        self.reveal_caret();
+        true
+    }
+
     /// Keys the Word view answers: deleting, splitting, and moving the caret
     /// — Shift extending the selection. Mid-composition they are the IME's.
     fn pages_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
@@ -1981,6 +2195,61 @@ impl DocView {
         let key = event.keystroke.key.as_str();
         let extend = event.keystroke.modifiers.shift;
         let alt = event.keystroke.modifiers.alt;
+        if let Document::Pages {
+            object: Some(grab), ..
+        } = &self.document
+        {
+            match key {
+                "backspace" | "delete" => {
+                    use jade_web::word::objects::WordObjects;
+                    let target = grab.object.target;
+                    let mut deleted = false;
+                    self.word_edit(cx, |document| {
+                        document.delete_object(target)?;
+                        deleted = true;
+                        Ok(())
+                    });
+                    if deleted {
+                        if let Document::Pages { object, .. } = &mut self.document {
+                            *object = None;
+                        }
+                        cx.notify();
+                    }
+                    return true;
+                }
+                "escape" => {
+                    if let Document::Pages { object, .. } = &mut self.document {
+                        *object = None;
+                    }
+                    cx.notify();
+                    return true;
+                }
+                "left" | "right" | "up" | "down" => {
+                    use jade_web::word::objects::WordObjects;
+                    let object = grab.object;
+                    let step = if alt { 1.0 } else { 7.5 };
+                    let (dx, dy) = match key {
+                        "left" => (-step, 0.0),
+                        "right" => (step, 0.0),
+                        "up" => (0.0, -step),
+                        _ => (0.0, step),
+                    };
+                    self.word_edit(cx, |document| {
+                        document.move_object(
+                            object,
+                            (object.x + dx, object.y + dy, object.width, object.height),
+                        )
+                    });
+                    self.refresh_selected_object();
+                    cx.notify();
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        if matches!(key, "pageup" | "pagedown") && !alt {
+            return self.pages_screen(key == "pagedown", extend, cx);
+        }
         let Document::Pages { document, .. } = &mut self.document else {
             return false;
         };
@@ -2147,7 +2416,7 @@ impl DocView {
             return self.story_action(action, cx);
         }
         if let Action::Review(review) = action {
-            return self.review_action(review, cx);
+            return self.review_action(review, window, cx);
         }
         if action == Action::InsertLink {
             return self.open_link_dialog(cx);
@@ -2210,6 +2479,7 @@ impl DocView {
                 Action::Undo => document.undo().map(|_| ()),
                 _ => document.redo().map(|_| ()),
             });
+            self.refresh_selected_object();
             return self.equation_after_history();
         }
         if let Action::View(action) = action {
@@ -2306,6 +2576,7 @@ impl DocView {
         let on_similar = move |document: &mut jade_web::editing::WordDoc, format| {
             jade_web::word::similar::format(document, &similar, format)
         };
+        let history = matches!(action, Action::Undo | Action::Redo);
         self.word_edit(cx, move |document| match action {
             Action::Toggle(format) => on_similar(document, RangeFormat::Toggle(format)),
             Action::ClearFormatting => on_similar(document, RangeFormat::ClearFormatting),
@@ -2367,6 +2638,9 @@ impl DocView {
             | Action::ClosePopup
             | Action::Grid(..) => Ok(()),
         });
+        if history {
+            self.refresh_selected_object();
+        }
     }
 
     /// The ribbon over the pages, with what it shows as current read again
@@ -2598,11 +2872,17 @@ impl DocView {
         self.shown_zoom = zoom;
         self.start_recovery(cx);
         self.follow_scroll(viewport);
-        let arrangement = match &self.document {
+        let mut arrangement = match &self.document {
             Document::Pages { page_size, .. } => self.arrangement(*page_size, zoom),
             _ => unreachable!(),
         };
         let chrome = !self.views.hides_chrome();
+        // Center only when the page fits; negative overflow hides its start.
+        let available_width =
+            f32::from(viewport.width) - if chrome { PAGES_SIDEBAR_WIDTH } else { 0.0 };
+        if arrangement.grid.page.0 + arrangement.grid.padding * 2.0 > available_width {
+            arrangement.from_left = true;
+        }
         // The rulers measure pages: not Web レイアウト's or アウトライン's
         // sheet, nor 閲覧モード's columns.
         let rulers = chrome && self.views.kind.keeps_pages();
@@ -3302,11 +3582,46 @@ impl DocView {
                 // Word for Mac's 書式のコピー / 書式の貼り付け.
                 "c" if pages && modifiers.shift => self.pick_up_format(false, cx),
                 "v" if pages && modifiers.shift => self.paint_format(true, cx),
-                // ⌘↩ is Word's page break (改ページ).
-                "enter" if pages => self.setup_action(
+                // Keep table rows, column breaks and page breaks distinct,
+                // as in the native shell. Alt+Shift is left unassigned.
+                "enter" if pages && modifiers.alt && !modifiers.shift => self.ribbon_action(
+                    Action::Table(jade_web::editing::TableCommand::InsertRowBelow),
+                    window,
+                    cx,
+                ),
+                "enter" if pages && modifiers.shift && !modifiers.alt => self.setup_action(
+                    word_setup::SetupAction::Break(jade_web::word::page_setup::PageBreak::Column),
+                    cx,
+                ),
+                "enter" if pages && !modifiers.alt && !modifiers.shift => self.setup_action(
                     word_setup::SetupAction::Break(jade_web::word::page_setup::PageBreak::Page),
                     cx,
                 ),
+                "backspace" if pages && modifiers.shift && !modifiers.alt => self.ribbon_action(
+                    Action::Table(jade_web::editing::TableCommand::DeleteRow),
+                    window,
+                    cx,
+                ),
+                // Paragraph formatting uses the same command path as the
+                // ribbon, including selection, protection and undo.
+                "l" if pages && modifiers.shift && !modifiers.alt => {
+                    self.ribbon_action(Action::List(true), window, cx)
+                }
+                "e" if pages && modifiers.shift && !modifiers.alt => {
+                    self.review_action(crate::word_review::ReviewAction::ToggleTracking, window, cx)
+                }
+                "l" | "e" | "r" | "j" if pages && !modifiers.shift && !modifiers.alt => {
+                    let alignment = match key {
+                        "l" => "left",
+                        "e" => "center",
+                        "r" => "right",
+                        _ => "both",
+                    };
+                    self.ribbon_action(Action::Align(alignment), window, cx)
+                }
+                "]" | "[" if pages && !modifiers.shift && !modifiers.alt => {
+                    self.ribbon_action(Action::Indent(key == "]"), window, cx)
+                }
                 "c" if pages => self.word_copy(false, cx),
                 // ハイパーリンクの挿入.
                 "k" if pages => self.open_link_dialog(cx),
@@ -3570,7 +3885,12 @@ impl DocView {
         if self.finding() || self.commenting() || self.views.is_open() {
             return None;
         }
-        let Document::Pages { document, .. } = &self.document else {
+        let Document::Pages {
+            document,
+            object: None,
+            ..
+        } = &self.document
+        else {
             return None;
         };
         let (paragraph, offset) = document.caret()?;
@@ -3697,9 +4017,34 @@ impl EntityInputHandler for DocView {
 
     fn paste(&mut self, item: gpui::ClipboardItem, window: &mut Window, cx: &mut Context<Self>) {
         self.paste_arrived = true;
-        let Some(text) = item.text() else {
+        let html = item.entries.iter().find_map(|entry| {
+            let gpui::ClipboardEntry::String(string) = entry else {
+                return None;
+            };
+            let metadata = string.metadata_json::<std::collections::BTreeMap<String, String>>()?;
+            metadata.get("text/html").cloned()
+        });
+        let html_clip = html.as_ref().and_then(|html| {
+            let clip = jade_web::word::clipboard::RichClip::from_html(html);
+            (!clip.paragraphs.is_empty()).then_some(clip)
+        });
+        let Some(text) = item
+            .text()
+            .filter(|text| !text.is_empty())
+            .or_else(|| html_clip.as_ref().map(|clip| clip.plain_text()))
+        else {
             return;
         };
+        if matches!(&self.document, Document::Pages { comment: None, find, .. } if !find.as_ref().is_some_and(|bar| bar.active))
+        {
+            let clip = OBJECT_CLIP
+                .with(|kept| kept.borrow().clone())
+                .filter(|clip| clip.matches(&text, html.as_deref()));
+            if let Some(clip) = clip {
+                self.paste_object_copy(&clip, cx);
+                return;
+            }
+        }
         match &mut self.document {
             // Into a bar, its first line.
             Document::Pages {
@@ -3714,13 +4059,18 @@ impl EntityInputHandler for DocView {
                 let line = text.lines().next().unwrap_or_default().to_string();
                 self.replace_text_in_range(None, &line, window, cx);
             }
+            // Pasting text must not replace a remembered text selection
+            // while the picture or text-box frame has the focus.
+            Document::Pages {
+                object: Some(_), ..
+            } => {}
             // Copied here, and still what the clipboard holds: with its
             // formatting, as one undo step.
             Document::Pages { .. }
                 if RICH_CLIP.with(|kept| {
                     kept.borrow()
                         .as_ref()
-                        .is_some_and(|clip| clip.matches(&text))
+                        .is_some_and(|clip| clip.matches(&text, html.as_deref()))
                 }) =>
             {
                 let clip = RICH_CLIP.with(|kept| kept.borrow().clone());
@@ -3728,14 +4078,21 @@ impl EntityInputHandler for DocView {
                 // document or another.
                 let mode = word_views::prefs::default_paste(&self.name);
                 self.word_edit(cx, move |document| {
-                    use jade_web::word::clipboard::{PasteMode, WordClipboard};
+                    use jade_web::word::clipboard::WordClipboard;
                     let Some(clip) = clip else {
                         return Ok(());
                     };
-                    if mode != PasteMode::KeepSource {
-                        return document.paste_as(&clip, mode).map(|_| ());
-                    }
-                    let caret = document.paste_rich(&clip)?;
+                    let caret = document.paste_as(&clip.clip, mode)?;
+                    document.place_caret(caret.0, caret.1);
+                    Ok(())
+                });
+            }
+            Document::Pages { .. } if html_clip.is_some() => {
+                use jade_web::word::clipboard::WordClipboard;
+                let clip = html_clip.unwrap();
+                let mode = word_views::prefs::paste_mode(word_views::prefs::Source::OtherProgram);
+                self.word_edit(cx, move |document| {
+                    let caret = document.paste_as(&clip, mode)?;
                     document.place_caret(caret.0, caret.1);
                     Ok(())
                 });
@@ -3835,6 +4192,17 @@ impl EntityInputHandler for DocView {
         }
         if matches!(self.document, Document::Pages { .. }) && !self.finding() && !self.commenting()
         {
+            // A frame selection owns the input focus. The document still
+            // remembers its text selection for returning to text editing.
+            if matches!(
+                self.document,
+                Document::Pages {
+                    object: Some(_),
+                    ..
+                }
+            ) {
+                return;
+            }
             let text = text.to_string();
             let composing = self
                 .word_input()
@@ -3932,6 +4300,15 @@ impl EntityInputHandler for DocView {
         }
         if matches!(self.document, Document::Pages { .. }) && !self.finding() && !self.commenting()
         {
+            if matches!(
+                self.document,
+                Document::Pages {
+                    object: Some(_),
+                    ..
+                }
+            ) {
+                return;
+            }
             let text = new_text.to_string();
             self.word_edit(cx, move |document| document.set_composition(&text));
             return;
@@ -4054,7 +4431,7 @@ impl Render for DocView {
         // per frame so the toggle and the system can both change it. A no-op
         // unless it changed.
         if let Document::Pages { document, .. } = &mut self.document {
-            match document.set_dark_paper(palette::is_dark()) {
+            match document.set_dark_paper(palette::dark_pages()) {
                 Ok(true) => self.refresh_repainted(),
                 Ok(false) => {}
                 Err(error) => self.status = error.into(),
@@ -4064,7 +4441,10 @@ impl Render for DocView {
             self.slideshow_body(window, cx)
         } else {
             match self.document {
-                Document::Pages { .. } => self.pages_body(window.viewport_size(), cx),
+                Document::Pages { .. } => {
+                    let (width, height) = editor_area(window, cx);
+                    self.pages_body(gpui::size(px(width), px(height)), cx)
+                }
                 Document::Deck { .. } => self.deck_body(window, cx),
                 Document::Workbook(_) => self.workbook_body(window, cx),
             }
@@ -4074,7 +4454,6 @@ impl Render for DocView {
         let controls_dialog = word_controls::dialog(self, window, cx);
         let mailings_dialog = word_mailings::dialog(self, window, cx);
         let immersive = self.immersive_overlay(window, cx);
-        self.update_screen_reader();
         let fields_dialog = self.fields_dialog_element(window, cx);
         let tool_dialog = self.tool_dialog_element(window, cx);
         let views_dialog = self.views_dialog(window, cx);

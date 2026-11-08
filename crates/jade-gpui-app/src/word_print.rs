@@ -87,19 +87,30 @@ impl PrintPanel {
     }
 }
 
+fn validate_print_selection(
+    document: &NativeDocument,
+    settings: &PrintSettings,
+) -> Result<(), String> {
+    if settings.range == PrintRange::Selection && document.selection().is_none() {
+        return Err("Select content before printing the selection.".into());
+    }
+    Ok(())
+}
+
 /// The document `settings` print, laid out: the open one when it prints as
 /// it is, otherwise one made for the purpose.
 fn print_document(
-    view: &mut DocumentView,
+    source: &NativeDocument,
     settings: &PrintSettings,
 ) -> Result<Option<NativeDocument>, String> {
-    let docx = view.document.export_docx()?;
+    validate_print_selection(source, settings)?;
+    let docx = source.export_docx()?;
     let mut changed = printing::has_background(&docx) && !settings.background
         || printing::has_hidden_text(&docx) && settings.hidden_text
         || !settings.markup;
     let mut bytes = printing::print_docx(&docx, settings)?;
     if settings.range == PrintRange::Selection {
-        if let Some((start, end)) = view.document.selection() {
+        if let Some((start, end)) = source.selection() {
             bytes = printing::selection_docx(&bytes, start, end)?;
             changed = true;
         }
@@ -186,6 +197,7 @@ impl DocumentView {
     }
 
     fn build_preview(&mut self, settings: &PrintSettings) -> Result<Preview, String> {
+        validate_print_selection(&self.document, settings)?;
         // The document laid out again only when what it prints differs; a
         // range or a layout change reuses it.
         let reuse = self.printing.as_mut().and_then(|panel| {
@@ -193,6 +205,7 @@ impl DocumentView {
             let same_document = preview.settings.markup == settings.markup
                 && preview.settings.background == settings.background
                 && preview.settings.hidden_text == settings.hidden_text
+                && preview.settings.update_fields == settings.update_fields
                 && (preview.settings.range == PrintRange::Selection)
                     == (settings.range == PrintRange::Selection);
             same_document.then_some(preview)
@@ -200,7 +213,17 @@ impl DocumentView {
         let (document, images) = match reuse {
             Some(preview) => (preview.document, preview.images),
             None => {
-                let document = print_document(self, settings)?;
+                let document = if settings.update_fields {
+                    // Predict the actual print-time update without changing
+                    // the editor's document, selection or undo history.
+                    let mut snapshot = crate::open_document_bytes(&self.document.export_docx()?)?;
+                    snapshot.set_selection_range(self.document.selection_range());
+                    printing::update_fields(&mut snapshot)?;
+                    crate::word_characters::start_field_clock(&mut snapshot);
+                    print_document(&snapshot, settings)?.or(Some(snapshot))
+                } else {
+                    print_document(&self.document, settings)?
+                };
                 let images = match &document {
                     Some(document) => (0..document.page_count())
                         .filter_map(|index| crate::page_image(document, index))
@@ -227,14 +250,17 @@ impl DocumentView {
     /// The PDF the settings print: the document's pages, vector, on their
     /// sheets.
     pub(crate) fn print_pdf(&mut self, settings: &PrintSettings) -> Result<Vec<u8>, String> {
+        // Reject an empty selection before print-time field updates can edit
+        // the document. Preview and output use the same validation.
+        validate_print_selection(&self.document, settings)?;
         if settings.update_fields {
             // 印刷前にフィールドを更新する: in the document itself, as Word
             // does — the table of contents, and the date and time now.
-            printing::update_fields(&mut self.document);
+            printing::update_fields(&mut self.document)?;
             crate::word_characters::start_field_clock(&mut self.document);
             self.rebuild_all_images();
         }
-        let document = print_document(self, settings)?;
+        let document = print_document(&self.document, settings)?;
         let printed: &NativeDocument = document.as_ref().unwrap_or(&self.document);
         let pdf = printed.export_pdf_with_options(PdfExportOptions {
             rendering: PdfRenderingMode::Vector,
@@ -812,6 +838,7 @@ pub fn overlay(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jade_office_model::word::WordSession;
 
     fn open(
         cx: &mut gpui::TestAppContext,
@@ -889,6 +916,193 @@ mod tests {
         // Escape closes it.
         cx.simulate_keystrokes("escape");
         view.read_with(cx, |view, _| assert!(view.printing.is_none()));
+    }
+
+    #[gpui::test]
+    fn print_field_updates_cover_all_tables_and_roll_back_on_error(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open(cx);
+        let toc = r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> TOC \o "1-3" \u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Old cached contents</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#;
+        for (first, fails) in [
+            (format!("<w:p>{toc}</w:p>"), false),
+            (format!("<w:p><w:bookmarkStart w:id=\"1\" w:name=\"Around\"/>{toc}<w:bookmarkEnd w:id=\"1\"/></w:p>"), false),
+            (format!("<w:p><w:commentRangeStart w:id=\"9\"/>{toc}<w:commentRangeEnd w:id=\"9\"/><w:r><w:commentReference w:id=\"9\"/></w:r></w:p>"), false),
+            (format!("<w:p><w:permStart w:id=\"9\" w:edGrp=\"everyone\"/>{toc}<w:permEnd w:id=\"9\"/></w:p>"), false),
+            (format!("<w:p><w:moveFromRangeStart w:id=\"9\" w:name=\"MovedText\"/>{toc}<w:moveFromRangeEnd w:id=\"9\"/></w:p>"), true),
+            (format!("<w:p>{}</w:p>", toc.replacen("w:fldCharType=\"begin\"", "w:fldCharType=\"begin\" w:fldLock=\"true\"", 1)), false),
+        ] {
+            let blank = jade_office_model::word::new::blank_document(jade_office_model::word::new::Blank::English);
+            let mut package = jade_opc::OpcPackage::open(&blank).unwrap();
+            let xml = package.part_str("word/document.xml").unwrap().unwrap().replace(
+                "<w:body><w:p/>",
+                &format!(r#"<w:body>{first}<w:p><w:r><w:t>Before </w:t></w:r>{toc}<w:r><w:t> after</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:r><w:t>New heading for both tables</w:t></w:r></w:p>"#),
+            );
+            package.replace("word/document.xml", xml.into_bytes());
+            let bytes = package.write().unwrap();
+            view.update(cx, |view, _| {
+                *view.document = crate::open_document_bytes(&bytes).unwrap();
+                let before = view.document.export_docx().unwrap();
+                let result = printing::update_fields(&mut view.document);
+                if fails {
+                    assert!(result.unwrap_err().contains("table of contents 1"));
+                    let settings = PrintSettings {
+                        update_fields: true,
+                        ..Default::default()
+                    };
+                    assert!(view.build_preview(&settings).err().unwrap().contains("table of contents 1"));
+                    assert!(view.print_pdf(&settings).unwrap_err().contains("table of contents 1"));
+                    assert_eq!(view.document.export_docx().unwrap(), before);
+                    assert!(!view.document.can_undo());
+                } else {
+                    result.unwrap();
+                    let after = view.document.export_docx().unwrap();
+                    let package = jade_opc::OpcPackage::open(&after).unwrap();
+                    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+                    let locked = first.contains("fldLock");
+                    assert_eq!(xml.matches("New heading for both tables").count(), if locked { 2 } else { 3 });
+                    assert_eq!(xml.matches("Old cached contents").count(), usize::from(locked));
+                    assert!(xml.contains("Before "));
+                    assert!(xml.contains(" after"));
+                    if first.contains("commentRangeStart") {
+                        for marker in ["commentRangeStart", "commentRangeEnd", "commentReference"] {
+                            assert_eq!(xml.matches(&format!("<w:{marker} w:id=\"9\"")).count(), 1);
+                        }
+                    }
+                    if first.contains("permStart") {
+                        let ranges = view.document.word_document().editable_ranges();
+                        assert_eq!(ranges.len(), 1);
+                        assert_eq!(ranges[0].id, "9");
+                        assert_eq!(ranges[0].editors, "everyone");
+                        assert_eq!(ranges[0].start, (0, 0));
+                        let text_len: usize = view.document.word_document().paragraph(0).unwrap().runs.iter().map(|run| run.text.len()).sum();
+                        assert_eq!(ranges[0].end, (0, text_len));
+                    }
+                    if first.contains("bookmarkStart") {
+                        let bookmarks = &view.document.word_document().document.as_ref().unwrap().bookmarks;
+                        let ids: std::collections::HashSet<_> = bookmarks.iter().map(|b| b.id.as_str()).collect();
+                        assert_eq!(ids.len(), bookmarks.len(), "preserved and generated bookmark IDs must be unique");
+                        assert!(bookmarks.iter().any(|b| b.id == "1" && b.name == "Around"));
+                    }
+                    view.document.undo().unwrap();
+                    assert_eq!(view.document.export_docx().unwrap(), before);
+                    assert!(!view.document.can_undo(), "all updates form one undo step");
+                }
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn preview_predicts_field_updates_without_editing(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open(cx);
+        let blank = jade_office_model::word::new::blank_document(
+            jade_office_model::word::new::Blank::English,
+        );
+        let mut document = crate::open_document_bytes(&blank).unwrap();
+        document.insert_table_of_contents().unwrap();
+        let fixture = document.export_docx().unwrap();
+        let mut package = jade_opc::OpcPackage::open(&fixture).unwrap();
+        let mut xml = package
+            .part_str("word/document.xml")
+            .unwrap()
+            .unwrap()
+            .to_owned();
+        let headings: String = (0..60).map(|index| format!(
+            r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:outlineLvl w:val="0"/></w:pPr><w:r><w:t>Additional preview heading {index}: a long title for the updated table of contents</w:t></w:r></w:p>"#
+        )).collect();
+        let at = xml
+            .rfind("<w:sectPr")
+            .unwrap_or_else(|| xml.rfind("</w:body>").unwrap());
+        xml.insert_str(at, &headings);
+        package.replace("word/document.xml", xml.into_bytes());
+        let bytes = package.write().unwrap();
+        view.update(cx, |view, _| {
+            *view.document = crate::open_document_bytes(&bytes).unwrap();
+            view.rebuild_all_images();
+            let before = view.document.export_docx().unwrap();
+            let undo = view.document.can_undo();
+            let selection = view.document.selection_range();
+            view.printing = Some(PrintPanel::new());
+            view.refresh_print_preview();
+            let stale_pages = view
+                .printing
+                .as_ref()
+                .unwrap()
+                .preview
+                .as_ref()
+                .unwrap()
+                .sizes
+                .len();
+            view.printing.as_mut().unwrap().settings.update_fields = true;
+            view.refresh_print_preview();
+            let preview = view.printing.as_ref().unwrap().preview.as_ref().unwrap();
+            let updated_pages = preview.sizes.len();
+            assert!(
+                updated_pages > stale_pages,
+                "the expanded TOC must change pagination: stale={stale_pages}, updated={updated_pages}"
+            );
+            let predicted = preview.document.as_ref().unwrap().export_docx().unwrap();
+            assert_ne!(predicted, before);
+            assert_eq!(view.document.export_docx().unwrap(), before);
+            assert_eq!(view.document.selection_range(), selection);
+            assert_eq!(view.document.can_undo(), undo);
+            // Toggling back must retire the updated snapshot, even when every
+            // other setting is unchanged.
+            view.printing.as_mut().unwrap().settings.update_fields = false;
+            view.refresh_print_preview();
+            assert_eq!(
+                view.printing
+                    .as_ref()
+                    .unwrap()
+                    .preview
+                    .as_ref()
+                    .unwrap()
+                    .sizes
+                    .len(),
+                stale_pages
+            );
+            let pdf = view
+                .print_pdf(&PrintSettings {
+                    update_fields: true,
+                    ..PrintSettings::default()
+                })
+                .unwrap();
+            assert_eq!(pdf_pages(&pdf).len(), updated_pages);
+            assert_eq!(view.document.export_docx().unwrap(), predicted);
+        });
+    }
+
+    #[gpui::test]
+    fn selection_printing_requires_selected_content(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open(cx);
+        view.update(cx, |view, _| {
+            let before = view.document.export_docx().unwrap();
+            let undo = view.document.can_undo();
+            for selection in [
+                None,
+                Some(jade_selection::SelectionRange::new(
+                    jade_selection::TextPosition::new(0, 3),
+                    jade_selection::TextPosition::new(0, 3),
+                )),
+            ] {
+                view.document.set_selection_range(selection);
+                for update_fields in [false, true] {
+                    let settings = PrintSettings {
+                        range: PrintRange::Selection,
+                        update_fields,
+                        ..PrintSettings::default()
+                    };
+                    assert_eq!(
+                        view.print_pdf(&settings).unwrap_err(),
+                        "Select content before printing the selection."
+                    );
+                    assert!(view.build_preview(&settings).is_err());
+                    assert_eq!(view.document.export_docx().unwrap(), before);
+                    assert_eq!(view.document.can_undo(), undo);
+                    assert_eq!(view.document.selection_range(), selection);
+                }
+            }
+            // Switching back to the whole document remains usable.
+            assert!(!pdf_pages(&view.print_pdf(&PrintSettings::default()).unwrap()).is_empty());
+        });
     }
 
     /// What prints: the pages chosen, laid out on their sheets, scaled to

@@ -24,7 +24,84 @@ struct PagePixels {
     rgba: Vec<u8>,
 }
 
+/// Paper layout used by the print panel and the generated PDF, in points.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PrintPreview {
+    pub sheets: Vec<Sheet>,
+    pub page_sizes: Vec<(f64, f64)>,
+}
+
+struct PrintLayout {
+    document: EditableDocument,
+    pages: Vec<usize>,
+    preview: PrintPreview,
+}
+
+/// A print preview snapshot. Only the requested sheet is painted; navigation
+/// reuses pagination and does not allocate images for the whole document.
+pub struct PrintPreviewSession {
+    layout: PrintLayout,
+}
+
+impl PrintPreviewSession {
+    pub fn layout(&self) -> &PrintPreview {
+        &self.layout.preview
+    }
+
+    /// Render the same sheet pixels used by PDF printing (RGBA, premultiplied).
+    pub fn render_sheet(&mut self, index: usize) -> Result<PdfPage, String> {
+        let sheet = self
+            .layout
+            .preview
+            .sheets
+            .get(index)
+            .ok_or_else(|| format!("print sheet {} does not exist", index + 1))?;
+        let mut pixels = std::collections::HashMap::new();
+        for placement in &sheet.placements {
+            let page = placement.page;
+            if pixels.contains_key(&page) {
+                continue;
+            }
+            self.layout.document.set_resident_pages(page..page + 1)?;
+            let surface = self
+                .layout
+                .document
+                .page(page)
+                .ok_or_else(|| format!("page {} did not paint", page + 1))?;
+            pixels.insert(
+                page,
+                PagePixels {
+                    width: surface.width(),
+                    height: surface.height(),
+                    rgba: surface.rgba_premultiplied(),
+                },
+            );
+        }
+        let image = sheet_pixels(sheet, &self.layout.preview.page_sizes, &pixels);
+        self.layout.document.set_resident_pages(0..0)?;
+        Ok(image)
+    }
+}
+
 impl EditableDocument {
+    /// A fresh paper layout shared by PDF export and printing. Screen-only
+    /// decorations must never appear in either output, even though the editor
+    /// enables formatting and crop marks by default.
+    pub(super) fn open_for_output(&self, bytes: &[u8]) -> Result<Self, String> {
+        let mut printed = Self::open_resident_with_datetime(
+            bytes,
+            PRINT_SCALE,
+            Rc::clone(&self.fonts),
+            Rc::clone(&self.measurer),
+            0..0,
+            self.field_datetime,
+        )?;
+        printed.options.show_formatting_marks = false;
+        printed.options.show_crop_marks = false;
+        printed.repaint_all()?;
+        Ok(printed)
+    }
+
     /// The document as `settings` print it: a PDF of the sheets. `current`
     /// is the page the caret is on.
     pub fn print_pdf(
@@ -32,28 +109,109 @@ impl EditableDocument {
         settings: &PrintSettings,
         current: usize,
     ) -> Result<Vec<u8>, String> {
-        let docx = self
-            .word_document
-            .export_docx()
-            .map_err(|error| format!("cannot print: {error:?}"))?;
-        let mut bytes = printing::print_docx(&docx, settings)?;
-        if settings.range == PrintRange::Selection {
-            if let Some(range) = self.selection.filter(|range| !range.is_collapsed()) {
-                let (start, end) = range.normalized();
-                bytes = printing::selection_docx(
-                    &bytes,
-                    (start.paragraph, start.offset),
-                    (end.paragraph, end.offset),
-                )?;
+        self.print_pdf_from_docx(&self.word_docx()?, settings, current)
+    }
+
+    pub(super) fn print_pdf_from_docx(
+        &self,
+        docx: &[u8],
+        settings: &PrintSettings,
+        current: usize,
+    ) -> Result<Vec<u8>, String> {
+        let PrintLayout {
+            mut document,
+            pages,
+            preview,
+        } = self.print_layout_from_docx(docx, settings, current)?;
+        let printed = &mut document;
+        let sizes = &preview.page_sizes;
+        let sheets = &preview.sheets;
+        let mut pixels: std::collections::HashMap<usize, PagePixels> = Default::default();
+        for page in &pages {
+            if pixels.contains_key(page) {
+                continue;
             }
+            printed.set_resident_pages(*page..*page + 1)?;
+            let surface = printed
+                .page(*page)
+                .ok_or_else(|| format!("page {} did not paint", page + 1))?;
+            pixels.insert(
+                *page,
+                PagePixels {
+                    width: surface.width(),
+                    height: surface.height(),
+                    rgba: surface.rgba_premultiplied(),
+                },
+            );
         }
-        let mut printed = EditableDocument::open_resident(
-            &bytes,
-            PRINT_SCALE,
-            Rc::clone(&self.fonts),
-            Rc::clone(&self.measurer),
-            0..0,
-        )?;
+        let pages: Vec<PdfPage> = sheets
+            .iter()
+            .map(|sheet| sheet_pixels(sheet, sizes, &pixels))
+            .collect();
+        crate::pdf::pdf_of_pages(&pages)
+    }
+    /// Prepare pagination without painting page images or changing editor state.
+    pub fn print_preview(
+        &self,
+        settings: &PrintSettings,
+        current: usize,
+    ) -> Result<PrintPreview, String> {
+        Ok(self
+            .prepare_print_preview(settings, current)?
+            .layout()
+            .clone())
+    }
+
+    pub fn prepare_print_preview(
+        &self,
+        settings: &PrintSettings,
+        current: usize,
+    ) -> Result<PrintPreviewSession, String> {
+        self.prepare_print_preview_from_docx(&self.word_docx()?, settings, current)
+    }
+
+    pub(super) fn prepare_print_preview_from_docx(
+        &self,
+        docx: &[u8],
+        settings: &PrintSettings,
+        current: usize,
+    ) -> Result<PrintPreviewSession, String> {
+        if settings.update_fields {
+            // The print action updates the real document (and its undo stack).
+            // Preview that same update on an isolated snapshot so opening or
+            // cancelling the panel never edits the user's document.
+            let mut updated = self.open_for_output(docx)?;
+            updated.selection = self.selection;
+            printing::update_fields(&mut updated)?;
+            return Ok(PrintPreviewSession {
+                layout: updated.print_layout_from_docx(&updated.word_docx()?, settings, current)?,
+            });
+        }
+        Ok(PrintPreviewSession {
+            layout: self.print_layout_from_docx(docx, settings, current)?,
+        })
+    }
+
+    fn print_layout_from_docx(
+        &self,
+        docx: &[u8],
+        settings: &PrintSettings,
+        current: usize,
+    ) -> Result<PrintLayout, String> {
+        let mut bytes = printing::print_docx(docx, settings)?;
+        if settings.range == PrintRange::Selection {
+            let range = self
+                .selection
+                .filter(|range| !range.is_collapsed())
+                .ok_or("Select content before printing the selection.")?;
+            let (start, end) = range.normalized();
+            bytes = printing::selection_docx(
+                &bytes,
+                (start.paragraph, start.offset),
+                (end.paragraph, end.offset),
+            )?;
+        }
+        let mut printed = self.open_for_output(&bytes)?;
         if !settings.markup {
             printed.options.render_changes = false;
             printed.options.render_comments = false;
@@ -82,29 +240,14 @@ impl EditableDocument {
         let pages =
             pages_to_print(settings, &labels, current).map_err(|error| error.to_string())?;
         let sheets = printing::sheets(settings, &pages, &sizes);
-        let mut pixels: std::collections::HashMap<usize, PagePixels> = Default::default();
-        for page in &pages {
-            if pixels.contains_key(page) {
-                continue;
-            }
-            printed.set_resident_pages(*page..*page + 1)?;
-            let surface = printed
-                .page(*page)
-                .ok_or_else(|| format!("page {} did not paint", page + 1))?;
-            pixels.insert(
-                *page,
-                PagePixels {
-                    width: surface.width(),
-                    height: surface.height(),
-                    rgba: surface.rgba_premultiplied(),
-                },
-            );
-        }
-        let pages: Vec<PdfPage> = sheets
-            .iter()
-            .map(|sheet| sheet_pixels(sheet, &sizes, &pixels))
-            .collect();
-        crate::pdf::pdf_of_pages(&pages)
+        Ok(PrintLayout {
+            document: printed,
+            pages,
+            preview: PrintPreview {
+                sheets,
+                page_sizes: sizes,
+            },
+        })
     }
 }
 

@@ -1,22 +1,73 @@
 //! The native app's two palettes (`jade-gpui-app`'s `theme`), picked by the
 //! page's `prefers-color-scheme` until the title bar's toggle overrides it.
-//! A Word document's pages go dark with the dark palette, as in Word's dark
-//! page mode (see `jade_painter::paper`); slides and cells keep their own
-//! colours, which are the content.
+//! The palette and the separate dark-pages preference survive a reload.
+//! Slides and cells keep their content colours.
 
+use crate::view::word_views::settings;
 use gpui::{rgb, Rgba, WindowAppearance};
 use std::cell::Cell;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Mode {
+    fn parse(text: &str) -> Self {
+        match text.trim() {
+            "light" => Self::Light,
+            "dark" => Self::Dark,
+            _ => Self::System,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+}
+
 thread_local! {
     static SYSTEM_DARK: Cell<bool> = const { Cell::new(true) };
-    /// The toggle's choice, once made; `None` follows the page.
-    static CHOSEN: Cell<Option<bool>> = const { Cell::new(None) };
+    static MODE: Cell<Mode> = Cell::new(Mode::parse(&settings::load("theme.txt").unwrap_or_default()));
+    static DARK_PAGES: Cell<bool> = Cell::new(settings::load("dark-pages.txt").as_deref().map(str::trim) != Some("0"));
+}
+
+pub fn mode() -> Mode {
+    MODE.with(Cell::get)
+}
+
+pub fn set_mode(mode: Mode) {
+    MODE.with(|cell| cell.set(mode));
+    settings::save("theme.txt", mode.name());
 }
 
 pub fn is_dark() -> bool {
-    CHOSEN
-        .with(Cell::get)
-        .unwrap_or_else(|| SYSTEM_DARK.with(Cell::get))
+    match mode() {
+        Mode::System => SYSTEM_DARK.with(Cell::get),
+        Mode::Light => false,
+        Mode::Dark => true,
+    }
+}
+
+pub fn dark_pages_wanted() -> bool {
+    DARK_PAGES.with(Cell::get)
+}
+
+pub fn dark_pages() -> bool {
+    is_dark() && dark_pages_wanted()
+}
+
+pub fn toggle_dark_pages() {
+    let wanted = !dark_pages_wanted();
+    DARK_PAGES.with(|cell| cell.set(wanted));
+    settings::save("dark-pages.txt", if wanted { "1" } else { "0" });
 }
 
 /// Takes up the page's appearance; true when that changed the palette.
@@ -33,8 +84,7 @@ pub fn follow(appearance: WindowAppearance) -> bool {
 
 /// The title bar's toggle: the other palette, from now on.
 pub fn toggle() {
-    let dark = !is_dark();
-    CHOSEN.with(|cell| cell.set(Some(dark)));
+    set_mode(if is_dark() { Mode::Light } else { Mode::Dark });
 }
 
 fn pick(dark: u32, light: u32) -> Rgba {
@@ -73,7 +123,7 @@ pub fn text() -> Rgba {
 }
 /// A Word page, behind its picture: white, or the dark paper.
 pub fn paper() -> Rgba {
-    let [r, g, b] = if is_dark() {
+    let [r, g, b] = if dark_pages() {
         jade_painter::paper::to_dark_paper_u8([0xff, 0xff, 0xff])
     } else {
         [0xff, 0xff, 0xff]
@@ -83,7 +133,7 @@ pub fn paper() -> Rgba {
 /// What the view draws on a Word page — the caret, a composition — in the
 /// colour the page's own black ink is shown in.
 pub fn ink() -> Rgba {
-    let [r, g, b] = if is_dark() {
+    let [r, g, b] = if dark_pages() {
         jade_painter::paper::to_dark_paper_u8([0, 0, 0])
     } else {
         [0, 0, 0]

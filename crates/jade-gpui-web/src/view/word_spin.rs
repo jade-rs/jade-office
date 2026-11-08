@@ -69,6 +69,7 @@ pub struct Spin {
     pub metrics: Metrics,
     /// Its value now, in the field's unit.
     pub value: f64,
+    pub mixed: bool,
     pub enabled: bool,
     pub width: f32,
     pub apply: Apply,
@@ -91,6 +92,7 @@ impl Spin {
             spec,
             metrics: Metrics::default(),
             value,
+            mixed: false,
             enabled: true,
             width: 72.0,
             apply: Rc::new(apply),
@@ -100,6 +102,11 @@ impl Spin {
 
     pub fn on_focus(mut self, on_focus: impl Fn(&mut DocumentView) + 'static) -> Self {
         self.on_focus = Some(Rc::new(on_focus));
+        self
+    }
+
+    pub fn mixed(mut self, mixed: bool) -> Self {
+        self.mixed = mixed;
         self
     }
 
@@ -213,10 +220,14 @@ impl DocumentView {
         if let Some(on_focus) = spin.on_focus.as_ref() {
             on_focus(self);
         }
+        let mut field = SpinField::focus(spin.spec, spin.metrics, spin.value);
+        if spin.mixed {
+            field.edit = TextEdit::selected(String::new());
+        }
         self.spin = Some(SpinFocus {
             id: spin.id.clone(),
             owner: spin.owner,
-            field: SpinField::focus(spin.spec, spin.metrics, spin.value),
+            field,
             apply: Rc::clone(&spin.apply),
         });
     }
@@ -279,6 +290,7 @@ pub fn spin_field(view: &DocumentView, spin: Spin, cx: &mut Context<DocumentView
     let has_focus = focused.is_some();
     let text = match focused {
         Some(focus) => edited_text(&focus.field.edit),
+        None if spin.mixed => div(),
         None => div().child(spin.spec.format(spin.value)),
     };
     let spin = Rc::new(spin);

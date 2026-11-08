@@ -350,37 +350,67 @@ pub fn sheets(settings: &PrintSettings, pages: &[usize], sizes: &[(f64, f64)]) -
 
 // ---- the document printed ---------------------------------------------------------
 
-/// Removes every element named `tag` (`<w:vanish/>`, `<w:vanish w:val="1"/>`,
-/// `<w:background …>…</w:background>`) from `xml`.
-fn remove_elements(xml: &str, tag: &str) -> String {
-    let open = format!("<{tag}");
-    let close = format!("</{tag}>");
-    let mut out = String::with_capacity(xml.len());
-    let mut rest = xml;
-    while let Some(start) = rest.find(&open) {
-        let after = &rest[start + open.len()..];
-        // `<w:vanishX` is another element.
-        if !after.starts_with(['/', '>', ' ', '\t', '\r', '\n']) {
-            out.push_str(&rest[..start + open.len()]);
-            rest = after;
-            continue;
-        }
-        out.push_str(&rest[..start]);
-        let Some(end) = after.find('>') else {
-            rest = "";
-            break;
-        };
-        let self_closing = after[..end].ends_with('/');
-        rest = &after[end + 1..];
-        if !self_closing {
-            match rest.find(&close) {
-                Some(close_at) => rest = &rest[close_at + close.len()..],
-                None => rest = "",
+/// Locate WordprocessingML elements while retaining the original XML bytes.
+fn word_element_ranges(
+    xml: &str,
+    local_name: &[u8],
+) -> Result<Vec<std::ops::Range<usize>>, String> {
+    use quick_xml::{events::Event, name::ResolveResult, reader::NsReader};
+
+    let mut reader = NsReader::from_str(xml);
+    let mut ranges = Vec::new();
+    let mut depth = 0usize;
+    let mut active = None;
+    loop {
+        let start = reader.buffer_position() as usize;
+        let (namespace, event) = reader
+            .read_resolved_event()
+            .map_err(|error| error.to_string())?;
+        let is_word = matches!(namespace, ResolveResult::Bound(ns) if matches!(ns.as_ref(),
+            b"http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            | b"http://purl.oclc.org/ooxml/wordprocessingml/main"));
+        match event {
+            Event::Start(element) => {
+                if active.is_none() && is_word && element.local_name().as_ref() == local_name {
+                    active = Some((start, depth));
+                }
+                depth += 1;
             }
+            Event::Empty(element) => {
+                if active.is_none() && is_word && element.local_name().as_ref() == local_name {
+                    ranges.push(start..reader.buffer_position() as usize);
+                }
+            }
+            Event::End(_) => {
+                depth = depth.checked_sub(1).ok_or("Unexpected XML end element")?;
+                if let Some((start, level)) = active {
+                    if depth == level {
+                        ranges.push(start..reader.buffer_position() as usize);
+                        active = None;
+                    }
+                }
+            }
+            Event::Eof => {
+                if depth != 0 {
+                    return Err("Unclosed XML element".into());
+                }
+                return Ok(ranges);
+            }
+            _ => {}
         }
     }
-    out.push_str(rest);
-    out
+}
+
+fn remove_elements(xml: &str, local_name: &[u8]) -> Result<String, String> {
+    let ranges = word_element_ranges(xml, local_name)?;
+    let mut out = String::with_capacity(xml.len());
+    let mut previous = 0;
+    for range in ranges {
+        out.push_str(&xml[previous..range.start]);
+        previous = range.end;
+    }
+    out.push_str(&xml[previous..]);
+    Ok(out)
 }
 
 /// Whether the document has a page background (ページの色), which prints
@@ -389,7 +419,9 @@ pub fn has_background(docx: &[u8]) -> bool {
     OpcPackage::open(docx)
         .ok()
         .and_then(|package| package.part_str("word/document.xml").ok().flatten())
-        .is_some_and(|xml| xml.contains("<w:background"))
+        .is_some_and(|xml| {
+            word_element_ranges(&xml, b"background").is_ok_and(|ranges| !ranges.is_empty())
+        })
 }
 
 /// Whether the document has hidden text, which prints only when 隠し文字を
@@ -401,11 +433,9 @@ pub fn has_hidden_text(docx: &[u8]) -> bool {
     package.part_names().iter().any(|name| {
         name.starts_with("word/")
             && name.ends_with(".xml")
-            && package
-                .part_str(name)
-                .ok()
-                .flatten()
-                .is_some_and(|xml| xml.contains("<w:vanish"))
+            && package.part_str(name).ok().flatten().is_some_and(|xml| {
+                word_element_ranges(&xml, b"vanish").is_ok_and(|ranges| !ranges.is_empty())
+            })
     })
 }
 
@@ -419,7 +449,7 @@ pub fn print_docx(docx: &[u8], settings: &PrintSettings) -> Result<Vec<u8>, Stri
             .part_str("word/document.xml")
             .map_err(|e| e.to_string())?
         {
-            let stripped = remove_elements(&xml, "w:background");
+            let stripped = remove_elements(&xml, b"background")?;
             if stripped != xml {
                 package.replace("word/document.xml", stripped.into_bytes());
                 changed = true;
@@ -435,7 +465,7 @@ pub fn print_docx(docx: &[u8], settings: &PrintSettings) -> Result<Vec<u8>, Stri
             .collect();
         for name in names {
             if let Some(xml) = package.part_str(&name).map_err(|e| e.to_string())? {
-                let shown = remove_elements(&xml, "w:vanish");
+                let shown = remove_elements(&xml, b"vanish")?;
                 if shown != xml {
                     package.replace(&name, shown.into_bytes());
                     changed = true;
@@ -503,11 +533,40 @@ pub fn selection_docx(
 /// 印刷前にフィールドを更新する: the table of contents brought up to date
 /// (the fields the pages compute — PAGE, NUMPAGES, DATE — are computed as
 /// they are drawn). One undo step; nothing when there is no table of
-/// contents.
-pub fn update_fields(session: &mut dyn super::WordSession) {
-    session
-        .apply_command(HeadlessCommand::UpdateTableOfContents, true)
-        .ok();
+/// contents. Errors leave every table unchanged, rather than silently printing
+/// stale results after updating only part of the document.
+pub fn update_fields(session: &mut dyn super::WordSession) -> Result<(), String> {
+    let document = session.word_document();
+    let indices: Vec<usize> = document
+        .tables_of_contents()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, block)| {
+            let at = jade_selection::SelectionRange::collapsed(jade_selection::TextPosition::new(
+                block.start,
+                0,
+            ));
+            let locked = jade_docx_editor::fields::fields_at(document, at)
+                .iter()
+                .any(|field| field.name == "TOC" && field.locked);
+            (!locked).then_some(index)
+        })
+        .collect();
+    if indices.is_empty() {
+        return Ok(());
+    }
+    super::references::edit_document(session, "update_print_fields", true, move |document, _| {
+        // Work backwards so replacing a table cannot change the indices of
+        // tables that have not yet been updated.
+        for &index in indices.iter().rev() {
+            document
+                .update_table_of_contents_at(index)
+                .map_err(|error| {
+                    format!("Could not update table of contents {}: {error}", index + 1)
+                })?;
+        }
+        Ok(())
+    })
 }
 
 // ---- the PDF printed ---------------------------------------------------------------
@@ -743,10 +802,10 @@ mod tests {
 
     #[test]
     fn printing_strips_the_background_and_shows_hidden_text() {
-        let xml = r#"<w:document><w:background w:color="FF0000"><v:background/></w:background><w:body><w:p><w:r><w:rPr><w:vanish/><w:vanishX/></w:rPr><w:t>x</w:t></w:r><w:r><w:rPr><w:vanish w:val="1"/></w:rPr></w:r></w:p></w:body></w:document>"#;
-        let stripped = remove_elements(xml, "w:background");
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:v="urn:v"><w:background w:color="FF0000"><v:background/></w:background><w:body><w:p><w:r><w:rPr><w:vanish/><w:vanishX/></w:rPr><w:t>x</w:t></w:r><w:r><w:rPr><w:vanish w:val="1"/></w:rPr></w:r></w:p></w:body></w:document>"#;
+        let stripped = remove_elements(xml, b"background").unwrap();
         assert!(!stripped.contains("background"));
-        let shown = remove_elements(xml, "w:vanish");
+        let shown = remove_elements(xml, b"vanish").unwrap();
         assert!(!shown.contains("<w:vanish/>") && !shown.contains("<w:vanish w:val"));
         assert!(shown.contains("<w:vanishX/>"));
     }

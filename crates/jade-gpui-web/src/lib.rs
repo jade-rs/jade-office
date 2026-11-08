@@ -97,6 +97,17 @@ impl Host {
     }
 }
 
+/// Keep the page's navigation warning in sync with every editor tab.
+pub(crate) fn set_unsaved_changes(unsaved: bool) {
+    if let Ok(callback) = js_sys::Reflect::get(&js_sys::global(), &"jadeSetUnsavedChanges".into()) {
+        if let Some(callback) = callback.dyn_ref::<js_sys::Function>() {
+            callback
+                .call1(&JsValue::NULL, &JsValue::from_bool(unsaved))
+                .ok();
+        }
+    }
+}
+
 type Incoming = (String, Vec<u8>);
 
 thread_local! {

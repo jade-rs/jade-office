@@ -855,6 +855,8 @@ impl WebWindowInner {
 
             let old_units: Vec<u16> = old_value.encode_utf16().collect();
             let new_units: Vec<u16> = new_value.encode_utf16().collect();
+            let (element_selection_start, element_selection_end) =
+                this.ime_mirror.stored_selection();
 
             // A prefix/suffix diff is ambiguous when the inserted text
             // shares characters with what follows it (inserting "pactor "
@@ -875,21 +877,31 @@ impl WebWindowInner {
                         && old_units[old_units.len() - suffix_length..]
                             == new_units[new_units.len() - suffix_length..]
                 });
-            let suffix_length = anchored_suffix_length.unwrap_or_else(|| {
-                old_units
-                    .iter()
-                    .rev()
-                    .zip(new_units.iter().rev())
-                    .take_while(|(old_unit, new_unit)| old_unit == new_unit)
-                    .count()
-            });
+            let suffix_length = anchored_suffix_length
+                .unwrap_or_else(|| {
+                    old_units
+                        .iter()
+                        .rev()
+                        .zip(new_units.iter().rev())
+                        .take_while(|(old_unit, new_unit)| old_unit == new_unit)
+                        .count()
+                })
+                .min(
+                    old_units
+                        .len()
+                        .saturating_sub(element_selection_end as usize),
+                );
             let prefix_length = old_units
                 .iter()
                 .zip(&new_units)
                 .take_while(|(old_unit, new_unit)| old_unit == new_unit)
                 .count()
                 .min(old_units.len() - suffix_length)
-                .min(new_units.len() - suffix_length);
+                .min(new_units.len() - suffix_length)
+                // Selected text belongs to the replacement even when its
+                // prefix/suffix happens to equal the new text. The handler
+                // replaces the entire live selection below.
+                .min(element_selection_start as usize);
 
             let inserted_text = String::from_utf16_lossy(
                 &new_units[prefix_length..new_units.len() - suffix_length],
@@ -899,8 +911,6 @@ impl WebWindowInner {
             // The edit's shape relative to the element's pre-edit selection.
             // The element is private to the IME and these syncs, so the
             // stored selection is exact.
-            let (element_selection_start, element_selection_end) =
-                this.ime_mirror.stored_selection();
             let removed_before_selection =
                 (element_selection_start as usize).saturating_sub(prefix_length);
             let removed_after_selection =
@@ -1046,7 +1056,7 @@ impl WebWindowInner {
     /// exposes `clipboardData` synchronously inside the event. It fires for
     /// any browser-initiated paste (keyboard, menu bar, context menu).
     ///
-    /// Text-only pastes reach the input handler synchronously. Pasted image
+    /// Text and HTML pastes reach the input handler synchronously. Pasted image
     /// files only expose their bytes through asynchronous blob reads, so
     /// pastes containing images are delivered once those reads resolve — to
     /// whichever input handler is focused at that point, matching how an
@@ -1062,6 +1072,11 @@ impl WebWindowInner {
                 .get_data("text/plain")
                 .ok()
                 .filter(|text| !text.is_empty());
+
+            let html = clipboard_data
+                .get_data("text/html")
+                .ok()
+                .filter(|html| !html.trim().is_empty());
 
             // File handles must be collected synchronously: the browser
             // clears `clipboardData`'s item list once this handler returns,
@@ -1083,26 +1098,31 @@ impl WebWindowInner {
                 }
             }
 
-            if text.is_none() && image_files.is_empty() {
+            if text.is_none() && html.is_none() && image_files.is_empty() {
                 return;
             }
             event.prevent_default();
 
-            if image_files.is_empty() {
-                if let Some(text) = text {
-                    this.with_input_handler(|handler| {
-                        handler.paste(ClipboardItem::new_string(text));
-                    });
+            // Carry HTML beside the plain text in GPUI's string metadata.
+            // Capture both inside the event; clipboardData expires afterwards.
+            let mut entries = Vec::new();
+            if text.is_some() || html.is_some() {
+                let mut string = ClipboardString::new(text.unwrap_or_default());
+                if let Some(html) = html {
+                    string = string.with_json_metadata(std::collections::BTreeMap::from([(
+                        "text/html",
+                        html,
+                    )]));
                 }
+                entries.push(ClipboardEntry::String(string));
+            }
+            if image_files.is_empty() {
+                this.with_input_handler(|handler| handler.paste(ClipboardItem { entries }));
                 return;
             }
 
             let this = Rc::clone(&this);
             wasm_bindgen_futures::spawn_local(async move {
-                let mut entries = Vec::new();
-                if let Some(text) = text {
-                    entries.push(ClipboardEntry::String(ClipboardString::new(text)));
-                }
                 for (format, file) in image_files {
                     match crate::platform::read_blob_bytes(&file).await {
                         Ok(bytes) => {

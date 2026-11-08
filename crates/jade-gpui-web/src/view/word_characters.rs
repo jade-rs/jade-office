@@ -120,7 +120,6 @@ pub enum DialogList {
     Ligatures,
     NumberSpacing,
     NumberForm,
-    StylisticSet,
     Glow,
     TextOutline,
 }
@@ -515,8 +514,10 @@ pub(crate) fn button(
 pub(crate) fn check(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
-    on: bool,
+    state: impl Into<Option<bool>>,
 ) -> gpui::Stateful<gpui::Div> {
+    let state = state.into();
+    let on = state == Some(true);
     div()
         .id(id)
         .flex()
@@ -536,7 +537,11 @@ pub(crate) fn check(
                     box_.bg(theme::accent()).text_color(gpui::white())
                 })
                 .text_size(px(10.0))
-                .child(if on { "✓" } else { "" }),
+                .child(match state {
+                    Some(true) => "✓",
+                    Some(false) => "",
+                    None => "−",
+                }),
         )
         .child(label.into())
 }

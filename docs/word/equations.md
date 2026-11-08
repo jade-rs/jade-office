@@ -43,7 +43,31 @@ input and conversion layers:
 |---|---|---|---|
 | `m:oMath` | an equation; inline when it shares its paragraph with text | — | read; drawn as an object in its line, as tall and deep as its structure; edited in place; saved as written |
 | `m:oMathPara` | display math: one or more `m:oMath` on lines of their own, alone in a `w:p` | `m:oMathParaPr/m:jc`: `left`, `right`, `center`, `centerGroup` (default) | read; each `m:oMath` on its own lines, justified as a group (`centerGroup`) or line by line (`center`); edited and saved |
-| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after) and `defJc` used by the layout; the margins and spacings are read but not applied; saved as written |
+| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `mathFont` applies to inline, display and text-box equations; `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after), margins and `defJc` used by the layout; `dispDef=false` disables math margins and continuation settings and uses the paragraph alignment cascade; explicit equation alignment still wins; the four equation-spacing settings are preserved without affecting layout, consistent with the Word implementation notes below; saved as written |
+
+### Equation spacing compatibility
+
+The published Word implementation notes say Word ignores `preSp`, `postSp`,
+`interSp`, and `intraSp` (and does not write them back). jade preserves these
+settings on save but also leaves them out of layout. Their presence in the
+OOXML schema alone does not establish a missing Word layout feature. New Word
+captures are still needed to check whether current Word releases differ from
+these implementation notes.
+
+Sources: [preSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/e03f7edc-179c-4017-8869-2a9930c37c68),
+[postSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/2ec60dcb-1daf-4437-9ec0-729017b3dc21),
+[interSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/2294400c-b0fb-499d-aa04-c38fc4028c88),
+[intraSp](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/0c50cee0-a9b4-4139-8e36-b86a8a290208).
+
+### Literal run compatibility
+
+The OOXML `m:lit` definition suppresses operator interpretation, but the
+published Word implementation note says Word 2007, SP1 and SP2 do not change
+operator interpretation for this property. Current Word captures are needed
+before treating literal-run spacing as a confirmed compatibility gap; jade
+currently preserves the property without applying it to layout.
+
+Source: [Word implementation note for lit](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/e941fac0-a989-49a8-a8f0-766a141b73a1).
 
 ## Structures
 
@@ -80,9 +104,23 @@ level (`brkBin`), continuation lines indented by `wrapIndent` or set flush
 right with `wrapRight`. Runs with `m:aln` align their lines on that point.
 Inline equations do not break.
 
+Equation-array distribution remains unimplemented. The published Word
+implementation note for [`maxDist`](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4a8c035c-c930-4e87-aabf-32715949ba48)
+limits its effect to arrays with alignment points. Future Word comparisons
+must include arrays with and without these points, rather than assuming
+that every array expands when the setting is enabled.
+
 ### Faces and metrics
 
-Word sets equations in Cambria Math and lays them out from its OpenType
+The document's `mathFont` setting selects the math face, with Cambria Math
+as the fallback. Normal-text (`m:nor`) runs without an explicit run font
+resolve the document text defaults, including the default paragraph style
+and theme font. Explicit run fonts remain authoritative. Custom paragraph
+styles for normal-text runs and fresh Word captures for these font and
+display-default changes remain pending; renderer regression tests establish
+implementation behavior, not Word equivalence.
+
+By default, Word sets equations in Cambria Math and lays them out from its OpenType
 MATH table. The native shell binds Cambria Math from Office's own fonts
 (face 1 of `Cambria.ttc` in Word's `DFonts`) and draws glyph outlines,
 variants and assemblies from the face; with no face bound (the browser
@@ -229,9 +267,9 @@ enclosed characters and distributed text keep their own handling.
 
 - Ink Equation, user Math AutoCorrect entries, and Math AutoCorrect outside
   equations.
-- `m:mathPr` margins and spacings (`lMargin`, `rMargin`, `preSp`, `postSp`,
-  `interSp`, `intraSp`), `brkBin` `repeat` (breaks as `before`),
-  `brkBinSub`, `eqArr` `maxDist`/`objDist`, `m:lit`.
+- `brkBin` `repeat` (breaks as `before`), `brkBinSub`,
+  `eqArr` `maxDist`/`objDist`.
+- Current Word behavior for `m:lit` (see the implementation-note caveat above).
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
 - Selecting a range inside an equation (the caret is a point; a structure

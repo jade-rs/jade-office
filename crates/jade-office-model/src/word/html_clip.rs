@@ -4,13 +4,15 @@
 //! plain text.
 //!
 //! The markup is read the way a paste into Word reads it: block elements
-//! (`p`, `div`, headings, list items, table rows) and `br` end paragraphs;
+//! (`p`, `div`, headings, list items, table rows) end paragraphs; `br` inserts
+//! a line break inside the current paragraph;
 //! `b`/`strong`, `i`/`em`, `u`, `s`/`strike`/`del`, `sup` and `sub` and the
 //! inline `style` declarations Word and the browsers write (`font-weight`,
 //! `font-style`, `text-decoration`, `vertical-align`, `font-size`,
 //! `font-family`, `color`, `text-align`) give the runs and paragraphs their
 //! formatting. Scripts, styles and comments are dropped; entities are
-//! decoded; runs of white space collapse as a browser shows them.
+//! decoded; ordinary HTML whitespace collapses while Unicode space separators
+//! retain their original characters.
 
 use jade_docx_headless_api::HeadlessRunStyle;
 
@@ -49,6 +51,10 @@ struct Frame {
     tag: String,
     style: HeadlessRunStyle,
     alignment: Option<String>,
+    preserve_whitespace: bool,
+    /// Paragraphs already emitted when this element opened. An empty paragraph
+    /// element still counts, but a wrapper around emitted paragraphs does not.
+    paragraphs_at_open: usize,
 }
 
 /// A colour as CSS writes it (`#c00`, `#C00000`, `rgb(192, 0, 0)`, a few
@@ -145,28 +151,85 @@ fn css_family(value: &str) -> Option<String> {
 
 /// `name="value"`, `name='value'` or `name=value` in a start tag.
 fn attribute(tag: &str, name: &str) -> Option<String> {
-    let lower = tag.to_ascii_lowercase();
-    let mut from = 0;
-    while let Some(found) = lower[from..].find(name) {
-        let at = from + found;
-        from = at + name.len();
-        let before = lower[..at].chars().last();
-        if !before.is_some_and(char::is_whitespace) {
+    let bytes = tag.as_bytes();
+    let mut at = bytes.iter().position(u8::is_ascii_whitespace)?;
+    while at < bytes.len() {
+        while at < bytes.len() && (bytes[at].is_ascii_whitespace() || bytes[at] == b'/') {
+            at += 1;
+        }
+        let start = at;
+        while at < bytes.len() && !bytes[at].is_ascii_whitespace() && bytes[at] != b'=' {
+            at += 1;
+        }
+        if start == at {
+            // Stray '=' is not an attribute name; always advance on malformed HTML.
+            at += 1;
             continue;
         }
-        let rest = tag[from..].trim_start();
-        let Some(rest) = rest.strip_prefix('=') else {
-            continue;
-        };
-        let rest = rest.trim_start();
-        let value = match rest.chars().next() {
-            Some(quote @ ('"' | '\'')) => rest[1..].split(quote).next().unwrap_or(""),
-            _ => rest
-                .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
-                .next()
-                .unwrap_or(""),
-        };
-        return Some(decode_entities(value));
+        let key = &tag[start..at];
+        while at < bytes.len() && bytes[at].is_ascii_whitespace() {
+            at += 1;
+        }
+        let mut value = "";
+        if bytes.get(at) == Some(&b'=') {
+            at += 1;
+            while at < bytes.len() && bytes[at].is_ascii_whitespace() {
+                at += 1;
+            }
+            if let Some(quote @ (b'"' | b'\'')) = bytes.get(at).copied() {
+                at += 1;
+                let start = at;
+                while at < bytes.len() && bytes[at] != quote {
+                    at += 1;
+                }
+                value = &tag[start..at];
+                if at < bytes.len() {
+                    at += 1;
+                }
+            } else {
+                let start = at;
+                while at < bytes.len() && !bytes[at].is_ascii_whitespace() {
+                    at += 1;
+                }
+                value = &tag[start..at];
+            }
+        }
+        if key.eq_ignore_ascii_case(name) {
+            return Some(decode_entities(value));
+        }
+    }
+    None
+}
+
+/// Tag terminator, excluding greater-than signs inside quoted attribute values.
+/// Quotes inside an unquoted value remain literal, matching HTML error recovery.
+fn tag_end(html: &str) -> Option<usize> {
+    let mut quote = None;
+    let mut value_pending = false;
+    let mut unquoted = false;
+    for (at, byte) in html.bytes().enumerate() {
+        if let Some(delimiter) = quote {
+            if byte == delimiter {
+                quote = None;
+            }
+        } else if byte == b'>' {
+            return Some(at);
+        } else if unquoted {
+            if byte.is_ascii_whitespace() {
+                unquoted = false;
+            }
+        } else if value_pending {
+            if !byte.is_ascii_whitespace() {
+                value_pending = false;
+                if matches!(byte, b'"' | b'\'') {
+                    quote = Some(byte);
+                } else {
+                    unquoted = true;
+                }
+            }
+        } else if byte == b'=' {
+            value_pending = true;
+        }
     }
     None
 }
@@ -230,6 +293,8 @@ fn frame_for(tag_name: &str, tag: &str, parent: &Frame) -> Frame {
         tag: tag_name.to_string(),
         style: parent.style.clone(),
         alignment: parent.alignment.clone(),
+        preserve_whitespace: parent.preserve_whitespace,
+        paragraphs_at_open: 0,
     };
     let style = &mut frame.style;
     match tag_name {
@@ -318,6 +383,11 @@ fn frame_for(tag_name: &str, tag: &str, parent: &Frame) -> Frame {
                     }
                 }
                 "text-align" => frame.alignment = alignment(&lower),
+                "white-space" => match lower.as_str() {
+                    "pre" | "pre-wrap" | "break-spaces" => frame.preserve_whitespace = true,
+                    "normal" | "nowrap" | "pre-line" => frame.preserve_whitespace = false,
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -349,6 +419,8 @@ struct Builder {
     space: Option<HeadlessRunStyle>,
     /// Inside `pre`: white space is kept.
     preformatted: usize,
+    /// A lone unmarked BR is the placeholder used for an empty HTML block.
+    placeholder_break: bool,
 }
 
 impl Builder {
@@ -357,6 +429,7 @@ impl Builder {
         if text.is_empty() {
             return;
         }
+        self.placeholder_break = false;
         match self.current.runs.last_mut() {
             Some(run) if run.style == *style => run.text.push_str(text),
             _ => self.current.runs.push(ClipRun {
@@ -370,13 +443,25 @@ impl Builder {
         if self.current.runs.is_empty() && self.current.alignment.is_none() {
             self.current.alignment = frame.alignment.clone();
         }
-        if self.preformatted > 0 {
-            self.push(&text.replace('\u{a0}', " "), &frame.style);
+        if self.preformatted > 0 || frame.preserve_whitespace {
+            if let Some(style) = self.space.take() {
+                if self
+                    .current
+                    .runs
+                    .last()
+                    .is_some_and(|run| !run.text.ends_with('\n'))
+                {
+                    self.push(" ", &style);
+                }
+            }
+            self.push(text, &frame.style);
             return;
         }
         let mut collapsed = String::new();
         for character in text.chars() {
-            if character.is_whitespace() && character != '\u{a0}' {
+            // CSS collapses document whitespace, not Unicode space separators.
+            // Preserve NBSP, narrow NBSP and width-specific spaces verbatim.
+            if matches!(character, ' ' | '\t' | '\n' | '\r' | '\u{c}') {
                 if self.space.is_none() {
                     // The space keeps the style of the text it was in.
                     self.push(&std::mem::take(&mut collapsed), &frame.style);
@@ -386,23 +471,30 @@ impl Builder {
             }
             if let Some(style) = self.space.take() {
                 // None at a paragraph's start.
-                if !self.current.runs.is_empty() {
+                if self
+                    .current
+                    .runs
+                    .last()
+                    .is_some_and(|run| !run.text.ends_with('\n'))
+                {
                     self.push(" ", &style);
                 }
             }
-            collapsed.push(if character == '\u{a0}' {
-                ' '
-            } else {
-                character
-            });
+            collapsed.push(character);
         }
         self.push(&collapsed, &frame.style);
     }
 
-    /// Ends the paragraph; `forced` (a `br`) even when it is empty.
+    /// Ends a block, retaining explicit empty paragraphs and BR placeholders.
     fn break_paragraph(&mut self, forced: bool) {
         self.space = None;
+        let placeholder = std::mem::take(&mut self.placeholder_break);
+        if placeholder {
+            self.current.runs.clear();
+        }
+        let forced = forced || placeholder;
         if self.current.runs.is_empty() && !forced {
+            self.current = ClipParagraph::default();
             return;
         }
         self.paragraphs.push(std::mem::take(&mut self.current));
@@ -410,21 +502,6 @@ impl Builder {
 
     fn finish(mut self) -> RichClip {
         self.break_paragraph(false);
-        // Leading and trailing empty paragraphs are the markup's, not text.
-        while self
-            .paragraphs
-            .last()
-            .is_some_and(|paragraph| paragraph.runs.is_empty())
-        {
-            self.paragraphs.pop();
-        }
-        while self
-            .paragraphs
-            .first()
-            .is_some_and(|paragraph| paragraph.runs.is_empty())
-        {
-            self.paragraphs.remove(0);
-        }
         RichClip {
             paragraphs: self.paragraphs,
         }
@@ -432,6 +509,98 @@ impl Builder {
 }
 
 impl RichClip {
+    /// HTML for other applications, alongside `plain_text()` on the clipboard.
+    /// Only text and formatting are emitted; copied text cannot become markup.
+    pub fn to_html(&self) -> String {
+        fn escaped(value: &str) -> String {
+            value
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+                .replace('\'', "&#39;")
+        }
+        let mut html = String::from("<html><body><!--StartFragment-->");
+        for paragraph in &self.paragraphs {
+            let alignment = match paragraph.alignment.as_deref() {
+                Some("left" | "start") => "left",
+                Some("right" | "end") => "right",
+                Some("center") => "center",
+                Some("both" | "distribute") => "justify",
+                _ => "left",
+            };
+            html.push_str(&format!(
+                "<p style=\"margin:0;white-space:pre-wrap;text-align:{alignment}\">"
+            ));
+            for run in &paragraph.runs {
+                let style = &run.style;
+                let mut css = String::new();
+                if let Some(bold) = style.bold {
+                    css.push_str(if bold {
+                        "font-weight:700;"
+                    } else {
+                        "font-weight:400;"
+                    });
+                }
+                if let Some(italic) = style.italic {
+                    css.push_str(if italic {
+                        "font-style:italic;"
+                    } else {
+                        "font-style:normal;"
+                    });
+                }
+                let mut decorations = Vec::new();
+                if style.underline == Some(true) {
+                    decorations.push("underline");
+                }
+                if style.strike == Some(true) {
+                    decorations.push("line-through");
+                }
+                if !decorations.is_empty() {
+                    css.push_str(&format!("text-decoration:{};", decorations.join(" ")));
+                } else if style.underline.is_some() || style.strike.is_some() {
+                    css.push_str("text-decoration:none;");
+                }
+                match style.baseline.as_deref() {
+                    Some("superscript") => css.push_str("vertical-align:super;"),
+                    Some("subscript") => css.push_str("vertical-align:sub;"),
+                    _ => {}
+                }
+                if let Some(size) = style
+                    .font_size
+                    .filter(|size| size.is_finite() && *size > 0.0)
+                {
+                    css.push_str(&format!("font-size:{size}pt;"));
+                }
+                if let Some(family) = &style.font_family {
+                    // Quote the CSS string before escaping the HTML attribute.
+                    let family = family
+                        .replace('\\', "\\\\")
+                        .replace('\'', "\\'")
+                        .replace(['\r', '\n', '\0'], " ");
+                    css.push_str(&format!("font-family:'{family}';"));
+                }
+                if let Some(color) = &style.color {
+                    let color = color.strip_prefix('#').unwrap_or(color);
+                    if color.len() == 6 && color.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                        css.push_str(&format!("color:#{color};"));
+                    }
+                }
+                html.push_str(&format!("<span style=\"{}\">", escaped(&css)));
+                html.push_str(
+                    &escaped(&run.text).replace('\n', "<br data-jade-line-break=\"true\">"),
+                );
+                html.push_str("</span>");
+            }
+            if paragraph.runs.is_empty() {
+                html.push_str("<br>");
+            }
+            html.push_str("</p>");
+        }
+        html.push_str("<!--EndFragment--></body></html>");
+        html
+    }
+
     /// The clipboard's `text/html` as a copy with its formatting. Only the
     /// fragment between `<!--StartFragment-->` and `<!--EndFragment-->` is
     /// read when the markup marks one, as Windows' and Office's HTML
@@ -465,7 +634,7 @@ impl RichClip {
                 rest = comment.find("-->").map_or("", |end| &comment[end + 3..]);
                 continue;
             }
-            let Some(close) = rest.find('>') else {
+            let Some(close) = tag_end(rest) else {
                 break;
             };
             let tag = &rest[1..close];
@@ -480,8 +649,8 @@ impl RichClip {
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == ':')
                 .collect::<String>()
                 .to_ascii_lowercase();
-            // Office writes `o:p` and its kin; their names are not HTML's.
-            let name = name.rsplit(':').next().unwrap_or("").to_string();
+            // Keep Office namespace wrappers distinct: `o:p` inside an HTML
+            // paragraph is a placeholder, not another paragraph element.
             if let Some(skipped) = &skipping {
                 if closing && *skipped == name {
                     skipping = None;
@@ -496,12 +665,39 @@ impl RichClip {
             }
             let block = BLOCKS.contains(&name.as_str());
             if name == "br" {
-                builder.break_paragraph(true);
+                if builder.current.runs.is_empty() {
+                    builder.current.alignment =
+                        stack.last().and_then(|frame| frame.alignment.clone());
+                }
+                // Keep the paragraph's formatting and write a text-wrapping
+                // break. A lone browser placeholder BR stays an empty block;
+                // exported genuine breaks are marked to disambiguate that case.
+                let placeholder = builder.current.runs.is_empty()
+                    && attribute(tag, "data-jade-line-break").as_deref() != Some("true");
+                let frame = stack.last().cloned().unwrap_or_default();
+                builder.space = None;
+                builder.push("\n", &frame.style);
+                builder.placeholder_break = placeholder;
                 continue;
             }
             if closing {
                 if block {
-                    builder.break_paragraph(false);
+                    let empty_paragraph = stack
+                        .iter()
+                        .rfind(|frame| frame.tag == name)
+                        .filter(|frame| frame.paragraphs_at_open == builder.paragraphs.len())
+                        .filter(|_| {
+                            matches!(
+                                name.as_str(),
+                                "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" | "pre"
+                            )
+                        });
+                    if let Some(frame) = empty_paragraph {
+                        if builder.current.runs.is_empty() {
+                            builder.current.alignment = frame.alignment.clone();
+                        }
+                    }
+                    builder.break_paragraph(empty_paragraph.is_some());
                 }
                 if name == "pre" {
                     builder.preformatted = builder.preformatted.saturating_sub(1);
@@ -541,8 +737,102 @@ impl RichClip {
                 builder.preformatted += 1;
             }
             let parent = stack.last().cloned().unwrap_or_default();
-            stack.push(frame_for(&name, tag, &parent));
+            let mut frame = frame_for(&name, tag, &parent);
+            frame.paragraphs_at_open = builder.paragraphs.len();
+            stack.push(frame);
         }
         builder.finish()
+    }
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+
+    #[test]
+    fn clipboard_html_accepts_document_and_imported_color_forms() {
+        for color in ["123456", "#123456"] {
+            let clip = RichClip {
+                paragraphs: vec![ClipParagraph {
+                    runs: vec![ClipRun {
+                        text: "Color".into(),
+                        style: HeadlessRunStyle {
+                            color: Some(color.into()),
+                            ..Default::default()
+                        },
+                    }],
+                    ..Default::default()
+                }],
+            };
+            assert!(clip.to_html().contains("color:#123456;"));
+        }
+    }
+
+    #[test]
+    fn clipboard_html_roundtrips_text_and_character_formatting() {
+        let style = HeadlessRunStyle {
+            bold: Some(true),
+            italic: Some(true),
+            underline: Some(true),
+            strike: Some(true),
+            baseline: Some("superscript".into()),
+            font_size: Some(18.5),
+            font_family: Some("Noto Sans JP".into()),
+            color: Some("123456".into()),
+        };
+        let clip = RichClip {
+            paragraphs: vec![
+                ClipParagraph {
+                    alignment: Some("center".into()),
+                    runs: vec![ClipRun {
+                        text: "  A<&\"' 日本語\t  ".into(),
+                        style: style.clone(),
+                    }],
+                    ..Default::default()
+                },
+                ClipParagraph {
+                    alignment: Some("both".into()),
+                    runs: vec![ClipRun {
+                        text: "Second".into(),
+                        style: HeadlessRunStyle {
+                            bold: Some(false),
+                            italic: Some(false),
+                            underline: Some(false),
+                            strike: Some(false),
+                            ..Default::default()
+                        },
+                    }],
+                    ..Default::default()
+                },
+            ],
+        };
+        let html = clip.to_html();
+        assert!(html.contains("&lt;&amp;&quot;&#39;"));
+        assert!(html.contains("<!--StartFragment-->"));
+        assert_eq!(RichClip::from_html(&html), clip);
+    }
+
+    #[test]
+    fn clipboard_html_cannot_turn_text_or_font_names_into_markup() {
+        let clip = RichClip {
+            paragraphs: vec![ClipParagraph {
+                runs: vec![ClipRun {
+                    text: "<script>alert('text')</script>".into(),
+                    style: HeadlessRunStyle {
+                        font_family: Some("'\" onmouseover=\"alert(1)\\\n".into()),
+                        color: Some("red;position:fixed".into()),
+                        font_size: Some(f32::NAN),
+                        ..Default::default()
+                    },
+                }],
+                ..Default::default()
+            }],
+        };
+        let html = clip.to_html();
+        assert!(!html.contains("<script>"));
+        assert!(!html.contains("style=\"font-family:'\""));
+        assert!(!html.contains("position:fixed"));
+        assert!(!html.contains("NaN"));
+        assert_eq!(RichClip::from_html(&html).plain_text(), clip.plain_text());
     }
 }

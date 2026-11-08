@@ -10,6 +10,24 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 web="$root/crates/jade-web"
 www="$web/www"
 
+# macOS's ar/ranlib cannot index ring's WebAssembly C objects. Use LLVM's
+# archiver when available, while preserving an explicitly configured tool.
+if [[ "$(uname -s)" == Darwin && -z "${AR_wasm32_unknown_unknown:-}${TARGET_AR:-}${AR:-}" ]]; then
+  if command -v llvm-ar >/dev/null; then
+    export AR_wasm32_unknown_unknown="$(command -v llvm-ar)"
+  elif command -v brew >/dev/null; then
+    # Versioned Homebrew LLVM installations are keg-only, so their binaries
+    # need not be on PATH even when the toolchain is installed.
+    brew_prefix="$(brew --prefix)"
+    for llvm_ar in "$brew_prefix"/opt/llvm*/bin/llvm-ar; do
+      if [[ -x "$llvm_ar" ]]; then
+        export AR_wasm32_unknown_unknown="$llvm_ar"
+        break
+      fi
+    done
+  fi
+fi
+
 cargo build --manifest-path "$web/Cargo.toml" --lib --release --target wasm32-unknown-unknown
 wasm-bindgen "$web/target/wasm32-unknown-unknown/release/jade_web.wasm" \
   --out-dir "$www/pkg" --target web --no-typescript
