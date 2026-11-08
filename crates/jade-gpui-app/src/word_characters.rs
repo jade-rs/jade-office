@@ -897,7 +897,7 @@ mod tests {
             view.run_ribbon(Action::Characters(CharAction::Shading), cx);
             view.run_ribbon(Action::Characters(CharAction::Border), cx);
             let format = view.format_state().character;
-            assert!(format.shading.is_none());
+            assert_eq!(format.shading.as_deref(), Some("none"));
             assert_ne!(format.border, Some(true));
         });
         let xml = view.read_with(cx, |view, _| document_xml(view));
