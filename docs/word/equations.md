@@ -145,7 +145,12 @@ note kind, ID and block path, so the same editor can address them inside
 note table cells. The
 `display_equations_in_note_tables_keep_their_location_and_history`
 regression covers both note kinds, other equations and text, save/reopen
-and exact undo/redo. Equation insertion in notes remains unsupported.
+and exact undo/redo. Inline equations can also be inserted into footnote
+and endnote paragraphs, including table cells. The
+`inline_equations_insert_in_note_tables_with_utf8_carets_and_history`
+regression checks Japanese text boundaries, the caret after the equation,
+note reference markers, neighbouring content, save/reopen and exact undo/redo.
+Display equation insertion in notes remains unsupported.
 
 The equation toolbar recognizes an inline equation at either boundary of
 its rendered object, including immediately after its three-byte U+FFFC
