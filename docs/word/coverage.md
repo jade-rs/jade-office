@@ -257,7 +257,7 @@ quality stream).
 | 192 | page colour | `jade-web/tests/edits_documents.rs::dark_paper_turns_the_pages_over_and_back` <br> `jade-docx-native-render/tests/native_document.rs::dark_paper_turns_the_page_over_on_screen_but_not_in_the_pdf` |
 | 193 | blank page | `jade-docx-editor/src/commands/insert_blank_page.rs::blank_page_uses_one_or_two_breaks_and_round_trips_history` |
 | 194 | cover page | `jade-web/tests/section_setup_documents.rs::page_borders_color_and_a_cover_page` <br> `jade-docx-headless-api/src/lib.rs::cover_page_wire_schema_requires_a_strict_paragraph_list` |
-| 195 | header / footer editing | `jade-web/tests/pages_documents.rs::headers_and_footers_take_text_and_a_page_number` |
+| 195 | header / footer editing | `jade-web/tests/pages_documents.rs::headers_and_footers_take_text_and_a_page_number` <br> `jade-web/tests/story_documents.rs::saving_an_open_story_saves_the_whole_document_and_keeps_editing` |
 | 196 | first-page header | `jade-docx-native-render/tests/pdf_export.rs::pdf_keeps_first_page_and_section_specific_header_footer_stories` <br> `jade-docx-reader/src/parser.rs::title_page_explicit_false_disables_first_page_variant` |
 | 197 | odd / even headers | `core/jade-docx-reader/src/settings.rs::parses_even_and_odd_headers_toggle` |
 | 198 | link to previous | `core/jade-docx-editor/tests/section_layout_and_stories.rs::a_section_unlinks_and_links_its_header` |

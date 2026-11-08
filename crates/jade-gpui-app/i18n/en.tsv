@@ -5199,3 +5199,7 @@ setup.fill.foreground	Foreground
 setup.fill.background	Background
 setup.fill.choose_picture	Select Picture...
 setup.fill.no_picture	No picture selected
+
+workspace.close_unsaved	Save changes to “{name}” before closing?
+workspace.close_download	Download a copy
+workspace.close_discard	Close without saving

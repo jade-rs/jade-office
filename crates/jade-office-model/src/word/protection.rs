@@ -41,9 +41,7 @@ pub trait WordProtection: WordSession {
     /// Whether edits are being kept as tracked changes by a restriction
     /// (変更履歴のロック): tracking may not be turned off.
     fn tracking_locked(&self) -> bool {
-        self.editing_restriction().is_some_and(|restriction| {
-            restriction.enforced && restriction.kind == Some(EditingKind::TrackedChanges)
-        })
+        self.word_document().tracking_locked()
     }
 
     /// 保護の開始: `kind` (or only formatting), with a password when one is
@@ -76,17 +74,13 @@ pub trait WordProtection: WordSession {
         )
     }
 
-    /// 保護の中止: with the password when the restriction has one. A
-    /// protection Word wrote with its older hash cannot be checked here
-    /// and is lifted as Word lifts one without a password.
+    /// 保護の中止: verify the password before lifting a protected restriction.
     fn stop_restriction(&mut self, password: &str) -> Result<(), String> {
         let Some(restriction) = self.editing_restriction() else {
             return Ok(());
         };
         if let Some(hash) = &restriction.password {
-            if hash.verifies(password) == Some(false) {
-                return Err("the password is wrong".to_string());
-            }
+            hash.verify_for_unlock(password)?;
         }
         // Not enforced any more, the choices kept for next time.
         let stopped = EditingRestriction {

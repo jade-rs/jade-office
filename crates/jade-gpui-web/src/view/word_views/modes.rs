@@ -51,7 +51,12 @@ impl EditMode {
 
 /// Changes the mode, turning change tracking on for 校閲 and off when
 /// leaving it.
-pub fn set_mode(view: &mut DocumentView, mode: EditMode, cx: &mut Context<DocumentView>) {
+pub fn set_mode(
+    view: &mut DocumentView,
+    mode: EditMode,
+    window: &mut Window,
+    cx: &mut Context<DocumentView>,
+) {
     let before = view.views.mode;
     view.views.mode_menu = false;
     if before == mode {
@@ -62,7 +67,7 @@ pub fn set_mode(view: &mut DocumentView, mode: EditMode, cx: &mut Context<Docume
     if (mode == EditMode::Reviewing) != tracking
         && (mode == EditMode::Reviewing || before == EditMode::Reviewing)
     {
-        view.review_action(crate::word_review::ReviewAction::ToggleTracking, cx);
+        view.review_action(crate::word_review::ReviewAction::ToggleTracking, window, cx);
     }
 }
 

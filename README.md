@@ -43,6 +43,14 @@ The engine's renderers — documents, slides and sheets — also run as WebAssem
 python3 -m http.server 8765 --directory crates/jade-web/www
 ```
 
+On macOS, put LLVM's tools on `PATH` before building (for example,
+`export PATH="$(brew --prefix llvm@21)/bin:$PATH"` with Homebrew's `llvm@21`
+installed). The build script selects `llvm-ar` for the WASM target, including
+keg-only Homebrew LLVM installations when `brew` is on `PATH`. Apple's
+`ar`/`ranlib` can leave `ring`'s archive empty, causing undefined
+`ring_core_*` symbols at link time. After changing tools, clean `ring` in
+each affected crate's target directory before rebuilding.
+
 The browser IME regression runs against that server with Playwright. It checks
 the native input's candidate anchor, Word composition, scrolling and zoom, and
 multiline Excel editing at 1× and 2× device scale. Install its test dependency

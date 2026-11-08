@@ -261,3 +261,41 @@ fn the_ribbon_shows_and_sets_the_caret_section() {
     document.place_caret(paragraph + 1, 0);
     assert_eq!(document.page_setup().landscape, first.landscape);
 }
+
+#[test]
+fn paragraph_grid_can_override_an_off_style_and_survives_history_and_reopen() {
+    use common::open_bytes;
+    use jade_office_model::word::new::{blank_document, Blank};
+    use jade_office_model::word::package::Package;
+
+    let mut package = Package::open(&blank_document(Blank::Japanese)).unwrap();
+    let main = package.main().to_string();
+    let styles = package.related(&main, "styles").unwrap();
+    package.put_bytes(&styles, br#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="GridOff"><w:name w:val="Grid off"/><w:pPr><w:snapToGrid w:val="0"/></w:pPr></w:style></w:styles>"#.to_vec());
+    package.put_bytes(&main, br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="GridOff"/><w:keepNext/></w:pPr><w:r><w:t>First</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="GridOff"/></w:pPr><w:r><w:t>Second</w:t></w:r></w:p></w:body></w:document>"#.to_vec());
+    let mut document = open_bytes(&package.write().unwrap());
+    document.place_caret(0, 0);
+    assert!(!document.snap_to_grid());
+    let before = document.export_docx().unwrap();
+    document.set_snap_to_grid(true).unwrap();
+    assert!(document.snap_to_grid());
+    let enabled = document.export_docx().unwrap();
+    let xml = part(&enabled, "word/document.xml");
+    assert!(xml.contains(r#"<w:snapToGrid w:val="1"/>"#), "{xml}");
+    assert!(xml.contains("<w:keepNext/>"));
+    let mut reopened = open_bytes(&enabled);
+    reopened.place_caret(0, 0);
+    assert!(reopened.snap_to_grid());
+    reopened.place_caret(1, 0);
+    assert!(!reopened.snap_to_grid());
+    document.undo().unwrap();
+    assert!(!document.snap_to_grid());
+    assert_eq!(document.export_docx().unwrap(), before);
+    document.redo().unwrap();
+    assert!(document.snap_to_grid());
+    assert_eq!(document.export_docx().unwrap(), enabled);
+    document.set_snap_to_grid(false).unwrap();
+    let mut reopened = open_bytes(&document.export_docx().unwrap());
+    reopened.place_caret(0, 0);
+    assert!(!reopened.snap_to_grid());
+}

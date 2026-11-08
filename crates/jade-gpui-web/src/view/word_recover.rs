@@ -116,6 +116,20 @@ pub(crate) mod store {
         });
     }
 
+    /// Keeps the latest opened/saved file for the next visit (at most eight).
+    pub fn remember(name: &str, bytes: &[u8]) {
+        let promise = call(
+            "remember",
+            &[
+                JsValue::from_str(name),
+                js_sys::Uint8Array::from(bytes).into(),
+            ],
+        );
+        wasm_bindgen_futures::spawn_local(async move {
+            awaited(promise).await;
+        });
+    }
+
     pub fn put_template(key: &str, bytes: &[u8]) {
         put("templates", key, key, super::now(), bytes);
     }
@@ -167,6 +181,16 @@ pub(crate) mod store {
 }
 
 impl DocView {
+    /// Continues protecting a recovered snapshot under its existing store key.
+    pub(crate) fn resume_recovery(&mut self, key: String, saved_at: f64) {
+        if let Document::Pages { document, .. } = &mut self.document {
+            document.mark_recovered();
+            self.recovery.key = key;
+            self.recovery.last = Some(saved_at);
+            self.recovery.stored = true;
+        }
+    }
+
     /// Starts the document's clock, once: every few seconds it looks
     /// whether a copy is due.
     pub(crate) fn start_recovery(&mut self, cx: &mut Context<Self>) {
@@ -233,6 +257,13 @@ impl DocView {
                 self.recovery_snapshot();
             }
         } else if self.recovery.stored {
+            store::remove("recovery", &self.recovery.key);
+        }
+    }
+
+    /// Explicitly closing without saving discards this tab's recovery copy too.
+    pub(crate) fn discard_recovery(&mut self) {
+        if std::mem::take(&mut self.recovery.stored) {
             store::remove("recovery", &self.recovery.key);
         }
     }

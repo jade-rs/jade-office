@@ -228,9 +228,9 @@ fn a_defined_list_sets_alignment_indents_suffix_and_legal_numbering() {
     assert_eq!(label(&document, 0).as_deref(), Some("Article I."));
     document.select((1, 0), (2, 1)).unwrap();
     document.change_list_level(1).unwrap();
-    // Legal: Article I's numeral reads 1, the level keeps its 01.
-    assert_eq!(label(&document, 1).as_deref(), Some("Section 1.01"));
-    assert_eq!(label(&document, 2).as_deref(), Some("Section 1.02"));
+    // Legal numbering converts both the ancestor and the current level to decimal.
+    assert_eq!(label(&document, 1).as_deref(), Some("Section 1.1"));
+    assert_eq!(label(&document, 2).as_deref(), Some("Section 1.2"));
 
     // リストのインデントの調整 on the caret's level.
     document.place_caret(1, 0);
@@ -851,4 +851,187 @@ fn shading_patterns_are_picked_written_and_read_back() {
             Some(token.to_string())
         );
     }
+}
+
+/// An imported list with instance-specific formatting that the list dialog
+/// does not model, plus a start override on a different level.
+fn formatted_override_list() -> EditableDocument {
+    use jade_office_model::word::package::PartKind;
+    use jade_office_model::word::xml::Element;
+    let mut document = document(&["first", "second", "third"]);
+    document.select((0, 0), (2, 5)).unwrap();
+    document.apply_list_format("decimal", "%1.", None).unwrap();
+    let id = document.list_state().unwrap().num_id;
+    let mut package = Package::open(&document.export_docx().unwrap()).unwrap();
+    package
+        .edit(PartKind::Numbering, |root| {
+            let instance = root
+                .elements_mut()
+                .find(|element| {
+                    element.name == "w:num" && element.get("w:numId").as_deref() == Some(&id)
+                })
+                .unwrap();
+            let level = Element::new("w:lvl")
+                .attr("w:ilvl", "0")
+                .child(Element::with_val("w:start", "1"))
+                .child(Element::with_val("w:numFmt", "decimal"))
+                .child(Element::with_val("w:lvlText", "%1."))
+                .child(
+                    Element::new("w:pPr").child(
+                        Element::new("w:tabs").child(
+                            Element::new("w:tab")
+                                .attr("w:val", "num")
+                                .attr("w:pos", "720"),
+                        ),
+                    ),
+                )
+                .child(
+                    Element::new("w:rPr")
+                        .child(Element::new("w:b"))
+                        .child(Element::with_val("w:color", "CC0000"))
+                        .child(Element::with_val("w:sz", "28")),
+                );
+            instance
+                .children
+                .push(jade_office_model::word::xml::Node::Element(
+                    Element::new("w:lvlOverride")
+                        .attr("w:ilvl", "0")
+                        .child(Element::with_val("w:startOverride", "8"))
+                        .child(level),
+                ));
+            instance
+                .children
+                .push(jade_office_model::word::xml::Node::Element(
+                    Element::new("w:lvlOverride")
+                        .attr("w:ilvl", "1")
+                        .child(Element::with_val("w:startOverride", "4")),
+                ));
+            Ok(())
+        })
+        .unwrap();
+    open_bytes(&package.write().unwrap())
+}
+
+#[test]
+fn restarting_an_imported_formatted_list_survives_save_undo_and_redo() {
+    use jade_office_model::word::xml::Document;
+    fn instance(
+        document: &mut EditableDocument,
+        id: &str,
+    ) -> jade_office_model::word::xml::Element {
+        Document::parse(&part(document, "numbering"))
+            .unwrap()
+            .root
+            .elements()
+            .find(|element| {
+                element.name == "w:num" && element.get("w:numId").as_deref() == Some(id)
+            })
+            .unwrap()
+            .clone()
+    }
+    let mut document = formatted_override_list();
+    document.place_caret(1, 0);
+    assert_eq!(label(&document, 0).as_deref(), Some("8."));
+    assert_eq!(label(&document, 2).as_deref(), Some("10."));
+    let source_id = document.list_state().unwrap().num_id;
+    let source = instance(&mut document, &source_id);
+    let before = document.export_docx().unwrap();
+    document.set_list_start(3).unwrap();
+    let new_id = document.list_state().unwrap().num_id;
+    assert_ne!(source_id, new_id);
+    let edited = instance(&mut document, &new_id);
+    let overrides: Vec<_> = edited
+        .elements()
+        .filter(|child| child.name == "w:lvlOverride")
+        .collect();
+    let original: Vec<_> = source
+        .elements()
+        .filter(|child| child.name == "w:lvlOverride")
+        .collect();
+    assert_eq!(overrides.len(), 2);
+    assert_eq!(overrides[0].find("w:lvl"), original[0].find("w:lvl"));
+    assert_eq!(overrides[1], original[1]);
+    assert_eq!(instance(&mut document, &source_id), source);
+    let after = document.export_docx().unwrap();
+    let mut reopened = reopen(&mut document);
+    for current in [&document, &reopened] {
+        assert_eq!(label(current, 0).as_deref(), Some("8."));
+        assert_eq!(label(current, 1).as_deref(), Some("3."));
+        assert_eq!(label(current, 2).as_deref(), Some("4."));
+    }
+    assert_eq!(instance(&mut reopened, &new_id), edited);
+    assert!(document.undo().unwrap());
+    assert_eq!(document.export_docx().unwrap(), before);
+    assert_eq!(label(&document, 2).as_deref(), Some("10."));
+    assert!(document.redo().unwrap());
+    assert_eq!(document.export_docx().unwrap(), after);
+    assert_eq!(label(&document, 2).as_deref(), Some("4."));
+    assert_eq!(instance(&mut document, &new_id), edited);
+}
+
+#[test]
+fn redefining_an_imported_formatted_list_survives_save_undo_and_redo() {
+    use jade_office_model::word::xml::{Document, Element};
+    fn active_level(document: &mut EditableDocument) -> Element {
+        let state = document.list_state().unwrap();
+        let xml = Document::parse(&part(document, "numbering")).unwrap();
+        let instance = xml
+            .root
+            .elements()
+            .find(|element| {
+                element.name == "w:num" && element.get("w:numId").as_deref() == Some(&state.num_id)
+            })
+            .unwrap();
+        if let Some(level) = instance
+            .elements()
+            .find(|element| {
+                element.name == "w:lvlOverride" && element.get("w:ilvl").as_deref() == Some("0")
+            })
+            .and_then(|element| element.find("w:lvl"))
+        {
+            return level.clone();
+        }
+        let level = xml
+            .root
+            .elements()
+            .find(|element| {
+                element.name == "w:abstractNum"
+                    && element.get("w:abstractNumId").as_deref() == Some(&state.abstract_id)
+            })
+            .unwrap()
+            .elements()
+            .find(|element| {
+                element.name == "w:lvl" && element.get("w:ilvl").as_deref() == Some("0")
+            })
+            .unwrap()
+            .clone();
+        level
+    }
+    let mut document = formatted_override_list();
+    document.select((0, 0), (2, 5)).unwrap();
+    let original = active_level(&mut document);
+    let mut definition = document.list_state().unwrap().definition;
+    definition.levels[0].format = "lowerLetter".into();
+    definition.levels[0].text = "(%1)".into();
+    definition.levels[0].start = 5;
+    let before = document.export_docx().unwrap();
+    document.apply_list_definition(&definition, None).unwrap();
+    let edited = active_level(&mut document);
+    assert_eq!(edited.find("w:rPr"), original.find("w:rPr"));
+    assert_eq!(edited.find("w:pPr"), original.find("w:pPr"));
+    let after = document.export_docx().unwrap();
+    let mut reopened = reopen(&mut document);
+    for current in [&document, &reopened] {
+        assert_eq!(label(current, 0).as_deref(), Some("(e)"));
+        assert_eq!(label(current, 2).as_deref(), Some("(g)"));
+    }
+    reopened.place_caret(0, 0);
+    assert_eq!(active_level(&mut reopened), edited);
+    assert!(document.undo().unwrap());
+    assert_eq!(document.export_docx().unwrap(), before);
+    assert_eq!(label(&document, 2).as_deref(), Some("10."));
+    assert!(document.redo().unwrap());
+    assert_eq!(document.export_docx().unwrap(), after);
+    assert_eq!(label(&document, 2).as_deref(), Some("(g)"));
+    assert_eq!(active_level(&mut document), edited);
 }

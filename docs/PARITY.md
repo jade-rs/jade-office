@@ -17,6 +17,80 @@ feature by feature against what Word, Excel and PowerPoint do — Word first.
 `docs/GAPS.md` lists what everyday users hit first; this file tracks the
 distance to a whole suite, and how it is measured.
 
+## Current acceptance status (2026-11-07)
+
+Word parity remains **open**. The historical counts below describe feature
+inventory, not proof of equivalent behavior. A row being implemented does not
+establish parity across the native and browser shells, saved files, rendering,
+and Word-authored inputs. The uncovered rows in [word/coverage.md](word/coverage.md)
+and the differences in [word/web-vs-desktop.md](word/web-vs-desktop.md) still need
+verification and fixes.
+
+The browser now warns before navigation with unsaved edits in any editor tab.
+Its recovery store waits for transaction commit and retries a failed database
+open. `scripts/test-web-storage.cjs` checks commit, abort, retry and warning
+lifecycle; this is a storage regression gate, not an end-to-end Word parity gate.
+Recovery snapshots now reopen as unsaved and remain stored until saved or
+explicitly discarded. Native recovery and opening-clock regressions pass:
+DATE/TIME fields receive the browser's local clock from the first layout in
+the body, headers and footers while preserving saved results and edit history.
+The browser shell also passes its WASM compile check. These checks cover the
+specific behaviors above; they do not establish full Word parity.
+Recent opened/saved files now survive a reload through a bounded IndexedDB
+store (eight names). The storage regression additionally checks v1 migration,
+concurrent writes, replacement, clock rollback and atomic eviction rollback.
+These are browser-local copies; original-file paths and same-name identity
+remain limitations described in the browser comparison.
+
+Dirty browser tabs now ask before closing, with download, discard and cancel
+choices. Download leaves the tab open; explicit discard removes its recovery
+copy. Word format/protection failures retain the unsaved state, and Compare
+uses a snapshot that does not acknowledge saving. The save regressions cover
+failure state/undo preservation and successful RTF output reopening. Release-build browser interaction checks pass for Cancel, Escape, download,
+discard, clean close and retaining the confirmation target while another tab
+opens/closes. The downloaded DOCX contains the edits, and reopening recent files
+after page reload restores the saved version rather than later discarded edits.
+Recovery-store deletion and rejected cell edits still need browser coverage.
+
+The macOS browser build now selects LLVM’s archiver when available and no
+archiver override is set. Apple’s archiver produced an empty `ring` WASM archive,
+causing undefined-symbol errors; rebuilding with LLVM produces a working release
+bundle. README documents the toolchain requirement and clearing stale archives.
+
+Browser appearance now offers System, Light and Dark in the View tab, with a
+separate dark-pages preference. Both preferences persist in localStorage; the
+title-bar toggle saves its choice too. Release-build browser checks confirm
+dark chrome with white paper, light chrome, returning to System, and persistence
+after reload. Existing document text and page thumbnails follow the paper
+choice. The WASM compile and release build pass. The native
+`dark_paper_turns_the_pages_over_and_back` regression passes, checking identical
+DOCX bytes and restored light-paper pixels after switching back. Live OS appearance changes and
+storage-denied browser sessions have not been exercised in the browser.
+
+The browser screen-reader mirror now belongs to the active Word tab and caches
+document entity identity. Both its text box and live region are removed when
+no Word document is active. WASM compile/release builds and browser checks pass
+for editing, tab switching, leaving Word for Excel, closing the last Word tab,
+and reopening the same filename. The comparison actions now dispatch through
+the originating window. Release-browser checks confirm the two-document layout,
+active-tab/screen-reader ownership when clicking either pane, and clearing
+comparison when a paired document closes with synchronous scrolling disabled.
+Synchronous/independent scrolling and resetting the partner position also pass
+browser interaction checks. Actual VoiceOver speech remains unverified.
+Word now uses the editor/pane dimensions rather than the whole browser window.
+Oversized vertical pages align from the left so their start remains reachable.
+The rebuilt release passes browser checks for visible line starts at 100% and
+page-width fitting within one comparison pane.
+
+Browser print preview now paints actual sheet content using the same paper
+composition as PDF printing. Snapshot pagination covers selection printing,
+mixed section sizes and print-time TOC updates without editing the open
+document. Seven print and ten story regressions pass, including byte-identical
+PDFs made from preview sheets and matching open header/footer selection images.
+Release-browser checks cover visible text, page navigation, two-up layout,
+white print paper with dark editor pages, reopening the panel, and no-selection
+errors. Physical printing and comparison with Word rendering remain open.
+
 ## Where jade stood on 2026-10-21
 
 Each feature was classified from jade's code:

@@ -319,6 +319,7 @@ fn color_select(
     id: &'static str,
     list: DialogList,
     current: Option<String>,
+    mixed: bool,
     none_label: &'static str,
     set: impl Fn(&mut FontDialog, ColorChoice) + Clone + 'static,
     more: bool,
@@ -330,8 +331,12 @@ fn color_select(
             let palette = theme_palette(&theme_colors(view));
             let none = set.clone();
             let mut panel = list_panel("color-list", 230.0).child(
-                list_row((id, 0usize), i18n::text(none_label), current.is_none())
-                    .on_click(pick(cx, move |dialog| none(dialog, None))),
+                list_row(
+                    (id, 0usize),
+                    i18n::text(none_label),
+                    current.is_none() && !mixed,
+                )
+                .on_click(pick(cx, move |dialog| none(dialog, None))),
             );
             panel = panel.child(caption(i18n::text("chars.color.theme")));
             for (row_index, row) in palette.into_iter().enumerate() {
@@ -380,7 +385,11 @@ fn color_select(
             }
             panel.into_any_element()
         });
-    let value = color_label(current.as_deref());
+    let value = if mixed {
+        String::new()
+    } else {
+        color_label(current.as_deref())
+    };
     let rgb = current
         .as_deref()
         .and_then(|hex| u32::from_str_radix(hex, 16).ok());
@@ -452,7 +461,7 @@ fn font_tab(
         220.0,
         cx,
     );
-    let (bold, italic) = (format.bold == Some(true), format.italic == Some(true));
+    let (bold, italic) = (format.bold, format.italic);
     let styles = [
         (false, false, "chars.style.regular"),
         (false, true, "chars.style.italic"),
@@ -472,7 +481,7 @@ fn font_tab(
                         list_row(
                             ("font-style", index),
                             i18n::text(label),
-                            bold == b && italic == i,
+                            bold == Some(b) && italic == Some(i),
                         )
                         .when(b, |row| row.font_weight(FontWeight::BOLD))
                         .when(i, |row| row.italic())
@@ -486,7 +495,7 @@ fn font_tab(
             );
     let size = format.font_size.unwrap_or(10.5);
     // サイズ: a spin box to type into or step, and Word's sizes to pick from.
-    let size_spin = spin_field(view, size_spin(size), cx);
+    let size_spin = spin_field(view, size_spin(size).mixed(dialog.is_mixed("font_size")), cx);
     let sizes_open = view.characters.list == Some(DialogList::Size);
     let size_menu = sizes_open.then(|| {
         list_panel("choice-list", 120.0)
@@ -523,10 +532,7 @@ fn font_tab(
         size_menu,
     );
     // The complex-script style: Word keeps it apart (w:bCs, w:iCs).
-    let (complex_bold, complex_italic) = (
-        format.complex_bold.or(format.bold) == Some(true),
-        format.complex_italic.or(format.italic) == Some(true),
-    );
+    let (complex_bold, complex_italic) = (format.complex_bold, format.complex_italic);
     let complex_styles = div()
         .flex()
         .gap_1()
@@ -538,7 +544,7 @@ fn font_tab(
                     list_row(
                         ("complex-style", index),
                         i18n::text(label),
-                        complex_bold == b && complex_italic == i,
+                        complex_bold == Some(b) && complex_italic == Some(i),
                     )
                     .when(b, |row| row.font_weight(FontWeight::BOLD))
                     .when(i, |row| row.italic())
@@ -567,6 +573,7 @@ fn font_tab(
                 })
             },
         )
+        .mixed(dialog.is_mixed("complex_font_size"))
         .width(76.0),
         cx,
     );
@@ -575,6 +582,7 @@ fn font_tab(
         "font-color",
         DialogList::FontColor,
         format.color.clone().filter(|color| color != "auto"),
+        dialog.is_mixed("color"),
         "doc.color.auto",
         |dialog: &mut FontDialog, choice: ColorChoice| match choice {
             Some((color, theme)) => {
@@ -594,7 +602,7 @@ fn font_tab(
         "underline-style",
         DialogList::Underline,
         150.0,
-        format.underline.clone().unwrap_or_else(|| "none".into()),
+        format.underline.clone().unwrap_or_default(),
         UNDERLINE_STYLES
             .iter()
             .map(|kind| (kind.to_string(), SharedString::from(underline_label(kind))))
@@ -610,6 +618,7 @@ fn font_tab(
             .underline_color
             .clone()
             .filter(|color| color != "auto"),
+        dialog.is_mixed("underline_color"),
         "doc.color.auto",
         |dialog: &mut FontDialog, choice: ColorChoice| {
             dialog.format.underline_color = Some(
@@ -634,7 +643,7 @@ fn font_tab(
         "emphasis",
         DialogList::Emphasis,
         110.0,
-        format.emphasis.clone().unwrap_or_else(|| "none".into()),
+        format.emphasis.clone().unwrap_or_default(),
         EMPHASIS_MARKS
             .iter()
             .map(|mark| (mark.to_string(), SharedString::from(emphasis_label(mark))))
@@ -647,10 +656,10 @@ fn font_tab(
             .into_iter()
             .enumerate()
             .map(|(index, effect)| {
-                let on = dialog.effect(effect);
+                let on = dialog.effect_state(effect);
                 check(("decoration", index), effect_label(effect), on).on_click(cx.listener(
                     move |view, _: &ClickEvent, _, cx| {
-                        edit(view, |dialog| dialog.set_effect(effect, !on));
+                        edit(view, |dialog| dialog.set_effect(effect, on != Some(true)));
                         cx.notify();
                     },
                 ))
@@ -722,7 +731,10 @@ fn advanced_tab(
         "scale",
         DialogList::Scale,
         80.0,
-        format.scale.unwrap_or(100.0).round() as i32,
+        format
+            .scale
+            .map(|scale| scale.round() as i32)
+            .unwrap_or(i32::MIN),
         SCALES
             .iter()
             .map(|percent| (*percent as i32, SharedString::from(format!("{percent}%"))))
@@ -746,19 +758,19 @@ fn advanced_tab(
         .gap_2()
         .child(spacing_kind(
             "chars.spacing.normal",
-            spacing == 0.0,
+            format.spacing.is_some() && spacing == 0.0,
             0.0,
             cx,
         ))
         .child(spacing_kind(
             "chars.spacing.expanded",
-            spacing > 0.0,
+            format.spacing.is_some() && spacing > 0.0,
             spacing.abs().max(1.0),
             cx,
         ))
         .child(spacing_kind(
             "chars.spacing.condensed",
-            spacing < 0.0,
+            format.spacing.is_some() && spacing < 0.0,
             -spacing.abs().max(1.0),
             cx,
         ))
@@ -795,19 +807,19 @@ fn advanced_tab(
         .gap_2()
         .child(position_kind(
             "chars.position.normal",
-            position == 0.0,
+            format.position.is_some() && position == 0.0,
             0.0,
             cx,
         ))
         .child(position_kind(
             "chars.position.raised",
-            position > 0.0,
+            format.position.is_some() && position > 0.0,
             position.abs().max(3.0),
             cx,
         ))
         .child(position_kind(
             "chars.position.lowered",
-            position < 0.0,
+            format.position.is_some() && position < 0.0,
             -position.abs().max(3.0),
             cx,
         ))
@@ -834,12 +846,15 @@ fn advanced_tab(
         .items_center()
         .gap_2()
         .child(
-            check("kerning", i18n::text("chars.kerning"), kerning.is_some()).on_click(cx.listener(
-                move |view, _: &ClickEvent, _, cx| {
-                    edit(view, |dialog| dialog.set_kerning(kerning.is_none()));
-                    cx.notify();
-                },
-            )),
+            check(
+                "kerning",
+                i18n::text("chars.kerning"),
+                format.kerning.map(|value| value > 0.0),
+            )
+            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                edit(view, |dialog| dialog.set_kerning(kerning.is_none()));
+                cx.notify();
+            })),
         )
         .child(spin_field(
             view,
@@ -865,7 +880,7 @@ fn advanced_tab(
         "ligatures",
         DialogList::Ligatures,
         150.0,
-        format.ligatures.clone().unwrap_or_else(|| "none".into()),
+        format.ligatures.clone().unwrap_or_default(),
         LIGATURES
             .iter()
             .map(|value| (value.to_string(), SharedString::from(ligature_label(value))))
@@ -878,10 +893,7 @@ fn advanced_tab(
         "number-spacing",
         DialogList::NumberSpacing,
         110.0,
-        format
-            .number_spacing
-            .clone()
-            .unwrap_or_else(|| "default".into()),
+        format.number_spacing.clone().unwrap_or_default(),
         NUMBER_SPACINGS
             .iter()
             .map(|value| (value.to_string(), SharedString::from(number_label(value))))
@@ -894,10 +906,7 @@ fn advanced_tab(
         "number-form",
         DialogList::NumberForm,
         110.0,
-        format
-            .number_form
-            .clone()
-            .unwrap_or_else(|| "default".into()),
+        format.number_form.clone().unwrap_or_default(),
         NUMBER_FORMS
             .iter()
             .map(|value| (value.to_string(), SharedString::from(number_label(value))))
@@ -905,37 +914,33 @@ fn advanced_tab(
         |dialog, value: String| dialog.format.number_form = Some(value),
         cx,
     );
-    let stylistic_set = choice_select(
-        view,
-        "stylistic-set",
-        DialogList::StylisticSet,
-        80.0,
-        format.stylistic_set.unwrap_or(0),
-        (0..=20u8)
-            .map(|set| {
-                (
-                    set,
-                    SharedString::from(if set == 0 {
-                        i18n::text("chars.number.default").to_string()
-                    } else {
-                        set.to_string()
-                    }),
-                )
-            })
-            .collect(),
-        |dialog, set: u8| dialog.format.stylistic_set = Some(set),
-        cx,
-    );
-    let alternates = format.contextual_alternates == Some(true);
+    let stylistic_sets = div()
+        .flex()
+        .flex_wrap()
+        .gap_x_3()
+        .gap_y_1()
+        .children((1..=20usize).map(|set| {
+            let on = format
+                .stylistic_sets
+                .as_ref()
+                .map(|sets| sets.contains(&(set as u8)));
+            check(("stylistic-set", set), set.to_string(), on).on_click(cx.listener(
+                move |view, _: &ClickEvent, _, cx| {
+                    edit(view, |dialog| dialog.toggle_stylistic_set(set as u8));
+                    cx.notify();
+                },
+            ))
+        }));
+    let alternates = format.contextual_alternates;
     let effects = div().flex().flex_wrap().gap_x_4().gap_y_1().children(
         Effect::TEXT_EFFECTS
             .into_iter()
             .enumerate()
             .map(|(index, effect)| {
-                let on = dialog.effect(effect);
+                let on = dialog.effect_state(effect);
                 check(("text-effect", index), effect_label(effect), on).on_click(cx.listener(
                     move |view, _: &ClickEvent, _, cx| {
-                        edit(view, |dialog| dialog.set_effect(effect, !on));
+                        edit(view, |dialog| dialog.set_effect(effect, on != Some(true)));
                         cx.notify();
                     },
                 ))
@@ -946,6 +951,7 @@ fn advanced_tab(
         "glow",
         DialogList::Glow,
         format.glow_color.clone().filter(|color| color != "none"),
+        dialog.is_mixed("glow_color"),
         "chars.none",
         |dialog: &mut FontDialog, choice: ColorChoice| {
             dialog.format.glow_color = Some(
@@ -953,7 +959,6 @@ fn advanced_tab(
                     .map(|(color, _)| color)
                     .unwrap_or_else(|| "none".into()),
             );
-            dialog.format.glow_radius.get_or_insert(5.0);
         },
         false,
         cx,
@@ -966,6 +971,7 @@ fn advanced_tab(
             .text_outline_color
             .clone()
             .filter(|color| color != "none"),
+        dialog.is_mixed("text_outline_color"),
         "chars.none",
         |dialog: &mut FontDialog, choice: ColorChoice| {
             dialog.format.text_outline_color = Some(
@@ -973,7 +979,6 @@ fn advanced_tab(
                     .map(|(color, _)| color)
                     .unwrap_or_else(|| "none".into()),
             );
-            dialog.format.text_outline_width.get_or_insert(0.75);
         },
         false,
         cx,
@@ -994,9 +999,9 @@ fn advanced_tab(
                 .gap_3()
                 .child(labelled("chars.advanced.ligatures", ligatures))
                 .child(labelled("chars.advanced.number_spacing", number_spacing))
-                .child(labelled("chars.advanced.number_form", number_form))
-                .child(labelled("chars.advanced.stylistic_set", stylistic_set)),
+                .child(labelled("chars.advanced.number_form", number_form)),
         )
+        .child(labelled("chars.advanced.stylistic_set", stylistic_sets))
         .child(
             check(
                 "alternates",
@@ -1005,7 +1010,7 @@ fn advanced_tab(
             )
             .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                 edit(view, |dialog| {
-                    dialog.format.contextual_alternates = Some(!alternates)
+                    dialog.format.contextual_alternates = Some(alternates != Some(true))
                 });
                 cx.notify();
             })),

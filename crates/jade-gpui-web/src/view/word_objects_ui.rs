@@ -475,17 +475,11 @@ impl DocView {
             )
         });
         let selected = self.selected_placed().map(|object| object.target);
-        let renaming = self.objects_ui.renaming.as_ref().map(|(target, edit)| {
-            (
-                *target,
-                TextEdit {
-                    text: edit.text.clone(),
-                    marked: edit.marked.clone(),
-                    caret: edit.caret,
-                    whole: edit.whole,
-                },
-            )
-        });
+        let renaming = self
+            .objects_ui
+            .renaming
+            .as_ref()
+            .map(|(target, edit)| (*target, edit.clone()));
         let rows: Vec<AnyElement> = objects
             .iter()
             .enumerate()

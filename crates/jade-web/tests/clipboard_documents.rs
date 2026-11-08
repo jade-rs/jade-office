@@ -106,3 +106,101 @@ fn html_from_another_application_pastes_with_its_formatting() {
     let plain = document.run_style_at((paragraph, end + 1)).unwrap();
     assert_ne!(plain.bold, Some(true));
 }
+
+#[test]
+fn html_soft_breaks_paste_without_splitting_the_document_paragraph() {
+    use jade_web::word::clipboard::{PasteMode, RichClip};
+    let mut document = contract();
+    let paragraph = typed(&mut document, "Here: ");
+    let before = document.paragraph_text(paragraph).unwrap();
+    let count = document.paragraph_count();
+    let clip = RichClip::from_html("<p>First<br><b>Second</b><br><br>Last</p>");
+    document.place_caret(paragraph, 6);
+    let end = document.paste_as(&clip, PasteMode::KeepSource).unwrap();
+    assert_eq!(end, (paragraph, 6 + "First\nSecond\n\nLast".len()));
+    assert_eq!(document.paragraph_count(), count);
+    let after = document.paragraph_text(paragraph).unwrap();
+    assert!(
+        after.starts_with("Here: First\nSecond\n\nLast"),
+        "{after:?}"
+    );
+    assert_eq!(
+        document
+            .run_style_at((paragraph, 6 + "First\n".len()))
+            .unwrap()
+            .bold,
+        Some(true)
+    );
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_count(), count);
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+    document.redo().unwrap();
+    assert_eq!(document.paragraph_count(), count);
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), after);
+    document.select((paragraph, 6), end).unwrap();
+    let copied = document.copy_rich().unwrap();
+    let restored = RichClip::from_html(&copied.to_html());
+    assert_eq!(restored.plain_text(), "First\nSecond\n\nLast");
+    assert_eq!(restored.paragraphs.len(), 1);
+}
+
+#[test]
+fn html_unicode_spaces_survive_paste_copy_and_history() {
+    use jade_web::word::clipboard::{PasteMode, RichClip};
+    let mut document = contract();
+    let paragraph = typed(&mut document, "Here: ");
+    let before = document.paragraph_text(paragraph).unwrap();
+    let text = "10\u{202f}000\u{a0}円　　end\u{2009}";
+    let clip = RichClip::from_html("<p><b>10&#x202f;000&nbsp;円</b>　　end&#x2009;</p>");
+    document.place_caret(paragraph, 6);
+    let end = document.paste_as(&clip, PasteMode::KeepSource).unwrap();
+    assert_eq!(end, (paragraph, 6 + text.len()));
+    let after = document.paragraph_text(paragraph).unwrap();
+    assert!(after.starts_with(&format!("Here: {text}")), "{after:?}");
+    assert_eq!(
+        document.run_style_at((paragraph, 6)).unwrap().bold,
+        Some(true)
+    );
+    document.select((paragraph, 6), end).unwrap();
+    let copied = document.copy_rich().unwrap();
+    assert_eq!(copied.plain_text(), text);
+    assert_eq!(RichClip::from_html(&copied.to_html()).plain_text(), text);
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+    document.redo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), after);
+}
+
+#[test]
+fn html_attribute_values_do_not_leak_into_pasted_text_or_formatting() {
+    use jade_web::word::clipboard::{PasteMode, RichClip};
+    let mut document = contract();
+    let paragraph = typed(&mut document, "Here: ");
+    let before = document.paragraph_text(paragraph).unwrap();
+    let clip = RichClip::from_html(
+        "<p title=\"a > b style='font-weight:bold'\">plain<span title='x > y' style='color:#123456'>色</span></p>",
+    );
+    document.place_caret(paragraph, 6);
+    let end = document.paste_as(&clip, PasteMode::KeepSource).unwrap();
+    assert_eq!(end, (paragraph, 6 + "plain色".len()));
+    let after = document.paragraph_text(paragraph).unwrap();
+    assert!(after.starts_with("Here: plain色"), "{after:?}");
+    assert_ne!(
+        document.run_style_at((paragraph, 6)).unwrap().bold,
+        Some(true)
+    );
+    assert_eq!(
+        document
+            .run_style_at((paragraph, 11))
+            .unwrap()
+            .color
+            .as_deref(),
+        Some("#123456")
+    );
+    document.select((paragraph, 6), end).unwrap();
+    assert_eq!(document.copy_rich().unwrap().plain_text(), "plain色");
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), before);
+    document.redo().unwrap();
+    assert_eq!(document.paragraph_text(paragraph).unwrap(), after);
+}

@@ -48,6 +48,17 @@ impl Workspace {
         });
     }
 
+    /// Closing either member also ends comparison when sync scrolling is off
+    /// (and therefore no timer is running to notice the missing document).
+    pub(super) fn close_side_by_side(&mut self, id: gpui::EntityId, cx: &mut App) {
+        if self.side.pair.is_some_and(|(a, b)| a == id || b == id) {
+            self.side.pair = None;
+            self.side.sync = false;
+            self.side.last = None;
+            self.publish_side_by_side(cx);
+        }
+    }
+
     /// 並べて比較: on with the Word document beside the one in front, or off.
     pub(super) fn toggle_side_by_side(&mut self, cx: &mut Context<Self>) {
         if self.side.pair.take().is_none() {

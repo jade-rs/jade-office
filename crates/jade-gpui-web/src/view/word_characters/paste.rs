@@ -5,7 +5,7 @@
 //!
 //! The clipboard is read with the browser's asynchronous Clipboard API on
 //! the click or the key that asked, HTML and plain text: a copy made here
-//! is recognised by its text and pastes with its formatting; HTML from
+//! is recognised by its HTML identity and contents; HTML from
 //! another application pastes as `jade-office-model`'s `RichClip::from_html`
 //! reads it. Where the browser refuses the read — no permission, an
 //! embedding page — the app's own last copy is pasted.
@@ -23,6 +23,7 @@ pub struct PasteSpecial {
     pub formats: Vec<PasteFormat>,
     pub chosen: usize,
     pub clip: RichClip,
+    object: Option<crate::view::word_clipboard::ObjectCopy>,
 }
 
 /// What the clipboard held when it was read.
@@ -32,6 +33,7 @@ struct Clipboard {
     rich: bool,
     /// The formatting is HTML from another application's copy.
     html: bool,
+    object: Option<crate::view::word_clipboard::ObjectCopy>,
 }
 
 pub fn mode_label(mode: PasteMode) -> &'static str {
@@ -113,24 +115,39 @@ async fn read_browser_clipboard() -> Option<(Option<String>, Option<String>)> {
     Some((None, Some(text)))
 }
 
-/// What a paste pastes: this app's last copy when the clipboard's text is
-/// still that copy's, else the HTML from elsewhere, else the text — or,
+/// What a paste pastes: this app's last copy when the clipboard's identity,
+/// text and exported formatting still match, else external HTML or text — or,
 /// when the browser will not let the page read it, the app's own copy.
 fn resolve(read: Option<(Option<String>, Option<String>)>) -> Option<Clipboard> {
-    let kept = crate::view::RICH_CLIP.with(|kept| kept.borrow().clone());
-    let Some((html, text)) = read else {
-        return kept.map(|clip| Clipboard {
-            clip,
+    let object = crate::view::OBJECT_CLIP.with(|kept| kept.borrow().clone());
+    if let Some(object) = object.filter(|copy| {
+        read.as_ref().map_or(true, |(html, text)| {
+            copy.matches(text.as_deref().unwrap_or(""), html.as_deref())
+        })
+    }) {
+        return Some(Clipboard {
+            clip: RichClip::from_text("\u{fffc}"),
             rich: true,
             html: false,
+            object: Some(object),
+        });
+    }
+    let kept = crate::view::RICH_CLIP.with(|kept| kept.borrow().clone());
+    let Some((html, text)) = read else {
+        return kept.map(|copy| Clipboard {
+            clip: copy.clip,
+            rich: true,
+            html: false,
+            object: None,
         });
     };
     if let (Some(kept), Some(text)) = (&kept, &text) {
-        if kept.matches(text) {
+        if kept.matches(text, html.as_deref()) {
             return Some(Clipboard {
-                clip: kept.clone(),
+                clip: kept.clip.clone(),
                 rich: true,
                 html: false,
+                object: None,
             });
         }
     }
@@ -141,6 +158,7 @@ fn resolve(read: Option<(Option<String>, Option<String>)>) -> Option<Clipboard> 
                 clip,
                 rich: true,
                 html: true,
+                object: None,
             });
         }
     }
@@ -149,6 +167,7 @@ fn resolve(read: Option<(Option<String>, Option<String>)>) -> Option<Clipboard> 
         clip: RichClip::from_text(&text),
         rich: false,
         html: false,
+        object: None,
     })
 }
 
@@ -175,7 +194,11 @@ fn with_clipboard(
 /// Pastes the clipboard in `mode`, as one undo step.
 pub fn paste_with(_view: &mut DocumentView, mode: PasteMode, cx: &mut Context<DocumentView>) {
     with_clipboard(cx, move |view, clipboard, cx| {
-        paste_clip(view, &clipboard.clip, mode, cx)
+        if let Some(object) = clipboard.object {
+            view.paste_object_copy(&object, cx);
+        } else {
+            paste_clip(view, &clipboard.clip, mode, cx);
+        }
     });
 }
 
@@ -185,15 +208,29 @@ fn paste_clip(
     mode: PasteMode,
     cx: &mut Context<DocumentView>,
 ) {
-    let result =
-        view.word_edit_result(|document| WordClipboard::paste_as(document, clip, mode).map(|_| ()));
+    if matches!(
+        view.document,
+        crate::view::Document::Pages {
+            object: Some(_),
+            ..
+        }
+    ) {
+        return;
+    }
+    let result = view.word_edit_result(|document| {
+        let caret = WordClipboard::paste_as(document, clip, mode)?;
+        document.place_caret(caret.0, caret.1);
+        Ok(())
+    });
     view.after_character_edit(result, cx);
 }
 
 /// 形式を選択して貼り付け (⌃⌘V).
 pub fn open(_view: &mut DocumentView, cx: &mut Context<DocumentView>) {
     with_clipboard(cx, |view, clipboard, cx| {
-        let formats = if clipboard.html {
+        let formats = if clipboard.object.is_some() {
+            vec![PasteFormat::WordDocument]
+        } else if clipboard.html {
             // HTML from another application: no Word or RTF copy of it.
             vec![
                 PasteFormat::Html,
@@ -207,6 +244,7 @@ pub fn open(_view: &mut DocumentView, cx: &mut Context<DocumentView>) {
             formats,
             chosen: 0,
             clip: clipboard.clip,
+            object: clipboard.object,
         }));
         cx.notify();
     });
@@ -218,6 +256,10 @@ pub(super) fn confirm(
     dialog: PasteSpecial,
     cx: &mut Context<DocumentView>,
 ) {
+    if let Some(object) = dialog.object {
+        view.paste_object_copy(&object, cx);
+        return;
+    }
     let mode = dialog
         .formats
         .get(dialog.chosen)

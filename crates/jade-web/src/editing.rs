@@ -36,6 +36,7 @@ mod autocorrect;
 mod formatting;
 mod objects;
 mod print;
+pub use print::{PrintPreview, PrintPreviewSession};
 mod story;
 pub use formatting::{
     style_gallery, CellStep, CharacterFormat, FindOptions, FormatState, Found, GalleryStyle,
@@ -79,10 +80,37 @@ pub enum Motion {
     WordLeft,
     /// To the end of the word after the caret, across a paragraph's end.
     WordRight,
-    /// The start and the end of the document's body (⌘↑ and ⌘↓, or
-    /// Ctrl+Home and Ctrl+End).
+    /// The start and the end of the document's body (Cmd/Ctrl+Home/End).
     DocumentStart,
     DocumentEnd,
+    /// Current paragraph start, or the previous paragraph's start when already there.
+    ParagraphStart,
+    /// Next paragraph's start, or this story's end at the last paragraph.
+    ParagraphEnd,
+    /// Current paragraph's text end, excluding its paragraph break (Cmd+Shift+Down).
+    ParagraphTextEnd,
+}
+
+/// A short run of adjacent character events belongs to one undo action.
+struct TypingRun {
+    end: (usize, usize),
+    revision: u64,
+    at_ms: f64,
+}
+
+fn typing_time_ms() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64()
+            * 1000.0
+    }
 }
 
 pub struct EditableDocument {
@@ -91,6 +119,7 @@ pub struct EditableDocument {
     /// commands (a paste, Enter over a selection) recorded as a group. It
     /// keeps the last 200 actions.
     executor: CommandExecutor,
+    typing_run: Option<TypingRun>,
     selection: Option<SelectionRange>,
     /// The composition in the text: its paragraph and byte range.
     composition: Option<(usize, usize, usize)>,
@@ -167,6 +196,19 @@ impl EditableDocument {
         measurer: Rc<ShapingMeasurer>,
         resident: Range<usize>,
     ) -> Result<Self, String> {
+        Self::open_resident_with_datetime(bytes, scale, fonts, measurer, resident, None)
+    }
+
+    /// Opens with a host clock for DATE/TIME fields in the body, headers and
+    /// footers from the first layout. Saved results and edit history stay intact.
+    pub fn open_resident_with_datetime(
+        bytes: &[u8],
+        scale: f64,
+        fonts: Rc<FontBook>,
+        measurer: Rc<ShapingMeasurer>,
+        resident: Range<usize>,
+        datetime: Option<jade_office_model::word::fields::FieldDateTime>,
+    ) -> Result<Self, String> {
         let scale = if scale.is_finite() && scale > 0.0 {
             scale
         } else {
@@ -196,6 +238,7 @@ impl EditableDocument {
             scale,
             (&fonts, &measurer),
             0..0,
+            datetime,
         )?;
         let size = opened.renderer.layout_page_size();
         let mut built_for = INITIAL_PAGE;
@@ -209,6 +252,7 @@ impl EditableDocument {
                 scale,
                 (&fonts, &measurer),
                 resident,
+                datetime,
             )?;
         } else {
             // Letter after all: its layout, painted on the resident pages.
@@ -224,6 +268,7 @@ impl EditableDocument {
         Ok(Self {
             word_document,
             executor: CommandExecutor::default(),
+            typing_run: None,
             selection: None,
             composition: None,
             renderer,
@@ -247,7 +292,7 @@ impl EditableDocument {
             repainted_pages: std::collections::BTreeSet::new(),
             field_codes: Default::default(),
             field_shading: Default::default(),
-            field_datetime: None,
+            field_datetime: datetime,
             view: ViewLayout::default(),
         })
     }
@@ -262,6 +307,7 @@ impl EditableDocument {
         scale: f64,
         (fonts, measurer): (&Rc<FontBook>, &Rc<ShapingMeasurer>),
         resident: Range<usize>,
+        datetime: Option<jade_office_model::word::fields::FieldDateTime>,
     ) -> Result<Opened, String> {
         let host = TinySkiaRenderHost::with_resident(
             width,
@@ -283,6 +329,17 @@ impl EditableDocument {
         };
         let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
             .map_err(|_| "renderer setup failed".to_string())?;
+        renderer.set_current_datetime(datetime.map(|datetime| {
+            jade_docx_editor::canvas_renderer::FieldDateTime {
+                year: datetime.year,
+                month: datetime.month,
+                day: datetime.day,
+                hour: datetime.hour,
+                minute: datetime.minute,
+                second: datetime.second,
+                weekday: datetime.weekday,
+            }
+        }));
         renderer.sync_word_document(word_document);
         renderer.set_view_geometry(view.geometry);
         renderer.set_outline_indents(view.indents.clone());
@@ -485,6 +542,7 @@ impl EditableDocument {
 
     /// Moves the caret, reporting where it is drawn.
     pub fn place_caret(&mut self, paragraph: usize, offset: usize) -> Option<CaretRect> {
+        self.typing_run = None;
         self.composition = None;
         self.goal_x = None;
         self.affinity = CaretAffinity::Upstream;
@@ -509,7 +567,7 @@ impl EditableDocument {
         let mut nearest = (CaretAffinity::Upstream, f64::INFINITY);
         for affinity in [CaretAffinity::Upstream, CaretAffinity::Downstream] {
             self.renderer.set_caret_affinity(affinity);
-            if let Some(rect) = self.caret_rect() {
+            if let Some(rect) = self.focus_rect() {
                 let distance = (rect.document_y + rect.height / 2.0 - y).abs();
                 if distance < nearest.1 {
                     nearest = (affinity, distance);
@@ -523,6 +581,7 @@ impl EditableDocument {
     /// Selects from `anchor` to `focus`. Nothing is repainted: the shell
     /// draws [`Self::selection_rects`] over the pages.
     pub fn select(&mut self, anchor: (usize, usize), focus: (usize, usize)) -> Result<(), String> {
+        self.typing_run = None;
         if anchor == focus {
             self.place_caret(focus.0, focus.1);
             return Ok(());
@@ -777,6 +836,7 @@ impl EditableDocument {
     /// An arrow, Home or End; with `extend` (Shift) the selection's far end
     /// moves and its anchor stays.
     pub fn move_caret(&mut self, motion: Motion, extend: bool) -> Result<(), String> {
+        self.typing_run = None;
         let range = self.selection.ok_or("no caret")?;
         let anchor = (range.anchor.paragraph, range.anchor.offset);
         let focus = (range.focus.paragraph, range.focus.offset);
@@ -790,6 +850,13 @@ impl EditableDocument {
             Motion::WordLeft | Motion::WordRight => {
                 self.step_word(focus, motion == Motion::WordRight)
             }
+            Motion::ParagraphStart | Motion::ParagraphEnd => {
+                self.step_paragraph(focus, motion == Motion::ParagraphEnd)
+            }
+            Motion::ParagraphTextEnd => (
+                focus.0,
+                self.paragraph_text(focus.0).map_or(0, |text| text.len()),
+            ),
             Motion::DocumentStart => {
                 let first = (0..self.paragraph_count())
                     .find(|&index| self.is_body_paragraph(index))
@@ -846,6 +913,117 @@ impl EditableDocument {
         }
     }
 
+    /// Move to the first text line of the adjacent physical page.
+    pub fn move_caret_page(&mut self, down: bool, extend: bool) -> Result<(), String> {
+        let range = self.selection.ok_or("no caret")?;
+        let rect = self.focus_rect().ok_or("the caret has no position")?;
+        let current = self.page_and_offset(rect.document_y + rect.height / 2.0).0;
+        let target_page = if down {
+            current
+                .checked_add(1)
+                .filter(|&page| page < self.page_count())
+        } else {
+            current.checked_sub(1)
+        };
+        let Some(page) = target_page else {
+            return Ok(());
+        };
+        let focus = range.focus.paragraph;
+        let target = self
+            .renderer
+            .selection_manager()
+            .paragraphs()
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| self.same_navigation_story(focus, *index))
+            .flat_map(|(index, paragraph)| paragraph.lines.iter().map(move |line| (index, line)))
+            .filter(|(_, line)| {
+                self.page_and_offset(line.absolute_top + line.height / 2.0)
+                    .0
+                    == page
+            })
+            .min_by(|(_, a), (_, b)| {
+                a.column_index
+                    .cmp(&b.column_index)
+                    .then_with(|| a.absolute_top.total_cmp(&b.absolute_top))
+                    .then_with(|| a.start_x.total_cmp(&b.start_x))
+            })
+            .map(|(index, line)| {
+                (
+                    (
+                        index,
+                        line.logical_source_range().map_or(0, |range| range.0),
+                    ),
+                    line.absolute_top + line.height / 2.0,
+                )
+            });
+        if let Some((target, y)) = target {
+            if extend {
+                self.select((range.anchor.paragraph, range.anchor.offset), target)?;
+            } else {
+                self.place_caret(target.0, target.1);
+            }
+            self.lean_towards(y);
+        }
+        Ok(())
+    }
+
+    fn same_navigation_story(&self, from: usize, to: usize) -> bool {
+        use jade_docx_editor::word_document::ParagraphStory;
+        match (
+            self.word_document.paragraph_story(from),
+            self.word_document.paragraph_story(to),
+        ) {
+            (Some(ParagraphStory::Body { .. }), Some(ParagraphStory::Body { .. })) => true,
+            (
+                Some(ParagraphStory::TextBox { host, text_box, .. }),
+                Some(ParagraphStory::TextBox {
+                    host: other_host,
+                    text_box: other_box,
+                    ..
+                }),
+            ) => host == other_host && text_box == other_box,
+            (
+                Some(ParagraphStory::Footnote { note_id, .. }),
+                Some(ParagraphStory::Footnote { note_id: other, .. }),
+            )
+            | (
+                Some(ParagraphStory::Endnote { note_id, .. }),
+                Some(ParagraphStory::Endnote { note_id: other, .. }),
+            ) => note_id == other,
+            _ => from == to,
+        }
+    }
+
+    /// Move vertically to a viewport-derived document coordinate, retaining
+    /// the preferred column and the current story. Used by PageUp/PageDown.
+    pub fn move_caret_to_y(&mut self, document_y: f64, extend: bool) -> Result<(), String> {
+        if !document_y.is_finite() {
+            return Err("invalid vertical position".into());
+        }
+        let range = self.selection.ok_or("no caret")?;
+        let focus = (range.focus.paragraph, range.focus.offset);
+        let rect = self.rect_at(focus).ok_or("the caret has no position")?;
+        let x = self.goal_x.unwrap_or(rect.x);
+        let target = self
+            .renderer
+            .selection_manager()
+            .hit_test_matching(x, document_y, |index| {
+                self.same_navigation_story(focus.0, index)
+            })
+            .map(|position| (position.paragraph, position.offset))
+            .unwrap_or(focus);
+        if extend {
+            self.select((range.anchor.paragraph, range.anchor.offset), target)?;
+        } else {
+            self.place_caret(target.0, target.1);
+            self.lean_towards(document_y);
+        }
+        self.typing_run = None;
+        self.goal_x = Some(x);
+        Ok(())
+    }
+
     /// The position at `x` on the line above or below the one through
     /// `line` — a caret at `from`, `height` tall — and the height it was
     /// found at; `None` at the top or the bottom of the document.
@@ -854,8 +1032,8 @@ impl EditableDocument {
     /// page's last line are its bottom margin, the gap and the next page's
     /// top margin, and a hit-test there still lands on the line it is
     /// nearest. So the probe walks on until it finds a line other than the
-    /// caret's. Body text stays in the body, as a drag does, rather than
-    /// stepping into a footer or a header on the way.
+    /// caret's. Movement stays in the current story: body text, one note,
+    /// or one text box, without entering neighboring stories.
     fn line_beyond(
         &self,
         from: (usize, usize),
@@ -864,13 +1042,11 @@ impl EditableDocument {
         height: f64,
         down: bool,
     ) -> Option<((usize, usize), f64)> {
-        let body = self.is_body_paragraph(from.0);
         let hit = |y: f64| {
-            if body {
-                self.body_position_at(x, y)
-            } else {
-                self.position_at(x, y)
-            }
+            self.renderer
+                .selection_manager()
+                .hit_test_matching(x, y, |index| self.same_navigation_story(from.0, index))
+                .map(|position| (position.paragraph, position.offset))
         };
         // What the caret's own line has at `x`: the same answer further on
         // is still that line.
@@ -937,6 +1113,46 @@ impl EditableDocument {
         } else {
             (paragraph, word_start_before(&text, offset))
         }
+    }
+
+    /// Paragraph movement stays in the current story even when notes or text
+    /// boxes interleave its surfaces. Body paragraphs include table cells.
+    fn step_paragraph(
+        &self,
+        (paragraph, offset): (usize, usize),
+        forwards: bool,
+    ) -> (usize, usize) {
+        use jade_docx_editor::word_document::ParagraphStory;
+        if !forwards && offset > 0 {
+            return (paragraph, 0);
+        }
+        let end = if forwards {
+            self.paragraph_text(paragraph).map_or(0, |text| text.len())
+        } else {
+            0
+        };
+        let Some(mut story) = self.word_document.paragraph_story(paragraph) else {
+            return (paragraph, end);
+        };
+        let index = match &mut story {
+            ParagraphStory::Body { index } => index,
+            ParagraphStory::TextBox { paragraph, .. }
+            | ParagraphStory::Footnote { paragraph, .. }
+            | ParagraphStory::Endnote { paragraph, .. } => paragraph,
+        };
+        let next = if forwards {
+            index.checked_add(1)
+        } else {
+            index.checked_sub(1)
+        };
+        let Some(next) = next else {
+            return (paragraph, end);
+        };
+        *index = next;
+        self.word_document
+            .paragraph_story_surface(&story)
+            .map(|paragraph| (paragraph, 0))
+            .unwrap_or((paragraph, end))
     }
 
     /// Where a caret at `position` would be drawn, leaving the selection as
@@ -1012,6 +1228,15 @@ impl EditableDocument {
             return Ok(());
         }
         let (paragraph, offset) = self.caret().ok_or("no caret")?;
+        let previous = self.typing_run.take();
+        let at_ms = typing_time_ms();
+        let single_character = text.chars().count() == 1 && !text.chars().any(char::is_control);
+        let join = previous.filter(|run| {
+            single_character
+                && run.end == (paragraph, offset)
+                && run.revision == self.executor.history_revision()
+                && (0.0..=3000.0).contains(&(at_ms - run.at_ms))
+        });
         self.apply(
             paragraph,
             HeadlessCommand::InsertText {
@@ -1022,12 +1247,23 @@ impl EditableDocument {
             true,
         )?;
         self.set_caret(paragraph, offset + text.len());
+        if single_character {
+            if let Some(previous) = join {
+                self.executor.join_latest_undo(previous.revision);
+            }
+            self.typing_run = Some(TypingRun {
+                end: (paragraph, offset + text.len()),
+                revision: self.executor.history_revision(),
+                at_ms,
+            });
+        }
         Ok(())
     }
 
     /// Backspace (`backwards`) or Delete: one character, joining paragraphs
     /// at their edges.
     pub fn delete(&mut self, backwards: bool) -> Result<(), String> {
+        self.typing_run = None;
         self.goal_x = None;
         if self.selection().is_some() {
             return self.replace_selection("");
@@ -1121,6 +1357,7 @@ impl EditableDocument {
     /// Pastes `text` as typing would, its lines becoming paragraphs; one
     /// undo takes it all back.
     pub fn paste(&mut self, text: &str) -> Result<(), String> {
+        self.typing_run = None;
         let text = text.replace("\r\n", "\n").replace('\r', "\n");
         let mut lines = text.split('\n');
         // Every line is a split and an insert, and each of those repainted
@@ -1142,6 +1379,7 @@ impl EditableDocument {
             Ok(())
         })();
         self.executor.end_group();
+        self.typing_run = None;
         let from = self
             .deferred_repaint
             .take()
@@ -1207,6 +1445,7 @@ impl EditableDocument {
     /// Replaces the composition with the committed `text`, as one undoable
     /// edit.
     pub fn commit_composition(&mut self, text: &str) -> Result<(), String> {
+        self.typing_run = None;
         if let Some((paragraph, start, end)) = self.composition.take() {
             self.apply(
                 paragraph,
@@ -1224,7 +1463,9 @@ impl EditableDocument {
         if text.is_empty() {
             return Ok(());
         }
-        self.insert_text(text)
+        let result = self.insert_text(text);
+        self.typing_run = None;
+        result
     }
 
     /// The composition in the text, if one is open: paragraph and byte
@@ -1250,6 +1491,7 @@ impl EditableDocument {
     }
 
     fn step_history(&mut self, backwards: bool) -> Result<bool, String> {
+        self.typing_run = None;
         self.composition = None;
         let mut selection = self.selection.take();
         let stepped = self.edit_in_place(|this| {
@@ -1297,6 +1539,7 @@ impl EditableDocument {
         command: HeadlessCommand,
         recorded: bool,
     ) -> Result<(), String> {
+        self.typing_run = None;
         let paragraphs = self.paragraph_count();
         let request = HeadlessEditRequest {
             commands: vec![command],
@@ -1799,6 +2042,7 @@ impl EditableDocument {
             self.scale,
             (&self.fonts, &self.measurer),
             resident,
+            self.field_datetime,
         )?;
         let dark = self.dark_paper.get();
         self.renderer = renderer;
@@ -1842,31 +2086,33 @@ impl EditableDocument {
         self.dirty
     }
 
-    /// The document as a PDF of its pages as the editor paints them (see
-    /// [`crate::pdf`]), on its own paper, at the view's scale: each page
-    /// painted in turn, then the pages kept before put back.
+    /// A recovered snapshot still needs saving, even before the first edit.
+    /// This changes save state without adding an edit to the undo history.
+    pub fn mark_recovered(&mut self) {
+        self.dirty = true;
+    }
+
+    /// The document's pages as a PDF, independent of screen layout, collapsed
+    /// headings, editing marks, dark paper and display resolution. Rendering a
+    /// separate snapshot also leaves the editor untouched if output fails.
     pub fn export_pdf(&mut self) -> Result<Vec<u8>, String> {
-        let resident = self.resident.borrow().clone();
-        let dark = self.dark_paper.get();
-        // The document's own paper, whatever the view shows.
-        self.set_dark_paper(false)?;
-        let mut pages = Vec::with_capacity(self.page_count());
-        let mut result = Ok(());
-        for index in 0..self.page_count() {
-            if let Err(error) = self.set_resident_pages(index..index + 1) {
-                result = Err(error);
-                break;
-            }
-            let Some(page) = self.page(index) else {
-                result = Err(format!("page {} did not paint", index + 1));
-                break;
-            };
-            let (width, height) = self
+        self.export_pdf_from_docx(&self.word_docx()?)
+    }
+
+    fn export_pdf_from_docx(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let mut printed = self.open_for_output(bytes)?;
+        let mut pages = Vec::with_capacity(printed.page_count());
+        for index in 0..printed.page_count() {
+            printed.set_resident_pages(index..index + 1)?;
+            let page = printed
+                .page(index)
+                .ok_or_else(|| format!("page {} did not paint", index + 1))?;
+            let (width, height) = printed
                 .page_sizes
                 .borrow()
                 .get(index)
                 .copied()
-                .unwrap_or_else(|| self.page_size());
+                .unwrap_or_else(|| printed.page_size());
             pages.push(crate::pdf::PdfPage {
                 // CSS px to points.
                 width_pt: width * 0.75,
@@ -1876,9 +2122,6 @@ impl EditableDocument {
                 rgba: page.rgba_premultiplied(),
             });
         }
-        self.set_resident_pages(resident)?;
-        self.set_dark_paper(dark)?;
-        result?;
         crate::pdf::pdf_of_pages(&pages)
     }
 
@@ -1892,10 +2135,16 @@ impl EditableDocument {
 
     /// The document as `.docx` bytes, every edit in it; marks it saved.
     pub fn export_docx(&mut self) -> Result<Vec<u8>, String> {
-        let bytes = self
-            .word_document
-            .export_docx()
-            .map_err(|error| format!("cannot save: {error:?}"))?;
+        self.export_docx_with(Ok)
+    }
+
+    /// Marks the document saved only after the format conversion or protection
+    /// step succeeds. A failed save must retain the unsaved state and undo history.
+    pub fn export_docx_with(
+        &mut self,
+        finish: impl FnOnce(Vec<u8>) -> Result<Vec<u8>, String>,
+    ) -> Result<Vec<u8>, String> {
+        let bytes = finish(self.word_docx()?)?;
         self.dirty = false;
         Ok(bytes)
     }

@@ -3637,6 +3637,7 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "sha1",
  "sha2 0.10.9",
  "thiserror 2.0.20",
  "unicode-script",
@@ -3653,6 +3654,7 @@ dependencies = [
 name = "jade-docx-extract"
 version = "0.1.0"
 dependencies = [
+ "jade-number-format",
  "quick-xml 0.41.0",
  "serde",
  "thiserror 2.0.20",
@@ -3738,6 +3740,7 @@ version = "0.1.0"
 dependencies = [
  "encoding_rs",
  "jade-ink",
+ "jade-number-format",
  "jade-opc",
  "quick-xml 0.41.0",
  "serde",
@@ -3791,6 +3794,10 @@ dependencies = [
  "quick-xml 0.41.0",
  "serde",
 ]
+
+[[package]]
+name = "jade-number-format"
+version = "0.1.0"
 
 [[package]]
 name = "jade-office-model"
@@ -3948,6 +3955,7 @@ dependencies = [
  "lopdf",
  "rustybuzz 0.20.1",
  "skia-safe",
+ "unicode-segmentation",
 ]
 
 [[package]]

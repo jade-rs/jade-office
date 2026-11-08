@@ -155,7 +155,12 @@ impl DocView {
     }
 
     /// The 校閲 tab's buttons.
-    pub(super) fn review_action(&mut self, action: ReviewAction, cx: &mut Context<Self>) {
+    pub(super) fn review_action(
+        &mut self,
+        action: ReviewAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Document::Pages {
             show_comments,
             markup,
@@ -196,13 +201,20 @@ impl DocView {
             ReviewAction::Thesaurus => return self.toggle_thesaurus(cx),
             ReviewAction::SignatureLine => return self.open_signature_line_dialog(cx),
             ReviewAction::SideBySide => {
-                return cx.dispatch_action(&crate::workspace::side_by_side::ViewSideBySide)
+                return window
+                    .dispatch_action(Box::new(crate::workspace::side_by_side::ViewSideBySide), cx)
             }
             ReviewAction::SyncScroll => {
-                return cx.dispatch_action(&crate::workspace::side_by_side::SynchronousScrolling)
+                return window.dispatch_action(
+                    Box::new(crate::workspace::side_by_side::SynchronousScrolling),
+                    cx,
+                )
             }
             ReviewAction::ResetPosition => {
-                return cx.dispatch_action(&crate::workspace::side_by_side::ResetWindowPosition)
+                return window.dispatch_action(
+                    Box::new(crate::workspace::side_by_side::ResetWindowPosition),
+                    cx,
+                )
             }
             ReviewAction::Immersive => return self.toggle_immersive(cx),
             ReviewAction::Inspect | ReviewAction::InspectRemove(_) => {

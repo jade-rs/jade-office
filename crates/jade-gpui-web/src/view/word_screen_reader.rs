@@ -3,6 +3,8 @@
 //! with the document's text, a paragraph a line, kept up to date as it is
 //! edited, and a polite live region that reads out the paragraph the caret
 //! moves into — what `jade-office-model`'s `word::screen_reader` gives.
+//! The workspace publishes only its active tab, including in side-by-side
+//! view, and removes both mirrors when no Word document is active.
 
 use jade_web::word::screen_reader::screen_reader_text;
 
@@ -10,7 +12,13 @@ use super::*;
 
 /// What was last handed over: the document, its edit count and caret,
 /// and the caret's paragraph.
-type Handed = (SharedString, u64, Option<(usize, usize)>, usize);
+struct Handed {
+    document: gpui::EntityId,
+    name: SharedString,
+    generation: u64,
+    caret: Option<(usize, usize)>,
+    paragraph: usize,
+}
 
 thread_local! {
     static LAST: std::cell::RefCell<Option<Handed>> = const { std::cell::RefCell::new(None) };
@@ -19,18 +27,18 @@ thread_local! {
 impl DocView {
     /// After a frame's changes: the text and the caret's paragraph handed
     /// to the page again if they changed.
-    pub(super) fn update_screen_reader(&self) {
+    pub(crate) fn update_screen_reader(&self, id: gpui::EntityId) {
         let Document::Pages { document, .. } = &self.document else {
-            return;
+            return Self::clear_screen_reader();
         };
         let caret = document.caret();
-        let key = (self.name.clone(), self.generation, caret);
         let unchanged = LAST.with(|last| {
-            last.borrow()
-                .as_ref()
-                .is_some_and(|(name, generation, at, _)| {
-                    (name, generation, at) == (&key.0, &key.1, &key.2)
-                })
+            last.borrow().as_ref().is_some_and(|last| {
+                last.document == id
+                    && last.name == self.name
+                    && last.generation == self.generation
+                    && last.caret == caret
+            })
         });
         if unchanged {
             return;
@@ -38,13 +46,19 @@ impl DocView {
         let read = screen_reader_text(&**document);
         let moved = LAST.with(|last| {
             let mut last = last.borrow_mut();
-            let moved = last.as_ref().is_none_or(|(name, _, _, paragraph)| {
-                name != &key.0 || *paragraph != read.paragraph
-            });
-            let text_changed = last
+            let moved = last
                 .as_ref()
-                .is_none_or(|(name, generation, _, _)| name != &key.0 || *generation != key.1);
-            *last = Some((key.0.clone(), key.1, key.2, read.paragraph));
+                .is_none_or(|last| last.document != id || last.paragraph != read.paragraph);
+            let text_changed = last.as_ref().is_none_or(|last| {
+                last.document != id || last.name != self.name || last.generation != self.generation
+            });
+            *last = Some(Handed {
+                document: id,
+                name: self.name.clone(),
+                generation: self.generation,
+                caret,
+                paragraph: read.paragraph,
+            });
             if text_changed {
                 dom::set_text(&self.name, &read.text);
             }
@@ -52,6 +66,12 @@ impl DocView {
         });
         if moved {
             dom::announce(&read.paragraph_text);
+        }
+    }
+
+    pub(crate) fn clear_screen_reader() {
+        if LAST.with(|last| last.borrow_mut().take().is_some()) {
+            dom::clear();
         }
     }
 }
@@ -121,10 +141,24 @@ mod dom {
         };
         js_sys::Reflect::set(&live, &"textContent".into(), &text.into()).ok();
     }
+
+    pub fn clear() {
+        let Ok(document) = js_sys::Reflect::get(&js_sys::global(), &"document".into()) else {
+            return;
+        };
+        for id in ["jade-screen-reader", "jade-screen-reader-live"] {
+            if let Some(element) =
+                call(&document, "getElementById", &[id.into()]).filter(|found| !found.is_null())
+            {
+                call(&element, "remove", &[]);
+            }
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 mod dom {
     pub fn set_text(_name: &str, _text: &str) {}
     pub fn announce(_text: &str) {}
+    pub fn clear() {}
 }

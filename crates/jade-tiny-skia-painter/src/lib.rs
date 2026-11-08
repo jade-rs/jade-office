@@ -37,6 +37,7 @@ use std::hash::{BuildHasherDefault, Hasher};
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
+use unicode_segmentation::UnicodeSegmentation;
 
 use jade_painter::{ImageRect, ImageSource, Painter, TextMetrics};
 use tiny_skia::{
@@ -138,6 +139,8 @@ pub struct FontBook {
     /// table directory, which per character was a tenth of a repaint.
     characters: RefCell<FastMap<(usize, char), CharGlyph>>,
     covering: RefCell<FastMap<(usize, char), usize>>,
+    /// Vertical substitutions and advances in design units, shared across sizes.
+    upright: RefCell<FastMap<usize, FastMap<String, Option<(ttf_parser::GlyphId, Option<u16>)>>>>,
     /// Each font shorthand set, parsed and resolved to a face once: a
     /// renderer sets one per run of text, and parsing it every time was a
     /// twentieth of a keystroke's repaint.
@@ -258,6 +261,45 @@ impl FontBook {
             .min_by_key(|(_, face)| (i32::from(face.weight) - i32::from(weight)).abs())
             .map(|(index, _)| index)
             .unwrap_or(0)
+    }
+
+    fn upright_glyph(&self, font: usize, text: &str) -> Option<(ttf_parser::GlyphId, Option<u16>)> {
+        if let Some(&cached) = self
+            .upright
+            .borrow()
+            .get(&font)
+            .and_then(|glyphs| glyphs.get(text))
+        {
+            return cached;
+        }
+        let result = (|| {
+            let face = self.faces.get(font)?;
+            let shaper = rustybuzz::Face::from_slice(&face.data, 0)?;
+            let mut buffer = rustybuzz::UnicodeBuffer::new();
+            buffer.push_str(text);
+            buffer.guess_segment_properties();
+            buffer.set_direction(rustybuzz::Direction::TopToBottom);
+            let shaped = rustybuzz::shape(&shaper, &[], buffer);
+            let [info] = shaped.glyph_infos() else {
+                return None;
+            };
+            if info.glyph_id == 0 {
+                return None;
+            }
+            let glyph = ttf_parser::GlyphId(info.glyph_id as u16);
+            Some((
+                glyph,
+                shaper
+                    .glyph_ver_advance(glyph)
+                    .filter(|advance| *advance > 0),
+            ))
+        })();
+        self.upright
+            .borrow_mut()
+            .entry(font)
+            .or_default()
+            .insert(text.to_owned(), result);
+        result
     }
 
     /// `font`, unless it lacks `ch` and another face has it — or, when no
@@ -2083,6 +2125,42 @@ impl TinySkiaPainter {
         }
     }
 
+    fn draw_upright_text(&self, text: &str, x: f64, y: f64) {
+        let mut chars = text.chars();
+        let Some(ch) = chars.next() else {
+            return;
+        };
+        if text.graphemes(true).count() != 1 {
+            return self.draw_text(text, x, y, false);
+        }
+        let (primary, size, baseline, transform, color) = {
+            let state = self.inner.state.borrow();
+            (
+                state.font,
+                state.font_size_px,
+                state.baseline,
+                state.transform,
+                state.fill,
+            )
+        };
+        let font = self.inner.fonts.covering(primary, ch);
+        let Some((glyph, _)) = self.inner.fonts.upright_glyph(font, text) else {
+            return self.draw_text(text, x, y, false);
+        };
+        let face = &self.inner.fonts.faces[font];
+        let scale = size / face.units_per_em;
+        let (ascent, descent) = self.font_extent(font, size);
+        let baseline_y = y as f32 + baseline.offset(ascent, descent);
+        let glyph_transform = transform.pre_concat(Transform::from_row(
+            scale, 0.0, 0.0, -scale, x as f32, baseline_y,
+        ));
+        if !self.blit_glyph(font, glyph, glyph_transform, None, color) {
+            if let Some(outline) = self.inner.fonts.outline(font, glyph) {
+                self.fill_path_with(&outline, color, glyph_transform);
+            }
+        }
+    }
+
     /// One face's run of [`Self::draw_text`], from `pen`; the pen after it.
     fn draw_run(
         &self,
@@ -3228,6 +3306,13 @@ impl Painter for TinySkiaPainter {
         Ok(())
     }
 
+    fn fill_upright_text(&self, text: &str, x: f64, y: f64) -> Result<(), Self::Error> {
+        if !self.with_effects(|layer| layer.draw_upright_text(text, x, y)) {
+            self.draw_upright_text(text, x, y);
+        }
+        Ok(())
+    }
+
     fn try_fill_shaped_text(
         &self,
         text: &str,
@@ -3261,6 +3346,29 @@ impl Painter for TinySkiaPainter {
         }
         let size = self.inner.state.borrow().font_size_px;
         Ok(f64::from(self.text_width(size, text)))
+    }
+
+    fn measure_upright_vertical_advance(&self, text: &str) -> Result<Option<f64>, Self::Error> {
+        let mut chars = text.chars();
+        let Some(ch) = chars.next() else {
+            return Ok(None);
+        };
+        if text.graphemes(true).count() != 1 {
+            return Ok(None);
+        }
+        let state = self.inner.state.borrow();
+        let font = self.inner.fonts.covering(state.font, ch);
+        Ok(self
+            .inner
+            .fonts
+            .upright_glyph(font, text)
+            .and_then(|(_, advance)| {
+                let face = self.inner.fonts.faces.get(font)?;
+                Some(
+                    f64::from(advance?) * f64::from(state.font_size_px)
+                        / f64::from(face.units_per_em),
+                )
+            }))
     }
 
     fn measure_text_metrics(&self, text: &str) -> Result<TextMetrics, Self::Error> {
@@ -3533,6 +3641,144 @@ mod tests {
         book.register("Noto Sans JP", 400, Arc::new(std::fs::read(path).unwrap()))
             .unwrap();
         Rc::new(book)
+    }
+
+    #[test]
+    fn upright_alternates_match_vertical_reference_with_effects_and_capture() {
+        use jade_painter::capture::{new_sink, replay, RoutedPainter};
+        let fonts = fonts();
+        let render = |text: &str, upright: bool, capture: bool, effects: bool| {
+            let painter = TinySkiaPainter::new(120, 120, fonts.clone()).unwrap();
+            let sink = new_sink();
+            let routed = RoutedPainter::new(painter, capture.then(|| sink.clone()));
+            routed.set_font("40px 'Noto Sans JP'");
+            routed.set_text_baseline("top");
+            routed.set_fill_style_str("#204080");
+            routed.translate(4.0, 3.0).unwrap();
+            routed.scale(1.1, 0.9).unwrap();
+            if effects {
+                routed.set_shadow_color("#803020");
+                routed.set_shadow_blur(2.0);
+                routed.set_shadow_offset_x(3.0);
+                routed.set_shadow_offset_y(2.0);
+                routed.set_blur_filter(0.5);
+                routed.set_global_alpha(0.7);
+            }
+            if upright {
+                routed.fill_upright_text(text, 15.0, 15.0).unwrap();
+            } else {
+                routed.fill_text(text, 15.0, 15.0).unwrap();
+            }
+            if capture {
+                replay(&sink.borrow(), routed.inner(), |_| {}).unwrap();
+            }
+            routed.inner().rgba_premultiplied()
+        };
+        for effects in [false, true] {
+            let reference = render("︵", false, false, effects);
+            assert!(reference.iter().any(|&byte| byte != 0));
+            assert!(render("（", false, false, effects) != reference);
+            assert!(render("（", true, false, effects) == reference);
+            assert!(render("（", true, true, effects) == reference);
+            for (cluster, composed) in [("か\u{3099}", "が"), ("a\u{301}", "á")] {
+                assert_eq!(
+                    fonts.upright_glyph(0, cluster),
+                    fonts.upright_glyph(0, composed)
+                );
+                // Kana also has a vertical alternate, so compare vertical shaping on both encodings.
+                let reference = render(composed, true, false, effects);
+                assert!(reference.iter().any(|&byte| byte != 0));
+                assert!(
+                    render(cluster, true, false, effects) == reference,
+                    "{cluster:?}, effects={effects}"
+                );
+                assert!(
+                    render(cluster, true, true, effects) == reference,
+                    "{cluster:?}, captured effects={effects}"
+                );
+            }
+            for text in ["i", "ab", "a\u{20dd}", ""] {
+                assert!(
+                    render(text, true, false, effects) == render(text, false, false, effects),
+                    "{text:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn upright_metrics_use_substituted_glyph_design_units_at_each_size() {
+        let original = fonts();
+        let mut bytes = original.faces[0].data.as_ref().clone();
+        let face = ttf_parser::Face::parse(&bytes, 0).unwrap();
+        let glyph = usize::from(face.glyph_index('︵').unwrap().0);
+        let advance = face.units_per_em() * 3 / 4;
+        let count = u16::from_be_bytes(bytes[4..6].try_into().unwrap()) as usize;
+        let record = (0..count)
+            .map(|i| 12 + 16 * i)
+            .find(|&i| &bytes[i..i + 4] == b"vmtx")
+            .unwrap();
+        let offset =
+            u32::from_be_bytes(bytes[record + 8..record + 12].try_into().unwrap()) as usize;
+        bytes[offset + glyph * 4..offset + glyph * 4 + 2].copy_from_slice(&advance.to_be_bytes());
+        let mut book = FontBook::new();
+        book.register("Thai", 400, thai()).unwrap();
+        book.register("Vertical", 400, Arc::new(bytes.clone()))
+            .unwrap();
+        bytes[record..record + 4].copy_from_slice(b"TEST");
+        book.register("No Metrics", 400, Arc::new(bytes)).unwrap();
+        let painter = TinySkiaPainter::new(80, 80, Rc::new(book)).unwrap();
+        // The Thai face falls back to the JP face for the bracket.
+        for family in ["Vertical", "Thai"] {
+            for (size, expected) in [(32, 24.0), (16, 12.0), (32, 24.0)] {
+                painter.set_font(&format!("{size}px '{family}'"));
+                assert_eq!(
+                    painter.measure_upright_vertical_advance("（").unwrap(),
+                    Some(expected)
+                );
+            }
+        }
+        for family in ["Vertical", "Thai"] {
+            painter.set_font(&format!("32px '{family}'"));
+            let pairs: &[(&str, &str)] = if family == "Thai" {
+                &[("か\u{3099}", "が")]
+            } else {
+                &[("か\u{3099}", "が"), ("a\u{301}", "á")]
+            };
+            for &(cluster, composed) in pairs {
+                assert_eq!(
+                    painter.measure_upright_vertical_advance(cluster).unwrap(),
+                    painter.measure_upright_vertical_advance(composed).unwrap(),
+                    "{family}: {cluster:?}"
+                );
+                assert_eq!(
+                    painter.measure_upright_vertical_advance(cluster).unwrap(),
+                    Some(32.0),
+                    "{family}: {cluster:?}"
+                );
+            }
+        }
+        painter.set_font("32px 'No Metrics'");
+        assert_eq!(
+            painter.measure_upright_vertical_advance("（").unwrap(),
+            None
+        );
+        for text in ["", "ab", "a\u{20dd}", "\u{10ffff}"] {
+            assert_eq!(
+                painter.measure_upright_vertical_advance(text).unwrap(),
+                None
+            );
+        }
+        painter.set_font("32px 'Thai'");
+        assert_eq!(painter.measure_upright_vertical_advance("ก").unwrap(), None);
+        // The selected Thai face covers `a` but cannot compose this cluster.
+        // Keep the generic fallback rather than borrowing metrics from another face.
+        assert_eq!(
+            painter
+                .measure_upright_vertical_advance("a\u{301}")
+                .unwrap(),
+            None
+        );
     }
 
     fn pixel(painter: &TinySkiaPainter, x: u32, y: u32) -> [u8; 4] {

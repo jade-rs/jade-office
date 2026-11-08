@@ -27,6 +27,7 @@ use jade_docx_editor::word_document::{
 use super::page::WordPage;
 use super::picture::{PlacedObject, Wrap};
 use super::WordSession;
+pub use jade_docx_editor::word_document::objects::ObjectClip;
 
 /// CSS px per point.
 pub const PX_PER_PT: f64 = 96.0 / 72.0;
@@ -474,6 +475,63 @@ pub trait WordObjects: WordSession + WordPage {
         edit: impl FnMut(&mut WordDocument, &mut XmlElement) -> Result<(), String> + 'static,
     ) -> Result<(), String> {
         self.execute_command(Box::new(edit_drawing_command(name, target, edit)), true)
+    }
+
+    /// A drawing copy independent of the source document and its history.
+    fn copy_object(&self, target: FloatingObjectTarget) -> Result<ObjectClip, String> {
+        self.word_document().copy_object(target)
+    }
+
+    fn paste_object(&mut self, clip: &ObjectClip) -> Result<(), String> {
+        let range = self.selection_range().ok_or("paste requires a caret")?;
+        self.execute_command(
+            Box::new(
+                jade_docx_editor::commands::paste_object::PasteObjectCommand::new(
+                    range,
+                    clip.clone(),
+                ),
+            ),
+            false,
+        )
+    }
+
+    /// Paste at a selected frame's anchor, independent of a remembered text range.
+    fn paste_object_beside(
+        &mut self,
+        clip: &ObjectClip,
+        target: FloatingObjectTarget,
+    ) -> Result<(), String> {
+        let paragraph = self
+            .word_document()
+            .paragraph(target.paragraph_index)
+            .ok_or("object paragraph is missing")?;
+        let offset = paragraph
+            .runs
+            .iter()
+            .take(target.run_index)
+            .map(|r| r.text.len())
+            .sum();
+        let caret = self.word_document().model_to_rendered_text_position(
+            jade_selection::TextPosition::new(target.paragraph_index, offset),
+        );
+        self.execute_command(
+            Box::new(
+                jade_docx_editor::commands::paste_object::PasteObjectCommand::new(
+                    jade_selection::SelectionRange::collapsed(caret),
+                    clip.clone(),
+                ),
+            ),
+            false,
+        )
+    }
+
+    /// Deletes the selected drawing, leaving the caret at its host paragraph.
+    /// Text-box surfaces disappear with their host and return on undo.
+    fn delete_object(&mut self, target: FloatingObjectTarget) -> Result<(), String> {
+        self.execute_command(
+            Box::new(jade_docx_editor::commands::delete_object::DeleteObjectCommand::new(target)),
+            false,
+        )
     }
 
     fn object_format(&self, target: FloatingObjectTarget) -> Option<ObjectFormat> {

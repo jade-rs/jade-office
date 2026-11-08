@@ -4,11 +4,14 @@
 //! whose own print dialog then takes the printer, copies and two-sided
 //! printing.
 
-use gpui::{div, prelude::*, px, AnyElement, Context, KeyDownEvent, MouseButton, SharedString};
-use jade_web::word::page::Paper;
-use jade_web::word::printing::{
-    self, PageLabel, PrintRange, PrintSettings, Sheet, PAGES_PER_SHEET,
+use std::sync::Arc;
+
+use gpui::{
+    div, img, prelude::*, px, AnyElement, Context, KeyDownEvent, MouseButton, RenderImage,
+    SharedString,
 };
+use jade_web::word::page::Paper;
+use jade_web::word::printing::{PrintRange, PrintSettings, PAGES_PER_SHEET};
 
 use super::{DocView, Document};
 use crate::{i18n, palette};
@@ -23,6 +26,10 @@ fn t(key: &'static str) -> &'static str {
 /// The panel while it is open.
 pub(crate) struct PrintPanel {
     pub settings: PrintSettings,
+    preview: Result<jade_web::editing::PrintPreviewSession, String>,
+    image: Option<Arc<RenderImage>>,
+    painted_sheet: Option<usize>,
+    preview_settings: Option<PrintSettings>,
     /// The ユーザー指定 range as typed.
     pub range: String,
     pub sheet: usize,
@@ -44,12 +51,18 @@ impl DocView {
         if !matches!(self.document, Document::Pages { .. }) {
             return;
         }
+        self.close_print_panel();
         self.print_panel = Some(Box::new(PrintPanel {
             settings: PrintSettings::default(),
+            preview: Err(String::new()),
+            image: None,
+            painted_sheet: None,
+            preview_settings: None,
             range: String::new(),
             sheet: 0,
             problem: None,
         }));
+        self.refresh_print_preview();
         cx.notify();
     }
 
@@ -58,30 +71,65 @@ impl DocView {
             change(panel);
             panel.problem = None;
         }
+        self.refresh_print_preview();
         cx.notify();
     }
 
-    /// The sheets the settings make of the open document's pages.
-    fn print_sheets(&self, settings: &PrintSettings) -> Result<Vec<Sheet>, String> {
-        let Document::Pages {
-            document, current, ..
-        } = &self.document
-        else {
-            return Ok(Vec::new());
+    // Cache pagination across renders and sheet navigation. Settings changes
+    // rebuild the same paper layout used by the PDF output.
+    fn refresh_print_preview(&mut self) {
+        let Some(panel) = self.print_panel.as_ref() else {
+            return;
         };
-        let labels: Vec<PageLabel> = document
-            .page_labels()
-            .into_iter()
-            .map(|(section, number)| PageLabel {
-                section: section + 1,
-                number,
-            })
-            .collect();
-        let (width, height) = document.page_size();
-        let sizes = vec![(width * 0.75, height * 0.75); labels.len()];
-        let pages = printing::pages_to_print(settings, &labels, *current)
-            .map_err(|error| error.to_string())?;
-        Ok(printing::sheets(settings, &pages, &sizes))
+        let settings = panel.effective();
+        if panel.preview_settings.as_ref() != Some(&settings) {
+            let Document::Pages {
+                document, current, ..
+            } = &self.document
+            else {
+                return;
+            };
+            let preview = document.prepare_print_preview(&settings, *current);
+            if let Some(panel) = self.print_panel.as_mut() {
+                panel.preview = preview;
+                panel.preview_settings = Some(settings);
+                panel.sheet = 0;
+                panel.painted_sheet = None;
+            }
+        }
+        if let Some(panel) = self.print_panel.as_mut() {
+            if panel.painted_sheet == Some(panel.sheet) {
+                return;
+            }
+            self.retired.extend(panel.image.take());
+            match &mut panel.preview {
+                Ok(preview) => match preview.render_sheet(panel.sheet) {
+                    Ok(mut page) => {
+                        // GPUI's image upload expects BGRA premultiplied pixels.
+                        for pixel in page.rgba.chunks_exact_mut(4) {
+                            pixel.swap(0, 2);
+                        }
+                        if let Some(buffer) = image::ImageBuffer::from_raw(
+                            page.pixel_width,
+                            page.pixel_height,
+                            page.rgba,
+                        ) {
+                            panel.image =
+                                Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])));
+                        }
+                    }
+                    Err(error) => panel.problem = Some(error.into()),
+                },
+                Err(_) => {}
+            }
+            panel.painted_sheet = Some(panel.sheet);
+        }
+    }
+
+    fn close_print_panel(&mut self) {
+        if let Some(mut panel) = self.print_panel.take() {
+            self.retired.extend(panel.image.take());
+        }
     }
 
     fn print_now(&mut self, cx: &mut Context<Self>) {
@@ -95,13 +143,16 @@ impl DocView {
             return;
         };
         let current = *current;
-        if settings.update_fields {
-            // 印刷前にフィールドを更新する: in the document, as Word does.
-            printing::update_fields(document.as_mut());
-        }
-        match document.print_pdf(&settings, current) {
+        let result = (|| {
+            if settings.update_fields {
+                // 印刷前にフィールドを更新する: in the document, as Word does.
+                document.update_fields_for_print()?;
+            }
+            document.print_pdf(&settings, current)
+        })();
+        match result {
             Ok(pdf) => {
-                self.print_panel = None;
+                self.close_print_panel();
                 let name = format!(
                     "{}.pdf",
                     self.name
@@ -128,7 +179,7 @@ impl DocView {
         };
         let key = event.keystroke.key.as_str();
         match key {
-            "escape" => self.print_panel = None,
+            "escape" => self.close_print_panel(),
             "enter" => {
                 self.print_now(cx);
                 return true;
@@ -149,6 +200,7 @@ impl DocView {
                 }
             }
         }
+        self.refresh_print_preview();
         cx.notify();
         true
     }
@@ -156,7 +208,6 @@ impl DocView {
     pub(crate) fn print_panel_element(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let panel = self.print_panel.as_ref()?;
         let settings = panel.effective();
-        let sheets = self.print_sheets(&settings);
         let chip = |id: SharedString, label: SharedString, on: bool| {
             div()
                 .id(id)
@@ -196,8 +247,9 @@ impl DocView {
                 s.hidden_text = !s.hidden_text
             }),
         ];
-        let preview = match &sheets {
-            Ok(sheets) => {
+        let preview = match &panel.preview {
+            Ok(preview) => {
+                let sheets = &preview.layout().sheets;
                 let index = panel.sheet.min(sheets.len().saturating_sub(1));
                 let count = sheets.len();
                 let sheet = sheets.get(index).map(|sheet| {
@@ -208,28 +260,7 @@ impl DocView {
                         .h(px(sheet.height as f32 * scale))
                         .bg(gpui::white())
                         .shadow_md()
-                        .children(sheet.placements.iter().map(|placement| {
-                            let (width, height) = match &self.document {
-                                Document::Pages { document, .. } => {
-                                    let (w, h) = document.page_size();
-                                    (w * 0.75, h * 0.75)
-                                }
-                                _ => (612.0, 792.0),
-                            };
-                            div()
-                                .absolute()
-                                .left(px(placement.x as f32 * scale))
-                                .top(px(placement.y as f32 * scale))
-                                .w(px((width * placement.scale) as f32 * scale))
-                                .h(px((height * placement.scale) as f32 * scale))
-                                .border_1()
-                                .border_color(gpui::rgb(0x9ca3af))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_color(gpui::rgb(0x6b7280))
-                                .child((placement.page + 1).to_string())
-                        }))
+                        .children(panel.image.clone().map(|image| img(image).size_full()))
                 });
                 div()
                     .flex()
@@ -387,7 +418,7 @@ impl DocView {
                     .child(
                         chip("print-cancel".into(), t("format.cancel").into(), false).on_click(
                             cx.listener(|view, _, _, cx| {
-                                view.print_panel = None;
+                                view.close_print_panel();
                                 cx.notify();
                             }),
                         ),

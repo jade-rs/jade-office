@@ -53,6 +53,8 @@ pub enum ViewsAction {
     ToggleWhiteSpace,
     /// フォーカス.
     ToggleFocus,
+    SetTheme(theme::Mode),
+    ToggleDarkPages,
     /// ウィンドウ → 分割.
     Split,
     /// ウィンドウ → 新しいウィンドウを開く, and closing it.
@@ -238,10 +240,18 @@ impl DocumentView {
                 self.views.hide_white_space = !self.views.hide_white_space;
             }
             ViewsAction::ToggleFocus => modes::toggle_focus(self, window),
+            ViewsAction::SetTheme(mode) => {
+                theme::set_mode(mode);
+                window.refresh();
+            }
+            ViewsAction::ToggleDarkPages => {
+                theme::toggle_dark_pages();
+                window.refresh();
+            }
             ViewsAction::Split => split::toggle_split(self),
             ViewsAction::NewWindow => split::open_window(self),
             ViewsAction::CloseWindow => self.views.window = None,
-            ViewsAction::SetMode(mode) => modes::set_mode(self, mode, cx),
+            ViewsAction::SetMode(mode) => modes::set_mode(self, mode, window, cx),
             ViewsAction::ToggleModeMenu => self.views.mode_menu = !self.views.mode_menu,
             ViewsAction::OpenAutoCorrect => {
                 self.views.dialog = Some(ViewDialog::AutoCorrect(Box::new(
@@ -999,6 +1009,48 @@ pub fn view_tab(
             ),
         ])],
     );
+    let appearance = group(
+        t("menu.view.appearance"),
+        vec![
+            row([
+                (
+                    "appearance-system",
+                    "menu.view.appearance.system",
+                    theme::Mode::System,
+                ),
+                (
+                    "appearance-light",
+                    "menu.view.appearance.light",
+                    theme::Mode::Light,
+                ),
+                (
+                    "appearance-dark",
+                    "menu.view.appearance.dark",
+                    theme::Mode::Dark,
+                ),
+            ]
+            .into_iter()
+            .map(|(id, label, mode)| {
+                tab_button(
+                    id,
+                    t(label),
+                    t(label),
+                    theme::mode() == mode,
+                    ViewsAction::SetTheme(mode),
+                    cx,
+                )
+            })
+            .collect()),
+            row(vec![tab_button(
+                "appearance-dark-pages",
+                t("menu.view.appearance.dark_pages"),
+                t("menu.view.appearance.dark_pages"),
+                theme::dark_pages_wanted(),
+                ViewsAction::ToggleDarkPages,
+                cx,
+            )]),
+        ],
+    );
     let mut groups = vec![views_group, focus];
     groups.extend(before);
     groups.push(movement);
@@ -1007,6 +1059,7 @@ pub fn view_tab(
     groups.push(window_group);
     groups.extend(after);
     groups.push(options);
+    groups.push(appearance);
     groups
 }
 

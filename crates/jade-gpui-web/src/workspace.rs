@@ -65,6 +65,8 @@ pub struct Workspace {
     /// 回復されたファイル: the copies 自動回復 left in the browser, offered
     /// back (`view::word_recover`).
     recovered: Vec<jade_web::word::recovery::RecoveredCopy>,
+    /// Keep the entity, rather than a changing tab index, while asking to close.
+    closing: Option<Entity<DocView>>,
 }
 
 /// A file waiting for its password to open.
@@ -94,16 +96,19 @@ impl Workspace {
             locked: None,
             side: Default::default(),
             recovered: Vec::new(),
+            closing: None,
         }
         .loading_from_store(cx)
     }
 
     /// The browser's store, read once the page is up: the copies 自動回復
-    /// left there by an earlier visit, and the Normal template.
+    /// left there by an earlier visit, recent files, and the Normal template.
     fn loading_from_store(self, cx: &mut Context<Self>) -> Self {
         use crate::view::word_recover::store;
         cx.spawn(async move |workspace, cx| {
             let copies = store::all("recovery").await;
+            let mut recent = store::all("recent").await;
+            recent.sort_by(|a, b| b.2.total_cmp(&a.2));
             let normal = store::bytes("templates", "normal").await;
             if let Some(normal) = normal {
                 crate::view::word_files::NORMAL
@@ -111,6 +116,18 @@ impl Workspace {
             }
             workspace
                 .update(cx, |workspace, cx| {
+                    // Opens that arrived while storage was loading are newer.
+                    for (_, name, _, bytes) in recent {
+                        if workspace.recent.len() >= RECENT_LIMIT {
+                            break;
+                        }
+                        let name = SharedString::from(name);
+                        if workspace.files.contains_key(&name) {
+                            continue;
+                        }
+                        workspace.files.insert(name.clone(), Rc::new(bytes));
+                        workspace.recent.push(name);
+                    }
                     let open: Vec<String> = workspace
                         .tabs
                         .iter()
@@ -137,8 +154,8 @@ impl Workspace {
         self
     }
 
-    /// Opens a recovered copy as `<name> (回復済み).docx`; the copy leaves
-    /// the store, the document taking its own as it is edited.
+    /// Opens a recovered copy as an unsaved document, retaining its stored
+    /// copy until the document is saved or the copy is explicitly discarded.
     fn open_recovered(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
         use crate::view::word_recover::store;
         let Some(copy) = self.recovered.iter().find(|copy| copy.key == key).cloned() else {
@@ -150,10 +167,31 @@ impl Workspace {
             };
             workspace
                 .update_in(cx, |workspace, window, cx| {
-                    let name =
+                    if let Some(index) = workspace.tabs.iter().position(|tab| {
+                        tab.read(cx).recovery_key().as_deref() == Some(copy.key.as_str())
+                    }) {
+                        workspace.activate(index, window, cx);
+                        return;
+                    }
+                    let base =
                         jade_web::word::recovery::recovered_name(&copy.name, !i18n::is_english());
-                    workspace.open(name.into(), Rc::new(bytes), window, cx);
-                    workspace.discard_recovered(&copy.key, cx);
+                    let mut name: SharedString = base.clone().into();
+                    let mut number = 2;
+                    while workspace.tabs.iter().any(|tab| tab.read(cx).name == name) {
+                        name = format!("{} ({number}).docx", base.trim_end_matches(".docx")).into();
+                        number += 1;
+                    }
+                    if workspace.open_document_tab(
+                        name,
+                        Rc::new(bytes),
+                        Some((copy.key.clone(), copy.saved_at)),
+                        None,
+                        window,
+                        cx,
+                    ) {
+                        workspace.recovered.retain(|item| item.key != copy.key);
+                        cx.notify();
+                    }
                 })
                 .ok();
         })
@@ -183,6 +221,18 @@ impl Workspace {
                 return;
             }
         }
+        self.open_with_source(name, bytes, None, window, cx);
+    }
+
+    /// A decrypted document keeps its encrypted source in recent files.
+    fn open_with_source(
+        &mut self,
+        name: SharedString,
+        bytes: Rc<Vec<u8>>,
+        source: Option<Rc<Vec<u8>>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // A list picked for a mail merge goes to the document that asked.
         if let Some(tab) = self.active_tab().cloned() {
             if tab.read(cx).wants_data_source() {
@@ -264,6 +314,19 @@ impl Workspace {
             self.activate(index, window, cx);
             return;
         }
+        self.open_document_tab(name, bytes, None, source, window, cx);
+    }
+
+    /// Opens an actual document, bypassing the active tab's import modes.
+    fn open_document_tab(
+        &mut self,
+        name: SharedString,
+        bytes: Rc<Vec<u8>>,
+        recovery: Option<(String, f64)>,
+        source: Option<Rc<Vec<u8>>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let opened = DocView::open(
             name.clone(),
             &bytes,
@@ -272,36 +335,71 @@ impl Workspace {
             cx.focus_handle(),
         );
         match opened {
-            Ok(view) => {
+            Ok(mut view) => {
+                let is_recovered = recovery.is_some();
+                if let Some((key, saved_at)) = recovery {
+                    view.resume_recovery(key, saved_at);
+                }
                 let entity = cx.new(|_| view);
+                // Either document can receive focus in side-by-side view.
+                // Keep tab actions, status and accessibility on that document.
+                let id = entity.entity_id();
+                cx.on_focus_in(&entity.focus_handle(cx), window, move |workspace, _, cx| {
+                    if let Some(index) = workspace.tabs.iter().position(|tab| tab.entity_id() == id)
+                    {
+                        if workspace.active != Some(index) {
+                            workspace.active = Some(index);
+                            cx.notify();
+                        }
+                    }
+                })
+                .detach();
                 // Repaints the frame whenever the view changes, so the status
                 // bar follows the page, the slide and the zoom.
-                cx.observe(&entity, |_workspace, _entity, cx| cx.notify())
-                    .detach();
+                cx.observe(&entity, |workspace, entity, cx| {
+                    let view = entity.read(cx);
+                    if let Some(bytes) = view.saved_bytes.as_ref() {
+                        workspace.files.insert(view.name.clone(), Rc::clone(bytes));
+                    }
+                    cx.notify();
+                })
+                .detach();
                 self.tabs.push(entity);
-                self.files.insert(name.clone(), bytes);
+                let source = source.unwrap_or(bytes);
+                // Recovery snapshots must stay recovery candidates until saved.
+                if !is_recovered {
+                    crate::view::word_recover::store::remember(&name, &source);
+                }
+                self.files.insert(name.clone(), source);
                 self.recent =
                     recent_files::push(std::mem::take(&mut self.recent), name, RECENT_LIMIT);
                 self.error = None;
                 self.activate(self.tabs.len() - 1, window, cx);
+                true
             }
             Err(error) => {
                 self.error = Some(
                     i18n::format("web.open_failed", &[("name", &name), ("error", &error)]).into(),
                 );
                 cx.notify();
+                false
             }
         }
     }
 
     /// The next new document's name: 文書 1, 文書 2, …
     fn untitled_name(&mut self, extension: &str) -> SharedString {
-        self.untitled += 1;
-        format!(
-            "{}.{extension}",
-            i18n::format("doc.untitled", &[("n", &self.untitled)])
-        )
-        .into()
+        loop {
+            self.untitled += 1;
+            let name: SharedString = format!(
+                "{}.{extension}",
+                i18n::format("doc.untitled", &[("n", &self.untitled)])
+            )
+            .into();
+            if !self.files.contains_key(&name) {
+                return name;
+            }
+        }
     }
 
     /// 新規文書: a blank document, as this language's Word makes one.
@@ -340,12 +438,31 @@ impl Workspace {
     }
 
     fn close_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if index >= self.tabs.len() {
+        let Some(tab) = self.tabs.get(index).cloned() else {
+            return;
+        };
+        if !tab.update(cx, |view, cx| view.prepare_close(cx)) {
             return;
         }
-        // 自動回復: a copy stays only for a document closed with edits
-        // unsaved.
-        self.tabs[index].update(cx, |view, _| view.recovery_closing());
+        if tab.read(cx).is_dirty() {
+            self.closing = Some(tab);
+            window.focus(&self.focus, cx);
+            cx.notify();
+            return;
+        }
+        tab.update(cx, |view, _| view.recovery_closing());
+        self.remove_tab(index, window, cx);
+    }
+
+    fn remove_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .closing
+            .as_ref()
+            .is_some_and(|tab| tab.entity_id() == self.tabs[index].entity_id())
+        {
+            self.closing = None;
+        }
+        self.close_side_by_side(self.tabs[index].entity_id(), cx);
         self.tabs.remove(index);
         if self.tabs.is_empty() {
             self.active = None;
@@ -360,6 +477,75 @@ impl Workspace {
             active
         };
         self.activate(next.min(self.tabs.len() - 1), window, cx);
+    }
+
+    fn cancel_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(tab) = self.closing.take() {
+            if let Some(index) = self
+                .tabs
+                .iter()
+                .position(|item| item.entity_id() == tab.entity_id())
+            {
+                self.activate(index, window, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn close_bar(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let tab = self.closing.as_ref()?;
+        Some(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_3()
+                .px_4()
+                .py_2()
+                .bg(palette::panel())
+                .border_t_1()
+                .border_color(palette::accent())
+                .text_xs()
+                .child(div().flex_1().child(i18n::format(
+                    "workspace.close_unsaved",
+                    &[("name", &tab.read(cx).name)],
+                )))
+                .child(
+                    status_button("close-download", i18n::text("workspace.close_download"))
+                        .on_click(cx.listener(|workspace, _, window, cx| {
+                            let tab = workspace.closing.clone();
+                            workspace.cancel_close(window, cx);
+                            if let Some(tab) = tab {
+                                // Downloads can be cancelled by the browser: keep the tab
+                                // open so the user can check the copy before closing it.
+                                tab.update(cx, |view, cx| view.save(cx));
+                            }
+                        })),
+                )
+                .child(
+                    status_button("close-discard", i18n::text("workspace.close_discard")).on_click(
+                        cx.listener(|workspace, _, window, cx| {
+                            let Some(tab) = workspace.closing.take() else {
+                                return;
+                            };
+                            if let Some(index) = workspace
+                                .tabs
+                                .iter()
+                                .position(|item| item.entity_id() == tab.entity_id())
+                            {
+                                tab.update(cx, |view, _| view.discard_recovery());
+                                workspace.remove_tab(index, window, cx);
+                            }
+                        }),
+                    ),
+                )
+                .child(
+                    status_button("close-cancel", i18n::text("format.cancel")).on_click(
+                        cx.listener(|workspace, _, window, cx| workspace.cancel_close(window, cx)),
+                    ),
+                )
+                .into_any_element(),
+        )
     }
 
     fn active_tab(&self) -> Option<&Entity<DocView>> {
@@ -1362,6 +1548,14 @@ impl Focusable for Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::set_unsaved_changes(self.tabs.iter().any(|tab| tab.read(cx).is_dirty()));
+        // Only the active tab owns the page's accessibility mirror. A second
+        // rendered document (side by side) must not overwrite it.
+        if let Some(tab) = self.active_tab() {
+            tab.read(cx).update_screen_reader(tab.entity_id());
+        } else {
+            DocView::clear_screen_reader();
+        }
         palette::follow(window.appearance());
         let viewport = window.viewport_size();
         let (width, height) = (f32::from(viewport.width), f32::from(viewport.height));
@@ -1389,8 +1583,14 @@ impl Render for Workspace {
             } else {
                 0.0
             };
+        let compared = self.editor_content();
+        let editor_width = if compared.is_some() {
+            (width - side - 1.0) / 2.0
+        } else {
+            width - side
+        };
         cx.set_global(EditorArea(
-            (width - side).max(1.0),
+            editor_width.max(1.0),
             (height - TITLE_BAR_HEIGHT - TAB_BAR_HEIGHT - STATUS_BAR_HEIGHT).max(1.0),
         ));
 
@@ -1423,6 +1623,12 @@ impl Render for Workspace {
                 }),
             )
             .on_key_down(cx.listener(|workspace, event: &KeyDownEvent, window, cx| {
+                if workspace.closing.is_some() {
+                    if event.keystroke.key == "escape" {
+                        workspace.cancel_close(window, cx);
+                    }
+                    return cx.stop_propagation();
+                }
                 if workspace.password_key(event, window, cx) {
                     return cx.stop_propagation();
                 }
@@ -1449,7 +1655,7 @@ impl Render for Workspace {
                             .overflow_hidden()
                             .when(has_tabs, |editor| editor.child(self.tab_bar(cx)))
                             .child(div().flex_1().min_h_0().overflow_hidden().map(
-                                |content| match (self.editor_content(), active_view) {
+                                |content| match (compared, active_view) {
                                     (Some(pair), _) => content.child(pair),
                                     (None, Some(view)) => content.child(view),
                                     (None, None) => content.child(self.welcome(cx)),
@@ -1458,6 +1664,7 @@ impl Render for Workspace {
                     ),
             )
             .children(self.password_bar())
+            .children(self.close_bar(cx))
             .child(self.status_bar(cx))
             .into_any_element()
     }
@@ -1481,8 +1688,15 @@ impl Workspace {
                 match jade_web::word::protection::decrypt_package(&locked.bytes, &password) {
                     Ok(plain) => {
                         let name = locked.name.clone();
+                        let encrypted = Rc::clone(&locked.bytes);
                         self.locked = None;
-                        self.open(name.clone(), Rc::new(plain), window, cx);
+                        self.open_with_source(
+                            name.clone(),
+                            Rc::new(plain),
+                            Some(encrypted),
+                            window,
+                            cx,
+                        );
                         if let Some(tab) = self.tabs.iter().find(|tab| tab.read(cx).name == name) {
                             tab.update(cx, |view, _| view.set_open_password(password));
                         }

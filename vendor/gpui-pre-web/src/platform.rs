@@ -674,13 +674,61 @@ impl Platform for WebPlatform {
     }
 
     fn write_to_clipboard(&self, item: ClipboardItem) {
-        if let Some(text) = item.text()
-            && let Some(window) = web_sys::window()
-        {
-            // Fire-and-forget; called synchronously inside the user's input
-            // event, which satisfies the browser's user-activation requirement.
-            drop(window.navigator().clipboard().write_text(&text));
-        }
+        let Some(text) = item.text() else { return };
+        // In insecure contexts the property is absent. Do not invoke a web-sys
+        // method on undefined (which would abort the WASM application).
+        let Ok(clipboard) = js_sys::Reflect::get(
+            self.browser_window.navigator().as_ref(),
+            &"clipboard".into(),
+        )
+        .and_then(|value| value.dyn_into::<web_sys::Clipboard>()) else {
+            return;
+        };
+        let html = item.entries.iter().find_map(|entry| {
+            let ClipboardEntry::String(string) = entry else {
+                return None;
+            };
+            string
+                .metadata_json::<std::collections::BTreeMap<String, String>>()?
+                .remove("text/html")
+        });
+        let rich_write = html.and_then(|html| {
+            let write_available = js_sys::Reflect::get(clipboard.as_ref(), &"write".into())
+                .ok()
+                .is_some_and(|value| value.is_function());
+            if !write_available {
+                return None;
+            }
+            let data = js_sys::Object::new();
+            for (mime, value) in [("text/plain", text.as_str()), ("text/html", html.as_str())] {
+                let options = web_sys::BlobPropertyBag::new();
+                options.set_type(mime);
+                let parts = js_sys::Array::of1(&JsValue::from_str(value));
+                let blob =
+                    web_sys::Blob::new_with_str_sequence_and_options(&parts, &options).ok()?;
+                js_sys::Reflect::set(&data, &mime.into(), blob.as_ref()).ok()?;
+            }
+            let entry =
+                web_sys::ClipboardItem::new_with_record_from_str_to_blob_promise(&data).ok()?;
+            Some(clipboard.write(&js_sys::Array::of1(entry.as_ref())))
+        });
+        let was_rich = rich_write.is_some();
+        // Start the write synchronously during user activation. Observe its
+        // rejection and fall back when the browser cannot accept HTML.
+        let promise = rich_write.unwrap_or_else(|| clipboard.write_text(&text));
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(error) = wasm_bindgen_futures::JsFuture::from(promise).await {
+                if was_rich {
+                    if let Err(error) =
+                        wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&text)).await
+                    {
+                        log::warn!("clipboard write failed: {}", js_error_message(&error));
+                    }
+                } else {
+                    log::warn!("clipboard write failed: {}", js_error_message(&error));
+                }
+            }
+        });
     }
 
     fn write_credentials(&self, _url: &str, _username: &str, _password: &[u8]) -> Task<Result<()>> {
