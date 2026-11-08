@@ -112,6 +112,12 @@ right alignment for paragraphs containing only an equation. The
 `text_box_inline_math_wraps_paints_and_registers_object_positions` and
 `text_box_math_only_paragraph_keeps_alignment_on_repaint` regressions cover
 these paths; fresh Word capture comparisons remain pending.
+Inline equations can also be inserted at a text-box caret. The
+`inline_equation_in_a_text_box_preserves_both_copies_and_history` regression
+covers insertion after Japanese text, both DrawingML/VML copies, save/reopen,
+paragraph alignment, neighbouring body text and undo/redo. Inline insertion
+leaves the caret after the equation's UTF-8 object placeholder in both body
+and text-box paragraphs.
 Inline equations in text-box paragraphs also use the equation editor's
 existing replacement command. The
 `a_text_box_inline_equation_saves_reopens_undoes_and_redoes_in_its_story`
