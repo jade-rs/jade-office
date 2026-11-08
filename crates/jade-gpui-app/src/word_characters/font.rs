@@ -495,7 +495,11 @@ fn font_tab(
             );
     let size = format.font_size.unwrap_or(10.5);
     // サイズ: a spin box to type into or step, and Word's sizes to pick from.
-    let size_spin = spin_field(view, size_spin(size).mixed(dialog.is_mixed("font_size")), cx);
+    let size_spin = spin_field(
+        view,
+        size_spin(size).mixed(dialog.is_mixed("font_size")),
+        cx,
+    );
     let sizes_open = view.characters.list == Some(DialogList::Size);
     let size_menu = sizes_open.then(|| {
         list_panel("choice-list", 120.0)

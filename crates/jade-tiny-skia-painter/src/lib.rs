@@ -127,6 +127,8 @@ type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
 /// What a CSS font shorthand comes to: the face, the size in px, and the
 /// shorthand itself as the painter hands it back.
 type ResolvedFont = (usize, f32, Rc<str>);
+type UprightGlyph = Option<(ttf_parser::GlyphId, Option<u16>)>;
+type UprightGlyphCache = FastMap<usize, FastMap<String, UprightGlyph>>;
 
 #[derive(Default)]
 pub struct FontBook {
@@ -140,7 +142,7 @@ pub struct FontBook {
     characters: RefCell<FastMap<(usize, char), CharGlyph>>,
     covering: RefCell<FastMap<(usize, char), usize>>,
     /// Vertical substitutions and advances in design units, shared across sizes.
-    upright: RefCell<FastMap<usize, FastMap<String, Option<(ttf_parser::GlyphId, Option<u16>)>>>>,
+    upright: RefCell<UprightGlyphCache>,
     /// Each font shorthand set, parsed and resolved to a face once: a
     /// renderer sets one per run of text, and parsing it every time was a
     /// twentieth of a keystroke's repaint.
