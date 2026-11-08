@@ -43,7 +43,7 @@ input and conversion layers:
 |---|---|---|---|
 | `m:oMath` | an equation; inline when it shares its paragraph with text | — | read; drawn as an object in its line, as tall and deep as its structure; edited in place; saved as written |
 | `m:oMathPara` | display math: one or more `m:oMath` on lines of their own, alone in a `w:p` | `m:oMathParaPr/m:jc`: `left`, `right`, `center`, `centerGroup` (default) | read; each `m:oMath` on its own lines, justified as a group (`centerGroup`) or line by line (`center`); edited and saved |
-| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `mathFont` applies to inline, display and text-box equations; `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after), margins and `defJc` used by the layout; `dispDef=false` disables math margins and continuation settings and uses the paragraph alignment cascade; explicit equation alignment still wins; the four equation-spacing settings are preserved without affecting layout, consistent with the Word implementation notes below; saved as written |
+| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `mathFont` applies to inline, display and text-box equations; `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after, repeat), margins and `defJc` used by the layout; `dispDef=false` disables math margins and continuation settings and uses the paragraph alignment cascade; explicit equation alignment still wins; the four equation-spacing settings are preserved without affecting layout, consistent with the Word implementation notes below; saved as written |
 
 ### Equation spacing compatibility
 
@@ -99,9 +99,11 @@ it on save and reads its formatting where the structure draws characters.
 
 Display equations break where a run carries `m:brk` (aligned under the
 `alnAt`-th operator of the first line, else under its first relation) and,
-past the column's width, before a binary or relation operator at the top
-level (`brkBin`), continuation lines indented by `wrapIndent` or set flush
-right with `wrapRight`. Runs with `m:aln` align their lines on that point.
+past the column's width, at a binary or relation operator at the top level.
+With `brkBin=repeat`, an automatic break at a binary operator displays the
+operator at both the end of the first line and the start of the next line
+without changing the equation text. Continuation lines are indented by
+`wrapIndent` or set flush right with `wrapRight`. Runs with `m:aln` align their lines on that point.
 Inline equations do not break.
 
 Text-box paragraphs keep inline equations as measured objects in the same
@@ -331,8 +333,7 @@ enclosed characters and distributed text keep their own handling.
 
 - Ink Equation, user Math AutoCorrect entries, and Math AutoCorrect outside
   equations.
-- `brkBin` `repeat` (breaks as `before`), `brkBinSub`,
-  `eqArr` `maxDist`/`objDist`.
+- `brkBinSub` and `eqArr` `maxDist`/`objDist`.
 - Current Word behavior for `m:lit` (see the implementation-note caveat above).
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
