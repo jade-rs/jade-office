@@ -17,7 +17,7 @@ fn book() -> Workbook<TinySkiaBackend> {
 fn whole_axis_deletion_keeps_standard_and_x14_input_checks_at_surviving_cells() {
     for source in [
         r#"<dataValidations count="1"><dataValidation type="whole" operator="lessThan" showErrorMessage="1" sqref="B1:B3"><formula1>$A1</formula1></dataValidation></dataValidations>"#,
-        r#"<extLst><ext uri="dv"><x:dataValidations count="1"><x:dataValidation type="whole" operator="lessThan" showErrorMessage="1"><x:formula1><m:f>$A1</m:f></x:formula1><m:sqref>B1:B3</m:sqref></x:dataValidation></x:dataValidations></ext></extLst>"#,
+        r#"<extLst><ext uri="{CCE6A557-97BC-4B89-ADB6-D9C93CAAB3DF}"><x:dataValidations count="1"><x:dataValidation type="whole" operator="lessThan" showErrorMessage="1"><x:formula1><m:f>$A1</m:f></x:formula1><m:sqref>B1:B3</m:sqref></x:dataValidation></x:dataValidations></ext></extLst>"#,
     ] {
         let mut package = jade_opc::OpcPackage::open(include_bytes!(
             "../../../jade-core/public/fixtures/grid-operations-workbook.xlsx"
@@ -75,7 +75,7 @@ fn table_header_rename_keeps_x14_relative_input_bounds_valid_in_model_history() 
     .unwrap();
     let mut package = jade_opc::OpcPackage::open(core.bytes()).unwrap();
     let source = package.required_part_str(part).unwrap();
-    let ext = r#"<extLst><ext uri="dv"><x:dataValidations count="1"><x:dataValidation type="whole" operator="lessThan" showErrorMessage="1"><x:formula1><m:f>[@Qty]</m:f></x:formula1><m:sqref>H2:H3</m:sqref></x:dataValidation></x:dataValidations></ext></extLst>"#;
+    let ext = r#"<extLst><ext uri="{CCE6A557-97BC-4B89-ADB6-D9C93CAAB3DF}"><x:dataValidations count="1"><x:dataValidation type="whole" operator="lessThan" showErrorMessage="1"><x:formula1><m:f>[@Qty]</m:f></x:formula1><m:sqref>H2:H3</m:sqref></x:dataValidation></x:dataValidations></ext></extLst>"#;
     package.replace(
         part,
         source
@@ -310,7 +310,7 @@ fn imported_x14_rules_drive_prompts_lists_stop_and_warning_choices_with_history(
     // This scenario replaces the entire worksheet. Its original table
     // relationship would otherwise still make C1 a table heading (text).
     package.remove("xl/worksheets/_rels/sheet1.xml.rels");
-    package.replace(part,br#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:x="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:m="http://schemas.microsoft.com/office/excel/2006/main"><sheetData/><extLst><ext uri="dv"><x:dataValidations count="2"><x:dataValidation type="list" showDropDown="1" showInputMessage="1" showErrorMessage="1" promptTitle="Choose" prompt="Pick a city" imeMode="hiragana"><x:formula1><m:f>"Tokyo,Osaka"</m:f></x:formula1><m:sqref>B1:B3</m:sqref></x:dataValidation><x:dataValidation type="whole" operator="lessThan" showErrorMessage="1" errorStyle="warning" errorTitle="Check" error="Below five"><x:formula1><m:f>5</m:f></x:formula1><m:sqref>C1</m:sqref></x:dataValidation></x:dataValidations></ext></extLst></worksheet>"#.to_vec());
+    package.replace(part,br#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:x="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:m="http://schemas.microsoft.com/office/excel/2006/main"><sheetData/><extLst><ext uri="{CCE6A557-97BC-4B89-ADB6-D9C93CAAB3DF}"><x:dataValidations count="2"><x:dataValidation type="list" showDropDown="1" showInputMessage="1" showErrorMessage="1" promptTitle="Choose" prompt="Pick a city" imeMode="hiragana"><x:formula1><m:f>"Tokyo,Osaka"</m:f></x:formula1><m:sqref>B1:B3</m:sqref></x:dataValidation><x:dataValidation type="whole" operator="lessThan" showErrorMessage="1" errorStyle="warning" errorTitle="Check" error="Below five"><x:formula1><m:f>5</m:f></x:formula1><m:sqref>C1</m:sqref></x:dataValidation></x:dataValidations></ext></extLst></worksheet>"#.to_vec());
     let mut book = open_bytes(&package.write().unwrap());
     let at = CellRef::new(1, 0);
     let warning = CellRef::new(2, 0);
