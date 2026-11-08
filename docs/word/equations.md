@@ -117,8 +117,16 @@ existing replacement command. The
 `a_text_box_inline_equation_saves_reopens_undoes_and_redoes_in_its_story`
 regression checks that editing the target equation preserves the body and
 neighbouring equations, text, paragraph alignment and shape attributes
-through save/reopen and undo/redo. Display-equation editing inside text
-boxes remains unsupported.
+through save/reopen and undo/redo.
+
+Display equations in text boxes use the same editor through their own
+story locations, including equations inside a box's table cells. The
+`a_text_box_display_equation_in_a_table_keeps_its_story_on_save_and_undo`
+regression checks save/reopen and undo/redo while preserving body equations,
+other box equations, paragraph alignment and shape attributes.
+`a_text_box_display_equation_updates_drawingml_and_vml_fallback_together`
+checks that both representations of an imported box receive the edit.
+Equation editing in notes remains unsupported.
 
 The equation toolbar recognizes an inline equation at either boundary of
 its rendered object, including immediately after its three-byte U+FFFC
