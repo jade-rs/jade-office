@@ -43,7 +43,7 @@ input and conversion layers:
 |---|---|---|---|
 | `m:oMath` | an equation; inline when it shares its paragraph with text | — | read; drawn as an object in its line, as tall and deep as its structure; edited in place; saved as written |
 | `m:oMathPara` | display math: one or more `m:oMath` on lines of their own, alone in a `w:p` | `m:oMathParaPr/m:jc`: `left`, `right`, `center`, `centerGroup` (default) | read; each `m:oMath` on its own lines, justified as a group (`centerGroup`) or line by line (`center`); edited and saved |
-| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `mathFont` applies to inline, display and text-box equations; `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after), margins and `defJc` used by the layout; `dispDef=false` disables math margins and continuation settings and uses the paragraph alignment cascade; explicit equation alignment still wins; the four equation-spacing settings are preserved without affecting layout, consistent with the Word implementation notes below; saved as written |
+| `m:mathPr` (settings part) | document-wide defaults | `mathFont`, `brkBin` (before/after/repeat), `brkBinSub`, `smallFrac`, `dispDef`, `lMargin`, `rMargin`, `defJc`, `preSp`, `postSp`, `interSp`, `intraSp`, `wrapIndent` (twips, default 1440) / `wrapRight`, `intLim` (subSup default), `naryLim` (undOvr default) | read (`settings::MathProperties`); `mathFont` applies to inline, display and text-box equations; `intLim`, `naryLim`, `smallFrac`, `wrapIndent`/`wrapRight`, `brkBin` (before, after, repeat), `brkBinSub` (`--`, `+-`, `-+`), margins and `defJc` used by the layout; `dispDef=false` disables math margins and continuation settings and uses the paragraph alignment cascade; explicit equation alignment still wins; the four equation-spacing settings are preserved without affecting layout, consistent with the Word implementation notes below; saved as written |
 
 ### Equation spacing compatibility
 
@@ -91,17 +91,26 @@ it on save and reads its formatting where the structure draws characters.
 | `m:borderBox` | 囲み / Border Box | `hideTop`, `hideBot`, `hideLeft`, `hideRight`, `strikeH`, `strikeV`, `strikeBLTR`, `strikeTLBR` (all off) | `e` | the four sides less the hidden ones, the strikes through the box, padding round the base |
 | `m:box` | ボックス / Box | `opEmu`, `noBreak`, `diff`, `brk`, `aln` (off) | `e` | groups its base; `opEmu` spaces it as the operator it holds, `diff` puts a thin space before a differential |
 | `m:phant` | ファントム / Phantom | `show` (on), `zeroWid`, `zeroAsc`, `zeroDesc`, `transp` (off) | `e` | hidden content keeps its room; the zero switches take its width, ascent or depth away |
-| `m:eqArr` | 数式配列 / Equation Array | `baseJc` (`center`), `maxDist`, `objDist`, `rSpRule` (0 single, 1 1.5×, 2 double, 3 exact `rSp`, 4 multiple), `rSp` | one `e` per row | rows aligned on their `&` marks (odd marks right-align the column before them, even marks left-align the one after, as `&` pairs do in Word), rows spaced by `rSpRule`, centred on the axis or aligned on the top or bottom row; `maxDist`/`objDist` are read and not applied |
+| `m:eqArr` | 数式配列 / Equation Array | `baseJc` (`center`), `maxDist`, `objDist`, `rSpRule` (0 single, 1 1.5×, 2 double, 3 exact `rSp`, 4 multiple), `rSp` | one `e` per row | rows aligned on their `&` marks (odd marks right-align the column before them, even marks left-align the one after, as `&` pairs do in Word), rows spaced by `rSpRule`, centred on the axis or aligned on the top or bottom row; standalone display arrays with alignment marks distribute spare width per `maxDist`/`objDist` |
 | `m:m` | 行列 / Matrix | `baseJc` (`center`), `plcHide`, `rSpRule`, `rSp`, `cGpRule`, `cGp`, `cSp`, `mcs/mc/mcPr` (`count`, `mcJc`: `center`, `left`, `right`) | `mr` rows of `e` cells | column widths from the widest cell, each column justified by `mcJc`, column gap by `cGpRule`/`cGp` (one em by default), minimum spacing `cSp`, rows like an equation array; empty cells keep a placeholder's room unless `plcHide` |
 | `m:r` | — | `m:rPr`: `lit`, `nor` (normal text), `scr` (`roman`, `script`, `fraktur`, `double-struck`, `sans-serif`, `monospace`), `sty` (`p`, `b`, `i` default, `bi`), `brk` (`alnAt`), `aln`; and the run's `w:rPr` | `m:t` (and Word run content) | letters from the Mathematical Alphanumeric Symbols in the run's style and alphabet (Word's italic default: Latin letters and lowercase Greek; capital Greek upright), hyphen shown as minus, atoms spaced by class as TeX spaces them, italic correction before an upright glyph; `nor` text in the document's text face with no operator spacing; `brk` and `aln` break and align display lines |
 
 ### Line breaking and alignment
 
-Display equations break where a run carries `m:brk` (aligned under the
-`alnAt`-th operator of the first line, else under its first relation) and,
-past the column's width, before a binary or relation operator at the top
-level (`brkBin`), continuation lines indented by `wrapIndent` or set flush
-right with `wrapRight`. Runs with `m:aln` align their lines on that point.
+Display equations break where an operator starts a run carrying `m:brk`
+(aligned under the `alnAt`-th operator of the first line, else under its
+first relation). A break on a run starting with an operand or without text
+is ignored, as described in the [Word implementation
+note](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/9742c999-b065-4a70-91b5-09d6a6cf99f7).
+Past the column's width, display equations can still break at a binary or
+relation operator at the top level.
+With `brkBin=repeat`, an automatic break at a binary operator displays the
+operator at both the end of the first line and the start of the next line
+without changing the equation text. For subtraction, `brkBinSub` sets the
+trailing and leading signs respectively: `--` keeps both minus signs, `+-`
+shows a plus at the end of the first line, and `-+` shows a plus at the start
+of the next line. Continuation lines are indented by
+`wrapIndent` or set flush right with `wrapRight`. Runs with `m:aln` align their lines on that point.
 Inline equations do not break.
 
 Text-box paragraphs keep inline equations as measured objects in the same
@@ -118,6 +127,15 @@ covers insertion after Japanese text, both DrawingML/VML copies, save/reopen,
 paragraph alignment, neighbouring body text and undo/redo. Inline insertion
 leaves the caret after the equation's UTF-8 object placeholder in both body
 and text-box paragraphs.
+Inline equations in horizontal table cells reserve space within the text line
+and draw at the line's baseline. The editor uses the same UTF-8 object
+placeholder as in body text, so adjacent text remains editable at the right
+positions. Repeated header rows draw the equation without adding another
+editable copy. AutoFit uses measured inline and display equation widths when
+sizing a column. Cells with `lrTbV` keep their horizontal lines and rotated
+East Asian text; inline equations stay upright and reserve their measured
+width. For display equations AutoFit also measures the space needed at
+operator breaks, so a wide equation can wrap without clipping a fraction.
 Inline equations in text-box paragraphs also use the equation editor's
 existing replacement command. The
 `a_text_box_inline_equation_saves_reopens_undoes_and_redoes_in_its_story`
@@ -136,23 +154,48 @@ Inline edits also update both DrawingML and VML fallback copies. The
 `a_text_box_inline_equation_updates_drawingml_and_vml_fallback_together`
 regression edits the second equation in a box paragraph and checks both
 copies, neighbouring equations, save/reopen and exact undo/redo XML.
+Display equations in footnotes and endnotes draw on their own editable
+surfaces. When the first block is a display equation, the superscript note
+number appears to its left. The number takes no editing offsets in the
+equation or the following paragraph. The
+`leading_display_equations_keep_note_numbers_and_editable_surfaces`
+regression covers both note kinds. A footnote carries the whole equation
+to the next page when it does not fit in the remaining note area.
 Inline equations in footnotes and endnotes also use the replacement command.
 The `inline_equations_in_footnotes_and_endnotes_keep_their_story_and_history`
 regression edits the second equation in a note table cell, preserving body
 XML, neighbouring note text/equations, other notes and paragraph alignment
-through save/reopen and exact undo/redo. Display equation editing and
-insertion in notes remain unsupported.
+through save/reopen and exact undo/redo. Display equations retain their
+note kind, ID and block path, so the same editor can address them inside
+note table cells. The
+`display_equations_in_note_tables_keep_their_location_and_history`
+regression covers both note kinds, other equations and text, save/reopen
+and exact undo/redo. Inline equations can also be inserted into footnote
+and endnote paragraphs, including table cells. The
+`inline_equations_insert_in_note_tables_with_utf8_carets_and_history`
+regression checks Japanese text boundaries, the caret after the equation,
+note reference markers, neighbouring content, save/reopen and exact undo/redo.
+Display equations can also be inserted by splitting a note paragraph at the
+caret. The `block_equations_split_note_table_paragraphs_and_restore_history`
+regression covers both note kinds and table cells with preceding display
+math, preserves note reference markers and surrounding content, and checks
+save/reopen plus exact undo/redo. Editable note paragraphs are mapped to
+their current XML so display-math wrappers do not shift the target paragraph.
+A wrapper with a comment range can also own an editable paragraph even when
+it has no Word runs; the XML mapper keeps it separate from the next paragraph.
 
 The equation toolbar recognizes an inline equation at either boundary of
 its rendered object, including immediately after its three-byte U+FFFC
 placeholder. Regressions cover Japanese prefixes and adjacent equations;
 carets in neighbouring text or other paragraphs do not select that object.
 
-Equation-array distribution remains unimplemented. The published Word
-implementation note for [`maxDist`](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4a8c035c-c930-4e87-aabf-32715949ba48)
-limits its effect to arrays with alignment points. Future Word comparisons
-must include arrays with and without these points, rather than assuming
-that every array expands when the setting is enabled.
+For a standalone display equation array, `maxDist` uses the available
+formatting width when the rows have alignment marks. The [Word implementation
+note](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/4a8c035c-c930-4e87-aabf-32715949ba48)
+limits distribution to these arrays. The [documented Word 2007 example](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/d8d37e2b-532d-49db-9cba-2ef4bd8d9baa)
+places spare room between column pairs when `objDist` is on; otherwise
+it divides the room between the pairs and the outer margins. Arrays stay
+compact when inline, nested, or accompanied by other math on the line.
 
 ### Faces and metrics
 
@@ -315,9 +358,10 @@ enclosed characters and distributed text keep their own handling.
 
 - Ink Equation, user Math AutoCorrect entries, and Math AutoCorrect outside
   equations.
-- `brkBin` `repeat` (breaks as `before`), `brkBinSub`,
-  `eqArr` `maxDist`/`objDist`.
+- Current Word comparisons for `eqArr` `maxDist`/`objDist`, including inline and nested arrays.
 - Current Word behavior for `m:lit` (see the implementation-note caveat above).
+- Table cells laid out in vertical columns omit inline equations and show
+  display equations as text previews.
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
 - Selecting a range inside an equation (the caret is a point; a structure

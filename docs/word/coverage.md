@@ -31,8 +31,8 @@ Paths: `jade-web/…`, `jade-office-model/…`, `jade-gpui-app/…` are under
 
 | | rows |
 |---|---|
-| with at least one test | 383 |
-| without a test | 123 |
+| with at least one test | 385 |
+| without a test | 121 |
 
 Counts recomputed from the 506 rows below on 2026-11-09. These counts
 measure named test coverage, not feature completeness or Word equivalence.
@@ -164,7 +164,7 @@ quality stream).
 | 99 | fixed / % width | `jade-docx-reader/tests/generated_fixtures.rs::table_no_wrap_autofit_fixture_preserves_absolute_and_percentage_constraints` <br> `jade-docx-editor/src/headless_api.rs::set_table_width_command_rejects_invalid_spec` |
 | 100 | column width, row height | `jade-web/tests/tables_documents.rs::borders_drag_to_resize_columns_and_rows` <br> `jade-docx-reader/tests/generated_fixtures.rs::yokohama_table_row_heights_fixture_keeps_word_row_rules` |
 | 101 | row height rule | `jade-docx-reader/tests/generated_fixtures.rs::yokohama_table_row_heights_fixture_keeps_word_row_rules` <br> `jade-docx-editor/src/word_document.rs::row_height_nodes_receive_unique_non_root_ids` |
-| 102 | AutoFit to contents | `jade-web/tests/tables_documents.rs::borders_text_direction_and_autofit` <br> `jade-docx-reader/tests/generated_fixtures.rs::table_no_wrap_autofit_fixture_preserves_absolute_and_percentage_constraints` |
+| 102 | AutoFit to contents | `jade-web/tests/tables_documents.rs::borders_text_direction_and_autofit` <br> `jade-docx-reader/tests/generated_fixtures.rs::table_no_wrap_autofit_fixture_preserves_absolute_and_percentage_constraints` <br> `core/jade-docx-editor/src/canvas_renderer/table.rs::table_autofit_reserves_width_for_inline_equations` <br> `core/jade-docx-editor/src/canvas_renderer/table.rs::table_autofit_reserves_width_for_display_equations` |
 | 103 | AutoFit to window | `jade-web/tests/tables_documents.rs::borders_text_direction_and_autofit` |
 | 104 | distribute rows / columns | `core/jade-docx-editor/src/commands/table_structure.rs::distributing_rows_and_columns_evens_them_out_like_word` |
 | 105 | cell margins | `jade-docx-reader/src/parser/table.rs::parses_table_cell_margins` <br> `jade-docx-editor/src/canvas_renderer/table.rs::split_prepared_row_uses_resolved_zero_cell_padding` |
@@ -473,8 +473,8 @@ quality stream).
 | 408 | untouched round trip & fallbacks | `core/jade-docx-editor/tests/round_trip_corpus.rs::every_fixture_saves_without_losing_anything` <br> `core/jade-docx-pdf-renderer/tests/pdf_fixtures.rs::render_pdf_renders_math_as_text_fallback` |
 | 409 | coverage map (this file) | **none** |
 | 410 | version & compat-mode notes (docs/word/compatibility-modes.md) | **none** |
-| 411 | inline equations | `jade-docx-editor/tests/math_font_plan.rs::formula_exact_spacing_keeps_authored_height_and_unbound_plan_has_no_math_leading` <br> `jade-docx-reader/src/parser.rs::parses_inline_math_as_raw_omml` |
-| 412 | display equations | `jade-docx-reader/src/parser.rs::parses_math_paragraph_as_block_element` <br> `jade-docx-reader/src/document/math.rs::math_paragraph_preview_truncates_long_text` |
+| 411 | inline equations | `jade-docx-editor/tests/math_font_plan.rs::formula_exact_spacing_keeps_authored_height_and_unbound_plan_has_no_math_leading` <br> `jade-docx-reader/src/parser.rs::parses_inline_math_as_raw_omml` <br> `core/jade-docx-editor/src/canvas_renderer/table.rs::inline_equations_in_table_cells_keep_their_width_and_model_offsets` |
+| 412 | display equations | `core/jade-docx-editor/src/canvas_renderer.rs::display_equations_draw_on_their_own_footnote_and_endnote_surfaces` <br> `core/jade-docx-editor/src/canvas_renderer/math.rs::repeated_subtraction_settings_reach_both_math_painters` <br> `core/jade-docx-editor/src/canvas_renderer/table.rs::display_equations_in_table_cells_paint_and_keep_the_next_surface` |
 | 413 | built-in equations | `core/jade-docx-editor/src/commands/insert_equation.rs::inline_equation_round_trips_across_arbitrary_unicode_run_boundaries` <br> `core/jade-docx-editor/src/commands/insert_equation.rs::block_equation_splits_paragraph_and_reopens_without_phantom_coordinate` |
 | 414 | fractions | `core/jade-docx-editor/tests/math_font_plan.rs::painter_consumes_quadratic_and_cubic_commands_and_keeps_existing_fraction_rules` <br> `core/jade-docx-layout/src/math_layout/styled/tests.rs::styled_fraction_rules_and_children_fit_bounds_and_errors_propagate` |
 | 415 | radicals | `jade-docx-layout/src/math_layout.rs::radical_fallback_keeps_existing_base_only_preview` |
@@ -486,14 +486,14 @@ quality stream).
 | 421 | limits | `core/jade-docx-editor/tests/math_font_plan.rs::long_stacked_limits_reserve_left_and_right_advance` |
 | 422 | accents & bars | **none** |
 | 423 | matrices | **none** |
-| 424 | equation arrays | **none** |
+| 424 | equation arrays | `core/jade-docx-layout/src/math_layout/styled/tests.rs::display_equation_array_distributes_space_between_aligned_column_pairs` <br> `core/jade-docx-layout/src/math_layout/styled/tests.rs::distribution_does_not_expand_arrays_without_alignment_or_their_own_display_line` |
 | 425 | normal text in math | **none** |
 | 426 | math fonts | `jade-docx-layout/tests/math_font.rs::math_font_line_box_prefers_os2_typographic_metrics_and_falls_back_to_hhea` <br> `jade-docx-editor/src/canvas_renderer/math.rs::styled_math_font_preserves_authored_family_before_math_fallbacks` |
 | 427 | UnicodeMath input | **none** |
 | 428 | LaTeX input | **none** |
 | 429 | linear ↔ professional | **none** |
 | 430 | Math AutoCorrect | **none** |
-| 431 | math line breaks | **none** |
+| 431 | math line breaks | `core/jade-docx-layout/src/math_layout/styled/tests.rs::manual_break_on_a_run_that_does_not_start_with_an_operator_is_ignored` <br> `core/jade-docx-layout/src/math_layout/styled/tests.rs::display_lines_break_where_asked_and_where_they_overflow` |
 | 432 | OMML round trip | `jade-docx-reader/src/parser.rs::parses_inline_math_as_raw_omml` <br> `jade-docx-editor/src/canvas_renderer/math.rs::block_alignment_honors_omml_justification` |
 | 433 | math version matrix | **none** |
 | 434 | Print Layout | `jade-web/tests/opens_every_document.rs::every_document_opens_and_its_pages_paint` |
