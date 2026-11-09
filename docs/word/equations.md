@@ -126,6 +126,10 @@ regression checks save/reopen and undo/redo while preserving body equations,
 other box equations, paragraph alignment and shape attributes.
 `a_text_box_display_equation_updates_drawingml_and_vml_fallback_together`
 checks that both representations of an imported box receive the edit.
+Inline edits also update both DrawingML and VML fallback copies. The
+`a_text_box_inline_equation_updates_drawingml_and_vml_fallback_together`
+regression edits the second equation in a box paragraph and checks both
+copies, neighbouring equations, save/reopen and exact undo/redo XML.
 Equation editing in notes remains unsupported.
 
 The equation toolbar recognizes an inline equation at either boundary of
