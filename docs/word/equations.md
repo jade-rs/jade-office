@@ -136,7 +136,12 @@ Inline edits also update both DrawingML and VML fallback copies. The
 `a_text_box_inline_equation_updates_drawingml_and_vml_fallback_together`
 regression edits the second equation in a box paragraph and checks both
 copies, neighbouring equations, save/reopen and exact undo/redo XML.
-Equation editing in notes remains unsupported.
+Inline equations in footnotes and endnotes also use the replacement command.
+The `inline_equations_in_footnotes_and_endnotes_keep_their_story_and_history`
+regression edits the second equation in a note table cell, preserving body
+XML, neighbouring note text/equations, other notes and paragraph alignment
+through save/reopen and exact undo/redo. Display equation editing and
+insertion in notes remain unsupported.
 
 The equation toolbar recognizes an inline equation at either boundary of
 its rendered object, including immediately after its three-byte U+FFFC
