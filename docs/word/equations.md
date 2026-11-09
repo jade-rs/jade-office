@@ -127,6 +127,11 @@ covers insertion after Japanese text, both DrawingML/VML copies, save/reopen,
 paragraph alignment, neighbouring body text and undo/redo. Inline insertion
 leaves the caret after the equation's UTF-8 object placeholder in both body
 and text-box paragraphs.
+Inline equations in horizontal table cells reserve space within the text line
+and draw at the line's baseline. The editor uses the same UTF-8 object
+placeholder as in body text, so adjacent text remains editable at the right
+positions. Repeated header rows draw the equation without adding another
+editable copy.
 Inline equations in text-box paragraphs also use the equation editor's
 existing replacement command. The
 `a_text_box_inline_equation_saves_reopens_undoes_and_redoes_in_its_story`
@@ -347,7 +352,10 @@ enclosed characters and distributed text keep their own handling.
   equations.
 - Current Word comparisons for `eqArr` `maxDist`/`objDist`, including inline and nested arrays.
 - Current Word behavior for `m:lit` (see the implementation-note caveat above).
-- Drawing display equations in vertical table cells or at the start of a note before a numbered paragraph; these cases still show a text preview. Horizontal cells in the document and its notes draw display equations with the shared math layout. Table AutoFit does not yet use the formula’s intrinsic width.
+- Vertical table cells omit inline equations and show display equations as
+  text previews. A display equation at the start of a note before a numbered
+  paragraph also shows a preview. Table AutoFit does not yet use the
+  intrinsic width of inline or display equations.
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
 - Selecting a range inside an equation (the caret is a point; a structure
