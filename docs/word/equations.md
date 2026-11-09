@@ -132,7 +132,9 @@ and draw at the line's baseline. The editor uses the same UTF-8 object
 placeholder as in body text, so adjacent text remains editable at the right
 positions. Repeated header rows draw the equation without adding another
 editable copy. AutoFit uses measured inline and display equation widths when
-sizing a column. For display equations it also measures the space needed at
+sizing a column. Cells with `lrTbV` keep their horizontal lines and rotated
+East Asian text; inline equations stay upright and reserve their measured
+width. For display equations AutoFit also measures the space needed at
 operator breaks, so a wide equation can wrap without clipping a fraction.
 Inline equations in text-box paragraphs also use the equation editor's
 existing replacement command. The
@@ -358,8 +360,8 @@ enclosed characters and distributed text keep their own handling.
   equations.
 - Current Word comparisons for `eqArr` `maxDist`/`objDist`, including inline and nested arrays.
 - Current Word behavior for `m:lit` (see the implementation-note caveat above).
-- Vertical table cells omit inline equations and show display equations as
-  text previews.
+- Table cells laid out in vertical columns omit inline equations and show
+  display equations as text previews.
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
 - Selecting a range inside an equation (the caret is a point; a structure
