@@ -145,6 +145,9 @@ Inline edits also update both DrawingML and VML fallback copies. The
 `a_text_box_inline_equation_updates_drawingml_and_vml_fallback_together`
 regression edits the second equation in a box paragraph and checks both
 copies, neighbouring equations, save/reopen and exact undo/redo XML.
+Display equations following the numbered paragraph of a footnote or endnote
+draw as equations on their own editable surfaces. A footnote carries the
+whole block to the next page when it does not fit in the remaining note area.
 Inline equations in footnotes and endnotes also use the replacement command.
 The `inline_equations_in_footnotes_and_endnotes_keep_their_story_and_history`
 regression edits the second equation in a note table cell, preserving body
@@ -344,7 +347,7 @@ enclosed characters and distributed text keep their own handling.
   equations.
 - Current Word comparisons for `eqArr` `maxDist`/`objDist`, including inline and nested arrays.
 - Current Word behavior for `m:lit` (see the implementation-note caveat above).
-- Drawing display equations in tables and notes; these surfaces currently show a text preview.
+- Drawing display equations in tables or at the start of a note before a numbered paragraph; these cases still show a text preview.
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
 - Selecting a range inside an equation (the caret is a point; a structure
