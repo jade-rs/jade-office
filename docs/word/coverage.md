@@ -474,7 +474,7 @@ quality stream).
 | 409 | coverage map (this file) | **none** |
 | 410 | version & compat-mode notes (docs/word/compatibility-modes.md) | **none** |
 | 411 | inline equations | `jade-docx-editor/tests/math_font_plan.rs::formula_exact_spacing_keeps_authored_height_and_unbound_plan_has_no_math_leading` <br> `jade-docx-reader/src/parser.rs::parses_inline_math_as_raw_omml` |
-| 412 | display equations | `core/jade-docx-editor/src/canvas_renderer.rs::display_equations_draw_on_their_own_footnote_and_endnote_surfaces` <br> `core/jade-docx-editor/src/canvas_renderer/math.rs::repeated_subtraction_settings_reach_both_math_painters` |
+| 412 | display equations | `core/jade-docx-editor/src/canvas_renderer.rs::display_equations_draw_on_their_own_footnote_and_endnote_surfaces` <br> `core/jade-docx-editor/src/canvas_renderer/math.rs::repeated_subtraction_settings_reach_both_math_painters` <br> `core/jade-docx-editor/src/canvas_renderer/table.rs::display_equations_in_table_cells_paint_and_keep_the_next_surface` |
 | 413 | built-in equations | `core/jade-docx-editor/src/commands/insert_equation.rs::inline_equation_round_trips_across_arbitrary_unicode_run_boundaries` <br> `core/jade-docx-editor/src/commands/insert_equation.rs::block_equation_splits_paragraph_and_reopens_without_phantom_coordinate` |
 | 414 | fractions | `core/jade-docx-editor/tests/math_font_plan.rs::painter_consumes_quadratic_and_cubic_commands_and_keeps_existing_fraction_rules` <br> `core/jade-docx-layout/src/math_layout/styled/tests.rs::styled_fraction_rules_and_children_fit_bounds_and_errors_propagate` |
 | 415 | radicals | `jade-docx-layout/src/math_layout.rs::radical_fallback_keeps_existing_base_only_preview` |

@@ -347,7 +347,7 @@ enclosed characters and distributed text keep their own handling.
   equations.
 - Current Word comparisons for `eqArr` `maxDist`/`objDist`, including inline and nested arrays.
 - Current Word behavior for `m:lit` (see the implementation-note caveat above).
-- Drawing display equations in tables or at the start of a note before a numbered paragraph; these cases still show a text preview.
+- Drawing display equations in vertical table cells or at the start of a note before a numbered paragraph; these cases still show a text preview. Horizontal cells in the document and its notes draw display equations with the shared math layout. Table AutoFit does not yet use the formula’s intrinsic width.
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
 - Selecting a range inside an equation (the caret is a point; a structure
