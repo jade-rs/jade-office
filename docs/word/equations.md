@@ -131,7 +131,8 @@ Inline equations in horizontal table cells reserve space within the text line
 and draw at the line's baseline. The editor uses the same UTF-8 object
 placeholder as in body text, so adjacent text remains editable at the right
 positions. Repeated header rows draw the equation without adding another
-editable copy.
+editable copy. AutoFit uses the measured equation width when sizing the
+column.
 Inline equations in text-box paragraphs also use the equation editor's
 existing replacement command. The
 `a_text_box_inline_equation_saves_reopens_undoes_and_redoes_in_its_story`
@@ -355,7 +356,7 @@ enclosed characters and distributed text keep their own handling.
 - Vertical table cells omit inline equations and show display equations as
   text previews. A display equation at the start of a note before a numbered
   paragraph also shows a preview. Table AutoFit does not yet use the
-  intrinsic width of inline or display equations.
+  intrinsic width of display equations.
 - Breaking inline equations across lines.
 - UnicodeMath equation numbers (`#`) and the `\eqno` form.
 - Selecting a range inside an equation (the caret is a point; a structure
