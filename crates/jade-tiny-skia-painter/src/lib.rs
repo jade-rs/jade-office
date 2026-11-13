@@ -2053,7 +2053,7 @@ impl TinySkiaPainter {
             let pixels = data[first * 4..(surface_row + columns.end as usize) * 4]
                 .as_chunks_mut::<4>()
                 .0;
-            match (&edges, mask) {
+            match (edges, mask) {
                 // The usual case, kept free of per-pixel checks.
                 (None, None) => {
                     for (&alpha, pixel) in alphas.iter().zip(pixels.iter_mut()) {
