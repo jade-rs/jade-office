@@ -1534,14 +1534,14 @@ impl DocumentView {
     /// app actually draws gets looked at: set the variable, reproduce whatever
     /// is wrong, and the page is on disk.
     /// Records one document call for the dump. Free when the dump is off.
-    fn log_call(&mut self, call: String) {
+    fn log_call(&mut self, call: impl FnOnce(&Self) -> String) {
         if self.dump_directory.is_none() {
             return;
         }
         if self.call_log.len() >= 200 {
             self.call_log.remove(0);
         }
-        self.call_log.push(call);
+        self.call_log.push(call(self));
     }
 
     fn dump_page_if_asked(&self) {
@@ -4033,7 +4033,7 @@ impl DocumentView {
 
     /// Turns a click into an insertion point.
     fn click_page(&mut self, page_index: usize, event: &MouseDownEvent, cx: &mut Context<Self>) {
-        self.log_call(format!("click page {page_index}"));
+        self.log_call(|_| format!("click page {page_index}"));
         self.views.mini = false;
         // A click in the pages takes the keyboard back from the pane's
         // search box.
@@ -4251,14 +4251,16 @@ impl DocumentView {
         if self.refuse_locked_edit(cx) {
             return;
         }
-        self.log_call(format!(
-            "replace_bytes paragraph {} range {:?} text {text:?} bound {} marked {:?} selection {:?}",
-            self.insert_at.0,
-            range,
-            self.caret_page_1idx(),
-            self.marked,
-            self.document.selection(),
-        ));
+        self.log_call(|view| {
+            format!(
+                "replace_bytes paragraph {} range {:?} text {text:?} bound {} marked {:?} selection {:?}",
+                view.insert_at.0,
+                range,
+                view.caret_page_1idx(),
+                view.marked,
+                view.document.selection(),
+            )
+        });
         // A selection is what the next character replaces — the same rule
         // backspace already followed. Inserting at the caret instead left the
         // selected text on the page with the new character beside it.
@@ -4422,11 +4424,11 @@ impl EntityInputHandler for DocumentView {
             word_equation::type_text(self, text, cx);
             return;
         }
-        let paragraph_text = self.current_paragraph_text();
         // No range means "replace the composition", and no composition means
         // "insert at the caret".
         let bytes = match range {
             Some(range) => {
+                let paragraph_text = self.current_paragraph_text();
                 utf16_to_byte(&paragraph_text, range.start)
                     ..utf16_to_byte(&paragraph_text, range.end)
             }
@@ -4468,9 +4470,9 @@ impl EntityInputHandler for DocumentView {
             self.replace_in_find_bar(range, new_text, true, cx);
             return;
         }
-        let paragraph_text = self.current_paragraph_text();
         let bytes = match range {
             Some(range) => {
+                let paragraph_text = self.current_paragraph_text();
                 utf16_to_byte(&paragraph_text, range.start)
                     ..utf16_to_byte(&paragraph_text, range.end)
             }
@@ -5682,8 +5684,8 @@ mod tests {
                 let next = view.images[page + 1].clone();
                 let next_generation = view.image_generations[page + 1].unwrap();
                 let original = view.images[page].clone();
-                for text in ["に", "日本語"] {
-                    view.replace_and_mark_text_in_range(None, text, None, window, cx);
+                for (range, text) in [(None, "に"), (None, "にほん"), (Some(0..3), "日本語")] {
+                    view.replace_and_mark_text_in_range(range, text, None, window, cx);
                     assert!(view.current_paragraph_text().starts_with(text));
                     assert_eq!(
                         view.image_generations[page],
