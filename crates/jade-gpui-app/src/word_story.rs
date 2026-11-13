@@ -405,6 +405,18 @@ impl WordDoc {
         self.main.export_pdf_with_options(options)
     }
 
+    /// The body raster identifies the displayed page unless a story is composited over it.
+    pub fn page_raster_generation(&self, page_index: usize) -> Option<u32> {
+        if self
+            .story
+            .as_ref()
+            .is_some_and(|story| story.page == page_index)
+        {
+            return None;
+        }
+        self.main.page_raster_generation(page_index)
+    }
+
     /// A page as the view shows it: the story's page over its band, the rest
     /// of the page dimmed, a line where the story ends.
     pub fn page_pixels(&self, page_index: usize) -> Option<(Vec<u8>, i32, i32)> {
@@ -1208,7 +1220,12 @@ mod tests {
             // The header's own paragraph is the story's first.
             assert!(view.document.paragraph_text(0).unwrap().contains("Hello"));
         });
-        let shown = view.read_with(cx, |view, _| view.document.page_pixels(0).unwrap().0);
+        let shown = view.read_with(cx, |view, _| {
+            let shown = view.document.page_pixels(0).unwrap().0;
+            assert_eq!(view.images[0].as_bytes(0), Some(shown.as_slice()));
+            assert_eq!(view.image_generations[0], None);
+            shown
+        });
         assert_ne!(
             shown, before,
             "the page shows the story over the dimmed body"

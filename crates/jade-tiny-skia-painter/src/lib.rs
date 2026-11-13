@@ -3387,6 +3387,7 @@ impl Painter for TinySkiaPainter {
         // The ink box: each glyph's bounding box, at its pen position, in
         // the face that draws it.
         let (mut top, mut bottom, mut right) = (0.0_f32, 0.0_f32, 0.0_f32);
+        let mut left = f32::INFINITY;
         let mut pen = 0.0_f32;
         for (run_font, run) in self.segments(text) {
             let glyphs = self.glyphs(run_font, size, run);
@@ -3403,6 +3404,7 @@ impl Painter for TinySkiaPainter {
                     if let Some(rect) = face.glyph_bounding_box(*glyph) {
                         top = top.max(f32::from(rect.y_max) * scale);
                         bottom = bottom.max(-f32::from(rect.y_min) * scale);
+                        left = left.min(pen + f32::from(rect.x_min) * scale);
                         right = right.max(pen + f32::from(rect.x_max) * scale);
                     }
                     pen += advance;
@@ -3415,6 +3417,11 @@ impl Painter for TinySkiaPainter {
             font_bounding_box_descent: f64::from(descent.round()),
             actual_bounding_box_ascent: f64::from(top),
             actual_bounding_box_descent: f64::from(bottom),
+            actual_bounding_box_left: if left.is_finite() {
+                f64::from(-left)
+            } else {
+                0.0
+            },
             actual_bounding_box_right: f64::from(right),
         })
     }

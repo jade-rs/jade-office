@@ -1329,6 +1329,8 @@ struct DocumentView {
     document: word_story::WordDoc,
     /// One image per page, rebuilt only for the page an edit touched.
     images: Vec<Arc<RenderImage>>,
+    /// Skia generation of each displayed image, when it comes from one raster.
+    image_generations: Vec<Option<u32>>,
     /// Where to write the session when `JADE_DUMP_PAGE` names a directory,
     /// resolved once at startup rather than looked up on every repaint.
     ///
@@ -1515,8 +1517,7 @@ impl DocumentView {
     /// paragraph gaining a line — moves everything below it, and the bottom of
     /// that movement is on the next page. Refreshing only the caret's page
     /// leaves the top of the next one showing what used to be there.
-    /// `set_page_image` compares before it replaces, so a page that did not
-    /// change costs a read and no upload.
+    /// `set_page_image` checks the raster generation before reading pixels.
     fn refresh_caret_page_image(&mut self) {
         self.edits += 1;
         self.dump_page_if_asked();
@@ -1533,14 +1534,14 @@ impl DocumentView {
     /// app actually draws gets looked at: set the variable, reproduce whatever
     /// is wrong, and the page is on disk.
     /// Records one document call for the dump. Free when the dump is off.
-    fn log_call(&mut self, call: String) {
+    fn log_call(&mut self, call: impl FnOnce(&Self) -> String) {
         if self.dump_directory.is_none() {
             return;
         }
         if self.call_log.len() >= 200 {
             self.call_log.remove(0);
         }
-        self.call_log.push(call);
+        self.call_log.push(call(self));
     }
 
     fn dump_page_if_asked(&self) {
@@ -1597,11 +1598,19 @@ impl DocumentView {
     /// retire, and most repaints leave most pages exactly as they were —
     /// comparing the pixels costs a fraction of what uploading them does.
     fn set_page_image(&mut self, index: usize) {
+        let generation = self.document.page_raster_generation(index);
+        if generation.is_some() && self.image_generations.get(index) == Some(&generation) {
+            return;
+        }
         let Some((bgra, width, height)) = self.document.page_pixels(index) else {
             return;
         };
         if let Some(current) = self.images.get(index) {
-            if current.as_bytes(0) == Some(bgra.as_slice()) {
+            let size = current.size(0);
+            if (size.width.0, size.height.0) == (width, height)
+                && current.as_bytes(0) == Some(bgra.as_slice())
+            {
+                self.image_generations[index] = generation;
                 return;
             }
         }
@@ -1610,6 +1619,7 @@ impl DocumentView {
         };
         let image = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
         if let Some(slot) = self.images.get_mut(index) {
+            self.image_generations[index] = generation;
             // The replaced texture stays in gpui's atlas until it is dropped,
             // and a page-sized one is megabytes. Left to accumulate — which is
             // what a keystroke used to do — the atlas grows without bound.
@@ -1617,6 +1627,7 @@ impl DocumentView {
             self.retired_images.push(retired);
         } else if index == self.images.len() {
             self.images.push(image);
+            self.image_generations.push(generation);
         }
     }
 
@@ -3945,6 +3956,7 @@ impl DocumentView {
         // there; they still hold their place in the atlas.
         if self.images.len() > pages {
             let dropped: Vec<_> = self.images.drain(pages..).collect();
+            self.image_generations.truncate(pages);
             self.retired_images.extend(dropped);
         }
         self.refresh_master_boxes();
@@ -4021,7 +4033,7 @@ impl DocumentView {
 
     /// Turns a click into an insertion point.
     fn click_page(&mut self, page_index: usize, event: &MouseDownEvent, cx: &mut Context<Self>) {
-        self.log_call(format!("click page {page_index}"));
+        self.log_call(|_| format!("click page {page_index}"));
         self.views.mini = false;
         // A click in the pages takes the keyboard back from the pane's
         // search box.
@@ -4239,14 +4251,16 @@ impl DocumentView {
         if self.refuse_locked_edit(cx) {
             return;
         }
-        self.log_call(format!(
-            "replace_bytes paragraph {} range {:?} text {text:?} bound {} marked {:?} selection {:?}",
-            self.insert_at.0,
-            range,
-            self.caret_page_1idx(),
-            self.marked,
-            self.document.selection(),
-        ));
+        self.log_call(|view| {
+            format!(
+                "replace_bytes paragraph {} range {:?} text {text:?} bound {} marked {:?} selection {:?}",
+                view.insert_at.0,
+                range,
+                view.caret_page_1idx(),
+                view.marked,
+                view.document.selection(),
+            )
+        });
         // A selection is what the next character replaces — the same rule
         // backspace already followed. Inserting at the caret instead left the
         // selected text on the page with the new character beside it.
@@ -4410,11 +4424,11 @@ impl EntityInputHandler for DocumentView {
             word_equation::type_text(self, text, cx);
             return;
         }
-        let paragraph_text = self.current_paragraph_text();
         // No range means "replace the composition", and no composition means
         // "insert at the caret".
         let bytes = match range {
             Some(range) => {
+                let paragraph_text = self.current_paragraph_text();
                 utf16_to_byte(&paragraph_text, range.start)
                     ..utf16_to_byte(&paragraph_text, range.end)
             }
@@ -4456,9 +4470,9 @@ impl EntityInputHandler for DocumentView {
             self.replace_in_find_bar(range, new_text, true, cx);
             return;
         }
-        let paragraph_text = self.current_paragraph_text();
         let bytes = match range {
             Some(range) => {
+                let paragraph_text = self.current_paragraph_text();
                 utf16_to_byte(&paragraph_text, range.start)
                     ..utf16_to_byte(&paragraph_text, range.end)
             }
@@ -5406,9 +5420,12 @@ fn document_view(
         collapsed
     };
     let caret = document.place_caret(INSERT_PARAGRAPH, 0);
-    let images: Vec<_> = (0..document.page_count())
-        .filter_map(|index| page_image(&document, index))
-        .collect();
+    let (images, image_generations) = (0..document.page_count())
+        .filter_map(|index| {
+            let image = page_image(&document, index)?;
+            Some((image, document.page_raster_generation(index)))
+        })
+        .unzip();
     let mut ribbon = ribbon::Ribbon::default();
     ribbon.read_styles(&document);
     let mailings = word_mailings::open_merge(&document, &path_text);
@@ -5420,6 +5437,7 @@ fn document_view(
         file_size,
         document: word_story::WordDoc::new(document),
         images,
+        image_generations,
         retired_images: Vec::new(),
         dump_directory: std::env::var_os("JADE_DUMP_PAGE").map(PathBuf::from),
         call_log: Vec::new(),
@@ -5649,6 +5667,41 @@ mod tests {
         }
         view.read_with(cx, |view, _| {
             assert_eq!(view.current_paragraph_text(), before);
+        });
+    }
+
+    #[gpui::test]
+    fn ime_updates_the_edited_page_and_keeps_the_next_page_image(cx: &mut gpui::TestAppContext) {
+        use gpui::EntityInputHandler;
+        use std::sync::Arc;
+
+        let (view, cx) = open_contract(cx);
+        cx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.insert_at = (3, 0);
+                view.caret = view.document.place_caret(3, 0);
+                let page = view.caret_page_1idx() - 1;
+                let next = view.images[page + 1].clone();
+                let next_generation = view.image_generations[page + 1].unwrap();
+                let original = view.images[page].clone();
+                let updates = [(None, "に"), (None, "にほん"), (Some(0..3), "日本語")];
+                for (range, text) in updates {
+                    view.replace_and_mark_text_in_range(range, text, None, window, cx);
+                    assert!(view.current_paragraph_text().starts_with(text));
+                    assert_eq!(
+                        view.image_generations[page],
+                        view.document.page_raster_generation(page)
+                    );
+                    assert!(Arc::ptr_eq(&next, &view.images[page + 1]));
+                    assert_eq!(
+                        view.document.page_raster_generation(page + 1),
+                        Some(next_generation)
+                    );
+                    let (pixels, _, _) = view.document.page_pixels(page).unwrap();
+                    assert_eq!(view.images[page].as_bytes(0), Some(pixels.as_slice()));
+                }
+                assert!(!Arc::ptr_eq(&original, &view.images[page]));
+            });
         });
     }
 
