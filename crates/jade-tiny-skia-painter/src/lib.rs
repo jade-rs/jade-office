@@ -34,7 +34,6 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::hash::{BuildHasherDefault, Hasher};
-use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 use unicode_segmentation::UnicodeSegmentation;
@@ -1563,24 +1562,25 @@ impl TinySkiaPainter {
             let last = columns.end - usize::from(overlap(columns.end - 1, x0, x1) != 255);
             first..last.max(first)
         };
-        let edges: Vec<(usize, u8)> = columns
-            .clone()
-            .filter(|column| !whole.contains(column))
-            .map(|column| (column, overlap(column, x0, x1)))
-            .collect();
-        let row_of_value: Vec<u8> = value.repeat(whole.len());
+        let left_edge =
+            (columns.start < whole.start).then(|| (columns.start, overlap(columns.start, x0, x1)));
+        let right = columns.end - 1;
+        let right_edge =
+            (right >= whole.end && right != columns.start).then(|| (right, overlap(right, x0, x1)));
         let data = pixmap.data_mut();
         for row in rows {
             let row_cover = overlap(row, y0, y1);
             let at = |column: usize| (row * width + column) * 4;
+            let start = at(whole.start);
+            let end = at(whole.end);
             if row_cover == 255 {
-                data[at(whole.start)..at(whole.end)].copy_from_slice(&row_of_value);
+                data[start..end].as_chunks_mut::<4>().0.fill(value);
             } else {
-                for pixel in data[at(whole.start)..at(whole.end)].chunks_exact_mut(4) {
+                for pixel in data[start..end].chunks_exact_mut(4) {
                     lerp(pixel, row_cover);
                 }
             }
-            for &(column, column_cover) in &edges {
+            for (column, column_cover) in left_edge.into_iter().chain(right_edge) {
                 let cover = scale_u8(row_cover, column_cover);
                 let pixel = &mut data[at(column)..at(column) + 4];
                 if cover == 255 {
@@ -1993,7 +1993,7 @@ impl TinySkiaPainter {
         let mut rows = top.max(0)..(top + height).min(surface_height);
         // A rectangle's coverage of each column and row, for the clip's
         // fractional edges; a path's coverage of each pixel.
-        let mut edges: Option<(Bounds, Range<i32>, Range<i32>)> = None;
+        let mut edges = None;
         let mut mask: Option<&[u8]> = None;
         if let Some(clip) = clip.as_deref() {
             let bounds = [
@@ -2011,7 +2011,7 @@ impl TinySkiaPainter {
                         ..columns.end.min(rect[2].ceil() as i32);
                     rows =
                         rows.start.max(rect[1].floor() as i32)..rows.end.min(rect[3].ceil() as i32);
-                    edges = Some((rect, columns.clone(), rows.clone()));
+                    edges = Some(rect);
                 }
                 Coverage::Partial => mask = Some(clip.whole_mask().data()),
             }
@@ -2029,6 +2029,11 @@ impl TinySkiaPainter {
         if columns.is_empty() || rows.is_empty() {
             return;
         }
+        let edges = edges.map(|rect| {
+            let first = overlap(columns.start, rect[0], rect[2]);
+            let last = overlap(columns.end - 1, rect[0], rect[2]);
+            (rect, first, last)
+        });
         self.note_damage(
             [
                 columns.start as f32,
@@ -2060,36 +2065,34 @@ impl TinySkiaPainter {
                 // Only the first and last columns, and rows at the clip's
                 // top and bottom, can be cut by its edges: a path filled
                 // across the clip covers many pixels between them.
-                (Some((rect, _, _)), _) => {
+                (Some((rect, first_cover, last_cover)), _) => {
                     let row_cover = overlap(row, rect[1], rect[3]);
-                    let (first_cover, last_cover) = (
-                        overlap(columns.start, rect[0], rect[2]),
-                        overlap(columns.end - 1, rect[0], rect[2]),
-                    );
-                    let last = alphas.len() - 1;
-                    for (index, (&alpha, pixel)) in alphas.iter().zip(pixels.iter_mut()).enumerate()
-                    {
-                        if alpha == 0 {
-                            continue;
+                    let blend_edge = |pixel: &mut [u8; 4], alpha, column_cover| {
+                        let alpha = scale_u8(alpha, scale_u8(row_cover, column_cover));
+                        if alpha != 0 {
+                            blend(pixel, alpha);
                         }
-                        let column_cover = match index {
-                            0 => first_cover,
-                            _ if index == last => last_cover,
-                            _ => 255,
-                        };
-                        let cover = match (row_cover, column_cover) {
-                            (255, 255) => 255,
-                            (row, 255) => row,
-                            (row, column) => scale_u8(row, column),
-                        };
-                        blend(
-                            pixel,
-                            if cover == 255 {
-                                alpha
-                            } else {
-                                scale_u8(alpha, cover)
-                            },
-                        );
+                    };
+                    let (first_pixel, pixels) = pixels.split_first_mut().unwrap();
+                    blend_edge(first_pixel, alphas[0], first_cover);
+                    if let Some((last_pixel, middle)) = pixels.split_last_mut() {
+                        let last = alphas.len() - 1;
+                        blend_edge(last_pixel, alphas[last], last_cover);
+                        let alphas = &alphas[1..last];
+                        if row_cover == 255 {
+                            for (&alpha, pixel) in alphas.iter().zip(middle) {
+                                if alpha != 0 {
+                                    blend(pixel, alpha);
+                                }
+                            }
+                        } else {
+                            for (&alpha, pixel) in alphas.iter().zip(middle) {
+                                let alpha = scale_u8(alpha, row_cover);
+                                if alpha != 0 {
+                                    blend(pixel, alpha);
+                                }
+                            }
+                        }
                     }
                 }
                 (None, Some(mask)) => {
@@ -4054,6 +4057,41 @@ mod tests {
 
     /// A rectangle clipped to, under no transform at all (tiny-skia's
     /// `is_scale_translate` says no to the identity), is kept as a rectangle.
+    #[test]
+    fn opaque_rectangles_preserve_fractional_coverage() {
+        let background = [35, 65, 95, 255];
+        let foreground = [230, 160, 90, 255];
+        for [left, top, right, bottom] in [
+            [1.0_f64, 1.0, 4.0, 4.0],
+            [0.75, 0.5, 4.25, 4.75],
+            [1.25, 0.5, 1.75, 4.75],
+            [1.75, 0.5, 2.25, 4.75],
+            [1.0, 1.25, 2.0, 1.75],
+            [-0.5, 0.0, 5.5, 5.5],
+        ] {
+            let painter = TinySkiaPainter::new(5, 5, fonts()).unwrap();
+            painter.set_fill_style_str("#23415f");
+            painter.fill_rect(0.0, 0.0, 5.0, 5.0);
+            painter.set_fill_style_str("#e6a05a");
+            painter.fill_rect(left, top, right - left, bottom - top);
+
+            let overlap = |at: u32, start: f64, end: f64| {
+                let at = f64::from(at);
+                (((at + 1.0).min(end) - at.max(start)).clamp(0.0, 1.0) * 255.0).round() as u8
+            };
+            for y in 0..5 {
+                for x in 0..5 {
+                    let alpha = scale_u8(overlap(x, left, right), overlap(y, top, bottom));
+                    let expected = std::array::from_fn(|channel| {
+                        scale_u8(foreground[channel], alpha)
+                            .saturating_add(scale_u8(background[channel], 255 - alpha))
+                    });
+                    assert_eq!(pixel(&painter, x, y), expected, "pixel ({x}, {y})");
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_rectangle_clip_is_kept_as_a_rectangle() {
         let mut builder = PathBuilder::new();
