@@ -21,10 +21,10 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
-use jade_docx_editor::Options;
 use jade_docx_editor::canvas_renderer::{CanvasRenderer, FullLayoutDebugSnapshot};
 use jade_docx_editor::render_host::{CanvasRenderHost, ImageCropMapping};
 use jade_docx_editor::word_document::WordDocument;
+use jade_docx_editor::Options;
 use jade_docx_layout::font_measurer::RegisteredFontStyle;
 use jade_docx_layout::layout_cache::TextMeasurer;
 pub use jade_docx_layout::shaping_measurer::ShapingMeasurer;

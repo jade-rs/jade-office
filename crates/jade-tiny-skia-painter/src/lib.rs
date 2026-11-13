@@ -3654,7 +3654,7 @@ mod tests {
 
     #[test]
     fn upright_alternates_match_vertical_reference_with_effects_and_capture() {
-        use jade_painter::capture::{RoutedPainter, new_sink, replay};
+        use jade_painter::capture::{new_sink, replay, RoutedPainter};
         let fonts = fonts();
         let render = |text: &str, upright: bool, capture: bool, effects: bool| {
             let painter = TinySkiaPainter::new(120, 120, fonts.clone()).unwrap();
@@ -4417,10 +4417,9 @@ mod tests {
         covered.set_fill_style_str("#336699");
         covered.fill_rect(-1.0, -1.0, 10.0, 10.0);
         let data = covered.rgba_premultiplied();
-        assert!(
-            data.chunks_exact(4)
-                .all(|pixel| pixel == [0x33, 0x66, 0x99, 255])
-        );
+        assert!(data
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0x33, 0x66, 0x99, 255]));
     }
 
     /// Paths drawn across a rectangle clip's edge are filled by area: what
