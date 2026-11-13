@@ -3387,6 +3387,7 @@ impl Painter for TinySkiaPainter {
         // The ink box: each glyph's bounding box, at its pen position, in
         // the face that draws it.
         let (mut top, mut bottom, mut right) = (0.0_f32, 0.0_f32, 0.0_f32);
+        let mut left = f32::INFINITY;
         let mut pen = 0.0_f32;
         for (run_font, run) in self.segments(text) {
             let glyphs = self.glyphs(run_font, size, run);
@@ -3403,6 +3404,7 @@ impl Painter for TinySkiaPainter {
                     if let Some(rect) = face.glyph_bounding_box(*glyph) {
                         top = top.max(f32::from(rect.y_max) * scale);
                         bottom = bottom.max(-f32::from(rect.y_min) * scale);
+                        left = left.min(pen + f32::from(rect.x_min) * scale);
                         right = right.max(pen + f32::from(rect.x_max) * scale);
                     }
                     pen += advance;
@@ -3415,6 +3417,11 @@ impl Painter for TinySkiaPainter {
             font_bounding_box_descent: f64::from(descent.round()),
             actual_bounding_box_ascent: f64::from(top),
             actual_bounding_box_descent: f64::from(bottom),
+            actual_bounding_box_left: if left.is_finite() {
+                f64::from(-left)
+            } else {
+                0.0
+            },
             actual_bounding_box_right: f64::from(right),
         })
     }
@@ -3647,7 +3654,7 @@ mod tests {
 
     #[test]
     fn upright_alternates_match_vertical_reference_with_effects_and_capture() {
-        use jade_painter::capture::{new_sink, replay, RoutedPainter};
+        use jade_painter::capture::{RoutedPainter, new_sink, replay};
         let fonts = fonts();
         let render = |text: &str, upright: bool, capture: bool, effects: bool| {
             let painter = TinySkiaPainter::new(120, 120, fonts.clone()).unwrap();
@@ -4410,9 +4417,10 @@ mod tests {
         covered.set_fill_style_str("#336699");
         covered.fill_rect(-1.0, -1.0, 10.0, 10.0);
         let data = covered.rgba_premultiplied();
-        assert!(data
-            .chunks_exact(4)
-            .all(|pixel| pixel == [0x33, 0x66, 0x99, 255]));
+        assert!(
+            data.chunks_exact(4)
+                .all(|pixel| pixel == [0x33, 0x66, 0x99, 255])
+        );
     }
 
     /// Paths drawn across a rectangle clip's edge are filled by area: what
