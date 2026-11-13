@@ -1567,6 +1567,10 @@ impl TinySkiaPainter {
         let right = columns.end - 1;
         let right_edge =
             (right >= whole.end && right != columns.start).then(|| (right, overlap(right, x0, x1)));
+        // Reuse the first complete row for wide fills. Bulk copying costs
+        // fewer instructions than storing each pixel again on later rows.
+        let reuse_row = whole.len() >= 256;
+        let mut filled_row = None;
         let data = pixmap.data_mut();
         for row in rows {
             let row_cover = overlap(row, y0, y1);
@@ -1574,7 +1578,14 @@ impl TinySkiaPainter {
             let start = at(whole.start);
             let end = at(whole.end);
             if row_cover == 255 {
-                data[start..end].as_chunks_mut::<4>().0.fill(value);
+                if let Some(source) = filled_row {
+                    data.copy_within(source..source + (end - start), start);
+                } else {
+                    data[start..end].as_chunks_mut::<4>().0.fill(value);
+                    if reuse_row {
+                        filled_row = Some(start);
+                    }
+                }
             } else {
                 for pixel in data[start..end].chunks_exact_mut(4) {
                     lerp(pixel, row_cover);
@@ -4061,17 +4072,18 @@ mod tests {
     fn opaque_rectangles_preserve_fractional_coverage() {
         let background = [35, 65, 95, 255];
         let foreground = [230, 160, 90, 255];
-        for [left, top, right, bottom] in [
-            [1.0_f64, 1.0, 4.0, 4.0],
-            [0.75, 0.5, 4.25, 4.75],
-            [1.25, 0.5, 1.75, 4.75],
-            [1.75, 0.5, 2.25, 4.75],
-            [1.0, 1.25, 2.0, 1.75],
-            [-0.5, 0.0, 5.5, 5.5],
+        for (width, [left, top, right, bottom]) in [
+            (5, [1.0_f64, 1.0, 4.0, 4.0]),
+            (5, [0.75, 0.5, 4.25, 4.75]),
+            (5, [1.25, 0.5, 1.75, 4.75]),
+            (5, [1.75, 0.5, 2.25, 4.75]),
+            (5, [1.0, 1.25, 2.0, 1.75]),
+            (5, [-0.5, 0.0, 5.5, 5.5]),
+            (300, [0.75, 0.5, 299.25, 4.75]),
         ] {
-            let painter = TinySkiaPainter::new(5, 5, fonts()).unwrap();
+            let painter = TinySkiaPainter::new(width, 5, fonts()).unwrap();
             painter.set_fill_style_str("#23415f");
-            painter.fill_rect(0.0, 0.0, 5.0, 5.0);
+            painter.fill_rect(0.0, 0.0, f64::from(width), 5.0);
             painter.set_fill_style_str("#e6a05a");
             painter.fill_rect(left, top, right - left, bottom - top);
 
@@ -4080,7 +4092,7 @@ mod tests {
                 (((at + 1.0).min(end) - at.max(start)).clamp(0.0, 1.0) * 255.0).round() as u8
             };
             for y in 0..5 {
-                for x in 0..5 {
+                for x in 0..width {
                     let alpha = scale_u8(overlap(x, left, right), overlap(y, top, bottom));
                     let expected = std::array::from_fn(|channel| {
                         scale_u8(foreground[channel], alpha)
