@@ -5684,7 +5684,8 @@ mod tests {
                 let next = view.images[page + 1].clone();
                 let next_generation = view.image_generations[page + 1].unwrap();
                 let original = view.images[page].clone();
-                for (range, text) in [(None, "に"), (None, "にほん"), (Some(0..3), "日本語")] {
+                let updates = [(None, "に"), (None, "にほん"), (Some(0..3), "日本語")];
+                for (range, text) in updates {
                     view.replace_and_mark_text_in_range(range, text, None, window, cx);
                     assert!(view.current_paragraph_text().starts_with(text));
                     assert_eq!(
