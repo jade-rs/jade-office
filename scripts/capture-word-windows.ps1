@@ -14,6 +14,15 @@ foreach ($source in $Documents) {
     if (-not $sourceNames.Add([IO.Path]::GetFileNameWithoutExtension($path))) {
         throw "Duplicate fixture name: $path"
     }
+    $sourceHash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (-not $DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
+        $stream=[IO.File]::OpenRead($path)
+        try { $header=New-Object byte[] 8; $read=$stream.Read($header,0,8) }
+        finally { $stream.Dispose() }
+        if ($read -eq 8 -and [BitConverter]::ToString($header) -eq 'D0-CF-11-E0-A1-B1-1A-E1') {
+        throw 'Compound/encrypted DOCX requires a supplied password for unattended capture'
+        }
+    }
 }
 # A separate COM instance; never attach to or close the user's Word instance.
 $word = New-Object -ComObject Word.Application
@@ -43,21 +52,14 @@ try {
     foreach ($source in $Documents) {
         $path = (Resolve-Path -LiteralPath $source).Path
         $sourceHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-        # Word treats an empty password as permission to show a hidden prompt.
-        # Compound DOCX containers need an explicit supplied password; ordinary
-        # ZIP documents ignore the nonempty placeholder passed to Open below.
-        if (-not $DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
-            $stream=[IO.File]::OpenRead($path)
-            try { $header=New-Object byte[] 8; $read=$stream.Read($header,0,8) }
-            finally { $stream.Dispose() }
-            if ($read -eq 8 -and [BitConverter]::ToString($header) -eq 'D0-CF-11-E0-A1-B1-1A-E1') {
-                throw 'Compound/encrypted DOCX requires a supplied password for unattended capture'
-            }
+        if ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
+            $password=[string]$DocumentPasswordsBySha256[$sourceHash]
+            $document=$word.Documents.Open($path,$false,$true,$false,$password)
+        } else {
+            # Preserve ordinary DOCX opening; the preflight already excludes
+            # compound/encrypted inputs without an explicitly supplied password.
+            $document=$word.Documents.Open($path,$false,$true,$false)
         }
-        $password = if ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
-            [string]$DocumentPasswordsBySha256[$sourceHash]
-        } else { [Guid]::NewGuid().ToString('N') }
-        $document = $word.Documents.Open($path, $false, $true, $false, $password)
         try {
             $document.Repaginate()
             $target = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($path)+'.pdf')
