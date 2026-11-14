@@ -4240,9 +4240,15 @@ pub(crate) fn byte_to_utf16(text: &str, byte_offset: usize) -> usize {
 /// command addresses, so it is the natural window to expose.
 impl DocumentView {
     fn current_paragraph_text(&self) -> String {
-        self.document
-            .paragraph_text(self.insert_at.0)
-            .unwrap_or_default()
+        // The paragraph-slice query also computes numbering and deleted rows
+        // across the document. The IME only needs the editable run text.
+        let mut text = String::new();
+        if let Some(paragraph) = self.document.word_document().paragraph(self.insert_at.0) {
+            for run in &paragraph.runs {
+                text.push_str(&run.text);
+            }
+        }
+        text
     }
 
     /// Replaces `range` (bytes, in the current paragraph) with `text`, leaving
@@ -4363,15 +4369,17 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Range<usize>> {
-        let text = self.focused_text();
         if let Some(field) = self.text_bar() {
             let marked = field.marked.clone()?;
-            return Some(byte_to_utf16(&text, marked.start)..byte_to_utf16(&text, marked.end));
+            return Some(
+                byte_to_utf16(&field.text, marked.start)..byte_to_utf16(&field.text, marked.end),
+            );
         }
         let marked = match self.find_bar.as_ref() {
             Some(bar) => bar.marked.clone()?,
             None => self.marked.clone()?,
         };
+        let text = self.focused_text();
         Some(byte_to_utf16(&text, marked.start)..byte_to_utf16(&text, marked.end))
     }
 
