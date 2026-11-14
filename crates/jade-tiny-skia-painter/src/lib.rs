@@ -154,8 +154,11 @@ pub struct FontBook {
     /// repeats from one document to the next. `None` for bytes that would
     /// not decode, so they are not retried every frame.
     pictures: RefCell<HashMap<PictureKey, Option<Rc<Pixmap>>>>,
-    /// The decoded pictures' pixel bytes, against [`PICTURE_CACHE_BYTES`].
+    /// The decoded pictures' pixel and key bytes, against [`PICTURE_CACHE_BYTES`].
     picture_bytes: Cell<usize>,
+    /// SVG rasterizations shared across pages at the same device size.
+    svg_rasters: RefCell<HashMap<SvgRasterKey, Rc<Pixmap>>>,
+    svg_raster_bytes: Cell<usize>,
 }
 
 impl FontBook {
@@ -171,8 +174,14 @@ impl FontBook {
         }
         let decoded = decode(bytes).map(Rc::new);
         let size = decoded.as_ref().map_or(0, |pixmap| pixmap.data().len());
+        if size > PICTURE_CACHE_BYTES || id.0.len() > PICTURE_CACHE_BYTES - size {
+            return decoded;
+        }
+        let size = size + id.0.len();
         let mut pictures = self.pictures.borrow_mut();
-        if self.picture_bytes.get() + size > PICTURE_CACHE_BYTES {
+        if self.picture_bytes.get() + size > PICTURE_CACHE_BYTES
+            || pictures.len() >= PICTURE_CACHE_ENTRIES
+        {
             pictures.clear();
             self.picture_bytes.set(0);
         }
@@ -201,6 +210,9 @@ impl FontBook {
             ascender,
             descender,
         });
+        *self.svg_fonts.get_mut() = None;
+        self.svg_rasters.get_mut().clear();
+        self.svg_raster_bytes.set(0);
         Ok(())
     }
 
@@ -489,12 +501,17 @@ struct GlyphKey {
 /// at many sizes and zooms reaches.
 const GLYPH_CACHE_LIMIT: usize = 16_384;
 
-/// The decoded pictures are dropped whole past this many pixel bytes: a
+/// The decoded pictures are dropped whole past this many bytes: a
 /// dozen full-HD photos.
 const PICTURE_CACHE_BYTES: usize = 96 * 1024 * 1024;
+// Failed decodes cost no pixels but still occupy entries.
+const PICTURE_CACHE_ENTRIES: usize = 4096;
+const SVG_TREE_CACHE_ENTRIES: usize = 128;
+const SVG_RASTER_CACHE_BYTES: usize = 8 << 20;
 
 /// A picture's key from the caller, and a hash of its bytes.
 type PictureKey = (String, u64);
+type SvgRasterKey = (PictureKey, u32, u32);
 
 /// A picture's bytes hashed a word at a time ([`FastHasher`]): it runs over
 /// the whole encoded file at every draw, and SipHash made it a visible part
@@ -982,7 +999,7 @@ struct Inner {
     path: RefCell<PathBuilder>,
     /// Parsed SVG pictures by content key, likewise; rasterized per draw at
     /// the size they land at.
-    svgs: RefCell<HashMap<String, Option<Rc<resvg::usvg::Tree>>>>,
+    svgs: RefCell<HashMap<PictureKey, Option<Rc<resvg::usvg::Tree>>>>,
     /// The device-px bounds of everything drawn since the last
     /// [`TinySkiaPainter::take_damaged_rows`]: what a reader keeping a copy
     /// of the pixels has to read again.
@@ -1404,8 +1421,29 @@ impl TinySkiaPainter {
             destination.y as f32,
             destination.width as f32,
             destination.height as f32,
-        )
-        .map(PathBuilder::from_rect);
+        );
+        let image_bounds = Rect::from_xywh(0.0, 0.0, image.width() as f32, image.height() as f32)
+            .map(|rect| device_bounds(rect, transform));
+        // The image draw already stops at its own bounds. At integer device
+        // edges, an enclosing rectangular crop cannot affect its pixels.
+        let crop = crop
+            .filter(|crop| {
+                state.transform.has_skew()
+                    || state
+                        .clip
+                        .as_deref()
+                        .is_some_and(|clip| clip.path.is_some())
+                    || !image_bounds.is_some_and(|bounds| {
+                        let crop = device_bounds(*crop, state.transform);
+                        crop.iter()
+                            .all(|edge| edge.is_finite() && edge.fract() == 0.0)
+                            && crop[0] <= bounds[0]
+                            && crop[1] <= bounds[1]
+                            && crop[2] >= bounds[2]
+                            && crop[3] >= bounds[3]
+                    })
+            })
+            .map(PathBuilder::from_rect);
         let mut pixmap = self.pixels();
         let size = (pixmap.width(), pixmap.height());
         // The crop is one more clip, in force for this picture alone.
@@ -1413,8 +1451,6 @@ impl TinySkiaPainter {
             .as_ref()
             .map(|crop| Clip::new(state.clip.as_deref(), Some(crop), state.transform, size));
         let clip = cropped.as_ref().or(state.clip.as_deref());
-        let image_bounds = Rect::from_xywh(0.0, 0.0, image.width() as f32, image.height() as f32)
-            .map(|rect| device_bounds(rect, transform));
         let mask = match (clip, image_bounds) {
             (None, _) => None,
             (Some(clip), Some(bounds)) => match clip.coverage(bounds) {
@@ -2736,27 +2772,6 @@ impl TinySkiaPainter {
         source: Option<[f64; 4]>,
         destination: &ImageRect,
     ) -> Option<Rc<Pixmap>> {
-        let tree = {
-            let mut svgs = self.inner.svgs.borrow_mut();
-            svgs.entry(key.to_string())
-                .or_insert_with(|| {
-                    let mut options = resvg::usvg::Options {
-                        font_family: self
-                            .inner
-                            .fonts
-                            .faces
-                            .first()
-                            .map(|face| face.family.clone())
-                            .unwrap_or_default(),
-                        ..Default::default()
-                    };
-                    options.fontdb = self.inner.fonts.svg_fonts();
-                    resvg::usvg::Tree::from_data(bytes, &options)
-                        .ok()
-                        .map(Rc::new)
-                })
-                .clone()?
-        };
         let transform = self.inner.state.borrow().transform;
         let device_x =
             f64::from((transform.sx * transform.sx + transform.ky * transform.ky).sqrt());
@@ -2770,6 +2785,34 @@ impl TinySkiaPainter {
         let height = (destination.height * device_y / sh.max(1e-6))
             .ceil()
             .clamp(1.0, LIMIT);
+        let fonts = &self.inner.fonts;
+        let id = (key.to_string(), content_hash(bytes));
+        let raster_key = (id.clone(), width as u32, height as u32);
+        if let Some(pixmap) = fonts.svg_rasters.borrow().get(&raster_key) {
+            return Some(Rc::clone(pixmap));
+        }
+        let tree = {
+            let mut svgs = self.inner.svgs.borrow_mut();
+            if svgs.len() >= SVG_TREE_CACHE_ENTRIES && !svgs.contains_key(&id) {
+                svgs.clear();
+            }
+            svgs.entry(id)
+                .or_insert_with(|| {
+                    let mut options = resvg::usvg::Options {
+                        font_family: fonts
+                            .faces
+                            .first()
+                            .map(|face| face.family.clone())
+                            .unwrap_or_default(),
+                        ..Default::default()
+                    };
+                    options.fontdb = fonts.svg_fonts();
+                    resvg::usvg::Tree::from_data(bytes, &options)
+                        .ok()
+                        .map(Rc::new)
+                })
+                .clone()?
+        };
         let mut pixmap = Pixmap::new(width as u32, height as u32)?;
         let size = tree.size();
         resvg::render(
@@ -2780,7 +2823,23 @@ impl TinySkiaPainter {
             ),
             &mut pixmap.as_mut(),
         );
-        Some(Rc::new(pixmap))
+        let pixmap = Rc::new(pixmap);
+        let size = pixmap.data().len();
+        if size <= SVG_RASTER_CACHE_BYTES && key.len() <= SVG_RASTER_CACHE_BYTES - size {
+            let size = size + key.len();
+            let mut rasters = fonts.svg_rasters.borrow_mut();
+            if fonts.svg_raster_bytes.get() + size > SVG_RASTER_CACHE_BYTES
+                || rasters.len() >= PICTURE_CACHE_ENTRIES
+            {
+                rasters.clear();
+                fonts.svg_raster_bytes.set(0);
+            }
+            rasters.insert(raster_key, Rc::clone(&pixmap));
+            fonts
+                .svg_raster_bytes
+                .set(fonts.svg_raster_bytes.get() + size);
+        }
+        Some(pixmap)
     }
 }
 
@@ -3937,6 +3996,49 @@ mod tests {
         assert_eq!(fonts.pictures.borrow().len(), 1);
     }
 
+    #[test]
+    fn failed_picture_decodes_do_not_grow_the_cache_without_bound() {
+        let fonts = FontBook::new();
+        for index in 0..=PICTURE_CACHE_ENTRIES {
+            assert!(fonts.picture(&index.to_string(), b"invalid").is_none());
+        }
+        assert_eq!(fonts.pictures.borrow().len(), 1);
+        assert_eq!(
+            fonts.picture_bytes.get(),
+            PICTURE_CACHE_ENTRIES.to_string().len()
+        );
+    }
+
+    #[test]
+    fn integer_image_bounds_match_a_masked_draw() {
+        let png = solid_png([120, 210, 70, 160]);
+        let source = decode(&png).unwrap();
+        let painter = TinySkiaPainter::new(24, 24, fonts()).unwrap();
+        let destination = ImageRect {
+            x: 3.0,
+            y: 5.0,
+            width: 8.0,
+            height: 12.0,
+        };
+        assert!(painter.draw_encoded_image_rect("image.png", &png, None, destination));
+        let mut expected = Pixmap::new(24, 24).unwrap();
+        expected.fill(Color::WHITE);
+        let path = PathBuilder::from_rect(Rect::from_xywh(3.0, 5.0, 8.0, 12.0).unwrap());
+        let crop = Clip::new(None, Some(&path), Transform::identity(), (24, 24));
+        expected.draw_pixmap(
+            0,
+            0,
+            source.as_ref(),
+            &PixmapPaint {
+                quality: tiny_skia::FilterQuality::Bilinear,
+                ..PixmapPaint::default()
+            },
+            Transform::from_row(2.0, 0.0, 0.0, 3.0, 3.0, 5.0),
+            Some(crop.whole_mask()),
+        );
+        assert_eq!(painter.rgba_premultiplied().as_slice(), expected.data());
+    }
+
     /// The key is a part name, which the next document reuses for its own
     /// picture: that one draws, not the first document's.
     #[test]
@@ -3989,6 +4091,40 @@ mod tests {
             .filter(|&(x, y)| data[((y * 240 + x) * 4) as usize] < 128)
             .count();
         assert!(ink > 50, "the text drew {ink} dark pixels");
+    }
+
+    #[test]
+    fn svg_rasters_are_shared_by_content_and_device_size() {
+        let red = br##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#f00"/></svg>"##;
+        let blue = br##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#00f"/></svg>"##;
+        let fonts = fonts();
+        let first = TinySkiaPainter::new(24, 24, Rc::clone(&fonts)).unwrap();
+        let second = TinySkiaPainter::new(24, 24, Rc::clone(&fonts)).unwrap();
+        let nominal = ImageRect {
+            x: 0.0,
+            y: 0.0,
+            width: 8.0,
+            height: 8.0,
+        };
+        let larger = ImageRect {
+            width: 16.0,
+            height: 12.0,
+            ..nominal
+        };
+        let raster = first
+            .rasterize_svg("image.svg", red, None, &nominal)
+            .unwrap();
+        let reused = second
+            .rasterize_svg("image.svg", red, None, &nominal)
+            .unwrap();
+        assert!(Rc::ptr_eq(&raster, &reused));
+        let resized = second
+            .rasterize_svg("image.svg", red, None, &larger)
+            .unwrap();
+        assert_eq!((resized.width(), resized.height()), (16, 12));
+        draw_whole(&first, "image.svg", red);
+        draw_whole(&first, "image.svg", blue);
+        assert_eq!(pixel(&first, 4, 4), [0, 0, 255, 255]);
     }
 
     fn dark_pixels(painter: &TinySkiaPainter) -> usize {

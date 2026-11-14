@@ -236,6 +236,21 @@ pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<Hea
     .next()
 }
 
+/// Reads the editable text addressed by paragraph byte offsets.
+pub fn editable_paragraph_text(document: &WordDocument, index: usize) -> Option<String> {
+    if index >= document.paragraph_count() {
+        return None;
+    }
+    // Some paragraph surfaces, such as equations, have no editable text runs.
+    let mut text = String::new();
+    if let Some(paragraph) = document.paragraph(index) {
+        for run in &paragraph.runs {
+            text.push_str(&run.text);
+        }
+    }
+    Some(text)
+}
+
 /// A character format the ribbon toggles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CharacterFormat {
@@ -415,23 +430,11 @@ trait Helpers: WordSession {
     }
 
     fn text_of(&self, paragraph: usize) -> Option<String> {
-        match self.query(HeadlessQuery::ParagraphSlice {
-            start_paragraph: paragraph,
-            max_paragraphs: 1,
-        })? {
-            HeadlessQueryResult::ParagraphSlice { paragraphs, .. } => paragraphs
-                .into_iter()
-                .find(|entry| entry.paragraph == paragraph)
-                .map(|entry| entry.text),
-            _ => None,
-        }
+        editable_paragraph_text(self.word_document(), paragraph)
     }
 
     fn paragraph_total(&self) -> usize {
-        match self.query(HeadlessQuery::ParagraphCount) {
-            Some(HeadlessQueryResult::ParagraphCount { paragraph_count }) => paragraph_count,
-            _ => 0,
-        }
+        self.word_document().paragraph_count()
     }
 
     /// Makes the selection a caret at `position`, without repainting.
