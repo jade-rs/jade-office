@@ -506,6 +506,8 @@ const GLYPH_CACHE_LIMIT: usize = 16_384;
 const PICTURE_CACHE_BYTES: usize = 96 * 1024 * 1024;
 // Failed decodes cost no pixels but still occupy entries.
 const PICTURE_CACHE_ENTRIES: usize = 4096;
+const SVG_TREE_CACHE_ENTRIES: usize = 128;
+const SVG_RASTER_CACHE_BYTES: usize = 8 << 20;
 
 /// A picture's key from the caller, and a hash of its bytes.
 type PictureKey = (String, u64);
@@ -2794,6 +2796,9 @@ impl TinySkiaPainter {
         }
         let tree = {
             let mut svgs = self.inner.svgs.borrow_mut();
+            if svgs.len() >= SVG_TREE_CACHE_ENTRIES && !svgs.contains_key(&id) {
+                svgs.clear();
+            }
             svgs.entry(id)
                 .or_insert_with(|| {
                     let mut options = resvg::usvg::Options {
@@ -2822,11 +2827,13 @@ impl TinySkiaPainter {
             &mut pixmap.as_mut(),
         );
         let pixmap = Rc::new(pixmap);
-        const CACHE_BYTES: usize = 8 << 20;
         let size = pixmap.data().len();
-        if size <= CACHE_BYTES {
+        if size <= SVG_RASTER_CACHE_BYTES && key.len() <= SVG_RASTER_CACHE_BYTES - size {
+            let size = size + key.len();
             let mut rasters = fonts.svg_rasters.borrow_mut();
-            if fonts.svg_raster_bytes.get() + size > CACHE_BYTES {
+            if fonts.svg_raster_bytes.get() + size > SVG_RASTER_CACHE_BYTES
+                || rasters.len() >= PICTURE_CACHE_ENTRIES
+            {
                 rasters.clear();
                 fonts.svg_raster_bytes.set(0);
             }
