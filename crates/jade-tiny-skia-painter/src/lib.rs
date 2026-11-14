@@ -1605,8 +1605,7 @@ impl TinySkiaPainter {
             (right >= whole.end && right != columns.start).then(|| (right, overlap(right, x0, x1)));
         // Reuse the first complete row for wide fills. Bulk copying costs
         // fewer instructions than storing each pixel again on later rows.
-        let white = value == [255; 4];
-        let reuse_row = whole.len() >= 256 && !white;
+        let reuse_row = whole.len() >= 256;
         let mut filled_row = None;
         let data = pixmap.data_mut();
         for row in rows {
@@ -1615,9 +1614,7 @@ impl TinySkiaPainter {
             let start = at(whole.start);
             let end = at(whole.end);
             if row_cover == 255 {
-                if white {
-                    data[start..end].fill(255);
-                } else if let Some(source) = filled_row {
+                if let Some(source) = filled_row {
                     data.copy_within(source..source + (end - start), start);
                 } else {
                     data[start..end].as_chunks_mut::<4>().0.fill(value);
@@ -4210,22 +4207,20 @@ mod tests {
     #[test]
     fn opaque_rectangles_preserve_fractional_coverage() {
         let background = [35, 65, 95, 255];
-        let orange = ("#e6a05a", [230, 160, 90, 255]);
-        let white = ("#ffffff", [255; 4]);
-        for (width, (color, foreground), [left, top, right, bottom]) in [
-            (5, orange, [1.0_f64, 1.0, 4.0, 4.0]),
-            (5, orange, [0.75, 0.5, 4.25, 4.75]),
-            (5, orange, [1.25, 0.5, 1.75, 4.75]),
-            (5, orange, [1.75, 0.5, 2.25, 4.75]),
-            (5, orange, [1.0, 1.25, 2.0, 1.75]),
-            (5, orange, [-0.5, 0.0, 5.5, 5.5]),
-            (300, orange, [0.75, 0.5, 299.25, 4.75]),
-            (300, white, [0.75, 0.5, 299.25, 4.75]),
+        let foreground = [230, 160, 90, 255];
+        for (width, [left, top, right, bottom]) in [
+            (5, [1.0_f64, 1.0, 4.0, 4.0]),
+            (5, [0.75, 0.5, 4.25, 4.75]),
+            (5, [1.25, 0.5, 1.75, 4.75]),
+            (5, [1.75, 0.5, 2.25, 4.75]),
+            (5, [1.0, 1.25, 2.0, 1.75]),
+            (5, [-0.5, 0.0, 5.5, 5.5]),
+            (300, [0.75, 0.5, 299.25, 4.75]),
         ] {
             let painter = TinySkiaPainter::new(width, 5, fonts()).unwrap();
             painter.set_fill_style_str("#23415f");
             painter.fill_rect(0.0, 0.0, f64::from(width), 5.0);
-            painter.set_fill_style_str(color);
+            painter.set_fill_style_str("#e6a05a");
             painter.fill_rect(left, top, right - left, bottom - top);
 
             let overlap = |at: u32, start: f64, end: f64| {
