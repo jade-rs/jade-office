@@ -156,6 +156,9 @@ pub struct FontBook {
     pictures: RefCell<HashMap<PictureKey, Option<Rc<Pixmap>>>>,
     /// The decoded pictures' pixel bytes, against [`PICTURE_CACHE_BYTES`].
     picture_bytes: Cell<usize>,
+    /// SVG rasterizations shared across pages at the same device size.
+    svg_rasters: RefCell<HashMap<SvgRasterKey, Rc<Pixmap>>>,
+    svg_raster_bytes: Cell<usize>,
 }
 
 impl FontBook {
@@ -201,6 +204,9 @@ impl FontBook {
             ascender,
             descender,
         });
+        *self.svg_fonts.get_mut() = None;
+        self.svg_rasters.get_mut().clear();
+        self.svg_raster_bytes.set(0);
         Ok(())
     }
 
@@ -495,6 +501,7 @@ const PICTURE_CACHE_BYTES: usize = 96 * 1024 * 1024;
 
 /// A picture's key from the caller, and a hash of its bytes.
 type PictureKey = (String, u64);
+type SvgRasterKey = (PictureKey, u32, u32);
 
 /// A picture's bytes hashed a word at a time ([`FastHasher`]): it runs over
 /// the whole encoded file at every draw, and SipHash made it a visible part
@@ -982,7 +989,7 @@ struct Inner {
     path: RefCell<PathBuilder>,
     /// Parsed SVG pictures by content key, likewise; rasterized per draw at
     /// the size they land at.
-    svgs: RefCell<HashMap<String, Option<Rc<resvg::usvg::Tree>>>>,
+    svgs: RefCell<HashMap<PictureKey, Option<Rc<resvg::usvg::Tree>>>>,
     /// The device-px bounds of everything drawn since the last
     /// [`TinySkiaPainter::take_damaged_rows`]: what a reader keeping a copy
     /// of the pixels has to read again.
@@ -2739,27 +2746,6 @@ impl TinySkiaPainter {
         source: Option<[f64; 4]>,
         destination: &ImageRect,
     ) -> Option<Rc<Pixmap>> {
-        let tree = {
-            let mut svgs = self.inner.svgs.borrow_mut();
-            svgs.entry(key.to_string())
-                .or_insert_with(|| {
-                    let mut options = resvg::usvg::Options {
-                        font_family: self
-                            .inner
-                            .fonts
-                            .faces
-                            .first()
-                            .map(|face| face.family.clone())
-                            .unwrap_or_default(),
-                        ..Default::default()
-                    };
-                    options.fontdb = self.inner.fonts.svg_fonts();
-                    resvg::usvg::Tree::from_data(bytes, &options)
-                        .ok()
-                        .map(Rc::new)
-                })
-                .clone()?
-        };
         let transform = self.inner.state.borrow().transform;
         let device_x =
             f64::from((transform.sx * transform.sx + transform.ky * transform.ky).sqrt());
@@ -2773,6 +2759,31 @@ impl TinySkiaPainter {
         let height = (destination.height * device_y / sh.max(1e-6))
             .ceil()
             .clamp(1.0, LIMIT);
+        let fonts = &self.inner.fonts;
+        let id = (key.to_string(), content_hash(bytes));
+        let raster_key = (id.clone(), width as u32, height as u32);
+        if let Some(pixmap) = fonts.svg_rasters.borrow().get(&raster_key) {
+            return Some(Rc::clone(pixmap));
+        }
+        let tree = {
+            let mut svgs = self.inner.svgs.borrow_mut();
+            svgs.entry(id)
+                .or_insert_with(|| {
+                    let mut options = resvg::usvg::Options {
+                        font_family: fonts
+                            .faces
+                            .first()
+                            .map(|face| face.family.clone())
+                            .unwrap_or_default(),
+                        ..Default::default()
+                    };
+                    options.fontdb = fonts.svg_fonts();
+                    resvg::usvg::Tree::from_data(bytes, &options)
+                        .ok()
+                        .map(Rc::new)
+                })
+                .clone()?
+        };
         let mut pixmap = Pixmap::new(width as u32, height as u32)?;
         let size = tree.size();
         resvg::render(
@@ -2783,7 +2794,21 @@ impl TinySkiaPainter {
             ),
             &mut pixmap.as_mut(),
         );
-        Some(Rc::new(pixmap))
+        let pixmap = Rc::new(pixmap);
+        const CACHE_BYTES: usize = 8 << 20;
+        let size = pixmap.data().len();
+        if size <= CACHE_BYTES {
+            let mut rasters = fonts.svg_rasters.borrow_mut();
+            if fonts.svg_raster_bytes.get() + size > CACHE_BYTES {
+                rasters.clear();
+                fonts.svg_raster_bytes.set(0);
+            }
+            rasters.insert(raster_key, Rc::clone(&pixmap));
+            fonts
+                .svg_raster_bytes
+                .set(fonts.svg_raster_bytes.get() + size);
+        }
+        Some(pixmap)
     }
 }
 
@@ -3992,6 +4017,40 @@ mod tests {
             .filter(|&(x, y)| data[((y * 240 + x) * 4) as usize] < 128)
             .count();
         assert!(ink > 50, "the text drew {ink} dark pixels");
+    }
+
+    #[test]
+    fn svg_rasters_are_shared_by_content_and_device_size() {
+        let red = br##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#f00"/></svg>"##;
+        let blue = br##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#00f"/></svg>"##;
+        let fonts = fonts();
+        let first = TinySkiaPainter::new(24, 24, Rc::clone(&fonts)).unwrap();
+        let second = TinySkiaPainter::new(24, 24, Rc::clone(&fonts)).unwrap();
+        let nominal = ImageRect {
+            x: 0.0,
+            y: 0.0,
+            width: 8.0,
+            height: 8.0,
+        };
+        let larger = ImageRect {
+            width: 16.0,
+            height: 12.0,
+            ..nominal
+        };
+        let raster = first
+            .rasterize_svg("image.svg", red, None, &nominal)
+            .unwrap();
+        let reused = second
+            .rasterize_svg("image.svg", red, None, &nominal)
+            .unwrap();
+        assert!(Rc::ptr_eq(&raster, &reused));
+        let resized = second
+            .rasterize_svg("image.svg", red, None, &larger)
+            .unwrap();
+        assert_eq!((resized.width(), resized.height()), (16, 12));
+        draw_whole(&first, "image.svg", red);
+        draw_whole(&first, "image.svg", blue);
+        assert_eq!(pixel(&first, 4, 4), [0, 0, 255, 255]);
     }
 
     fn dark_pixels(painter: &TinySkiaPainter) -> usize {
