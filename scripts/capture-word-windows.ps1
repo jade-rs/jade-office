@@ -5,6 +5,7 @@ param(
     [switch]$UnclippedTableGlyphs
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'word-windows-page-geometry.ps1')
 $root = [IO.Path]::GetFullPath($OutputDirectory)
 $sourceNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($source in $Documents) {
@@ -53,14 +54,12 @@ try {
                 $document.Repaginate()
                 for ($pageNumber=1; $pageNumber -le $pages; $pageNumber++) {
                     $page=$document.ActiveWindow.Panes.Item(1).Pages.Item($pageNumber)
-                    $pageRange=$document.GoTo(1,1,$pageNumber)
-                    if ($pageRange.Information(3) -ne $pageNumber) { throw 'Word returned a different physical page' }
-                    $pageSetup=$pageRange.Sections.Item(1).PageSetup
-                    if ([Math]::Abs($pageSetup.PageWidth-$page.Width) -gt 0.51 -or [Math]::Abs($pageSetup.PageHeight-$page.Height) -gt 0.51) { throw 'Word page geometry differs from its section setup' }
+                    $geometry=Get-WordCapturePageGeometry $document $page $pageNumber
+                    $pageSetup=$geometry.PageSetup
                     $metafileName=([IO.Path]::GetFileNameWithoutExtension($path))+('.page-{0:D3}.emf' -f $pageNumber)
                     $metafilePath=Join-Path $output $metafileName
                     [IO.File]::WriteAllBytes($metafilePath, [byte[]]$page.EnhMetaFileBits)
-                    $metafiles += [ordered]@{ page=$pageNumber; file=$metafileName; sha256=(Get-FileHash -LiteralPath $metafilePath -Algorithm SHA256).Hash.ToLowerInvariant(); width_pt=$pageSetup.PageWidth; height_pt=$pageSetup.PageHeight }
+                    $metafiles += [ordered]@{ page=$pageNumber; file=$metafileName; sha256=(Get-FileHash -LiteralPath $metafilePath -Algorithm SHA256).Hash.ToLowerInvariant(); width_pt=$pageSetup.PageWidth; height_pt=$pageSetup.PageHeight; geometry_source=$geometry.Source }
                 }
             }
             if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sourceHash) { throw "DOCX changed during capture: $path" }
