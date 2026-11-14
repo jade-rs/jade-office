@@ -4,6 +4,7 @@ param(
     [switch]$CaptureMetafiles,
     [switch]$UnclippedTableGlyphs,
     [switch]$HideComments,
+    [switch]$OpenAndRepair,
     [hashtable]$DocumentPasswordsBySha256=@{}
 )
 $ErrorActionPreference = 'Stop'
@@ -53,7 +54,17 @@ try {
     foreach ($source in $Documents) {
         $path = (Resolve-Path -LiteralPath $source).Path
         $sourceHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
+        if ($OpenAndRepair) {
+            $missing=[Type]::Missing
+            $password=$missing
+            if ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
+                $password=[string]$DocumentPasswordsBySha256[$sourceHash]
+            }
+            # Documents.Open: OpenAndRepair is argument 14. This repairs only
+            # the read-only in-memory document; never save over the source.
+            $document=$word.Documents.Open($path,$false,$true,$false,$password,$missing,
+                $false,$missing,$missing,$missing,$missing,$false,$false,$true,$missing,$true)
+        } elseif ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
             $password=[string]$DocumentPasswordsBySha256[$sourceHash]
             $document=$word.Documents.Open($path,$false,$true,$false,$password)
         } else {
@@ -84,6 +95,7 @@ try {
             if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sourceHash) { throw "DOCX changed during capture: $path" }
             $item=[ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$pages; compatibility_mode=[int]$document.CompatibilityMode }
             $item['password_provided']=$DocumentPasswordsBySha256.ContainsKey($sourceHash)
+            $item['open_mode']=if($OpenAndRepair){'open-and-repair-read-only'}else{'normal-read-only'}
             $item['word_view']=[ordered]@{
                 hide_comments_requested=[bool]$HideComments
                 show_comments=[bool]$document.ActiveWindow.View.ShowComments
