@@ -4240,15 +4240,11 @@ pub(crate) fn byte_to_utf16(text: &str, byte_offset: usize) -> usize {
 /// command addresses, so it is the natural window to expose.
 impl DocumentView {
     fn current_paragraph_text(&self) -> String {
-        // The paragraph-slice query also computes numbering and deleted rows
-        // across the document. The IME only needs the editable run text.
-        let mut text = String::new();
-        if let Some(paragraph) = self.document.word_document().paragraph(self.insert_at.0) {
-            for run in &paragraph.runs {
-                text.push_str(&run.text);
-            }
-        }
-        text
+        jade_office_model::word::editable_paragraph_text(
+            self.document.word_document(),
+            self.insert_at.0,
+        )
+        .unwrap_or_default()
     }
 
     /// Replaces `range` (bytes, in the current paragraph) with `text`, leaving
