@@ -104,6 +104,9 @@ impl DecodedPictures {
             return Some(Rc::clone(bytes));
         }
         let bytes: Rc<[u8]> = decode_data_uri(data_uri)?.into();
+        if bytes.len() > DECODED_PICTURE_BYTES {
+            return Some(bytes);
+        }
         if self.bytes + bytes.len() > DECODED_PICTURE_BYTES {
             self.by_uri.clear();
             self.bytes = 0;

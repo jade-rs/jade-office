@@ -154,7 +154,7 @@ pub struct FontBook {
     /// repeats from one document to the next. `None` for bytes that would
     /// not decode, so they are not retried every frame.
     pictures: RefCell<HashMap<PictureKey, Option<Rc<Pixmap>>>>,
-    /// The decoded pictures' pixel bytes, against [`PICTURE_CACHE_BYTES`].
+    /// The decoded pictures' pixel and key bytes, against [`PICTURE_CACHE_BYTES`].
     picture_bytes: Cell<usize>,
     /// SVG rasterizations shared across pages at the same device size.
     svg_rasters: RefCell<HashMap<SvgRasterKey, Rc<Pixmap>>>,
@@ -174,8 +174,14 @@ impl FontBook {
         }
         let decoded = decode(bytes).map(Rc::new);
         let size = decoded.as_ref().map_or(0, |pixmap| pixmap.data().len());
+        if size > PICTURE_CACHE_BYTES || id.0.len() > PICTURE_CACHE_BYTES - size {
+            return decoded;
+        }
+        let size = size + id.0.len();
         let mut pictures = self.pictures.borrow_mut();
-        if self.picture_bytes.get() + size > PICTURE_CACHE_BYTES {
+        if self.picture_bytes.get() + size > PICTURE_CACHE_BYTES
+            || pictures.len() >= PICTURE_CACHE_ENTRIES
+        {
             pictures.clear();
             self.picture_bytes.set(0);
         }
@@ -495,9 +501,11 @@ struct GlyphKey {
 /// at many sizes and zooms reaches.
 const GLYPH_CACHE_LIMIT: usize = 16_384;
 
-/// The decoded pictures are dropped whole past this many pixel bytes: a
+/// The decoded pictures are dropped whole past this many bytes: a
 /// dozen full-HD photos.
 const PICTURE_CACHE_BYTES: usize = 96 * 1024 * 1024;
+// Failed decodes cost no pixels but still occupy entries.
+const PICTURE_CACHE_ENTRIES: usize = 4096;
 
 /// A picture's key from the caller, and a hash of its bytes.
 type PictureKey = (String, u64);
@@ -3982,6 +3990,19 @@ mod tests {
             assert_eq!(pixel(&painter, 4, 4), [255, 0, 0, 255]);
         }
         assert_eq!(fonts.pictures.borrow().len(), 1);
+    }
+
+    #[test]
+    fn failed_picture_decodes_do_not_grow_the_cache_without_bound() {
+        let fonts = FontBook::new();
+        for index in 0..=PICTURE_CACHE_ENTRIES {
+            assert!(fonts.picture(&index.to_string(), b"invalid").is_none());
+        }
+        assert_eq!(fonts.pictures.borrow().len(), 1);
+        assert_eq!(
+            fonts.picture_bytes.get(),
+            PICTURE_CACHE_ENTRIES.to_string().len()
+        );
     }
 
     #[test]
