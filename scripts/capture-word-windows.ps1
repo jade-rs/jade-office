@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory=$true)][string[]]$Documents,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [switch]$CaptureMetafiles,
-    [switch]$UnclippedTableGlyphs
+    [switch]$UnclippedTableGlyphs,
+    [hashtable]$DocumentPasswordsBySha256=@{}
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'word-windows-page-geometry.ps1')
@@ -42,7 +43,21 @@ try {
     foreach ($source in $Documents) {
         $path = (Resolve-Path -LiteralPath $source).Path
         $sourceHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-        $document = $word.Documents.Open($path, $false, $true, $false)
+        # Word treats an empty password as permission to show a hidden prompt.
+        # Compound DOCX containers need an explicit supplied password; ordinary
+        # ZIP documents ignore the nonempty placeholder passed to Open below.
+        if (-not $DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
+            $stream=[IO.File]::OpenRead($path)
+            try { $header=New-Object byte[] 8; $read=$stream.Read($header,0,8) }
+            finally { $stream.Dispose() }
+            if ($read -eq 8 -and [BitConverter]::ToString($header) -eq 'D0-CF-11-E0-A1-B1-1A-E1') {
+                throw 'Compound/encrypted DOCX requires a supplied password for unattended capture'
+            }
+        }
+        $password = if ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
+            [string]$DocumentPasswordsBySha256[$sourceHash]
+        } else { [Guid]::NewGuid().ToString('N') }
+        $document = $word.Documents.Open($path, $false, $true, $false, $password)
         try {
             $document.Repaginate()
             $target = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($path)+'.pdf')
@@ -64,6 +79,7 @@ try {
             }
             if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sourceHash) { throw "DOCX changed during capture: $path" }
             $item=[ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$pages; compatibility_mode=[int]$document.CompatibilityMode }
+            $item['password_provided']=$DocumentPasswordsBySha256.ContainsKey($sourceHash)
             if ($CaptureMetafiles) { $item.metafiles=$metafiles }
             $metadata.documents += $item
         } finally { $document.Close(0); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($document) }

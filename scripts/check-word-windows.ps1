@@ -4,11 +4,12 @@ param(
     [string]$OutputDirectory='tmp/word-windows-versioned',
     [string]$NativeExecutable='jade-core/crates/jade-docx-native-render/target/debug/examples/word_coordinates.exe',
     [switch]$CaptureMetafiles,
-    [switch]$UnclippedTableGlyphs
+    [switch]$UnclippedTableGlyphs,
+    [hashtable]$DocumentPasswordsBySha256=@{}
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $NativeExecutable)) { throw 'Build the word_coordinates example before capturing' }
-$manifest = & (Join-Path $PSScriptRoot 'capture-word-windows.ps1') -Documents $Documents -OutputDirectory $OutputDirectory -CaptureMetafiles:$CaptureMetafiles -UnclippedTableGlyphs:$UnclippedTableGlyphs
+$manifest = & (Join-Path $PSScriptRoot 'capture-word-windows.ps1') -Documents $Documents -OutputDirectory $OutputDirectory -CaptureMetafiles:$CaptureMetafiles -UnclippedTableGlyphs:$UnclippedTableGlyphs -DocumentPasswordsBySha256 $DocumentPasswordsBySha256
 $capture = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
 $directory = Split-Path -Parent $manifest
 & $PythonExecutable (Join-Path $PSScriptRoot 'extract-word-windows-reference.py') $manifest
