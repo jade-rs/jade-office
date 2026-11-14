@@ -12,7 +12,9 @@ function Range($page, $width=420.0, $height=480.0) {
 }
 function Document($range, $sections=1) {
     $d=[pscustomobject]@{Anchor=$range;Sections=(Collection @($range.Sections.Item(1))) }
-    $d.Sections.Count=$sections
+    if ($sections -gt 1) {
+        $d.Sections=Collection @($range.Sections.Item(1), (Range 1 421).Sections.Item(1))
+    }
     $d|Add-Member ScriptMethod GoTo {param($what,$which,$count) if($what -ne 1 -or $which -ne 1){throw 'Unexpected page navigation'};return $this.Anchor}
     return $d
 }
@@ -39,4 +41,13 @@ Reject {Get-WordCapturePageGeometry (Document (Range 2 421)) (Page @()) 2} 'geom
 Reject {Get-WordCapturePageGeometry (Document $anchor) (Page @()) 0} 'must be positive'
 $r=Get-WordCapturePageGeometry (Document (Range 1 595.3 841.9)) (Page @() 595 842) 1
 Equal $r.PageSetup.PageWidth 595.3 'exact A4 section width must survive rounded window size'
-'7 physical-page geometry regressions passed'
+$uniform=Document $anchor
+$uniform.Sections=Collection @($anchor.Sections.Item(1),$anchor.Sections.Item(1))
+$r=Get-WordCapturePageGeometry $uniform (Page @()) 2
+Equal $r.Source 'uniform-section-page-sizes' 'automatic blank page between equal-size sections'
+$fractional=Range 1 595.3 841.9
+$uniform=Document $fractional
+$uniform.Sections=Collection @($fractional.Sections.Item(1),$fractional.Sections.Item(1))
+$r=Get-WordCapturePageGeometry $uniform (Page @() 595 842) 2
+Equal $r.PageSetup.PageWidth 595.3 'blank page preserves exact fractional section dimensions'
+'9 physical-page geometry regressions passed'

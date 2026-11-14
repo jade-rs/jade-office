@@ -25,7 +25,18 @@ function Get-WordCapturePageGeometry {
         $setup=$Document.Sections.Item(1).PageSetup
         $source='single-section-continuation'
     } else {
-        throw 'Cannot resolve exact section geometry for this physical page'
+        # Word-generated blank pages at odd/even section breaks have no body
+        # range. Multiple sections are unambiguous when every exact page size
+        # is identical; never infer fractional points from rounded Page sizes.
+        $setup=$Document.Sections.Item(1).PageSetup
+        for ($section=2; $section -le $Document.Sections.Count; $section++) {
+            $other=$Document.Sections.Item($section).PageSetup
+            if ($other.PageWidth -ne $setup.PageWidth -or
+                $other.PageHeight -ne $setup.PageHeight) {
+                throw 'Cannot resolve exact section geometry for this physical page'
+            }
+        }
+        $source='uniform-section-page-sizes'
     }
     if ([Math]::Abs($setup.PageWidth-$Page.Width) -gt 0.51 -or
         [Math]::Abs($setup.PageHeight-$Page.Height) -gt 0.51) {
