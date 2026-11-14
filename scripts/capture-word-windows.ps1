@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [switch]$CaptureMetafiles,
     [switch]$UnclippedTableGlyphs,
+    [switch]$HideComments,
     [hashtable]$DocumentPasswordsBySha256=@{}
 )
 $ErrorActionPreference = 'Stop'
@@ -61,6 +62,7 @@ try {
             $document=$word.Documents.Open($path,$false,$true,$false)
         }
         try {
+            if ($HideComments) { $document.ActiveWindow.View.ShowComments=$false }
             $document.Repaginate()
             $target = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($path)+'.pdf')
             $document.ExportAsFixedFormat($target, 17)
@@ -82,6 +84,12 @@ try {
             if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sourceHash) { throw "DOCX changed during capture: $path" }
             $item=[ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$pages; compatibility_mode=[int]$document.CompatibilityMode }
             $item['password_provided']=$DocumentPasswordsBySha256.ContainsKey($sourceHash)
+            $item['word_view']=[ordered]@{
+                hide_comments_requested=[bool]$HideComments
+                show_comments=[bool]$document.ActiveWindow.View.ShowComments
+                show_revisions_and_comments=[bool]$document.ActiveWindow.View.ShowRevisionsAndComments
+                revisions_mode=[int]$document.ActiveWindow.View.RevisionsMode
+            }
             if ($CaptureMetafiles) { $item.metafiles=$metafiles }
             $metadata.documents += $item
         } finally { $document.Close(0); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($document) }
