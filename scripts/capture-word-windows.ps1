@@ -4,7 +4,6 @@ param(
     [switch]$CaptureMetafiles,
     [switch]$UnclippedTableGlyphs,
     [switch]$HideComments,
-    [switch]$OpenAndRepair,
     [hashtable]$DocumentPasswordsBySha256=@{}
 )
 $ErrorActionPreference = 'Stop'
@@ -54,18 +53,7 @@ try {
     foreach ($source in $Documents) {
         $path = (Resolve-Path -LiteralPath $source).Path
         $sourceHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($OpenAndRepair) {
-            $password=''
-            if ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
-                $password=[string]$DocumentPasswordsBySha256[$sourceHash]
-            }
-            # Documents.Open: OpenAndRepair is argument 14. This repairs only
-            # the read-only in-memory document; never save over the source.
-            # PowerShell's COM binder does not accept Type.Missing here. Use
-            # automatic format and UTF-8 for text imports (DOCX declares XML encoding).
-            $document=$word.Documents.Open($path,$false,$true,$false,$password,'',
-                $false,'','',0,65001,$false,$false,$true)
-        } elseif ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
+        if ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
             $password=[string]$DocumentPasswordsBySha256[$sourceHash]
             $document=$word.Documents.Open($path,$false,$true,$false,$password)
         } else {
@@ -96,7 +84,7 @@ try {
             if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sourceHash) { throw "DOCX changed during capture: $path" }
             $item=[ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$pages; compatibility_mode=[int]$document.CompatibilityMode }
             $item['password_provided']=$DocumentPasswordsBySha256.ContainsKey($sourceHash)
-            $item['open_mode']=if($OpenAndRepair){'open-and-repair-read-only'}else{'normal-read-only'}
+            $item['open_mode']='normal-read-only'
             $item['word_view']=[ordered]@{
                 hide_comments_requested=[bool]$HideComments
                 show_comments=[bool]$document.ActiveWindow.View.ShowComments
