@@ -1411,8 +1411,29 @@ impl TinySkiaPainter {
             destination.y as f32,
             destination.width as f32,
             destination.height as f32,
-        )
-        .map(PathBuilder::from_rect);
+        );
+        let image_bounds = Rect::from_xywh(0.0, 0.0, image.width() as f32, image.height() as f32)
+            .map(|rect| device_bounds(rect, transform));
+        // The image draw already stops at its own bounds. At integer device
+        // edges, an enclosing rectangular crop cannot affect its pixels.
+        let crop = crop
+            .filter(|crop| {
+                state.transform.has_skew()
+                    || state
+                        .clip
+                        .as_deref()
+                        .is_some_and(|clip| clip.path.is_some())
+                    || !image_bounds.is_some_and(|bounds| {
+                        let crop = device_bounds(*crop, state.transform);
+                        crop.iter()
+                            .all(|edge| edge.is_finite() && edge.fract() == 0.0)
+                            && crop[0] <= bounds[0]
+                            && crop[1] <= bounds[1]
+                            && crop[2] >= bounds[2]
+                            && crop[3] >= bounds[3]
+                    })
+            })
+            .map(PathBuilder::from_rect);
         let mut pixmap = self.pixels();
         let size = (pixmap.width(), pixmap.height());
         // The crop is one more clip, in force for this picture alone.
@@ -1420,8 +1441,6 @@ impl TinySkiaPainter {
             .as_ref()
             .map(|crop| Clip::new(state.clip.as_deref(), Some(crop), state.transform, size));
         let clip = cropped.as_ref().or(state.clip.as_deref());
-        let image_bounds = Rect::from_xywh(0.0, 0.0, image.width() as f32, image.height() as f32)
-            .map(|rect| device_bounds(rect, transform));
         let mask = match (clip, image_bounds) {
             (None, _) => None,
             (Some(clip), Some(bounds)) => match clip.coverage(bounds) {
@@ -3963,6 +3982,36 @@ mod tests {
             assert_eq!(pixel(&painter, 4, 4), [255, 0, 0, 255]);
         }
         assert_eq!(fonts.pictures.borrow().len(), 1);
+    }
+
+    #[test]
+    fn integer_image_bounds_match_a_masked_draw() {
+        let png = solid_png([120, 210, 70, 160]);
+        let source = decode(&png).unwrap();
+        let painter = TinySkiaPainter::new(24, 24, fonts()).unwrap();
+        let destination = ImageRect {
+            x: 3.0,
+            y: 5.0,
+            width: 8.0,
+            height: 12.0,
+        };
+        assert!(painter.draw_encoded_image_rect("image.png", &png, None, destination));
+        let mut expected = Pixmap::new(24, 24).unwrap();
+        expected.fill(Color::WHITE);
+        let path = PathBuilder::from_rect(Rect::from_xywh(3.0, 5.0, 8.0, 12.0).unwrap());
+        let crop = Clip::new(None, Some(&path), Transform::identity(), (24, 24));
+        expected.draw_pixmap(
+            0,
+            0,
+            source.as_ref(),
+            &PixmapPaint {
+                quality: tiny_skia::FilterQuality::Bilinear,
+                ..PixmapPaint::default()
+            },
+            Transform::from_row(2.0, 0.0, 0.0, 3.0, 3.0, 5.0),
+            Some(crop.whole_mask()),
+        );
+        assert_eq!(painter.rgba_premultiplied().as_slice(), expected.data());
     }
 
     /// The key is a part name, which the next document reuses for its own
