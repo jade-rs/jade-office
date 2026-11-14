@@ -55,15 +55,16 @@ try {
         $path = (Resolve-Path -LiteralPath $source).Path
         $sourceHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($OpenAndRepair) {
-            $missing=[Type]::Missing
-            $password=$missing
+            $password=''
             if ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
                 $password=[string]$DocumentPasswordsBySha256[$sourceHash]
             }
             # Documents.Open: OpenAndRepair is argument 14. This repairs only
             # the read-only in-memory document; never save over the source.
-            $document=$word.Documents.Open($path,$false,$true,$false,$password,$missing,
-                $false,$missing,$missing,$missing,$missing,$false,$false,$true,$missing,$true)
+            # PowerShell's COM binder does not accept Type.Missing here. Use
+            # automatic format and UTF-8 for text imports (DOCX declares XML encoding).
+            $document=$word.Documents.Open($path,$false,$true,$false,$password,'',
+                $false,'','',0,65001,$false,$false,$true)
         } elseif ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
             $password=[string]$DocumentPasswordsBySha256[$sourceHash]
             $document=$word.Documents.Open($path,$false,$true,$false,$password)
