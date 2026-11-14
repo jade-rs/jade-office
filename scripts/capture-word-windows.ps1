@@ -2,15 +2,27 @@ param(
     [Parameter(Mandatory=$true)][string[]]$Documents,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [switch]$CaptureMetafiles,
-    [switch]$UnclippedTableGlyphs
+    [switch]$UnclippedTableGlyphs,
+    [switch]$HideComments,
+    [hashtable]$DocumentPasswordsBySha256=@{}
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'word-windows-page-geometry.ps1')
 $root = [IO.Path]::GetFullPath($OutputDirectory)
 $sourceNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($source in $Documents) {
     $path = (Resolve-Path -LiteralPath $source).Path
     if (-not $sourceNames.Add([IO.Path]::GetFileNameWithoutExtension($path))) {
         throw "Duplicate fixture name: $path"
+    }
+    $sourceHash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (-not $DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
+        $stream=[IO.File]::OpenRead($path)
+        try { $header=New-Object byte[] 8; $read=$stream.Read($header,0,8) }
+        finally { $stream.Dispose() }
+        if ($read -eq 8 -and [BitConverter]::ToString($header) -eq 'D0-CF-11-E0-A1-B1-1A-E1') {
+        throw 'Compound/encrypted DOCX requires a supplied password for unattended capture'
+        }
     }
 }
 # A separate COM instance; never attach to or close the user's Word instance.
@@ -41,8 +53,16 @@ try {
     foreach ($source in $Documents) {
         $path = (Resolve-Path -LiteralPath $source).Path
         $sourceHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-        $document = $word.Documents.Open($path, $false, $true, $false)
+        if ($DocumentPasswordsBySha256.ContainsKey($sourceHash)) {
+            $password=[string]$DocumentPasswordsBySha256[$sourceHash]
+            $document=$word.Documents.Open($path,$false,$true,$false,$password)
+        } else {
+            # Preserve ordinary DOCX opening; the preflight already excludes
+            # compound/encrypted inputs without an explicitly supplied password.
+            $document=$word.Documents.Open($path,$false,$true,$false)
+        }
         try {
+            if ($HideComments) { $document.ActiveWindow.View.ShowComments=$false }
             $document.Repaginate()
             $target = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($path)+'.pdf')
             $document.ExportAsFixedFormat($target, 17)
@@ -53,18 +73,24 @@ try {
                 $document.Repaginate()
                 for ($pageNumber=1; $pageNumber -le $pages; $pageNumber++) {
                     $page=$document.ActiveWindow.Panes.Item(1).Pages.Item($pageNumber)
-                    $pageRange=$document.GoTo(1,1,$pageNumber)
-                    if ($pageRange.Information(3) -ne $pageNumber) { throw 'Word returned a different physical page' }
-                    $pageSetup=$pageRange.Sections.Item(1).PageSetup
-                    if ([Math]::Abs($pageSetup.PageWidth-$page.Width) -gt 0.51 -or [Math]::Abs($pageSetup.PageHeight-$page.Height) -gt 0.51) { throw 'Word page geometry differs from its section setup' }
+                    $geometry=Get-WordCapturePageGeometry $document $page $pageNumber
+                    $pageSetup=$geometry.PageSetup
                     $metafileName=([IO.Path]::GetFileNameWithoutExtension($path))+('.page-{0:D3}.emf' -f $pageNumber)
                     $metafilePath=Join-Path $output $metafileName
                     [IO.File]::WriteAllBytes($metafilePath, [byte[]]$page.EnhMetaFileBits)
-                    $metafiles += [ordered]@{ page=$pageNumber; file=$metafileName; sha256=(Get-FileHash -LiteralPath $metafilePath -Algorithm SHA256).Hash.ToLowerInvariant(); width_pt=$pageSetup.PageWidth; height_pt=$pageSetup.PageHeight }
+                    $metafiles += [ordered]@{ page=$pageNumber; file=$metafileName; sha256=(Get-FileHash -LiteralPath $metafilePath -Algorithm SHA256).Hash.ToLowerInvariant(); width_pt=$pageSetup.PageWidth; height_pt=$pageSetup.PageHeight; geometry_source=$geometry.Source }
                 }
             }
             if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sourceHash) { throw "DOCX changed during capture: $path" }
             $item=[ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$pages; compatibility_mode=[int]$document.CompatibilityMode }
+            $item['password_provided']=$DocumentPasswordsBySha256.ContainsKey($sourceHash)
+            $item['open_mode']='normal-read-only'
+            $item['word_view']=[ordered]@{
+                hide_comments_requested=[bool]$HideComments
+                show_comments=[bool]$document.ActiveWindow.View.ShowComments
+                show_revisions_and_comments=[bool]$document.ActiveWindow.View.ShowRevisionsAndComments
+                revisions_mode=[int]$document.ActiveWindow.View.RevisionsMode
+            }
             if ($CaptureMetafiles) { $item.metafiles=$metafiles }
             $metadata.documents += $item
         } finally { $document.Close(0); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($document) }

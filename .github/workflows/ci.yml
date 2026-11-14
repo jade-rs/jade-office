@@ -34,6 +34,10 @@ jobs:
         run: python -m unittest discover -s scripts -p test_word_version_capture.py
       - name: Reject moved, missing, substituted or repaginated PDF glyphs
         run: python -m unittest discover -s scripts -p test_word_coordinate_comparison.py
+      - name: Resolve physical Word pages without fitting their geometry
+        run: pwsh -NoProfile -File scripts/test_word_physical_page_geometry.ps1
+      - name: Reject unattended capture prompts before starting Word
+        run: pwsh -NoProfile -File scripts/test_word_capture_preflight.ps1
 
   # Submodule workflows do not run for a jade-office PR. Keep the engine's
   # Mac coordinate gate explicit here as well; never refresh its snapshots.
