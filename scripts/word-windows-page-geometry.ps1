@@ -1,3 +1,16 @@
+# Page.Width/Height are Long values, unlike the exact floating-point section
+# dimensions. Word can report either adjacent integer (A3:1190.55 ->1190).
+# This is only a sanity check; capture coordinates always use PageSetup.
+function Test-WordReportedPageDimension {
+    param([double]$Exact, [double]$Reported)
+    if ($Exact -le 0 -or $Reported -le 0 -or
+        [double]::IsNaN($Exact) -or [double]::IsInfinity($Exact) -or
+        [double]::IsNaN($Reported) -or [double]::IsInfinity($Reported)) {
+        return $false
+    }
+    return $Reported -eq [Math]::Floor($Exact) -or $Reported -eq [Math]::Ceiling($Exact)
+}
+
 # Word GoTo can return a continued table/footnote's earlier body anchor.
 # The Page object still identifies the physical EMF being captured.
 function Get-WordCapturePageGeometry {
@@ -38,8 +51,8 @@ function Get-WordCapturePageGeometry {
         }
         $source='uniform-section-page-sizes'
     }
-    if ([Math]::Abs($setup.PageWidth-$Page.Width) -gt 0.51 -or
-        [Math]::Abs($setup.PageHeight-$Page.Height) -gt 0.51) {
+    if (-not (Test-WordReportedPageDimension $setup.PageWidth $Page.Width) -or
+        -not (Test-WordReportedPageDimension $setup.PageHeight $Page.Height)) {
         throw 'Word page geometry differs from its section setup'
     }
     [pscustomobject]@{PageSetup=$setup;Source=$source}

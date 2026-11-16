@@ -50,4 +50,18 @@ $uniform=Document $fractional
 $uniform.Sections=Collection @($fractional.Sections.Item(1),$fractional.Sections.Item(1))
 $r=Get-WordCapturePageGeometry $uniform (Page @() 595 842) 2
 Equal $r.PageSetup.PageWidth 595.3 'blank page preserves exact fractional section dimensions'
-'9 physical-page geometry regressions passed'
+# Actual Word16.0.19127.20936 reports A3 as1190x842 while its exact
+# PageSetup is1190.550048828125x841.9000244140625 points.
+$a3=Range 1 1190.550048828125 841.9000244140625
+$r=Get-WordCapturePageGeometry (Document $a3) (Page @() 1190 842) 1
+Equal $r.PageSetup.PageWidth 1190.550048828125 'retain exact measured A3 width'
+$r=Get-WordCapturePageGeometry (Document $a3) (Page @() 1191 841) 1
+Equal $r.PageSetup.PageHeight 841.9000244140625 'retain exact height for adjacent integer reports'
+Reject {Get-WordCapturePageGeometry (Document $a3) (Page @() 1189 842) 1} 'geometry differs'
+Reject {Get-WordCapturePageGeometry (Document $a3) (Page @() 1192 842) 1} 'geometry differs'
+Reject {Get-WordCapturePageGeometry (Document $a3) (Page @() 1190.5 842) 1} 'geometry differs'
+Reject {Get-WordCapturePageGeometry (Document $a3) (Page @() 842 1190) 1} 'geometry differs'
+Reject {Get-WordCapturePageGeometry (Document $a3) (Page @() 1190 843) 1} 'geometry differs'
+Reject {Get-WordCapturePageGeometry (Document (Range 1 ([double]::NaN) 842)) (Page @() 1190 842) 1} 'geometry differs'
+Reject {Get-WordCapturePageGeometry (Document $a3) (Page @() ([double]::PositiveInfinity) 842) 1} 'geometry differs'
+'18 physical-page geometry regressions passed'
