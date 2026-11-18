@@ -5217,3 +5217,16 @@ layout.indent_left	Indent Left
 layout.indent_right	Indent Right
 layout.space_before	Spacing Before
 layout.space_after	Spacing After
+fit.scroll_left	Scroll left
+fit.scroll_right	Scroll right
+sheet.group.font	Font
+sheet.group.alignment	Alignment
+sheet.group.number	Number
+sheet.group.styles	Styles
+sheet.group.data	Data
+deck.group.slides	Slides
+deck.group.insert	Insert
+deck.group.table	Table
+deck.group.show	Show
+deck.group.font	Font
+deck.group.paragraph	Paragraph

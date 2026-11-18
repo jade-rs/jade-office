@@ -882,10 +882,11 @@ impl DocumentView {
         }
         // Deferred, so it is over the pages and the overlays after it, and
         // takes the clicks on it.
-        out.extend(
-            self.controls_popup(page, cx)
-                .map(|popup| gpui::deferred(popup).with_priority(2).into_any_element()),
-        );
+        out.extend(self.controls_popup(page, cx).map(|popup| {
+            crate::layer::deferred(popup)
+                .with_priority(2)
+                .into_any_element()
+        }));
         out
     }
 

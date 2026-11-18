@@ -18,9 +18,10 @@
 //! at sizes where that shows. The layout is cached by the deck, so painting
 //! again at a new width is only the Skia pass.
 
+use crate::layer::deferred;
 use gpui::{
-    anchored, canvas, deferred, div, img, point, prelude::*, px, rgb, size, svg, AnyElement, App,
-    Bounds, ClickEvent, Context, Div, ElementId, ElementInputHandler, Entity, EntityInputHandler,
+    anchored, canvas, div, img, point, prelude::*, px, rgb, size, svg, AnyElement, App, Bounds,
+    ClickEvent, Context, Div, ElementId, ElementInputHandler, Entity, EntityInputHandler,
     FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels,
     RenderImage, ScrollHandle, SharedString, Stateful, UTF16Selection, Window, WindowBounds,
     WindowOptions,
@@ -1996,17 +1997,7 @@ fn format_list(id: &'static str, width: f32, value: String, open: bool) -> State
 
 /// A trigger with its list under it while open.
 fn with_menu(trigger: AnyElement, menu: Option<AnyElement>) -> AnyElement {
-    div()
-        .relative()
-        .flex_none()
-        .child(trigger)
-        .children(menu.map(|menu| {
-            div().absolute().top_full().left_0().child(
-                deferred(anchored().snap_to_window_with_margin(px(8.0)).child(menu))
-                    .with_priority(2),
-            )
-        }))
-        .into_any_element()
+    crate::fit::drop_down(trigger, menu)
 }
 
 /// The panel a list is drawn on.
@@ -2081,7 +2072,13 @@ impl DeckView {
 
     /// The format strip, PowerPoint's Font and Paragraph groups, over the
     /// text typed into or all of the selected shape's.
-    fn format_bar(&self, strip: &FormatStrip, open: Option<Popup>, cx: &mut Context<Self>) -> Div {
+    fn format_bar(
+        &self,
+        strip: &FormatStrip,
+        open: Option<Popup>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let font = strip.font.clone().unwrap_or_default();
         let font_menu = (open == Some(Popup::Font)).then(|| {
             let mut fonts: Vec<String> = FONT_FAMILIES.iter().map(|f| f.to_string()).collect();
@@ -2152,148 +2149,180 @@ impl DeckView {
                 }))
                 .into_any_element()
         });
-        let separator = || div().w(px(1.0)).h(px(18.0)).mx_1().bg(theme::border());
         let alignment = strip.alignment;
         div()
             .h(px(FORMAT_BAR_HEIGHT))
             .flex_none()
             .flex()
             .items_center()
-            .gap_0p5()
-            .px_3()
+            .px_1()
             .bg(theme::panel())
             .border_b_1()
             .border_color(theme::border())
             .text_color(theme::text())
-            .child(with_menu(
-                format_list("deck-font", 150.0, font, open == Some(Popup::Font))
-                    .tooltip(Tooltip::text(i18n::text("deck.font")))
-                    .on_click(Self::on_popup(Popup::Font, cx))
-                    .into_any_element(),
-                font_menu,
-            ))
-            .child(with_menu(
-                format_list(
-                    "deck-size",
-                    56.0,
-                    strip.size.map(size_label).unwrap_or_default(),
-                    open == Some(Popup::Size),
-                )
-                .tooltip(Tooltip::text(i18n::text("deck.font_size")))
-                .on_click(Self::on_popup(Popup::Size, cx))
-                .into_any_element(),
-                size_menu,
-            ))
-            .child(
-                format_button("deck-grow", "icons/a-arrow-up.svg", "deck.grow_font", false)
-                    .on_click(Self::on_format(TextCommand::Grow, cx)),
-            )
-            .child(
-                format_button(
-                    "deck-shrink",
-                    "icons/a-arrow-down.svg",
-                    "deck.shrink_font",
-                    false,
-                )
-                .on_click(Self::on_format(TextCommand::Shrink, cx)),
-            )
-            .child(separator())
-            .child(
-                format_button("deck-bold", "icons/bold.svg", "deck.bold", strip.bold)
-                    .on_click(Self::on_format(TextCommand::Bold, cx)),
-            )
-            .child(
-                format_button(
-                    "deck-italic",
-                    "icons/italic.svg",
-                    "deck.italic",
-                    strip.italic,
-                )
-                .on_click(Self::on_format(TextCommand::Italic, cx)),
-            )
-            .child(
-                format_button(
-                    "deck-underline",
-                    "icons/underline.svg",
-                    "deck.underline",
-                    strip.underline,
-                )
-                .on_click(Self::on_format(TextCommand::Underline, cx)),
-            )
-            .child(with_menu(
-                format_button(
-                    "deck-color",
-                    "icons/baseline.svg",
-                    "deck.font_color",
-                    open == Some(Popup::Color),
-                )
-                .on_click(Self::on_popup(Popup::Color, cx))
-                .into_any_element(),
-                color_menu,
-            ))
-            .child(separator())
-            .children(
-                [
-                    (
-                        ParagraphAlignment::Left,
-                        "deck-align-left",
-                        "icons/align-left.svg",
-                        "deck.align_left",
-                    ),
-                    (
-                        ParagraphAlignment::Center,
-                        "deck-align-center",
-                        "icons/align-center.svg",
-                        "deck.align_center",
-                    ),
-                    (
-                        ParagraphAlignment::Right,
-                        "deck-align-right",
-                        "icons/align-right.svg",
-                        "deck.align_right",
-                    ),
-                    (
-                        ParagraphAlignment::Justify,
-                        "deck-justify",
-                        "icons/align-justify.svg",
-                        "deck.justify",
-                    ),
-                ]
-                .into_iter()
-                .map(|(value, id, icon, tip)| {
-                    format_button(id, icon, tip, alignment == Some(value))
-                        .on_click(Self::on_format(TextCommand::Align(value), cx))
-                }),
-            )
-            .child(separator())
-            .child(
-                format_button(
-                    "deck-bullets",
-                    "icons/list.svg",
-                    "deck.bullets",
-                    strip.bullets,
-                )
-                .on_click(Self::on_format(TextCommand::Bullets, cx)),
-            )
-            .child(
-                format_button(
-                    "deck-numbering",
-                    "icons/list-ordered.svg",
-                    "deck.numbering",
-                    strip.numbering,
-                )
-                .on_click(Self::on_format(TextCommand::Numbering, cx)),
-            )
-            .child(with_menu(
-                format_button(
-                    "deck-line-spacing",
-                    "icons/chevrons-up-down.svg",
-                    "deck.line_spacing",
-                    open == Some(Popup::Spacing),
-                )
-                .on_click(Self::on_popup(Popup::Spacing, cx))
-                .into_any_element(),
-                spacing_menu,
+            .child(crate::fit::strip(
+                "deck-format-bar",
+                "deck-format-bar",
+                window,
+                crate::fit::Compact::Inline,
+                div().flex().items_center().gap_0p5().px_2(),
+                || {
+                    vec![
+                        toolbar_piece(
+                            "deck.group.font",
+                            "icons/type.svg",
+                            vec![
+                                with_menu(
+                                    format_list(
+                                        "deck-font",
+                                        150.0,
+                                        font,
+                                        open == Some(Popup::Font),
+                                    )
+                                    .tooltip(Tooltip::text(i18n::text("deck.font")))
+                                    .on_click(Self::on_popup(Popup::Font, cx))
+                                    .into_any_element(),
+                                    font_menu,
+                                )
+                                .into_any_element(),
+                                with_menu(
+                                    format_list(
+                                        "deck-size",
+                                        56.0,
+                                        strip.size.map(size_label).unwrap_or_default(),
+                                        open == Some(Popup::Size),
+                                    )
+                                    .tooltip(Tooltip::text(i18n::text("deck.font_size")))
+                                    .on_click(Self::on_popup(Popup::Size, cx))
+                                    .into_any_element(),
+                                    size_menu,
+                                )
+                                .into_any_element(),
+                                format_button(
+                                    "deck-grow",
+                                    "icons/a-arrow-up.svg",
+                                    "deck.grow_font",
+                                    false,
+                                )
+                                .on_click(Self::on_format(TextCommand::Grow, cx))
+                                .into_any_element(),
+                                format_button(
+                                    "deck-shrink",
+                                    "icons/a-arrow-down.svg",
+                                    "deck.shrink_font",
+                                    false,
+                                )
+                                .on_click(Self::on_format(TextCommand::Shrink, cx))
+                                .into_any_element(),
+                                toolbar_separator(),
+                                format_button(
+                                    "deck-bold",
+                                    "icons/bold.svg",
+                                    "deck.bold",
+                                    strip.bold,
+                                )
+                                .on_click(Self::on_format(TextCommand::Bold, cx))
+                                .into_any_element(),
+                                format_button(
+                                    "deck-italic",
+                                    "icons/italic.svg",
+                                    "deck.italic",
+                                    strip.italic,
+                                )
+                                .on_click(Self::on_format(TextCommand::Italic, cx))
+                                .into_any_element(),
+                                format_button(
+                                    "deck-underline",
+                                    "icons/underline.svg",
+                                    "deck.underline",
+                                    strip.underline,
+                                )
+                                .on_click(Self::on_format(TextCommand::Underline, cx))
+                                .into_any_element(),
+                                with_menu(
+                                    format_button(
+                                        "deck-color",
+                                        "icons/baseline.svg",
+                                        "deck.font_color",
+                                        open == Some(Popup::Color),
+                                    )
+                                    .on_click(Self::on_popup(Popup::Color, cx))
+                                    .into_any_element(),
+                                    color_menu,
+                                )
+                                .into_any_element(),
+                            ],
+                        ),
+                        toolbar_separator(),
+                        toolbar_piece("deck.group.paragraph", "icons/align-left.svg", {
+                            let mut controls: Vec<AnyElement> = [
+                                (
+                                    ParagraphAlignment::Left,
+                                    "deck-align-left",
+                                    "icons/align-left.svg",
+                                    "deck.align_left",
+                                ),
+                                (
+                                    ParagraphAlignment::Center,
+                                    "deck-align-center",
+                                    "icons/align-center.svg",
+                                    "deck.align_center",
+                                ),
+                                (
+                                    ParagraphAlignment::Right,
+                                    "deck-align-right",
+                                    "icons/align-right.svg",
+                                    "deck.align_right",
+                                ),
+                                (
+                                    ParagraphAlignment::Justify,
+                                    "deck-justify",
+                                    "icons/align-justify.svg",
+                                    "deck.justify",
+                                ),
+                            ]
+                            .into_iter()
+                            .map(|(value, id, icon, tip)| {
+                                format_button(id, icon, tip, alignment == Some(value))
+                                    .on_click(Self::on_format(TextCommand::Align(value), cx))
+                                    .into_any_element()
+                            })
+                            .collect();
+                            controls.extend([
+                                toolbar_separator(),
+                                format_button(
+                                    "deck-bullets",
+                                    "icons/list.svg",
+                                    "deck.bullets",
+                                    strip.bullets,
+                                )
+                                .on_click(Self::on_format(TextCommand::Bullets, cx))
+                                .into_any_element(),
+                                format_button(
+                                    "deck-numbering",
+                                    "icons/list-ordered.svg",
+                                    "deck.numbering",
+                                    strip.numbering,
+                                )
+                                .on_click(Self::on_format(TextCommand::Numbering, cx))
+                                .into_any_element(),
+                                with_menu(
+                                    format_button(
+                                        "deck-line-spacing",
+                                        "icons/chevrons-up-down.svg",
+                                        "deck.line_spacing",
+                                        open == Some(Popup::Spacing),
+                                    )
+                                    .on_click(Self::on_popup(Popup::Spacing, cx))
+                                    .into_any_element(),
+                                    spacing_menu,
+                                )
+                                .into_any_element(),
+                            ]);
+                            controls
+                        }),
+                    ]
+                },
             ))
     }
 }
@@ -2331,6 +2360,46 @@ fn shape_name(preset: jade_office_model::deck::ShapePreset) -> &'static str {
         ShapePreset::Diamond => "deck.shape.diamond",
         ShapePreset::Hexagon => "deck.shape.hexagon",
     }
+}
+
+/// The toolbars' separator between groups.
+fn toolbar_separator() -> AnyElement {
+    div()
+        .flex_none()
+        .w(px(1.0))
+        .h(px(18.0))
+        .mx_1()
+        .bg(theme::border())
+        .into_any_element()
+}
+
+/// A group of a toolbar's buttons, which folds into one button that opens
+/// them when the window is too narrow (`fit`).
+fn toolbar_piece(
+    caption: &'static str,
+    icon: &'static str,
+    controls: Vec<AnyElement>,
+) -> AnyElement {
+    crate::fit::piece(
+        i18n::text(caption),
+        icon,
+        div()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .children(controls)
+            .into_any_element(),
+        |controls, measure| {
+            div()
+                .relative()
+                .flex()
+                .flex_none()
+                .items_center()
+                .child(controls)
+                .child(measure)
+                .into_any_element()
+        },
+    )
 }
 
 fn toolbar_button(
@@ -2681,7 +2750,7 @@ impl Render for DeckView {
         let animation_buttons = self.animation_buttons(cx);
         let strip = self.format_strip();
         let format_bar = self
-            .format_bar(&strip.clone().unwrap_or_default(), self.popup, cx)
+            .format_bar(&strip.clone().unwrap_or_default(), self.popup, window, cx)
             .when(strip.is_none(), |bar| bar.opacity(0.5));
         let count = self.deck.slide_count();
         let current_hidden = self.deck.is_hidden(self.current);
@@ -2790,6 +2859,8 @@ impl Render for DeckView {
                 // slide stays put as buttons come and go.
                 div()
                     .flex_1()
+                    // Never wider than its room: the toolbars fold to fit
+                    // it rather than widening it past the window.
                     .min_w_0()
                     .h_full()
                     .flex()
@@ -2801,251 +2872,287 @@ impl Render for DeckView {
                             .overflow_x_hidden()
                             .flex()
                             .items_center()
-                            .gap_1()
-                            .px_3()
+                            .px_1()
                             .bg(theme::panel())
                             .border_b_1()
                             .border_color(theme::border())
-                            .child(div().px_1().text_xs().text_color(theme::text_dim()).child(
-                                i18n::format(
-                                    "deck.position",
-                                    &[("current", &(self.current + 1)), ("count", &count)],
-                                ),
-                            ))
-                            .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(theme::border()))
-                            .child(
-                                toolbar_button(
-                                    "new-slide",
-                                    "icons/file-plus.svg",
-                                    i18n::text("deck.new_slide"),
-                                )
-                                .on_click(
-                                    cx.listener(|view, _event, _window, cx| view.new_slide(cx)),
-                                ),
-                            )
-                            .child(self.layouts_button(cx))
-                            .child(
-                                toolbar_button(
-                                    "duplicate-slide",
-                                    "icons/files.svg",
-                                    i18n::text("deck.duplicate_slide"),
-                                )
-                                .on_click(
-                                    cx.listener(|view, _event, _window, cx| {
-                                        view.duplicate_slide(cx)
-                                    }),
-                                ),
-                            )
-                            .child(
-                                toolbar_button(
-                                    "delete-slide",
-                                    "icons/trash-2.svg",
-                                    i18n::text("deck.delete_slide"),
-                                )
-                                .on_click(
-                                    cx.listener(|view, _event, _window, cx| view.delete_slide(cx)),
-                                ),
-                            )
-                            .child(
-                                toolbar_button(
-                                    "hide-slide",
-                                    "icons/eye-off.svg",
-                                    i18n::text(if current_hidden {
-                                        "deck.show_slide"
-                                    } else {
-                                        "deck.hide_slide"
-                                    }),
-                                )
-                                .when(current_hidden, |button| {
-                                    button.bg(theme::selected()).text_color(theme::text())
-                                })
-                                .on_click(
-                                    cx.listener(|view, _event, _window, cx| view.toggle_hidden(cx)),
-                                ),
-                            )
-                            .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(theme::border()))
-                            .child(
-                                toolbar_button(
-                                    "insert-text-box",
-                                    "icons/type.svg",
-                                    i18n::text("deck.text_box"),
-                                )
-                                .when(self.inserting == Some(Insert::TextBox), |button| {
-                                    button.bg(theme::selected())
-                                })
-                                .on_click(cx.listener(
-                                    |view, _event, _window, cx| {
-                                        view.start_insert(Insert::TextBox, cx)
-                                    },
-                                )),
-                            )
-                            .child(self.shapes_button(cx))
-                            .child(
-                                toolbar_button(
-                                    "insert-picture",
-                                    "icons/image.svg",
-                                    i18n::text("deck.picture"),
-                                )
-                                .on_click(
-                                    cx.listener(|view, _event, _window, cx| view.pick_picture(cx)),
-                                ),
-                            )
-                            .child(self.smartart_button(cx))
-                            .children(self.convert_button(cx))
-                            .child(self.picture_insert_buttons(cx))
-                            .child(div().flex_1())
-                            // A table's layout, while one of its cells is
-                            // typed into: PowerPoint's Layout tab.
-                            .when(editing_cell, |bar| {
-                                bar.child(
-                                    toolbar_button(
-                                        "row-below",
-                                        "icons/arrow-down-to-line.svg",
-                                        i18n::text("deck.row_below"),
-                                    )
-                                    .on_click(cx.listener(
-                                        |view, _event, _window, cx| {
-                                            view.change_table(
-                                                |row, _| TableChange::InsertRow(row + 1),
-                                                cx,
+                            // As jade-elsa's ribbon: groups that do not fit fold, the
+                            // rightmost first, into buttons that open them; then the row
+                            // scrolls (`fit`). Nothing is cut off.
+                            .child(crate::fit::strip(
+                                "deck-toolbar",
+                                "deck-toolbar",
+                                window,
+                                crate::fit::Compact::Inline,
+                                div().flex().items_center().gap_1().px_2(),
+                                || {
+                                    // A table's layout, while one of its cells is typed
+                                    // into: PowerPoint's Layout tab.
+                                    let mut table: Vec<AnyElement> = Vec::new();
+                                    if editing_cell {
+                                        table.extend(vec![
+                                            toolbar_button(
+                                                "row-below",
+                                                "icons/arrow-down-to-line.svg",
+                                                i18n::text("deck.row_below"),
                                             )
-                                        },
-                                    )),
-                                )
-                                .child(
-                                    toolbar_button(
-                                        "column-right",
-                                        "icons/arrow-right-to-line.svg",
-                                        i18n::text("deck.column_right"),
-                                    )
-                                    .on_click(cx.listener(
-                                        |view, _event, _window, cx| {
-                                            view.change_table(
-                                                |_, column| TableChange::InsertColumn(column + 1),
-                                                cx,
+                                            .on_click(cx.listener(|view, _event, _window, cx| {
+                                                view.change_table(
+                                                    |row, _| TableChange::InsertRow(row + 1),
+                                                    cx,
+                                                )
+                                            }))
+                                            .into_any_element(),
+                                            toolbar_button(
+                                                "column-right",
+                                                "icons/arrow-right-to-line.svg",
+                                                i18n::text("deck.column_right"),
                                             )
-                                        },
-                                    )),
-                                )
-                                .child(
-                                    toolbar_button(
-                                        "delete-row",
-                                        "icons/trash-2.svg",
-                                        i18n::text("deck.delete_row"),
-                                    )
-                                    .on_click(cx.listener(
-                                        |view, _event, _window, cx| {
-                                            view.change_table(
-                                                |row, _| TableChange::DeleteRow(row),
-                                                cx,
+                                            .on_click(cx.listener(|view, _event, _window, cx| {
+                                                view.change_table(
+                                                    |_, column| {
+                                                        TableChange::InsertColumn(column + 1)
+                                                    },
+                                                    cx,
+                                                )
+                                            }))
+                                            .into_any_element(),
+                                            toolbar_button(
+                                                "delete-row",
+                                                "icons/trash-2.svg",
+                                                i18n::text("deck.delete_row"),
                                             )
-                                        },
-                                    )),
-                                )
-                                .child(
-                                    toolbar_button(
-                                        "delete-column",
-                                        "icons/trash-2.svg",
-                                        i18n::text("deck.delete_column"),
-                                    )
-                                    .on_click(cx.listener(
-                                        |view, _event, _window, cx| {
-                                            view.change_table(
-                                                |_, column| TableChange::DeleteColumn(column),
-                                                cx,
+                                            .on_click(cx.listener(|view, _event, _window, cx| {
+                                                view.change_table(
+                                                    |row, _| TableChange::DeleteRow(row),
+                                                    cx,
+                                                )
+                                            }))
+                                            .into_any_element(),
+                                            toolbar_button(
+                                                "delete-column",
+                                                "icons/trash-2.svg",
+                                                i18n::text("deck.delete_column"),
                                             )
-                                        },
-                                    )),
-                                )
-                            })
-                            .when(selecting_cells, |bar| {
-                                bar.child(
-                                    toolbar_button(
-                                        "merge-cells",
-                                        "icons/merge.svg",
-                                        i18n::text("deck.merge_cells"),
-                                    )
-                                    .on_click(
-                                        cx.listener(|view, _event, _window, cx| {
+                                            .on_click(cx.listener(|view, _event, _window, cx| {
+                                                view.change_table(
+                                                    |_, column| TableChange::DeleteColumn(column),
+                                                    cx,
+                                                )
+                                            }))
+                                            .into_any_element(),
+                                        ]);
+                                    }
+                                    if selecting_cells {
+                                        table.extend(vec![toolbar_button(
+                                            "merge-cells",
+                                            "icons/merge.svg",
+                                            i18n::text("deck.merge_cells"),
+                                        )
+                                        .on_click(cx.listener(|view, _event, _window, cx| {
                                             view.merge_cells(cx)
-                                        }),
-                                    ),
-                                )
-                            })
-                            .when(editing_merged, |bar| {
-                                bar.child(
-                                    toolbar_button(
-                                        "split-cell",
-                                        "icons/split.svg",
-                                        i18n::text("deck.split_cell"),
-                                    )
-                                    .on_click(
-                                        cx.listener(|view, _event, _window, cx| {
+                                        }))
+                                        .into_any_element()]);
+                                    }
+                                    if editing_merged {
+                                        table.extend(vec![toolbar_button(
+                                            "split-cell",
+                                            "icons/split.svg",
+                                            i18n::text("deck.split_cell"),
+                                        )
+                                        .on_click(cx.listener(|view, _event, _window, cx| {
                                             view.split_cell(cx)
-                                        }),
-                                    ),
-                                )
-                            })
-                            .child(
-                                toolbar_button(
-                                    "notes",
-                                    "icons/file-text.svg",
-                                    i18n::text("deck.notes"),
-                                )
-                                .on_click(cx.listener(
-                                    |view, _event, _window, cx| {
-                                        view.show_notes = !view.show_notes;
-                                        cx.notify();
-                                    },
-                                )),
-                            )
-                            .child(
-                                toolbar_button(
-                                    "print",
-                                    "icons/printer.svg",
-                                    i18n::text("deck.print"),
-                                )
-                                .on_click(cx.listener(|view, _event, _window, cx| view.print(cx))),
-                            )
-                            .child(animation_buttons)
-                            .child(
-                                toolbar_button(
-                                    "from-current",
-                                    "icons/play.svg",
-                                    i18n::text("deck.from_current"),
-                                )
-                                .on_click(cx.listener(
-                                    |view, _event, _window, cx| {
-                                        view.start_slideshow(view.current, cx)
-                                    },
-                                )),
-                            )
-                            .child(
-                                div()
-                                    .id("slideshow")
-                                    .flex()
-                                    .items_center()
-                                    .gap_1p5()
-                                    .ml_1()
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
-                                    .text_xs()
-                                    .text_color(gpui::white())
-                                    .bg(theme::accent())
-                                    .cursor_pointer()
-                                    .hover(|button| button.opacity(0.9))
-                                    .child(
-                                        svg()
-                                            .path("icons/play.svg")
-                                            .size_3()
-                                            .text_color(gpui::white()),
-                                    )
-                                    .child(i18n::text("deck.slideshow"))
-                                    .on_click(cx.listener(|view, _event, _window, cx| {
-                                        view.start_slideshow(view.deck.first_shown(), cx)
-                                    })),
-                            ),
+                                        }))
+                                        .into_any_element()]);
+                                    }
+                                    let mut row = vec![
+                                        div()
+                                            .px_1()
+                                            .text_xs()
+                                            .text_color(theme::text_dim())
+                                            .child(i18n::format(
+                                                "deck.position",
+                                                &[
+                                                    ("current", &(self.current + 1)),
+                                                    ("count", &count),
+                                                ],
+                                            ))
+                                            .into_any_element(),
+                                        toolbar_separator(),
+                                        toolbar_piece(
+                                            "deck.group.slides",
+                                            "icons/files.svg",
+                                            vec![
+                                                toolbar_button(
+                                                    "new-slide",
+                                                    "icons/file-plus.svg",
+                                                    i18n::text("deck.new_slide"),
+                                                )
+                                                .on_click(cx.listener(
+                                                    |view, _event, _window, cx| view.new_slide(cx),
+                                                ))
+                                                .into_any_element(),
+                                                self.layouts_button(cx).into_any_element(),
+                                                toolbar_button(
+                                                    "duplicate-slide",
+                                                    "icons/files.svg",
+                                                    i18n::text("deck.duplicate_slide"),
+                                                )
+                                                .on_click(cx.listener(
+                                                    |view, _event, _window, cx| {
+                                                        view.duplicate_slide(cx)
+                                                    },
+                                                ))
+                                                .into_any_element(),
+                                                toolbar_button(
+                                                    "delete-slide",
+                                                    "icons/trash-2.svg",
+                                                    i18n::text("deck.delete_slide"),
+                                                )
+                                                .on_click(cx.listener(
+                                                    |view, _event, _window, cx| {
+                                                        view.delete_slide(cx)
+                                                    },
+                                                ))
+                                                .into_any_element(),
+                                                toolbar_button(
+                                                    "hide-slide",
+                                                    "icons/eye-off.svg",
+                                                    i18n::text(if current_hidden {
+                                                        "deck.show_slide"
+                                                    } else {
+                                                        "deck.hide_slide"
+                                                    }),
+                                                )
+                                                .when(current_hidden, |button| {
+                                                    button
+                                                        .bg(theme::selected())
+                                                        .text_color(theme::text())
+                                                })
+                                                .on_click(cx.listener(
+                                                    |view, _event, _window, cx| {
+                                                        view.toggle_hidden(cx)
+                                                    },
+                                                ))
+                                                .into_any_element(),
+                                            ],
+                                        ),
+                                        toolbar_separator(),
+                                        toolbar_piece(
+                                            "deck.group.insert",
+                                            "icons/shapes.svg",
+                                            vec![
+                                                toolbar_button(
+                                                    "insert-text-box",
+                                                    "icons/type.svg",
+                                                    i18n::text("deck.text_box"),
+                                                )
+                                                .when(
+                                                    self.inserting == Some(Insert::TextBox),
+                                                    |button| button.bg(theme::selected()),
+                                                )
+                                                .on_click(cx.listener(
+                                                    |view, _event, _window, cx| {
+                                                        view.start_insert(Insert::TextBox, cx)
+                                                    },
+                                                ))
+                                                .into_any_element(),
+                                                self.shapes_button(cx).into_any_element(),
+                                                toolbar_button(
+                                                    "insert-picture",
+                                                    "icons/image.svg",
+                                                    i18n::text("deck.picture"),
+                                                )
+                                                .on_click(cx.listener(
+                                                    |view, _event, _window, cx| {
+                                                        view.pick_picture(cx)
+                                                    },
+                                                ))
+                                                .into_any_element(),
+                                                self.smartart_button(cx),
+                                            ]
+                                            .into_iter()
+                                            .chain(self.convert_button(cx))
+                                            .chain([self.picture_insert_buttons(cx)])
+                                            .collect(),
+                                        ),
+                                        crate::fit::spacer(),
+                                    ];
+                                    if !table.is_empty() {
+                                        row.push(toolbar_piece(
+                                            "deck.group.table",
+                                            "icons/table.svg",
+                                            table,
+                                        ));
+                                    }
+                                    row.push(toolbar_piece(
+                                        "deck.group.show",
+                                        "icons/play.svg",
+                                        vec![
+                                            toolbar_button(
+                                                "notes",
+                                                "icons/file-text.svg",
+                                                i18n::text("deck.notes"),
+                                            )
+                                            .on_click(cx.listener(|view, _event, _window, cx| {
+                                                view.show_notes = !view.show_notes;
+                                                cx.notify();
+                                            }))
+                                            .into_any_element(),
+                                            toolbar_button(
+                                                "print",
+                                                "icons/printer.svg",
+                                                i18n::text("deck.print"),
+                                            )
+                                            .on_click(cx.listener(|view, _event, _window, cx| {
+                                                view.print(cx)
+                                            }))
+                                            .into_any_element(),
+                                            animation_buttons.into_any_element(),
+                                            toolbar_button(
+                                                "from-current",
+                                                "icons/play.svg",
+                                                i18n::text("deck.from_current"),
+                                            )
+                                            .on_click(cx.listener(|view, _event, _window, cx| {
+                                                view.start_slideshow(view.current, cx)
+                                            }))
+                                            .into_any_element(),
+                                            div()
+                                                .id("slideshow")
+                                                .flex()
+                                                .items_center()
+                                                .gap_1p5()
+                                                .ml_1()
+                                                .px_3()
+                                                .py_1()
+                                                .rounded_md()
+                                                .text_xs()
+                                                .text_color(gpui::white())
+                                                .bg(theme::accent())
+                                                .cursor_pointer()
+                                                .hover(|button| button.opacity(0.9))
+                                                .child(
+                                                    svg()
+                                                        .path("icons/play.svg")
+                                                        .size_3()
+                                                        .text_color(gpui::white()),
+                                                )
+                                                .child(i18n::text("deck.slideshow"))
+                                                .on_click(cx.listener(
+                                                    |view, _event, _window, cx| {
+                                                        view.start_slideshow(
+                                                            view.deck.first_shown(),
+                                                            cx,
+                                                        )
+                                                    },
+                                                ))
+                                                .into_any_element(),
+                                        ],
+                                    ));
+                                    row
+                                },
+                            )),
                     )
                     .child(format_bar)
                     .children(smartart_bar)

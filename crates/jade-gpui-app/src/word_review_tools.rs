@@ -9,9 +9,9 @@
 
 use std::cell::RefCell;
 
+use crate::layer::deferred;
 use gpui::{
-    anchored, deferred, div, point, prelude::*, px, AnyElement, ClickEvent, Context, MouseButton,
-    Window,
+    anchored, div, point, prelude::*, px, AnyElement, ClickEvent, Context, MouseButton, Window,
 };
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::accessibility::{AltTextForm, WordAccessibility};

@@ -15,8 +15,8 @@
 //! backdrop that closes them on a click anywhere outside.
 
 use gpui::{
-    anchored, deferred, div, point, prelude::*, px, rgb, svg, AnyElement, ClickEvent, Context,
-    ElementId, MouseButton, Pixels, SharedString, Size, Window,
+    anchored, div, point, prelude::*, px, rgb, svg, AnyElement, ClickEvent, Context, ElementId,
+    MouseButton, Pixels, SharedString, Size, Window,
 };
 use jade_docx_native_render::NativeDocument;
 use jade_office_model::word::page::{PageCommand, Story};
@@ -25,6 +25,7 @@ use jade_office_model::word::{
     TableCommand,
 };
 
+use crate::layer::deferred;
 use crate::tooltip::Tooltip;
 use crate::DocumentView;
 use crate::{i18n, theme};
@@ -638,17 +639,7 @@ fn combo_box(
 
 /// A trigger with its list under it while open.
 pub(crate) fn dropdown(trigger: AnyElement, menu: Option<AnyElement>) -> AnyElement {
-    div()
-        .relative()
-        .flex_none()
-        .child(trigger)
-        .children(menu.map(|menu| {
-            div().absolute().top_full().left_0().child(
-                deferred(anchored().snap_to_window_with_margin(px(8.0)).child(menu))
-                    .with_priority(2),
-            )
-        }))
-        .into_any_element()
+    crate::fit::drop_down(trigger, menu)
 }
 
 /// The panel a list is drawn on.
@@ -749,26 +740,43 @@ fn swatch(
 }
 
 /// A group of controls with its caption under it.
+///
+/// Folds into a button when the ribbon is too narrow for it (`fit`).
 pub(crate) fn group(caption: &'static str, rows: Vec<AnyElement>) -> AnyElement {
-    div()
+    let rows = div()
         .flex()
         .flex_col()
-        .flex_none()
-        .justify_between()
-        .h_full()
-        .px_2()
-        .border_r_1()
-        .border_color(theme::border())
-        .child(div().flex().flex_col().gap_1().children(rows))
-        .child(
+        .gap_1()
+        .children(rows)
+        .into_any_element();
+    crate::fit::piece(
+        caption,
+        crate::fit::icon_for(caption),
+        rows,
+        |rows, measure| {
             div()
+                .relative()
                 .flex()
-                .justify_center()
-                .text_xs()
-                .text_color(theme::text_faint())
-                .child(caption),
-        )
-        .into_any_element()
+                .flex_col()
+                .flex_none()
+                .justify_between()
+                .h_full()
+                .px_2()
+                .border_r_1()
+                .border_color(theme::border())
+                .child(rows)
+                .child(
+                    div()
+                        .flex()
+                        .justify_center()
+                        .text_xs()
+                        .text_color(theme::text_faint())
+                        .child(caption),
+                )
+                .child(measure)
+                .into_any_element()
+        },
+    )
 }
 
 /// A group whose caption has Word's dialog launcher at its right: the small
@@ -781,51 +789,66 @@ pub(crate) fn group_with_launcher(
     action: Action,
     cx: &mut Context<DocumentView>,
 ) -> AnyElement {
-    div()
+    let launcher = div()
+        .id(id)
+        .absolute()
+        .right_0()
+        .top_0()
+        .size(px(14.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_sm()
+        .cursor_pointer()
+        .hover(|button| button.bg(theme::hovered()))
+        .tooltip(Tooltip::text(tooltip))
+        .on_click(listener(action.clone(), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(action, cx))
+        .child(
+            svg()
+                .path("icons/arrow-down-right.svg")
+                .size_3()
+                .text_color(theme::text_dim()),
+        );
+    let rows = div()
         .flex()
         .flex_col()
-        .flex_none()
-        .justify_between()
-        .h_full()
-        .px_2()
-        .border_r_1()
-        .border_color(theme::border())
-        .child(div().flex().flex_col().gap_1().children(rows))
-        .child(
+        .gap_1()
+        .children(rows)
+        .into_any_element();
+    // Folds as `group` does; the launcher shows with the group in full.
+    crate::fit::piece(
+        caption,
+        crate::fit::icon_for(caption),
+        rows,
+        move |rows, measure| {
             div()
                 .relative()
                 .flex()
-                .justify_center()
-                .text_xs()
-                .text_color(theme::text_faint())
-                .child(caption)
+                .flex_col()
+                .flex_none()
+                .justify_between()
+                .h_full()
+                .px_2()
+                .border_r_1()
+                .border_color(theme::border())
+                .child(rows)
                 .child(
                     div()
-                        .id(id)
-                        .absolute()
-                        .right_0()
-                        .top_0()
-                        .size(px(14.0))
+                        .relative()
                         .flex()
-                        .items_center()
                         .justify_center()
-                        .rounded_sm()
-                        .cursor_pointer()
-                        .hover(|button| button.bg(theme::hovered()))
-                        .tooltip(Tooltip::text(tooltip))
-                        .on_click(listener(action.clone(), cx))
-                        .tab_index(0)
-                        .focus(focus_ring)
-                        .on_key_down(key_listener(action, cx))
-                        .child(
-                            svg()
-                                .path("icons/arrow-down-right.svg")
-                                .size_3()
-                                .text_color(theme::text_dim()),
-                        ),
-                ),
-        )
-        .into_any_element()
+                        .text_xs()
+                        .text_color(theme::text_faint())
+                        .child(caption)
+                        .child(launcher),
+                )
+                .child(measure)
+                .into_any_element()
+        },
+    )
 }
 
 /// What the 段落 group takes from the list and paragraph tools

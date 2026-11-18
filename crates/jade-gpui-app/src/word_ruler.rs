@@ -1,4 +1,4 @@
-//! The rulers (ルーラー), as Word draws them over and beside the page: the
+//! The ruler (ルーラー), as Word draws it over the page: the
 //! margins in grey, ticks and numbers in the chosen unit (mm, cm, inches,
 //! points or 字), the caret paragraph's indent markers — 1 行目のインデント
 //! on top, ぶら下げインデント and 左インデント below, 右インデント at the
@@ -7,8 +7,8 @@
 //! On the horizontal ruler a click between the margins sets a tab stop of
 //! the kind the selector at its left shows (click the selector for the
 //! next kind); a tab stop dragged along moves, dragged off the ruler goes;
-//! an indent marker dragged sets that indent. The vertical ruler beside the
-//! caret's page shows its top and bottom margins.
+//! an indent marker dragged sets that indent. Like Elsa, there is no
+//! vertical ruler beside the page.
 
 use gpui::{
     canvas, div, prelude::*, px, rgb, AnyElement, Context, MouseButton, MouseDownEvent,
@@ -103,29 +103,23 @@ pub fn unit_label(unit: RulerUnit) -> &'static str {
     })
 }
 
-/// The page box the rulers measure: its size and margins, in points.
+/// The page width the ruler measures, and its side margins, in points.
 struct Measure {
     width: f32,
-    height: f32,
     left: f32,
     right: f32,
-    top: f32,
-    bottom: f32,
 }
 
 impl DocumentView {
     fn measure(&self) -> Measure {
         let setup = self.document.page_setup();
-        let (width, height) = self.document.layout_page_size();
+        let (width, _) = self.document.layout_page_size();
         Measure {
             // The layout's page box is in CSS px; the rulers measure in
             // points, as the margins, indents and tab stops are.
             width: width as f32 * PT_PER_PX,
-            height: height as f32 * PT_PER_PX,
             left: setup.margins.left,
             right: setup.margins.right,
-            top: setup.margins.top,
-            bottom: setup.margins.bottom,
         }
     }
 
@@ -456,74 +450,6 @@ impl DocumentView {
         )
     }
 
-    /// The vertical ruler, beside page `index` when the caret is on it.
-    pub(crate) fn vertical_ruler(&self, index: usize) -> Option<AnyElement> {
-        if !self.tools.ruler || index + 1 != self.caret_page_1idx() {
-            return None;
-        }
-        let measure = self.measure();
-        let zoom = self.zoom;
-        let unit = self.tools.unit;
-        let char_width = self
-            .format
-            .as_ref()
-            .and_then(|(_, state)| state.font_size)
-            .unwrap_or(10.5);
-        // 字 down a page is a line: Word measures the vertical ruler in lines
-        // there; a line is the character's height and a half.
-        let (unit, char_width) = match unit {
-            RulerUnit::Characters => (RulerUnit::Characters, char_width * 1.5),
-            unit => (unit, char_width),
-        };
-        let y = |points: f32| px(points * zoom * PX_PER_PT);
-        let mut ruler = div()
-            .absolute()
-            .top_0()
-            .left(px(-24.0))
-            .w(px(18.0))
-            .h(y(measure.height))
-            .bg(theme::sidebar())
-            .child(
-                div()
-                    .absolute()
-                    .left(px(2.0))
-                    .w(px(14.0))
-                    .top(y(measure.top))
-                    .h(y(measure.height - measure.top - measure.bottom))
-                    .bg(theme::paper()),
-            );
-        for tick in ticks(unit, char_width, -measure.top, measure.height - measure.top) {
-            let at = y(measure.top + tick.at);
-            ruler = match tick.label {
-                Some(label) => ruler.child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .w(px(18.0))
-                        .top(at - px(6.0))
-                        .flex()
-                        .justify_center()
-                        .text_size(px(8.0))
-                        .text_color(rgb(0x606060))
-                        .child(label),
-                ),
-                None => {
-                    let length = if tick.half { 6.0 } else { 3.0 };
-                    ruler.child(
-                        div()
-                            .absolute()
-                            .left(px((18.0 - length) / 2.0))
-                            .top(at)
-                            .h(px(1.0))
-                            .w(px(length))
-                            .bg(rgb(0x808080)),
-                    )
-                }
-            };
-        }
-        Some(ruler.into_any_element())
-    }
-
     /// 表示 → ルーラー: on and off, and its unit.
     pub(crate) fn ruler_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let open = self.ribbon.popup == Some(Popup::Word(ToolMenu::RulerUnits));
@@ -579,41 +505,5 @@ impl DocumentView {
                 ),
             ])],
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use gpui::Focusable;
-
-    /// 垂直ルーラー: beside the caret's page only, while the ruler is on, in
-    /// lines when the unit is characters.
-    #[gpui::test]
-    fn the_vertical_ruler_follows_the_caret_page(cx: &mut gpui::TestAppContext) {
-        let path = std::path::PathBuf::from(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../jade-core/contract.docx"
-        ));
-        let (view, cx) =
-            cx.add_window_view(|_window, cx| crate::open_document_view(&path, cx).unwrap());
-        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
-        cx.run_until_parked();
-        view.update(cx, |view, _| {
-            view.tools.ruler = true;
-            let page = view.caret_page_1idx() - 1;
-            assert!(
-                view.vertical_ruler(page).is_some(),
-                "beside the caret's page"
-            );
-            assert!(
-                view.vertical_ruler(page + 1).is_none(),
-                "not beside another"
-            );
-            view.tools.ruler = false;
-            assert!(
-                view.vertical_ruler(page).is_none(),
-                "hidden with the ruler off"
-            );
-        });
     }
 }

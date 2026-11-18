@@ -24,8 +24,10 @@ mod autorecover;
 mod deck;
 mod deck_show_anim;
 mod editor;
+mod fit;
 mod i18n;
 mod keyboard_access;
+mod layer;
 mod native_print;
 mod ribbon;
 mod screen_reader;
@@ -1184,6 +1186,7 @@ impl gpui::AssetSource for Assets {
             "chart-column",
             "check",
             "chevron-down",
+            "chevron-left",
             "chevron-right",
             "chevrons-up-down",
             "clock",
@@ -2217,23 +2220,37 @@ impl DocumentView {
     }
 
     /// A group of buttons with Word's caption under it.
-    fn ribbon_group(label: &str, rows: Vec<AnyElement>) -> impl IntoElement {
-        div()
+    ///
+    /// Folds into a button when the ribbon is too narrow for it (`fit`).
+    fn ribbon_group(label: &str, rows: Vec<AnyElement>) -> AnyElement {
+        let label = SharedString::from(label.to_string());
+        let rows = div()
             .flex()
             .flex_col()
-            .flex_none()
-            .items_center()
             .gap_1()
-            .px_3()
-            .border_r_1()
-            .border_color(theme::border())
-            .child(div().flex().flex_col().gap_1().children(rows))
-            .child(
+            .children(rows)
+            .into_any_element();
+        fit::piece(
+            label.clone(),
+            fit::icon_for(&label),
+            rows,
+            |rows, measure| {
                 div()
-                    .text_xs()
-                    .text_color(theme::text_faint())
-                    .child(label.to_string()),
-            )
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .flex_none()
+                    .items_center()
+                    .gap_1()
+                    .px_3()
+                    .border_r_1()
+                    .border_color(theme::border())
+                    .child(rows)
+                    .child(div().text_xs().text_color(theme::text_faint()).child(label))
+                    .child(measure)
+                    .into_any_element()
+            },
+        )
     }
 
     /// A row inside a group.
@@ -2313,38 +2330,58 @@ impl DocumentView {
                     .pt(px(8.0))
                     // クイック アクセス ツール バー.
                     .child(word_views::customize::toolbar(cx))
-                    .children(tabs.into_iter().map(|(tab, label)| {
-                        div()
-                            .id(label)
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .cursor_pointer()
-                            .text_sm()
-                            .when(tab == active, |element| {
-                                element.bg(theme::selected()).text_color(theme::text())
-                            })
-                            .when(tab != active, |element| {
-                                element.text_color(theme::text_dim())
-                            })
-                            .hover(|element| element.bg(theme::hovered()))
-                            .child(label)
-                            .map(|element| {
-                                keyboard_access::activatable(element, cx, move |view, cx| {
-                                    view.ribbon_tab = tab;
-                                    view.ribbon.popup = None;
-                                    cx.notify();
+                    // The tabs scroll, with ‹ › at their ends, when the window
+                    // is too narrow for them all (`fit`).
+                    .child(fit::strip(
+                        "ribbon-tabs",
+                        "word-tabs",
+                        window,
+                        fit::Compact::Inline,
+                        div().flex().items_center().gap_1(),
+                        || {
+                            tabs.into_iter()
+                                .map(|(tab, label)| {
+                                    div()
+                                        .id(label)
+                                        .flex_none()
+                                        .px_3()
+                                        .py_1()
+                                        .rounded_md()
+                                        .cursor_pointer()
+                                        .whitespace_nowrap()
+                                        .text_sm()
+                                        .when(tab == active, |element| {
+                                            element.bg(theme::selected()).text_color(theme::text())
+                                        })
+                                        .when(tab != active, |element| {
+                                            element.text_color(theme::text_dim())
+                                        })
+                                        .hover(|element| element.bg(theme::hovered()))
+                                        .child(label)
+                                        .map(|element| {
+                                            keyboard_access::activatable(
+                                                element,
+                                                cx,
+                                                move |view, cx| {
+                                                    view.ribbon_tab = tab;
+                                                    view.ribbon.popup = None;
+                                                    cx.notify();
+                                                },
+                                            )
+                                        })
+                                        .into_any_element()
                                 })
-                            })
-                    }))
+                                .collect()
+                        },
+                    ))
                     // Word 出力 sits at the right of the strip, as it does in
                     // the browser shell.
                     .child(
-                        div().flex_1().child(
+                        div().flex_none().child(
                             div()
                                 .id("export")
-                                .ml_auto()
-                                .w(px(104.0))
+                                .ml_2()
+                                .whitespace_nowrap()
                                 .px_3()
                                 .py_1()
                                 .rounded_md()
@@ -2362,21 +2399,19 @@ impl DocumentView {
                     .child(word_views::modes::switch(self, cx)),
             )
             .child(
-                div()
-                    .id("ribbon-groups")
-                    .flex()
-                    // A scroll container may shrink to nothing in a column; keep every row
-                    // of the tallest group in view.
-                    .flex_none()
-                    .items_start()
-                    .gap_1()
-                    .px_4()
-                    .py_2()
-                    // Scrolls rather than being cut off: the groups are wider
-                    // than a narrow window, and a group that is off the edge is
-                    // a command nobody can reach.
-                    .overflow_x_scroll()
-                    .children(self.ribbon_groups(cx)),
+                // As jade-elsa's ribbon: groups that do not fit fold, the
+                // rightmost first, into buttons that open them; if even that
+                // is too wide the row scrolls, with ‹ › at its ends. Nothing
+                // is cut off: a group off the edge is a command nobody can
+                // reach.
+                div().flex().flex_none().px_1().child(fit::strip(
+                    "ribbon-groups",
+                    format!("word-groups/{active:?}"),
+                    window,
+                    fit::Compact::Stacked,
+                    div().flex().items_start().gap_1().px_3().py_2(),
+                    || self.ribbon_groups(cx),
+                )),
             )
             .children(
                 self.ribbon
@@ -4852,10 +4887,6 @@ impl Render for DocumentView {
         let styles_pane = self.styles_pane(cx);
         let ruler = self.horizontal_ruler(cx);
         let tool_dialog = self.tool_dialog_element(cx);
-        let vertical_rulers: Vec<Option<AnyElement>> = (0..self.images.len())
-            .map(|index| self.vertical_ruler(index))
-            .collect();
-        let mut vertical_rulers = vertical_rulers.into_iter();
         let reference_dialog = word_references::overlay(self, window, cx);
         let views_dialog = word_views::overlay(self, cx);
         let mini_toolbar = word_views::mini::toolbar(self, cx);
@@ -5168,41 +5199,6 @@ impl Render for DocumentView {
             .text_color(theme::text())
             // ---- the navigation pane, while it is open ----------------------
             .children(navigation)
-            // ---- sidebar: the document's pages ----------------------------
-            .child(
-                div()
-                    .when(word_views::layout::hides_chrome(self), |sidebar| {
-                        sidebar.hidden()
-                    })
-                    .flex()
-                    .flex_col()
-                    .flex_none()
-                    .w(px(168.0))
-                    .h_full()
-                    .bg(theme::sidebar())
-                    .border_r_1()
-                    .border_color(theme::border())
-                    .child(
-                        div()
-                            .px_3()
-                            .pt_3()
-                            .pb_2()
-                            .text_xs()
-                            .text_color(theme::text_faint())
-                            .child(i18n::format("doc.pages", &[("n", &page_count)])),
-                    )
-                    .child(
-                        div()
-                            .id("page-list")
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .px_2()
-                            .size_full()
-                            .overflow_scroll()
-                            .children((0..page_count).map(|index| self.sidebar_row(index, cx))),
-                    ),
-            )
             // ---- canvas: the ribbon, the find bar, then the pages ----------
             .child(
                 div()
@@ -5335,7 +5331,6 @@ impl Render for DocumentView {
                                         .children(word_equation::overlay(self, index))
                                         .children(self.table_overlay(index))
                                         .children(self.story_label(index))
-                                        .children(vertical_rulers.next().flatten())
                                         .children(self.object_overlay(index))
                                         .children(self.wrap_point_overlay(index))
                                         .children(self.controls_overlay(index, cx))
@@ -5402,7 +5397,7 @@ impl Render for DocumentView {
             .children(restrict_pane)
             .children(proofing_menu)
             // ---- a table dialog, over everything while it is open ----
-            .children(table_dialog.map(|dialog| gpui::deferred(dialog).with_priority(3)))
+            .children(table_dialog.map(|dialog| crate::layer::deferred(dialog).with_priority(3)))
             // ---- a ページ設定 dialog, over everything while it is open ----
             .children(self.page_dialog_element(cx))
             // ---- the open dialog, over everything ----

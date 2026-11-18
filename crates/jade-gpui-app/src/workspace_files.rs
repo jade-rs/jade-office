@@ -3,10 +3,12 @@
 //! explorer on), and the documents 自動回復 kept that were never saved —
 //! offered back after a crash, as Word's ドキュメントの回復 does.
 
-use gpui::{anchored, deferred, div, prelude::*, px, svg, AnyElement, Context, SharedString};
+use gpui::{anchored, div, prelude::*, px, svg, AnyElement, Context, SharedString};
+
 use std::path::{Path, PathBuf};
 
 use crate::autorecover::{self, Recovered};
+use crate::layer::deferred;
 use crate::shell::{self, recent};
 use crate::tooltip::Tooltip;
 use crate::workspace::Workspace;

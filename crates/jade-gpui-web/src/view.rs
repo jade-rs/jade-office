@@ -2943,13 +2943,6 @@ impl DocView {
         }
         .into_iter();
         let horizontal_ruler = self.horizontal_ruler(cx);
-        let mut vertical_rulers = match &self.document {
-            Document::Pages { pages, .. } => (0..pages.len())
-                .map(|index| self.vertical_ruler(index))
-                .collect::<Vec<_>>(),
-            _ => Vec::new(),
-        }
-        .into_iter();
         let find_bar = self.find_bar_element(cx);
         let read_aloud_bar = self.read_aloud_bar(cx);
         let table_cursor = self.table_cursor();
@@ -3119,7 +3112,6 @@ impl DocView {
                     let control_overlay = control_overlays.next().unwrap_or_default();
                     let ink_overlay = ink_overlays.next().flatten();
                     let story_label = story_labels.next().flatten();
-                    let vertical_ruler = vertical_rulers.next().flatten().filter(|_| rulers);
                     let object_overlay = object_overlays.next().unwrap_or_default();
                     let crop = arrangement.crops.get(index).copied().flatten();
                     let grid_overlay = grid_overlays.next().flatten();
@@ -3173,7 +3165,6 @@ impl DocView {
                             .children(table_overlay)
                             .children(ink_overlay)
                             .children(story_label)
-                            .children(vertical_ruler)
                             .children(object_overlay)
                             .children(word_references::page_marks(&marks, index, zoom, cx))
                             .children(control_overlay)

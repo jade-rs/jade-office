@@ -11,9 +11,10 @@
 
 use std::sync::Arc;
 
+use crate::layer::deferred;
 use gpui::{
-    anchored, deferred, div, img, point, prelude::*, px, AnyElement, ClickEvent, Context,
-    MouseButton, RenderImage, SharedString, Window,
+    anchored, div, img, point, prelude::*, px, AnyElement, ClickEvent, Context, MouseButton,
+    RenderImage, SharedString, Window,
 };
 use jade_docx_native_render::{NativeDocument, PdfExportOptions, PdfRenderingMode};
 use jade_office_model::text::TextEdit;

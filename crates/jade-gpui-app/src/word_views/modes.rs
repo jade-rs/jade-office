@@ -9,7 +9,8 @@
 //! - フォーカス: the ribbon, the page list and the panes go, the window
 //!   fills the screen, and Escape brings them back.
 
-use gpui::{anchored, deferred, div, prelude::*, px, AnyElement, Context, MouseButton, Window};
+use crate::layer::deferred;
+use gpui::{anchored, div, prelude::*, px, AnyElement, Context, MouseButton, Window};
 
 use crate::ribbon::Action;
 use crate::tooltip::Tooltip;

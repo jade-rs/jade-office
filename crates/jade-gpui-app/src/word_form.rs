@@ -4,9 +4,10 @@
 //! The content control and mail-merge dialogs are drawn this way; the
 //! browser shell has the same (`jade-gpui-web/src/view/word_form.rs`).
 
+use crate::layer::deferred;
 use gpui::{
-    anchored, deferred, div, point, prelude::*, px, AnyElement, ClickEvent, Context, ElementId,
-    MouseButton, SharedString, Window,
+    anchored, div, point, prelude::*, px, AnyElement, ClickEvent, Context, ElementId, MouseButton,
+    SharedString, Window,
 };
 use jade_office_model::word::form_view::{
     FieldView, FormButton, FormEvent, FormId, FormRow, FormView, ToolGroup, ToolItem,
@@ -671,7 +672,7 @@ fn tool_item(item: &ToolItem, handler: Handler, cx: &mut Context<DocumentView>) 
             div()
                 .relative()
                 .child(trigger)
-                .children(menu.map(|menu| gpui::deferred(menu).with_priority(2)))
+                .children(menu.map(|menu| crate::layer::deferred(menu).with_priority(2)))
                 .into_any_element()
         }
     }

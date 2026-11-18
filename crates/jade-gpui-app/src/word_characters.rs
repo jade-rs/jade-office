@@ -20,9 +20,10 @@ mod ribbon;
 mod ruby;
 mod typography;
 
+use crate::layer::deferred;
 use gpui::{
-    anchored, deferred, div, point, prelude::*, px, AnyElement, ClickEvent, Context, ElementId,
-    MouseButton, SharedString, Window,
+    anchored, div, point, prelude::*, px, AnyElement, ClickEvent, Context, ElementId, MouseButton,
+    SharedString, Window,
 };
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::font::{

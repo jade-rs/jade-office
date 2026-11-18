@@ -23,9 +23,10 @@ mod toc;
 
 use std::collections::BTreeSet;
 
+use crate::layer::deferred;
 use gpui::{
-    anchored, deferred, div, point, prelude::*, px, AnyElement, ClickEvent, Context, ElementId,
-    MouseButton, SharedString, Window,
+    anchored, div, point, prelude::*, px, AnyElement, ClickEvent, Context, ElementId, MouseButton,
+    SharedString, Window,
 };
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::references::bookmarks::BookmarkDialog;

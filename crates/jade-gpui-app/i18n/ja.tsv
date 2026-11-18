@@ -5217,3 +5217,16 @@ layout.indent_left	インデント 左
 layout.indent_right	インデント 右
 layout.space_before	間隔 前
 layout.space_after	間隔 後
+fit.scroll_left	左へスクロール
+fit.scroll_right	右へスクロール
+sheet.group.font	フォント
+sheet.group.alignment	配置
+sheet.group.number	数値
+sheet.group.styles	スタイル
+sheet.group.data	データ
+deck.group.slides	スライド
+deck.group.insert	挿入
+deck.group.table	表
+deck.group.show	表示
+deck.group.font	フォント
+deck.group.paragraph	段落
