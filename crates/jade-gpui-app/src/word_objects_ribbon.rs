@@ -164,6 +164,7 @@ fn list_button(
 ) -> AnyElement {
     div()
         .id(id)
+        .debug_selector(|| format!("ribbon-{id}"))
         .flex()
         .flex_none()
         .items_center()
@@ -1005,7 +1006,7 @@ impl DocumentView {
 
     /// 配置: 位置, 文字列の折り返し, 前面へ, 背面へ, オブジェクトの選択と
     /// 表示, 配置, グループ化, 回転.
-    fn arrange_group(
+    pub(crate) fn arrange_group(
         &mut self,
         format: &jade_office_model::word::objects::ObjectFormat,
         cx: &mut Context<Self>,

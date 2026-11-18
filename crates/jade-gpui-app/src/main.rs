@@ -2483,6 +2483,12 @@ impl DocumentView {
             .chain([word_hyphenation::layout_group(self, cx)])
             .chain([word_manuscript::layout_group(cx)])
             .chain([self.layout_paragraph_group(cx)])
+            // 配置, as Word has it here too, while a picture or shape is
+            // selected.
+            .chain(
+                self.selected_format()
+                    .map(|format| self.arrange_group(&format, cx)),
+            )
             .collect(),
             RibbonTab::TableDesign => {
                 let tabs = self.tables.tab_state(&self.document);

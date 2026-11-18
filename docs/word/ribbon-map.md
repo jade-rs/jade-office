@@ -167,7 +167,7 @@ jade has no ink model; "Draw" in jade is only the table pencil and eraser
 | — › Left-to-Right / Right-to-Left | ✓ | ✓ | `setup.ltr`, `setup.rtl` |
 | — › Snap to Grid | ✓ | ✓ | `setup.snap` |
 | Arrange › Position, Wrap Text | ✓ wrap buttons for a selected picture | ✓ | `picture.wrap.*` |
-| Arrange › Bring Forward, Send Backward, Selection Pane, Align, Group, Rotate | – | – | — |
+| Arrange › Position, Wrap Text, Bring Forward, Send Backward, Selection Pane, Align, Group, Rotate | ✓ while a picture or shape is selected (also on its format tab) | – (format tab only) | `objects.group.arrange` |
 
 The Layout tab's page break is in 区切り, as in Word; 挿入 › ページ has
 ページ区切り beside 空白のページ.

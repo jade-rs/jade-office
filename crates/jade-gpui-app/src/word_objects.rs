@@ -1120,6 +1120,37 @@ mod scenarios {
         });
     }
 
+    /// レイアウト has 配置 too, as Word's does, while a picture is selected —
+    /// and its 段落 group either way.
+    #[gpui::test]
+    fn the_layout_tab_arranges_a_selected_picture(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        let object = picture(&view, cx);
+        cx.simulate_resize(gpui::size(gpui::px(2400.0), gpui::px(900.0)));
+        view.update(cx, |view, cx| {
+            view.ribbon_tab = crate::RibbonTab::Layout;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("ribbon-bring-forward").is_none());
+        let center = (
+            object.x + object.width / 2.0,
+            object.y + object.height / 2.0,
+        );
+        let point = on_page(&view, cx, 0, center);
+        cx.simulate_click(point, Modifiers::none());
+        view.update(cx, |view, cx| {
+            assert_eq!(view.object_target(), Some(target_of(&object)));
+            view.ribbon_tab = crate::RibbonTab::Layout;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        assert!(
+            cx.debug_bounds("ribbon-bring-forward").is_some(),
+            "前面へ移動 is on レイアウト"
+        );
+    }
+
     /// 挿入 → 図形: dragging on the page draws the shape there, styled as a
     /// new Word shape; a double click puts the caret in it to type.
     #[gpui::test]
