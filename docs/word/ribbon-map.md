@@ -38,7 +38,7 @@ listed.
 |---|---|---|---|---|
 | File (Windows Backstage) / File menu (Mac) | menu bar | title-bar buttons | `menu.file.*` | see "Menus" |
 | Home | ✓ | ✓ | `doc.tab.home` | browser has no Clipboard group |
-| Insert | ✓ | ✓ | `doc.tab.insert` | browser has no Blank Page / Comment groups |
+| Insert | ✓ | ✓ | `doc.tab.insert` | groups in Word's order; browser has no Blank Page |
 | Draw | – | – | — | no ink at all |
 | Design | ✓ (Page Background only) | – (under Layout) | `doc.tab.design` | no themes, style sets, watermark |
 | Layout | ✓ | ✓ | `doc.tab.layout` | |
@@ -113,7 +113,7 @@ uses the macOS text convention ⌘[ / ⌘].
 |---|---|---|---|---|---|
 | Pages › Cover Page | ribbon | ribbon | ✓ (Simple, Banner, Lined) | ✓ | `setup.cover` |
 | Pages › Blank Page | ribbon | ribbon | ✓ | – | `doc.blank_page` |
-| Pages › Page Break | Ctrl+Enter | ⌘↩ | ✓ ⌘↩ | ✓ ⌘↩ | `setup.break.*` |
+| Pages › Page Break | Ctrl+Enter | ⌘↩ | ✓ ⌘↩, ribbon | ✓ ⌘↩, ribbon | `doc.page_break_tip` |
 | Tables › Table (grid, Insert Table…) | ribbon | ribbon | ✓ grid 10×8 | ✓ | `ribbon.insert_table` |
 | Tables › Draw Table | ribbon | ribbon | ✓ | ✓ | `table.draw` |
 | Tables › Convert Text to Table | ribbon | ribbon | ✓ | ✓ | `table.to_table` |
@@ -122,12 +122,12 @@ uses the macOS text convention ⌘[ / ⌘].
 | Illustrations › Shapes, Icons, 3D Models, SmartArt, Chart, Screenshot | ribbon | ribbon | – | – | — |
 | Media › Online Video | ribbon | ribbon | – | – | — |
 | Links › Link | Ctrl+K | ⌘K | ✓ ⌘K | ✓ ⌘K | `link.button` |
-| Links › Bookmark, Cross-reference | ribbon | ribbon | – | – | — |
-| Comments › Comment | Ctrl+Alt+M | ⌘⌥A | ✓ ⌘M | Review tab only | `doc.comment` |
+| Links › Bookmark, Cross-reference (one group with Link) | ribbon | ribbon | ✓ | ✓ | `bookmark.title`, `xref.title` |
+| Comments › Comment | Ctrl+Alt+M | ⌘⌥A | ✓ ⌘M, ribbon | ✓ ribbon | `doc.comment_tip` |
 | Header & Footer › Header / Footer | ribbon | ribbon | ✓ (in place) | ✓ (one-line bar) | `page.header`, `page.footer` |
 | Header & Footer › Page Number (positions, format, remove) | Alt+Shift+P (field) | ⌃⇧P (field) | ✓ gallery | ✓ gallery | `page.number.*`, `setup.numbers.open` |
 | Text › Text Box, Quick Parts, WordArt, Drop Cap, Signature Line, Object | ribbon | ribbon | – | – | — |
-| Text › Date & Time | Alt+Shift+D (field) | ⌃⇧D (field) | ✓ ⌃⇧D opens the dialog | ✓ ribbon | `chars.date.title_menu` |
+| Text › Date & Time | Alt+Shift+D (field) | ⌃⇧D (field) | ✓ ⌃⇧D, ribbon (the 日付と時刻 dialog) | ✓ ribbon | `field.date_time` |
 | Symbols › Equation | Alt+= | ⌃= | – | – | — |
 | Symbols › Symbol | ribbon | ribbon | ✓ ⌥⇧⌘S | ✓ ribbon | `chars.symbol.title_menu` |
 

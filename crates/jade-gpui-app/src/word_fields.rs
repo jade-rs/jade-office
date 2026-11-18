@@ -1422,7 +1422,16 @@ impl DocumentView {
                     i18n::text("field.date_time_title"),
                     false,
                     cx,
-                    |view, cx| view.open_field_dialog(Some("DATE"), cx),
+                    // Word's 日付と時刻 dialog, whose 自動的に更新する makes
+                    // it a DATE field.
+                    |view, cx| {
+                        view.run_ribbon(
+                            crate::ribbon::Action::Characters(
+                                crate::word_characters::CharAction::OpenDateTime,
+                            ),
+                            cx,
+                        )
+                    },
                 )
                 .into_any_element(),
                 self.ribbon_button(

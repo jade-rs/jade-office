@@ -614,6 +614,8 @@ doc.table_2x2_title	2×2 の表
 doc.group.pages	ページ
 doc.blank_page	空白ページ
 doc.comment	コメント
+doc.page_break_tip	ページ区切り (⌘↩)
+doc.comment_tip	新しいコメント (⌘M)
 doc.page_color	ページの色
 doc.color.cream	クリーム
 doc.color.light_gray	薄灰
@@ -1562,7 +1564,7 @@ chars.paste.format.text	書式なしテキスト
 chars.paste.format.unicode	書式なしの Unicode テキスト
 menu.insert.symbol	記号と特殊文字...
 menu.insert.date_time	日付と時刻...
-chars.insert.group	記号と日付
+chars.insert.group	記号と特殊文字
 chars.symbol.title	記号と特殊文字
 chars.symbol.title_menu	記号と特殊文字
 chars.symbol.tab_symbols	記号

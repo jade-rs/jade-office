@@ -311,3 +311,54 @@ fn word_for_mac_paragraph_style_and_case_keys(cx: &mut gpui::TestAppContext) {
         "three presses come round again"
     );
 }
+
+/// 挿入 in Word's order — ページ (表紙, 空白のページ, ページ区切り), 表, 図,
+/// リンク, コメント, …, テキスト — with ページ区切り putting in a page break
+/// and 日付と時刻 opening Word's 日付と時刻 dialog.
+#[gpui::test]
+fn the_insert_tab_follows_words_order(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = with_text(cx);
+    cx.simulate_resize(gpui::size(gpui::px(2400.0), gpui::px(900.0)));
+    view.update(cx, |view, cx| {
+        view.ribbon_tab = crate::RibbonTab::Insert;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let at = |cx: &mut gpui::VisualTestContext, name: &'static str| {
+        cx.debug_bounds(name)
+            .unwrap_or_else(|| panic!("{name} is on the tab"))
+    };
+    let order = [
+        "ribbon-blank-page",
+        "ribbon-insert-page-break",
+        "ribbon-hyperlink",
+        "ribbon-comment",
+        "ribbon-insert-date",
+    ];
+    let lefts: Vec<_> = order.iter().map(|name| at(cx, name).origin.x).collect();
+    assert!(
+        lefts.windows(2).all(|pair| pair[0] < pair[1]),
+        "{order:?} at {lefts:?}"
+    );
+
+    let paragraphs = view.update(cx, |view, _| view.document.paragraph_count());
+    let button = at(cx, "ribbon-insert-page-break").center();
+    cx.simulate_click(button, gpui::Modifiers::none());
+    view.update(cx, |view, _| {
+        use crate::Editor;
+        assert!(view.is_dirty(), "ページ区切り changes the document");
+        assert!(view.document.paragraph_count() <= paragraphs + 1);
+    });
+
+    let button = at(cx, "ribbon-insert-date").center();
+    cx.simulate_click(button, gpui::Modifiers::none());
+    view.update(cx, |view, _| {
+        assert!(
+            matches!(
+                view.characters.dialog,
+                Some(crate::word_characters::Dialog::DateTime(_))
+            ),
+            "日付と時刻 opens its dialog"
+        );
+    });
+}

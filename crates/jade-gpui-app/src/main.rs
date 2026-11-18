@@ -2192,6 +2192,7 @@ impl DocumentView {
     ) -> impl IntoElement {
         div()
             .id(id)
+            .debug_selector(|| format!("ribbon-{id}"))
             .flex()
             .flex_none()
             .items_center()
@@ -2400,61 +2401,72 @@ impl DocumentView {
                 groups.extend(word_views::customize::custom_group(cx));
                 groups
             }
-            RibbonTab::Insert => vec![
-                ribbon::insert_table(&self.ribbon, cx).remove(0),
-                self.quick_parts_group(cx),
-                self.picture_group(cx),
-                word_signatures::insert_group(self, cx),
-                word_ole::insert_group(self, cx),
-                Self::ribbon_group(
-                    t("link.group"),
-                    vec![Self::ribbon_row(vec![self
-                        .ribbon_button(
-                            "hyperlink",
-                            t("link.button"),
-                            t("link.button_title"),
-                            false,
-                            cx,
-                            |view, cx| view.open_link_dialog(cx),
-                        )
-                        .into_any_element()])],
-                )
-                .into_any_element(),
-                word_references::links_group(cx),
-                word_page::header_footer(&self.ribbon, cx),
-                self.cover_group(cx),
-                word_characters::insert_group(cx),
-                self.fields_group(cx),
-                word_equation::insert_group(self, cx),
-                Self::ribbon_group(
-                    t("doc.group.pages"),
-                    vec![Self::ribbon_row(vec![self
-                        .ribbon_button(
-                            "blank-page",
-                            t("doc.blank_page"),
-                            t("doc.blank_page"),
-                            false,
-                            cx,
-                            |view, cx| view.insert_blank_page(cx),
-                        )
-                        .into_any_element()])],
-                )
-                .into_any_element(),
-                Self::ribbon_group(
-                    t("doc.comment"),
-                    vec![Self::ribbon_row(vec![self
-                        .ribbon_button(
-                            "comment",
-                            t("doc.comment"),
-                            t("doc.comment"),
-                            false,
-                            cx,
-                            |view, cx| view.add_comment(cx),
-                        )
-                        .into_any_element()])],
-                )
-                .into_any_element(),
-            ],
+            // Word's order: ページ, 表, 図, リンク, コメント, ヘッダーと
+            // フッター, テキスト, 記号と特殊文字.
+            RibbonTab::Insert => {
+                let blank = self
+                    .ribbon_button(
+                        "blank-page",
+                        t("doc.blank_page"),
+                        t("doc.blank_page"),
+                        false,
+                        cx,
+                        |view, cx| view.insert_blank_page(cx),
+                    )
+                    .into_any_element();
+                let page_break = self
+                    .ribbon_button(
+                        "insert-page-break",
+                        t("doc.page_break"),
+                        t("doc.page_break_tip"),
+                        false,
+                        cx,
+                        |view, cx| {
+                            view.run_ribbon(
+                                Action::Setup(word_page_setup::SetupAction::Break(
+                                    jade_office_model::word::page_setup::PageBreak::Page,
+                                )),
+                                cx,
+                            )
+                        },
+                    )
+                    .into_any_element();
+                let link = self
+                    .ribbon_button(
+                        "hyperlink",
+                        t("link.button"),
+                        t("link.button_title"),
+                        false,
+                        cx,
+                        |view, cx| view.open_link_dialog(cx),
+                    )
+                    .into_any_element();
+                let comment = self
+                    .ribbon_button(
+                        "comment",
+                        t("doc.comment"),
+                        t("doc.comment_tip"),
+                        false,
+                        cx,
+                        |view, cx| view.add_comment(cx),
+                    )
+                    .into_any_element();
+                vec![
+                    self.cover_group(vec![blank, page_break], cx),
+                    ribbon::insert_table(&self.ribbon, cx).remove(0),
+                    self.picture_group(cx),
+                    word_references::links_group(link, cx),
+                    Self::ribbon_group(t("doc.comment"), vec![Self::ribbon_row(vec![comment])])
+                        .into_any_element(),
+                    word_page::header_footer(&self.ribbon, cx),
+                    self.quick_parts_group(cx),
+                    word_signatures::insert_group(self, cx),
+                    self.fields_group(cx),
+                    word_ole::insert_group(self, cx),
+                    word_equation::insert_group(self, cx),
+                    word_characters::insert_group(cx),
+                ]
+            }
             RibbonTab::Design => self
                 .design_groups(cx)
                 .into_iter()
