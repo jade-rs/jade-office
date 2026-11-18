@@ -362,3 +362,36 @@ fn the_insert_tab_follows_words_order(cx: &mut gpui::TestAppContext) {
         );
     });
 }
+
+/// 校閲 in Word's order: 文章校正, 音声, アクセシビリティ, 言語, コメント,
+/// 記録, 変更箇所, 比較, 保護.
+#[gpui::test]
+fn the_review_tab_follows_words_order(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = with_text(cx);
+    cx.simulate_resize(gpui::size(gpui::px(3200.0), gpui::px(900.0)));
+    view.update(cx, |view, cx| {
+        view.ribbon_tab = crate::RibbonTab::Review;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let order = [
+        "ribbon-review-accessibility",
+        "ribbon-review-language",
+        "ribbon-review-comment-delete",
+        "ribbon-review-compare",
+        "ribbon-review-restrict",
+    ];
+    let lefts: Vec<_> = order
+        .iter()
+        .map(|name| {
+            cx.debug_bounds(name)
+                .unwrap_or_else(|| panic!("{name} is on the tab"))
+                .origin
+                .x
+        })
+        .collect();
+    assert!(
+        lefts.windows(2).all(|pair| pair[0] < pair[1]),
+        "{order:?} at {lefts:?}"
+    );
+}

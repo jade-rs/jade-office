@@ -670,6 +670,7 @@ pub fn text_button(
 ) -> AnyElement {
     div()
         .id(id)
+        .debug_selector(|| format!("ribbon-{id}"))
         .flex()
         .flex_none()
         .items_center()

@@ -504,6 +504,50 @@ pub fn review(
             ],
         ),
         group(
+            i18n::text("review.group.changes"),
+            vec![row(vec![
+                decision_list(true, open, cx),
+                decision_list(false, open, cx),
+                text_button(
+                    "revision-previous",
+                    i18n::text("review.previous"),
+                    i18n::text("review.previous_title"),
+                    false,
+                    act(ReviewAction::Step(false)),
+                    cx,
+                ),
+                text_button(
+                    "revision-next",
+                    i18n::text("review.next"),
+                    i18n::text("review.next_title"),
+                    false,
+                    act(ReviewAction::Step(true)),
+                    cx,
+                ),
+            ])],
+        ),
+        group(
+            i18n::text("compare.group"),
+            vec![row(vec![
+                text_button(
+                    "review-compare",
+                    i18n::text("compare.button"),
+                    i18n::text("compare.title"),
+                    false,
+                    act(ReviewAction::Compare(false)),
+                    cx,
+                ),
+                text_button(
+                    "review-combine",
+                    i18n::text("compare.combine"),
+                    i18n::text("compare.combine_title"),
+                    false,
+                    act(ReviewAction::Compare(true)),
+                    cx,
+                ),
+            ])],
+        ),
+        group(
             i18n::text("protect.group"),
             vec![row(vec![
                 text_button(
@@ -552,50 +596,6 @@ pub fn review(
                     i18n::text("inspect.tooltip"),
                     shown.inspect,
                     act(ReviewAction::Inspect),
-                    cx,
-                ),
-            ])],
-        ),
-        group(
-            i18n::text("compare.group"),
-            vec![row(vec![
-                text_button(
-                    "review-compare",
-                    i18n::text("compare.button"),
-                    i18n::text("compare.title"),
-                    false,
-                    act(ReviewAction::Compare(false)),
-                    cx,
-                ),
-                text_button(
-                    "review-combine",
-                    i18n::text("compare.combine"),
-                    i18n::text("compare.combine_title"),
-                    false,
-                    act(ReviewAction::Compare(true)),
-                    cx,
-                ),
-            ])],
-        ),
-        group(
-            i18n::text("review.group.changes"),
-            vec![row(vec![
-                decision_list(true, open, cx),
-                decision_list(false, open, cx),
-                text_button(
-                    "revision-previous",
-                    i18n::text("review.previous"),
-                    i18n::text("review.previous_title"),
-                    false,
-                    act(ReviewAction::Step(false)),
-                    cx,
-                ),
-                text_button(
-                    "revision-next",
-                    i18n::text("review.next"),
-                    i18n::text("review.next_title"),
-                    false,
-                    act(ReviewAction::Step(true)),
                     cx,
                 ),
             ])],

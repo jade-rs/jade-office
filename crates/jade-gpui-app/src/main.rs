@@ -2511,8 +2511,10 @@ impl DocumentView {
             RibbonTab::Equation => word_equation::tab_groups(self, cx),
             RibbonTab::Review => {
                 let mut groups = self.review_groups(cx);
-                // 言語: 校正言語の設定 (`word_views`).
-                groups.push(word_views::language::review_group(cx));
+                // 言語: 校正言語の設定 (`word_views`), after 文章校正, 音声 and
+                // アクセシビリティ as in Word.
+                let language = word_views::language::review_group(cx);
+                groups.insert(3.min(groups.len()), language);
                 groups
             }
             RibbonTab::HeaderFooter => self.story_groups(cx),
