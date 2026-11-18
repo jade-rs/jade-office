@@ -637,7 +637,7 @@ doc.accept_all	すべて反映
 doc.reject_all	すべて取消
 doc.reject_all_title	すべて元に戻す
 doc.marks	編集記号
-doc.marks_title	編集記号の表示
+doc.marks_title	編集記号の表示/非表示 (⌘8)
 doc.group.zoom	ズーム
 doc.zoom_out	縮小
 doc.zoom_actual	等倍
@@ -5203,3 +5203,4 @@ setup.fill.no_picture	図が選択されていません
 workspace.close_unsaved	「{name}」への変更を保存しますか？
 workspace.close_download	コピーをダウンロード
 workspace.close_discard	保存せずに閉じる
+doc.select	選択

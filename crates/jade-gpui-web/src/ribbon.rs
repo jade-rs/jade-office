@@ -36,8 +36,6 @@ pub(crate) const FONT_SIZES: [f32; 17] = [
 /// What an empty size or family box falls back to, as in jade-ide.
 pub(crate) const DEFAULT_FAMILY: &str = "游明朝";
 pub(crate) const DEFAULT_SIZE: f32 = 12.0;
-// Temporarily hide the extra controls until their Word-compatible placement is decided.
-const SHOW_EXTRA_FONT_ROW: bool = false;
 /// Word's highlight names and what they look like.
 const HIGHLIGHTS: [(&str, u32); 16] = jade_web::word::font::HIGHLIGHT_COLORS;
 const LINE_SPACINGS: [(&str, f32); 4] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)];
@@ -677,6 +675,62 @@ fn swatch(
         .into_any_element()
 }
 
+/// A group whose caption has Word's dialog launcher at its right.
+pub(crate) fn group_with_launcher(
+    caption: &'static str,
+    rows: Vec<AnyElement>,
+    id: &'static str,
+    tooltip: &'static str,
+    action: Action,
+    cx: &mut Context<DocView>,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .flex_none()
+        .justify_between()
+        .h_full()
+        .px_2()
+        .border_r_1()
+        .border_color(palette::border())
+        .child(div().flex().flex_col().gap_1().children(rows))
+        .child(
+            div()
+                .relative()
+                .flex()
+                .justify_center()
+                .text_xs()
+                .text_color(palette::faint())
+                .child(caption)
+                .child(
+                    div()
+                        .id(id)
+                        .absolute()
+                        .right_0()
+                        .top_0()
+                        .size(px(14.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .hover(|button| button.bg(palette::hovered()))
+                        .tooltip(Tooltip::text(tooltip))
+                        .on_click(listener(action.clone(), cx))
+                        .tab_index(0)
+                        .focus(focus_ring)
+                        .on_key_down(key_listener(action, cx))
+                        .child(
+                            svg()
+                                .path("icons/arrow-down-right.svg")
+                                .size_3()
+                                .text_color(palette::dim()),
+                        ),
+                ),
+        )
+        .into_any_element()
+}
+
 /// A group of controls with its caption under it.
 pub(crate) fn group(caption: &'static str, rows: Vec<AnyElement>) -> AnyElement {
     div()
@@ -1100,6 +1154,7 @@ pub fn ribbon(
 // ---- ホーム -------------------------------------------------------------------
 
 fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<AnyElement> {
+    let font = crate::view::word_characters::font_controls(ribbon, state, cx);
     let open = ribbon.popup;
     let family = state
         .font_family
@@ -1236,7 +1291,7 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
     };
 
     vec![
-        group(
+        group_with_launcher(
             i18n::text("doc.group.font"),
             vec![
                 row(vec![
@@ -1283,6 +1338,18 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         Action::StepFontSize(false),
                         cx,
                     ),
+                    font.change_case,
+                    icon_button(
+                        "clear-format",
+                        "icons/eraser.svg",
+                        i18n::text("doc.clear_format_title"),
+                        false,
+                        true,
+                        Action::ClearFormatting,
+                        cx,
+                    ),
+                    font.ruby,
+                    font.enclose,
                 ]),
                 row(vec![
                     icon_button(
@@ -1312,6 +1379,7 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         Action::Toggle(CharacterFormat::Underline),
                         cx,
                     ),
+                    font.underline_style,
                     icon_button(
                         "strike",
                         "icons/strikethrough.svg",
@@ -1363,23 +1431,14 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         ),
                         highlight_menu,
                     ),
-                    icon_button(
-                        "clear-format",
-                        "icons/eraser.svg",
-                        i18n::text("doc.clear_format_title"),
-                        false,
-                        true,
-                        Action::ClearFormatting,
-                        cx,
-                    ),
+                    font.shading,
+                    font.border,
                 ]),
-            ]
-            .into_iter()
-            .chain(
-                SHOW_EXTRA_FONT_ROW
-                    .then(|| crate::view::word_characters::font_row(ribbon, state, cx)),
-            )
-            .collect(),
+            ],
+            "font-launcher",
+            i18n::text("chars.font.launcher"),
+            Action::Characters(crate::view::word_characters::CharAction::OpenFontDialog),
+            cx,
         ),
         group(
             i18n::text("doc.group.paragraph"),
@@ -1421,6 +1480,7 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                         Action::Indent(true),
                         cx,
                     ),
+                    font.asian_layout,
                     icon_button(
                         "paragraph-sort",
                         "icons/sort-a-z.svg",

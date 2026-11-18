@@ -1,7 +1,7 @@
-//! The ホーム tab's font group, beyond its first two rows: 文字種の変換,
-//! 下線のスタイル and 下線の色, 文字の網かけ, 囲み線, 拡張書式 and the
-//! フォント dialog's launcher; and the lists the first two rows drop — the
-//! installed fonts and the font colour's テーマの色.
+//! The ホーム tab's font controls beyond the basic ones: 文字種の変換,
+//! 下線のスタイル and 下線の色, 文字の網かけ, 囲み線, 拡張書式, ルビ and 囲い文字;
+//! and the lists the font group drops — the installed fonts and the font
+//! colour's テーマの色. The フォント dialog opens from the group's launcher.
 
 use gpui::{div, prelude::*, px, AnyElement, Context, SharedString};
 use jade_office_model::word::font::{
@@ -99,12 +99,25 @@ fn case_label(mode: HeadlessChangeCaseMode) -> &'static str {
     })
 }
 
-/// The font group's third row.
-pub fn font_row(
+/// The font group's controls beyond the basic ones, each on its own so the
+/// ホーム tab can put it where Word does: 文字種の変換, ルビ and 囲い文字 on
+/// the first row; 下線のスタイル, 文字の網かけ and 囲み線 on the second; 拡張書式
+/// in the paragraph group.
+pub struct FontControls {
+    pub change_case: AnyElement,
+    pub underline_style: AnyElement,
+    pub shading: AnyElement,
+    pub border: AnyElement,
+    pub asian_layout: AnyElement,
+    pub ruby: AnyElement,
+    pub enclose: AnyElement,
+}
+
+pub fn font_controls(
     ribbon: &Ribbon,
     state: &FormatState,
     cx: &mut Context<DocumentView>,
-) -> AnyElement {
+) -> FontControls {
     let open = ribbon.popup;
     let is_open = |popup: CharPopup| open == Some(Popup::Characters(popup));
     let character = &state.character;
@@ -222,8 +235,8 @@ pub fn font_row(
         .as_deref()
         .is_some_and(|fill| fill != "none");
     let boxed = character.border == Some(true);
-    row(vec![
-        dropdown(
+    FontControls {
+        change_case: dropdown(
             glyph_menu(
                 "change-case",
                 "Aa",
@@ -234,7 +247,7 @@ pub fn font_row(
             ),
             case_menu,
         ),
-        dropdown(
+        underline_style: dropdown(
             glyph_menu(
                 "underline-style",
                 "U̲",
@@ -245,7 +258,7 @@ pub fn font_row(
             ),
             underline_menu,
         ),
-        glyph_button(
+        shading: glyph_button(
             "char-shading",
             "Ａ",
             i18n::text("chars.shading"),
@@ -253,7 +266,7 @@ pub fn font_row(
             action(CharAction::Shading),
             cx,
         ),
-        glyph_button(
+        border: glyph_button(
             "char-border",
             "[Ａ]",
             i18n::text("chars.border"),
@@ -261,7 +274,7 @@ pub fn font_row(
             action(CharAction::Border),
             cx,
         ),
-        dropdown(
+        asian_layout: dropdown(
             glyph_menu(
                 "asian-layout",
                 "拡",
@@ -272,7 +285,7 @@ pub fn font_row(
             ),
             layout_menu,
         ),
-        glyph_button(
+        ruby: glyph_button(
             "ruby-dialog",
             "亜",
             i18n::text("chars.ruby.title"),
@@ -280,7 +293,7 @@ pub fn font_row(
             action(CharAction::OpenRuby),
             cx,
         ),
-        glyph_button(
+        enclose: glyph_button(
             "enclose-dialog",
             "㊀",
             i18n::text("chars.enclose.title"),
@@ -288,23 +301,7 @@ pub fn font_row(
             action(CharAction::OpenEnclose),
             cx,
         ),
-        glyph_button(
-            "typography-dialog",
-            "体裁",
-            i18n::text("chars.typography.title"),
-            false,
-            action(CharAction::OpenTypography),
-            cx,
-        ),
-        glyph_button(
-            "font-dialog",
-            "…",
-            i18n::text("chars.font.launcher"),
-            false,
-            action(CharAction::OpenFontDialog),
-            cx,
-        ),
-    ])
+    }
 }
 
 fn color_square(

@@ -197,6 +197,8 @@ impl DocumentView {
     }
 
     fn build_preview(&mut self, settings: &PrintSettings) -> Result<Preview, String> {
+        // The view's own images print when nothing is laid out again.
+        self.paint_all_stale_pages();
         validate_print_selection(&self.document, settings)?;
         // The document laid out again only when what it prints differs; a
         // range or a layout change reuses it.

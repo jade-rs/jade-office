@@ -637,7 +637,7 @@ doc.accept_all	Accept All
 doc.reject_all	Reject All
 doc.reject_all_title	Reject all changes
 doc.marks	Marks
-doc.marks_title	Show formatting marks
+doc.marks_title	Show/Hide formatting marks (⌘8)
 doc.group.zoom	Zoom
 doc.zoom_out	Zoom Out
 doc.zoom_actual	100%
@@ -5203,3 +5203,4 @@ setup.fill.no_picture	No picture selected
 workspace.close_unsaved	Save changes to “{name}” before closing?
 workspace.close_download	Download a copy
 workspace.close_discard	Close without saving
+doc.select	Select
