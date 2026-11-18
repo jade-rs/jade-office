@@ -1,9 +1,10 @@
 //! The right-click (⌃-click) menu over the pages, with Word's items for
 //! what is under the pointer (`jade_office_model::word::context_menu`).
 
+use crate::layer::deferred;
 use gpui::{
-    anchored, deferred, div, point, prelude::*, px, AnyElement, Context, MouseButton,
-    MouseDownEvent, Pixels, Point, SharedString,
+    anchored, div, point, prelude::*, px, AnyElement, Context, MouseButton, MouseDownEvent, Pixels,
+    Point, SharedString,
 };
 use jade_office_model::word::clipboard::PasteMode;
 use jade_office_model::word::context_menu::{menu, ContextCommand, ContextEntry, ContextTarget};

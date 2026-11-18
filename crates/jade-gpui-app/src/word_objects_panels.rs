@@ -1622,7 +1622,7 @@ impl DocumentView {
         dialogs
             .into_iter()
             .map(|dialog| {
-                gpui::deferred(
+                crate::layer::deferred(
                     gpui::anchored()
                         .position(gpui::point(px(260.0), px(140.0)))
                         .child(dialog),

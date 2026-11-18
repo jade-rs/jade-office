@@ -5,9 +5,9 @@
 //! the pages. What each line shows is `jade-office-model`'s
 //! `word::immersive`; the lines are where gpui's wrapper breaks them.
 
+use crate::layer::deferred;
 use gpui::{
-    deferred, div, prelude::*, px, rgb, AnyElement, ClickEvent, Context, LineFragment,
-    ScrollHandle, Window,
+    div, prelude::*, px, rgb, AnyElement, ClickEvent, Context, LineFragment, ScrollHandle, Window,
 };
 use jade_office_model::text::TextEdit;
 use jade_office_model::word::immersive::{

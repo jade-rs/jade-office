@@ -10,9 +10,10 @@
 //! takes it back, and a click keeps it. The preview is the command itself,
 //! applied and undone, so what shows is exactly what a click gives.
 
+use crate::layer::deferred;
 use gpui::{
-    anchored, deferred, div, point, prelude::*, px, svg, AnyElement, Context, MouseButton, Pixels,
-    Point, SharedString,
+    anchored, div, point, prelude::*, px, svg, AnyElement, Context, MouseButton, Pixels, Point,
+    SharedString,
 };
 use jade_office_model::word::SelectionRangeOf as SelectionRange;
 use jade_office_model::word::{CharacterFormat, WordSession};

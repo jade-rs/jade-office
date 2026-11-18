@@ -11,9 +11,10 @@
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use crate::layer::deferred;
 use gpui::{
-    actions, anchored, deferred, div, point, prelude::*, px, AnyElement, ClickEvent, Context,
-    MouseButton, SharedString, Window,
+    actions, anchored, div, point, prelude::*, px, AnyElement, ClickEvent, Context, MouseButton,
+    SharedString, Window,
 };
 use jade_office_model::word::formats::{
     open_as_docx, renamed, save_from_docx, text_preview, unencodable_characters, FormatError,
