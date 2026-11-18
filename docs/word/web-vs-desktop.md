@@ -110,7 +110,7 @@ and that are not on origin/main yet; the stream is in brackets.
 | 11 | Paste Special dialog (needs a clipboard read inside a user gesture) | `crates/jade-gpui-app/src/word_characters/paste.rs` (characters) |
 | 209, 223, 344, 362 | Field dialog; ASK and FILLIN prompts | `crates/jade-gpui-app/src/word_fields.rs` (fields) |
 | 226, 469, 470 | document Properties dialog | (fields) |
-| 43, 444, 445, 446 | Tabs dialog; horizontal and vertical rulers; ruler units | (lists and styles) |
+| 43, 444, 445, 446 | Tabs dialog; horizontal ruler (no vertical ruler); ruler units | (lists and styles) |
 | 44, 52 | Borders and Shading dialog; drop-cap options | (lists and styles) |
 | 55, 56, 57, 58, 60, 61, 62, 63 | define new list / numbering / multilevel dialogs | (lists and styles) |
 | 69, 70, 71, 72, 73, 74, 75 | New / Modify Style dialogs and the Styles pane | (lists and styles) |
