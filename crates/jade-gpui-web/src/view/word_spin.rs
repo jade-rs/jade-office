@@ -39,6 +39,9 @@ pub enum SpinOwner {
     PageSetup,
     /// 表のプロパティ and the table dialogs.
     Table,
+    /// A spin box on the ribbon (レイアウト's インデント and 間隔): it acts
+    /// on the document straight away, and has no dialog to pass Enter on to.
+    Ribbon,
 }
 
 /// The field that has the keyboard.
@@ -136,6 +139,10 @@ impl DocumentView {
             ),
             SpinOwner::PageSetup => self.page_dialog.is_some(),
             SpinOwner::Table => self.table_dialog_open(),
+            SpinOwner::Ribbon => matches!(
+                &self.document,
+                Document::Pages { ribbon, .. } if ribbon.tab == crate::ribbon::Tab::Layout
+            ),
         }
     }
 
@@ -188,6 +195,13 @@ impl DocumentView {
             return Some(SpinKeyOutcome::Taken);
         }
         let apply = Rc::clone(&spin.apply);
+        // A ribbon field's Enter and Escape end there: the page behind it
+        // must not get a paragraph mark.
+        let ends = if spin.owner == SpinOwner::Ribbon {
+            SpinKeyOutcome::Taken
+        } else {
+            SpinKeyOutcome::PassOn
+        };
         let outcome = match spin.field.key(event.keystroke.key.as_str()) {
             SpinKey::Stepped(value) => {
                 apply(self, value);
@@ -200,11 +214,11 @@ impl DocumentView {
                 }
                 // Enter goes on to be the dialog's OK, Tab to move to its
                 // next field.
-                SpinKeyOutcome::PassOn
+                ends
             }
             SpinKey::Reverted => {
                 self.spin = None;
-                SpinKeyOutcome::PassOn
+                ends
             }
             SpinKey::Edited => SpinKeyOutcome::Taken,
             SpinKey::Unhandled => SpinKeyOutcome::Typing,

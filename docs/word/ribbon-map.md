@@ -163,14 +163,14 @@ jade has no ink model; "Draw" in jade is only the table pencil and eraser
 | Page Setup › Text Direction (East Asian UI) | ✓ Horizontal/Vertical, options | ✓ | `setup.direction` |
 | Page Setup › 原稿用紙設定 (Japanese UI) | – | – | — |
 | Page Setup › Page Setup dialog (文字数と行数) | ✓ | ✓ | `setup.open` |
-| Paragraph › Indent / Spacing boxes | ≈ Indent −/+ buttons | – | `doc.indent_less`, `doc.indent_more` |
+| Paragraph › Indent (Left, Right) / Spacing (Before, After) spin boxes | ✓ | ✓ | `layout.indent_left` … `layout.space_after` |
 | — › Left-to-Right / Right-to-Left | ✓ | ✓ | `setup.ltr`, `setup.rtl` |
 | — › Snap to Grid | ✓ | ✓ | `setup.snap` |
 | Arrange › Position, Wrap Text | ✓ wrap buttons for a selected picture | ✓ | `picture.wrap.*` |
 | Arrange › Bring Forward, Send Backward, Selection Pane, Align, Group, Rotate | – | – | — |
 
-The native Layout tab's "Page Break" button (`doc.page_break`) inserts a
-page break at the caret; 空白のページ stays under 挿入.
+The Layout tab's page break is in 区切り, as in Word; 挿入 › ページ has
+ページ区切り beside 空白のページ.
 
 ## References
 

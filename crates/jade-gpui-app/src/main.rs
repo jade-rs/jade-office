@@ -2482,55 +2482,7 @@ impl DocumentView {
             .chain(self.page_setup_groups(cx))
             .chain([word_hyphenation::layout_group(self, cx)])
             .chain([word_manuscript::layout_group(cx)])
-            .chain([
-                Self::ribbon_group(
-                    t("doc.group.paragraph"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "layout-indent-less",
-                            t("doc.indent_less"),
-                            t("doc.indent_less_title"),
-                            false,
-                            cx,
-                            |view, cx| view.run_ribbon(Action::Indent(false), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "layout-indent-more",
-                            t("doc.indent_more"),
-                            t("doc.indent_more_title"),
-                            false,
-                            cx,
-                            |view, cx| view.run_ribbon(Action::Indent(true), cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-                Self::ribbon_group(
-                    t("doc.page_break"),
-                    vec![Self::ribbon_row(vec![self
-                        .ribbon_button(
-                            "layout-break",
-                            t("doc.page_break"),
-                            t("doc.page_break"),
-                            false,
-                            cx,
-                            // 改ページ: a page break at the caret. 空白のページ
-                            // stays under 挿入.
-                            |view, cx| {
-                                view.run_ribbon(
-                                    Action::Setup(word_page_setup::SetupAction::Break(
-                                        jade_office_model::word::page_setup::PageBreak::Page,
-                                    )),
-                                    cx,
-                                )
-                            },
-                        )
-                        .into_any_element()])],
-                )
-                .into_any_element(),
-            ])
+            .chain([self.layout_paragraph_group(cx)])
             .collect(),
             RibbonTab::TableDesign => {
                 let tabs = self.tables.tab_state(&self.document);

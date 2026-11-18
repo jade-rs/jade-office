@@ -5213,3 +5213,7 @@ workspace.close_unsaved	Save changes to “{name}” before closing?
 workspace.close_download	Download a copy
 workspace.close_discard	Close without saving
 doc.select	Select
+layout.indent_left	Indent Left
+layout.indent_right	Indent Right
+layout.space_before	Spacing Before
+layout.space_after	Spacing After

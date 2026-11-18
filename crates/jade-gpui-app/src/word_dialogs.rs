@@ -227,6 +227,127 @@ impl DocumentView {
         })
     }
 
+    /// レイアウト's 段落 group, as Word lays it out: インデント 左 / 右 and
+    /// 間隔 前 / 後 as spin boxes on the caret's paragraph (or every one
+    /// selected), each change one undo step.
+    pub(crate) fn layout_paragraph_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let format = self.document.paragraph_format();
+        let mut entry = |label: &'static str, field: ParagraphField| {
+            let spin = self.layout_paragraph_spin(&format, field);
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .child(
+                    div()
+                        .w(px(72.0))
+                        .text_xs()
+                        .text_color(theme::text())
+                        .whitespace_nowrap()
+                        .child(t(label)),
+                )
+                .child(spin_field(self, spin, cx))
+                .into_any_element()
+        };
+        let indent = [
+            entry("layout.indent_left", ParagraphField::Left),
+            entry("layout.indent_right", ParagraphField::Right),
+        ];
+        let spacing = [
+            entry("layout.space_before", ParagraphField::Before),
+            entry("layout.space_after", ParagraphField::After),
+        ];
+        let column = |entries: [AnyElement; 2]| {
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .children(entries)
+                .into_any_element()
+        };
+        crate::ribbon::group(
+            t("doc.group.paragraph"),
+            vec![div()
+                .flex()
+                .gap_3()
+                .child(column(indent))
+                .child(column(spacing))
+                .into_any_element()],
+        )
+    }
+
+    /// One of レイアウト's 段落 spin boxes: indents in the paragraph's own
+    /// unit (字 or mm), spacing in pt.
+    pub(crate) fn layout_paragraph_spin(
+        &self,
+        format: &jade_office_model::word::ParagraphFormat,
+        field: ParagraphField,
+    ) -> Spin {
+        let (spec, value) = match field {
+            ParagraphField::Left | ParagraphField::Right => (
+                match format.unit {
+                    IndentUnit::Characters => specs::INDENT_CHARS,
+                    IndentUnit::Millimetres => specs::INDENT_MM,
+                },
+                if field == ParagraphField::Left {
+                    format.left
+                } else {
+                    format.right
+                },
+            ),
+            _ => (
+                specs::PARAGRAPH_SPACING,
+                if field == ParagraphField::Before {
+                    format.before
+                } else {
+                    format.after
+                },
+            ),
+        };
+        let metrics = Metrics {
+            char_pt: self.document.character_width(self.insert_at.0) as f64,
+            ..Metrics::default()
+        };
+        Spin::new(
+            format!("layout-{field:?}"),
+            SpinOwner::Ribbon,
+            spec,
+            value as f64,
+            move |view, value| view.set_layout_paragraph_number(field, value as f32),
+        )
+        .metrics(metrics)
+    }
+
+    /// A value from レイアウト's 段落 spin boxes onto the selected paragraphs.
+    fn set_layout_paragraph_number(&mut self, field: ParagraphField, value: f32) {
+        if crate::word_views::modes::read_only(self) {
+            return;
+        }
+        self.sync_selection();
+        let was = self.document.paragraph_format();
+        let mut now = was.clone();
+        match field {
+            ParagraphField::Left => now.left = value,
+            ParagraphField::Right => now.right = value,
+            ParagraphField::Before => now.before = value,
+            ParagraphField::After => now.after = value,
+            _ => return,
+        }
+        match self.document.set_paragraph_format(&was, &now) {
+            Ok(()) => {
+                self.dirty = true;
+                self.table_status = None;
+                if self.document.selection().is_none() {
+                    self.caret = self
+                        .document
+                        .place_caret(self.insert_at.0, self.insert_at.1);
+                }
+                self.rebuild_all_images();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error)),
+        }
+    }
+
     /// Changes the open 段落 dialog from a click on one of its controls.
     pub(crate) fn edit_paragraph_form(
         &mut self,

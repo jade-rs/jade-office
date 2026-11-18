@@ -5213,3 +5213,7 @@ workspace.close_unsaved	「{name}」への変更を保存しますか？
 workspace.close_download	コピーをダウンロード
 workspace.close_discard	保存せずに閉じる
 doc.select	選択
+layout.indent_left	インデント 左
+layout.indent_right	インデント 右
+layout.space_before	間隔 前
+layout.space_after	間隔 後
