@@ -2676,9 +2676,15 @@ impl DocView {
         let outline = (self.views.kind == jade_web::word::view::ViewKind::Outline)
             .then(|| word_views::outline::groups(self, cx));
         let object_tab = self.object_tab(cx);
-        let layout_paragraph = matches!(&self.document,
+        let layout_extra = if matches!(&self.document,
             Document::Pages { ribbon, .. } if ribbon.tab == ribbon::Tab::Layout)
-        .then(|| self.layout_paragraph_group(cx));
+        {
+            std::iter::once(self.layout_paragraph_group(cx))
+                .chain(self.layout_arrange_group(cx))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let Document::Pages {
             document,
             ribbon,
@@ -2730,7 +2736,7 @@ impl DocView {
             use jade_web::word::review::WordReview;
             ribbon::TabState {
                 page,
-                layout_paragraph,
+                layout_extra,
                 tools: crate::word_tools::ToolState::read(
                     document,
                     match ribbon.popup {

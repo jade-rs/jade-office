@@ -802,8 +802,9 @@ pub struct PageState {
 
 /// What the tabs beyond ホーム show as current.
 pub struct TabState {
-    /// レイアウト's 段落 group, drawn by the view (its spin boxes need it).
-    pub layout_paragraph: Option<AnyElement>,
+    /// レイアウト's 段落 group and, while an object is selected, its 配置:
+    /// drawn by the view (its spin boxes and the object need it).
+    pub layout_extra: Vec<AnyElement>,
     /// The page, read only while レイアウト shows it.
     pub page: Option<PageState>,
     /// What the 校閲 tab shows, read only while it is up.
@@ -1043,7 +1044,7 @@ pub fn ribbon(
                 cx,
             ));
             groups.push(crate::view::word_manuscript::layout_group(cx));
-            groups.extend(shown.layout_paragraph.take());
+            groups.append(&mut shown.layout_extra);
             groups
         }
         Tab::References => {

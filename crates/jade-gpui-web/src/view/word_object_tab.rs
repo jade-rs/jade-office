@@ -649,6 +649,13 @@ impl DocView {
         Some((picture, groups))
     }
 
+    /// 配置 for レイアウト, as Word has it there too, while a picture or
+    /// shape is selected.
+    pub(crate) fn layout_arrange_group(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let format = self.selected_object_format()?;
+        Some(self.arrange_group(self.format_popup(), &format, cx))
+    }
+
     /// 図の形式 → 調整.
     fn adjust_group(
         &self,
