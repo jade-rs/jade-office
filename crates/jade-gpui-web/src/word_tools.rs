@@ -445,6 +445,14 @@ pub fn list_group(
                 ToolCommand::OpenBorders,
                 cx,
             ))
+            // 体裁: the paragraph dialog's 体裁 tab in Word.
+            .child(menu_row(
+                "word-open-typography",
+                i18n::text("chars.typography.title"),
+                false,
+                Action::Characters(crate::view::word_characters::CharAction::OpenTypography),
+                cx,
+            ))
             .into_any_element()
     });
     let distributed = alignment == Some("distribute");

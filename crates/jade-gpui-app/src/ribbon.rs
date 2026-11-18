@@ -37,8 +37,6 @@ const FONT_SIZES: [f32; 17] = [
 /// What an empty size or family box falls back to, as in jade-ide.
 const DEFAULT_FAMILY: &str = "游明朝";
 const DEFAULT_SIZE: f32 = 12.0;
-// Temporarily hide the extra controls until their Word-compatible placement is decided.
-const SHOW_EXTRA_FONT_ROW: bool = false;
 /// Word's highlight names and what they look like.
 const HIGHLIGHTS: [(&str, u32); 16] = jade_office_model::word::font::HIGHLIGHT_COLORS;
 const LINE_SPACINGS: [(&str, f32); 4] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)];
@@ -115,6 +113,8 @@ pub enum Popup {
     Draw(crate::word_draw::DrawPopup),
     /// The 校閲 tab's lists (`word_review_tools`).
     Review(crate::word_review_tools::ReviewPopup),
+    /// 編集 › 選択.
+    Select,
 }
 
 /// The ribbon's own state, kept with the document it formats.
@@ -128,6 +128,12 @@ pub struct Ribbon {
     default_style: Option<String>,
     /// The theme's colours, for the font colour's テーマの色.
     pub theme_colors: Vec<(String, String)>,
+    /// The colour フォントの色's button puts on, as Word's does: the last
+    /// one picked from its list, red until then.
+    pub last_font_color: Option<String>,
+    /// The colour 蛍光ペンの色's button puts on: the last one picked, yellow
+    /// until then.
+    pub last_highlight: Option<&'static str>,
 }
 
 impl Ribbon {
@@ -165,6 +171,28 @@ impl Ribbon {
         self.gallery[index].is_active(style_id, self.default_style.as_deref())
     }
 
+    /// The colour the フォントの色 button puts on, `RRGGBB`.
+    pub fn font_color(&self) -> &str {
+        self.last_font_color.as_deref().unwrap_or("FF0000")
+    }
+
+    /// The highlight the 蛍光ペンの色 button puts on.
+    pub fn highlight(&self) -> &'static str {
+        self.last_highlight.unwrap_or("yellow")
+    }
+
+    /// Remembers a colour picked from the font colour or highlight list, for
+    /// the button beside it.
+    pub fn remember_color(&mut self, action: &Action) {
+        match action {
+            Action::FontColor(color) if color != "auto" => {
+                self.last_font_color = Some(color.clone())
+            }
+            Action::Highlight(name) if *name != "none" => self.last_highlight = Some(name),
+            _ => {}
+        }
+    }
+
     /// Opens a list, or closes it when it is the one open.
     pub fn toggle(&mut self, popup: Popup) {
         self.popup = (self.popup != Some(popup)).then_some(popup);
@@ -179,6 +207,14 @@ pub enum Action {
     ClosePopup,
     /// 類似した書式の文字列を選択.
     SelectSimilar,
+    /// 編集 › 検索: the find bar.
+    Find,
+    /// 編集 › 置換: the find bar, typing into its replacement.
+    Replace,
+    /// 編集 › 選択 › すべて選択.
+    SelectAll,
+    /// 段落 › 編集記号の表示/非表示 (⌘8).
+    ToggleFormattingMarks,
     /// The table picker's pointer moved onto a size.
     Grid(usize, usize),
     Undo,
@@ -376,6 +412,45 @@ fn labeled_button(
         .into_any_element()
 }
 
+/// A labelled button with a chevron, which opens a list: 編集 › 選択.
+fn labeled_menu_button(
+    id: &'static str,
+    icon: &'static str,
+    label: &'static str,
+    open: bool,
+    popup: Popup,
+    cx: &mut Context<DocumentView>,
+) -> AnyElement {
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_1p5()
+        .h(px(26.0))
+        .px_2()
+        .rounded_md()
+        .text_xs()
+        .whitespace_nowrap()
+        .text_color(theme::text())
+        .cursor_pointer()
+        .when(open, |button| button.bg(theme::selected()))
+        .hover(|button| button.bg(theme::hovered()))
+        .on_click(listener(Action::Popup(popup), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(Action::Popup(popup), cx))
+        .child(svg().path(icon).size_3p5().text_color(theme::text_dim()))
+        .child(label)
+        .child(
+            svg()
+                .path("icons/chevron-down.svg")
+                .size_3()
+                .text_color(theme::text_dim()),
+        )
+        .into_any_element()
+}
+
 /// An icon with a chevron, which opens a list.
 pub(crate) fn menu_button(
     id: impl Into<ElementId>,
@@ -413,6 +488,85 @@ pub(crate) fn menu_button(
                     swatch.map(|color| div().mt(px(-1.0)).w(px(14.0)).h(px(3.0)).bg(rgb(color))),
                 ),
         )
+        .child(
+            svg()
+                .path("icons/chevron-down.svg")
+                .size_3()
+                .text_color(theme::text_dim()),
+        )
+        .into_any_element()
+}
+
+/// Word's split button: the icon does `action`, the chevron beside it opens
+/// `popup` — フォントの色 and 蛍光ペンの色 put on the last colour picked.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn split_button(
+    id: &'static str,
+    icon: &'static str,
+    tooltip: &'static str,
+    swatch: Option<u32>,
+    action: Action,
+    open: bool,
+    popup: Popup,
+    cx: &mut Context<DocumentView>,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .rounded_md()
+        .when(open, |button| button.bg(theme::selected()))
+        .child(
+            div()
+                .id(id)
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .h(px(26.0))
+                .px_1()
+                .rounded_l_md()
+                .cursor_pointer()
+                .hover(|button| button.bg(theme::hovered()))
+                .tooltip(Tooltip::text(tooltip))
+                .on_click(listener(action.clone(), cx))
+                .tab_index(0)
+                .focus(focus_ring)
+                .on_key_down(key_listener(action, cx))
+                .child(svg().path(icon).size_4().text_color(theme::text()))
+                .children(
+                    swatch.map(|color| div().mt(px(-1.0)).w(px(14.0)).h(px(3.0)).bg(rgb(color))),
+                ),
+        )
+        .child(chevron_button((id, 1usize), tooltip, open, popup, cx))
+        .into_any_element()
+}
+
+/// A chevron alone, opening `popup`: the list half of a split button.
+pub(crate) fn chevron_button(
+    id: impl Into<ElementId>,
+    tooltip: &'static str,
+    open: bool,
+    popup: Popup,
+    cx: &mut Context<DocumentView>,
+) -> AnyElement {
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .w(px(14.0))
+        .h(px(26.0))
+        .rounded_r_md()
+        .cursor_pointer()
+        .when(open, |button| button.bg(theme::selected()))
+        .hover(|button| button.bg(theme::hovered()))
+        .tooltip(Tooltip::text(tooltip))
+        .on_click(listener(Action::Popup(popup), cx))
+        .tab_index(0)
+        .focus(focus_ring)
+        .on_key_down(key_listener(Action::Popup(popup), cx))
         .child(
             svg()
                 .path("icons/chevron-down.svg")
@@ -610,6 +764,74 @@ pub(crate) fn group(caption: &'static str, rows: Vec<AnyElement>) -> AnyElement 
         .into_any_element()
 }
 
+/// A group whose caption has Word's dialog launcher at its right: the small
+/// arrow that opens the group's dialog (フォント, 段落) or pane (スタイル).
+pub(crate) fn group_with_launcher(
+    caption: &'static str,
+    rows: Vec<AnyElement>,
+    id: &'static str,
+    tooltip: &'static str,
+    action: Action,
+    cx: &mut Context<DocumentView>,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .flex_none()
+        .justify_between()
+        .h_full()
+        .px_2()
+        .border_r_1()
+        .border_color(theme::border())
+        .child(div().flex().flex_col().gap_1().children(rows))
+        .child(
+            div()
+                .relative()
+                .flex()
+                .justify_center()
+                .text_xs()
+                .text_color(theme::text_faint())
+                .child(caption)
+                .child(
+                    div()
+                        .id(id)
+                        .absolute()
+                        .right_0()
+                        .top_0()
+                        .size(px(14.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .hover(|button| button.bg(theme::hovered()))
+                        .tooltip(Tooltip::text(tooltip))
+                        .on_click(listener(action.clone(), cx))
+                        .tab_index(0)
+                        .focus(focus_ring)
+                        .on_key_down(key_listener(action, cx))
+                        .child(
+                            svg()
+                                .path("icons/arrow-down-right.svg")
+                                .size_3()
+                                .text_color(theme::text_dim()),
+                        ),
+                ),
+        )
+        .into_any_element()
+}
+
+/// What the 段落 group takes from the list and paragraph tools
+/// (`word_lists`, `word_paragraph`).
+pub struct ParagraphExtras {
+    pub bullets_library: AnyElement,
+    pub numbering_library: AnyElement,
+    pub multilevel: AnyElement,
+    pub distribute: AnyElement,
+    pub settings: AnyElement,
+    pub formatting_marks: bool,
+}
+
 pub(crate) fn row(children: Vec<AnyElement>) -> AnyElement {
     div()
         .flex()
@@ -669,6 +891,7 @@ pub fn backdrop(viewport: Size<Pixels>, cx: &mut Context<DocumentView>) -> AnyEl
 pub fn home(
     ribbon: &Ribbon,
     state: &FormatState,
+    paragraph: ParagraphExtras,
     cx: &mut Context<DocumentView>,
 ) -> Vec<AnyElement> {
     let open = ribbon.popup;
@@ -806,8 +1029,36 @@ pub fn home(
         icon_button(id, icon, tooltip, active, true, Action::Align(value), cx)
     };
 
+    let font = crate::word_characters::font_controls(ribbon, state, cx);
+    let select_menu = (open == Some(Popup::Select)).then(|| {
+        menu_panel("select-menu")
+            .w(px(260.0))
+            .child(menu_row(
+                "select-all",
+                i18n::text("menu.edit.select_all"),
+                false,
+                Action::SelectAll,
+                cx,
+            ))
+            .child(menu_row(
+                "select-similar",
+                i18n::text("doc.select_similar"),
+                false,
+                Action::SelectSimilar,
+                cx,
+            ))
+            .into_any_element()
+    });
+    let font_color = u32::from_str_radix(ribbon.font_color(), 16).unwrap_or(0xff0000);
+    let highlight = HIGHLIGHTS
+        .iter()
+        .find(|(name, _)| *name == ribbon.highlight())
+        .map_or(0xffff00, |(_, color)| *color);
+
+    // Word's ホーム tab: フォント, 段落, スタイル and 編集, each control where
+    // Word puts it, the dialogs behind each group's launcher.
     vec![
-        group(
+        group_with_launcher(
             i18n::text("doc.group.font"),
             vec![
                 row(vec![
@@ -854,6 +1105,18 @@ pub fn home(
                         Action::StepFontSize(false),
                         cx,
                     ),
+                    font.change_case,
+                    icon_button(
+                        "clear-format",
+                        "icons/eraser.svg",
+                        i18n::text("doc.clear_format_title"),
+                        false,
+                        true,
+                        Action::ClearFormatting,
+                        cx,
+                    ),
+                    font.ruby,
+                    font.enclose,
                 ]),
                 row(vec![
                     icon_button(
@@ -883,6 +1146,7 @@ pub fn home(
                         Action::Toggle(CharacterFormat::Underline),
                         cx,
                     ),
+                    font.underline_style,
                     icon_button(
                         "strike",
                         "icons/strikethrough.svg",
@@ -911,45 +1175,41 @@ pub fn home(
                         cx,
                     ),
                     dropdown(
-                        menu_button(
-                            "font-color",
-                            "icons/baseline.svg",
-                            i18n::text("doc.font_color_title"),
-                            Some(0xdc2626),
-                            open == Some(Popup::FontColor),
-                            Popup::FontColor,
-                            cx,
-                        ),
-                        color_menu,
-                    ),
-                    dropdown(
-                        menu_button(
+                        split_button(
                             "highlight",
                             "icons/highlighter.svg",
                             i18n::text("doc.highlight_title"),
-                            Some(0xffff00),
+                            Some(highlight),
+                            Action::Highlight(ribbon.highlight()),
                             open == Some(Popup::Highlight),
                             Popup::Highlight,
                             cx,
                         ),
                         highlight_menu,
                     ),
-                    icon_button(
-                        "clear-format",
-                        "icons/eraser.svg",
-                        i18n::text("doc.clear_format_title"),
-                        false,
-                        true,
-                        Action::ClearFormatting,
-                        cx,
+                    dropdown(
+                        split_button(
+                            "font-color",
+                            "icons/baseline.svg",
+                            i18n::text("doc.font_color_title"),
+                            Some(font_color),
+                            Action::FontColor(ribbon.font_color().to_string()),
+                            open == Some(Popup::FontColor),
+                            Popup::FontColor,
+                            cx,
+                        ),
+                        color_menu,
                     ),
+                    font.shading,
+                    font.border,
                 ]),
-            ]
-            .into_iter()
-            .chain(SHOW_EXTRA_FONT_ROW.then(|| crate::word_characters::font_row(ribbon, state, cx)))
-            .collect(),
+            ],
+            "font-launcher",
+            i18n::text("chars.font.launcher"),
+            Action::Characters(crate::word_characters::CharAction::OpenFontDialog),
+            cx,
         ),
-        group(
+        group_with_launcher(
             i18n::text("doc.group.paragraph"),
             vec![
                 row(vec![
@@ -962,6 +1222,7 @@ pub fn home(
                         Action::List(true),
                         cx,
                     ),
+                    paragraph.bullets_library,
                     icon_button(
                         "numbering",
                         "icons/list-ordered.svg",
@@ -971,6 +1232,8 @@ pub fn home(
                         Action::List(false),
                         cx,
                     ),
+                    paragraph.numbering_library,
+                    paragraph.multilevel,
                     icon_button(
                         "indent-less",
                         "icons/indent-decrease.svg",
@@ -989,6 +1252,7 @@ pub fn home(
                         Action::Indent(true),
                         cx,
                     ),
+                    font.asian_layout,
                     icon_button(
                         "paragraph-sort",
                         "icons/sort-a-z.svg",
@@ -998,17 +1262,14 @@ pub fn home(
                         Action::Tables(crate::word_table::TableAction::Sort),
                         cx,
                     ),
-                    dropdown(
-                        menu_button(
-                            "line-spacing",
-                            "icons/chevrons-up-down.svg",
-                            i18n::text("doc.line_spacing_title"),
-                            None,
-                            open == Some(Popup::LineSpacing),
-                            Popup::LineSpacing,
-                            cx,
-                        ),
-                        spacing_menu,
+                    icon_button(
+                        "formatting-marks",
+                        "icons/pilcrow.svg",
+                        i18n::text("doc.marks_title"),
+                        paragraph.formatting_marks,
+                        true,
+                        Action::ToggleFormattingMarks,
+                        cx,
                     ),
                 ]),
                 row(vec![
@@ -1040,6 +1301,19 @@ pub fn home(
                         "both",
                         cx,
                     ),
+                    paragraph.distribute,
+                    dropdown(
+                        menu_button(
+                            "line-spacing",
+                            "icons/chevrons-up-down.svg",
+                            i18n::text("doc.line_spacing_title"),
+                            None,
+                            open == Some(Popup::LineSpacing),
+                            Popup::LineSpacing,
+                            cx,
+                        ),
+                        spacing_menu,
+                    ),
                     dropdown(
                         menu_button(
                             "shading",
@@ -1064,50 +1338,46 @@ pub fn home(
                         ),
                         borders_menu,
                     ),
-                    icon_button(
-                        "paragraph-dialog",
-                        "icons/settings-2.svg",
-                        i18n::text("paragraph.button_title"),
-                        false,
-                        true,
-                        Action::ParagraphDialog,
-                        cx,
-                    ),
+                    paragraph.settings,
                 ]),
             ],
+            "paragraph-launcher",
+            i18n::text("paragraph.button_title"),
+            Action::ParagraphDialog,
+            cx,
         ),
         styles_group(ribbon, state, cx),
         group(
             i18n::text("doc.group.editing"),
-            vec![row(vec![
-                icon_button(
-                    "undo",
-                    "icons/undo.svg",
-                    i18n::text("doc.undo_title"),
-                    false,
+            vec![
+                row(vec![labeled_button(
+                    "find",
+                    "icons/search.svg",
+                    i18n::text("doc.find"),
                     true,
-                    Action::Undo,
+                    Action::Find,
                     cx,
-                ),
-                icon_button(
-                    "redo",
-                    "icons/redo.svg",
-                    i18n::text("doc.redo"),
-                    false,
+                )]),
+                row(vec![labeled_button(
+                    "replace",
+                    "icons/replace.svg",
+                    i18n::text("doc.find.replacement"),
                     true,
-                    Action::Redo,
+                    Action::Replace,
                     cx,
-                ),
-                icon_button(
-                    "select-similar",
-                    "icons/text-select.svg",
-                    i18n::text("doc.select_similar"),
-                    false,
-                    true,
-                    Action::SelectSimilar,
-                    cx,
-                ),
-            ])],
+                )]),
+                row(vec![dropdown(
+                    labeled_menu_button(
+                        "select",
+                        "icons/mouse-pointer.svg",
+                        i18n::text("doc.select"),
+                        open == Some(Popup::Select),
+                        Popup::Select,
+                        cx,
+                    ),
+                    select_menu,
+                )]),
+            ],
         ),
     ]
 }

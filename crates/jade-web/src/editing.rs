@@ -1572,11 +1572,18 @@ impl EditableDocument {
         // pass stops at the paragraph's page; if the paragraph came out of it
         // where and as tall as it went in, that is all. Otherwise the rest of
         // the document is repainted after it.
+        //
+        // Only the paragraph's page, top and height place what follows it.
+        // Its first line's left edge does not: a centred or right-aligned
+        // line starts further left with every character typed into it, and
+        // counting that as a move repainted every page after it on each key.
         let geometry = |renderer: &CanvasRenderer<TinySkiaPainter>| {
             (
                 renderer.cached_paragraph_start_page(paragraph),
                 renderer.cached_paragraph_height(paragraph),
-                renderer.paragraph_layout_origin(paragraph),
+                renderer
+                    .paragraph_layout_origin(paragraph)
+                    .map(|(page, _, top)| (page, top)),
             )
         };
         let before = geometry(&self.renderer);

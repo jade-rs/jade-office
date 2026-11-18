@@ -35,7 +35,7 @@ use crate::view::DocView as DocumentView;
 use crate::{i18n, palette as theme};
 
 pub use paste::{open as open_paste_special, paste_with};
-pub use ribbon::{font_color_menu, font_family_menu, font_row, insert_group, paste_options};
+pub use ribbon::{font_color_menu, font_controls, font_family_menu, insert_group, paste_options};
 
 /// The lists the font group's third row drops.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

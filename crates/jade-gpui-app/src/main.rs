@@ -161,6 +161,7 @@ actions!(
         Paste,
         SelectAll,
         SelectParagraph,
+        ToggleFormattingMarks,
         NextPage,
         PreviousPage,
         FindAndReplace,
@@ -278,6 +279,8 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-v", Paste, None),
         KeyBinding::new("cmd-a", SelectAll, None),
         KeyBinding::new("cmd-alt-a", SelectParagraph, CONTEXT),
+        // Word for Mac's 編集記号の表示/非表示.
+        KeyBinding::new("cmd-8", ToggleFormattingMarks, CONTEXT),
         // Page Down / Page Up rather than ⌘↓ / ⌘↑: those two mean "end of
         // document" and "start of document" on macOS, and taking them for
         // paging would be taking them from where the caret goes.
@@ -1120,16 +1123,19 @@ impl gpui::AssetSource for Assets {
             "a-arrow-up",
             "align-bottom",
             "align-center",
+            "align-distribute",
             "align-justify",
             "align-left",
             "align-middle",
             "align-right",
             "align-top",
+            "arrow-down-right",
             "arrow-down-to-line",
             "arrow-left-to-line",
             "arrow-right-to-line",
             "arrow-up-to-line",
             "baseline",
+            "blocks",
             "bold",
             "borders",
             "chart-column",
@@ -1157,23 +1163,30 @@ impl gpui::AssetSource for Assets {
             "life-buoy",
             "list",
             "list-ordered",
+            "list-tree",
             "lock",
             "merge",
             "moon",
+            "mouse-pointer",
             "paint-bucket",
             "paintbrush",
-            "panels-top-left",
+            "palette",
             "panel-right",
+            "panels-top-left",
+            "pilcrow",
             "pin",
             "play",
             "presentation",
             "printer",
             "redo",
+            "replace",
+            "ruler",
+            "search",
             "settings-2",
             "shapes",
-            "sort-a-z",
-            "text-select",
             "sheet",
+            "sort-a-z",
+            "sparkles",
             "split",
             "square",
             "strikethrough",
@@ -1181,21 +1194,15 @@ impl gpui::AssetSource for Assets {
             "sun",
             "superscript",
             "table",
+            "text-select",
             "trash-2",
             "type",
+            "type-plus",
             "underline",
             "undo",
             "wrap-text",
             "x",
             "zap",
-            // The Word view's paragraph, list and design tools.
-            "align-distribute",
-            "blocks",
-            "list-tree",
-            "palette",
-            "ruler",
-            "sparkles",
-            "type-plus",
         );
         Ok(bytes.map(std::borrow::Cow::Borrowed))
     }
@@ -2330,13 +2337,11 @@ impl DocumentView {
             RibbonTab::ObjectFormat => self.object_format_groups(cx),
             RibbonTab::Home => {
                 let mut groups = vec![self.clipboard_group(cx)];
-                groups.extend(ribbon::home(&self.ribbon, &state, cx));
-                // Lists and the paragraph's settings after 段落, the style
-                // tools after the gallery.
-                let lists = self.list_group(cx);
-                groups.insert(3.min(groups.len()), lists);
+                let paragraph = self.list_controls(cx);
+                groups.extend(ribbon::home(&self.ribbon, &state, paragraph, cx));
+                // The style tools after the gallery.
                 let styles = self.style_tools_group(cx);
-                groups.insert(5.min(groups.len()), styles);
+                groups.insert(4.min(groups.len()), styles);
                 // リボンのユーザー設定: the user's own group.
                 groups.extend(word_views::customize::custom_group(cx));
                 groups
@@ -3345,6 +3350,7 @@ impl DocumentView {
             return cx.notify();
         }
         self.ribbon.popup = None;
+        self.ribbon.remember_color(&action);
         // 均等割り付け on text inside a paragraph: 文字の均等割り付け.
         if matches!(action, Action::Align("distribute")) && self.open_fit_text_dialog(cx) {
             return;
@@ -3384,6 +3390,16 @@ impl DocumentView {
             Action::Undo => return self.step_history(true, cx),
             Action::Redo => return self.step_history(false, cx),
             Action::SelectSimilar => return word_views::select::select_similar(self, cx),
+            Action::Find => return self.open_find_bar(cx),
+            Action::Replace => {
+                self.open_find_bar(cx);
+                if let Some(bar) = self.find_bar.as_mut() {
+                    bar.editing_replacement = true;
+                }
+                return cx.notify();
+            }
+            Action::SelectAll => return self.select_document(cx),
+            Action::ToggleFormattingMarks => return self.toggle_formatting_marks(cx),
             Action::InsertTable(rows, columns) => {
                 let moved = WordFormatting::insert_table(document, rows, columns);
                 return self.ribbon_moved(moved, cx);
@@ -3524,10 +3540,13 @@ impl DocumentView {
             .paragraph_text(last)
             .map(|text| text.len())
             .unwrap_or(0);
-        let page = self.caret_page_1idx();
+        // Through the last page: the highlight is on every one of them.
+        let page = self.document.page_count().max(1);
         if self.document.select((0, 0), (last, end), page).is_ok() {
             self.insert_at = (last, end);
-            self.caret = self.document.place_caret(last, end);
+            // Where the caret is drawn, without collapsing the selection onto
+            // it: `place_caret` would, and ⌘A would select nothing.
+            self.caret = self.document.position_rect(last, end);
             self.selection_anchor = None;
             // The highlight is painted by the renderer, and it now covers every
             // page rather than the one the caret is on.
@@ -4777,6 +4796,9 @@ impl Render for DocumentView {
             .on_action(cx.listener(|view, _: &Copy, _window, cx| view.copy(cx)))
             .on_action(cx.listener(|view, _: &Paste, _window, cx| view.paste(cx)))
             .on_action(cx.listener(|view, _: &SelectAll, _window, cx| view.select_document(cx)))
+            .on_action(cx.listener(|view, _: &ToggleFormattingMarks, _window, cx| {
+                view.toggle_formatting_marks(cx)
+            }))
             .on_action(
                 cx.listener(|view, _: &SelectParagraph, _window, cx| view.select_paragraph(cx)),
             )

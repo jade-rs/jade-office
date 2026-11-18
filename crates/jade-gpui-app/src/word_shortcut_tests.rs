@@ -94,3 +94,57 @@ fn the_layout_page_break_and_the_column_break_key_insert_breaks(cx: &mut gpui::T
         assert!(view.document.paragraph_count() <= paragraphs + 1);
     });
 }
+
+/// ホーム as Word lays it out: フォントの色 and 蛍光ペンの色 put on the colour
+/// last picked from their lists, ⌘8 and ¶ show the formatting marks, and
+/// 編集's 検索 and 置換 open the find bar in the field each names.
+#[gpui::test]
+fn home_split_buttons_marks_and_find_act_as_words(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = with_text(cx);
+    view.update(cx, |view, cx| {
+        assert_eq!(
+            view.ribbon.font_color(),
+            "FF0000",
+            "red until one is picked"
+        );
+        assert_eq!(view.ribbon.highlight(), "yellow");
+        view.run_ribbon(Action::FontColor("00B050".into()), cx);
+        view.run_ribbon(Action::Highlight("cyan"), cx);
+        // 自動 and なし are not remembered: the button keeps a colour.
+        view.run_ribbon(Action::FontColor("auto".into()), cx);
+        view.run_ribbon(Action::Highlight("none"), cx);
+        assert_eq!(view.ribbon.font_color(), "00B050");
+        assert_eq!(view.ribbon.highlight(), "cyan");
+    });
+    let marks = view.update(cx, |view, _| view.document.formatting_marks());
+    cx.simulate_keystrokes("cmd-8");
+    assert_eq!(
+        view.update(cx, |view, _| view.document.formatting_marks()),
+        !marks
+    );
+    view.update(cx, |view, cx| {
+        view.run_ribbon(Action::ToggleFormattingMarks, cx);
+        assert_eq!(view.document.formatting_marks(), marks);
+        view.run_ribbon(Action::Replace, cx);
+        assert!(view.find_bar.as_ref().unwrap().editing_replacement);
+        view.close_find_bar(cx);
+        view.run_ribbon(Action::Find, cx);
+        assert!(!view.find_bar.as_ref().unwrap().editing_replacement);
+        view.run_ribbon(Action::SelectAll, cx);
+        assert!(view.document.selection().is_some());
+    });
+}
+
+/// ⌘A selects the whole document and keeps it selected: the caret drawn at
+/// its end used to collapse the selection onto itself.
+#[gpui::test]
+fn select_all_keeps_the_whole_document_selected(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = with_text(cx);
+    cx.simulate_keystrokes("cmd-a");
+    view.update(cx, |view, _| {
+        let last = view.document.paragraph_count() - 1;
+        let end = view.document.paragraph_text(last).unwrap().len();
+        assert_eq!(view.document.selection(), Some(((0, 0), (last, end))));
+        assert!(view.caret.is_some(), "the caret is still drawn");
+    });
+}

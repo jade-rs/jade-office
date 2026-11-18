@@ -131,7 +131,13 @@ impl DefineListDialog {
 impl DocumentView {
     /// ホーム → the list libraries, リストのレベル, 均等割り付け and 段落's
     /// settings, as a group beside 段落.
-    pub(crate) fn list_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    /// The list libraries and the paragraph tools that sit in the ホーム
+    /// tab's 段落 group, as Word places them: each library behind a chevron
+    /// beside its button, 均等割り付け with the other alignments.
+    pub(crate) fn list_controls(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> crate::ribbon::ParagraphExtras {
         let popup = self.ribbon.popup;
         let bullets_open = popup == Some(Popup::Word(ToolMenu::Bullets));
         let numbering_open = popup == Some(Popup::Word(ToolMenu::Numbering));
@@ -293,61 +299,51 @@ impl DocumentView {
         });
         let distributed = self.format_state().alignment.as_deref() == Some("distribute");
         let settings = self.paragraph_settings_menu(cx);
-        crate::ribbon::group(
-            i18n::text("word.group.lists"),
-            vec![
-                crate::ribbon::row(vec![
-                    dropdown(
-                        crate::ribbon::menu_button(
-                            "bullet-library",
-                            "icons/list.svg",
-                            i18n::text("word.list.bullet_library"),
-                            None,
-                            bullets_open,
-                            Popup::Word(ToolMenu::Bullets),
-                            cx,
-                        ),
-                        bullets,
-                    ),
-                    dropdown(
-                        crate::ribbon::menu_button(
-                            "number-library",
-                            "icons/list-ordered.svg",
-                            i18n::text("word.list.number_library"),
-                            None,
-                            numbering_open,
-                            Popup::Word(ToolMenu::Numbering),
-                            cx,
-                        ),
-                        numbering,
-                    ),
-                    dropdown(
-                        crate::ribbon::menu_button(
-                            "multilevel-library",
-                            "icons/list-tree.svg",
-                            i18n::text("word.list.multilevel_library"),
-                            None,
-                            multilevel_open,
-                            Popup::Word(ToolMenu::Multilevel),
-                            cx,
-                        ),
-                        multilevel,
-                    ),
-                ]),
-                crate::ribbon::row(vec![
-                    crate::ribbon::icon_button(
-                        "align-distribute",
-                        "icons/align-distribute.svg",
-                        i18n::text("word.align.distribute"),
-                        distributed,
-                        true,
-                        Action::Align("distribute"),
-                        cx,
-                    ),
-                    settings,
-                ]),
-            ],
-        )
+        crate::ribbon::ParagraphExtras {
+            bullets_library: dropdown(
+                crate::ribbon::chevron_button(
+                    "bullet-library",
+                    i18n::text("word.list.bullet_library"),
+                    bullets_open,
+                    Popup::Word(ToolMenu::Bullets),
+                    cx,
+                ),
+                bullets,
+            ),
+            numbering_library: dropdown(
+                crate::ribbon::chevron_button(
+                    "number-library",
+                    i18n::text("word.list.number_library"),
+                    numbering_open,
+                    Popup::Word(ToolMenu::Numbering),
+                    cx,
+                ),
+                numbering,
+            ),
+            multilevel: dropdown(
+                crate::ribbon::menu_button(
+                    "multilevel-library",
+                    "icons/list-tree.svg",
+                    i18n::text("word.list.multilevel_library"),
+                    None,
+                    multilevel_open,
+                    Popup::Word(ToolMenu::Multilevel),
+                    cx,
+                ),
+                multilevel,
+            ),
+            distribute: crate::ribbon::icon_button(
+                "align-distribute",
+                "icons/align-distribute.svg",
+                i18n::text("word.align.distribute"),
+                distributed,
+                true,
+                Action::Align("distribute"),
+                cx,
+            ),
+            settings,
+            formatting_marks: self.document.formatting_marks(),
+        }
     }
 
     /// 箇条書き → 図: asks for a picture and makes it the bullet.
