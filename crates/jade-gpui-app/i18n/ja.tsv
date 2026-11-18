@@ -5204,3 +5204,16 @@ workspace.close_unsaved	「{name}」への変更を保存しますか？
 workspace.close_download	コピーをダウンロード
 workspace.close_discard	保存せずに閉じる
 doc.select	選択
+fit.scroll_left	左へスクロール
+fit.scroll_right	右へスクロール
+sheet.group.font	フォント
+sheet.group.alignment	配置
+sheet.group.number	数値
+sheet.group.styles	スタイル
+sheet.group.data	データ
+deck.group.slides	スライド
+deck.group.insert	挿入
+deck.group.table	表
+deck.group.show	表示
+deck.group.font	フォント
+deck.group.paragraph	段落

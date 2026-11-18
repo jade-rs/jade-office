@@ -641,7 +641,8 @@ pub fn prompt(
     workspace: &crate::workspace::Workspace,
     window: &mut gpui::Window,
 ) -> Option<AnyElement> {
-    use gpui::{anchored, deferred, point};
+    use crate::layer::deferred;
+    use gpui::{anchored, point};
     let prompt = workspace.password.as_ref()?;
     let viewport = window.viewport_size();
     let name = prompt

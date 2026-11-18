@@ -5204,3 +5204,16 @@ workspace.close_unsaved	Save changes to “{name}” before closing?
 workspace.close_download	Download a copy
 workspace.close_discard	Close without saving
 doc.select	Select
+fit.scroll_left	Scroll left
+fit.scroll_right	Scroll right
+sheet.group.font	Font
+sheet.group.alignment	Alignment
+sheet.group.number	Number
+sheet.group.styles	Styles
+sheet.group.data	Data
+deck.group.slides	Slides
+deck.group.insert	Insert
+deck.group.table	Table
+deck.group.show	Show
+deck.group.font	Font
+deck.group.paragraph	Paragraph

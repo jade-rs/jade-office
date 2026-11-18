@@ -6,11 +6,11 @@
 //! issues one at a time. What is checked and what an answer does is
 //! `jade-office-model`'s `word::proofing`.
 
+use crate::layer::deferred;
 #[cfg(test)]
 use gpui::point;
 use gpui::{
-    anchored, deferred, div, prelude::*, px, AnyElement, ClickEvent, Context, MouseDownEvent,
-    Pixels, Point,
+    anchored, div, prelude::*, px, AnyElement, ClickEvent, Context, MouseDownEvent, Pixels, Point,
 };
 use jade_office_model::word::proofing::{
     Issue, ProofingKind, ProofingPane, SpellChecker, WordProofing, WordProofingDisplay,

@@ -4294,17 +4294,19 @@ impl WorkbookView {
     /// The formatting strip: font styles, alignment, wrap and merge, number
     /// formats, decimals, font size, colours, borders and the filter — lit
     /// where the active cell has them.
-    fn sheet_toolbar(&self, cx: &mut Context<Self>) -> gpui::Div {
+    fn sheet_toolbar(&self, window: &Window, cx: &mut Context<Self>) -> gpui::Div {
         let look = self.book.format_at(self.active());
         let open = self.popup;
-        // The open dropdown hangs under its button, painted over the grid.
-        let mut dropdown = self.toolbar_popup(cx).map(gpui::deferred);
+        // The open dropdown hangs under its button (or over it, when there
+        // is more room there), painted over the grid.
+        let mut dropdown = self.toolbar_popup(cx);
         let mut hang = move |which: Popup, button: gpui::Stateful<gpui::Div>| {
-            let button = button.relative();
-            match dropdown.take().filter(|_| open == Some(which)) {
-                Some(dropdown) => button.child(dropdown),
-                None => button,
-            }
+            let menu = if open == Some(which) {
+                dropdown.take().map(IntoElement::into_any_element)
+            } else {
+                None
+            };
+            crate::fit::drop_down(button.into_any_element(), menu)
         };
         let button = |id: &'static str, on: bool, tool: Tool| {
             div()
@@ -4340,244 +4342,319 @@ impl WorkbookView {
             .as_deref()
             .and_then(|color| u32::from_str_radix(color, 16).ok());
         let popup = self.popup;
+        // As jade-elsa's ribbon: groups that do not fit the window fold, the
+        // rightmost first, into buttons that open them; then the row scrolls
+        // (`fit`). Nothing is cut off.
+        let piece = |caption: &'static str, icon: &'static str, controls: Vec<gpui::AnyElement>| {
+            crate::fit::piece(
+                i18n::text(caption),
+                icon,
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_0p5()
+                    .children(controls)
+                    .into_any_element(),
+                |controls, measure| {
+                    div()
+                        .relative()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .child(controls)
+                        .child(measure)
+                        .into_any_element()
+                },
+            )
+        };
         div()
             .h(px(SHEET_TOOLBAR_HEIGHT))
             .flex_none()
             .flex()
             .items_center()
-            .gap_0p5()
-            .px_2()
+            .px_1()
             .bg(theme::panel())
             .border_b_1()
             .border_color(theme::border())
-            .child(
-                div()
-                    .id("tool-format-painter")
-                    .min_w(px(24.0))
-                    .h(px(24.0))
-                    .px_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .when(self.format_source.is_some(), |button| {
-                        button.bg(theme::selected())
-                    })
-                    .hover(|button| button.bg(theme::hovered()))
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    // A double-click keeps painting until Escape, as Excel's
-                    // brush does.
-                    .on_click(cx.listener(move |view, event: &ClickEvent, window, cx| {
-                        window.focus(&view.focus);
-                        view.pick_up_format(event.click_count() >= 2, cx);
-                    }))
-                    .child(icon("icons/paintbrush.svg")),
-            )
-            .child(hang(
-                Popup::FontName,
-                // Named for the active cell's font, as Excel's box is.
-                button(
-                    "tool-font-name",
-                    popup == Some(Popup::FontName),
-                    Tool::Open(Popup::FontName),
-                )
-                .gap_1()
-                .min_w(px(96.0))
-                .justify_between()
-                .child(look.font_name.clone().unwrap_or_default())
-                .child(icon("icons/chevron-down.svg").size_3()),
+            .child(crate::fit::strip(
+                "sheet-toolbar",
+                "sheet-toolbar",
+                window,
+                crate::fit::Compact::Inline,
+                div().flex().items_center().gap_0p5().px_1(),
+                || {
+                    vec![
+                        piece(
+                            "sheet.group.font",
+                            "icons/type.svg",
+                            vec![
+                                div()
+                                    .id("tool-format-painter")
+                                    .min_w(px(24.0))
+                                    .h(px(24.0))
+                                    .px_1()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded_sm()
+                                    .cursor_pointer()
+                                    .when(self.format_source.is_some(), |button| {
+                                        button.bg(theme::selected())
+                                    })
+                                    .hover(|button| button.bg(theme::hovered()))
+                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation()
+                                    })
+                                    // A double-click keeps painting until Escape, as Excel's
+                                    // brush does.
+                                    .on_click(cx.listener(
+                                        move |view, event: &ClickEvent, window, cx| {
+                                            window.focus(&view.focus);
+                                            view.pick_up_format(event.click_count() >= 2, cx);
+                                        },
+                                    ))
+                                    .child(icon("icons/paintbrush.svg"))
+                                    .into_any_element(),
+                                hang(
+                                    Popup::FontName,
+                                    // Named for the active cell's font, as Excel's box is.
+                                    button(
+                                        "tool-font-name",
+                                        popup == Some(Popup::FontName),
+                                        Tool::Open(Popup::FontName),
+                                    )
+                                    .gap_1()
+                                    .min_w(px(96.0))
+                                    .justify_between()
+                                    .child(look.font_name.clone().unwrap_or_default())
+                                    .child(icon("icons/chevron-down.svg").size_3()),
+                                )
+                                .into_any_element(),
+                                button(
+                                    "tool-bold",
+                                    look.bold == Some(true),
+                                    Tool::Font(FontToggle::Bold),
+                                )
+                                .child("B")
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .into_any_element(),
+                                button(
+                                    "tool-italic",
+                                    look.italic == Some(true),
+                                    Tool::Font(FontToggle::Italic),
+                                )
+                                .child("I")
+                                .italic()
+                                .into_any_element(),
+                                button(
+                                    "tool-underline",
+                                    look.underline == Some(true),
+                                    Tool::Font(FontToggle::Underline),
+                                )
+                                .child("U")
+                                .underline()
+                                .into_any_element(),
+                                button(
+                                    "tool-strike",
+                                    look.strike == Some(true),
+                                    Tool::Font(FontToggle::Strike),
+                                )
+                                .child("S")
+                                .line_through()
+                                .into_any_element(),
+                                separator().into_any_element(),
+                                button("tool-font-larger", false, Tool::FontSize(true))
+                                    .child("A+")
+                                    .into_any_element(),
+                                button("tool-font-smaller", false, Tool::FontSize(false))
+                                    .child("A-")
+                                    .into_any_element(),
+                            ],
+                        ),
+                        separator().into_any_element(),
+                        piece(
+                            "sheet.group.alignment",
+                            "icons/align-left.svg",
+                            vec![
+                                button(
+                                    "tool-left",
+                                    horizontal == HorizontalAlignment::Left,
+                                    Tool::Align(HorizontalAlignment::Left),
+                                )
+                                .child(icon("icons/align-left.svg"))
+                                .into_any_element(),
+                                button(
+                                    "tool-center",
+                                    horizontal == HorizontalAlignment::Center,
+                                    Tool::Align(HorizontalAlignment::Center),
+                                )
+                                .child(icon("icons/align-center.svg"))
+                                .into_any_element(),
+                                button(
+                                    "tool-right",
+                                    horizontal == HorizontalAlignment::Right,
+                                    Tool::Align(HorizontalAlignment::Right),
+                                )
+                                .child(icon("icons/align-right.svg"))
+                                .into_any_element(),
+                                button(
+                                    "tool-top",
+                                    look.vertical == Some(VerticalAlignment::Top),
+                                    Tool::VAlign(VerticalAlignment::Top),
+                                )
+                                .child(icon("icons/align-top.svg"))
+                                .into_any_element(),
+                                button(
+                                    "tool-middle",
+                                    look.vertical == Some(VerticalAlignment::Center),
+                                    Tool::VAlign(VerticalAlignment::Center),
+                                )
+                                .child(icon("icons/align-middle.svg"))
+                                .into_any_element(),
+                                button(
+                                    "tool-bottom",
+                                    look.vertical == Some(VerticalAlignment::Bottom),
+                                    Tool::VAlign(VerticalAlignment::Bottom),
+                                )
+                                .child(icon("icons/align-bottom.svg"))
+                                .into_any_element(),
+                                button("tool-indent-less", false, Tool::Indent(false))
+                                    .child(icon("icons/indent-decrease.svg"))
+                                    .into_any_element(),
+                                button("tool-indent-more", false, Tool::Indent(true))
+                                    .child(icon("icons/indent-increase.svg"))
+                                    .into_any_element(),
+                                button("tool-wrap", look.wrap_text == Some(true), Tool::Wrap)
+                                    .child(icon("icons/wrap-text.svg"))
+                                    .into_any_element(),
+                                button("tool-merge", false, Tool::Merge)
+                                    .child(icon("icons/merge.svg"))
+                                    .into_any_element(),
+                            ],
+                        ),
+                        separator().into_any_element(),
+                        piece(
+                            "sheet.group.number",
+                            "icons/chevrons-up-down.svg",
+                            vec![
+                                hang(
+                                    Popup::NumberFormat,
+                                    // Named for the active cell's format, as Excel's box is.
+                                    button(
+                                        "tool-number-format",
+                                        popup == Some(Popup::NumberFormat),
+                                        Tool::Open(Popup::NumberFormat),
+                                    )
+                                    .gap_1()
+                                    .min_w(px(72.0))
+                                    .justify_between()
+                                    .child(i18n::text(
+                                        self.book.number_format_name(self.active(), i18n::text),
+                                    ))
+                                    .child(icon("icons/chevron-down.svg").size_3()),
+                                )
+                                .into_any_element(),
+                                button("tool-currency", false, Tool::Currency)
+                                    .child(i18n::text("sheet.tool.currency_symbol"))
+                                    .into_any_element(),
+                                button("tool-percent", false, Tool::Percent)
+                                    .child("%")
+                                    .into_any_element(),
+                                button("tool-comma", false, Tool::Comma)
+                                    .child(",")
+                                    .into_any_element(),
+                                button("tool-more-decimals", false, Tool::Decimals(true))
+                                    .child(".0→")
+                                    .into_any_element(),
+                                button("tool-fewer-decimals", false, Tool::Decimals(false))
+                                    .child("←.0")
+                                    .into_any_element(),
+                            ],
+                        ),
+                        separator().into_any_element(),
+                        piece(
+                            "sheet.group.styles",
+                            "icons/paint-bucket.svg",
+                            vec![
+                                hang(
+                                    Popup::Fill,
+                                    // The colour under the bucket and the A is the active
+                                    // cell's, as Excel's buttons show theirs.
+                                    button(
+                                        "tool-fill",
+                                        popup == Some(Popup::Fill),
+                                        Tool::Open(Popup::Fill),
+                                    )
+                                    .flex_col()
+                                    .child(icon("icons/paint-bucket.svg"))
+                                    .child(
+                                        div()
+                                            .w(px(12.0))
+                                            .h(px(3.0))
+                                            .bg(fill.map_or(theme::text_dim(), gpui::rgb)),
+                                    ),
+                                )
+                                .into_any_element(),
+                                hang(
+                                    Popup::Font,
+                                    button(
+                                        "tool-font-color",
+                                        popup == Some(Popup::Font),
+                                        Tool::Open(Popup::Font),
+                                    )
+                                    .flex_col()
+                                    .child("A")
+                                    .child(
+                                        div()
+                                            .w(px(12.0))
+                                            .h(px(3.0))
+                                            .bg(ink.map_or(theme::text(), gpui::rgb)),
+                                    ),
+                                )
+                                .into_any_element(),
+                                hang(
+                                    Popup::Borders,
+                                    button(
+                                        "tool-borders",
+                                        popup == Some(Popup::Borders),
+                                        Tool::Open(Popup::Borders),
+                                    )
+                                    .child(icon("icons/borders.svg")),
+                                )
+                                .into_any_element(),
+                                hang(
+                                    Popup::Conditional,
+                                    button(
+                                        "tool-conditional",
+                                        popup == Some(Popup::Conditional),
+                                        Tool::Open(Popup::Conditional),
+                                    )
+                                    .child(icon("icons/highlighter.svg")),
+                                )
+                                .into_any_element(),
+                                hang(
+                                    Popup::Chart,
+                                    button(
+                                        "tool-chart",
+                                        popup == Some(Popup::Chart),
+                                        Tool::Open(Popup::Chart),
+                                    )
+                                    .child(icon("icons/chart-column.svg")),
+                                )
+                                .into_any_element(),
+                            ],
+                        ),
+                        separator().into_any_element(),
+                        piece(
+                            "sheet.group.data",
+                            "icons/filter.svg",
+                            vec![button("tool-filter", false, Tool::Filter)
+                                .child(icon("icons/filter.svg"))
+                                .into_any_element()],
+                        ),
+                    ]
+                },
             ))
-            .child(
-                button(
-                    "tool-bold",
-                    look.bold == Some(true),
-                    Tool::Font(FontToggle::Bold),
-                )
-                .child("B")
-                .font_weight(gpui::FontWeight::BOLD),
-            )
-            .child(
-                button(
-                    "tool-italic",
-                    look.italic == Some(true),
-                    Tool::Font(FontToggle::Italic),
-                )
-                .child("I")
-                .italic(),
-            )
-            .child(
-                button(
-                    "tool-underline",
-                    look.underline == Some(true),
-                    Tool::Font(FontToggle::Underline),
-                )
-                .child("U")
-                .underline(),
-            )
-            .child(
-                button(
-                    "tool-strike",
-                    look.strike == Some(true),
-                    Tool::Font(FontToggle::Strike),
-                )
-                .child("S")
-                .line_through(),
-            )
-            .child(separator())
-            .child(button("tool-font-larger", false, Tool::FontSize(true)).child("A+"))
-            .child(button("tool-font-smaller", false, Tool::FontSize(false)).child("A-"))
-            .child(separator())
-            .child(
-                button(
-                    "tool-left",
-                    horizontal == HorizontalAlignment::Left,
-                    Tool::Align(HorizontalAlignment::Left),
-                )
-                .child(icon("icons/align-left.svg")),
-            )
-            .child(
-                button(
-                    "tool-center",
-                    horizontal == HorizontalAlignment::Center,
-                    Tool::Align(HorizontalAlignment::Center),
-                )
-                .child(icon("icons/align-center.svg")),
-            )
-            .child(
-                button(
-                    "tool-right",
-                    horizontal == HorizontalAlignment::Right,
-                    Tool::Align(HorizontalAlignment::Right),
-                )
-                .child(icon("icons/align-right.svg")),
-            )
-            .child(
-                button(
-                    "tool-top",
-                    look.vertical == Some(VerticalAlignment::Top),
-                    Tool::VAlign(VerticalAlignment::Top),
-                )
-                .child(icon("icons/align-top.svg")),
-            )
-            .child(
-                button(
-                    "tool-middle",
-                    look.vertical == Some(VerticalAlignment::Center),
-                    Tool::VAlign(VerticalAlignment::Center),
-                )
-                .child(icon("icons/align-middle.svg")),
-            )
-            .child(
-                button(
-                    "tool-bottom",
-                    look.vertical == Some(VerticalAlignment::Bottom),
-                    Tool::VAlign(VerticalAlignment::Bottom),
-                )
-                .child(icon("icons/align-bottom.svg")),
-            )
-            .child(
-                button("tool-indent-less", false, Tool::Indent(false))
-                    .child(icon("icons/indent-decrease.svg")),
-            )
-            .child(
-                button("tool-indent-more", false, Tool::Indent(true))
-                    .child(icon("icons/indent-increase.svg")),
-            )
-            .child(
-                button("tool-wrap", look.wrap_text == Some(true), Tool::Wrap)
-                    .child(icon("icons/wrap-text.svg")),
-            )
-            .child(button("tool-merge", false, Tool::Merge).child(icon("icons/merge.svg")))
-            .child(separator())
-            .child(hang(
-                Popup::NumberFormat,
-                // Named for the active cell's format, as Excel's box is.
-                button(
-                    "tool-number-format",
-                    popup == Some(Popup::NumberFormat),
-                    Tool::Open(Popup::NumberFormat),
-                )
-                .gap_1()
-                .min_w(px(72.0))
-                .justify_between()
-                .child(i18n::text(
-                    self.book.number_format_name(self.active(), i18n::text),
-                ))
-                .child(icon("icons/chevron-down.svg").size_3()),
-            ))
-            .child(
-                button("tool-currency", false, Tool::Currency)
-                    .child(i18n::text("sheet.tool.currency_symbol")),
-            )
-            .child(button("tool-percent", false, Tool::Percent).child("%"))
-            .child(button("tool-comma", false, Tool::Comma).child(","))
-            .child(button("tool-more-decimals", false, Tool::Decimals(true)).child(".0→"))
-            .child(button("tool-fewer-decimals", false, Tool::Decimals(false)).child("←.0"))
-            .child(separator())
-            .child(hang(
-                Popup::Fill,
-                // The colour under the bucket and the A is the active
-                // cell's, as Excel's buttons show theirs.
-                button(
-                    "tool-fill",
-                    popup == Some(Popup::Fill),
-                    Tool::Open(Popup::Fill),
-                )
-                .flex_col()
-                .child(icon("icons/paint-bucket.svg"))
-                .child(
-                    div()
-                        .w(px(12.0))
-                        .h(px(3.0))
-                        .bg(fill.map_or(theme::text_dim(), gpui::rgb)),
-                ),
-            ))
-            .child(hang(
-                Popup::Font,
-                button(
-                    "tool-font-color",
-                    popup == Some(Popup::Font),
-                    Tool::Open(Popup::Font),
-                )
-                .flex_col()
-                .child("A")
-                .child(
-                    div()
-                        .w(px(12.0))
-                        .h(px(3.0))
-                        .bg(ink.map_or(theme::text(), gpui::rgb)),
-                ),
-            ))
-            .child(hang(
-                Popup::Borders,
-                button(
-                    "tool-borders",
-                    popup == Some(Popup::Borders),
-                    Tool::Open(Popup::Borders),
-                )
-                .child(icon("icons/borders.svg")),
-            ))
-            .child(hang(
-                Popup::Conditional,
-                button(
-                    "tool-conditional",
-                    popup == Some(Popup::Conditional),
-                    Tool::Open(Popup::Conditional),
-                )
-                .child(icon("icons/highlighter.svg")),
-            ))
-            .child(hang(
-                Popup::Chart,
-                button(
-                    "tool-chart",
-                    popup == Some(Popup::Chart),
-                    Tool::Open(Popup::Chart),
-                )
-                .child(icon("icons/chart-column.svg")),
-            ))
-            .child(separator())
-            .child(button("tool-filter", false, Tool::Filter).child(icon("icons/filter.svg")))
     }
 
     /// Excel's ▼ beside an active cell with a list of choices (its data
@@ -4846,9 +4923,7 @@ impl WorkbookView {
         };
         Some(
             div()
-                .absolute()
-                .top(px(26.0))
-                .left_0()
+                .mt_1()
                 .min_w(px(150.0))
                 .whitespace_nowrap()
                 .rounded_md()
@@ -5570,7 +5645,7 @@ impl Render for WorkbookView {
             Hover::Border => gpui::CursorStyle::OpenHand,
         };
         let dragging = self.drag.is_some();
-        let toolbar = self.sheet_toolbar(cx);
+        let toolbar = self.sheet_toolbar(window, cx);
         let rule_dialog = self.rule_dialog(cx);
         let chart_dialog = self.chart_dialog(cx);
         let rules_manager = self.rules_manager(cx);

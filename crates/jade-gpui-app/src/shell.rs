@@ -51,7 +51,16 @@ pub fn file_name(path: &Path) -> String {
 }
 
 fn window_options(cx: &App) -> WindowOptions {
-    let bounds = Bounds::centered(None, size(px(1440.0), px(920.0)), cx);
+    // `JADE_WINDOW_SIZE=900x700` opens a smaller window, to see how the
+    // ribbons fit a narrow one.
+    let (width, height) = std::env::var("JADE_WINDOW_SIZE")
+        .ok()
+        .and_then(|value| {
+            let (width, height) = value.split_once('x')?;
+            Some((width.parse().ok()?, height.parse().ok()?))
+        })
+        .unwrap_or((1440.0, 920.0));
+    let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
