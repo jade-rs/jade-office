@@ -507,7 +507,7 @@ quality stream).
 | 442 | one / many pages, page width | `jade-gpui-app/src/word_views.rs::the_zoom_fits_follow_the_window` <br> `jade-office-model/src/word/view.rs::fits_follow_the_window` |
 | 443 | zoom percentage | `jade-gpui-app/src/editor.rs::zoom_is_clamped_and_never_nan` |
 | 444 | horizontal ruler | `jade-web/tests/lists_styles_documents.rs::tab_stops_from_the_dialog_and_the_ruler_are_saved` <br> `jade-gpui-app/src/word_tools.rs::tab_stops_from_the_ruler_and_the_dialog` |
-| 445 | vertical ruler | `jade-gpui-app/src/word_ruler.rs::the_vertical_ruler_follows_the_caret_page` |
+| 445 | vertical ruler | not shown (hidden, as in Elsa) |
 | 446 | ruler units | `jade-web/tests/paragraphs_documents.rs::an_english_document_measures_in_millimetres_and_hanging_indents` |
 | 447 | gridlines | `jade-gpui-app/src/word_views.rs::gridlines_draw_over_the_page` <br> `jade-office-model/src/word/view.rs::the_grid_comes_from_the_settings` |
 | 448 | navigation pane view | `core/jade-docx-editor/src/headless_api.rs::document_outline_lists_every_navigation_pane_heading` |

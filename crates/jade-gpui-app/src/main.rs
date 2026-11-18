@@ -4824,10 +4824,6 @@ impl Render for DocumentView {
         let styles_pane = self.styles_pane(cx);
         let ruler = self.horizontal_ruler(cx);
         let tool_dialog = self.tool_dialog_element(cx);
-        let vertical_rulers: Vec<Option<AnyElement>> = (0..self.images.len())
-            .map(|index| self.vertical_ruler(index))
-            .collect();
-        let mut vertical_rulers = vertical_rulers.into_iter();
         let reference_dialog = word_references::overlay(self, window, cx);
         let views_dialog = word_views::overlay(self, cx);
         let mini_toolbar = word_views::mini::toolbar(self, cx);
@@ -5078,41 +5074,6 @@ impl Render for DocumentView {
             .text_color(theme::text())
             // ---- the navigation pane, while it is open ----------------------
             .children(navigation)
-            // ---- sidebar: the document's pages ----------------------------
-            .child(
-                div()
-                    .when(word_views::layout::hides_chrome(self), |sidebar| {
-                        sidebar.hidden()
-                    })
-                    .flex()
-                    .flex_col()
-                    .flex_none()
-                    .w(px(168.0))
-                    .h_full()
-                    .bg(theme::sidebar())
-                    .border_r_1()
-                    .border_color(theme::border())
-                    .child(
-                        div()
-                            .px_3()
-                            .pt_3()
-                            .pb_2()
-                            .text_xs()
-                            .text_color(theme::text_faint())
-                            .child(i18n::format("doc.pages", &[("n", &page_count)])),
-                    )
-                    .child(
-                        div()
-                            .id("page-list")
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .px_2()
-                            .size_full()
-                            .overflow_scroll()
-                            .children((0..page_count).map(|index| self.sidebar_row(index, cx))),
-                    ),
-            )
             // ---- canvas: the ribbon, the find bar, then the pages ----------
             .child(
                 div()
@@ -5245,7 +5206,6 @@ impl Render for DocumentView {
                                         .children(word_equation::overlay(self, index))
                                         .children(self.table_overlay(index))
                                         .children(self.story_label(index))
-                                        .children(vertical_rulers.next().flatten())
                                         .children(self.object_overlay(index))
                                         .children(self.wrap_point_overlay(index))
                                         .children(self.controls_overlay(index, cx))
