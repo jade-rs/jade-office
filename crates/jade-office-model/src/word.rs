@@ -900,6 +900,21 @@ pub trait WordFormatting: WordSession {
         })
     }
 
+    /// ⌘T / ⇧⌘T: moves every line but the first in or out by a tab stop,
+    /// the first line staying put.
+    fn step_hanging_indent(&mut self, increase: bool) -> Result<(), String> {
+        self.run_on_paragraphs(|start, end| HeadlessCommand::AdjustParagraphIndent {
+            start_paragraph: start,
+            end_paragraph: end,
+            direction: if increase {
+                HeadlessIndentDirection::Increase
+            } else {
+                HeadlessIndentDirection::Decrease
+            },
+            target: HeadlessIndentTarget::Hanging,
+        })
+    }
+
     /// Line height as a multiple of a single line (1.0, 1.15, 1.5, …): Word's
     /// `auto` rule, which the command takes as the multiple itself and
     /// writes in 240ths of a line.

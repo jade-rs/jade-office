@@ -1286,7 +1286,13 @@ impl DocumentView {
     }
 
     /// 挿入's 表紙 gallery.
-    pub(crate) fn cover_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    /// 挿入's ページ group: 表紙's gallery, then `rest` (空白のページ,
+    /// ページ区切り) beside it, as Word has them.
+    pub(crate) fn cover_group(
+        &mut self,
+        rest: Vec<AnyElement>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let open = self.ribbon.popup;
         let menu = (open == Some(Popup::Cover)).then(|| {
             menu_panel("cover-menu")
@@ -1309,7 +1315,7 @@ impl DocumentView {
         });
         group(
             t("setup.cover.group"),
-            vec![row(vec![dropdown(
+            vec![row(std::iter::once(dropdown(
                 list_button(
                     "cover-page",
                     t("setup.cover"),
@@ -1318,7 +1324,9 @@ impl DocumentView {
                     cx,
                 ),
                 menu,
-            )])],
+            ))
+            .chain(rest)
+            .collect())],
         )
     }
 

@@ -262,6 +262,10 @@ pub enum Action {
     Highlight(&'static str),
     List(bool),
     Indent(bool),
+    /// A character effect Word puts on a key of its own (⇧⌘K, ⇧⌘A, …).
+    RunEffect(jade_web::word::font::RunEffect),
+    /// ⇧F3: lower → Title → UPPER case.
+    CycleCase,
     Align(&'static str),
     LineSpacing(f32),
     Shading(Option<String>),
@@ -798,6 +802,8 @@ pub struct PageState {
 
 /// What the tabs beyond ホーム show as current.
 pub struct TabState {
+    /// レイアウト's 段落 group, drawn by the view (its spin boxes need it).
+    pub layout_paragraph: Option<AnyElement>,
     /// The page, read only while レイアウト shows it.
     pub page: Option<PageState>,
     /// What the 校閲 tab shows, read only while it is up.
@@ -948,14 +954,41 @@ pub fn ribbon(
             groups
         }
         Tab::Design => crate::word_tools::design(ribbon, &shown.tools, cx),
+        // Word's order: ページ, 表, 図, リンク, コメント, ヘッダーとフッター,
+        // テキスト, 記号と特殊文字.
         Tab::Insert => {
-            let mut groups = insert(ribbon, cx);
-            groups.push(crate::word_tools::drop_cap_group(ribbon, &shown.tools, cx));
-            groups.push(crate::view::word_design::quick_parts_group(
-                ribbon,
-                &shown.tools.quick_parts,
+            let page_break = crate::word_page::text_button(
+                "insert-page-break",
+                i18n::text("doc.page_break"),
+                i18n::text("doc.page_break_tip"),
+                false,
+                Action::Setup(crate::view::word_setup::SetupAction::Break(
+                    jade_web::word::page_setup::PageBreak::Page,
+                )),
                 cx,
-            ));
+            );
+            let link = crate::word_page::text_button(
+                "hyperlink",
+                i18n::text("link.button"),
+                i18n::text("link.button_title"),
+                false,
+                Action::InsertLink,
+                cx,
+            );
+            let comment = crate::word_page::text_button(
+                "insert-comment",
+                i18n::text("doc.comment"),
+                i18n::text("doc.comment_tip"),
+                false,
+                Action::Review(crate::word_review::ReviewAction::NewComment),
+                cx,
+            );
+            let mut groups = vec![crate::view::word_setup::cover_group(
+                ribbon.popup,
+                vec![page_break],
+                cx,
+            )];
+            groups.extend(insert(ribbon, cx));
             groups.push(crate::word_page::pictures(shown.picture, cx));
             groups.push(crate::word_objects::objects(
                 ribbon.popup,
@@ -963,27 +996,22 @@ pub fn ribbon(
                 shown.object_modes,
                 cx,
             ));
-            groups.push(group(
-                i18n::text("link.group"),
-                vec![row(vec![crate::word_page::text_button(
-                    "hyperlink",
-                    i18n::text("link.button"),
-                    i18n::text("link.button_title"),
-                    false,
-                    Action::InsertLink,
-                    cx,
-                )])],
-            ));
-            groups.push(crate::view::word_references::links_group(cx));
+            groups.push(crate::view::word_references::links_group(link, cx));
+            groups.push(group(i18n::text("doc.comment"), vec![row(vec![comment])]));
             groups.push(crate::word_page::header_footer(ribbon, cx));
-            groups.push(crate::view::word_setup::cover_group(ribbon.popup, cx));
-            groups.push(crate::view::word_characters::insert_group(cx));
-            groups.push(crate::view::word_ole::insert_group(cx));
+            groups.push(crate::view::word_design::quick_parts_group(
+                ribbon,
+                &shown.tools.quick_parts,
+                cx,
+            ));
+            groups.push(crate::word_tools::drop_cap_group(ribbon, &shown.tools, cx));
             groups.push(crate::view::word_fields::fields_group(
                 shown.field_codes,
                 cx,
             ));
+            groups.push(crate::view::word_ole::insert_group(cx));
             groups.push(crate::view::word_equation::insert_group(ribbon.popup, cx));
+            groups.push(crate::view::word_characters::insert_group(cx));
             groups
         }
         Tab::Layout => {
@@ -1015,6 +1043,7 @@ pub fn ribbon(
                 cx,
             ));
             groups.push(crate::view::word_manuscript::layout_group(cx));
+            groups.extend(shown.layout_paragraph.take());
             groups
         }
         Tab::References => {
@@ -1507,28 +1536,28 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                     align(
                         "align-left",
                         "icons/align-left.svg",
-                        i18n::text("doc.align_left_title"),
+                        i18n::text("doc.align_left_tip"),
                         "left",
                         cx,
                     ),
                     align(
                         "align-center",
                         "icons/align-center.svg",
-                        i18n::text("doc.center_title"),
+                        i18n::text("doc.center_tip"),
                         "center",
                         cx,
                     ),
                     align(
                         "align-right",
                         "icons/align-right.svg",
-                        i18n::text("doc.align_right_title"),
+                        i18n::text("doc.align_right_tip"),
                         "right",
                         cx,
                     ),
                     align(
                         "align-both",
                         "icons/align-justify.svg",
-                        i18n::text("doc.justify_title"),
+                        i18n::text("doc.justify_tip"),
                         "both",
                         cx,
                     ),
@@ -1584,7 +1613,7 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                 icon_button(
                     "redo",
                     "icons/redo.svg",
-                    i18n::text("doc.redo"),
+                    i18n::text("doc.redo_tip"),
                     false,
                     true,
                     Action::Redo,

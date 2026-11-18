@@ -566,7 +566,12 @@ pub fn background_groups(
 }
 
 /// 挿入's 表紙 gallery.
-pub fn cover_group(open: Option<Popup>, cx: &mut Context<DocView>) -> AnyElement {
+/// 挿入's ページ group: 表紙's gallery, then `rest` (ページ区切り) beside it.
+pub fn cover_group(
+    open: Option<Popup>,
+    rest: Vec<AnyElement>,
+    cx: &mut Context<DocView>,
+) -> AnyElement {
     let menu = (open == Some(Popup::Cover)).then(|| {
         menu_panel("cover-menu")
             .w(px(180.0))
@@ -588,7 +593,7 @@ pub fn cover_group(open: Option<Popup>, cx: &mut Context<DocView>) -> AnyElement
     });
     group(
         t("setup.cover.group"),
-        vec![row(vec![dropdown(
+        vec![row(std::iter::once(dropdown(
             list_button(
                 "cover-page",
                 t("setup.cover"),
@@ -597,7 +602,9 @@ pub fn cover_group(open: Option<Popup>, cx: &mut Context<DocView>) -> AnyElement
                 cx,
             ),
             menu,
-        )])],
+        ))
+        .chain(rest)
+        .collect())],
     )
 }
 

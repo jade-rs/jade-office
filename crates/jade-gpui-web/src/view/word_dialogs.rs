@@ -256,6 +256,88 @@ impl DocView {
         .on_focus(move |view| view.edit_paragraph_form(|form| form.focus = field))
     }
 
+    /// レイアウト's 段落 group, as Word lays it out: インデント 左 / 右 and
+    /// 間隔 前 / 後 as spin boxes on the caret's paragraph (or every one
+    /// selected).
+    pub(super) fn layout_paragraph_group(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Document::Pages { document, .. } = &self.document else {
+            return div().into_any_element();
+        };
+        let format = document.paragraph_format();
+        let char_pt = document
+            .caret()
+            .map_or(10.5, |(paragraph, _)| document.character_width(paragraph));
+        let mut entry = |label: &'static str, field: ParagraphField| {
+            let spin = layout_paragraph_spin(&format, field, char_pt);
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .child(
+                    div()
+                        .w(px(72.0))
+                        .text_xs()
+                        .text_color(palette::text())
+                        .whitespace_nowrap()
+                        .child(i18n::text(label)),
+                )
+                .child(spin_field(self, spin, cx))
+                .into_any_element()
+        };
+        let indent = [
+            entry("layout.indent_left", ParagraphField::Left),
+            entry("layout.indent_right", ParagraphField::Right),
+        ];
+        let spacing = [
+            entry("layout.space_before", ParagraphField::Before),
+            entry("layout.space_after", ParagraphField::After),
+        ];
+        let column = |entries: [gpui::AnyElement; 2]| {
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .children(entries)
+                .into_any_element()
+        };
+        crate::ribbon::group(
+            i18n::text("doc.group.paragraph"),
+            vec![div()
+                .flex()
+                .gap_3()
+                .child(column(indent))
+                .child(column(spacing))
+                .into_any_element()],
+        )
+    }
+
+    /// A value from レイアウト's 段落 spin boxes onto the selected
+    /// paragraphs; the spin box redraws the view.
+    fn set_layout_paragraph_number(&mut self, field: ParagraphField, value: f32) {
+        if word_views::modes::read_only(self) {
+            return;
+        }
+        let Document::Pages { document, .. } = &mut self.document else {
+            return;
+        };
+        let was = document.paragraph_format();
+        let mut now = was.clone();
+        match field {
+            ParagraphField::Left => now.left = value,
+            ParagraphField::Right => now.right = value,
+            ParagraphField::Before => now.before = value,
+            ParagraphField::After => now.after = value,
+            _ => return,
+        }
+        let result = document.set_paragraph_format(&was, &now);
+        self.refresh_repainted();
+        self.generation += 1;
+        self.status = match result {
+            Ok(()) => SharedString::default(),
+            Err(error) => error.into(),
+        };
+    }
+
     /// 校閲 › ユーザー情報: who comments and changes are put down to.
     pub(super) fn open_reviewer_dialog(&mut self, cx: &mut Context<Self>) {
         let form = jade_web::word::reviewer::ReviewerForm::new(&super::word_review::reviewer());
@@ -1122,4 +1204,45 @@ impl DocView {
             .child(row(buttons))
             .into_any_element()
     }
+}
+
+/// One of レイアウト's 段落 spin boxes: indents in the paragraph's own unit
+/// (字 or mm), spacing in pt.
+fn layout_paragraph_spin(
+    format: &jade_web::word::ParagraphFormat,
+    field: ParagraphField,
+    char_pt: f32,
+) -> Spin {
+    let (spec, value) = match field {
+        ParagraphField::Left | ParagraphField::Right => (
+            match format.unit {
+                IndentUnit::Characters => specs::INDENT_CHARS,
+                IndentUnit::Millimetres => specs::INDENT_MM,
+            },
+            if field == ParagraphField::Left {
+                format.left
+            } else {
+                format.right
+            },
+        ),
+        _ => (
+            specs::PARAGRAPH_SPACING,
+            if field == ParagraphField::Before {
+                format.before
+            } else {
+                format.after
+            },
+        ),
+    };
+    Spin::new(
+        format!("layout-{field:?}"),
+        SpinOwner::Ribbon,
+        spec,
+        value as f64,
+        move |view, value| view.set_layout_paragraph_number(field, value as f32),
+    )
+    .metrics(Metrics {
+        char_pt: char_pt as f64,
+        ..Metrics::default()
+    })
 }

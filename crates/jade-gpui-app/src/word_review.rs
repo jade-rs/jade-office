@@ -394,6 +394,29 @@ impl DocumentView {
             .into_any_element(),
             Self::ribbon_group(t("review.group.changes"), vec![Self::ribbon_row(decisions)])
                 .into_any_element(),
+            // 比較 before 保護, as in Word.
+            Self::ribbon_group(
+                t("compare.group"),
+                vec![Self::ribbon_row(vec![
+                    tools::text_button(
+                        "review-compare",
+                        "compare.button",
+                        "compare.title",
+                        false,
+                        ReviewAction::Compare(false),
+                        cx,
+                    ),
+                    tools::text_button(
+                        "review-combine",
+                        "compare.combine",
+                        "compare.combine_title",
+                        false,
+                        ReviewAction::Compare(true),
+                        cx,
+                    ),
+                ])],
+            )
+            .into_any_element(),
             Self::ribbon_group(
                 t("protect.group"),
                 vec![Self::ribbon_row(vec![
@@ -444,28 +467,6 @@ impl DocumentView {
                         "inspect.tooltip",
                         self.review.inspect.is_some(),
                         ReviewAction::Inspect,
-                        cx,
-                    ),
-                ])],
-            )
-            .into_any_element(),
-            Self::ribbon_group(
-                t("compare.group"),
-                vec![Self::ribbon_row(vec![
-                    tools::text_button(
-                        "review-compare",
-                        "compare.button",
-                        "compare.title",
-                        false,
-                        ReviewAction::Compare(false),
-                        cx,
-                    ),
-                    tools::text_button(
-                        "review-combine",
-                        "compare.combine",
-                        "compare.combine_title",
-                        false,
-                        ReviewAction::Compare(true),
                         cx,
                     ),
                 ])],

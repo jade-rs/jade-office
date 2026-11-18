@@ -125,6 +125,7 @@ pub fn review_group(cx: &mut Context<DocumentView>) -> AnyElement {
         t("language.group"),
         vec![row(vec![div()
             .id("review-language")
+            .debug_selector(|| "ribbon-review-language".into())
             .flex()
             .items_center()
             .h(gpui::px(26.0))

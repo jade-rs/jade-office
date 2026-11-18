@@ -29,6 +29,7 @@ use jade_web::text::{byte_to_utf16, utf16_to_byte, TextEdit};
 use crate::ribbon::{self, Action};
 use crate::{i18n, palette, Fonts, Host, UI_FONT};
 use jade_web::editing::{CharacterFormat, FormatState, HighlightRect, WordFormatting};
+use jade_web::word::font::{RunEffect, WordCharacters};
 use jade_web::word::similar::RangeFormat;
 
 mod deck;
@@ -2589,6 +2590,11 @@ impl DocView {
             }
             Action::List(bullets) => document.toggle_list(bullets),
             Action::Indent(increase) => document.step_indent(increase),
+            Action::RunEffect(effect) => {
+                let current = WordFormatting::format_state(&*document).character;
+                WordCharacters::apply_run_format(document, effect.toggled(&current))
+            }
+            Action::CycleCase => WordCharacters::cycle_case(document),
             Action::Align(alignment) => document.set_alignment(alignment),
             Action::LineSpacing(multiple) => document.set_line_spacing(multiple),
             Action::Shading(color) => document.set_paragraph_shading(color.as_deref()),
@@ -2670,6 +2676,9 @@ impl DocView {
         let outline = (self.views.kind == jade_web::word::view::ViewKind::Outline)
             .then(|| word_views::outline::groups(self, cx));
         let object_tab = self.object_tab(cx);
+        let layout_paragraph = matches!(&self.document,
+            Document::Pages { ribbon, .. } if ribbon.tab == ribbon::Tab::Layout)
+        .then(|| self.layout_paragraph_group(cx));
         let Document::Pages {
             document,
             ribbon,
@@ -2721,6 +2730,7 @@ impl DocView {
             use jade_web::word::review::WordReview;
             ribbon::TabState {
                 page,
+                layout_paragraph,
                 tools: crate::word_tools::ToolState::read(
                     document,
                     match ribbon.popup {
@@ -3550,6 +3560,17 @@ impl DocView {
             cx.stop_propagation();
             return;
         }
+        // ⇧F3: Word's case cycle.
+        if key == "f3"
+            && modifiers.shift
+            && !modifiers.platform
+            && !modifiers.control
+            && matches!(self.document, Document::Pages { .. })
+        {
+            self.ribbon_action(Action::CycleCase, window, cx);
+            cx.stop_propagation();
+            return;
+        }
         // ⌘ on a Mac, Ctrl elsewhere.
         if modifiers.platform || modifiers.control {
             let pages = matches!(self.document, Document::Pages { .. });
@@ -3562,7 +3583,43 @@ impl DocView {
                 cx.stop_propagation();
                 return;
             }
+            // Word for Mac's character keys (⇧⌘K, ⇧⌘A, …), ahead of the
+            // unshifted commands on the same letters.
+            let effect = match key {
+                "k" | "K" => Some(RunEffect::SmallCaps),
+                "a" | "A" => Some(RunEffect::AllCaps),
+                "d" | "D" => Some(RunEffect::DoubleUnderline),
+                "w" | "W" => Some(RunEffect::WordUnderline),
+                _ => None,
+            };
+            if let Some(effect) = effect.filter(|_| pages && modifiers.shift && !modifiers.alt) {
+                self.ribbon_action(Action::RunEffect(effect), window, cx);
+                cx.stop_propagation();
+                return;
+            }
             match key {
+                "x" | "X" if pages && modifiers.shift && !modifiers.alt => {
+                    self.ribbon_action(Action::Toggle(CharacterFormat::Strikethrough), window, cx)
+                }
+                "j" | "J" if pages && modifiers.shift && !modifiers.alt => {
+                    self.ribbon_action(Action::Align("distribute"), window, cx)
+                }
+                // ⌘= 下付き, ⇧⌘= (⌘+) 上付き.
+                "=" | "+" if pages && !modifiers.alt => {
+                    let format = if modifiers.shift || key == "+" {
+                        CharacterFormat::Superscript
+                    } else {
+                        CharacterFormat::Subscript
+                    };
+                    self.ribbon_action(Action::Toggle(format), window, cx)
+                }
+                // ⇧⌘> and ⇧⌘<: one step up or down Word's size list.
+                ">" | "." if pages && modifiers.shift => {
+                    self.ribbon_action(Action::StepFontSize(true), window, cx)
+                }
+                "<" | "," if pages && modifiers.shift => {
+                    self.ribbon_action(Action::StepFontSize(false), window, cx)
+                }
                 "z" => self.step_history(!modifiers.shift, cx),
                 "y" => self.step_history(false, cx),
                 "s" => self.save(cx),

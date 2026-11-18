@@ -36,6 +36,9 @@ pub enum SpinOwner {
     PageSetup,
     /// 表のプロパティ and the table dialogs.
     Table,
+    /// A spin box on the ribbon (レイアウト's インデント and 間隔): it acts
+    /// on the document straight away, and has no dialog to pass Enter on to.
+    Ribbon,
 }
 
 /// The field that has the keyboard.
@@ -132,6 +135,7 @@ impl DocumentView {
             }
             SpinOwner::PageSetup => self.page_dialog.is_some(),
             SpinOwner::Table => self.tables.dialog.is_some(),
+            SpinOwner::Ribbon => self.ribbon_tab == crate::RibbonTab::Layout,
         }
     }
 
@@ -184,6 +188,13 @@ impl DocumentView {
             return Some(SpinKeyOutcome::Taken);
         }
         let apply = Rc::clone(&spin.apply);
+        // A ribbon field's Enter and Escape end there: the page behind it
+        // must not get a paragraph mark.
+        let ends = if spin.owner == SpinOwner::Ribbon {
+            SpinKeyOutcome::Taken
+        } else {
+            SpinKeyOutcome::PassOn
+        };
         let outcome = match spin.field.key(event.keystroke.key.as_str()) {
             SpinKey::Stepped(value) => {
                 apply(self, value);
@@ -196,11 +207,11 @@ impl DocumentView {
                 }
                 // Enter goes on to be the dialog's OK, Tab to move to its
                 // next field.
-                SpinKeyOutcome::PassOn
+                ends
             }
             SpinKey::Reverted => {
                 self.spin = None;
-                SpinKeyOutcome::PassOn
+                ends
             }
             SpinKey::Edited => SpinKeyOutcome::Taken,
             SpinKey::Unhandled => SpinKeyOutcome::Typing,
@@ -499,6 +510,61 @@ mod tests {
             view.document.undo().unwrap();
             assert!(!view.document.paragraph_format().mirror_indents);
         });
+    }
+
+    /// レイアウト's インデント and 間隔 spin boxes act on the paragraph at
+    /// once: a typed 左 lands on Enter — which stays in the field rather than
+    /// splitting the paragraph — and ▲ on 前 steps the spacing, each one undo
+    /// step.
+    #[gpui::test]
+    fn the_layout_tab_indent_and_spacing_act_on_the_paragraph(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        view.update(cx, |view, cx| {
+            view.ribbon_tab = crate::RibbonTab::Layout;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        let (paragraphs, left) = view.update(cx, |view, _| {
+            let format = view.document.paragraph_format();
+            let spin = view.layout_paragraph_spin(&format, ParagraphField::Left);
+            view.focus_spin(&spin);
+            (view.document.paragraph_count(), format.left)
+        });
+        assert_ne!(left, 3.0);
+        cx.simulate_input("3");
+        cx.simulate_keystrokes("enter");
+        view.update(cx, |view, _| {
+            assert_eq!(view.document.paragraph_format().left, 3.0);
+            assert_eq!(
+                view.document.paragraph_count(),
+                paragraphs,
+                "Enter stays in the field"
+            );
+            assert!(!view.spin_has_focus("layout-Left"));
+        });
+        let before = view.update(cx, |view, _| {
+            let format = view.document.paragraph_format();
+            let spin = view.layout_paragraph_spin(&format, ParagraphField::Before);
+            view.focus_spin(&spin);
+            format.before
+        });
+        cx.simulate_keystrokes("up");
+        view.update(cx, |view, _| {
+            assert!(view.document.paragraph_format().before > before);
+            view.document.undo().unwrap();
+            assert_eq!(view.document.paragraph_format().before, before);
+            view.document.undo().unwrap();
+            assert_eq!(view.document.paragraph_format().left, left);
+        });
+        // The tab gone, so is the field's keyboard.
+        view.update(cx, |view, _| {
+            let format = view.document.paragraph_format();
+            let spin = view.layout_paragraph_spin(&format, ParagraphField::After);
+            view.focus_spin(&spin);
+            view.ribbon_tab = crate::RibbonTab::Home;
+        });
+        cx.simulate_input("x");
+        view.update(cx, |view, _| assert!(view.spin_text().is_none()));
     }
 
     /// The フォント dialog's サイズ: typed in another unit it is converted to

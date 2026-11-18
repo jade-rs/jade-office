@@ -65,6 +65,7 @@ menu.format	書式
 menu.format.bold	太字
 menu.format.italic	斜体
 menu.format.underline	下線
+menu.format.strikethrough	取り消し線
 menu.format.align_left	左揃え
 menu.format.center	中央揃え
 menu.format.align_right	右揃え
@@ -613,6 +614,8 @@ doc.table_2x2_title	2×2 の表
 doc.group.pages	ページ
 doc.blank_page	空白ページ
 doc.comment	コメント
+doc.page_break_tip	ページ区切り (⌘↩)
+doc.comment_tip	新しいコメント (⌘M)
 doc.page_color	ページの色
 doc.color.cream	クリーム
 doc.color.light_gray	薄灰
@@ -624,9 +627,9 @@ doc.page_borders_box	ページを罫線で囲む
 doc.page_borders_none	ページの罫線を消す
 doc.group.paragraph	段落
 doc.indent_less	字下げ－
-doc.indent_less_title	インデントを減らす
+doc.indent_less_title	インデントを減らす (⌘[)
 doc.indent_more	字下げ＋
-doc.indent_more_title	インデントを増やす
+doc.indent_more_title	インデントを増やす (⌘])
 doc.page_break	改ページ
 doc.toc	目次
 doc.toc_title	目次を挿入
@@ -655,17 +658,17 @@ doc.copy	複写
 doc.copy_title	コピー
 doc.group.font	フォント
 doc.grow	大
-doc.grow_title	フォントサイズの拡大
+doc.grow_title	フォントサイズの拡大 (⇧⌘>)
 doc.shrink	小
-doc.shrink_title	フォントサイズの縮小
-doc.bold_title	太字
-doc.italic_title	斜体
-doc.underline_title	下線
-doc.strike_title	取り消し線
+doc.shrink_title	フォントサイズの縮小 (⇧⌘<)
+doc.bold_title	太字 (⌘B)
+doc.italic_title	斜体 (⌘I)
+doc.underline_title	下線 (⌘U)
+doc.strike_title	取り消し線 (⇧⌘X)
 doc.subscript	下付
-doc.subscript_title	下付き
+doc.subscript_title	下付き (⌘=)
 doc.superscript	上付
-doc.superscript_title	上付き
+doc.superscript_title	上付き (⇧⌘=)
 doc.font_color	文字色
 doc.font_color_title	フォントの色
 doc.highlight	蛍光
@@ -701,8 +704,13 @@ doc.style.heading2	見出し 2
 doc.style.heading3	見出し 3
 doc.group.editing	編集
 doc.undo	戻す
-doc.undo_title	元に戻す
+doc.undo_title	元に戻す (⌘Z)
 doc.redo	やり直し
+doc.align_left_tip	左揃え (⌘L)
+doc.center_tip	中央揃え (⌘E)
+doc.align_right_tip	右揃え (⌘R)
+doc.justify_tip	両端揃え (⌘J)
+doc.redo_tip	やり直し (⌘Y)
 doc.find	検索
 doc.find_title	検索と置換
 doc.color.auto	自動
@@ -1517,6 +1525,7 @@ chars.asian.warichu_none	割注 (括弧なし)
 chars.asian.remove	拡張書式の解除
 chars.asian.scale	文字の拡大/縮小
 menu.format.typography	体裁...
+menu.format.change_case	文字種の変換
 chars.typography.title	体裁 (文字体裁)
 chars.typography.paragraph	改行時の処理 (選択した段落)
 chars.typography.document	文字体裁 (文書全体)
@@ -1555,7 +1564,7 @@ chars.paste.format.text	書式なしテキスト
 chars.paste.format.unicode	書式なしの Unicode テキスト
 menu.insert.symbol	記号と特殊文字...
 menu.insert.date_time	日付と時刻...
-chars.insert.group	記号と日付
+chars.insert.group	記号と特殊文字
 chars.symbol.title	記号と特殊文字
 chars.symbol.title_menu	記号と特殊文字
 chars.symbol.tab_symbols	記号
@@ -5204,6 +5213,10 @@ workspace.close_unsaved	「{name}」への変更を保存しますか？
 workspace.close_download	コピーをダウンロード
 workspace.close_discard	保存せずに閉じる
 doc.select	選択
+layout.indent_left	インデント 左
+layout.indent_right	インデント 右
+layout.space_before	間隔 前
+layout.space_after	間隔 後
 fit.scroll_left	左へスクロール
 fit.scroll_right	右へスクロール
 sheet.group.font	フォント

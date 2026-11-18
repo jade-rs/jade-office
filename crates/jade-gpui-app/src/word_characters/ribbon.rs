@@ -453,7 +453,7 @@ pub fn paste_options(ribbon: &Ribbon, cx: &mut Context<DocumentView>) -> AnyElem
     )
 }
 
-/// 挿入's 記号と特殊文字 and 日付と時刻.
+/// 挿入's 記号と特殊文字 (日付と時刻 is in the フィールド group).
 pub fn insert_group(cx: &mut Context<DocumentView>) -> AnyElement {
     let button = |id: &'static str,
                   label: &'static str,
@@ -478,19 +478,11 @@ pub fn insert_group(cx: &mut Context<DocumentView>) -> AnyElement {
     };
     crate::ribbon::group(
         i18n::text("chars.insert.group"),
-        vec![row(vec![
-            button(
-                "insert-symbol",
-                "chars.symbol.title_menu",
-                CharAction::OpenSymbols,
-                cx,
-            ),
-            button(
-                "insert-date",
-                "chars.date.title_menu",
-                CharAction::OpenDateTime,
-                cx,
-            ),
-        ])],
+        vec![row(vec![button(
+            "insert-symbol",
+            "chars.symbol.title_menu",
+            CharAction::OpenSymbols,
+            cx,
+        )])],
     )
 }

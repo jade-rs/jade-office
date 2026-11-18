@@ -179,3 +179,219 @@ fn enter_in_a_long_document_draws_the_pages_in_view_first(cx: &mut gpui::TestApp
     view.update(cx, |view, _| view.paint_all_stale_pages());
     assert!(!view.update(cx, |view, _| view.document.has_stale_pages()));
 }
+
+fn document_xml(view: &crate::DocumentView) -> String {
+    let bytes = view.document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&bytes).unwrap();
+    package.part_str("word/document.xml").unwrap().unwrap()
+}
+
+/// The character keys Word for Mac has beyond ⌘B/⌘I/⌘U: ⇧⌘K small caps,
+/// ⇧⌘A all caps, ⇧⌘D double underline, ⇧⌘W words-only underline, ⇧⌘H
+/// hidden, ⇧⌘X strikethrough, ⌘⇧> / ⌘⇧< grow and shrink, ⌃Space clears it all again, and ⌘Y
+/// redoes what ⌘Z took back.
+#[gpui::test]
+fn word_for_mac_character_effect_keys(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = with_text(cx);
+    cx.simulate_keystrokes("cmd-alt-a");
+    let character = |view: &gpui::Entity<crate::DocumentView>, cx: &mut gpui::VisualTestContext| {
+        view.update(cx, |view, _| view.format_state().character)
+    };
+    cx.simulate_keystrokes("cmd-shift-k");
+    assert_eq!(character(&view, cx).small_caps, Some(true));
+    cx.simulate_keystrokes("cmd-shift-k");
+    assert_ne!(
+        character(&view, cx).small_caps,
+        Some(true),
+        "a second press takes it off"
+    );
+    cx.simulate_keystrokes("cmd-shift-a");
+    assert_eq!(character(&view, cx).caps, Some(true));
+    cx.simulate_keystrokes("cmd-shift-d");
+    assert_eq!(character(&view, cx).underline.as_deref(), Some("double"));
+    cx.simulate_keystrokes("cmd-shift-w");
+    assert_eq!(character(&view, cx).underline.as_deref(), Some("words"));
+    cx.simulate_keystrokes("cmd-shift-h");
+    assert_eq!(character(&view, cx).hidden, Some(true));
+    cx.simulate_keystrokes("cmd-shift-h");
+    cx.simulate_keystrokes("cmd-shift-x");
+    assert!(view.update(cx, |view, _| view.format_state().strike));
+
+    let size = view.update(cx, |view, _| view.format_state().font_size);
+    cx.simulate_keystrokes("cmd->");
+    let grown = view.update(cx, |view, _| view.format_state().font_size);
+    assert!(grown > size, "{size:?} → {grown:?}");
+    cx.simulate_keystrokes("cmd-<");
+    assert_eq!(
+        view.update(cx, |view, _| view.format_state().font_size),
+        size
+    );
+
+    cx.simulate_keystrokes("ctrl-space");
+    assert_ne!(
+        character(&view, cx).caps,
+        Some(true),
+        "⌃Space clears the effects"
+    );
+
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(character(&view, cx).caps, Some(true));
+    cx.simulate_keystrokes("cmd-y");
+    assert_ne!(character(&view, cx).caps, Some(true), "⌘Y redoes");
+}
+
+/// ⇧⌘J distributes the paragraph, ⌘1 / ⌘5 / ⌘2 set single, 1.5 and double line spacing, ⌘T and ⇧⌘T move
+/// the hanging indent, ⌘⌥1 and ⇧⌘N put on 見出し 1 and 標準, and ⇧F3 walks
+/// the selection through Word's case cycle.
+#[gpui::test]
+fn word_for_mac_paragraph_style_and_case_keys(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = with_text(cx);
+    cx.simulate_keystrokes("cmd-shift-j");
+    assert_eq!(
+        view.update(cx, |view, _| view.format_state().alignment),
+        Some("distribute".into())
+    );
+    cx.simulate_keystrokes("cmd-5");
+    assert!(view
+        .update(cx, |view, _| document_xml(view))
+        .contains(r#"w:line="360""#));
+    cx.simulate_keystrokes("cmd-2");
+    assert!(view
+        .update(cx, |view, _| document_xml(view))
+        .contains(r#"w:line="480""#));
+    cx.simulate_keystrokes("cmd-1");
+    assert!(view
+        .update(cx, |view, _| document_xml(view))
+        .contains(r#"w:line="240""#));
+
+    let hanging = |view: &gpui::Entity<crate::DocumentView>, cx: &mut gpui::VisualTestContext| {
+        view.update(cx, |view, _| document_xml(view))
+            .matches("w:hanging=")
+            .count()
+    };
+    let before = hanging(&view, cx);
+    cx.simulate_keystrokes("cmd-t");
+    assert!(hanging(&view, cx) > before, "⌘T hangs the paragraph");
+    cx.simulate_keystrokes("cmd-shift-t");
+    assert_eq!(hanging(&view, cx), before, "⇧⌘T takes it back");
+
+    cx.simulate_keystrokes("cmd-alt-1");
+    assert_eq!(
+        view.update(cx, |view, _| view.format_state().style_id),
+        Some("Heading1".into())
+    );
+    cx.simulate_keystrokes("cmd-shift-n");
+    assert_ne!(
+        view.update(cx, |view, _| view.format_state().style_id),
+        Some("Heading1".into())
+    );
+
+    let paragraph = view.update(cx, |view, _| view.insert_at.0);
+    cx.simulate_input("hello world ");
+    view.update(cx, |view, _| {
+        view.document
+            .select((paragraph, 0), (paragraph, 11), 1)
+            .unwrap();
+    });
+    let text = |view: &gpui::Entity<crate::DocumentView>, cx: &mut gpui::VisualTestContext| {
+        let text = view.update(cx, |view, _| {
+            view.document.paragraph_text(paragraph).unwrap()
+        });
+        text.chars().take(11).collect::<String>()
+    };
+    assert_eq!(text(&view, cx), "hello world");
+    cx.simulate_keystrokes("shift-f3");
+    assert_eq!(text(&view, cx), "Hello World");
+    cx.simulate_keystrokes("shift-f3");
+    assert_eq!(text(&view, cx), "HELLO WORLD");
+    cx.simulate_keystrokes("shift-f3");
+    assert_eq!(
+        text(&view, cx),
+        "hello world",
+        "three presses come round again"
+    );
+}
+
+/// 挿入 in Word's order — ページ (表紙, 空白のページ, ページ区切り), 表, 図,
+/// リンク, コメント, …, テキスト — with ページ区切り putting in a page break
+/// and 日付と時刻 opening Word's 日付と時刻 dialog.
+#[gpui::test]
+fn the_insert_tab_follows_words_order(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = with_text(cx);
+    cx.simulate_resize(gpui::size(gpui::px(2400.0), gpui::px(900.0)));
+    view.update(cx, |view, cx| {
+        view.ribbon_tab = crate::RibbonTab::Insert;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let at = |cx: &mut gpui::VisualTestContext, name: &'static str| {
+        cx.debug_bounds(name)
+            .unwrap_or_else(|| panic!("{name} is on the tab"))
+    };
+    let order = [
+        "ribbon-blank-page",
+        "ribbon-insert-page-break",
+        "ribbon-hyperlink",
+        "ribbon-comment",
+        "ribbon-insert-date",
+    ];
+    let lefts: Vec<_> = order.iter().map(|name| at(cx, name).origin.x).collect();
+    assert!(
+        lefts.windows(2).all(|pair| pair[0] < pair[1]),
+        "{order:?} at {lefts:?}"
+    );
+
+    let paragraphs = view.update(cx, |view, _| view.document.paragraph_count());
+    let button = at(cx, "ribbon-insert-page-break").center();
+    cx.simulate_click(button, gpui::Modifiers::none());
+    view.update(cx, |view, _| {
+        use crate::Editor;
+        assert!(view.is_dirty(), "ページ区切り changes the document");
+        assert!(view.document.paragraph_count() <= paragraphs + 1);
+    });
+
+    let button = at(cx, "ribbon-insert-date").center();
+    cx.simulate_click(button, gpui::Modifiers::none());
+    view.update(cx, |view, _| {
+        assert!(
+            matches!(
+                view.characters.dialog,
+                Some(crate::word_characters::Dialog::DateTime(_))
+            ),
+            "日付と時刻 opens its dialog"
+        );
+    });
+}
+
+/// 校閲 in Word's order: 文章校正, 音声, アクセシビリティ, 言語, コメント,
+/// 記録, 変更箇所, 比較, 保護.
+#[gpui::test]
+fn the_review_tab_follows_words_order(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = with_text(cx);
+    cx.simulate_resize(gpui::size(gpui::px(3200.0), gpui::px(900.0)));
+    view.update(cx, |view, cx| {
+        view.ribbon_tab = crate::RibbonTab::Review;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let order = [
+        "ribbon-review-accessibility",
+        "ribbon-review-language",
+        "ribbon-review-comment-delete",
+        "ribbon-review-compare",
+        "ribbon-review-restrict",
+    ];
+    let lefts: Vec<_> = order
+        .iter()
+        .map(|name| {
+            cx.debug_bounds(name)
+                .unwrap_or_else(|| panic!("{name} is on the tab"))
+                .origin
+                .x
+        })
+        .collect();
+    assert!(
+        lefts.windows(2).all(|pair| pair[0] < pair[1]),
+        "{order:?} at {lefts:?}"
+    );
+}

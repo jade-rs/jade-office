@@ -38,7 +38,7 @@ listed.
 |---|---|---|---|---|
 | File (Windows Backstage) / File menu (Mac) | menu bar | title-bar buttons | `menu.file.*` | see "Menus" |
 | Home | ✓ | ✓ | `doc.tab.home` | browser has no Clipboard group |
-| Insert | ✓ | ✓ | `doc.tab.insert` | browser has no Blank Page / Comment groups |
+| Insert | ✓ | ✓ | `doc.tab.insert` | groups in Word's order; browser has no Blank Page |
 | Draw | – | – | — | no ink at all |
 | Design | ✓ (Page Background only) | – (under Layout) | `doc.tab.design` | no themes, style sets, watermark |
 | Layout | ✓ | ✓ | `doc.tab.layout` | |
@@ -67,40 +67,42 @@ Right-click (or ⌃-click) opens Word's context menu in the native shell — tex
 | Clipboard › Cut / Copy | Ctrl+X / Ctrl+C | ⌘X / ⌘C | ✓ | ✓ (keys only) | `doc.cut`, `doc.copy` |
 | Clipboard › Format Painter | Ctrl+Shift+C / Ctrl+Shift+V | ⌘⇧C / ⌘⇧V | ✓ | ✓ (Editing group) | `painter.title` |
 | Font › font, size | Ctrl+Shift+F, Ctrl+Shift+P | ⌘⇧F, ⌘⇧P | ✓ ribbon | ✓ ribbon | `ribbon.font_family`, `ribbon.font_size` |
-| Font › grow / shrink | Ctrl+Shift+> / < | ⌘⇧> / < | ✓ ribbon | ✓ ribbon | `doc.grow_title`, `doc.shrink_title` |
-| Font › Change Case | Shift+F3 | ⌘⌥C | ✓ ribbon (9 modes incl. 半角/全角/カタカナ/ひらがな) | ✓ | `chars.case.title_tip` |
-| Font › Clear Formatting | Ctrl+Space | ⌃Space | ✓ ribbon | ✓ | `doc.clear_format_title` |
+| Font › grow / shrink | Ctrl+Shift+> / < | ⌘⇧> / < | ✓ ⇧⌘> / ⇧⌘<, ribbon | ✓ ⇧⌘> / ⇧⌘<, ribbon | `doc.grow_title`, `doc.shrink_title` |
+| Font › Change Case | Shift+F3 | ⌘⌥C, ⇧F3 | ✓ ⇧F3 (lower → Title → UPPER), ribbon (9 modes incl. 半角/全角/カタカナ/ひらがな) | ✓ ⇧F3, ribbon | `chars.case.title_tip` |
+| Font › Clear Formatting | Ctrl+Space | ⌃Space | ✓ ⌃Space, ribbon | ✓ ribbon | `doc.clear_format_title` |
 | Font › Phonetic Guide (ルビ, Japanese UI) | ribbon | ribbon | ✓ | ✓ | `chars.ruby.title` |
 | Font › Enclose Characters (囲い文字) | ribbon | ribbon | ✓ | ✓ | `chars.enclose.title` |
 | Font › Bold / Italic / Underline | Ctrl+B / I / U | ⌘B / I / U | ✓ | ✓ | `doc.bold_title` … |
 | Font › underline style and colour | ribbon | ribbon | ✓ | ✓ | `chars.font.underline` |
-| Font › Strikethrough | ribbon | ⌘⇧X | ✓ ribbon | ✓ | `doc.strike_title` |
-| Font › Subscript / Superscript | Ctrl+= / Ctrl+Shift+= | ⌘= / ⌘⇧= | ✓ ribbon (⌘= is zoom in jade) | ✓ | `doc.subscript_title`, `doc.superscript_title` |
+| Font › Strikethrough | ribbon | ⌘⇧X | ✓ ⇧⌘X, ribbon | ✓ ⇧⌘X, ribbon | `doc.strike_title` |
+| Font › Subscript / Superscript | Ctrl+= / Ctrl+Shift+= | ⌘= / ⌘⇧= | ✓ ⌘= / ⇧⌘=, ribbon | ✓ ⌘= / ⇧⌘=, ribbon | `doc.subscript_title`, `doc.superscript_title` |
 | Font › Text Effects | ribbon | ribbon | in Font dialog | in Font dialog | `chars.font.title` |
 | Font › Highlight | ribbon | ribbon | ✓ (15 colours, no white) | ✓ | `doc.highlight_title` |
 | Font › Font Color | ribbon | ribbon | ✓ (auto, theme, standard, more) | ✓ | `doc.font_color_title` |
 | Font › Character Shading / Border (Japanese UI) | ribbon | ribbon | ✓ | ✓ | `chars.shading`, `chars.border` |
 | Font › Font dialog | Ctrl+D | ⌘D | ✓ ⌘D | ✓ ⌘D | `chars.font.launcher` |
-| Paragraph › Bullets / Numbering | Ctrl+Shift+L (bullets) | ⌘⇧L (bullets) | ✓ ribbon (⇧⌘L is align left in jade) | ✓ | `doc.bullets`, `doc.numbering` |
+| Font dialog effects: Small Caps / All Caps / Double Underline / Word Underline / Hidden | Ctrl+Shift+K / A / D / W / H | ⌘⇧K / A / D / W / H | ✓ all five keys | ✓ K / A / D / W (⇧⌘H is Replace in the browser) | `RunEffect` |
+| Paragraph › Bullets / Numbering | Ctrl+Shift+L (bullets) | ⌘⇧L (bullets) | ✓ ⇧⌘L, ribbon | ✓ ⇧⌘L, ribbon | `doc.bullets`, `doc.numbering` |
 | Paragraph › Multilevel List, Define New List | ribbon | ribbon | – | – | — |
 | Paragraph › Decrease / Increase Indent | Ctrl+Shift+M / Ctrl+M | see note | ✓ ⌘[ / ⌘] | ✓ ribbon | `doc.indent_less_title`, `doc.indent_more_title` |
 | Paragraph › Asian Layout (縦中横, 組み文字, 割注, 文字の拡大/縮小) | ribbon | ribbon | ✓ | ✓ | `chars.asian.title` |
 | Paragraph › Sort | ribbon | ribbon | – (tables only) | – | — |
 | Paragraph › Show/Hide ¶ | Ctrl+Shift+8 | ⌘8 | View › Marks | View › Marks | `doc.marks` |
-| Paragraph › Align left / center / right / justify | Ctrl+L / E / R / J | ⌘L / E / R / J | ✓ ⇧⌘L / ⇧⌘E / ⇧⌘R, justify ribbon | ✓ ribbon | `doc.align_left_title` … |
-| Paragraph › Distributed (均等割り付け) | Ctrl+Shift+J | ⌘⇧J | – | – | — |
-| Paragraph › Line spacing | Ctrl+1 / 2 / 5 | ⌘1 / 2 / 5 | ✓ ribbon (1.0, 1.15, 1.5, 2.0) | ✓ | `doc.line_spacing_title` |
+| Paragraph › Align left / center / right / justify | Ctrl+L / E / R / J | ⌘L / E / R / J | ✓ ⌘L / E / R / J, ribbon | ✓ ⌘L / E / R / J, ribbon | `doc.align_left_tip` … |
+| Paragraph › Distributed (均等割り付け) | Ctrl+Shift+J | ⌘⇧J | ✓ ⇧⌘J, ribbon | ✓ ⇧⌘J, ribbon | `AlignDistribute` |
+| Paragraph › Hanging indent / reduce | Ctrl+T / Ctrl+Shift+T | ⌘T / ⌘⇧T | ✓ ⌘T / ⇧⌘T | – (browser keeps ⌘T) | `HangingIndent` |
+| Paragraph › Line spacing | Ctrl+1 / 2 / 5 | ⌘1 / 2 / 5 | ✓ ⌘1 / ⌘2 / ⌘5, ribbon (1.0, 1.15, 1.5, 2.0) | ✓ ribbon (browser keeps ⌘1–9) | `doc.line_spacing_title` |
 | Paragraph › Shading | ribbon | ribbon | ✓ (4 swatches) | ✓ | `doc.shading_title` |
 | Paragraph › Borders | ribbon | ribbon | ✓ (bottom, top, box, none) | ✓ | `ribbon.paragraph_borders` |
 | Paragraph › Paragraph dialog | ribbon / Alt key tips | ⌥⌘M | ✓ ⌥⌘M | ✓ ⌥⌘M | `paragraph.button_title` |
-| Styles › gallery | Ctrl+Alt+1/2/3 (headings), Ctrl+Shift+N (Normal) | ⌘⌥1/2/3, ⌘⇧N | ✓ ribbon | ✓ | `doc.style.*`, `ribbon.styles_more` |
+| Styles › gallery | Ctrl+Alt+1/2/3 (headings), Ctrl+Shift+N (Normal) | ⌘⌥1/2/3, ⌘⇧N | ✓ ⌘⌥1/2/3, ⇧⌘N, ribbon | ✓ ribbon | `doc.style.*`, `ribbon.styles_more` |
 | Styles › Styles pane, Create/Modify Style | Ctrl+Alt+Shift+S | ribbon | – | – | — |
 | Editing › Find | Ctrl+F | ⌘F | ✓ ⌘F (bar) | ✓ ⌘F (bar) | `doc.find.*` |
 | Editing › Replace | Ctrl+H | ⌃H | ✓ ⌃H | ✓ ⇧⌘H | `doc.find.*` |
 | Editing › Advanced Find and Replace (More ▼: wildcards, ^ codes, format, style, direction, scope, prefix/suffix, width, kana, punctuation, spaces) | ribbon | Edit menu | ✓ ⌥⇧⌘H, Edit menu | ≈ find bar's ⋯ row (no format/scope) | `find.*` |
-| Editing › Go To | Ctrl+G / F5 | ⌘⌥G | – (⌘G is Find Next in jade) | – | — |
+| Editing › Go To | Ctrl+G / F5 | ⌘⌥G | ✓ ⌘⌥G (⌘G is Find Next) | ✓ ⌘⌥G | `goto.menu` |
 | Editing › Select All / Select Paragraph | Ctrl+A | ⌘A | ✓ ⌘A, ⌥⌘A | ✓ ⌘A, triple-click | — |
-| Undo / Redo (Quick Access) | Ctrl+Z / Ctrl+Y | ⌘Z / ⌘Y | ✓ ⌘Z / ⇧⌘Z, ribbon | ✓ ⌘Z / ⇧⌘Z / ⌘Y | `doc.undo_title`, `doc.redo` |
+| Undo / Redo (Quick Access) | Ctrl+Z / Ctrl+Y | ⌘Z / ⌘Y | ✓ ⌘Z / ⌘Y / ⇧⌘Z | ✓ ⌘Z / ⇧⌘Z / ⌘Y | `doc.undo_title`, `doc.redo_tip` |
 
 Word for Mac's indent shortcuts are not listed here (not verified); jade
 uses the macOS text convention ⌘[ / ⌘].
@@ -111,7 +113,7 @@ uses the macOS text convention ⌘[ / ⌘].
 |---|---|---|---|---|---|
 | Pages › Cover Page | ribbon | ribbon | ✓ (Simple, Banner, Lined) | ✓ | `setup.cover` |
 | Pages › Blank Page | ribbon | ribbon | ✓ | – | `doc.blank_page` |
-| Pages › Page Break | Ctrl+Enter | ⌘↩ | ✓ ⌘↩ | ✓ ⌘↩ | `setup.break.*` |
+| Pages › Page Break | Ctrl+Enter | ⌘↩ | ✓ ⌘↩, ribbon | ✓ ⌘↩, ribbon | `doc.page_break_tip` |
 | Tables › Table (grid, Insert Table…) | ribbon | ribbon | ✓ grid 10×8 | ✓ | `ribbon.insert_table` |
 | Tables › Draw Table | ribbon | ribbon | ✓ | ✓ | `table.draw` |
 | Tables › Convert Text to Table | ribbon | ribbon | ✓ | ✓ | `table.to_table` |
@@ -120,12 +122,12 @@ uses the macOS text convention ⌘[ / ⌘].
 | Illustrations › Shapes, Icons, 3D Models, SmartArt, Chart, Screenshot | ribbon | ribbon | – | – | — |
 | Media › Online Video | ribbon | ribbon | – | – | — |
 | Links › Link | Ctrl+K | ⌘K | ✓ ⌘K | ✓ ⌘K | `link.button` |
-| Links › Bookmark, Cross-reference | ribbon | ribbon | – | – | — |
-| Comments › Comment | Ctrl+Alt+M | ⌘⌥A | ✓ ⌘M | Review tab only | `doc.comment` |
+| Links › Bookmark, Cross-reference (one group with Link) | ribbon | ribbon | ✓ | ✓ | `bookmark.title`, `xref.title` |
+| Comments › Comment | Ctrl+Alt+M | ⌘⌥A | ✓ ⌘M, ribbon | ✓ ribbon | `doc.comment_tip` |
 | Header & Footer › Header / Footer | ribbon | ribbon | ✓ (in place) | ✓ (one-line bar) | `page.header`, `page.footer` |
 | Header & Footer › Page Number (positions, format, remove) | Alt+Shift+P (field) | ⌃⇧P (field) | ✓ gallery | ✓ gallery | `page.number.*`, `setup.numbers.open` |
 | Text › Text Box, Quick Parts, WordArt, Drop Cap, Signature Line, Object | ribbon | ribbon | – | – | — |
-| Text › Date & Time | Alt+Shift+D (field) | ⌃⇧D (field) | ✓ ⌃⇧D opens the dialog | ✓ ribbon | `chars.date.title_menu` |
+| Text › Date & Time | Alt+Shift+D (field) | ⌃⇧D (field) | ✓ ⌃⇧D, ribbon (the 日付と時刻 dialog) | ✓ ribbon | `field.date_time` |
 | Symbols › Equation | Alt+= | ⌃= | – | – | — |
 | Symbols › Symbol | ribbon | ribbon | ✓ ⌥⇧⌘S | ✓ ribbon | `chars.symbol.title_menu` |
 
@@ -161,14 +163,14 @@ jade has no ink model; "Draw" in jade is only the table pencil and eraser
 | Page Setup › Text Direction (East Asian UI) | ✓ Horizontal/Vertical, options | ✓ | `setup.direction` |
 | Page Setup › 原稿用紙設定 (Japanese UI) | – | – | — |
 | Page Setup › Page Setup dialog (文字数と行数) | ✓ | ✓ | `setup.open` |
-| Paragraph › Indent / Spacing boxes | ≈ Indent −/+ buttons | – | `doc.indent_less`, `doc.indent_more` |
+| Paragraph › Indent (Left, Right) / Spacing (Before, After) spin boxes | ✓ | ✓ | `layout.indent_left` … `layout.space_after` |
 | — › Left-to-Right / Right-to-Left | ✓ | ✓ | `setup.ltr`, `setup.rtl` |
 | — › Snap to Grid | ✓ | ✓ | `setup.snap` |
 | Arrange › Position, Wrap Text | ✓ wrap buttons for a selected picture | ✓ | `picture.wrap.*` |
-| Arrange › Bring Forward, Send Backward, Selection Pane, Align, Group, Rotate | – | – | — |
+| Arrange › Position, Wrap Text, Bring Forward, Send Backward, Selection Pane, Align, Group, Rotate | ✓ while a picture or shape is selected (also on its format tab) | – (format tab only) | `objects.group.arrange` |
 
-The native Layout tab's "Page Break" button (`doc.page_break`) inserts a
-page break at the caret; 空白のページ stays under 挿入.
+The Layout tab's page break is in 区切り, as in Word; 挿入 › ページ has
+ページ区切り beside 空白のページ.
 
 ## References
 

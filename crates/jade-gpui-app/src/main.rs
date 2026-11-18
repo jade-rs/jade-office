@@ -118,7 +118,7 @@ use jade_office_model::word::{
     CharacterFormat, FindOptions, FormatState, Found, TableCommand, WordFind, WordFormatting,
 };
 use jade_office_model::word::{NoteKind, WordReferences};
-use ribbon::Action;
+use ribbon::{Action, RunEffect};
 use std::cell::RefCell;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -164,6 +164,26 @@ actions!(
         SelectAll,
         SelectParagraph,
         ToggleFormattingMarks,
+        GrowFont,
+        ShrinkFont,
+        SmallCaps,
+        AllCaps,
+        DoubleUnderline,
+        WordUnderline,
+        HiddenText,
+        SingleSpacing,
+        OneAndHalfSpacing,
+        DoubleSpacing,
+        HangingIndent,
+        ReduceHangingIndent,
+        ClearCharacterFormatting,
+        ApplyNormalStyle,
+        ApplyHeading1,
+        ApplyHeading2,
+        ApplyHeading3,
+        CycleCase,
+        Strikethrough,
+        AlignDistribute,
         NextPage,
         PreviousPage,
         FindAndReplace,
@@ -320,7 +340,28 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-alt-enter", InsertTableRow, CONTEXT),
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
-        KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
+        // Word for Mac's own keys (Word Help › Keyboard shortcuts).
+        KeyBinding::new("cmd-y", Redo, None),
+        KeyBinding::new("cmd->", GrowFont, CONTEXT),
+        KeyBinding::new("cmd-<", ShrinkFont, CONTEXT),
+        KeyBinding::new("cmd-shift-k", SmallCaps, CONTEXT),
+        KeyBinding::new("cmd-shift-a", AllCaps, CONTEXT),
+        KeyBinding::new("cmd-shift-d", DoubleUnderline, CONTEXT),
+        KeyBinding::new("cmd-shift-w", WordUnderline, CONTEXT),
+        KeyBinding::new("cmd-shift-h", HiddenText, CONTEXT),
+        KeyBinding::new("cmd-1", SingleSpacing, CONTEXT),
+        KeyBinding::new("cmd-5", OneAndHalfSpacing, CONTEXT),
+        KeyBinding::new("cmd-2", DoubleSpacing, CONTEXT),
+        KeyBinding::new("cmd-t", HangingIndent, CONTEXT),
+        KeyBinding::new("cmd-shift-t", ReduceHangingIndent, CONTEXT),
+        KeyBinding::new("ctrl-space", ClearCharacterFormatting, CONTEXT),
+        KeyBinding::new("cmd-shift-n", ApplyNormalStyle, CONTEXT),
+        KeyBinding::new("cmd-alt-1", ApplyHeading1, CONTEXT),
+        KeyBinding::new("cmd-alt-2", ApplyHeading2, CONTEXT),
+        KeyBinding::new("cmd-alt-3", ApplyHeading3, CONTEXT),
+        KeyBinding::new("shift-f3", CycleCase, CONTEXT),
+        KeyBinding::new("cmd-shift-x", Strikethrough, CONTEXT),
+        KeyBinding::new("cmd-shift-j", AlignDistribute, CONTEXT),
         // Word for Mac's スペル チェックと文章校正.
         KeyBinding::new("alt-cmd-l", SpellingAndGrammar, CONTEXT),
         // Word for Mac's 挿入 menu.
@@ -464,8 +505,10 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.format.bold"), Bold),
                 MenuItem::action(t("menu.format.italic"), Italic),
                 MenuItem::action(t("menu.format.underline"), Underline),
+                MenuItem::action(t("menu.format.strikethrough"), Strikethrough),
                 MenuItem::action(t("menu.format.font"), FontDialog),
                 MenuItem::action(t("menu.format.typography"), TypographyDialog),
+                MenuItem::action(t("menu.format.change_case"), CycleCase),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.align_left"), AlignLeft),
                 MenuItem::action(t("menu.format.center"), AlignCenter),
@@ -2152,6 +2195,7 @@ impl DocumentView {
     ) -> impl IntoElement {
         div()
             .id(id)
+            .debug_selector(|| format!("ribbon-{id}"))
             .flex()
             .flex_none()
             .items_center()
@@ -2392,61 +2436,72 @@ impl DocumentView {
                 groups.extend(word_views::customize::custom_group(cx));
                 groups
             }
-            RibbonTab::Insert => vec![
-                ribbon::insert_table(&self.ribbon, cx).remove(0),
-                self.quick_parts_group(cx),
-                self.picture_group(cx),
-                word_signatures::insert_group(self, cx),
-                word_ole::insert_group(self, cx),
-                Self::ribbon_group(
-                    t("link.group"),
-                    vec![Self::ribbon_row(vec![self
-                        .ribbon_button(
-                            "hyperlink",
-                            t("link.button"),
-                            t("link.button_title"),
-                            false,
-                            cx,
-                            |view, cx| view.open_link_dialog(cx),
-                        )
-                        .into_any_element()])],
-                )
-                .into_any_element(),
-                word_references::links_group(cx),
-                word_page::header_footer(&self.ribbon, cx),
-                self.cover_group(cx),
-                word_characters::insert_group(cx),
-                self.fields_group(cx),
-                word_equation::insert_group(self, cx),
-                Self::ribbon_group(
-                    t("doc.group.pages"),
-                    vec![Self::ribbon_row(vec![self
-                        .ribbon_button(
-                            "blank-page",
-                            t("doc.blank_page"),
-                            t("doc.blank_page"),
-                            false,
-                            cx,
-                            |view, cx| view.insert_blank_page(cx),
-                        )
-                        .into_any_element()])],
-                )
-                .into_any_element(),
-                Self::ribbon_group(
-                    t("doc.comment"),
-                    vec![Self::ribbon_row(vec![self
-                        .ribbon_button(
-                            "comment",
-                            t("doc.comment"),
-                            t("doc.comment"),
-                            false,
-                            cx,
-                            |view, cx| view.add_comment(cx),
-                        )
-                        .into_any_element()])],
-                )
-                .into_any_element(),
-            ],
+            // Word's order: ページ, 表, 図, リンク, コメント, ヘッダーと
+            // フッター, テキスト, 記号と特殊文字.
+            RibbonTab::Insert => {
+                let blank = self
+                    .ribbon_button(
+                        "blank-page",
+                        t("doc.blank_page"),
+                        t("doc.blank_page"),
+                        false,
+                        cx,
+                        |view, cx| view.insert_blank_page(cx),
+                    )
+                    .into_any_element();
+                let page_break = self
+                    .ribbon_button(
+                        "insert-page-break",
+                        t("doc.page_break"),
+                        t("doc.page_break_tip"),
+                        false,
+                        cx,
+                        |view, cx| {
+                            view.run_ribbon(
+                                Action::Setup(word_page_setup::SetupAction::Break(
+                                    jade_office_model::word::page_setup::PageBreak::Page,
+                                )),
+                                cx,
+                            )
+                        },
+                    )
+                    .into_any_element();
+                let link = self
+                    .ribbon_button(
+                        "hyperlink",
+                        t("link.button"),
+                        t("link.button_title"),
+                        false,
+                        cx,
+                        |view, cx| view.open_link_dialog(cx),
+                    )
+                    .into_any_element();
+                let comment = self
+                    .ribbon_button(
+                        "comment",
+                        t("doc.comment"),
+                        t("doc.comment_tip"),
+                        false,
+                        cx,
+                        |view, cx| view.add_comment(cx),
+                    )
+                    .into_any_element();
+                vec![
+                    self.cover_group(vec![blank, page_break], cx),
+                    ribbon::insert_table(&self.ribbon, cx).remove(0),
+                    self.picture_group(cx),
+                    word_references::links_group(link, cx),
+                    Self::ribbon_group(t("doc.comment"), vec![Self::ribbon_row(vec![comment])])
+                        .into_any_element(),
+                    word_page::header_footer(&self.ribbon, cx),
+                    self.quick_parts_group(cx),
+                    word_signatures::insert_group(self, cx),
+                    self.fields_group(cx),
+                    word_ole::insert_group(self, cx),
+                    word_equation::insert_group(self, cx),
+                    word_characters::insert_group(cx),
+                ]
+            }
             RibbonTab::Design => self
                 .design_groups(cx)
                 .into_iter()
@@ -2462,55 +2517,13 @@ impl DocumentView {
             .chain(self.page_setup_groups(cx))
             .chain([word_hyphenation::layout_group(self, cx)])
             .chain([word_manuscript::layout_group(cx)])
-            .chain([
-                Self::ribbon_group(
-                    t("doc.group.paragraph"),
-                    vec![Self::ribbon_row(vec![
-                        self.ribbon_button(
-                            "layout-indent-less",
-                            t("doc.indent_less"),
-                            t("doc.indent_less_title"),
-                            false,
-                            cx,
-                            |view, cx| view.run_ribbon(Action::Indent(false), cx),
-                        )
-                        .into_any_element(),
-                        self.ribbon_button(
-                            "layout-indent-more",
-                            t("doc.indent_more"),
-                            t("doc.indent_more_title"),
-                            false,
-                            cx,
-                            |view, cx| view.run_ribbon(Action::Indent(true), cx),
-                        )
-                        .into_any_element(),
-                    ])],
-                )
-                .into_any_element(),
-                Self::ribbon_group(
-                    t("doc.page_break"),
-                    vec![Self::ribbon_row(vec![self
-                        .ribbon_button(
-                            "layout-break",
-                            t("doc.page_break"),
-                            t("doc.page_break"),
-                            false,
-                            cx,
-                            // 改ページ: a page break at the caret. 空白のページ
-                            // stays under 挿入.
-                            |view, cx| {
-                                view.run_ribbon(
-                                    Action::Setup(word_page_setup::SetupAction::Break(
-                                        jade_office_model::word::page_setup::PageBreak::Page,
-                                    )),
-                                    cx,
-                                )
-                            },
-                        )
-                        .into_any_element()])],
-                )
-                .into_any_element(),
-            ])
+            .chain([self.layout_paragraph_group(cx)])
+            // 配置, as Word has it here too, while a picture or shape is
+            // selected.
+            .chain(
+                self.selected_format()
+                    .map(|format| self.arrange_group(&format, cx)),
+            )
             .collect(),
             RibbonTab::TableDesign => {
                 let tabs = self.tables.tab_state(&self.document);
@@ -2533,8 +2546,10 @@ impl DocumentView {
             RibbonTab::Equation => word_equation::tab_groups(self, cx),
             RibbonTab::Review => {
                 let mut groups = self.review_groups(cx);
-                // 言語: 校正言語の設定 (`word_views`).
-                groups.push(word_views::language::review_group(cx));
+                // 言語: 校正言語の設定 (`word_views`), after 文章校正, 音声 and
+                // アクセシビリティ as in Word.
+                let language = word_views::language::review_group(cx);
+                groups.insert(3.min(groups.len()), language);
                 groups
             }
             RibbonTab::HeaderFooter => self.story_groups(cx),
@@ -3425,6 +3440,8 @@ impl DocumentView {
                 | Action::Align(_)
                 | Action::LineSpacing(_)
                 | Action::Indent(_)
+                | Action::HangingIndent(_)
+                | Action::RunEffect(_)
                 | Action::Shading(_)
                 | Action::ParagraphBorders(_)
         );
@@ -3463,6 +3480,17 @@ impl DocumentView {
             Action::Highlight(color) => document.set_highlight(color),
             Action::List(bullets) => document.toggle_list(bullets),
             Action::Indent(increase) => document.step_indent(increase),
+            Action::HangingIndent(increase) => document.step_hanging_indent(increase),
+            Action::RunEffect(effect) => {
+                let current = WordFormatting::format_state(&*document).character;
+                jade_office_model::word::font::WordCharacters::apply_run_format(
+                    document,
+                    effect.toggled(&current),
+                )
+            }
+            Action::CycleCase => {
+                jade_office_model::word::font::WordCharacters::cycle_case(document)
+            }
             Action::Align(alignment) => WordFormatting::set_alignment(document, alignment),
             Action::LineSpacing(multiple) => WordFormatting::set_line_spacing(document, multiple),
             Action::Shading(color) => {
@@ -4998,6 +5026,68 @@ impl Render for DocumentView {
             }))
             .on_action(cx.listener(|view, _: &FontSizeDialog, _window, cx| {
                 word_characters::open_font_dialog(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &GrowFont, _window, cx| {
+                view.run_ribbon(Action::StepFontSize(true), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ShrinkFont, _window, cx| {
+                view.run_ribbon(Action::StepFontSize(false), cx)
+            }))
+            .on_action(cx.listener(|view, _: &SmallCaps, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::SmallCaps), cx)
+            }))
+            .on_action(cx.listener(|view, _: &AllCaps, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::AllCaps), cx)
+            }))
+            .on_action(cx.listener(|view, _: &DoubleUnderline, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::DoubleUnderline), cx)
+            }))
+            .on_action(cx.listener(|view, _: &WordUnderline, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::WordUnderline), cx)
+            }))
+            .on_action(cx.listener(|view, _: &HiddenText, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::Hidden), cx)
+            }))
+            .on_action(cx.listener(|view, _: &SingleSpacing, _window, cx| {
+                view.run_ribbon(Action::LineSpacing(1.0), cx)
+            }))
+            .on_action(cx.listener(|view, _: &OneAndHalfSpacing, _window, cx| {
+                view.run_ribbon(Action::LineSpacing(1.5), cx)
+            }))
+            .on_action(cx.listener(|view, _: &DoubleSpacing, _window, cx| {
+                view.run_ribbon(Action::LineSpacing(2.0), cx)
+            }))
+            .on_action(cx.listener(|view, _: &HangingIndent, _window, cx| {
+                view.run_ribbon(Action::HangingIndent(true), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ReduceHangingIndent, _window, cx| {
+                view.run_ribbon(Action::HangingIndent(false), cx)
+            }))
+            .on_action(
+                cx.listener(|view, _: &ClearCharacterFormatting, _window, cx| {
+                    view.run_ribbon(Action::ClearFormatting, cx)
+                }),
+            )
+            .on_action(cx.listener(|view, _: &ApplyNormalStyle, _window, cx| {
+                view.run_ribbon(Action::Style(Some("Normal".to_string())), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ApplyHeading1, _window, cx| {
+                view.run_ribbon(Action::Style(Some("Heading1".to_string())), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ApplyHeading2, _window, cx| {
+                view.run_ribbon(Action::Style(Some("Heading2".to_string())), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ApplyHeading3, _window, cx| {
+                view.run_ribbon(Action::Style(Some("Heading3".to_string())), cx)
+            }))
+            .on_action(cx.listener(|view, _: &Strikethrough, _window, cx| {
+                view.run_ribbon(Action::Toggle(CharacterFormat::Strikethrough), cx)
+            }))
+            .on_action(cx.listener(|view, _: &AlignDistribute, _window, cx| {
+                view.run_ribbon(Action::Align("distribute"), cx)
+            }))
+            .on_action(cx.listener(|view, _: &CycleCase, _window, cx| {
+                view.run_ribbon(Action::CycleCase, cx)
             }))
             .on_action(cx.listener(|view, _: &IndentMore, _window, cx| {
                 view.run_ribbon(Action::Indent(true), cx)

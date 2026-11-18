@@ -1458,11 +1458,13 @@ pub fn ribbon_groups(view: &mut DocumentView, cx: &mut Context<DocumentView>) ->
     ]
 }
 
-/// 挿入's リンク group: ブックマーク and 相互参照, beside ⌘K's link.
-pub fn links_group(cx: &mut Context<DocumentView>) -> AnyElement {
+/// 挿入's リンク group: ⌘K's `link`, ブックマーク and 相互参照, as Word
+/// has them in one group.
+pub fn links_group(link: AnyElement, cx: &mut Context<DocumentView>) -> AnyElement {
     group(
         t("links.group"),
         vec![row(vec![
+            link,
             text_button(
                 "insert-bookmark",
                 t("bookmark.title"),
