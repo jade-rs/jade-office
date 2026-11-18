@@ -262,6 +262,10 @@ pub enum Action {
     Highlight(&'static str),
     List(bool),
     Indent(bool),
+    /// A character effect Word puts on a key of its own (⇧⌘K, ⇧⌘A, …).
+    RunEffect(jade_web::word::font::RunEffect),
+    /// ⇧F3: lower → Title → UPPER case.
+    CycleCase,
     Align(&'static str),
     LineSpacing(f32),
     Shading(Option<String>),
@@ -1507,28 +1511,28 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                     align(
                         "align-left",
                         "icons/align-left.svg",
-                        i18n::text("doc.align_left_title"),
+                        i18n::text("doc.align_left_tip"),
                         "left",
                         cx,
                     ),
                     align(
                         "align-center",
                         "icons/align-center.svg",
-                        i18n::text("doc.center_title"),
+                        i18n::text("doc.center_tip"),
                         "center",
                         cx,
                     ),
                     align(
                         "align-right",
                         "icons/align-right.svg",
-                        i18n::text("doc.align_right_title"),
+                        i18n::text("doc.align_right_tip"),
                         "right",
                         cx,
                     ),
                     align(
                         "align-both",
                         "icons/align-justify.svg",
-                        i18n::text("doc.justify_title"),
+                        i18n::text("doc.justify_tip"),
                         "both",
                         cx,
                     ),
@@ -1584,7 +1588,7 @@ fn home(ribbon: &Ribbon, state: &FormatState, cx: &mut Context<DocView>) -> Vec<
                 icon_button(
                     "redo",
                     "icons/redo.svg",
-                    i18n::text("doc.redo"),
+                    i18n::text("doc.redo_tip"),
                     false,
                     true,
                     Action::Redo,

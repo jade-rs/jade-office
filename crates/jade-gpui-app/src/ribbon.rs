@@ -28,6 +28,7 @@ use jade_office_model::word::{
 use crate::tooltip::Tooltip;
 use crate::DocumentView;
 use crate::{i18n, theme};
+pub use jade_office_model::word::font::RunEffect;
 
 /// Word's ribbon sizes (`WORD_FONT_SIZES`).
 const FONT_SIZES: [f32; 17] = [
@@ -228,6 +229,12 @@ pub enum Action {
     Highlight(&'static str),
     List(bool),
     Indent(bool),
+    /// ⌘T / ⇧⌘T: the hanging indent in or out by a tab stop.
+    HangingIndent(bool),
+    /// A character effect Word puts on a key of its own (⇧⌘K, ⇧⌘A, …).
+    RunEffect(RunEffect),
+    /// ⇧F3: lower → Title → UPPER case.
+    CycleCase,
     Align(&'static str),
     LineSpacing(f32),
     Shading(Option<String>),
@@ -1276,28 +1283,28 @@ pub fn home(
                     align(
                         "align-left",
                         "icons/align-left.svg",
-                        i18n::text("doc.align_left_title"),
+                        i18n::text("doc.align_left_tip"),
                         "left",
                         cx,
                     ),
                     align(
                         "align-center",
                         "icons/align-center.svg",
-                        i18n::text("doc.center_title"),
+                        i18n::text("doc.center_tip"),
                         "center",
                         cx,
                     ),
                     align(
                         "align-right",
                         "icons/align-right.svg",
-                        i18n::text("doc.align_right_title"),
+                        i18n::text("doc.align_right_tip"),
                         "right",
                         cx,
                     ),
                     align(
                         "align-both",
                         "icons/align-justify.svg",
-                        i18n::text("doc.justify_title"),
+                        i18n::text("doc.justify_tip"),
                         "both",
                         cx,
                     ),

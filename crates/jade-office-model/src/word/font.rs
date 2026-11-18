@@ -1061,12 +1061,97 @@ pub trait WordCharacters: WordSession {
             false,
         )
     }
+
+    /// ⇧F3: Word's case cycle. All lower case becomes Each Word Capitalised,
+    /// all upper case becomes lower case, and anything else becomes upper
+    /// case — so pressing it again walks lower → Title → UPPER → lower.
+    fn cycle_case(&mut self) -> Result<(), String> {
+        let range = self
+            .selection_range()
+            .filter(|range| !range.is_collapsed())
+            .ok_or_else(|| "select the text to change".to_string())?;
+        let (start, end) = range.normalized();
+        let mut text = String::new();
+        for paragraph in start.paragraph..=end.paragraph {
+            let line = self.text_of(paragraph).unwrap_or_default();
+            let from = if paragraph == start.paragraph {
+                start.offset
+            } else {
+                0
+            };
+            let to = if paragraph == end.paragraph {
+                end.offset
+            } else {
+                usize::MAX
+            };
+            text.extend(line.chars().skip(from).take(to.saturating_sub(from)));
+        }
+        self.change_case(next_case(&text))
+    }
+}
+
+/// Where ⇧F3 goes from `text`.
+pub fn next_case(text: &str) -> HeadlessChangeCaseMode {
+    let lower = text.chars().any(char::is_lowercase);
+    let upper = text.chars().any(char::is_uppercase);
+    match (lower, upper) {
+        (true, false) => HeadlessChangeCaseMode::Title,
+        (false, true) => HeadlessChangeCaseMode::Lower,
+        _ => HeadlessChangeCaseMode::Upper,
+    }
+}
+
+/// Character effects Word for Mac toggles from the keyboard.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunEffect {
+    /// ⇧⌘K すべて小文字を小型英大文字.
+    SmallCaps,
+    /// ⇧⌘A すべて大文字.
+    AllCaps,
+    /// ⇧⌘D 二重下線.
+    DoubleUnderline,
+    /// ⇧⌘W 単語だけの下線.
+    WordUnderline,
+    /// ⇧⌘H 隠し文字.
+    Hidden,
+}
+
+impl RunEffect {
+    /// The format that turns this effect on, or off when `current` has it.
+    pub fn toggled(self, current: &HeadlessRunFormat) -> HeadlessRunFormat {
+        let flip = |on: Option<bool>| Some(on != Some(true));
+        let underline = |style: &str| {
+            Some(if current.underline.as_deref() == Some(style) {
+                "none".to_string()
+            } else {
+                style.to_string()
+            })
+        };
+        let mut format = HeadlessRunFormat::default();
+        match self {
+            RunEffect::SmallCaps => format.small_caps = flip(current.small_caps),
+            RunEffect::AllCaps => format.caps = flip(current.caps),
+            RunEffect::Hidden => format.hidden = flip(current.hidden),
+            RunEffect::DoubleUnderline => format.underline = underline("double"),
+            RunEffect::WordUnderline => format.underline = underline("words"),
+        }
+        format
+    }
 }
 
 impl<T: WordSession + ?Sized> WordCharacters for T {}
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shift_f3_walks_lower_title_upper() {
+        use super::{next_case, HeadlessChangeCaseMode as Mode};
+        assert_eq!(next_case("hello world"), Mode::Title);
+        assert_eq!(next_case("Hello World"), Mode::Upper);
+        assert_eq!(next_case("HELLO WORLD"), Mode::Lower);
+        assert_eq!(next_case("hELLO"), Mode::Upper);
+    }
+
     #[test]
     fn the_highlight_palette_offers_every_st_highlight_color() {
         let names: Vec<_> = super::HIGHLIGHT_COLORS

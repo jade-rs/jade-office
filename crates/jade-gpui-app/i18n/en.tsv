@@ -65,6 +65,7 @@ menu.format	Format
 menu.format.bold	Bold
 menu.format.italic	Italic
 menu.format.underline	Underline
+menu.format.strikethrough	Strikethrough
 menu.format.align_left	Align Left
 menu.format.center	Center
 menu.format.align_right	Align Right
@@ -624,9 +625,9 @@ doc.page_borders_box	Put a border round the page
 doc.page_borders_none	Remove the page border
 doc.group.paragraph	Paragraph
 doc.indent_less	Indent −
-doc.indent_less_title	Decrease Indent
+doc.indent_less_title	Decrease Indent (⌘[)
 doc.indent_more	Indent +
-doc.indent_more_title	Increase Indent
+doc.indent_more_title	Increase Indent (⌘])
 doc.page_break	Page Break
 doc.toc	Contents
 doc.toc_title	Insert a table of contents
@@ -655,17 +656,17 @@ doc.copy	Copy
 doc.copy_title	Copy
 doc.group.font	Font
 doc.grow	A+
-doc.grow_title	Increase Font Size
+doc.grow_title	Increase Font Size (⇧⌘>)
 doc.shrink	A−
-doc.shrink_title	Decrease Font Size
-doc.bold_title	Bold
-doc.italic_title	Italic
-doc.underline_title	Underline
-doc.strike_title	Strikethrough
+doc.shrink_title	Decrease Font Size (⇧⌘<)
+doc.bold_title	Bold (⌘B)
+doc.italic_title	Italic (⌘I)
+doc.underline_title	Underline (⌘U)
+doc.strike_title	Strikethrough (⇧⌘X)
 doc.subscript	x₂
-doc.subscript_title	Subscript
+doc.subscript_title	Subscript (⌘=)
 doc.superscript	x²
-doc.superscript_title	Superscript
+doc.superscript_title	Superscript (⇧⌘=)
 doc.font_color	Color
 doc.font_color_title	Font Color
 doc.highlight	Highlight
@@ -701,8 +702,13 @@ doc.style.heading2	Heading 2
 doc.style.heading3	Heading 3
 doc.group.editing	Editing
 doc.undo	Undo
-doc.undo_title	Undo
+doc.undo_title	Undo (⌘Z)
 doc.redo	Redo
+doc.align_left_tip	Align Left (⌘L)
+doc.center_tip	Center (⌘E)
+doc.align_right_tip	Align Right (⌘R)
+doc.justify_tip	Justify (⌘J)
+doc.redo_tip	Redo (⌘Y)
 doc.find	Find
 doc.find_title	Find and Replace
 doc.color.auto	Automatic
@@ -1517,6 +1523,7 @@ chars.asian.warichu_none	Two lines in one (no brackets)
 chars.asian.remove	Remove Asian layout
 chars.asian.scale	Character scale
 menu.format.typography	Asian Typography...
+menu.format.change_case	Change Case
 chars.typography.title	Asian Typography
 chars.typography.paragraph	Line breaking (selected paragraphs)
 chars.typography.document	Typography (whole document)

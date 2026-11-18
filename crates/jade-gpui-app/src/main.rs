@@ -116,7 +116,7 @@ use jade_office_model::word::{
     CharacterFormat, FindOptions, FormatState, Found, TableCommand, WordFind, WordFormatting,
 };
 use jade_office_model::word::{NoteKind, WordReferences};
-use ribbon::Action;
+use ribbon::{Action, RunEffect};
 use std::cell::RefCell;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -162,6 +162,26 @@ actions!(
         SelectAll,
         SelectParagraph,
         ToggleFormattingMarks,
+        GrowFont,
+        ShrinkFont,
+        SmallCaps,
+        AllCaps,
+        DoubleUnderline,
+        WordUnderline,
+        HiddenText,
+        SingleSpacing,
+        OneAndHalfSpacing,
+        DoubleSpacing,
+        HangingIndent,
+        ReduceHangingIndent,
+        ClearCharacterFormatting,
+        ApplyNormalStyle,
+        ApplyHeading1,
+        ApplyHeading2,
+        ApplyHeading3,
+        CycleCase,
+        Strikethrough,
+        AlignDistribute,
         NextPage,
         PreviousPage,
         FindAndReplace,
@@ -318,7 +338,28 @@ fn key_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-alt-enter", InsertTableRow, CONTEXT),
         KeyBinding::new("cmd-shift-backspace", DeleteTableRow, CONTEXT),
         KeyBinding::new("cmd-m", AddComment, CONTEXT),
-        KeyBinding::new("cmd-shift-t", ToggleChangeTracking, CONTEXT),
+        // Word for Mac's own keys (Word Help › Keyboard shortcuts).
+        KeyBinding::new("cmd-y", Redo, None),
+        KeyBinding::new("cmd->", GrowFont, CONTEXT),
+        KeyBinding::new("cmd-<", ShrinkFont, CONTEXT),
+        KeyBinding::new("cmd-shift-k", SmallCaps, CONTEXT),
+        KeyBinding::new("cmd-shift-a", AllCaps, CONTEXT),
+        KeyBinding::new("cmd-shift-d", DoubleUnderline, CONTEXT),
+        KeyBinding::new("cmd-shift-w", WordUnderline, CONTEXT),
+        KeyBinding::new("cmd-shift-h", HiddenText, CONTEXT),
+        KeyBinding::new("cmd-1", SingleSpacing, CONTEXT),
+        KeyBinding::new("cmd-5", OneAndHalfSpacing, CONTEXT),
+        KeyBinding::new("cmd-2", DoubleSpacing, CONTEXT),
+        KeyBinding::new("cmd-t", HangingIndent, CONTEXT),
+        KeyBinding::new("cmd-shift-t", ReduceHangingIndent, CONTEXT),
+        KeyBinding::new("ctrl-space", ClearCharacterFormatting, CONTEXT),
+        KeyBinding::new("cmd-shift-n", ApplyNormalStyle, CONTEXT),
+        KeyBinding::new("cmd-alt-1", ApplyHeading1, CONTEXT),
+        KeyBinding::new("cmd-alt-2", ApplyHeading2, CONTEXT),
+        KeyBinding::new("cmd-alt-3", ApplyHeading3, CONTEXT),
+        KeyBinding::new("shift-f3", CycleCase, CONTEXT),
+        KeyBinding::new("cmd-shift-x", Strikethrough, CONTEXT),
+        KeyBinding::new("cmd-shift-j", AlignDistribute, CONTEXT),
         // Word for Mac's スペル チェックと文章校正.
         KeyBinding::new("alt-cmd-l", SpellingAndGrammar, CONTEXT),
         // Word for Mac's 挿入 menu.
@@ -462,8 +503,10 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action(t("menu.format.bold"), Bold),
                 MenuItem::action(t("menu.format.italic"), Italic),
                 MenuItem::action(t("menu.format.underline"), Underline),
+                MenuItem::action(t("menu.format.strikethrough"), Strikethrough),
                 MenuItem::action(t("menu.format.font"), FontDialog),
                 MenuItem::action(t("menu.format.typography"), TypographyDialog),
+                MenuItem::action(t("menu.format.change_case"), CycleCase),
                 MenuItem::separator(),
                 MenuItem::action(t("menu.format.align_left"), AlignLeft),
                 MenuItem::action(t("menu.format.center"), AlignCenter),
@@ -3390,6 +3433,8 @@ impl DocumentView {
                 | Action::Align(_)
                 | Action::LineSpacing(_)
                 | Action::Indent(_)
+                | Action::HangingIndent(_)
+                | Action::RunEffect(_)
                 | Action::Shading(_)
                 | Action::ParagraphBorders(_)
         );
@@ -3428,6 +3473,17 @@ impl DocumentView {
             Action::Highlight(color) => document.set_highlight(color),
             Action::List(bullets) => document.toggle_list(bullets),
             Action::Indent(increase) => document.step_indent(increase),
+            Action::HangingIndent(increase) => document.step_hanging_indent(increase),
+            Action::RunEffect(effect) => {
+                let current = WordFormatting::format_state(&*document).character;
+                jade_office_model::word::font::WordCharacters::apply_run_format(
+                    document,
+                    effect.toggled(&current),
+                )
+            }
+            Action::CycleCase => {
+                jade_office_model::word::font::WordCharacters::cycle_case(document)
+            }
             Action::Align(alignment) => WordFormatting::set_alignment(document, alignment),
             Action::LineSpacing(multiple) => WordFormatting::set_line_spacing(document, multiple),
             Action::Shading(color) => {
@@ -4967,6 +5023,68 @@ impl Render for DocumentView {
             }))
             .on_action(cx.listener(|view, _: &FontSizeDialog, _window, cx| {
                 word_characters::open_font_dialog(view, cx)
+            }))
+            .on_action(cx.listener(|view, _: &GrowFont, _window, cx| {
+                view.run_ribbon(Action::StepFontSize(true), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ShrinkFont, _window, cx| {
+                view.run_ribbon(Action::StepFontSize(false), cx)
+            }))
+            .on_action(cx.listener(|view, _: &SmallCaps, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::SmallCaps), cx)
+            }))
+            .on_action(cx.listener(|view, _: &AllCaps, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::AllCaps), cx)
+            }))
+            .on_action(cx.listener(|view, _: &DoubleUnderline, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::DoubleUnderline), cx)
+            }))
+            .on_action(cx.listener(|view, _: &WordUnderline, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::WordUnderline), cx)
+            }))
+            .on_action(cx.listener(|view, _: &HiddenText, _window, cx| {
+                view.run_ribbon(Action::RunEffect(RunEffect::Hidden), cx)
+            }))
+            .on_action(cx.listener(|view, _: &SingleSpacing, _window, cx| {
+                view.run_ribbon(Action::LineSpacing(1.0), cx)
+            }))
+            .on_action(cx.listener(|view, _: &OneAndHalfSpacing, _window, cx| {
+                view.run_ribbon(Action::LineSpacing(1.5), cx)
+            }))
+            .on_action(cx.listener(|view, _: &DoubleSpacing, _window, cx| {
+                view.run_ribbon(Action::LineSpacing(2.0), cx)
+            }))
+            .on_action(cx.listener(|view, _: &HangingIndent, _window, cx| {
+                view.run_ribbon(Action::HangingIndent(true), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ReduceHangingIndent, _window, cx| {
+                view.run_ribbon(Action::HangingIndent(false), cx)
+            }))
+            .on_action(
+                cx.listener(|view, _: &ClearCharacterFormatting, _window, cx| {
+                    view.run_ribbon(Action::ClearFormatting, cx)
+                }),
+            )
+            .on_action(cx.listener(|view, _: &ApplyNormalStyle, _window, cx| {
+                view.run_ribbon(Action::Style(Some("Normal".to_string())), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ApplyHeading1, _window, cx| {
+                view.run_ribbon(Action::Style(Some("Heading1".to_string())), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ApplyHeading2, _window, cx| {
+                view.run_ribbon(Action::Style(Some("Heading2".to_string())), cx)
+            }))
+            .on_action(cx.listener(|view, _: &ApplyHeading3, _window, cx| {
+                view.run_ribbon(Action::Style(Some("Heading3".to_string())), cx)
+            }))
+            .on_action(cx.listener(|view, _: &Strikethrough, _window, cx| {
+                view.run_ribbon(Action::Toggle(CharacterFormat::Strikethrough), cx)
+            }))
+            .on_action(cx.listener(|view, _: &AlignDistribute, _window, cx| {
+                view.run_ribbon(Action::Align("distribute"), cx)
+            }))
+            .on_action(cx.listener(|view, _: &CycleCase, _window, cx| {
+                view.run_ribbon(Action::CycleCase, cx)
             }))
             .on_action(cx.listener(|view, _: &IndentMore, _window, cx| {
                 view.run_ribbon(Action::Indent(true), cx)
