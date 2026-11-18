@@ -1,4 +1,4 @@
-//! The rulers (ルーラー), as Word draws them over and beside the page: the
+//! The ruler (ルーラー), as Word draws it over the page: the
 //! margins in grey, ticks and numbers in the chosen unit (mm, cm, inches,
 //! points or 字), the caret paragraph's indent markers — 1 行目のインデント
 //! on top, ぶら下げインデント and 左インデント below, 右インデント at the
@@ -7,8 +7,8 @@
 //! On the horizontal ruler a click between the margins sets a tab stop of
 //! the kind the selector at its left shows (click the selector for the
 //! next kind); a tab stop dragged along moves, dragged off the ruler goes;
-//! an indent marker dragged sets that indent. The vertical ruler beside the
-//! caret's page shows its top and bottom margins.
+//! an indent marker dragged sets that indent. Like Elsa, there is no
+//! vertical ruler beside the page.
 
 use gpui::{
     canvas, div, prelude::*, px, AnyElement, Context, MouseButton, MouseDownEvent, MouseMoveEvent,
@@ -92,29 +92,23 @@ pub fn unit_label(unit: RulerUnit) -> &'static str {
     })
 }
 
-/// The page box the rulers measure: its size and margins, in points.
+/// The page width the ruler measures, and its side margins, in points.
 struct Measure {
     width: f32,
-    height: f32,
     left: f32,
     right: f32,
-    top: f32,
-    bottom: f32,
 }
 
 impl DocumentView {
     fn measure(&self) -> Measure {
         let setup = self.doc().page_setup();
-        let (width, height) = self.doc().page_size();
+        let (width, _) = self.doc().page_size();
         Measure {
             // The layout's page box is in CSS px; the rulers measure in
             // points, as the margins, indents and tab stops are.
             width: width as f32 * PT_PER_PX,
-            height: height as f32 * PT_PER_PX,
             left: setup.margins.left,
             right: setup.margins.right,
-            top: setup.margins.top,
-            bottom: setup.margins.bottom,
         }
     }
 
@@ -442,70 +436,6 @@ impl DocumentView {
                 .child(strip.when_some(offset, |strip, offset| strip.ml(offset)))
                 .into_any_element(),
         )
-    }
-
-    /// The vertical ruler, beside page `index` when the caret is on it.
-    pub(crate) fn vertical_ruler(&self, index: usize) -> Option<AnyElement> {
-        if !self.tools.ruler || index != self.caret_page() {
-            return None;
-        }
-        let measure = self.measure();
-        let zoom = self.shown_zoom;
-        let unit = self.tools.unit;
-        let char_width = self.char_width();
-        // 字 down a page is a line: Word measures the vertical ruler in lines
-        // there; a line is the character's height and a half.
-        let (unit, char_width) = match unit {
-            RulerUnit::Characters => (RulerUnit::Characters, char_width * 1.5),
-            unit => (unit, char_width),
-        };
-        let y = |points: f32| px(points * zoom * PX_PER_PT);
-        let mut ruler = div()
-            .absolute()
-            .top_0()
-            .left(px(-24.0))
-            .w(px(18.0))
-            .h(y(measure.height))
-            .bg(theme::sidebar())
-            .child(
-                div()
-                    .absolute()
-                    .left(px(2.0))
-                    .w(px(14.0))
-                    .top(y(measure.top))
-                    .h(y(measure.height - measure.top - measure.bottom))
-                    .bg(theme::paper()),
-            );
-        for tick in ticks(unit, char_width, -measure.top, measure.height - measure.top) {
-            let at = y(measure.top + tick.at);
-            ruler = match tick.label {
-                Some(label) => ruler.child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .w(px(18.0))
-                        .top(at - px(6.0))
-                        .flex()
-                        .justify_center()
-                        .text_size(px(8.0))
-                        .text_color(theme::text_dim())
-                        .child(label),
-                ),
-                None => {
-                    let length = if tick.half { 6.0 } else { 3.0 };
-                    ruler.child(
-                        div()
-                            .absolute()
-                            .left(px((18.0 - length) / 2.0))
-                            .top(at)
-                            .h(px(1.0))
-                            .w(px(length))
-                            .bg(theme::text_faint()),
-                    )
-                }
-            };
-        }
-        Some(ruler.into_any_element())
     }
 }
 
