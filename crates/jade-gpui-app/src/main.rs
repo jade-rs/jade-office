@@ -1481,7 +1481,18 @@ struct DocumentView {
     views: word_views::Views,
     scroll: ScrollHandle,
     focus: FocusHandle,
+    /// Draws the pages a whole-document repaint left stale, once editing
+    /// pauses: see [`Self::paint_pages_in_view`].
+    stale_painter: Option<gpui::Task<()>>,
 }
+
+/// Pages drawn at once around the ones in view: the view's own, two before
+/// and six after, which covers a zoomed-out view and a page scrolled to.
+const PAINT_WINDOW_BEFORE: usize = 2;
+const PAINT_WINDOW_AFTER: usize = 6;
+/// Stale pages drawn per pass once editing pauses, and how long it has to.
+const STALE_PAGES_PER_PASS: usize = 24;
+const STALE_PAINT_DELAY: Duration = Duration::from_millis(250);
 
 impl DocumentView {
     /// The page most of the viewport is showing, from the scroll offset.
@@ -3962,6 +3973,100 @@ impl DocumentView {
 
     /// Re-reads every page. Needed after a re-flow, where a later page's
     /// content may have moved even though the edit was on an earlier one.
+    /// Draws only the pages around the view when an edit re-flows the whole
+    /// document, and the rest once editing pauses.
+    ///
+    /// A paragraph split, a join or an undo near the start of a long document
+    /// moves every page after it; drawing and re-reading them all took over
+    /// half a second a key in a 151-page document. The pages in view are
+    /// drawn at once, so what is on screen is never out of date; the others
+    /// keep their old pixels until [`Self::paint_stale_pages_later`] gets to
+    /// them, a pass at a time.
+    fn paint_pages_in_view(&mut self, cx: &mut Context<Self>) {
+        let pages = self.document.page_count();
+        if pages == 0 {
+            return;
+        }
+        let caret = self.caret_page_1idx().saturating_sub(1);
+        let window = |page: usize| {
+            page.saturating_sub(PAINT_WINDOW_BEFORE)..(page + PAINT_WINDOW_AFTER + 1).min(pages)
+        };
+        let in_view = window(self.current_page);
+        // The caret's page too, when it is near: the next edit repaints from it.
+        let around = window(caret);
+        let paint_window = if around.start <= in_view.end && in_view.start <= around.end {
+            in_view.start.min(around.start)..in_view.end.max(around.end)
+        } else {
+            in_view.clone()
+        };
+        self.document.set_paint_window(Some(paint_window));
+        if !self.document.has_stale_pages() {
+            return;
+        }
+        match self.document.paint_stale_pages(in_view.clone()) {
+            Ok(true) => {
+                for index in in_view {
+                    self.set_page_image(index);
+                }
+            }
+            Ok(false) => {}
+            Err(error) => eprintln!("painting pages in view: {error}"),
+        }
+        self.paint_stale_pages_later(cx);
+    }
+
+    /// Once editing has paused, draws the stale pages a pass at a time.
+    fn paint_stale_pages_later(&mut self, cx: &mut Context<Self>) {
+        if self.stale_painter.is_some() || !self.document.has_stale_pages() {
+            return;
+        }
+        self.stale_painter = Some(cx.spawn(async move |view, cx| loop {
+            let edits = view.update(cx, |view, _| view.edits).ok();
+            cx.background_executor().timer(STALE_PAINT_DELAY).await;
+            let more = view.update(cx, |view, cx| {
+                // Still editing: the next pause, then.
+                if Some(view.edits) != edits {
+                    return true;
+                }
+                let Some(first) =
+                    (0..view.document.page_count()).find(|&page| view.document.is_page_stale(page))
+                else {
+                    return false;
+                };
+                let pass = first..first + STALE_PAGES_PER_PASS;
+                if let Err(error) = view.document.paint_stale_pages(pass.clone()) {
+                    eprintln!("painting stale pages: {error}");
+                    return false;
+                }
+                let shown = view.images.len();
+                for index in pass.start..pass.end.min(shown) {
+                    view.set_page_image(index);
+                }
+                cx.notify();
+                view.document.has_stale_pages()
+            });
+            if !matches!(more, Ok(true)) {
+                let _ = view.update(cx, |view, _| view.stale_painter = None);
+                break;
+            }
+        }));
+    }
+
+    /// Draws every stale page now, for whatever reads all of them: printing.
+    pub(crate) fn paint_all_stale_pages(&mut self) {
+        if !self.document.has_stale_pages() {
+            return;
+        }
+        match self.document.paint_stale_pages(0..usize::MAX) {
+            Ok(_) => {
+                for index in 0..self.document.page_count() {
+                    self.set_page_image(index);
+                }
+            }
+            Err(error) => eprintln!("painting stale pages: {error}"),
+        }
+    }
+
     fn rebuild_all_images(&mut self) {
         // Headings collapsed in the body follow edits that move them.
         word_references::refresh_collapsed(self);
@@ -4688,6 +4793,7 @@ impl Render for DocumentView {
         // Recomputed each frame: gpui does not notify on scroll, and this is
         // cheap next to laying the frame out.
         self.current_page = self.page_from_scroll();
+        self.paint_pages_in_view(cx);
         // The rendered page box, which is the document's rather than whatever
         // the shell asked for at open.
         let (page_width, page_height) = {
@@ -5525,6 +5631,7 @@ fn document_view(
         views: word_views::Views::default(),
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
+        stale_painter: None,
     }
 }
 

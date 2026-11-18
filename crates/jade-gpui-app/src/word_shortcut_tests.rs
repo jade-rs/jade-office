@@ -148,3 +148,34 @@ fn select_all_keeps_the_whole_document_selected(cx: &mut gpui::TestAppContext) {
         assert!(view.caret.is_some(), "the caret is still drawn");
     });
 }
+
+/// Enter near the start of a long document re-flows every page after it, but
+/// draws only the pages around the view; the rest are drawn later, and print
+/// draws any still waiting.
+#[gpui::test]
+fn enter_in_a_long_document_draws_the_pages_in_view_first(cx: &mut gpui::TestAppContext) {
+    let path = std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../jade-core/public/fixtures/yokohama.docx"
+    ));
+    let (view, cx) =
+        cx.add_window_view(|_window, cx| crate::open_document_view(&path, cx).unwrap());
+    cx.update(|_, cx| cx.bind_keys(crate::key_bindings()));
+    cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+    cx.run_until_parked();
+    view.update(cx, |view, _| {
+        view.insert_at = (40, 3);
+        view.caret = view.document.place_caret(40, 3);
+    });
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let far = view.update(cx, |view, _| {
+        let pages = view.document.page_count();
+        assert!(pages > 100);
+        assert!(!view.document.is_page_stale(view.current_page));
+        pages - 1
+    });
+    assert!(view.update(cx, |view, _| view.document.is_page_stale(far)));
+    view.update(cx, |view, _| view.paint_all_stale_pages());
+    assert!(!view.update(cx, |view, _| view.document.has_stale_pages()));
+}
