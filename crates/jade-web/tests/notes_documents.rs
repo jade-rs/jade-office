@@ -254,3 +254,66 @@ fn a_new_note_starts_with_a_space_after_its_number() {
         .iter()
         .any(|text| text == "text"));
 }
+
+/// The arrows step character by character through a note's text and the
+/// body text after a note mark, past the note number and the mark as Word
+/// does: never into the middle of a character, and on to the note's end.
+#[test]
+fn arrows_step_whole_characters_past_note_numbers_and_marks() {
+    use jade_web::editing::Motion;
+    use jade_web::word::headless::HeadlessCommand;
+    let mut document = common::contract();
+    document
+        .apply_commands(
+            vec![HeadlessCommand::InsertFootnote {
+                paragraph: 3,
+                offset: 0,
+                text: "日本語".into(),
+            }],
+            false,
+        )
+        .unwrap();
+    let note = (0..document.word_document().paragraph_count())
+        .find(|&index| {
+            document
+                .word_document()
+                .rendered_paragraph_text(index)
+                .ends_with(" 日本語")
+        })
+        .unwrap();
+    let text = document.caret_text(note).unwrap();
+    assert_eq!(
+        text.len(),
+        document.word_document().rendered_paragraph_len(note)
+    );
+    let mut stops = Vec::new();
+    document.place_caret(note, 0);
+    for _ in 0..5 {
+        document.move_caret(Motion::Right, false).unwrap();
+        stops.push(document.caret().unwrap());
+    }
+    let expected: Vec<_> = text
+        .char_indices()
+        .skip(1)
+        .map(|(offset, _)| (note, offset))
+        .chain([(note, text.len())])
+        .collect();
+    assert_eq!(stops, expected);
+
+    // In the body, after the mark: whole characters too.
+    let body = document.caret_text(3).unwrap();
+    assert!(body.is_char_boundary(1));
+    document.place_caret(3, 0);
+    let mut stops = Vec::new();
+    for _ in 0..3 {
+        document.move_caret(Motion::Right, false).unwrap();
+        stops.push(document.caret().unwrap().1);
+    }
+    let expected: Vec<_> = body
+        .char_indices()
+        .skip(1)
+        .take(3)
+        .map(|(o, _)| o)
+        .collect();
+    assert_eq!(stops, expected);
+}
