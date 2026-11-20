@@ -1553,13 +1553,12 @@ impl DocumentView {
         }
         // Scroll is in screen pixels and the pitch is in document pixels.
         let offset = -f64::from(self.scroll.offset().y) / f64::from(self.zoom);
-        let pitch = self.document.page_pitch();
         // Half a page in, so the highlight changes when a page takes over the
         // view rather than the moment its top edge appears.
-        (((offset + self.document.layout_page_size().1 / 2.0) / pitch)
-            .floor()
-            .max(0.0) as usize)
-            .min(self.images.len().saturating_sub(1))
+        let (page, _) = self
+            .document
+            .page_and_offset(offset + self.document.layout_page_size().1 / 2.0);
+        page.min(self.images.len().saturating_sub(1))
     }
 
     /// The page the caret is on, 1-based.
@@ -1989,7 +1988,8 @@ impl DocumentView {
                 let result = self.document.insert_paragraph_break(paragraph, offset);
                 self.rebuild_after_edit();
                 let split = result.is_ok();
-                self.after_edit(result, (paragraph + 1, 0), cx);
+                let next = self.document.paragraph_after_split(paragraph);
+                self.after_edit(result, (next, 0), cx);
                 if split {
                     word_views::input::after_enter(self, paragraph, cx);
                 }
@@ -3766,7 +3766,7 @@ impl DocumentView {
             {
                 break;
             }
-            self.insert_at = (paragraph + 1, 0);
+            self.insert_at = (self.document.paragraph_after_split(paragraph), 0);
             if !line.is_empty() {
                 let (paragraph, offset) = self.insert_at;
                 if self
@@ -4302,7 +4302,7 @@ impl DocumentView {
     fn sidebar_row(&self, index: usize, cx: &mut Context<Self>) -> impl IntoElement {
         const THUMBNAIL_WIDTH: f32 = 112.0;
         let selected = index == self.current_page;
-        let (page_width, page_height) = self.document.layout_page_size();
+        let (page_width, page_height) = self.document.page_box(index);
         let height = THUMBNAIL_WIDTH * (page_height / page_width.max(1.0)) as f32;
         div()
             .id(("page", index))
@@ -5316,9 +5316,14 @@ impl Render for DocumentView {
                                 .child(
                                     word_views::page_contents(crop, zoom)
                                         .child(
-                                            img(page.clone())
-                                                .w(px(page_width * zoom))
-                                                .h(px(page_height * zoom)),
+                                            // Each page at its own size: a
+                                            // landscape section's are wide.
+                                            {
+                                                let (width, height) = self.document.page_box(index);
+                                                img(page.clone())
+                                                    .w(px(width as f32 * zoom))
+                                                    .h(px(height as f32 * zoom))
+                                            },
                                         )
                                         .children(word_views::grid_overlay(self, index))
                                         .children(word_views::select::overlay(self, index))

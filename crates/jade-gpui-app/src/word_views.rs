@@ -406,7 +406,7 @@ pub fn page_crop(view: &DocumentView, index: usize) -> Option<PageCrop> {
     if !view.views.crops_pages() {
         return None;
     }
-    let (width, height) = view.document.layout_page_size();
+    let (width, height) = view.document.page_box(index);
     Some(page_band(view, index)?.crop(view.views.kind, (width as f32, height as f32)))
 }
 

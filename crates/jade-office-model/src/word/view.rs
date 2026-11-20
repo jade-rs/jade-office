@@ -290,6 +290,71 @@ impl PageGrid {
         start..end.max(start + 1)
     }
 
+    /// [`PageGrid::origin`] with each page its own height (`heights`, as
+    /// shown): a landscape section among portrait pages. A column of pages
+    /// only; rows and empty `heights` fall back to the uniform grid.
+    pub fn origin_in(&self, index: usize, heights: &[f32]) -> (f32, f32) {
+        if !self.stacks(heights) {
+            return self.origin(index);
+        }
+        let top: f32 = (0..index)
+            .map(|page| self.height_of(page, heights) + self.gap)
+            .sum();
+        (self.padding, self.padding + top)
+    }
+
+    /// [`PageGrid::visible`] with each page its own height.
+    pub fn visible_in(
+        &self,
+        scroll: (f32, f32),
+        size: (f32, f32),
+        page_count: usize,
+        heights: &[f32],
+    ) -> std::ops::Range<usize> {
+        if !self.stacks(heights) || page_count == 0 {
+            return self.visible(scroll, size, page_count);
+        }
+        let (from, to) = (scroll.1, scroll.1 + size.1);
+        let first = self.page_at(from, page_count, heights);
+        let last = self.page_at(to, page_count, heights);
+        first..(last + 1).min(page_count).max(first + 1)
+    }
+
+    /// [`PageGrid::current`] with each page its own height.
+    pub fn current_in(
+        &self,
+        scroll: (f32, f32),
+        size: (f32, f32),
+        page_count: usize,
+        heights: &[f32],
+    ) -> usize {
+        if !self.stacks(heights) || page_count == 0 {
+            return self.current(scroll, size, page_count);
+        }
+        self.page_at(scroll.1 + size.1 / 3.0, page_count, heights)
+    }
+
+    /// Whether the pages are one column whose heights differ.
+    fn stacks(&self, heights: &[f32]) -> bool {
+        !self.horizontal && self.per_row.max(1) == 1 && !heights.is_empty()
+    }
+
+    fn height_of(&self, page: usize, heights: &[f32]) -> f32 {
+        heights.get(page).copied().unwrap_or(self.page.1).max(1.0)
+    }
+
+    /// The page at `y` down a column of pages of their own heights.
+    fn page_at(&self, y: f32, page_count: usize, heights: &[f32]) -> usize {
+        let mut top = self.padding;
+        for page in 0..page_count {
+            top += self.height_of(page, heights) + self.gap;
+            if y < top {
+                return page;
+            }
+        }
+        page_count - 1
+    }
+
     /// The page counted current: the one a third of the way into the
     /// viewport, across for a row, down for a column.
     pub fn current(&self, scroll: (f32, f32), size: (f32, f32), page_count: usize) -> usize {
@@ -535,6 +600,39 @@ pub const ZOOM_PERCENTS: [u32; 3] = [200, 100, 75];
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A landscape page between portrait ones: the column of pages counts
+    /// each at its own height.
+    #[test]
+    fn a_column_of_pages_of_their_own_heights() {
+        let grid = PageGrid {
+            page: (600.0, 800.0),
+            gap: 10.0,
+            padding: 20.0,
+            per_row: 1,
+            horizontal: false,
+        };
+        let heights = [800.0, 400.0, 800.0];
+        assert_eq!(grid.origin_in(0, &heights), (20.0, 20.0));
+        assert_eq!(grid.origin_in(2, &heights), (20.0, 20.0 + 810.0 + 410.0));
+        // The uniform grid would have put page 2 a portrait page further.
+        assert_eq!(grid.origin(2), (20.0, 20.0 + 2.0 * 810.0));
+        // Page 2 runs from 830 to 1230 (its gap to 1240).
+        assert_eq!(
+            grid.visible_in((0.0, 900.0), (600.0, 300.0), 3, &heights),
+            1..2
+        );
+        assert_eq!(
+            grid.visible_in((0.0, 1200.0), (600.0, 300.0), 3, &heights),
+            1..3
+        );
+        assert_eq!(
+            grid.current_in((0.0, 1300.0), (600.0, 300.0), 3, &heights),
+            2
+        );
+        // Without heights, the uniform grid.
+        assert_eq!(grid.origin_in(2, &[]), grid.origin(2));
+    }
 
     fn layout() -> HeadlessSectionLayout {
         HeadlessSectionLayout {

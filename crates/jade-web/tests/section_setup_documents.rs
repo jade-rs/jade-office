@@ -299,3 +299,41 @@ fn paragraph_grid_can_override_an_off_style_and_survives_history_and_reopen() {
     reopened.place_caret(0, 0);
     assert!(!reopened.snap_to_grid());
 }
+
+/// A section turned landscape among portrait ones: each page keeps its own
+/// box, and the document's coordinates count each page at its own height,
+/// so a click on a portrait page after a landscape one lands where it is.
+#[test]
+fn a_landscape_section_has_pages_of_its_own_size() {
+    use jade_web::word::page::PageCommand;
+    let bytes =
+        std::fs::read(common::core().join("public/fixtures/header-footer-sections.docx")).unwrap();
+    let mut document = common::open_bytes(&bytes);
+    let portrait = document.page_size_of(0);
+    assert!(portrait.1 > portrait.0);
+    document.place_caret(0, 0);
+    document
+        .page_command(PageCommand::Landscape(true), true)
+        .unwrap();
+    assert_eq!(document.page_count(), 2);
+    let first = document.page_size_of(0);
+    let second = document.page_size_of(1);
+    assert!(first.0 > first.1, "section 1 is landscape: {first:?}");
+    assert!(second.1 > second.0, "section 2 stays portrait: {second:?}");
+    // Page 2 starts below page 1's short height, not a portrait one.
+    let top = document.document_y(1, 0.0);
+    assert!(top > first.1 && top < portrait.1, "{top}");
+    assert_eq!(document.page_and_offset(top + 10.0), (1, 10.0));
+    // A click on page 2's text puts the caret there.
+    let text = (0..document.paragraph_count())
+        .find(|&index| document.paragraph_text(index).as_deref() == Some("Section two paragraph 1"))
+        .unwrap();
+    let caret = document.place_caret(text, 0).unwrap();
+    assert_eq!(document.page_and_offset(caret.document_y).0, 1);
+    document.place_caret(0, 0);
+    assert_eq!(
+        document.place_caret_at(caret.x + 1.0, caret.document_y + caret.height / 2.0),
+        document.caret_rect()
+    );
+    assert_eq!(document.caret().map(|(paragraph, _)| paragraph), Some(text));
+}

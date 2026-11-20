@@ -101,7 +101,7 @@ impl DocumentView {
         };
         let offset = pane.scroll.offset();
         let size = pane.scroll.bounds().size;
-        arrangement.grid.visible(
+        arrangement.visible(
             (-f32::from(offset.x), -f32::from(offset.y)),
             (
                 f32::from(size.width).max(200.0),
@@ -148,6 +148,7 @@ impl DocumentView {
         pane.bounds.borrow_mut().resize(pages.len(), None);
         let surfaces = pages.iter().enumerate().map(|(index, page)| {
             let crop = arrangement.crops.get(index).copied().flatten();
+            let (width, height) = arrangement.size(index, (width, height));
             let store = Rc::clone(&pane.bounds);
             let (down, right) = (Rc::clone(&pane.bounds), Rc::clone(&pane.bounds));
             let inner = div()

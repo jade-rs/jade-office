@@ -99,7 +99,8 @@ impl DocView {
                 object: found,
                 from: (x, page_y),
                 rect: (found.x, found.y, found.width, found.height),
-                resizing: false,
+                handle: None,
+                keep_ratio: false,
                 dragging: false,
             });
             return ContextTarget {

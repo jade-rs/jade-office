@@ -154,7 +154,8 @@ impl DocView {
             object: found,
             from: (0.0, 0.0),
             rect: (found.x, found.y, found.width, found.height),
-            resizing: false,
+            handle: None,
+            keep_ratio: false,
             dragging: false,
         });
     }

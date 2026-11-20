@@ -173,6 +173,10 @@ impl WordSession for EditableDocument {
         self.renderer.math_zones().to_vec()
     }
 
+    fn paragraph_origin(&self, paragraph: usize) -> Option<(usize, f64, f64)> {
+        self.renderer.paragraph_layout_origin(paragraph)
+    }
+
     fn object_region(&self, paragraph: usize, run: usize) -> Option<(usize, f64, f64, f64, f64)> {
         use jade_docx_editor::word_document::{FloatingObjectKind, FloatingObjectTarget};
         self.renderer

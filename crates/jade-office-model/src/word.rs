@@ -221,6 +221,13 @@ pub trait WordSession {
     fn object_region(&self, _paragraph: usize, _run: usize) -> Option<(usize, f64, f64, f64, f64)> {
         None
     }
+
+    /// Where the last layout put the first line of paragraph `paragraph`:
+    /// its page (0-based), its left and its top there, in px. What an object
+    /// that moves with the text is placed from.
+    fn paragraph_origin(&self, _paragraph: usize) -> Option<(usize, f64, f64)> {
+        None
+    }
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {

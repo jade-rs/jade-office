@@ -142,3 +142,115 @@ fn the_notes_dialog_numbers_and_converts_notes() {
     document.undo().unwrap();
     assert_eq!(document.note_texts(NoteKind::Footnote).len(), footnotes);
 }
+
+/// Word types behind a reference mark when the caret is after it: at the
+/// end of a paragraph ("Hello¹|"), where the caret used to be refused as
+/// past the paragraph's end, and inside one ("abc¹|def"), where the text
+/// went in front of the mark.
+#[test]
+fn text_typed_after_a_reference_mark_goes_behind_it() {
+    let bytes = std::fs::read(common::core().join("public/fixtures/footnote.docx")).unwrap();
+    let mut document = common::open_bytes(&bytes);
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("Hello"));
+    document.place_caret(0, 0);
+    document
+        .move_caret(jade_web::editing::Motion::LineEnd, false)
+        .unwrap();
+    // "Hello" and the mark.
+    assert_eq!(document.caret(), Some((0, "Hello".len() + 1)));
+    document.insert_text(" world").unwrap();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("Hello world"));
+    assert_eq!(
+        marks(&document, 0)
+            .iter()
+            .map(|(_, at)| *at)
+            .collect::<Vec<_>>(),
+        vec![5]
+    );
+    assert_eq!(
+        document.caret(),
+        Some((0, "Hello¹ world".len() - "¹".len() + 1))
+    );
+
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "abcdef ");
+    note(&mut document, NoteKind::Footnote, (paragraph, 3), "note");
+    // Just behind the mark: "abc" and its one-character number.
+    document.place_caret(paragraph, 4);
+    document.insert_text("X").unwrap();
+    let text = document.paragraph_text(paragraph).unwrap();
+    assert!(text.starts_with("abcXdef"), "{text}");
+    // The mark stays after "abc", in front of what was typed.
+    assert_eq!(marks(&document, paragraph)[0].1, 3);
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    let reference = xml.find("<w:footnoteReference").unwrap();
+    let typed = xml.find(">X</w:t>").unwrap();
+    assert!(reference < typed, "the mark comes first");
+}
+
+/// Enter after a reference mark at the end of a paragraph starts the next
+/// paragraph without the mark, as in Word: the mark stays with its text.
+#[test]
+fn enter_after_a_reference_mark_leaves_the_mark_behind() {
+    let bytes = std::fs::read(common::core().join("public/fixtures/footnote.docx")).unwrap();
+    let mut document = common::open_bytes(&bytes);
+    document.place_caret(0, "Hello".len() + 1);
+    document.insert_paragraph_break().unwrap();
+    // The caret is in the new body paragraph, past the note's own.
+    let (next, offset) = document.caret().unwrap();
+    assert_eq!(offset, 0);
+    assert!(next > 1 && document.is_body_paragraph(next), "{next}");
+    assert_eq!(marks(&document, 0).len(), 1, "the mark stays on 'Hello'");
+    assert!(marks(&document, next).is_empty());
+    document.insert_text("next").unwrap();
+    assert_eq!(document.paragraph_text(next).as_deref(), Some("next"));
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("Hello"));
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let xml = package.part_str("word/document.xml").unwrap().unwrap();
+    let reference = xml.find("<w:footnoteReference").unwrap();
+    let hello = xml.find(">Hello<").unwrap();
+    let next = xml.find(">next<").unwrap();
+    assert!(hello < reference && reference < next, "{xml}");
+    // Undone, the split goes and the mark is still on "Hello".
+    document.undo().unwrap();
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("Hello"));
+    assert_eq!(marks(&document, 0).len(), 1);
+    assert!(!document.is_body_paragraph(2));
+    // In front of the mark, Enter takes it to the next paragraph.
+    let mut document = common::open_bytes(&bytes);
+    document.place_caret(0, "Hello".len());
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(document.caret(), Some((1, 0)));
+    assert!(marks(&document, 0).is_empty());
+    assert_eq!(marks(&document, 1).len(), 1);
+    // Undone, the paragraph is whole again with its mark.
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_text(0).as_deref(), Some("Hello"));
+    assert_eq!(marks(&document, 0).len(), 1);
+}
+
+/// A note inserted here starts as Word starts one: its number, then a
+/// space in a run of its own and the text, not a tab.
+#[test]
+fn a_new_note_starts_with_a_space_after_its_number() {
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "abc ");
+    note(&mut document, NoteKind::Footnote, (paragraph, 3), "text");
+    let saved = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&saved).unwrap();
+    let notes = package.part_str("word/footnotes.xml").unwrap().unwrap();
+    let marker = notes.rfind("<w:footnoteRef/>").unwrap();
+    let rest = &notes[marker..];
+    let text = rest
+        .find(r#"<w:t xml:space="preserve"> </w:t></w:r><w:r><w:t>text</w:t>"#)
+        .expect("a space before the text");
+    assert!(!rest[..text].contains("<w:tab/>"), "{rest}");
+    assert!(document
+        .note_texts(NoteKind::Footnote)
+        .iter()
+        .any(|text| text == "text"));
+}

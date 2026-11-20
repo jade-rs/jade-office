@@ -414,6 +414,9 @@ enum Document {
         document: Box<jade_web::editing::WordDoc>,
         pages: Vec<PageImage>,
         page_size: (f32, f32),
+        /// Each page's own box, in CSS px: a landscape section among
+        /// portrait pages, or other paper, as Word shows it.
+        page_sizes: Vec<(f32, f32)>,
         scroll: ScrollHandle,
         current: usize,
         /// Where each page sits in the window, recorded at paint: clicks
@@ -514,7 +517,11 @@ struct ObjectGrab {
     object: jade_web::word::picture::PlacedObject,
     from: (f64, f64),
     rect: (f64, f64, f64, f64),
-    resizing: bool,
+    /// The sizing handle pressed, if the press was on one of the eight.
+    handle: Option<jade_web::word::handles::Handle>,
+    /// Whether a size keeps the proportions: a picture's corners, as in
+    /// Word, or any handle with Shift held.
+    keep_ratio: bool,
     /// Whether the button is still down.
     dragging: bool,
 }
@@ -771,6 +778,7 @@ impl DocView {
                         .collect(),
                     document: Box::new(opened.into()),
                     page_size: (width as f32, height as f32),
+                    page_sizes: Vec::new(),
                     scroll: ScrollHandle::new(),
                     current: 0,
                     page_bounds: Rc::new(RefCell::new(Vec::new())),
@@ -1325,6 +1333,7 @@ impl DocView {
             document,
             pages,
             page_size,
+            page_sizes,
             ..
         } = &mut self.document
         else {
@@ -1335,6 +1344,12 @@ impl DocView {
         // follow it.
         let (width, height) = document.page_size();
         *page_size = (width as f32, height as f32);
+        *page_sizes = (0..document.page_count())
+            .map(|index| {
+                let (width, height) = document.page_size_of(index);
+                (width as f32, height as f32)
+            })
+            .collect();
         // An edit from this page on can have moved what any later page
         // shows: a thumbnail kept of one is out of date.
         let changed_from = document.take_repainted_from();
@@ -1430,7 +1445,7 @@ impl DocView {
                 .caret()
                 .and_then(|(paragraph, _)| document.paragraph_start_page(paragraph));
             if let Some(page) = page {
-                let (x, y) = grid.origin(page);
+                let (x, y) = arrangement.origin(page);
                 let max = scroll.max_offset();
                 let target = if grid.horizontal {
                     point(
@@ -1451,7 +1466,7 @@ impl DocView {
         let (page, y) = document.page_and_offset(caret.document_y);
         let crop = arrangement.crops.get(page).copied().flatten();
         let (crop_left, crop_top) = crop.map_or((0.0, 0.0), |crop| (crop.left, crop.top));
-        let (origin_x, origin_y) = grid.origin(page);
+        let (origin_x, origin_y) = arrangement.origin(page);
         let top = origin_y + (y as f32 - crop_top) * zoom;
         let bottom = top + caret.height as f32 * zoom;
         let left = origin_x + (caret.x as f32 - crop_left) * zoom;
@@ -1692,38 +1707,56 @@ impl DocView {
             }
         }
         // A picture is over the text. Text-box content accepts a caret;
-        // its border still takes hold of the object for moving/resizing.
+        // its border still takes hold of the object for moving/resizing, and
+        // its eight handles size it.
         if let Document::Pages {
             document, object, ..
         } = &mut self.document
         {
+            // Word's eight sizing handles, each taken within a few px.
+            const HANDLE: f64 = 6.0;
             let page_y = y - document.document_y(index, 0.0);
-            let grabbed = document.object_at(x, y).filter(|found| {
-                if found.page != index {
-                    return false;
-                }
-                const BORDER: f64 = 6.0;
-                const HANDLE: f64 = 12.0;
-                let resize_corner = x >= found.x + found.width - HANDLE
-                    && page_y >= found.y + found.height - HANDLE;
-                let text_content = document
-                    .word_document()
-                    .text_box_contains_paragraph(found.target, target.0)
-                    && x > found.x + BORDER
-                    && x < found.x + found.width - BORDER
-                    && page_y > found.y + BORDER
-                    && page_y < found.y + found.height - BORDER
-                    && !resize_corner;
-                !text_content
+            let handle_at = |found: &jade_web::word::picture::PlacedObject| {
+                jade_web::word::handles::Handle::ALL
+                    .into_iter()
+                    .find(|handle| {
+                        let (fx, fy) = handle.anchor();
+                        (x - (found.x + found.width * fx)).abs() <= HANDLE
+                            && (page_y - (found.y + found.height * fy)).abs() <= HANDLE
+                    })
+            };
+            // The selected object's handles stand half outside its box: a
+            // press on their outer half takes them too.
+            let selected = object
+                .map(|grab| grab.object)
+                .filter(|found| found.page == index && handle_at(found).is_some());
+            let grabbed = selected.or_else(|| {
+                document.object_at(x, y).filter(|found| {
+                    if found.page != index {
+                        return false;
+                    }
+                    const BORDER: f64 = 6.0;
+                    let text_content = document
+                        .word_document()
+                        .text_box_contains_paragraph(found.target, target.0)
+                        && x > found.x + BORDER
+                        && x < found.x + found.width - BORDER
+                        && page_y > found.y + BORDER
+                        && page_y < found.y + found.height - BORDER
+                        && handle_at(found).is_none();
+                    !text_content
+                })
             });
+            let shift = event.modifiers.shift;
             *object = grabbed.map(|found| {
-                const HANDLE: f64 = 12.0;
+                let handle = handle_at(&found);
                 ObjectGrab {
                     object: found,
                     from: (x, page_y),
                     rect: (found.x, found.y, found.width, found.height),
-                    resizing: x >= found.x + found.width - HANDLE
-                        && page_y >= found.y + found.height - HANDLE,
+                    handle,
+                    keep_ratio: shift
+                        || handle.is_some_and(|handle| handle.is_corner() && found.is_picture()),
                     dragging: true,
                 }
             });
@@ -1919,12 +1952,12 @@ impl DocView {
         let y = f64::from((event.position.y - bounds.origin.y) / zoom);
         let (dx, dy) = (x - grab.from.0, y - grab.from.1);
         let start = grab.object;
-        grab.rect = if grab.resizing {
-            (
-                start.x,
-                start.y,
-                (start.width + dx).max(8.0),
-                (start.height + dy).max(8.0),
+        grab.rect = if let Some(handle) = grab.handle {
+            jade_web::word::handles::resize(
+                (start.x, start.y, start.width, start.height),
+                handle,
+                (dx, dy),
+                grab.keep_ratio,
             )
         } else {
             (start.x + dx, start.y + dy, start.width, start.height)
@@ -2811,7 +2844,6 @@ impl DocView {
             return;
         };
         let arrangement = self.arrangement(*page_size, zoom);
-        let grid = arrangement.grid;
         // 分割's and 新しいウィンドウ's panes keep their pages too.
         let panes: Vec<_> = [self.views.split.as_ref(), self.views.window.as_ref()]
             .into_iter()
@@ -2844,8 +2876,8 @@ impl DocView {
         // The page a third of the way into the view is the current one:
         // worked out here, before the ribbon shows it, so a jump shows its
         // page on the frame it lands.
-        *current = grid.current(shown, size, count);
-        let visible = grid.visible(shown, size, count);
+        *current = arrangement.current(shown, size, count);
+        let visible = arrangement.visible(shown, size, count);
         let (first, last) = (visible.start.saturating_sub(1), visible.end + 1);
         // Widened evenly to the budget, within the document.
         let spare = RESIDENT_PAGES.saturating_sub(last - first);
@@ -3052,7 +3084,13 @@ impl DocView {
         let bounds_store = Rc::clone(page_bounds);
         let current_index = *current;
         let count = pages.len();
-        let thumbnail_height = PAGE_THUMBNAIL_WIDTH * page_size.1 / page_size.0.max(1.0);
+        // Each thumbnail keeps its page's shape: a landscape page is short.
+        let thumbnail_heights: Vec<f32> = (0..pages.len())
+            .map(|index| {
+                let (width, height) = arrangement.size(index, *page_size);
+                PAGE_THUMBNAIL_WIDTH * height / width.max(1.0)
+            })
+            .collect();
         let rows: Vec<_> = pages
             .iter()
             .enumerate()
@@ -3081,7 +3119,7 @@ impl DocView {
                     .child(
                         div()
                             .w(px(PAGE_THUMBNAIL_WIDTH))
-                            .h(px(thumbnail_height))
+                            .h(px(thumbnail_heights[index]))
                             .flex_none()
                             .overflow_hidden()
                             .rounded_sm()
@@ -3107,35 +3145,38 @@ impl DocView {
             })
             .collect();
         let entity = cx.entity();
-        let surfaces: Vec<_> =
-            pages
-                .iter()
-                .enumerate()
-                .map(|(index, page)| {
-                    let store = Rc::clone(&bounds_store);
-                    let entity = entity.clone();
-                    let table_overlay = table_overlays.next().flatten();
-                    let control_overlay = control_overlays.next().unwrap_or_default();
-                    let ink_overlay = ink_overlays.next().flatten();
-                    let story_label = story_labels.next().flatten();
-                    let object_overlay = object_overlays.next().unwrap_or_default();
-                    let crop = arrangement.crops.get(index).copied().flatten();
-                    let grid_overlay = grid_overlays.next().flatten();
-                    let outline_mark = outline_marks.next().flatten();
-                    let inner =
-                        div()
-                            .relative()
-                            .flex_none()
-                            .w(px(width))
-                            .h(px(height))
-                            .cursor(table_cursor)
-                            .child(div().w(px(width)).h(px(height)).child(page.element()))
-                            .children(grid_overlay)
-                            .children(outline_mark)
-                            // The selection, over the picture, in the renderer's own
-                            // fill and edges.
-                            .children(highlight.iter().filter(|rect| rect.page == index).map(
-                                |rect| {
+        let surfaces: Vec<_> = pages
+            .iter()
+            .enumerate()
+            .map(|(index, page)| {
+                let store = Rc::clone(&bounds_store);
+                let entity = entity.clone();
+                let table_overlay = table_overlays.next().flatten();
+                let control_overlay = control_overlays.next().unwrap_or_default();
+                let ink_overlay = ink_overlays.next().flatten();
+                let story_label = story_labels.next().flatten();
+                let object_overlay = object_overlays.next().unwrap_or_default();
+                let crop = arrangement.crops.get(index).copied().flatten();
+                let (width, height) = arrangement.size(index, (width, height));
+                let grid_overlay = grid_overlays.next().flatten();
+                let outline_mark = outline_marks.next().flatten();
+                let inner =
+                    div()
+                        .relative()
+                        .flex_none()
+                        .w(px(width))
+                        .h(px(height))
+                        .cursor(table_cursor)
+                        .child(div().w(px(width)).h(px(height)).child(page.element()))
+                        .children(grid_overlay)
+                        .children(outline_mark)
+                        // The selection, over the picture, in the renderer's own
+                        // fill and edges.
+                        .children(
+                            highlight
+                                .iter()
+                                .filter(|rect| rect.page == index)
+                                .map(|rect| {
                                     div()
                                         .absolute()
                                         .left(px(rect.x as f32 * zoom))
@@ -3146,140 +3187,144 @@ impl DocView {
                                         .border_l_1()
                                         .border_r_1()
                                         .border_color(rgba(0x584f_e8c7))
+                                }),
+                        )
+                        .children(object_outline.filter(|(page, ..)| *page == index).map(
+                            |(_, x, y, width, height)| {
+                                div()
+                                    .absolute()
+                                    .left(px(x))
+                                    .top(px(y))
+                                    .w(px(width))
+                                    .h(px(height))
+                                    .border_1()
+                                    .border_color(palette::accent())
+                                    // The eight sizing handles Word draws.
+                                    .children(jade_web::word::handles::Handle::ALL.map(|handle| {
+                                        let (fx, fy) = handle.anchor();
+                                        div()
+                                            .absolute()
+                                            .left(px(width * fx as f32 - 4.0))
+                                            .top(px(height * fy as f32 - 4.0))
+                                            .size(px(8.0))
+                                            .border_1()
+                                            .border_color(palette::accent())
+                                            .bg(gpui::white())
+                                    }))
+                            },
+                        ))
+                        .children(table_overlay)
+                        .children(ink_overlay)
+                        .children(story_label)
+                        .children(object_overlay)
+                        .children(word_references::page_marks(&marks, index, zoom, cx))
+                        .children(control_overlay)
+                        .children(
+                            equation_overlay
+                                .as_ref()
+                                .filter(|overlay| overlay.page == index)
+                                .map(|overlay| word_equation::overlay_elements(overlay, zoom))
+                                .unwrap_or_default(),
+                        )
+                        .children(composition.iter().filter(|mark| mark.page == index).map(
+                            |mark| {
+                                div()
+                                    .absolute()
+                                    .left(px(mark.x as f32 * zoom))
+                                    .top(px(mark.y as f32 * zoom))
+                                    .w(px((mark.width as f32 * zoom).max(1.0)))
+                                    .h(px((mark.height as f32 * zoom).max(1.0)))
+                                    .bg(palette::ink())
+                            },
+                        ))
+                        .children(caret.filter(|(page, ..)| *page == index).map(
+                            |(_, x, y, caret_height)| {
+                                div()
+                                    .absolute()
+                                    .left(px(x))
+                                    .top(px(y))
+                                    .w(px(1.5))
+                                    .h(px(caret_height.max(8.0)))
+                                    .bg(palette::ink())
+                            },
+                        ))
+                        // Records where the page is; registers the input handler
+                        // so typing — an IME's included — reaches the document.
+                        .child(
+                            canvas(
+                                move |bounds, _window, _cx| {
+                                    if let Some(slot) = store.borrow_mut().get_mut(index) {
+                                        *slot = Some(bounds);
+                                    }
+                                    bounds
                                 },
-                            ))
-                            .children(object_outline.filter(|(page, ..)| *page == index).map(
-                                |(_, x, y, width, height)| {
-                                    div()
-                                        .absolute()
-                                        .left(px(x))
-                                        .top(px(y))
-                                        .w(px(width))
-                                        .h(px(height))
-                                        .border_1()
-                                        .border_color(palette::accent())
-                                        .child(
-                                            div()
-                                                .absolute()
-                                                .right(px(-4.0))
-                                                .bottom(px(-4.0))
-                                                .size(px(8.0))
-                                                .bg(palette::accent()),
-                                        )
+                                move |_bounds, page, window, cx| {
+                                    if index == 0 {
+                                        let focus = entity.read(cx).focus.clone();
+                                        window.handle_input(
+                                            &focus,
+                                            ElementInputHandler::new(page, entity.clone()),
+                                            cx,
+                                        );
+                                        // A drag is followed wherever the pointer
+                                        // goes, not only over a page.
+                                        let dragged = entity.clone();
+                                        window.on_mouse_event(
+                                            move |event: &MouseMoveEvent, phase, _window, cx| {
+                                                if phase == DispatchPhase::Bubble {
+                                                    dragged.update(cx, |view, cx| {
+                                                        view.through_drag_pane(|view| {
+                                                            view.page_drag(event, cx)
+                                                        })
+                                                    });
+                                                }
+                                            },
+                                        );
+                                        let released = entity.clone();
+                                        window.on_mouse_event(
+                                            move |event: &MouseUpEvent, phase, _window, cx| {
+                                                if phase == DispatchPhase::Bubble
+                                                    && event.button == MouseButton::Left
+                                                {
+                                                    released.update(cx, |view, cx| {
+                                                        view.through_drag_pane(|view| {
+                                                            view.page_release(cx)
+                                                        })
+                                                    });
+                                                }
+                                            },
+                                        );
+                                    }
                                 },
-                            ))
-                            .children(table_overlay)
-                            .children(ink_overlay)
-                            .children(story_label)
-                            .children(object_overlay)
-                            .children(word_references::page_marks(&marks, index, zoom, cx))
-                            .children(control_overlay)
-                            .children(
-                                equation_overlay
-                                    .as_ref()
-                                    .filter(|overlay| overlay.page == index)
-                                    .map(|overlay| word_equation::overlay_elements(overlay, zoom))
-                                    .unwrap_or_default(),
                             )
-                            .children(composition.iter().filter(|mark| mark.page == index).map(
-                                |mark| {
-                                    div()
-                                        .absolute()
-                                        .left(px(mark.x as f32 * zoom))
-                                        .top(px(mark.y as f32 * zoom))
-                                        .w(px((mark.width as f32 * zoom).max(1.0)))
-                                        .h(px((mark.height as f32 * zoom).max(1.0)))
-                                        .bg(palette::ink())
-                                },
-                            ))
-                            .children(caret.filter(|(page, ..)| *page == index).map(
-                                |(_, x, y, caret_height)| {
-                                    div()
-                                        .absolute()
-                                        .left(px(x))
-                                        .top(px(y))
-                                        .w(px(1.5))
-                                        .h(px(caret_height.max(8.0)))
-                                        .bg(palette::ink())
-                                },
-                            ))
-                            // Records where the page is; registers the input handler
-                            // so typing — an IME's included — reaches the document.
-                            .child(
-                                canvas(
-                                    move |bounds, _window, _cx| {
-                                        if let Some(slot) = store.borrow_mut().get_mut(index) {
-                                            *slot = Some(bounds);
-                                        }
-                                        bounds
-                                    },
-                                    move |_bounds, page, window, cx| {
-                                        if index == 0 {
-                                            let focus = entity.read(cx).focus.clone();
-                                            window.handle_input(
-                                                &focus,
-                                                ElementInputHandler::new(page, entity.clone()),
-                                                cx,
-                                            );
-                                            // A drag is followed wherever the pointer
-                                            // goes, not only over a page.
-                                            let dragged = entity.clone();
-                                            window.on_mouse_event(
-                                        move |event: &MouseMoveEvent, phase, _window, cx| {
-                                            if phase == DispatchPhase::Bubble {
-                                                dragged.update(cx, |view, cx| {
-                                                    view.through_drag_pane(|view| {
-                                                        view.page_drag(event, cx)
-                                                    })
-                                                });
-                                            }
-                                        },
-                                    );
-                                            let released = entity.clone();
-                                            window.on_mouse_event(
-                                                move |event: &MouseUpEvent, phase, _window, cx| {
-                                                    if phase == DispatchPhase::Bubble
-                                                        && event.button == MouseButton::Left
-                                                    {
-                                                        released.update(cx, |view, cx| {
-                                                            view.through_drag_pane(|view| {
-                                                                view.page_release(cx)
-                                                            })
-                                                        });
-                                                    }
-                                                },
-                                            );
-                                        }
-                                    },
-                                )
-                                .absolute()
-                                .top_0()
-                                .left_0()
-                                .size_full(),
-                            );
-                    word_views::frame_page(
-                        div().id(("page-surface", index)),
-                        inner,
-                        crop,
-                        (width, height),
-                        zoom,
-                        arrangement.sheet,
-                    )
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |view, event, window, cx| {
-                            view.views.drag_pane = None;
-                            view.page_mouse_down(index, event, window, cx)
-                        }),
-                    )
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |view, event, window, cx| {
-                            view.page_right_click(index, event, window, cx)
-                        }),
-                    )
-                })
-                .collect();
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .size_full(),
+                        );
+                word_views::frame_page(
+                    div().id(("page-surface", index)),
+                    inner,
+                    crop,
+                    (width, height),
+                    zoom,
+                    arrangement.sheet,
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |view, event, window, cx| {
+                        view.views.drag_pane = None;
+                        view.page_mouse_down(index, event, window, cx)
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |view, event, window, cx| {
+                        view.page_right_click(index, event, window, cx)
+                    }),
+                )
+            })
+            .collect();
         div()
             .size_full()
             .flex()
@@ -4244,7 +4289,18 @@ impl EntityInputHandler for DocView {
         if self.equation.is_some() {
             return self.equation_type(text, cx);
         }
-        if matches!(self.document, Document::Pages { .. }) && !self.finding() && !self.commenting()
+        // A bar over the pages (脚注の挿入, ハイパーリンク…) takes the typing.
+        let bar_open = matches!(
+            self.document,
+            Document::Pages {
+                dialog: Some(_),
+                ..
+            }
+        );
+        if matches!(self.document, Document::Pages { .. })
+            && !self.finding()
+            && !self.commenting()
+            && !bar_open
         {
             // A frame selection owns the input focus. The document still
             // remembers its text selection for returning to text editing.
@@ -4352,7 +4408,18 @@ impl EntityInputHandler for DocView {
             field.replace(range, new_text, true);
             return cx.notify();
         }
-        if matches!(self.document, Document::Pages { .. }) && !self.finding() && !self.commenting()
+        // A bar over the pages (脚注の挿入, ハイパーリンク…) takes the typing.
+        let bar_open = matches!(
+            self.document,
+            Document::Pages {
+                dialog: Some(_),
+                ..
+            }
+        );
+        if matches!(self.document, Document::Pages { .. })
+            && !self.finding()
+            && !self.commenting()
+            && !bar_open
         {
             if matches!(
                 self.document,
