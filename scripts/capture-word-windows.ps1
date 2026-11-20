@@ -8,6 +8,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'word-windows-page-geometry.ps1')
+. (Join-Path $PSScriptRoot 'word-windows-executable-provenance.ps1')
 $root = [IO.Path]::GetFullPath($OutputDirectory)
 $sourceNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($source in $Documents) {
@@ -43,7 +44,7 @@ try {
     $binaryHash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
     $metadata = [ordered]@{
         schema=2; platform='windows'; capture_id=$captureId; captured_at_utc=[DateTime]::UtcNow.ToString('o'); status='capturing'
-        word=[ordered]@{ product_version=$productVersion; file_version=$binaryVersion.FileVersion; application_version=$word.Version; application_build=$word.Build; executable_sha256=$binaryHash }
+        word=[ordered]@{ product_version=$productVersion; file_version=$binaryVersion.FileVersion; application_version=$word.Version; application_build=$word.Build; executable_sha256=$binaryHash; executable_architecture=(Get-WordCaptureExecutableArchitecture -LiteralPath $binary) }
         os=[Runtime.InteropServices.RuntimeInformation]::OSDescription
         os_architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
         documents=@()
