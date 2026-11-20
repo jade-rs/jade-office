@@ -237,13 +237,19 @@ pub trait WordNotes: WordSession {
             return Some(mark.len);
         }
         let document = self.word_document();
-        // An inline picture or text box is one object character.
+        // An inline picture, text box or equation is one object character.
         if jade_docx_editor::commands::inline_objects::inline_object_beside_caret(
             document,
             TextPosition::new(paragraph, offset),
             true,
         )
         .is_some()
+            || jade_docx_editor::commands::inline_objects::inline_equation_beside_caret(
+                document,
+                TextPosition::new(paragraph, offset),
+                true,
+            )
+            .is_some()
         {
             return Some('\u{fffc}'.len_utf8());
         }
