@@ -337,3 +337,48 @@ fn a_footnote_equation_is_one_character_for_the_caret() {
     document.undo().unwrap();
     assert!(text_from(&document, note, 0).ends_with("abc\u{fffc}def"));
 }
+
+/// An inline equation in a text box is one character of its line too.
+#[test]
+fn a_text_box_equation_is_one_character_for_the_caret() {
+    use jade_docx_editor::document::TextBoxShape;
+    use jade_docx_editor::word_document::ParagraphStory;
+    use jade_web::editing::WordSession;
+    use jade_web::word::headless::{HeadlessCommand, HeadlessEquationPlacement};
+    use jade_web::word::shapes::WordShapes;
+    let mut document = contract();
+    let host = typed(&mut document, "Body");
+    document.place_caret(host, 0);
+    document
+        .insert_shape(TextBoxShape::Rectangle, None, true)
+        .unwrap();
+    let text_box = (0..document.paragraph_count())
+        .find(|&surface| {
+            matches!(
+                document.word_document().paragraph_story(surface),
+                Some(ParagraphStory::TextBox { .. })
+            )
+        })
+        .unwrap();
+    document.place_caret(text_box, 0);
+    document.insert_text("abcdef").unwrap();
+    document
+        .apply_commands(
+            vec![HeadlessCommand::InsertEquation {
+                paragraph: text_box,
+                offset: 3,
+                omml: "<m:oMath><m:r><m:t>xyz</m:t></m:r></m:oMath>".into(),
+                placement: HeadlessEquationPlacement::Inline,
+            }],
+            false,
+        )
+        .unwrap();
+    assert_eq!(document.caret_text(text_box).unwrap(), "abc\u{fffc}def");
+    let end = document.word_document().rendered_paragraph_len(text_box);
+    assert_eq!(end, "abc\u{fffc}def".len());
+    let x = |offset| document.position_metrics((text_box, offset)).unwrap().0;
+    assert!(x(end) > x(end - 1), "{} {}", x(end), x(end - 1));
+    document.place_caret(text_box, "abc\u{fffc}".len());
+    document.delete(true).unwrap();
+    assert_eq!(document.caret_text(text_box).unwrap(), "abcdef");
+}
