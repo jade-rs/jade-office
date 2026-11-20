@@ -1983,6 +1983,12 @@ impl DocumentView {
                 cx,
             ),
             "enter" => {
+                // At the start of a table with nothing before it, Word puts
+                // an empty paragraph in front of the table instead.
+                let document: &mut NativeDocument = &mut self.document;
+                if let Some(moved) = WordFormatting::enter_above_table(document) {
+                    return self.ribbon_moved(moved, cx);
+                }
                 // The split re-flows everything below, so the whole document is
                 // repainted rather than the visible page.
                 let result = self.document.insert_paragraph_break(paragraph, offset);

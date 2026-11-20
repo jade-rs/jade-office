@@ -1328,6 +1328,11 @@ impl EditableDocument {
             self.executor.end_group();
             return result;
         }
+        if let Some(result) = WordFormatting::enter_above_table(self) {
+            let (paragraph, offset) = result?;
+            self.set_caret(paragraph, offset);
+            return Ok(());
+        }
         self.split_at_caret()
     }
 

@@ -1266,6 +1266,39 @@ pub trait WordFormatting: WordSession {
         Ok(position)
     }
 
+    /// Enter at the very start of a table's first cell, when nothing comes
+    /// before the table but the document's start or another table: Word puts
+    /// an empty paragraph in front of the table (as 表の分割 does at the first
+    /// row) and leaves the caret in the cell. `None` when Enter should split
+    /// the paragraph as usual.
+    fn enter_above_table(&mut self) -> Option<Result<Position, String>> {
+        let range = self.selection_range()?;
+        if range.anchor != range.focus || range.focus.offset != 0 {
+            return None;
+        }
+        let paragraph = range.focus.paragraph;
+        let layout = self
+            .cell_id_for_paragraph(paragraph)
+            .and_then(|id| self.cell_layout(id))?;
+        if layout.row != 0 || layout.column != 0 || layout.paragraphs.first() != Some(&paragraph) {
+            return None;
+        }
+        let table_id = layout.table_id;
+        let table_order_index = self.table_order_for(table_id)?;
+        // A nested table is never split; Enter splits its cell's paragraph.
+        self.word_document()
+            .body_index_of_table_order(table_order_index)?;
+        let preceded_by_text = paragraph > 0
+            && self
+                .cell_id_for_paragraph(paragraph - 1)
+                .and_then(|id| self.cell_layout(id))
+                .is_none_or(|before| before.table_id == table_id);
+        if preceded_by_text {
+            return None;
+        }
+        Some(self.table_command(TableCommand::SplitTable))
+    }
+
     /// Tab and ⇧Tab in a table, as in Word: the next or the previous cell,
     /// its text to be selected so typing replaces it. Tab in the last cell
     /// adds a row below and goes into its first cell. Nothing is selected

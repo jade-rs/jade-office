@@ -775,3 +775,95 @@ fn alt_text_is_typed_saved_and_read_back() {
     assert!(!xml.contains("tblCaption"), "{xml}");
     assert!(xml.contains("tblDescription"), "{xml}");
 }
+
+/// Enter at the very start of a table at the top of the document: Word puts
+/// an empty paragraph in front of the table and leaves the caret in the
+/// cell; with text before the table, Enter splits the cell's paragraph.
+#[test]
+fn enter_at_the_start_of_a_leading_table_adds_a_paragraph_above_it() {
+    let mut document = with_table(2, 2);
+    fill(&mut document, 0, &[&["a", "b"], &["c", "d"]]);
+    let first = cell_paragraph(&document, 0, 0, 0);
+    assert_eq!(first, 0, "the table starts the document");
+    document.place_caret(first, 0);
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(document.cell_id_for_paragraph(0), None);
+    assert_eq!(document.paragraph_text(0).unwrap(), "");
+    let caret = document.caret().unwrap();
+    assert_eq!(caret, (cell_paragraph(&document, 0, 0, 0), 0));
+    assert_eq!(cell_texts(&document, 0), [["a", "b"], ["c", "d"]]);
+
+    // One undo takes the paragraph away again.
+    document.undo().unwrap();
+    assert_eq!(cell_paragraph(&document, 0, 0, 0), 0);
+    assert_eq!(cell_texts(&document, 0), [["a", "b"], ["c", "d"]]);
+
+    // Now the paragraph before the table is there: Enter splits the cell.
+    document.redo().unwrap();
+    let first = cell_paragraph(&document, 0, 0, 0);
+    document.place_caret(first, 0);
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(cell_texts(&document, 0), [["\na", "b"], ["c", "d"]]);
+}
+
+/// An empty paragraph beside a table goes as in Word: Delete in one just
+/// before the table, Backspace in one just after it, the caret going into
+/// the table's nearest cell; undo brings it back and a save has it gone.
+#[test]
+fn delete_and_backspace_remove_an_empty_paragraph_beside_a_table() {
+    let mut document = blank();
+    document.place_caret(0, 0);
+    document.insert_text("before").unwrap();
+    document.insert_paragraph_break().unwrap();
+    let caret = WordFormatting::insert_table(&mut document, 1, 2).unwrap();
+    document.place_caret(caret.0, caret.1);
+    fill(&mut document, 0, &[&["a", "b"]]);
+    let last = document.paragraph_count() - 1;
+    document.place_caret(last, 0);
+    document.insert_text("after").unwrap();
+    let texts = |document: &EditableDocument| -> Vec<String> {
+        (0..document.paragraph_count())
+            .map(|paragraph| document.paragraph_text(paragraph).unwrap())
+            .collect()
+    };
+    assert_eq!(texts(&document), ["before", "a", "b", "after"]);
+
+    // Delete in an empty paragraph before the table.
+    document.place_caret(0, 6);
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(texts(&document), ["before", "", "a", "b", "after"]);
+    document.delete(false).unwrap();
+    assert_eq!(texts(&document), ["before", "a", "b", "after"]);
+    assert_eq!(
+        document.caret(),
+        Some((cell_paragraph(&document, 0, 0, 0), 0))
+    );
+    document.undo().unwrap();
+    assert_eq!(texts(&document), ["before", "", "a", "b", "after"]);
+    document.redo().unwrap();
+
+    // Backspace in an empty paragraph after the table.
+    document.place_caret(3, 0);
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(texts(&document), ["before", "a", "b", "", "after"]);
+    document.place_caret(3, 0);
+    document.delete(true).unwrap();
+    assert_eq!(texts(&document), ["before", "a", "b", "after"]);
+    assert_eq!(
+        document.caret(),
+        Some((cell_paragraph(&document, 0, 0, 1), 1))
+    );
+
+    // Text in the paragraph, or a table on both sides: nothing goes.
+    document.place_caret(3, 0);
+    document.delete(true).unwrap();
+    document.place_caret(0, 6);
+    document.delete(false).unwrap();
+    assert_eq!(texts(&document), ["before", "a", "b", "after"]);
+
+    let xml = document_xml(&document.export_docx().unwrap());
+    assert_eq!(
+        xml.matches("<w:p>").count() + xml.matches("<w:p ").count(),
+        4
+    );
+}
