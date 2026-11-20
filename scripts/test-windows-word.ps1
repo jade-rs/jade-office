@@ -15,11 +15,18 @@ try {
     }
     # mbx shares compiled actions across the native crate, workspace and worktrees.
     # Let it manage target placement rather than pinning a private target directory.
+    Remove-Item -LiteralPath 'Env:\CARGO_TARGET_DIR' -ErrorAction SilentlyContinue
     $mbx = (Get-Command mbx -CommandType Application -ErrorAction Stop).Source
     & $mbx test --locked --manifest-path jade-core/crates/jade-docx-native-render/Cargo.toml --lib --test word_mac_coordinates --test word_windows_coordinates
     if ($LASTEXITCODE -ne 0) { throw 'Native coordinate tests failed' }
     & $mbx test --locked --manifest-path jade-core/Cargo.toml -p jade-docx-layout --lib --features native-shaping
     if ($LASTEXITCODE -ne 0) { throw 'Layout tests failed' }
 } finally {
-    foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process') }
+    foreach ($name in $saved.Keys) {
+        if ($null -eq $saved[$name]) {
+            Remove-Item -LiteralPath ("Env:\$name") -ErrorAction SilentlyContinue
+        } else {
+            [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process')
+        }
+    }
 }
