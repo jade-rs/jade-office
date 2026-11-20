@@ -1945,7 +1945,7 @@ impl DocumentView {
             "backspace" if paragraph > 0 => {
                 let joined_at = self
                     .document
-                    .paragraph_text(paragraph - 1)
+                    .caret_text(paragraph - 1)
                     .map_or(0, |text| text.len());
                 let page = self.caret_page_1idx();
                 let result = self.document.delete_text(paragraph, 0, true, 1, page);
@@ -2112,7 +2112,7 @@ impl DocumentView {
     /// edge, into the paragraph beside it.
     fn word_step(&self, (paragraph, offset): (usize, usize), forwards: bool) -> (usize, usize) {
         use jade_office_model::text::{word_end_after, word_start_before};
-        let text = self.document.paragraph_text(paragraph).unwrap_or_default();
+        let text = self.document.caret_text(paragraph).unwrap_or_default();
         let offset = offset.min(text.len());
         if forwards && offset < text.len() {
             (paragraph, word_end_after(&text, offset))
@@ -2129,7 +2129,7 @@ impl DocumentView {
         (paragraph, offset): (usize, usize),
         forwards: bool,
     ) -> (usize, usize) {
-        let text = self.document.paragraph_text(paragraph).unwrap_or_default();
+        let text = self.document.caret_text(paragraph).unwrap_or_default();
         let offset = offset.min(text.len());
         if forwards {
             match text[offset..].chars().next() {
@@ -2143,7 +2143,7 @@ impl DocumentView {
                 None if paragraph > 0 => (
                     paragraph - 1,
                     self.document
-                        .paragraph_text(paragraph - 1)
+                        .caret_text(paragraph - 1)
                         .map_or(0, |text| text.len()),
                 ),
                 None => (paragraph, offset),
@@ -2184,7 +2184,7 @@ impl DocumentView {
         .unwrap_or(0);
         let offset = if end {
             self.document
-                .paragraph_text(paragraph)
+                .caret_text(paragraph)
                 .map_or(0, |text| text.len())
         } else {
             0
@@ -3625,7 +3625,7 @@ impl DocumentView {
         };
         let end = self
             .document
-            .paragraph_text(last)
+            .caret_text(last)
             .map(|text| text.len())
             .unwrap_or(0);
         // Through the last page: the highlight is on every one of them.
@@ -3654,7 +3654,7 @@ impl DocumentView {
 
     fn select_paragraph(&mut self, cx: &mut Context<Self>) {
         let paragraph = self.insert_at.0;
-        let Some(text) = self.document.paragraph_text(paragraph) else {
+        let Some(text) = self.document.caret_text(paragraph) else {
             return;
         };
         let page = self.caret_page_1idx();
@@ -3675,7 +3675,7 @@ impl DocumentView {
     /// spaces after it in English (`word::selection::word_at`).
     fn select_word_at_caret(&mut self, cx: &mut Context<Self>) {
         let (paragraph, offset) = self.insert_at;
-        let Some(text) = self.document.paragraph_text(paragraph) else {
+        let Some(text) = self.document.caret_text(paragraph) else {
             return;
         };
         let (start, end) = jade_office_model::word::selection::word_at(&text, offset);
@@ -3850,6 +3850,12 @@ impl DocumentView {
         match WordPicture::insert_picture(&mut self.document, bytes) {
             Ok(()) => {
                 self.table_status = None;
+                // The caret goes after the picture, as in Word.
+                if let Some(range) =
+                    jade_office_model::word::WordSession::selection_range(&self.document)
+                {
+                    self.insert_at = (range.focus.paragraph, range.focus.offset);
+                }
                 self.caret = self
                     .document
                     .place_caret(self.insert_at.0, self.insert_at.1);

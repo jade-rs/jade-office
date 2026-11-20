@@ -19,7 +19,7 @@ impl EditableDocument {
         let Some((paragraph, caret)) = self.caret() else {
             return Ok(());
         };
-        let text = self.paragraph_text(paragraph).unwrap_or_default();
+        let text = self.caret_text(paragraph).unwrap_or_default();
         if let Some(list) = list_start(&text, caret, options) {
             if text[caret.min(text.len())..].trim().is_empty() {
                 self.start_list(paragraph, &list)?;
@@ -45,7 +45,7 @@ impl EditableDocument {
         options: &AutoCorrectOptions,
     ) -> Result<(), String> {
         let caret = self.caret();
-        let Some(text) = self.paragraph_text(ended) else {
+        let Some(text) = self.caret_text(ended) else {
             return Ok(());
         };
         let with_end = format!("{text}\n");
@@ -56,15 +56,15 @@ impl EditableDocument {
         if !fixes.is_empty() {
             self.apply_fixes(ended, &fixes, text.len())?;
         }
-        let text = self.paragraph_text(ended).unwrap_or_default();
+        let text = self.caret_text(ended).unwrap_or_default();
         let following: String = (ended + 1..ended + 40)
-            .filter_map(|index| self.paragraph_text(index))
+            .filter_map(|index| self.caret_text(index))
             .collect::<Vec<_>>()
             .join("\n");
         if let Some(format) = on_enter(&text, &following, options) {
             self.format_on_enter(ended, &format)?;
         } else if text.trim().is_empty() && ended > 0 {
-            let previous = self.paragraph_text(ended - 1).unwrap_or_default();
+            let previous = self.caret_text(ended - 1).unwrap_or_default();
             if heading_from(&previous, options) {
                 self.make_heading(ended - 1)?;
             }
