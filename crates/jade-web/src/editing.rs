@@ -1274,6 +1274,13 @@ impl EditableDocument {
         self.typing_run = None;
         self.goal_x = None;
         if self.selection().is_some() {
+            // Cells take Backspace and Delete as Word does: whole rows,
+            // columns or the table go; other cells are emptied.
+            if let Some(result) = WordFormatting::delete_selected_cells(self, backwards) {
+                let (paragraph, offset) = result?;
+                self.set_caret(paragraph, offset);
+                return Ok(());
+            }
             return self.replace_selection("");
         }
         let (paragraph, offset) = self.caret().ok_or("no caret")?;

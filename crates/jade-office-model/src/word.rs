@@ -606,6 +606,38 @@ trait Helpers: WordSession {
             .and_then(|layout| layout.paragraphs.first().copied())
     }
 
+    /// The rows and the columns a selection of two or more cells of the
+    /// table spans, as inclusive ranges. `None` for a caret or a selection
+    /// inside one cell.
+    fn selected_cell_lines(
+        &self,
+        table_order_index: usize,
+    ) -> Option<((usize, usize), (usize, usize))> {
+        let range = self.selection_range()?;
+        let layout = |paragraph: usize| {
+            self.cell_id_for_paragraph(paragraph)
+                .and_then(|id| self.cell_layout(id))
+        };
+        let (anchor, focus) = (
+            layout(range.anchor.paragraph)?,
+            layout(range.focus.paragraph)?,
+        );
+        if anchor.table_id != focus.table_id
+            || self.table_order_for(anchor.table_id) != Some(table_order_index)
+            || (anchor.row, anchor.column) == (focus.row, focus.column)
+        {
+            return None;
+        }
+        let last = |cell: &CellLayout| cell.column + cell.column_span.max(1) - 1;
+        Some((
+            (anchor.row.min(focus.row), anchor.row.max(focus.row)),
+            (
+                anchor.column.min(focus.column),
+                last(anchor).max(last(focus)),
+            ),
+        ))
+    }
+
     fn table_first_paragraph(&self, table_order_index: usize) -> Option<usize> {
         self.cell_layouts()
             .iter()
@@ -1093,6 +1125,51 @@ pub trait WordFormatting: WordSession {
         // renumbers the paragraphs after it.
         let mut caret_cell = (row, column);
         let mut caret_table = table_order_index;
+        // 行の削除 and 列の削除 take every row or column the selection
+        // spans, as in Word; all of them is the whole table.
+        let by_row = matches!(command, TableCommand::DeleteRow);
+        if let (true, Some((rows, columns))) = (
+            by_row || matches!(command, TableCommand::DeleteColumn),
+            self.selected_cell_lines(table_order_index),
+        ) {
+            let ((first, last), total) = if by_row {
+                (rows, cell.rows)
+            } else {
+                (columns, cell.columns)
+            };
+            if last > first {
+                if last - first + 1 >= total {
+                    return self.table_command(TableCommand::DeleteTable);
+                }
+                let commands = (first..=last)
+                    .rev()
+                    .map(|index| {
+                        if by_row {
+                            HeadlessCommand::DeleteTableRow {
+                                table_order_index,
+                                row_index: index,
+                            }
+                        } else {
+                            HeadlessCommand::DeleteTableColumn {
+                                table_order_index,
+                                column_index: index,
+                            }
+                        }
+                    })
+                    .collect();
+                self.collapse_to(caret);
+                self.apply_commands(commands, false)?;
+                let remaining = total - (last - first + 1);
+                let at = first.min(remaining - 1);
+                let target = if by_row { (at, 0) } else { (0, at) };
+                let paragraph = self
+                    .cell_paragraph(table_order_index, target)
+                    .unwrap_or(caret.0)
+                    .min(self.paragraph_total().saturating_sub(1));
+                self.collapse_to((paragraph, 0));
+                return Ok((paragraph, 0));
+            }
+        }
         let command_is_structural = command.is_structural();
         let headless = match command {
             TableCommand::InsertRowAbove => {
@@ -1264,6 +1341,69 @@ pub trait WordFormatting: WordSession {
         let position = (paragraph, 0);
         self.collapse_to(position);
         Ok(position)
+    }
+
+    /// Backspace or Delete with two or more cells selected, as Word takes
+    /// them: Backspace deletes the rows, the columns or the table when whole
+    /// ones are selected; otherwise, and always for Delete, the selected
+    /// cells are emptied and keep their places. `None` when the selection is
+    /// not cells.
+    fn delete_selected_cells(&mut self, backwards: bool) -> Option<Result<Position, String>> {
+        let range = self.selection_range()?;
+        let cell = self.table_cell_of(range.focus.paragraph)?;
+        let table_order_index = cell.table_order_index;
+        let (rows, columns) = self.selected_cell_lines(table_order_index)?;
+        let whole_rows = columns == (0, cell.columns - 1);
+        let whole_columns = rows == (0, cell.rows - 1);
+        if backwards && (whole_rows || whole_columns) {
+            let command = match (whole_rows, whole_columns) {
+                (true, true) => TableCommand::DeleteTable,
+                (true, false) => TableCommand::DeleteRow,
+                _ => TableCommand::DeleteColumn,
+            };
+            return Some(self.table_command(command));
+        }
+        // Each cell's text goes, last paragraph first so the earlier ones
+        // keep their numbers.
+        let table_id = self
+            .cell_id_for_paragraph(range.focus.paragraph)
+            .and_then(|id| self.cell_layout(id))?
+            .table_id;
+        let mut spans: Vec<(usize, usize)> = self
+            .cell_layouts()
+            .iter()
+            .filter(|layout| layout.table_id == table_id)
+            .filter(|layout| {
+                (rows.0..=rows.1).contains(&layout.row)
+                    && (columns.0..=columns.1).contains(&layout.column)
+            })
+            .filter_map(|layout| Some((*layout.paragraphs.first()?, *layout.paragraphs.last()?)))
+            .collect();
+        spans.sort_unstable();
+        spans.dedup();
+        let first = spans.first()?.0;
+        let commands: Vec<HeadlessCommand> = spans
+            .into_iter()
+            .rev()
+            .filter_map(|(start, end)| {
+                let end_offset = self.text_of(end)?.len();
+                (start != end || end_offset > 0).then(|| HeadlessCommand::ReplaceRange {
+                    start_paragraph: start,
+                    start_offset: 0,
+                    end_paragraph: end,
+                    end_offset,
+                    text: String::new(),
+                })
+            })
+            .collect();
+        self.collapse_to((first, 0));
+        if commands.is_empty() {
+            return Some(Ok((first, 0)));
+        }
+        Some(self.apply_commands(commands, false).map(|()| {
+            self.collapse_to((first, 0));
+            (first, 0)
+        }))
     }
 
     /// Enter at the very start of a table's first cell, when nothing comes

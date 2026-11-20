@@ -1874,6 +1874,14 @@ impl DocumentView {
         if self.document.selection().is_some()
             && matches!(event.keystroke.key.as_str(), "backspace" | "delete")
         {
+            // Selected cells: whole rows, columns or the table go on
+            // Backspace, other cells are emptied, as in Word.
+            let backwards = event.keystroke.key == "backspace";
+            let document: &mut NativeDocument = &mut self.document;
+            if let Some(moved) = WordFormatting::delete_selected_cells(document, backwards) {
+                self.selection_anchor = None;
+                return self.ribbon_moved(moved, cx);
+            }
             let page = self.caret_page_1idx();
             match self.document.replace_selection("", page) {
                 Ok(caret) => {

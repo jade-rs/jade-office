@@ -867,3 +867,91 @@ fn delete_and_backspace_remove_an_empty_paragraph_beside_a_table() {
         4
     );
 }
+
+/// Selected cells take Backspace and Delete as Word takes them: Backspace
+/// deletes whole rows, columns or the table; Delete, or Backspace over cells
+/// that are not whole rows or columns, empties just the selected cells. 行の
+/// 削除 and 列の削除 take every selected row or column.
+#[test]
+fn backspace_and_delete_on_selected_cells_act_as_word_does() {
+    fn filled() -> EditableDocument {
+        let mut document = with_table(3, 3);
+        fill(
+            &mut document,
+            0,
+            &[&["a", "b", "c"], &["d", "e", "f"], &["g", "h", "i"]],
+        );
+        document
+    }
+    fn select(document: &mut EditableDocument, part: TablePart) {
+        let paragraph = cell_paragraph(document, 0, 1, 1);
+        document.place_caret(paragraph, 0);
+        document.select_table_part(part).unwrap();
+    }
+
+    // Backspace: the row, the column, the table.
+    let mut document = filled();
+    select(&mut document, TablePart::Row);
+    document.delete(true).unwrap();
+    assert_eq!(cell_texts(&document, 0), [["a", "b", "c"], ["g", "h", "i"]]);
+    document.undo().unwrap();
+    assert_eq!(cell_texts(&document, 0).len(), 3);
+
+    let mut document = filled();
+    select(&mut document, TablePart::Column);
+    document.delete(true).unwrap();
+    assert_eq!(
+        cell_texts(&document, 0),
+        [["a", "c"], ["d", "f"], ["g", "i"]]
+    );
+
+    let mut document = filled();
+    select(&mut document, TablePart::Table);
+    document.delete(true).unwrap();
+    assert!(document.word_document().table_by_order(0).is_none());
+
+    // Delete empties exactly the selected cells.
+    let mut document = filled();
+    select(&mut document, TablePart::Column);
+    document.delete(false).unwrap();
+    assert_eq!(
+        cell_texts(&document, 0),
+        [["a", "", "c"], ["d", "", "f"], ["g", "", "i"]]
+    );
+    document.undo().unwrap();
+    assert_eq!(cell_texts(&document, 0)[1], ["d", "e", "f"]);
+
+    let mut document = filled();
+    select(&mut document, TablePart::Table);
+    document.delete(false).unwrap();
+    assert_eq!(
+        cell_texts(&document, 0),
+        [["", "", ""], ["", "", ""], ["", "", ""]]
+    );
+
+    // Backspace over cells that are not whole rows or columns empties them.
+    let mut document = filled();
+    let from = cell_paragraph(&document, 0, 0, 0);
+    let to = cell_paragraph(&document, 0, 1, 1);
+    assert!(document.select_cells_between(from, to).unwrap());
+    document.delete(true).unwrap();
+    assert_eq!(
+        cell_texts(&document, 0),
+        [["", "", "c"], ["", "", "f"], ["g", "h", "i"]]
+    );
+
+    // 行の削除 with two rows selected takes both.
+    let mut document = filled();
+    let from = cell_paragraph(&document, 0, 0, 1);
+    let to = cell_paragraph(&document, 0, 1, 1);
+    assert!(document.select_cells_between(from, to).unwrap());
+    WordFormatting::table_command(&mut document, TableCommand::DeleteRow).unwrap();
+    assert_eq!(cell_texts(&document, 0), [["g", "h", "i"]]);
+    // 列の削除 with every column selected takes the table.
+    let mut document = filled();
+    let from = cell_paragraph(&document, 0, 2, 0);
+    let to = cell_paragraph(&document, 0, 2, 2);
+    assert!(document.select_cells_between(from, to).unwrap());
+    WordFormatting::table_command(&mut document, TableCommand::DeleteColumn).unwrap();
+    assert!(document.word_document().table_by_order(0).is_none());
+}
