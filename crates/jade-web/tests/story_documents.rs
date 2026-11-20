@@ -489,3 +489,70 @@ fn preview_predicts_print_time_toc_updates_without_editing_the_document() {
         assert_eq!(document.word_docx().unwrap(), before);
     }
 }
+
+/// "Page 1 of 3" typed into a header as Word users type it: text after a
+/// page number stays outside the field (written into its result, it was
+/// lost when the header was saved), and once the header is reopened — the
+/// fields keeping no text of their own, their digits drawn by layout — the
+/// caret after a number types after it, and at the end of the line too.
+#[test]
+fn text_after_a_page_number_stays_outside_the_field() {
+    let mut document = WordDoc::new(contract());
+    document.open_story(0, Story::Header).unwrap();
+    document.insert_text("Page ").unwrap();
+    document
+        .insert_story_field(HeadlessFieldKind::Page, "1".into())
+        .unwrap();
+    document.insert_text(" of ").unwrap();
+    document
+        .insert_story_field(HeadlessFieldKind::NumPages, "2".into())
+        .unwrap();
+    assert!(document.close_story().unwrap());
+    let saved = parts(&mut document, "word/header");
+    assert!(
+        saved.contains(">Page <") || saved.contains(">Page </"),
+        "{saved}"
+    );
+    assert!(
+        saved.contains(" of "),
+        "the text after PAGE was kept: {saved}"
+    );
+
+    document.open_story(0, Story::Header).unwrap();
+    let rendered = |document: &WordDoc| {
+        let story = document.story().unwrap();
+        story
+            .document
+            .word_document()
+            .paragraph_text_len_at(0)
+            .unwrap()
+    };
+    let model_len = rendered(&document);
+    // The caret walks the line as it is shown: "Page 1 of N".
+    document.place_caret(0, 0);
+    document
+        .move_caret(jade_web::editing::Motion::LineEnd, false)
+        .unwrap();
+    let (_, end) = document.caret().unwrap();
+    assert!(
+        end > model_len,
+        "the shown digits count: {end} > {model_len}"
+    );
+    document.insert_text("!").unwrap();
+    // Right after the page number: "Page 1|".
+    document.place_caret(0, "Page 1".len());
+    document.insert_text("#").unwrap();
+    assert!(document.close_story().unwrap());
+    let saved = parts(&mut document, "word/header");
+    let page = saved.find("PAGE").unwrap();
+    let hash = saved.find(">#<").unwrap();
+    let of = saved.find(" of ").unwrap();
+    let bang = saved.find(">!<").unwrap();
+    assert!(page < hash && hash < of && of < bang, "{saved}");
+    // The page number's field ends before what was typed after it.
+    let between = &saved[page..hash];
+    assert!(
+        between.contains("</w:fldSimple>") || between.contains("w:fldCharType=\"end\""),
+        "{saved}"
+    );
+}

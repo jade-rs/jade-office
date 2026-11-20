@@ -222,19 +222,41 @@ pub trait WordPicture: WordSession + WordPage {
         object: PlacedObject,
         (x, y, width, height): (f64, f64, f64, f64),
     ) -> Result<(), String> {
-        self.execute_command(
-            Box::new(TransformObjectCommand::new(
-                object.target,
-                FloatingObjectTransform {
-                    x,
-                    y,
-                    width: width.max(1.0),
-                    height: height.max(1.0),
-                    rotation_deg: 0.0,
-                },
-            )),
-            true,
-        )
+        // Moved or sized, an object keeps its turn and, when it moves with
+        // the text (placed from its paragraph or line), stays placed from
+        // its paragraph, as Word keeps it.
+        let layout = super::objects::object_run(self.word_document(), object.target)
+            .and_then(|run| match (&run.image, &run.text_box) {
+                (Some(image), _) => Some(image.layout.clone()),
+                (None, Some(text_box)) => Some(text_box.layout.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let follows_text = layout
+            .position_v
+            .as_ref()
+            .and_then(|position| position.relative_from.as_deref())
+            .is_some_and(|from| {
+                from.eq_ignore_ascii_case("paragraph") || from.eq_ignore_ascii_case("line")
+            });
+        let mut command = TransformObjectCommand::new(
+            object.target,
+            FloatingObjectTransform {
+                x,
+                y,
+                width: width.max(1.0),
+                height: height.max(1.0),
+                rotation_deg: layout.rotation_deg.unwrap_or(0.0),
+            },
+        );
+        if follows_text {
+            if let Some((page, _, top)) = self.paragraph_origin(object.target.paragraph_index) {
+                if page == object.page {
+                    command = command.with_anchor_paragraph_top(top);
+                }
+            }
+        }
+        self.execute_command(Box::new(command), true)
     }
 
     /// 文字列の折り返し: in line with the text, square, tight, through, top and

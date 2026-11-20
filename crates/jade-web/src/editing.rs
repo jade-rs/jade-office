@@ -493,17 +493,25 @@ impl EditableDocument {
         self.page_size().1 + PAGE_GAP_PX
     }
 
-    /// Which page a document coordinate is on, and where on it.
-    pub fn page_and_offset(&self, document_y: f64) -> (usize, f64) {
-        let pitch = self.page_pitch().max(1.0);
-        let page = ((document_y / pitch).floor().max(0.0) as usize)
-            .min(self.page_count().saturating_sub(1));
-        (page, document_y - page as f64 * pitch)
+    /// Page `index`'s own box, in CSS px: a section turned landscape or on
+    /// other paper lays its pages out at its size, as Word shows them.
+    pub fn page_size_of(&self, index: usize) -> (f64, f64) {
+        self.renderer.page_box(index)
     }
 
-    /// The document coordinate of a point on a page.
+    /// Which page a document coordinate is on, and where on it.
+    pub fn page_and_offset(&self, document_y: f64) -> (usize, f64) {
+        let page = self
+            .renderer
+            .page_for_y(document_y.max(0.0))
+            .min(self.page_count().saturating_sub(1));
+        (page, document_y - self.renderer.page_top_y(page))
+    }
+
+    /// The document coordinate of a point on a page: the pages above it
+    /// count each at its own height.
     pub fn document_y(&self, page: usize, y_on_page: f64) -> f64 {
-        y_on_page + page as f64 * self.page_pitch()
+        y_on_page + self.renderer.page_top_y(page)
     }
 
     // ---- text ---------------------------------------------------------------
@@ -728,7 +736,6 @@ impl EditableDocument {
     }
 
     fn highlight_rects(&self) -> Vec<HighlightRect> {
-        let pitch = self.page_pitch();
         self.renderer
             .get_selection_rects()
             .into_iter()
@@ -736,7 +743,7 @@ impl EditableDocument {
                 // Text rectangles are in page px; whole-cell ones in
                 // document px, gaps included. A page-px top is never as far
                 // down as the top of its page in document px.
-                let page_top = rect.page as f64 * pitch;
+                let page_top = self.renderer.page_top_y(rect.page);
                 let y = if rect.page > 0 && rect.y >= page_top {
                     rect.y - page_top
                 } else {
@@ -1054,7 +1061,7 @@ impl EditableDocument {
         let here = hit(line);
         let direction = if down { 1.0 } else { -1.0 };
         let step = (height / 2.0).clamp(2.0, 8.0);
-        let end = self.page_count() as f64 * self.page_pitch();
+        let end = self.document_y(self.page_count(), 0.0);
         let mut y = line + height * direction;
         while (0.0..end).contains(&y) {
             if let Some(position) = hit(y).filter(|&position| Some(position) != here) {
@@ -1267,6 +1274,13 @@ impl EditableDocument {
         self.typing_run = None;
         self.goal_x = None;
         if self.selection().is_some() {
+            // Cells take Backspace and Delete as Word does: whole rows,
+            // columns or the table go; other cells are emptied.
+            if let Some(result) = WordFormatting::delete_selected_cells(self, backwards) {
+                let (paragraph, offset) = result?;
+                self.set_caret(paragraph, offset);
+                return Ok(());
+            }
             return self.replace_selection("");
         }
         let (paragraph, offset) = self.caret().ok_or("no caret")?;
@@ -1321,6 +1335,11 @@ impl EditableDocument {
             self.executor.end_group();
             return result;
         }
+        if let Some(result) = WordFormatting::enter_above_table(self) {
+            let (paragraph, offset) = result?;
+            self.set_caret(paragraph, offset);
+            return Ok(());
+        }
         self.split_at_caret()
     }
 
@@ -1351,7 +1370,11 @@ impl EditableDocument {
             },
             true,
         )?;
-        self.set_caret(paragraph + 1, 0);
+        // The command puts the caret at the start of the new paragraph,
+        // which is not always the next surface: the notes referenced before
+        // the split keep their paragraphs between.
+        let (next, _) = self.caret().unwrap_or((paragraph + 1, 0));
+        self.set_caret(next, 0);
         Ok(())
     }
 

@@ -170,6 +170,10 @@ impl WordSession for WordDoc {
     fn object_region(&self, paragraph: usize, run: usize) -> Option<(usize, f64, f64, f64, f64)> {
         WordSession::object_region(&**self, paragraph, run)
     }
+
+    fn paragraph_origin(&self, paragraph: usize) -> Option<(usize, f64, f64)> {
+        WordSession::paragraph_origin(&**self, paragraph)
+    }
 }
 
 fn role_name(role: Story) -> &'static str {
@@ -230,16 +234,20 @@ impl WordDoc {
         self.story.as_ref()
     }
 
+    /// The height of the page the open story is on (the first page with
+    /// none open): a landscape section's pages are shorter.
     fn page_height(&self) -> f64 {
-        self.main.layout_page_size().1
+        let page = self.story.as_ref().map_or(0, |story| story.page);
+        self.main.page_box(page).1
+    }
+
+    /// Page `index`'s own box.
+    pub fn page_box(&self, index: usize) -> (f64, f64) {
+        self.main.page_box(index)
     }
 
     pub fn page_count(&self) -> usize {
         self.main.page_count()
-    }
-
-    pub fn page_pitch(&self) -> f64 {
-        self.main.page_pitch()
     }
 
     pub fn layout_page_size(&self) -> (f64, f64) {
@@ -508,7 +516,7 @@ impl WordDoc {
         } else {
             0.0
         };
-        let (_, page_height) = self.main.layout_page_size();
+        let (_, page_height) = self.main.page_box(page);
         self.story = Some(StoryEdit {
             document,
             page,
@@ -698,7 +706,7 @@ impl DocumentView {
         let main = self.document.main();
         let section = main.renderer().section_index_for_zero_based_page(page);
         let layout = main.word_document().section_layout(Some(section));
-        let (_, height) = main.layout_page_size();
+        let (_, height) = main.page_box(page);
         let gutter_top = if layout.gutter_at_top {
             layout.gutter
         } else {
@@ -726,7 +734,7 @@ impl DocumentView {
         if story.page != page {
             return None;
         }
-        let (_, height) = self.document.layout_page_size();
+        let (_, height) = self.document.page_box(page);
         let (top, bottom) = story.band(height);
         let zoom = self.zoom;
         let mut label = String::from(i18n::text(match (story.role, story.variant) {
@@ -1232,7 +1240,9 @@ mod tests {
         );
 
         view.update(cx, |view, _| {
-            let end = view.document.paragraph_text(0).unwrap().len();
+            // The end of the line as it is shown: the PAGE field's number
+            // counts, though its run holds no text.
+            let end = view.document.word_document().rendered_paragraph_len(0);
             view.document.insert_paragraph_break(0, end).unwrap();
             view.insert_at = (1, 0);
             view.caret = view.document.place_caret(1, 0);

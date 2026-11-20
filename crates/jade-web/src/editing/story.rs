@@ -247,6 +247,10 @@ impl WordSession for WordDoc {
         WordSession::position_metrics(&**self, at)
     }
 
+    fn paragraph_origin(&self, paragraph: usize) -> Option<(usize, f64, f64)> {
+        WordSession::paragraph_origin(&**self, paragraph)
+    }
+
     fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
         WordSession::math_zones(&**self)
     }
@@ -277,8 +281,11 @@ impl WordDoc {
         self.story.as_deref()
     }
 
+    /// The height of the page the open story is on (the first page with
+    /// none open): a landscape section's pages are shorter.
     fn page_height(&self) -> f64 {
-        self.main.page_size().1
+        let page = self.story.as_deref().map_or(0, |story| story.page);
+        self.main.page_size_of(page).1
     }
 
     // ---- the pages: always the main document's ------------------------------
@@ -297,6 +304,10 @@ impl WordDoc {
 
     pub fn page_pitch(&self) -> f64 {
         self.main.page_pitch()
+    }
+
+    pub fn page_size_of(&self, index: usize) -> (f64, f64) {
+        self.main.page_size_of(index)
     }
 
     pub fn page_and_offset(&self, document_y: f64) -> (usize, f64) {
@@ -433,7 +444,7 @@ impl WordDoc {
     pub fn margin_story(&self, page: usize, y_on_page: f64) -> Option<Story> {
         let section = self.main.renderer.section_index_for_zero_based_page(page);
         let layout = self.main.word_document.section_layout(Some(section));
-        let height = self.page_height();
+        let height = self.main.page_size_of(page).1;
         let gutter_top = if layout.gutter_at_top {
             layout.gutter
         } else {
@@ -739,7 +750,7 @@ impl WordDoc {
         } else {
             0.0
         };
-        let page_height = self.page_height();
+        let page_height = self.main.page_size_of(page).1;
         document.place_caret(0, 0);
         self.story = Some(Box::new(StoryEdit {
             document,

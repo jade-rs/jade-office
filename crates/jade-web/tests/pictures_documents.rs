@@ -84,3 +84,57 @@ fn a_picture_goes_in_at_the_caret_and_wraps() {
     document.undo().unwrap();
     assert!(image_runs(&document, paragraph).is_empty());
 }
+
+/// A picture placed from the margin and moving with its line, dragged, is
+/// still placed from the margin and still moves with the text, as Word
+/// keeps it: its offsets are taken again from those frames.
+#[test]
+fn a_dragged_picture_keeps_its_frames() {
+    let bytes = std::fs::read(common::core().join("public/fixtures/image-floating.docx")).unwrap();
+    let mut document = common::open_bytes(&bytes);
+    let (paragraph, run) = (0..document.paragraph_count())
+        .find_map(|paragraph| {
+            image_runs(&document, paragraph)
+                .first()
+                .map(|&run| (paragraph, run))
+        })
+        .unwrap();
+    let target = FloatingObjectTarget {
+        paragraph_index: paragraph,
+        run_index: run,
+        kind: FloatingObjectKind::Image,
+    };
+    let frames = |document: &jade_web::editing::EditableDocument| {
+        let layout = document.word_document().paragraph(paragraph).unwrap().runs[run]
+            .image
+            .clone()
+            .unwrap()
+            .layout;
+        (layout.position_h.unwrap(), layout.position_v.unwrap())
+    };
+    let (h, v) = frames(&document);
+    assert_eq!(h.relative_from.as_deref(), Some("margin"));
+    assert_eq!(v.relative_from.as_deref(), Some("line"));
+
+    let object = document.object_region(target).unwrap();
+    document
+        .place_object(
+            object,
+            (
+                object.x + 30.0,
+                object.y + 50.0,
+                object.width,
+                object.height,
+            ),
+        )
+        .unwrap();
+    let placed = document.object_region(target).unwrap();
+    assert!((placed.x - (object.x + 30.0)).abs() < 1.0, "{placed:?}");
+    assert!((placed.y - (object.y + 50.0)).abs() < 1.0, "{placed:?}");
+    let (h, v) = frames(&document);
+    assert_eq!(h.relative_from.as_deref(), Some("margin"));
+    assert_eq!(v.relative_from.as_deref(), Some("paragraph"));
+    // Moved 30 px right of where the margin put it before.
+    let margin_left = object.x - 1517660.0 / 9525.0;
+    assert!((h.offset_px.unwrap() - (placed.x - margin_left)).abs() < 1.0);
+}

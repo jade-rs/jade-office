@@ -183,10 +183,44 @@ pub struct Arrangement {
     pub grid: PageGrid,
     /// The part of each page shown, when the view cuts them.
     pub crops: Vec<Option<PageCrop>>,
+    /// Each page's whole box, zoomed: pages of a section turned landscape
+    /// or on other paper have their own.
+    pub sizes: Vec<(f32, f32)>,
+    /// Each page's height as shown (its band when the view cuts), zoomed.
+    pub heights: Vec<f32>,
     pub background: gpui::Rgba,
     pub sheet: bool,
     /// 下書き: the bands from the left, as Word sets them.
     pub from_left: bool,
+}
+
+impl Arrangement {
+    /// The top-left of page `index` in the scrolled content.
+    pub fn origin(&self, index: usize) -> (f32, f32) {
+        self.grid.origin_in(index, &self.heights)
+    }
+
+    /// The pages a viewport shows.
+    pub fn visible(
+        &self,
+        scroll: (f32, f32),
+        size: (f32, f32),
+        page_count: usize,
+    ) -> std::ops::Range<usize> {
+        self.grid
+            .visible_in(scroll, size, page_count, &self.heights)
+    }
+
+    /// The page counted current.
+    pub fn current(&self, scroll: (f32, f32), size: (f32, f32), page_count: usize) -> usize {
+        self.grid
+            .current_in(scroll, size, page_count, &self.heights)
+    }
+
+    /// Page `index`'s whole box, zoomed, or `fallback`.
+    pub fn size(&self, index: usize, fallback: (f32, f32)) -> (f32, f32) {
+        self.sizes.get(index).copied().unwrap_or(fallback)
+    }
 }
 
 impl DocumentView {
@@ -438,12 +472,31 @@ impl DocumentView {
             Document::Pages { pages, .. } => pages.len(),
             _ => 0,
         };
+        let own_sizes: Vec<(f32, f32)> = match &self.document {
+            Document::Pages { page_sizes, .. } => (0..count)
+                .map(|index| page_sizes.get(index).copied().unwrap_or(page_size))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let size_of = |index: usize| own_sizes.get(index).copied().unwrap_or(page_size);
         let crops: Vec<Option<PageCrop>> = (0..count)
             .map(|index| {
                 if !views.crops_pages() {
                     return None;
                 }
-                Some(self.page_band(index)?.crop(views.kind, page_size))
+                Some(self.page_band(index)?.crop(views.kind, size_of(index)))
+            })
+            .collect();
+        let sizes: Vec<(f32, f32)> = (0..count)
+            .map(|index| {
+                let (width, height) = size_of(index);
+                (width * zoom, height * zoom)
+            })
+            .collect();
+        let heights: Vec<f32> = (0..count)
+            .map(|index| match crops.get(index).copied().flatten() {
+                Some(crop) => crop.height * zoom,
+                None => sizes[index].1,
             })
             .collect();
         let shown = crops
@@ -482,6 +535,8 @@ impl DocumentView {
                 horizontal: views.horizontal(),
             },
             crops,
+            sizes,
+            heights,
             background,
             sheet,
             from_left: views.kind == ViewKind::Draft && !views.focus,

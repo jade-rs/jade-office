@@ -775,3 +775,183 @@ fn alt_text_is_typed_saved_and_read_back() {
     assert!(!xml.contains("tblCaption"), "{xml}");
     assert!(xml.contains("tblDescription"), "{xml}");
 }
+
+/// Enter at the very start of a table at the top of the document: Word puts
+/// an empty paragraph in front of the table and leaves the caret in the
+/// cell; with text before the table, Enter splits the cell's paragraph.
+#[test]
+fn enter_at_the_start_of_a_leading_table_adds_a_paragraph_above_it() {
+    let mut document = with_table(2, 2);
+    fill(&mut document, 0, &[&["a", "b"], &["c", "d"]]);
+    let first = cell_paragraph(&document, 0, 0, 0);
+    assert_eq!(first, 0, "the table starts the document");
+    document.place_caret(first, 0);
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(document.cell_id_for_paragraph(0), None);
+    assert_eq!(document.paragraph_text(0).unwrap(), "");
+    let caret = document.caret().unwrap();
+    assert_eq!(caret, (cell_paragraph(&document, 0, 0, 0), 0));
+    assert_eq!(cell_texts(&document, 0), [["a", "b"], ["c", "d"]]);
+
+    // One undo takes the paragraph away again.
+    document.undo().unwrap();
+    assert_eq!(cell_paragraph(&document, 0, 0, 0), 0);
+    assert_eq!(cell_texts(&document, 0), [["a", "b"], ["c", "d"]]);
+
+    // Now the paragraph before the table is there: Enter splits the cell.
+    document.redo().unwrap();
+    let first = cell_paragraph(&document, 0, 0, 0);
+    document.place_caret(first, 0);
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(cell_texts(&document, 0), [["\na", "b"], ["c", "d"]]);
+}
+
+/// An empty paragraph beside a table goes as in Word: Delete in one just
+/// before the table, Backspace in one just after it, the caret going into
+/// the table's nearest cell; undo brings it back and a save has it gone.
+#[test]
+fn delete_and_backspace_remove_an_empty_paragraph_beside_a_table() {
+    let mut document = blank();
+    document.place_caret(0, 0);
+    document.insert_text("before").unwrap();
+    document.insert_paragraph_break().unwrap();
+    let caret = WordFormatting::insert_table(&mut document, 1, 2).unwrap();
+    document.place_caret(caret.0, caret.1);
+    fill(&mut document, 0, &[&["a", "b"]]);
+    let last = document.paragraph_count() - 1;
+    document.place_caret(last, 0);
+    document.insert_text("after").unwrap();
+    let texts = |document: &EditableDocument| -> Vec<String> {
+        (0..document.paragraph_count())
+            .map(|paragraph| document.paragraph_text(paragraph).unwrap())
+            .collect()
+    };
+    assert_eq!(texts(&document), ["before", "a", "b", "after"]);
+
+    // Delete in an empty paragraph before the table.
+    document.place_caret(0, 6);
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(texts(&document), ["before", "", "a", "b", "after"]);
+    document.delete(false).unwrap();
+    assert_eq!(texts(&document), ["before", "a", "b", "after"]);
+    assert_eq!(
+        document.caret(),
+        Some((cell_paragraph(&document, 0, 0, 0), 0))
+    );
+    document.undo().unwrap();
+    assert_eq!(texts(&document), ["before", "", "a", "b", "after"]);
+    document.redo().unwrap();
+
+    // Backspace in an empty paragraph after the table.
+    document.place_caret(3, 0);
+    document.insert_paragraph_break().unwrap();
+    assert_eq!(texts(&document), ["before", "a", "b", "", "after"]);
+    document.place_caret(3, 0);
+    document.delete(true).unwrap();
+    assert_eq!(texts(&document), ["before", "a", "b", "after"]);
+    assert_eq!(
+        document.caret(),
+        Some((cell_paragraph(&document, 0, 0, 1), 1))
+    );
+
+    // Text in the paragraph, or a table on both sides: nothing goes.
+    document.place_caret(3, 0);
+    document.delete(true).unwrap();
+    document.place_caret(0, 6);
+    document.delete(false).unwrap();
+    assert_eq!(texts(&document), ["before", "a", "b", "after"]);
+
+    let xml = document_xml(&document.export_docx().unwrap());
+    assert_eq!(
+        xml.matches("<w:p>").count() + xml.matches("<w:p ").count(),
+        4
+    );
+}
+
+/// Selected cells take Backspace and Delete as Word takes them: Backspace
+/// deletes whole rows, columns or the table; Delete, or Backspace over cells
+/// that are not whole rows or columns, empties just the selected cells. 行の
+/// 削除 and 列の削除 take every selected row or column.
+#[test]
+fn backspace_and_delete_on_selected_cells_act_as_word_does() {
+    fn filled() -> EditableDocument {
+        let mut document = with_table(3, 3);
+        fill(
+            &mut document,
+            0,
+            &[&["a", "b", "c"], &["d", "e", "f"], &["g", "h", "i"]],
+        );
+        document
+    }
+    fn select(document: &mut EditableDocument, part: TablePart) {
+        let paragraph = cell_paragraph(document, 0, 1, 1);
+        document.place_caret(paragraph, 0);
+        document.select_table_part(part).unwrap();
+    }
+
+    // Backspace: the row, the column, the table.
+    let mut document = filled();
+    select(&mut document, TablePart::Row);
+    document.delete(true).unwrap();
+    assert_eq!(cell_texts(&document, 0), [["a", "b", "c"], ["g", "h", "i"]]);
+    document.undo().unwrap();
+    assert_eq!(cell_texts(&document, 0).len(), 3);
+
+    let mut document = filled();
+    select(&mut document, TablePart::Column);
+    document.delete(true).unwrap();
+    assert_eq!(
+        cell_texts(&document, 0),
+        [["a", "c"], ["d", "f"], ["g", "i"]]
+    );
+
+    let mut document = filled();
+    select(&mut document, TablePart::Table);
+    document.delete(true).unwrap();
+    assert!(document.word_document().table_by_order(0).is_none());
+
+    // Delete empties exactly the selected cells.
+    let mut document = filled();
+    select(&mut document, TablePart::Column);
+    document.delete(false).unwrap();
+    assert_eq!(
+        cell_texts(&document, 0),
+        [["a", "", "c"], ["d", "", "f"], ["g", "", "i"]]
+    );
+    document.undo().unwrap();
+    assert_eq!(cell_texts(&document, 0)[1], ["d", "e", "f"]);
+
+    let mut document = filled();
+    select(&mut document, TablePart::Table);
+    document.delete(false).unwrap();
+    assert_eq!(
+        cell_texts(&document, 0),
+        [["", "", ""], ["", "", ""], ["", "", ""]]
+    );
+
+    // Backspace over cells that are not whole rows or columns empties them.
+    let mut document = filled();
+    let from = cell_paragraph(&document, 0, 0, 0);
+    let to = cell_paragraph(&document, 0, 1, 1);
+    assert!(document.select_cells_between(from, to).unwrap());
+    document.delete(true).unwrap();
+    assert_eq!(
+        cell_texts(&document, 0),
+        [["", "", "c"], ["", "", "f"], ["g", "h", "i"]]
+    );
+
+    // 行の削除 with two rows selected takes both.
+    let mut document = filled();
+    let from = cell_paragraph(&document, 0, 0, 1);
+    let to = cell_paragraph(&document, 0, 1, 1);
+    assert!(document.select_cells_between(from, to).unwrap());
+    WordFormatting::table_command(&mut document, TableCommand::DeleteRow).unwrap();
+    assert_eq!(cell_texts(&document, 0), [["g", "h", "i"]]);
+    // 列の削除 with every column selected takes the table.
+    let mut document = filled();
+    let from = cell_paragraph(&document, 0, 2, 0);
+    let to = cell_paragraph(&document, 0, 2, 2);
+    assert!(document.select_cells_between(from, to).unwrap());
+    WordFormatting::table_command(&mut document, TableCommand::DeleteColumn).unwrap();
+    assert!(document.word_document().table_by_order(0).is_none());
+}
