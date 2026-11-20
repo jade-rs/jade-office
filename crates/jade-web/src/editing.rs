@@ -526,6 +526,15 @@ impl EditableDocument {
             .map(|paragraph| paragraph.runs.iter().map(|run| run.text.as_str()).collect())
     }
 
+    /// Paragraph `paragraph`'s text in the caret's offsets: an inline
+    /// picture, text box or equation is one object character (U+FFFC), as
+    /// Word counts it, so the caret steps over it and Backspace takes it.
+    pub fn caret_text(&self, paragraph: usize) -> Option<String> {
+        self.word_document
+            .paragraph(paragraph)
+            .map(|_| self.word_document.paragraph_text_with_objects(paragraph))
+    }
+
     // ---- caret --------------------------------------------------------------
 
     /// The text position under a point in document coordinates.
@@ -610,7 +619,7 @@ impl EditableDocument {
     /// a whole, having no spaces to break on — selected, as a double click
     /// selects in Word. Elsewhere, the caret goes to `position`.
     pub fn select_word(&mut self, (paragraph, offset): (usize, usize)) -> Result<(), String> {
-        let text = self.paragraph_text(paragraph).unwrap_or_default();
+        let text = self.caret_text(paragraph).unwrap_or_default();
         // A run of one script in Japanese, a word and the spaces after it in
         // English, as Word's double-click takes them (the native app's too).
         let (start, end) = jade_office_model::word::selection::word_at(&text, offset);
@@ -635,7 +644,7 @@ impl EditableDocument {
 
     /// The whole of `paragraph` selected, as a triple click selects in Word.
     pub fn select_paragraph(&mut self, paragraph: usize) -> Result<(), String> {
-        let end = self.paragraph_text(paragraph).map_or(0, |text| text.len());
+        let end = self.caret_text(paragraph).map_or(0, |text| text.len());
         self.select((paragraph, 0), (paragraph, end))
     }
 
@@ -804,7 +813,7 @@ impl EditableDocument {
     /// Everything, from the first paragraph's start to the last one's end.
     pub fn select_all(&mut self) -> Result<(), String> {
         let last = self.paragraph_count().saturating_sub(1);
-        let end = self.paragraph_text(last).map_or(0, |text| text.len());
+        let end = self.caret_text(last).map_or(0, |text| text.len());
         self.select((0, 0), (last, end))
     }
 
@@ -822,23 +831,25 @@ impl EditableDocument {
     pub fn selected_text(&self) -> Option<String> {
         let range = self.selection.filter(|range| !range.is_collapsed())?;
         let (start, end) = range.normalized();
+        // The objects' characters stand for no text.
+        let text_only = |text: &str| text.replace('\u{fffc}', "");
         if start.paragraph == end.paragraph {
-            let text = self.paragraph_text(start.paragraph)?;
-            return Some(text.get(start.offset..end.offset)?.to_string());
+            let text = self.caret_text(start.paragraph)?;
+            return Some(text_only(text.get(start.offset..end.offset)?));
         }
         let mut parts = vec![self
             .paragraph_text(start.paragraph)?
             .get(start.offset..)?
             .to_string()];
         for paragraph in (start.paragraph + 1)..end.paragraph {
-            parts.push(self.paragraph_text(paragraph).unwrap_or_default());
+            parts.push(self.caret_text(paragraph).unwrap_or_default());
         }
         parts.push(
-            self.paragraph_text(end.paragraph)?
+            self.caret_text(end.paragraph)?
                 .get(..end.offset)?
                 .to_string(),
         );
-        Some(parts.join("\n"))
+        Some(text_only(&parts.join("\n")))
     }
 
     /// An arrow, Home or End; with `extend` (Shift) the selection's far end
@@ -863,7 +874,7 @@ impl EditableDocument {
             }
             Motion::ParagraphTextEnd => (
                 focus.0,
-                self.paragraph_text(focus.0).map_or(0, |text| text.len()),
+                self.caret_text(focus.0).map_or(0, |text| text.len()),
             ),
             Motion::DocumentStart => {
                 let first = (0..self.paragraph_count())
@@ -876,7 +887,7 @@ impl EditableDocument {
                     .rev()
                     .find(|&index| self.is_body_paragraph(index))
                     .unwrap_or(0);
-                (last, self.paragraph_text(last).map_or(0, |text| text.len()))
+                (last, self.caret_text(last).map_or(0, |text| text.len()))
             }
             Motion::Up | Motion::Down | Motion::LineStart | Motion::LineEnd => {
                 // The line the caret is drawn on, wrap or not.
@@ -1078,7 +1089,7 @@ impl EditableDocument {
         (paragraph, offset): (usize, usize),
         forwards: bool,
     ) -> (usize, usize) {
-        let text = self.paragraph_text(paragraph).unwrap_or_default();
+        let text = self.caret_text(paragraph).unwrap_or_default();
         if forwards {
             match text.get(offset..).and_then(|rest| rest.chars().next()) {
                 Some(next) => (paragraph, offset + next.len_utf8()),
@@ -1093,8 +1104,7 @@ impl EditableDocument {
                 Some(previous) => (paragraph, offset - previous.len_utf8()),
                 None if paragraph > 0 => (
                     paragraph - 1,
-                    self.paragraph_text(paragraph - 1)
-                        .map_or(0, |text| text.len()),
+                    self.caret_text(paragraph - 1).map_or(0, |text| text.len()),
                 ),
                 None => (paragraph, offset),
             }
@@ -1106,7 +1116,7 @@ impl EditableDocument {
     /// a whole). At a paragraph's edge, into the next paragraph.
     fn step_word(&self, (paragraph, offset): (usize, usize), forwards: bool) -> (usize, usize) {
         use jade_office_model::text::{word_end_after, word_start_before};
-        let text = self.paragraph_text(paragraph).unwrap_or_default();
+        let text = self.caret_text(paragraph).unwrap_or_default();
         let offset = offset.min(text.len());
         let at_edge = if forwards {
             offset == text.len()
@@ -1135,7 +1145,7 @@ impl EditableDocument {
             return (paragraph, 0);
         }
         let end = if forwards {
-            self.paragraph_text(paragraph).map_or(0, |text| text.len())
+            self.caret_text(paragraph).map_or(0, |text| text.len())
         } else {
             0
         };
@@ -1284,13 +1294,13 @@ impl EditableDocument {
             return self.replace_selection("");
         }
         let (paragraph, offset) = self.caret().ok_or("no caret")?;
-        let text = self.paragraph_text(paragraph).unwrap_or_default();
+        let text = self.caret_text(paragraph).unwrap_or_default();
         let caret = if backwards {
             if offset == 0 {
                 if paragraph == 0 {
                     return Ok(());
                 }
-                let before = self.paragraph_text(paragraph - 1).unwrap_or_default();
+                let before = self.caret_text(paragraph - 1).unwrap_or_default();
                 (paragraph - 1, before.len())
             } else {
                 let previous = text[..offset.min(text.len())]
@@ -1907,7 +1917,7 @@ impl EditableDocument {
         }
         if let Some((paragraph, offset)) = caret {
             let paragraph = paragraph.min(self.paragraph_count().saturating_sub(1));
-            let length = self.paragraph_text(paragraph).map_or(0, |text| text.len());
+            let length = self.caret_text(paragraph).map_or(0, |text| text.len());
             self.place_caret(paragraph, offset.min(length));
         }
         Ok(())

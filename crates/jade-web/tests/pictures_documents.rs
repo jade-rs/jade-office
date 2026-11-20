@@ -6,6 +6,7 @@ mod common;
 use common::{contract, typed};
 use jade_docx_editor::word_document::{FloatingObjectKind, FloatingObjectTarget};
 use jade_web::editing::WordSession;
+use jade_web::word::objects::WordObjects;
 use jade_web::word::picture::{PlacedObject, WordPicture, Wrap};
 
 /// A 2×1 PNG.
@@ -137,4 +138,84 @@ fn a_dragged_picture_keeps_its_frames() {
     // Moved 30 px right of where the margin put it before.
     let margin_left = object.x - 1517660.0 / 9525.0;
     assert!((h.offset_px.unwrap() - (placed.x - margin_left)).abs() < 1.0);
+}
+
+/// The text of `paragraph` from `from` on, an inline picture as U+FFFC.
+fn text_from(
+    document: &jade_web::editing::EditableDocument,
+    paragraph: usize,
+    from: usize,
+) -> String {
+    document.caret_text(paragraph).unwrap()[from..].to_string()
+}
+
+/// An inline picture is one character of its line, as in Word: the caret
+/// goes after it when it goes in, typing there follows it, the arrows step
+/// over it in one, Shift+← selects it, and Backspace after it or Delete
+/// before it removes it — each one undo step.
+#[test]
+fn an_inline_picture_is_one_character_for_the_caret() {
+    use jade_web::editing::Motion;
+    const PICTURE: &str = "\u{fffc}";
+    let mut document = contract();
+    let paragraph = typed(&mut document, "ab ");
+    document.place_caret(paragraph, "ab".len());
+    document.insert_picture(png()).unwrap();
+    let after = "ab".len() + PICTURE.len();
+    assert_eq!(document.caret(), Some((paragraph, after)));
+    assert!(text_from(&document, paragraph, 0).starts_with("ab\u{fffc} "));
+
+    // Typing after it goes behind it.
+    document.insert_text("X").unwrap();
+    assert!(text_from(&document, paragraph, 0).starts_with("ab\u{fffc}X "));
+    assert_eq!(image_runs(&document, paragraph).len(), 1);
+    document.undo().unwrap();
+    assert!(text_from(&document, paragraph, 0).starts_with("ab\u{fffc} "));
+
+    // The arrows step over it in one.
+    document.place_caret(paragraph, "ab".len());
+    document.move_caret(Motion::Right, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, after)));
+    document.move_caret(Motion::Left, false).unwrap();
+    assert_eq!(document.caret(), Some((paragraph, "ab".len())));
+
+    // Backspace after it removes it, and nothing else.
+    document.place_caret(paragraph, after);
+    document.delete(true).unwrap();
+    assert!(text_from(&document, paragraph, 0).starts_with("ab "));
+    assert!(image_runs(&document, paragraph).is_empty());
+    assert_eq!(document.caret(), Some((paragraph, "ab".len())));
+    document.undo().unwrap();
+    assert_eq!(image_runs(&document, paragraph).len(), 1);
+
+    // Delete in front of it removes it.
+    document.place_caret(paragraph, "ab".len());
+    document.delete(false).unwrap();
+    assert!(text_from(&document, paragraph, 0).starts_with("ab "));
+    assert!(image_runs(&document, paragraph).is_empty());
+    document.undo().unwrap();
+    assert_eq!(image_runs(&document, paragraph).len(), 1);
+
+    // Shift+← selects it; deleting the selection takes it with the text.
+    document.place_caret(paragraph, after);
+    document.move_caret(Motion::Left, true).unwrap();
+    document.move_caret(Motion::Left, true).unwrap();
+    document.delete(true).unwrap();
+    assert!(text_from(&document, paragraph, 0).starts_with("a "));
+    assert!(image_runs(&document, paragraph).is_empty());
+    document.undo().unwrap();
+    assert!(text_from(&document, paragraph, 0).starts_with("ab\u{fffc} "));
+    assert_eq!(image_runs(&document, paragraph).len(), 1);
+
+    // Deleted as a selected object, it leaves the caret where it was.
+    let target = FloatingObjectTarget {
+        paragraph_index: paragraph,
+        run_index: image_runs(&document, paragraph)[0],
+        kind: FloatingObjectKind::Image,
+    };
+    document.delete_object(target).unwrap();
+    assert!(image_runs(&document, paragraph).is_empty());
+    assert_eq!(document.caret(), Some((paragraph, "ab".len())));
+    let saved = document.export_docx().unwrap();
+    assert!(!saved.is_empty());
 }
