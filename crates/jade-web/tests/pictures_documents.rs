@@ -219,3 +219,121 @@ fn an_inline_picture_is_one_character_for_the_caret() {
     let saved = document.export_docx().unwrap();
     assert!(!saved.is_empty());
 }
+
+/// In a header or footer, too, an inline picture is one character: the
+/// caret goes after it, typing follows it, the arrows step over it and
+/// Backspace after it removes it.
+#[test]
+fn a_header_or_footer_picture_is_one_character_for_the_caret() {
+    use jade_web::editing::{Motion, WordDoc};
+    use jade_web::word::page::Story;
+    const PICTURE: &str = "\u{fffc}";
+    for role in [Story::Header, Story::Footer] {
+        let mut document = WordDoc::new(contract());
+        document.open_story(0, role).unwrap();
+        document.insert_text("ab").unwrap();
+        let paragraph = document.caret().unwrap().0;
+        document.place_caret(paragraph, 1);
+        document.insert_picture(png()).unwrap();
+        let after = "a".len() + PICTURE.len();
+        assert_eq!(document.caret(), Some((paragraph, after)), "{role:?}");
+        document.insert_text("X").unwrap();
+        assert!(
+            text_from(&document, paragraph, 0).starts_with("a\u{fffc}Xb"),
+            "{role:?}: {:?}",
+            text_from(&document, paragraph, 0)
+        );
+        document.place_caret(paragraph, 1);
+        document.move_caret(Motion::Right, false).unwrap();
+        assert_eq!(document.caret(), Some((paragraph, after)), "{role:?}");
+        document.delete(true).unwrap();
+        assert!(image_runs(&document, paragraph).is_empty(), "{role:?}");
+        assert!(
+            text_from(&document, paragraph, 0).starts_with("aXb"),
+            "{role:?}: {:?}",
+            text_from(&document, paragraph, 0)
+        );
+        document.undo().unwrap();
+        assert_eq!(image_runs(&document, paragraph).len(), 1, "{role:?}");
+        // Closed, the picture stays in the story it went into.
+        document.close_story().unwrap();
+        let package = jade_opc::OpcPackage::open(&document.word_docx().unwrap()).unwrap();
+        let prefix = match role {
+            Story::Header => "word/header",
+            _ => "word/footer",
+        };
+        assert!(
+            package.part_names().iter().any(|name| {
+                name.trim_start_matches('/').starts_with(prefix)
+                    && package
+                        .part_str(name)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|xml| xml.contains("<w:drawing"))
+            }),
+            "{role:?}: the picture is saved in the story"
+        );
+    }
+}
+
+/// An inline equation in a footnote is one character of its line, as in
+/// the body: the caret reaches the text after it, typing after it follows
+/// it, and Backspace after it removes it.
+#[test]
+fn a_footnote_equation_is_one_character_for_the_caret() {
+    use jade_web::editing::WordSession;
+    use jade_web::word::headless::{HeadlessCommand, HeadlessEquationPlacement};
+    const EQUATION: &str = "\u{fffc}";
+    let mut document = contract();
+    document
+        .apply_commands(
+            vec![HeadlessCommand::InsertFootnote {
+                paragraph: 3,
+                offset: 0,
+                text: "abcdef".into(),
+            }],
+            false,
+        )
+        .unwrap();
+    let note = (0..document.word_document().paragraph_count())
+        .find(|&index| {
+            document
+                .word_document()
+                .rendered_paragraph_text(index)
+                .contains("abcdef")
+        })
+        .unwrap();
+    let text = document.caret_text(note).unwrap();
+    let at = text.find("def").unwrap();
+    document
+        .apply_commands(
+            vec![HeadlessCommand::InsertEquation {
+                paragraph: note,
+                offset: at,
+                omml: "<m:oMath><m:r><m:t>xyz</m:t></m:r></m:oMath>".into(),
+                placement: HeadlessEquationPlacement::Inline,
+            }],
+            false,
+        )
+        .unwrap();
+    assert!(text_from(&document, note, 0).ends_with("abc\u{fffc}def"));
+    // The caret reaches the end of the note, past "def".
+    let end = document.word_document().rendered_paragraph_len(note);
+    let x = |offset| document.position_metrics((note, offset)).unwrap().0;
+    assert!(x(end) > x(end - 1));
+
+    // Typing after the equation follows it.
+    let after = at + EQUATION.len();
+    document.place_caret(note, after);
+    document.insert_text("X").unwrap();
+    assert!(text_from(&document, note, 0).ends_with("abc\u{fffc}Xdef"));
+    document.undo().unwrap();
+
+    // Backspace after it removes it, and nothing else.
+    document.place_caret(note, after);
+    document.delete(true).unwrap();
+    assert!(text_from(&document, note, 0).ends_with("abcdef"));
+    assert_eq!(document.caret(), Some((note, at)));
+    document.undo().unwrap();
+    assert!(text_from(&document, note, 0).ends_with("abc\u{fffc}def"));
+}

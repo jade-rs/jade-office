@@ -146,7 +146,10 @@ fn paragraph_moves_stay_in_the_body_or_current_note() {
             .unwrap();
         assert_vertical_story_boundaries(&mut document, note);
         assert_vertical_story_wrapping(&mut document, note);
-        let end = document.paragraph_text(note).unwrap().len();
+        // The end is past the note's last character: its text and the
+        // note number drawn ahead of it.
+        let end = document.word_document().rendered_paragraph_len(note);
+        assert_eq!(document.caret_text(note).unwrap().len(), end);
         document.place_caret(note, 0);
         document.move_caret(Motion::ParagraphTextEnd, true).unwrap();
         assert_eq!(document.selection(), Some(((note, 0), (note, end))));
