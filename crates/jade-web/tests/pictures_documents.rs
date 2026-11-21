@@ -382,3 +382,58 @@ fn a_text_box_equation_is_one_character_for_the_caret() {
     document.delete(true).unwrap();
     assert_eq!(document.caret_text(text_box).unwrap(), "abcdef");
 }
+
+#[test]
+fn a_copied_picture_pastes_as_a_picture_of_its_own() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = contract();
+    let paragraph = typed(&mut document, "ab ");
+    document.place_caret(paragraph, 1);
+    document.insert_picture(png()).unwrap();
+    // "a￼b": the picture is one character of the line.
+    document.select((paragraph, 0), (paragraph, 5)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.plain_text(), "ab");
+    assert_eq!(clip.pictures.len(), 1);
+    assert_eq!(clip.pictures[0].offset, 1);
+
+    let end = document.word_document().rendered_paragraph_len(paragraph);
+    document.place_caret(paragraph, end);
+    let after = document.paste_rich(&clip).unwrap();
+    let runs = image_runs(&document, paragraph);
+    assert_eq!(runs.len(), 2);
+    let shown = document.word_document().rendered_paragraph_text(paragraph);
+    assert!(shown.ends_with("a\u{fffc}b"), "{shown}");
+    assert_eq!(after, (paragraph, shown.len()));
+    let saved = document.export_docx().unwrap();
+    let xml = jade_opc::OpcPackage::open(&saved)
+        .unwrap()
+        .part_str("word/document.xml")
+        .unwrap()
+        .unwrap();
+    assert_eq!(xml.matches("<w:drawing>").count(), 2, "{xml}");
+
+    // One undo takes the text and the picture back.
+    document.undo().unwrap();
+    assert_eq!(image_runs(&document, paragraph).len(), 1);
+    assert_eq!(
+        document.word_document().rendered_paragraph_len(paragraph),
+        end
+    );
+}
+
+#[test]
+fn a_picture_at_the_end_of_a_copy_leaves_the_caret_after_it() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = contract();
+    let paragraph = typed(&mut document, "ab ");
+    document.place_caret(paragraph, 1);
+    document.insert_picture(png()).unwrap();
+    document.select((paragraph, 1), (paragraph, 4)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!((clip.plain_text().as_str(), clip.pictures.len()), ("", 1));
+    document.place_caret(paragraph, 0);
+    let after = document.paste_rich(&clip).unwrap();
+    assert_eq!(after, (paragraph, '\u{fffc}'.len_utf8()));
+    assert_eq!(image_runs(&document, paragraph).len(), 2);
+}

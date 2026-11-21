@@ -105,6 +105,14 @@ impl WordSession for EditableDocument {
         self.finish_command(before, selection, keep_selection)
     }
 
+    fn begin_edit_group(&mut self) {
+        self.executor.begin_group();
+    }
+
+    fn end_edit_group(&mut self) {
+        self.executor.end_group();
+    }
+
     fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize> {
         self.renderer.cell_id_for_paragraph(paragraph)
     }

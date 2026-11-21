@@ -505,6 +505,7 @@ impl Builder {
         RichClip {
             paragraphs: self.paragraphs,
             notes: Vec::new(),
+            pictures: Vec::new(),
         }
     }
 }
@@ -755,6 +756,7 @@ mod export_tests {
         for color in ["123456", "#123456"] {
             let clip = RichClip {
                 notes: Vec::new(),
+                pictures: Vec::new(),
                 paragraphs: vec![ClipParagraph {
                     runs: vec![ClipRun {
                         text: "Color".into(),
@@ -784,6 +786,7 @@ mod export_tests {
         };
         let clip = RichClip {
             notes: Vec::new(),
+            pictures: Vec::new(),
             paragraphs: vec![
                 ClipParagraph {
                     alignment: Some("center".into()),
@@ -819,6 +822,7 @@ mod export_tests {
     fn clipboard_html_cannot_turn_text_or_font_names_into_markup() {
         let clip = RichClip {
             notes: Vec::new(),
+            pictures: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 runs: vec![ClipRun {
                     text: "<script>alert('text')</script>".into(),

@@ -162,6 +162,13 @@ pub trait WordSession {
         command: Box<dyn Command>,
         keep_selection: bool,
     ) -> Result<(), String>;
+    /// Opens one undo step that the commands until
+    /// [`Self::end_edit_group`] all go into — an edit made of headless
+    /// commands and commands the shell built, like a paste with pictures.
+    /// A session without such history takes each as a step of its own.
+    fn begin_edit_group(&mut self) {}
+    /// Closes the step [`Self::begin_edit_group`] opened.
+    fn end_edit_group(&mut self) {}
     /// The table cell a paragraph was laid out in at the last paint, by its
     /// id in the renderer's cell registry.
     fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize>;
