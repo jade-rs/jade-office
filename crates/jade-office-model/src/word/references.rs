@@ -92,6 +92,9 @@ pub trait WordReferences: WordSession {
         at: Position,
         text: &str,
     ) -> Result<Position, String> {
+        if !self.is_main_story() {
+            return Err("notes go in the main text, not a header or footer".into());
+        }
         let (paragraph, offset) = at;
         let text = text.to_string();
         let command = match kind {

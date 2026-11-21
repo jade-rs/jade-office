@@ -125,6 +125,9 @@ impl<S: WordSession + ?Sized> WordSession for Recorder<'_, S> {
     fn word_document(&self) -> &WordDocument {
         self.inner.word_document()
     }
+    fn is_main_story(&self) -> bool {
+        self.inner.is_main_story()
+    }
     fn selection_range(&self) -> Option<SelectionRange> {
         self.selection
     }

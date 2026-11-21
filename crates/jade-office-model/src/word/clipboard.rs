@@ -340,6 +340,17 @@ impl RichClip {
         }
     }
 
+    /// The copy as a header or footer takes it: without its notes and the
+    /// section breaks its paragraphs end.
+    fn outside_the_main_story(&self) -> Self {
+        let mut clip = self.clone();
+        clip.notes.clear();
+        for paragraph in &mut clip.paragraphs {
+            paragraph.section = None;
+        }
+        clip
+    }
+
     /// Whether it holds nothing: no text and nothing in line.
     fn is_blank(&self) -> bool {
         self.paragraphs
@@ -1604,6 +1615,15 @@ pub trait WordClipboard: WordSession {
     /// Pastes `clip` in place of the selection, or at the caret, as one undo
     /// step. Returns where the caret goes: after what was pasted.
     fn paste_rich(&mut self, clip: &RichClip) -> Result<Position, String> {
+        // A header or footer holds neither notes nor section breaks: Word
+        // pastes the text without them.
+        let outside;
+        let clip = if self.is_main_story() {
+            clip
+        } else {
+            outside = clip.outside_the_main_story();
+            &outside
+        };
         let range = self.selection_range().ok_or("no caret")?;
         let (start, _) = range.normalized();
         if range.is_collapsed() {

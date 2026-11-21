@@ -7,9 +7,10 @@ mod common;
 
 use common::contract;
 use jade_web::editing::{StoryChange, WordDoc, WordFormatting, WordSession};
+use jade_web::word::clipboard::WordClipboard;
 use jade_web::word::headless::HeadlessFieldKind;
-use jade_web::word::page::Story;
-use jade_web::word::WordReferences;
+use jade_web::word::page::{SectionBreak, Story, WordPage};
+use jade_web::word::{NoteForm, NoteKind, WordReferences};
 
 #[test]
 fn print_updates_a_toc_sharing_a_paragraph_with_body_text() {
@@ -669,4 +670,34 @@ fn deleting_a_break_keeps_the_header_the_linked_section_showed() {
         assert_eq!(story_text(&document), "head", "backwards {backwards}");
         document.close_story().unwrap();
     }
+}
+
+#[test]
+fn a_header_takes_a_pasted_notes_text_without_its_mark() {
+    let mut body = contract();
+    let paragraph = common::typed(&mut body, "noted text ");
+    body.place_caret(paragraph, 5);
+    let mut form = NoteForm::new(&body, NoteKind::Footnote);
+    form.text.insert("the note");
+    form.submit(&mut body).unwrap();
+    body.select((paragraph, 0), (paragraph, 11)).unwrap();
+    let clip = body.copy_rich().unwrap();
+    assert_eq!(clip.notes.len(), 1);
+    let mut document = WordDoc::new(body);
+    let notes = parts(&mut document, "word/footnotes");
+
+    document.open_story(0, Story::Header).unwrap();
+    document.paste_rich(&clip).unwrap();
+    // Word greys out 脚注の挿入 and 区切り in a header.
+    assert!(document
+        .insert_note(NoteKind::Footnote, (0, 0), "x")
+        .is_err());
+    assert!(document
+        .insert_section_break(SectionBreak::NextPage)
+        .is_err());
+    document.close_story().unwrap();
+    let headers = parts(&mut document, "word/header");
+    assert!(headers.contains("noted"), "the text is pasted");
+    assert!(!headers.contains("footnoteReference"), "{headers}");
+    assert_eq!(parts(&mut document, "word/footnotes"), notes);
 }
