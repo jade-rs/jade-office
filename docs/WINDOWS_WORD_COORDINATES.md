@@ -75,6 +75,9 @@ as an independent output context alongside PDF and page drawings. The capture
 manifest records its filename and SHA256, and the archiver copies the original
 XPS into the same version/capture directory. Missing, changed or incomplete XPS
 evidence fails archiving before a strict reference can be registered.
+Archiving also requires an initialized `jade-core` Git checkout, so an empty
+submodule directory cannot silently record the parent repository's revision
+as the renderer version.
 
 New captures additionally record Word's file version, the OS architecture and
 each document's actual `Document.CompatibilityMode` reported by Word. This

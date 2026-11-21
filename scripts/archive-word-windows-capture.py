@@ -11,6 +11,16 @@ import subprocess
 from word_font_context import capture_font_context
 
 
+def engine_identity(core):
+    core = Path(core).resolve()
+    top = subprocess.check_output(['git', '-C', str(core), 'rev-parse', '--show-toplevel'], text=True).strip()
+    if Path(top).resolve() != core:
+        raise ValueError('jade-core must be an initialized Git checkout; refusing parent repository identity')
+    engine = subprocess.check_output(['git', '-C', str(core), 'rev-parse', 'HEAD'], text=True).strip()
+    dirty = bool(subprocess.check_output(['git', '-C', str(core), 'status', '--porcelain', '--', 'crates'], text=True).strip())
+    return engine, dirty
+
+
 def extract_emf_capture(manifest):
     script = Path(__file__).resolve().parents[1]/'jade-core/scripts/word-oracle/extract_windows_emf.py'
     spec = importlib.util.spec_from_file_location('word_emf_capture', script)
@@ -200,8 +210,7 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
     # Keep these facts beside the original bytes, separately from coordinates.
     (target/'font-context.json').write_bytes((json.dumps(font_context, ensure_ascii=False, indent=2)+'\n').encode('utf-8'))
     core = Path(__file__).resolve().parents[1]/'jade-core'
-    engine = subprocess.check_output(['git', '-C', str(core), 'rev-parse', 'HEAD'], text=True).strip()
-    engine_dirty = bool(subprocess.check_output(['git', '-C', str(core), 'status', '--porcelain', '--', 'crates'], text=True).strip())
+    engine, engine_dirty = engine_identity(core)
     verification = dict(engine_commit=engine, word_product_version=version, capture_id=capture_id,
                         font_context_sha256=font_context['context_sha256'],
                         reference_kind=reference_kind,

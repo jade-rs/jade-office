@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -99,7 +100,7 @@ class VersionCaptureTests(unittest.TestCase):
         self.assertEqual(''.join(g[1] for g in visible['fixtures'][0]['glyphs']), 'A')
         self.assertEqual(raw['pdf_text_flags'], 135)
         self.assertEqual(visible['pdf_text_flags'], 199)
-        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+        with patch.object(archiver, 'engine_identity', return_value=('engine', False)):
             target = archiver.archive(self.manifest, self.evidence, ['probe'])
         index = json.loads((self.evidence/'index.json').read_text(encoding='utf-8'))['references'][0]
         self.assertEqual(index['glyph_count'], 2)
@@ -172,7 +173,7 @@ class VersionCaptureTests(unittest.TestCase):
             extractor.extract(self.manifest)
 
     def test_full_version_directory_and_no_overwrite(self):
-        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+        with patch.object(archiver, 'engine_identity', return_value=('engine', False)):
             target = archiver.archive(self.manifest, self.evidence, ['probe'])
         self.assertEqual(target.parent.name, 'word-16.0.19127.20860')
         self.assertEqual((target/'capture.json').read_bytes(), self.manifest.read_bytes())
@@ -195,7 +196,7 @@ class VersionCaptureTests(unittest.TestCase):
         try:
             os.chdir(working)
             relative = Path("..") / ("core-" + "y" * 40) / "word-oracle"
-            with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+            with patch.object(archiver, 'engine_identity', return_value=('engine', False)):
                 target = archiver.archive(self.manifest, relative, ['probe'])
             self.assertTrue(target.is_absolute())
             self.assertNotIn('..', target.parts)
@@ -205,7 +206,7 @@ class VersionCaptureTests(unittest.TestCase):
             os.chdir(original)
 
     def test_another_word_build_accumulates_without_replacing_old_evidence(self):
-        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+        with patch.object(archiver, 'engine_identity', return_value=('engine', False)):
             first = archiver.archive(self.manifest, self.evidence, ['probe'])
         original = (first/'capture.json').read_bytes()
         version = '16.0.20000.10000'
@@ -216,7 +217,7 @@ class VersionCaptureTests(unittest.TestCase):
         reference = json.loads(reference_path.read_text(encoding='utf-8'))
         reference['word_product_version'] = version
         self.write(reference_path, reference)
-        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+        with patch.object(archiver, 'engine_identity', return_value=('engine', False)):
             second = archiver.archive(self.manifest, self.evidence, ['probe'])
         self.assertNotEqual(first, second)
         self.assertEqual(second.parent.name, 'word-'+version)
@@ -227,7 +228,7 @@ class VersionCaptureTests(unittest.TestCase):
 
     def test_original_input_survives_working_source_changes(self):
         original = (self.source/'probe.docx').read_bytes()
-        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+        with patch.object(archiver, 'engine_identity', return_value=('engine', False)):
             target = archiver.archive(self.manifest, self.evidence, ['probe'])
         (self.source/'probe.docx').write_bytes(b'a later edit')
         self.assertEqual((target/'inputs/probe.docx').read_bytes(), original)
@@ -334,7 +335,7 @@ class VersionCaptureTests(unittest.TestCase):
     def test_original_xps_is_preserved_with_version_and_manifest(self):
         data = self.add_xps()
         before = self.manifest.read_bytes()
-        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+        with patch.object(archiver, 'engine_identity', return_value=('engine', False)):
             target = archiver.archive(self.manifest, self.evidence, ['probe'])
         self.assertEqual((target/'probe.xps').read_bytes(), data)
         self.assertEqual((target/'capture.json').read_bytes(), before)
@@ -384,7 +385,7 @@ class VersionCaptureTests(unittest.TestCase):
     def test_metafiles_and_separate_strict_reference_are_preserved(self):
         reference, _ = self.add_metafile()
         with patch.object(archiver, 'extract_emf_capture', return_value=reference), \
-                patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+                patch.object(archiver, 'engine_identity', return_value=('engine', False)):
             target = archiver.archive(self.manifest, self.evidence, ['probe'], 'emf')
         self.assertEqual((target/'probe.page-001.emf').read_bytes(),
                          (self.source/'probe.page-001.emf').read_bytes())
@@ -433,6 +434,31 @@ class VersionCaptureTests(unittest.TestCase):
         self.write(self.manifest, self.capture)
         with self.assertRaisesRegex(ValueError, 'complete build'):
             extractor.extract(self.manifest)
+
+    def test_uninitialized_core_cannot_borrow_parent_repository_identity(self):
+        parent = self.root/'parent'
+        subprocess.run(['git', 'init', '-q', str(parent)], check=True)
+        core = parent/'jade-core'; core.mkdir()
+        with self.assertRaisesRegex(ValueError, 'initialized Git checkout'):
+            archiver.engine_identity(core)
+        identity = archiver.engine_identity
+        with patch.object(archiver, 'engine_identity', side_effect=lambda _: identity(core)):
+            with self.assertRaisesRegex(ValueError, 'parent repository identity'):
+                archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse((self.evidence/'index.json').exists())
+
+    def test_real_core_revision_and_dirty_sources_are_recorded(self):
+        core = self.root/'jade-core'
+        subprocess.run(['git', 'init', '-q', str(core)], check=True)
+        (core/'README').write_bytes(b'test source repository')
+        subprocess.run(['git', '-C', str(core), 'add', 'README'], check=True)
+        subprocess.run(['git', '-C', str(core), '-c', 'user.name=Fixture',
+                        '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false',
+                        'commit', '-q', '-m', 'Test renderer identity'], check=True)
+        expected = subprocess.check_output(['git', '-C', str(core), 'rev-parse', 'HEAD'], text=True).strip()
+        self.assertEqual(archiver.engine_identity(core), (expected, False))
+        (core/'crates').mkdir(); (core/'crates/probe.rs').write_bytes(b'changed source')
+        self.assertEqual(archiver.engine_identity(core), (expected, True))
 
 
 if __name__ == '__main__':
