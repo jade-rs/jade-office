@@ -9,15 +9,18 @@
 //! pastes it whenever the clipboard still holds that text.
 
 use jade_docx_headless_api::{
-    HeadlessCommand, HeadlessQuery, HeadlessQueryResult, HeadlessRunStyle,
+    HeadlessCommand, HeadlessQuery, HeadlessQueryResult, HeadlessRuby, HeadlessRunStyle,
     HeadlessTableCellSelection,
 };
 
+use jade_docx_editor::commands::hyperlink::InsertHyperlinkCommand;
 use jade_docx_editor::commands::insert_field::InsertFieldCommand;
 use jade_docx_editor::commands::insert_image::InsertImageCommand;
 use jade_docx_editor::document::RunFieldKind;
 use jade_selection::{SelectionRange, TextPosition};
 
+use super::asian::ruby_alignment;
+use super::references::edit_document;
 use super::{query, Position, WordFormatting, WordSession};
 
 /// A run of copied text and its character formatting.
@@ -85,10 +88,39 @@ pub struct ClipField {
     pub kind: RunFieldKind,
 }
 
+/// A hyperlink on text a copy took: Word pastes the text with its link.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ClipLink {
+    /// Which of the copy's paragraphs it is in.
+    pub paragraph: usize,
+    /// The byte range of that paragraph's copied text it covers.
+    pub offset: usize,
+    pub len: usize,
+    /// A web or mail address, or `#name` for a bookmark.
+    pub address: String,
+    pub tooltip: Option<String>,
+}
+
+/// A ルビ (phonetic guide) over text a copy took whole: Word pastes the
+/// text with its guide.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ClipRuby {
+    /// Which of the copy's paragraphs it is in.
+    pub paragraph: usize,
+    /// The byte range of that paragraph's copied text its base covers.
+    pub offset: usize,
+    pub len: usize,
+    pub ruby: HeadlessRuby,
+}
+
 /// What a copy took.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RichClip {
     pub paragraphs: Vec<ClipParagraph>,
+    /// Guides over the copied text, in document order.
+    pub rubies: Vec<ClipRuby>,
+    /// Links on the copied text, in document order.
+    pub links: Vec<ClipLink>,
     /// Fields the copy took whole, in document order.
     pub fields: Vec<ClipField>,
     /// Reference marks the copy took, in document order.
@@ -158,18 +190,85 @@ impl RichClip {
     }
 }
 
-/// Whether a copied field of `kind` pastes as a field: a hyperlink keeps
-/// its link on the text, and an EQ structure or a field that shows
-/// nothing has no result text to make one of.
+/// Whether a copied field of `kind` pastes as a field: a hyperlink goes
+/// back as a link on its text instead.
 fn pastes_as_field(kind: &RunFieldKind) -> bool {
-    !matches!(
-        kind.base_kind(),
-        RunFieldKind::Hyperlink { .. }
-            | RunFieldKind::EqDistributed { .. }
-            | RunFieldKind::EqEnclosed { .. }
-            | RunFieldKind::EqRuby { .. }
-            | RunFieldKind::NonDisplay { .. }
-    )
+    !matches!(kind.base_kind(), RunFieldKind::Hyperlink { .. })
+}
+
+/// Whether `text` can be a pasted field's result, as Word's field
+/// insertion takes one.
+fn fits_a_field(text: &str) -> bool {
+    !text.is_empty() && text.chars().count() <= 1024 && !text.chars().any(char::is_control)
+}
+
+/// A field a copy took at what it shows, its run holding no text: its
+/// offset in the copied paragraph, the text it shows, where on the page
+/// that text ends, and which of the copy's fields it is.
+type Splice = (usize, String, usize, usize);
+
+/// Puts the text the `splices` fields show into copied paragraph
+/// `paragraph`'s `runs`, in the style of the text before it, and moves the
+/// notes, pictures, fields and spans (links and guides: offset and
+/// length) after each along by it.
+fn splice_shown_fields(
+    runs: &mut Vec<ClipRun>,
+    splices: &[Splice],
+    paragraph: usize,
+    fields: &mut [ClipField],
+    spans: &mut [(&mut usize, &mut usize)],
+    notes: &mut [ClipNote],
+    pictures: &mut [ClipPicture],
+) {
+    // Last first, so each goes in at its offset in the text as copied.
+    for (offset, shown, end, field) in splices.iter().rev() {
+        let mut at = 0;
+        let mut placed = false;
+        for run in runs.iter_mut() {
+            let len = run.text.len();
+            if *offset <= at + len && run.text.is_char_boundary(offset - at) {
+                run.text.insert_str(offset - at, shown);
+                placed = true;
+                break;
+            }
+            at += len;
+        }
+        if !placed {
+            runs.push(ClipRun {
+                text: shown.clone(),
+                style: runs.last().map(|run| run.style.clone()).unwrap_or_default(),
+            });
+        }
+        let after = |at: usize, drawn: usize| at > *offset || (at == *offset && drawn >= *end);
+        for note in notes.iter_mut().filter(|note| note.paragraph == paragraph) {
+            if after(note.offset, note.shown) {
+                note.offset += shown.len();
+            }
+        }
+        for picture in pictures
+            .iter_mut()
+            .filter(|picture| picture.paragraph == paragraph)
+        {
+            if after(picture.offset, picture.shown) {
+                picture.offset += shown.len();
+            }
+        }
+        for (start, len) in spans.iter_mut() {
+            if **start >= *offset {
+                **start += shown.len();
+            } else if **start + **len > *offset {
+                **len += shown.len();
+            }
+        }
+        for (index, other) in fields.iter_mut().enumerate() {
+            if other.paragraph == paragraph
+                && index != *field
+                && (other.offset > *offset || (other.offset == *offset && index > *field))
+            {
+                other.offset += shown.len();
+            }
+        }
+    }
 }
 
 /// The surface of paragraph `paragraph` of a footnote (or endnote) `id`.
@@ -704,6 +803,16 @@ impl RichClip {
             } else {
                 self.fields.clone()
             },
+            links: if mode == PasteMode::TextOnly {
+                Vec::new()
+            } else {
+                self.links.clone()
+            },
+            rubies: if mode == PasteMode::TextOnly {
+                Vec::new()
+            } else {
+                self.rubies.clone()
+            },
             notes: self.notes.clone(),
             pictures: self.pictures.clone(),
             tables: self.tables.clone(),
@@ -732,6 +841,8 @@ impl RichClip {
             pictures: Vec::new(),
             tables: Vec::new(),
             fields: Vec::new(),
+            links: Vec::new(),
+            rubies: Vec::new(),
         }
     }
 }
@@ -756,6 +867,8 @@ pub trait WordClipboard: WordSession {
         let mut notes = Vec::new();
         let mut pictures = Vec::new();
         let mut fields = Vec::new();
+        let mut links: Vec<ClipLink> = Vec::new();
+        let mut rubies: Vec<ClipRuby> = Vec::new();
         let mut paragraphs = Vec::new();
         for index in start.paragraph..=end.paragraph {
             let Some(HeadlessQueryResult::Paragraph {
@@ -816,27 +929,170 @@ pub trait WordClipboard: WordSession {
                     runs: note_runs(document, span.is_footnote, &span.note_id),
                 });
             }
-            // The fields whose results it holds whole.
+            // The fields whose results it holds whole. A field that keeps no
+            // text of its own (a header's PAGE, its digits drawn by layout)
+            // is taken at what it shows, and that goes into the copied text.
+            let mut splices: Vec<Splice> = Vec::new();
             if let Some(model) = document.paragraph(index) {
+                // Taken out of the lock: positions below take it again.
+                let lengths = document
+                    .rendered_field_lengths()
+                    .lock()
+                    .map(|lengths| lengths.clone())
+                    .unwrap_or_default();
                 let mut run_start = 0;
                 for run in &model.runs {
                     let run_end = run_start + run.text.len();
-                    if let Some(field) = run.field.as_ref().filter(|field| {
-                        pastes_as_field(&field.kind)
-                            && from <= run_start
-                            && run_end <= to
-                            && !run.text.is_empty()
-                            && run.text.chars().count() <= 1024
-                            && !run.text.chars().any(char::is_control)
-                    }) {
+                    let Some(field) = run
+                        .field
+                        .as_ref()
+                        .filter(|field| pastes_as_field(&field.kind))
+                    else {
+                        run_start = run_end;
+                        continue;
+                    };
+                    let text = if run.text.is_empty() {
+                        let shown = run
+                            .node_id
+                            .and_then(|id| lengths.get(&id).cloned())
+                            .unwrap_or_default();
+                        let at = document
+                            .model_to_rendered_text_position(TextPosition::new(index, run_start))
+                            .offset;
+                        let end = at + shown.len();
+                        let within = from <= run_start
+                            && run_start <= to
+                            && shown_from <= at
+                            && end <= shown_to;
+                        // An XE, TA or RD shows nothing: it goes as its code.
+                        if shown.is_empty()
+                            && within
+                            && matches!(field.kind.base_kind(), RunFieldKind::NonDisplay { .. })
+                        {
+                            fields.push(ClipField {
+                                paragraph: paragraphs.len(),
+                                offset: run_start - from,
+                                text: String::new(),
+                                kind: field.kind.clone(),
+                            });
+                            run_start = run_end;
+                            continue;
+                        }
+                        if !fits_a_field(&shown)
+                            || run_start < from
+                            || to < run_start
+                            || at < shown_from
+                            || end > shown_to
+                        {
+                            run_start = run_end;
+                            continue;
+                        }
+                        splices.push((run_start - from, shown.clone(), end, fields.len()));
+                        shown
+                    } else if from <= run_start && run_end <= to {
+                        run.text.clone()
+                    } else {
+                        run_start = run_end;
+                        continue;
+                    };
+                    if fits_a_field(&text) {
                         fields.push(ClipField {
                             paragraph: paragraphs.len(),
                             offset: run_start - from,
-                            text: run.text.clone(),
+                            text,
                             kind: field.kind.clone(),
                         });
                     }
                     run_start = run_end;
+                }
+            }
+            // The guides over bases it holds whole: a base is the runs a
+            // guide continues over.
+            if let Some(model) = document.paragraph(index) {
+                let mut run_start = 0;
+                let mut open: Option<(usize, usize, HeadlessRuby)> = None;
+                let mut bases = Vec::new();
+                for run in &model.runs {
+                    let run_end = run_start + run.text.len();
+                    let ruby = run
+                        .properties
+                        .as_ref()
+                        .and_then(|properties| properties.ruby.as_ref());
+                    match (ruby, open.as_mut()) {
+                        (Some(ruby), Some((_, end, _)))
+                            if ruby.continuation && *end == run_start =>
+                        {
+                            *end = run_end;
+                        }
+                        (ruby, _) => {
+                            bases.extend(open.take());
+                            open = ruby.map(|ruby| {
+                                (
+                                    run_start,
+                                    run_end,
+                                    HeadlessRuby {
+                                        text: ruby.text.clone(),
+                                        align: ruby.align.as_deref().map(ruby_alignment),
+                                        size: ruby.size_pt,
+                                        raise: ruby.raise_half_points.map(|half| half as f32 / 2.0),
+                                        font: ruby.fonts.as_ref().and_then(|fonts| {
+                                            fonts.east_asia.as_deref().map(str::to_string)
+                                        }),
+                                    },
+                                )
+                            });
+                        }
+                    }
+                    run_start = run_end;
+                }
+                bases.extend(open);
+                for (start, end, ruby) in bases {
+                    if from <= start && end <= to && start < end && !ruby.text.is_empty() {
+                        rubies.push(ClipRuby {
+                            paragraph: paragraphs.len(),
+                            offset: start - from,
+                            len: end - start,
+                            ruby,
+                        });
+                    }
+                }
+            }
+            // The links on it, a link the runs that touch and go to the
+            // same place.
+            if let Some(model) = document.paragraph(index) {
+                let mut run_start = 0;
+                for run in &model.runs {
+                    let run_end = run_start + run.text.len();
+                    let (start, end) = (run_start.max(from), run_end.min(to));
+                    run_start = run_end;
+                    let Some(link) = run.hyperlink.as_ref() else {
+                        continue;
+                    };
+                    let address = match (&link.target, &link.anchor) {
+                        (Some(target), _) if !target.is_empty() => target.clone(),
+                        (_, Some(anchor)) if !anchor.is_empty() => format!("#{anchor}"),
+                        _ => continue,
+                    };
+                    if start >= end {
+                        continue;
+                    }
+                    let (offset, len) = (start - from, end - start);
+                    match links.last_mut() {
+                        Some(last)
+                            if last.paragraph == paragraphs.len()
+                                && last.address == address
+                                && last.offset + last.len == offset =>
+                        {
+                            last.len += len;
+                        }
+                        _ => links.push(ClipLink {
+                            paragraph: paragraphs.len(),
+                            offset,
+                            len,
+                            address,
+                            tooltip: link.tooltip.clone(),
+                        }),
+                    }
                 }
             }
             // The pictures in line drawn inside it, with their bytes.
@@ -900,6 +1156,27 @@ pub trait WordClipboard: WordSession {
                     }
                 }
             }
+            let here = paragraphs.len();
+            let mut spans: Vec<(&mut usize, &mut usize)> = links
+                .iter_mut()
+                .filter(|link| link.paragraph == here)
+                .map(|link| (&mut link.offset, &mut link.len))
+                .chain(
+                    rubies
+                        .iter_mut()
+                        .filter(|ruby| ruby.paragraph == here)
+                        .map(|ruby| (&mut ruby.offset, &mut ruby.len)),
+                )
+                .collect();
+            splice_shown_fields(
+                &mut runs,
+                &splices,
+                here,
+                &mut fields,
+                &mut spans,
+                &mut notes,
+                &mut pictures,
+            );
             paragraphs.push(ClipParagraph {
                 style_id: snapshot.style_id.clone(),
                 alignment: snapshot.alignment.clone(),
@@ -910,6 +1187,8 @@ pub trait WordClipboard: WordSession {
         Some(RichClip {
             paragraphs,
             fields,
+            links,
+            rubies,
             notes,
             pictures,
             tables,
@@ -1030,7 +1309,13 @@ pub trait WordClipboard: WordSession {
             .iter()
             .flat_map(|table| table.splits.iter().copied())
             .collect();
-        if objects.is_empty() && !styled && splits.is_empty() && clip.fields.is_empty() {
+        if objects.is_empty()
+            && !styled
+            && splits.is_empty()
+            && clip.fields.is_empty()
+            && clip.links.is_empty()
+            && clip.rubies.is_empty()
+        {
             return self.apply_commands(commands, false);
         }
         let mark = self.begin_edit_group();
@@ -1101,26 +1386,53 @@ pub trait WordClipboard: WordSession {
                     self.apply_commands(formats, false)?;
                 }
             }
-            // The fields' results become fields again, last first so the
-            // ones before keep their places. Where a field cannot go (a
-            // story other than the body) its result stays as text.
+            // The links go back on their text, then the fields' results
+            // become fields again, each last first so the ones before keep
+            // their places. Where a field cannot go its result stays text.
             let caret = self.selection_range();
-            for field in clip.fields.iter().rev() {
-                let Some(&(at_paragraph, at_offset)) = starts.get(field.paragraph) else {
+            let mut guides = Vec::new();
+            for ruby in clip.rubies.iter().rev() {
+                let Some(range) = self.pasted_range(starts, ruby.paragraph, ruby.offset, ruby.len)
+                else {
                     continue;
                 };
-                let document = self.word_document();
-                let start = document
-                    .rendered_to_model_text_position(TextPosition::new(at_paragraph, at_offset));
-                let from = start.offset + field.offset;
-                let range = SelectionRange::new(
-                    document
-                        .model_to_rendered_text_position(TextPosition::new(start.paragraph, from)),
-                    document.model_to_rendered_text_position(TextPosition::new(
-                        start.paragraph,
-                        from + field.text.len(),
+                let (start, end) = range.normalized();
+                guides.push(HeadlessCommand::SetRuby {
+                    paragraph: start.paragraph,
+                    start_offset: start.offset,
+                    end_offset: end.offset,
+                    ruby: Some(ruby.ruby.clone()),
+                });
+            }
+            if !guides.is_empty() {
+                self.apply_commands(guides, false)?;
+            }
+            for link in clip.links.iter().rev() {
+                let Some(range) = self.pasted_range(starts, link.paragraph, link.offset, link.len)
+                else {
+                    continue;
+                };
+                self.set_selection_range(Some(range));
+                let _ = self.execute_command(
+                    Box::new(InsertHyperlinkCommand::new(
+                        range,
+                        None,
+                        link.address.clone(),
+                        link.tooltip.clone(),
                     )),
+                    false,
                 );
+            }
+            for field in clip.fields.iter().rev() {
+                if field.text.is_empty() {
+                    self.paste_code_field(starts, field)?;
+                    continue;
+                }
+                let Some(range) =
+                    self.pasted_range(starts, field.paragraph, field.offset, field.text.len())
+                else {
+                    continue;
+                };
                 self.set_selection_range(Some(range));
                 let _ = self.execute_command(
                     Box::new(InsertFieldCommand::of_kind(
@@ -1131,7 +1443,7 @@ pub trait WordClipboard: WordSession {
                     false,
                 );
             }
-            if !clip.fields.is_empty() {
+            if !clip.fields.is_empty() || !clip.links.is_empty() {
                 self.set_selection_range(caret);
             }
             for object in objects.iter().rev() {
@@ -1355,6 +1667,45 @@ pub trait WordClipboard: WordSession {
         clip
     }
 
+    /// The range a paste put `len` bytes of the copy's paragraph
+    /// `paragraph` at `offset` in, as the selection counts it (`starts`:
+    /// where each copied paragraph went).
+    fn pasted_range(
+        &self,
+        starts: &[Position],
+        paragraph: usize,
+        offset: usize,
+        len: usize,
+    ) -> Option<SelectionRange> {
+        let &(at_paragraph, at_offset) = starts.get(paragraph)?;
+        let document = self.word_document();
+        let start =
+            document.rendered_to_model_text_position(TextPosition::new(at_paragraph, at_offset));
+        let from = start.offset + offset;
+        Some(SelectionRange::new(
+            document.model_to_rendered_text_position(TextPosition::new(start.paragraph, from)),
+            document
+                .model_to_rendered_text_position(TextPosition::new(start.paragraph, from + len)),
+        ))
+    }
+
+    /// Puts in a field that shows nothing (an XE, TA or RD) where the
+    /// paste put the text it was copied in.
+    fn paste_code_field(&mut self, starts: &[Position], field: &ClipField) -> Result<(), String> {
+        let RunFieldKind::NonDisplay { instruction } = field.kind.base_kind() else {
+            return Ok(());
+        };
+        let Some(range) = self.pasted_range(starts, field.paragraph, field.offset, 0) else {
+            return Ok(());
+        };
+        let (at, instruction) = (range.normalized().0, instruction.clone());
+        edit_document(self, "paste_field", true, move |document, _| {
+            document
+                .insert_inline_field(at, &instruction, "")
+                .map(|_| ())
+        })
+    }
+
     /// `position` in model offsets, which pasted notes do not move.
     fn model_position(&self, position: Position) -> Position {
         let model = self
@@ -1514,6 +1865,8 @@ mod tests {
             pictures: Vec::new(),
             tables: Vec::new(),
             fields: Vec::new(),
+            links: Vec::new(),
+            rubies: Vec::new(),
             paragraphs: vec![
                 ClipParagraph {
                     runs: vec![run("Bold"), run(" plain")],
@@ -1537,6 +1890,8 @@ mod tests {
             pictures: Vec::new(),
             tables: Vec::new(),
             fields: Vec::new(),
+            links: Vec::new(),
+            rubies: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 style_id: Some("Heading1".into()),
                 alignment: Some("center".into()),

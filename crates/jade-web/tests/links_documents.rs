@@ -161,3 +161,35 @@ fn addresses_are_completed_as_word_does() {
     assert_eq!(normalize_address("#Top"), "#Top");
     assert_eq!(normalize_address(""), "");
 }
+
+/// A copied link pastes with its link, as Word pastes it.
+#[test]
+fn a_copied_link_pastes_with_its_link() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "jade ");
+    document.select((paragraph, 0), (paragraph, 4)).unwrap();
+    let draft = document.link_draft();
+    document
+        .apply_link(&draft, &draft.display, "www.example.com")
+        .unwrap();
+
+    document.select((paragraph, 0), (paragraph, 5)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    document.place_caret(paragraph, 5);
+    document.paste_rich(&clip).unwrap();
+    let link = document
+        .hyperlink_at((paragraph, 7))
+        .expect("a pasted link");
+    assert_eq!((link.start, link.end), (5, 9));
+    assert_eq!(link.address, "http://www.example.com");
+    // テキストのみ保持 takes the text alone.
+    document.place_caret(paragraph, 10);
+    document
+        .paste_as(&clip, jade_web::word::clipboard::PasteMode::TextOnly)
+        .unwrap();
+    assert!(document.hyperlink_at((paragraph, 12)).is_none());
+    document.undo().unwrap();
+    document.undo().unwrap();
+    assert!(document.hyperlink_at((paragraph, 7)).is_none());
+}

@@ -204,3 +204,75 @@ fn html_attribute_values_do_not_leak_into_pasted_text_or_formatting() {
     document.redo().unwrap();
     assert_eq!(document.paragraph_text(paragraph).unwrap(), after);
 }
+
+/// ルビ and 囲い文字 come along with their text, as Word pastes them.
+#[test]
+fn a_paste_keeps_a_guide_and_an_enclosed_character() {
+    use jade_docx_editor::document::RunFieldKind;
+    use jade_web::editing::{EditableDocument, WordSession};
+    use jade_web::word::headless::{HeadlessCommand, HeadlessRuby};
+    let mut document = contract();
+    let paragraph = typed(&mut document, "漢字A ");
+    document
+        .apply_commands(
+            vec![
+                HeadlessCommand::SetRuby {
+                    paragraph,
+                    start_offset: 0,
+                    end_offset: "漢字".len(),
+                    ruby: Some(HeadlessRuby {
+                        text: "かんじ".into(),
+                        align: Some("distributeSpace".into()),
+                        size: None,
+                        raise: None,
+                        font: None,
+                    }),
+                },
+                HeadlessCommand::InsertEnclosedCharacter {
+                    start_paragraph: paragraph,
+                    start_offset: "漢字".len(),
+                    end_paragraph: paragraph,
+                    end_offset: "漢字A".len(),
+                    text: "A".into(),
+                    enclosure: "○".into(),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+    let count = |document: &EditableDocument| {
+        let runs = &document.word_document().paragraph(paragraph).unwrap().runs;
+        let guides = runs
+            .iter()
+            .filter(|run| {
+                run.properties
+                    .as_ref()
+                    .and_then(|properties| properties.ruby.as_ref())
+                    .is_some_and(|ruby| ruby.text == "かんじ")
+            })
+            .count();
+        let enclosed = runs
+            .iter()
+            .filter(|run| {
+                run.field
+                    .as_ref()
+                    .is_some_and(|field| matches!(field.kind, RunFieldKind::EqEnclosed { .. }))
+            })
+            .count();
+        (guides, enclosed)
+    };
+    assert_eq!(count(&document), (1, 1));
+
+    let end = document.caret_text(paragraph).unwrap().find(' ').unwrap();
+    document.select((paragraph, 0), (paragraph, end)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    document.place_caret(paragraph, end);
+    document.paste_rich(&clip).unwrap();
+    assert!(document
+        .caret_text(paragraph)
+        .unwrap()
+        .starts_with("漢字A漢字A "));
+    assert_eq!(count(&document), (2, 2));
+    document.undo().unwrap();
+    assert_eq!(count(&document), (1, 1));
+}
