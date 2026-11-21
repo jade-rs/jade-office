@@ -333,7 +333,12 @@ fn a_copy_after_a_note_takes_the_text_it_shows() {
     use jade_web::word::clipboard::WordClipboard;
     let mut document = common::contract();
     let paragraph = common::typed(&mut document, "one two ");
-    note(&mut document, NoteKind::Footnote, (paragraph, 3), "first note");
+    note(
+        &mut document,
+        NoteKind::Footnote,
+        (paragraph, 3),
+        "first note",
+    );
     // "one¹ two": the selection counts the number the page draws.
     document.select((paragraph, 5), (paragraph, 8)).unwrap();
     assert_eq!(document.selected_text().as_deref(), Some("two"));
@@ -347,7 +352,12 @@ fn a_pasted_reference_mark_brings_a_note_of_its_own() {
     use jade_web::word::clipboard::WordClipboard;
     let mut document = common::contract();
     let paragraph = common::typed(&mut document, "one two ");
-    note(&mut document, NoteKind::Footnote, (paragraph, 3), "first note");
+    note(
+        &mut document,
+        NoteKind::Footnote,
+        (paragraph, 3),
+        "first note",
+    );
     let before = saved_footnotes(&mut document).len();
 
     // Copied with its mark, "one¹" pastes as "one²" with a copy of the note.
@@ -360,15 +370,30 @@ fn a_pasted_reference_mark_brings_a_note_of_its_own() {
     let after = document.paste_rich(&clip).unwrap();
     let notes = saved_footnotes(&mut document);
     assert_eq!(notes.len(), before + 1, "{notes:?}");
-    assert_eq!(notes.iter().filter(|text| text.contains("first note")).count(), 2);
+    assert_eq!(
+        notes
+            .iter()
+            .filter(|text| text.contains("first note"))
+            .count(),
+        2
+    );
     let pasted = marks(&document, paragraph);
     assert_eq!(pasted.len(), 2, "{pasted:?}");
     // The caret goes past the pasted number, at the end of the paragraph.
-    assert_eq!(after, (paragraph, document.word_document().rendered_paragraph_len(paragraph)));
+    assert_eq!(
+        after,
+        (
+            paragraph,
+            document.word_document().rendered_paragraph_len(paragraph)
+        )
+    );
     // One undo takes the text and the note back.
     document.undo().unwrap();
     assert_eq!(saved_footnotes(&mut document).len(), before);
-    assert_eq!(document.word_document().rendered_paragraph_len(paragraph), end);
+    assert_eq!(
+        document.word_document().rendered_paragraph_len(paragraph),
+        end
+    );
 
     // Cut and pasted, the note moves with its mark.
     document.select((paragraph, 0), (paragraph, 4)).unwrap();
