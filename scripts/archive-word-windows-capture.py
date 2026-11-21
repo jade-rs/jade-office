@@ -37,7 +37,7 @@ def extract_pdf_capture(manifest, projection=None):
     return module.extract(manifest, projection)
 
 
-def archive(manifest, evidence_root, strict, reference_kind='pdf'):
+def archive(manifest, evidence_root, strict, reference_kind='pdf', renderer_root=None):
     if reference_kind not in ('pdf', 'emf'):
         raise ValueError('Unknown Word reference kind')
     reference_name = 'word-reference.json' if reference_kind == 'pdf' else 'word-emf-reference.json'
@@ -209,7 +209,7 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
     # The same Word executable can use different cloud-font/fallback programs.
     # Keep these facts beside the original bytes, separately from coordinates.
     (target/'font-context.json').write_bytes((json.dumps(font_context, ensure_ascii=False, indent=2)+'\n').encode('utf-8'))
-    core = Path(__file__).resolve().parents[1]/'jade-core'
+    core = Path(renderer_root) if renderer_root is not None else Path(__file__).resolve().parents[1]/'jade-core'
     engine, engine_dirty = engine_identity(core)
     verification = dict(engine_commit=engine, word_product_version=version, capture_id=capture_id,
                         font_context_sha256=font_context['context_sha256'],
@@ -249,5 +249,7 @@ if __name__ == '__main__':
     parser.add_argument('--evidence-root', type=Path, default=Path('jade-core/tests/word-oracle/windows'))
     parser.add_argument('--strict', nargs='*', default=[])
     parser.add_argument('--reference-kind', choices=['pdf', 'emf'], default='pdf')
+    parser.add_argument('--renderer-root', type=Path,
+                        help='Git checkout used to build the renderer; defaults to the jade-core submodule')
     args = parser.parse_args()
-    print(archive(args.manifest, args.evidence_root, args.strict, args.reference_kind))
+    print(archive(args.manifest, args.evidence_root, args.strict, args.reference_kind, args.renderer_root))

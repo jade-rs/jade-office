@@ -78,6 +78,9 @@ evidence fails archiving before a strict reference can be registered.
 Archiving also requires an initialized `jade-core` Git checkout, so an empty
 submodule directory cannot silently record the parent repository's revision
 as the renderer version.
+When the renderer was built in another worktree, pass its actual checkout with
+`archive-word-windows-capture.py --renderer-root <checkout>`; the same Git-root
+check applies to that path.
 
 New captures additionally record Word's file version, the OS architecture and
 each document's actual `Document.CompatibilityMode` reported by Word. This

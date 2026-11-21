@@ -457,6 +457,10 @@ class VersionCaptureTests(unittest.TestCase):
                         'commit', '-q', '-m', 'Test renderer identity'], check=True)
         expected = subprocess.check_output(['git', '-C', str(core), 'rev-parse', 'HEAD'], text=True).strip()
         self.assertEqual(archiver.engine_identity(core), (expected, False))
+        target = archiver.archive(self.manifest, self.evidence, ['probe'], renderer_root=core)
+        verification = json.loads((target/'verification.json').read_bytes())
+        self.assertEqual(verification['engine_commit'], expected)
+        self.assertFalse(verification['engine_source_worktree_dirty'])
         (core/'crates').mkdir(); (core/'crates/probe.rs').write_bytes(b'changed source')
         self.assertEqual(archiver.engine_identity(core), (expected, True))
 
