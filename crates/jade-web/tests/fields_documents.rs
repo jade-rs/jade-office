@@ -100,3 +100,46 @@ fn opening_footer_only_clock_preserves_saved_results() {
         assert_opening_clock("footer", fields, Blank::English);
     }
 }
+
+/// A field the layout shows at another length than its saved result (a
+/// PAGE field saved as "999" showing "1") is walked at what it shows: the
+/// arrows step over its value and on through whole characters after it.
+#[test]
+fn arrows_walk_a_field_at_the_value_it_shows() {
+    use jade_web::editing::{Motion, WordSession};
+    use jade_web::word::headless::{HeadlessCommand, HeadlessFieldKind};
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "ab");
+    document
+        .apply_commands(
+            vec![HeadlessCommand::InsertField {
+                start_paragraph: paragraph,
+                start_offset: 1,
+                end_paragraph: paragraph,
+                end_offset: 1,
+                kind: HeadlessFieldKind::Page,
+                cached_text: "999".into(),
+            }],
+            false,
+        )
+        .unwrap();
+    let text = document.caret_text(paragraph).unwrap();
+    assert!(text.starts_with("a1b"), "{text:?}");
+    assert_eq!(
+        text.len(),
+        document.word_document().rendered_paragraph_len(paragraph)
+    );
+    document.place_caret(paragraph, 0);
+    let mut stops = Vec::new();
+    for _ in 0..5 {
+        document.move_caret(Motion::Right, false).unwrap();
+        stops.push(document.caret().unwrap().1);
+    }
+    let expected: Vec<_> = text
+        .char_indices()
+        .skip(1)
+        .take(5)
+        .map(|(offset, _)| offset)
+        .collect();
+    assert_eq!(stops, expected);
+}
