@@ -2186,6 +2186,7 @@ notes.scope.whole	文書全体
 notes.section_end	セクションの最後
 notes.show	注の表示
 notes.show_title	参照マークと注の本文の間を移動します
+notes.custom_mark	任意の記号
 notes.start	開始番号
 notes.title	脚注と文末脚注
 sources.author	著者

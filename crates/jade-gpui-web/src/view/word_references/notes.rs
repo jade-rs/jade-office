@@ -20,7 +20,9 @@ use jade_web::editing::WordSession;
 pub fn open(view: &mut DocumentView, kind: NoteKind, cx: &mut Context<DocumentView>) {
     let dialog = view.doc().note_dialog(kind);
     let start = dialog.start.to_string();
-    view.references.open(Dialog::Notes(dialog), vec![start]);
+    // The start number, then 任意の記号.
+    view.references
+        .open(Dialog::Notes(dialog), vec![start, String::new()]);
     cx.notify();
 }
 
@@ -99,13 +101,14 @@ pub fn confirm(
             return cx.notify();
         }
     };
+    let mark = view.references.field(1).trim().to_string();
     let done = view.doc_mut().apply_note_dialog(&dialog);
     match done {
         Ok(()) => {
             view.references.close();
             view.after_reference_edit(Ok(None), cx);
             if insert {
-                view.open_note_dialog(dialog.kind, cx);
+                view.open_marked_note_dialog(dialog.kind, &mark, cx);
             }
         }
         Err(problem) => {
@@ -126,7 +129,8 @@ pub fn confirm_convert(
     match view.doc_mut().convert_all_notes(conversion) {
         Ok(()) => {
             let start = back.start.to_string();
-            view.references.open(Dialog::Notes(back), vec![start]);
+            view.references
+                .open(Dialog::Notes(back), vec![start, String::new()]);
             view.after_reference_edit(Ok(None), cx);
         }
         Err(problem) => {
@@ -288,6 +292,7 @@ pub fn body(view: &DocumentView, cx: &mut Context<DocumentView>) -> AnyElement {
                 }
             },
         )))
+        .child(text_field(view, 1, "notes.custom_mark", 60.0, cx))
         .child(text_field(view, 0, "notes.start", 60.0, cx))
         .child(line("notes.restart").child(select(
             view,
@@ -366,7 +371,9 @@ fn switch(view: &mut DocumentView, kind: NoteKind, cx: &mut Context<DocumentView
     if let Some(Dialog::Notes(mut dialog)) = view.references.dialog.take() {
         view.doc().switch_note_dialog(&mut dialog, kind);
         let start = dialog.start.to_string();
-        view.references.open(Dialog::Notes(dialog), vec![start]);
+        let mark = view.references.field(1).to_string();
+        view.references
+            .open(Dialog::Notes(dialog), vec![start, mark]);
     }
     cx.notify();
 }

@@ -160,12 +160,23 @@ impl DocumentView {
     /// ⌥⌘F / ⌥⌘D: the bar the note's text is typed into; its reference goes
     /// at the caret, or after the selection, when the text is put in.
     pub(crate) fn open_note_dialog(&mut self, kind: NoteKind, cx: &mut Context<Self>) {
+        self.open_marked_note_dialog(kind, "", cx);
+    }
+
+    /// The note's bar, its reference `mark` (脚注と文末脚注's 任意の記号)
+    /// rather than a number when one was typed.
+    pub(crate) fn open_marked_note_dialog(
+        &mut self,
+        kind: NoteKind,
+        mark: &str,
+        cx: &mut Context<Self>,
+    ) {
         self.sync_selection();
         // Greyed out in a header, a footer, a note or a text box, as in Word.
         if !jade_office_model::word::WordReferences::can_insert_note(&self.document) {
             return;
         }
-        let form = NoteForm::new(&self.document, kind);
+        let form = NoteForm::new(&self.document, kind).with_mark(mark);
         self.open_dialog(Dialog::Note(form), cx);
     }
 
