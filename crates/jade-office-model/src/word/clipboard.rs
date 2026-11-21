@@ -15,7 +15,7 @@ use jade_docx_headless_api::{
 use jade_docx_editor::commands::insert_image::InsertImageCommand;
 use jade_selection::{SelectionRange, TextPosition};
 
-use super::{query, Position, WordFormatting, WordSession};
+use super::{query, CellLayout, Position, WordFormatting, WordSession};
 
 /// A run of copied text and its character formatting.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -89,6 +89,13 @@ pub struct ClipTable {
     pub columns: usize,
     /// The table style it had, which the pasted table takes too.
     pub style_id: Option<String>,
+    /// How many paragraphs each cell holds, in order; empty when each holds
+    /// one. A paste joins a cell's paragraphs to make the table and splits
+    /// them again in it.
+    pub cell_paragraphs: Vec<usize>,
+    /// Where a paste splits the joined cells again: a copy's paragraph and a
+    /// byte offset in its text, in order.
+    pub splits: Vec<(usize, usize)>,
 }
 
 /// One of the things a paste puts in after the text: a note or a picture.
@@ -118,6 +125,71 @@ impl RichClip {
         objects.sort_by_key(ClipObject::at);
         objects
     }
+}
+
+impl RichClip {
+    /// How many paragraphs a paste adds back by splitting joined cells.
+    fn split_count(&self) -> usize {
+        self.tables.iter().map(|table| table.splits.len()).sum()
+    }
+}
+
+/// Joins the paragraphs of each of `clip`'s table cells that holds several
+/// into one, so the cells make a table a paragraph a cell, and notes where
+/// to split them again. Notes, pictures and the tables after it move with
+/// the paragraphs.
+fn join_cell_paragraphs(clip: &mut RichClip) {
+    // Each copied paragraph's new index and the offset its text starts at.
+    let mut map: Vec<(usize, usize)> = (0..clip.paragraphs.len()).map(|index| (index, 0)).collect();
+    let mut joined: Vec<ClipParagraph> = Vec::new();
+    let mut source = 0;
+    let mut tables = clip.tables.clone();
+    for table in &mut tables {
+        while source < table.first {
+            map[source] = (joined.len(), 0);
+            joined.push(clip.paragraphs[source].clone());
+            source += 1;
+        }
+        let first = joined.len();
+        let counts = if table.cell_paragraphs.is_empty() {
+            vec![1; table.cells]
+        } else {
+            table.cell_paragraphs.clone()
+        };
+        for count in &counts {
+            let index = joined.len();
+            let mut cell = clip.paragraphs[source].clone();
+            map[source] = (index, 0);
+            source += 1;
+            for _ in 1..*count {
+                let offset: usize = cell.runs.iter().map(|run| run.text.len()).sum();
+                table.splits.push((index, offset));
+                map[source] = (index, offset);
+                cell.runs
+                    .extend(clip.paragraphs[source].runs.iter().cloned());
+                source += 1;
+            }
+            joined.push(cell);
+        }
+        table.first = first;
+        table.cells = counts.len();
+        table.cell_paragraphs.clear();
+    }
+    while source < clip.paragraphs.len() {
+        map[source] = (joined.len(), 0);
+        joined.push(clip.paragraphs[source].clone());
+        source += 1;
+    }
+    for note in &mut clip.notes {
+        let (paragraph, offset) = map[note.paragraph];
+        (note.paragraph, note.offset) = (paragraph, offset + note.offset);
+    }
+    for picture in &mut clip.pictures {
+        let (paragraph, offset) = map[picture.paragraph];
+        (picture.paragraph, picture.offset) = (paragraph, offset + picture.offset);
+    }
+    clip.paragraphs = joined;
+    clip.tables = tables;
 }
 
 /// The bytes of a `data:` URI's base64 payload, and its type.
@@ -625,28 +697,51 @@ pub trait WordClipboard: WordSession {
                 .iter()
                 .filter(|other| other.table_id == table_id && other.row == cell.row)
                 .count();
-            let cells: Vec<_> = (index..=end).filter_map(cell_of).collect();
+            // The cells, each once, with how many of its paragraphs the run
+            // holds.
+            let mut cells: Vec<(&CellLayout, usize)> = Vec::new();
+            for paragraph in index..=end {
+                let Some(cell) = cell_of(paragraph) else {
+                    continue;
+                };
+                match cells.last_mut() {
+                    Some((last, count))
+                        if (last.table_id, last.row, last.column)
+                            == (cell.table_id, cell.row, cell.column) =>
+                    {
+                        *count += 1
+                    }
+                    _ => cells.push((cell, 1)),
+                }
+            }
             let whole_rows = columns > 0
-                && cells.len() == end - index + 1
-                && cells.len() % columns == 0
-                && cells.iter().enumerate().all(|(at, cell)| {
+                && cells.iter().map(|(_, count)| count).sum::<usize>() == end - index + 1
+                && cells.len().is_multiple_of(columns)
+                && cells.iter().enumerate().all(|(at, (cell, count))| {
                     cell.column == at % columns
                         && cell.column_span <= 1
-                        && cell.paragraphs.len() == 1
+                        && cell.paragraphs.len() == *count
                 })
                 && cells
                     .chunks(columns)
-                    .all(|row| row.iter().all(|cell| cell.row == row[0].row));
+                    .all(|row| row.iter().all(|(cell, _)| cell.row == row[0].0.row));
             if whole_rows {
                 let style_id = self
                     .table_order_for(table_id)
                     .and_then(|order| self.word_document().table_by_order(order))
                     .and_then(|table| table.style_name.clone());
+                let counts: Vec<usize> = cells.iter().map(|(_, count)| *count).collect();
                 tables.push(ClipTable {
                     first: index - first,
-                    cells: cells.len(),
+                    cells: end - index + 1,
                     columns,
                     style_id,
+                    cell_paragraphs: if counts.iter().all(|&count| count == 1) {
+                        Vec::new()
+                    } else {
+                        counts
+                    },
+                    splits: Vec::new(),
                 });
             }
             index = end + 1;
@@ -698,6 +793,7 @@ pub trait WordClipboard: WordSession {
             return Ok(at);
         }
         self.paste_commands_and_objects(clip, commands, &starts)?;
+        let at = (at.0 + clip.split_count(), at.1);
         Ok(self.after_pasted_objects(clip, model_start, at))
     }
 
@@ -713,10 +809,15 @@ pub trait WordClipboard: WordSession {
     ) -> Result<(), String> {
         let objects = clip.objects();
         let styled = clip.tables.iter().any(|table| table.style_id.is_some());
-        if objects.is_empty() && !styled {
+        let splits: Vec<(usize, usize)> = clip
+            .tables
+            .iter()
+            .flat_map(|table| table.splits.iter().copied())
+            .collect();
+        if objects.is_empty() && !styled && splits.is_empty() {
             return self.apply_commands(commands, false);
         }
-        self.begin_edit_group();
+        let mark = self.begin_edit_group();
         let result = (|| {
             self.apply_commands(commands, false)?;
             // Each pasted table takes the style the copied one had.
@@ -786,9 +887,28 @@ pub trait WordClipboard: WordSession {
                     }
                 }
             }
+            // Last, the cells that held several paragraphs are split again,
+            // last first so the ones before keep their places.
+            let mut breaks = Vec::new();
+            for &(paragraph, offset) in splits.iter().rev() {
+                let Some(&(at_paragraph, _)) = starts.get(paragraph) else {
+                    continue;
+                };
+                let at = self
+                    .word_document()
+                    .model_to_rendered_text_position(TextPosition::new(at_paragraph, offset));
+                breaks.push(HeadlessCommand::InsertParagraphBreak {
+                    paragraph: at.paragraph,
+                    offset: at.offset,
+                    count: 1,
+                });
+            }
+            if !breaks.is_empty() {
+                self.apply_commands(breaks, false)?;
+            }
             Ok(())
         })();
-        self.end_edit_group();
+        self.end_edit_group(mark);
         result
     }
 
@@ -877,6 +997,7 @@ pub trait WordClipboard: WordSession {
         if ends_in_table {
             clip.paragraphs.push(ClipParagraph::default());
         }
+        join_cell_paragraphs(&mut clip);
         clip
     }
 
@@ -930,6 +1051,7 @@ pub trait WordClipboard: WordSession {
         let clip = &self.with_room_for_tables(clip, target);
         let (end, starts) = push_paste_commands(clip, at, &inherited, &mut commands);
         self.paste_commands_and_objects(clip, commands, &starts)?;
+        let end = (end.0 + clip.split_count(), end.1);
         Ok(self.after_pasted_objects(clip, model_at, end))
     }
 }
@@ -1120,5 +1242,75 @@ mod tests {
             commands[0],
             HeadlessCommand::ApplyBold { enabled: false, .. }
         ));
+    }
+}
+
+#[cfg(all(test, feature = "skia"))]
+mod native_tests {
+    use super::*;
+    use crate::test_support::fixture;
+    use crate::word::picture::WordPicture;
+    use jade_docx_native_render::{FaceSpec, NativeDocument};
+
+    fn open(name: &str) -> NativeDocument {
+        let font =
+            crate::test_support::core().join("fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf");
+        let faces = ["Noto Sans JP", "Times New Roman", "serif"].map(|family| FaceSpec {
+            family,
+            weight: 400,
+            path: &font,
+        });
+        NativeDocument::open(&fixture(name), 816.0, 1056.0, &faces).unwrap()
+    }
+
+    fn png() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::RgbaImage::from_raw(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255])
+            .unwrap()
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        bytes
+    }
+
+    fn pictures(document: &NativeDocument) -> usize {
+        let document = WordSession::word_document(document);
+        (0..document.paragraph_count())
+            .filter_map(|index| document.paragraph(index))
+            .flat_map(|paragraph| paragraph.runs.iter())
+            .filter(|run| run.image.is_some())
+            .count()
+    }
+
+    #[test]
+    fn a_paste_with_a_picture_undoes_in_one_step_in_the_native_document() {
+        let mut document = open("hello.docx");
+        let caret = |offset| Some(SelectionRange::collapsed(TextPosition::new(0, offset)));
+        WordSession::set_selection_range(&mut document, caret(1));
+        document.insert_picture(png()).unwrap();
+        assert_eq!(pictures(&document), 1);
+        WordSession::set_selection_range(
+            &mut document,
+            Some(SelectionRange::new(
+                TextPosition::new(0, 0),
+                TextPosition::new(0, 5),
+            )),
+        );
+        let clip = document.copy_rich().unwrap();
+        assert_eq!(clip.pictures.len(), 1);
+        let text = WordSession::word_document(&document).rendered_paragraph_text(0);
+        WordSession::set_selection_range(&mut document, caret(text.len()));
+        let before = document.history_len();
+        document.paste_rich(&clip).unwrap();
+        assert_eq!(pictures(&document), 2);
+        assert_eq!(document.history_len(), before + 1);
+        NativeDocument::undo(&mut document).unwrap();
+        assert_eq!(pictures(&document), 1);
+        assert_eq!(
+            WordSession::word_document(&document).rendered_paragraph_text(0),
+            text
+        );
     }
 }
