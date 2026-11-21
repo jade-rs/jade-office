@@ -138,6 +138,7 @@ fn copied_soft_breaks_roundtrip_even_without_surrounding_text() {
     use jade_office_model::word::clipboard::{ClipParagraph, ClipRun};
     for text in ["\n", "\n\n", "start\n", "\nend"] {
         let clip = RichClip {
+            notes: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 alignment: Some("left".into()),
                 runs: vec![ClipRun {
