@@ -503,8 +503,8 @@ fn a_note_takes_a_pasted_notes_text_without_its_mark() {
     document.undo().unwrap();
     assert_eq!(document.note_texts(NoteKind::Footnote), ["the note"]);
 
-    // A picture copied with text goes in with the text alone, which a
-    // note here does not take a drawing in.
+    // A picture copied with text goes in with it, in line with the text, as
+    // Word puts a picture in a note.
     use jade_web::word::picture::WordPicture;
     let mut png = Vec::new();
     image::RgbaImage::from_raw(1, 1, vec![255, 0, 0, 255])
@@ -512,12 +512,68 @@ fn a_note_takes_a_pasted_notes_text_without_its_mark() {
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
         .unwrap();
     document.place_caret(paragraph, 1);
-    document.insert_picture(png).unwrap();
+    document.insert_picture(png.clone()).unwrap();
     document.select((paragraph, 0), (paragraph, 5)).unwrap();
     let clip = document.copy_rich().unwrap();
     assert_eq!(clip.pictures.len(), 1);
     let end = document.word_document().rendered_paragraph_len(in_note);
     document.place_caret(in_note, end);
     document.paste_rich(&clip).unwrap();
-    assert_eq!(document.note_texts(NoteKind::Footnote), ["the noteno"]);
+    let pictures = |document: &jade_web::editing::EditableDocument| {
+        document
+            .word_document()
+            .paragraph(in_note)
+            .unwrap()
+            .runs
+            .iter()
+            .filter(|run| run.image.is_some())
+            .count()
+    };
+    assert_eq!(pictures(&document), 1);
+
+    // And one put in from the ribbon goes in too, saved with the note.
+    let end = document.word_document().rendered_paragraph_len(in_note);
+    document.place_caret(in_note, end);
+    document.insert_picture(png).unwrap();
+    assert_eq!(pictures(&document), 2);
+    let saved = document.word_document().export_docx().unwrap();
+    let rels = jade_opc::OpcPackage::open(&saved)
+        .unwrap()
+        .part_str("word/_rels/footnotes.xml.rels")
+        .unwrap()
+        .unwrap();
+    assert_eq!(rels.matches("relationships/image").count(), 2, "{rels}");
+}
+
+#[test]
+fn a_picture_in_a_footnote_is_drawn_at_the_foot_of_the_page() {
+    use jade_web::word::picture::WordPicture;
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "noted text");
+    note(&mut document, NoteKind::Footnote, (paragraph, 5), "see");
+    let in_note = (0..document.paragraph_count())
+        .find(|&index| document.word_document().is_note_paragraph_surface(index))
+        .unwrap();
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(40, 40, image::Rgba([255, 0, 0, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    let end = document.word_document().rendered_paragraph_len(in_note);
+    document.place_caret(in_note, end);
+    document.insert_picture(png).unwrap();
+
+    let page = document.page(0).expect("first page");
+    let (width, height) = (page.width() as usize, page.height() as usize);
+    let pixels = page.rgba_premultiplied();
+    let red_rows: Vec<usize> = (0..height)
+        .filter(|y| {
+            (0..width).any(|x| {
+                let at = (y * width + x) * 4;
+                pixels[at] > 200 && pixels[at + 1] < 60 && pixels[at + 2] < 60
+            })
+        })
+        .collect();
+    assert!(!red_rows.is_empty(), "the picture is drawn");
+    // In the lower half of the page, where the footnotes are.
+    assert!(red_rows[0] > height / 2, "{} of {height}", red_rows[0]);
 }
