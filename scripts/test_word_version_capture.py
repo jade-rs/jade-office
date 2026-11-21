@@ -341,6 +341,19 @@ class VersionCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'metafile changed'):
             archiver.archive(self.manifest, self.evidence, ['probe'], 'emf')
 
+    def test_metafile_changed_during_copy_cannot_register_a_stale_reference(self):
+        reference, _ = self.add_metafile()
+        copyfile = archiver.shutil.copyfile
+        def replace_metafile(source, target):
+            if Path(source).suffix == '.emf':
+                Path(source).write_bytes(b'replaced after original verification')
+            return copyfile(source, target)
+        with patch.object(archiver.shutil, 'copyfile', side_effect=replace_metafile), \
+                patch.object(archiver, 'extract_emf_capture', return_value=reference):
+            with self.assertRaisesRegex(ValueError, 'metafile changed while archiving'):
+                archiver.archive(self.manifest, self.evidence, ['probe'], 'emf')
+        self.assertFalse((self.evidence/'index.json').exists())
+
     def test_stale_drawing_comparison_and_forged_origins_cannot_promote(self):
         reference, comparison = self.add_metafile()
         comparison[0]['metafile_sha256'] = ['stale drawing hash']

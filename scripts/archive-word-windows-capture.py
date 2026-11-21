@@ -163,6 +163,8 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
             raise ValueError('Captured PDF changed while archiving')
         for page in item.get('metafiles', []):
             shutil.copyfile(source/page['file'], target/page['file'])
+            if hashlib.sha256((target/page['file']).read_bytes()).hexdigest() != page['sha256']:
+                raise ValueError('Captured metafile changed while archiving')
     for item in capture['documents']:
         for suffix in ('.json', '.png', '.visible.json', '.visible.png', '.native.pdf'):
             native = source/(item['name']+suffix)
