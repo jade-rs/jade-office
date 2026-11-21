@@ -507,6 +507,7 @@ impl Builder {
             notes: Vec::new(),
             pictures: Vec::new(),
             tables: Vec::new(),
+            fields: Vec::new(),
         }
     }
 }
@@ -759,6 +760,7 @@ mod export_tests {
                 notes: Vec::new(),
                 pictures: Vec::new(),
                 tables: Vec::new(),
+                fields: Vec::new(),
                 paragraphs: vec![ClipParagraph {
                     runs: vec![ClipRun {
                         text: "Color".into(),
@@ -790,6 +792,7 @@ mod export_tests {
             notes: Vec::new(),
             pictures: Vec::new(),
             tables: Vec::new(),
+            fields: Vec::new(),
             paragraphs: vec![
                 ClipParagraph {
                     alignment: Some("center".into()),
@@ -827,6 +830,7 @@ mod export_tests {
             notes: Vec::new(),
             pictures: Vec::new(),
             tables: Vec::new(),
+            fields: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 runs: vec![ClipRun {
                     text: "<script>alert('text')</script>".into(),
