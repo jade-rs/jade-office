@@ -54,12 +54,21 @@ and use Arial's measured script sizes/moves without inflating line pitch.
 The Windows Actions gate checks these complete origins using the runner's
 installed Arial; the separate Mac gate remains mandatory and unchanged.
 
-All captures are under the full product-version directory
-`jade-core/tests/word-oracle/windows/word-16.0.19127.20860/`, each with its
-own immutable timestamp/ID. `capture.json` records Word's product/application
+Captures are stored under the full product-version directory
+`jade-core/tests/word-oracle/windows/word-<full-product-version>/<capture-id>/`,
+each with its own immutable timestamp/ID. `capture.json` records Word's product/application
 version and build, executable hash, OS and original DOCX/PDF/EMF hashes;
 `verification.json` records the engine commit and matching/pending fixtures.
 Failed captures are kept separately from the registered passing references.
+
+New archives also write `font-context.json`, bound to the original manifest,
+source DOCX and Word PDF hashes. It records each embedded font program's hash,
+family, style and version, plus the font names extracted from PDF text.
+Unembedded fonts and unavailable name tables are identified explicitly.
+`verification.json` includes the context fingerprint. This distinguishes
+captures where the same Word build uses different cloud fonts or substitutes
+Calibri for an unavailable Aptos face. Existing original manifests and
+coordinate references are retained as captured.
 
 New captures additionally record Word's file version, the OS architecture and
 each document's actual `Document.CompatibilityMode` reported by Word. This

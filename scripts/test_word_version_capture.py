@@ -30,7 +30,10 @@ class VersionCaptureTests(unittest.TestCase):
         self.evidence = self.root/'evidence'
         docx, pdf = self.source/'probe.docx', self.source/'probe.pdf'
         docx.write_bytes(b'synthetic docx for integrity checks')
-        pdf.write_bytes(b'synthetic pdf for integrity checks')
+        import pymupdf
+        with pymupdf.open() as document:
+            document.new_page().insert_text((72,84), 'A')
+            pdf.write_bytes(document.tobytes())
         self.capture = dict(schema=2, platform='windows', status='complete',
                             capture_id='20261101T010203456Z-1234abcd',
                             word=dict(product_version='16.0.19127.20860', file_version='16.0.19127.20860',
@@ -173,6 +176,11 @@ class VersionCaptureTests(unittest.TestCase):
             target = archiver.archive(self.manifest, self.evidence, ['probe'])
         self.assertEqual(target.parent.name, 'word-16.0.19127.20860')
         self.assertEqual((target/'capture.json').read_bytes(), self.manifest.read_bytes())
+        context = json.loads((target/'font-context.json').read_bytes())
+        self.assertEqual(context['word'], self.capture['word'])
+        self.assertEqual(context['documents'][0]['pdf_sha256'], self.capture['documents'][0]['pdf_sha256'])
+        verification = json.loads((target/'verification.json').read_bytes())
+        self.assertEqual(context['context_sha256'], verification['font_context_sha256'])
         original = (self.evidence/'index.json').read_bytes()
         with self.assertRaises(FileExistsError):
             archiver.archive(self.manifest, self.evidence, ['probe'])
@@ -259,6 +267,30 @@ class VersionCaptureTests(unittest.TestCase):
         (self.source/'probe.pdf').write_bytes(b'changed')
         with self.assertRaisesRegex(ValueError, 'PDF changed'):
             archiver.archive(self.manifest, self.evidence, ['probe'])
+
+    def test_pdf_changed_during_copy_cannot_register_a_stale_font_context(self):
+        copyfile = archiver.shutil.copyfile
+        def replace_pdf(source, target):
+            if Path(source).name == 'probe.pdf':
+                Path(source).write_bytes(b'replaced after font inspection')
+            return copyfile(source, target)
+        with patch.object(archiver.shutil, 'copyfile', side_effect=replace_pdf):
+            with self.assertRaisesRegex(ValueError, 'PDF changed while archiving'):
+                archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse((self.evidence/'index.json').exists())
+
+    def test_capture_changed_during_copy_cannot_register_another_word_version(self):
+        copyfile = archiver.shutil.copyfile
+        def replace_capture(source, target):
+            if Path(source).name == 'capture.json':
+                changed = json.loads(Path(source).read_bytes())
+                changed['word']['product_version'] = '16.0.20000.10000'
+                Path(source).write_bytes(json.dumps(changed).encode())
+            return copyfile(source, target)
+        with patch.object(archiver.shutil, 'copyfile', side_effect=replace_capture):
+            with self.assertRaisesRegex(ValueError, 'metadata changed while archiving'):
+                archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse((self.evidence/'index.json').exists())
 
     def test_reference_cannot_be_mixed_between_word_versions(self):
         self.capture['word']['product_version'] = '16.0.20000.10000'
