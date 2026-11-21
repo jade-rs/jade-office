@@ -147,6 +147,16 @@ impl RubyDialog {
     }
 }
 
+/// A guide's 配置 as Word writes it (`distributeSpace`), from the model's
+/// lowercase (`distributespace`); Word's default for one it does not know.
+pub fn ruby_alignment(lower: &str) -> String {
+    RUBY_ALIGNMENTS
+        .iter()
+        .find(|value| value.eq_ignore_ascii_case(lower))
+        .unwrap_or(&"distributeSpace")
+        .to_string()
+}
+
 /// 囲い文字's enclosures, in Word's order.
 pub const ENCLOSURES: [&str; 4] = ["○", "□", "△", "◇"];
 
@@ -273,12 +283,7 @@ pub trait WordAsian: WordSession {
             }
         }
         let align = align
-            .and_then(|lower| {
-                RUBY_ALIGNMENTS
-                    .iter()
-                    .find(|value| value.to_ascii_lowercase() == lower)
-                    .map(|value| value.to_string())
-            })
+            .map(|lower| ruby_alignment(&lower))
             .unwrap_or_else(|| "distributeSpace".to_string());
         let mut dialog = RubyDialog {
             paragraph,

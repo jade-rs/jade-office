@@ -142,6 +142,8 @@ fn copied_soft_breaks_roundtrip_even_without_surrounding_text() {
             pictures: Vec::new(),
             tables: Vec::new(),
             fields: Vec::new(),
+            links: Vec::new(),
+            rubies: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 alignment: Some("left".into()),
                 runs: vec![ClipRun {

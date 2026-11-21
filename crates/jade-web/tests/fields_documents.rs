@@ -205,3 +205,88 @@ fn a_copied_field_pastes_as_a_field() {
     assert_eq!(page_fields(&document), 1);
     assert!(document.caret_text(paragraph).unwrap().contains("a999b"));
 }
+
+/// A header's page number keeps no text of its own once reopened — layout
+/// draws its digits — and a copy of "Page 1 of 1" there still pastes its
+/// PAGE and NUMPAGES as fields, as Word does.
+#[test]
+fn a_copied_header_page_number_pastes_as_a_field() {
+    use jade_web::editing::{WordDoc, WordSession};
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::HeadlessFieldKind;
+    use jade_web::word::page::Story;
+    let saved_codes = |document: &mut WordDoc| {
+        let bytes = document.export_docx().unwrap();
+        let package = jade_opc::OpcPackage::open(&bytes).unwrap();
+        let header = package
+            .part_names()
+            .iter()
+            .filter(|name| name.starts_with("word/header"))
+            .filter_map(|name| package.part_str(name).ok().flatten())
+            .collect::<String>();
+        let numpages = header.matches("NUMPAGES").count();
+        (header.matches("PAGE").count() - numpages, numpages)
+    };
+    let mut document = WordDoc::new(common::contract());
+    document.open_story(0, Story::Header).unwrap();
+    document.insert_text("Page ").unwrap();
+    document
+        .insert_story_field(HeadlessFieldKind::Page, "1".into())
+        .unwrap();
+    document.insert_text(" of ").unwrap();
+    document
+        .insert_story_field(HeadlessFieldKind::NumPages, "1".into())
+        .unwrap();
+    assert!(document.close_story().unwrap());
+    assert_eq!(saved_codes(&mut document), (1, 1));
+
+    document.open_story(0, Story::Header).unwrap();
+    let end = |document: &WordDoc| {
+        document
+            .story()
+            .unwrap()
+            .document
+            .word_document()
+            .rendered_paragraph_len(0)
+    };
+    let shown = end(&document);
+    document.select((0, 0), (0, shown)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.plain_text(), "Page 1 of 1");
+    assert_eq!(clip.fields.len(), 2);
+    document.place_caret(0, shown);
+    let caret = document.paste_rich(&clip).unwrap();
+    assert_eq!(caret, (0, end(&document)));
+    assert!(document.close_story().unwrap());
+    assert_eq!(saved_codes(&mut document), (2, 2));
+}
+
+/// An index entry (XE) shows nothing, and a copy of the word it marks
+/// brings it along: the pasted word is marked too.
+#[test]
+fn a_copied_index_entry_comes_with_its_text() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::references::index::{MarkEntryDialog, WordIndex};
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "契約 ");
+    document
+        .select((paragraph, 0), (paragraph, "契約".len()))
+        .unwrap();
+    document
+        .mark_index_entry(&MarkEntryDialog::for_text("契約"))
+        .unwrap();
+    assert_eq!(document.index_entries().len(), 1);
+
+    let end = document.caret_text(paragraph).unwrap().find(' ').unwrap();
+    document.select((paragraph, 0), (paragraph, end)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    document.place_caret(paragraph, end);
+    document.paste_rich(&clip).unwrap();
+    assert!(document
+        .caret_text(paragraph)
+        .unwrap()
+        .starts_with("契約契約 "));
+    assert_eq!(document.index_entries().len(), 2);
+    document.undo().unwrap();
+    assert_eq!(document.index_entries().len(), 1);
+}
