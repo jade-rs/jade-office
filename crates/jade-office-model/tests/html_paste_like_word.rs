@@ -139,6 +139,7 @@ fn copied_soft_breaks_roundtrip_even_without_surrounding_text() {
     for text in ["\n", "\n\n", "start\n", "\nend"] {
         let clip = RichClip {
             notes: Vec::new(),
+            pictures: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 alignment: Some("left".into()),
                 runs: vec![ClipRun {

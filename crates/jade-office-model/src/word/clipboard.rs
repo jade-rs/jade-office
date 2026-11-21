@@ -12,7 +12,8 @@ use jade_docx_headless_api::{
     HeadlessCommand, HeadlessQuery, HeadlessQueryResult, HeadlessRunStyle,
 };
 
-use jade_selection::TextPosition;
+use jade_docx_editor::commands::insert_image::InsertImageCommand;
+use jade_selection::{SelectionRange, TextPosition};
 
 use super::{query, Position, WordFormatting, WordSession};
 
@@ -41,6 +42,28 @@ pub struct ClipNote {
     pub offset: usize,
     pub footnote: bool,
     pub text: String,
+    /// Where the page drew it, which orders it among objects at the same
+    /// offset.
+    pub shown: usize,
+}
+
+/// A picture in line with the text that a copy took, with its bytes, so
+/// the paste puts in one of its own as Word does.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ClipPicture {
+    /// Which of the copy's paragraphs it is in.
+    pub paragraph: usize,
+    /// Its byte offset in that paragraph's copied text.
+    pub offset: usize,
+    pub bytes: Vec<u8>,
+    pub mime: String,
+    /// Its size on the page, in CSS px.
+    pub width: f64,
+    pub height: f64,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    /// Where the page drew it.
+    pub shown: usize,
 }
 
 /// What a copy took.
@@ -49,6 +72,65 @@ pub struct RichClip {
     pub paragraphs: Vec<ClipParagraph>,
     /// Reference marks the copy took, in document order.
     pub notes: Vec<ClipNote>,
+    /// Pictures in line the copy took, in document order.
+    pub pictures: Vec<ClipPicture>,
+}
+
+/// One of the things a paste puts in after the text: a note or a picture.
+enum ClipObject<'a> {
+    Note(&'a ClipNote),
+    Picture(&'a ClipPicture),
+}
+
+impl ClipObject<'_> {
+    fn at(&self) -> (usize, usize, usize) {
+        match self {
+            ClipObject::Note(note) => (note.paragraph, note.offset, note.shown),
+            ClipObject::Picture(picture) => (picture.paragraph, picture.offset, picture.shown),
+        }
+    }
+}
+
+impl RichClip {
+    /// The notes and pictures, in the order the copy met them.
+    fn objects(&self) -> Vec<ClipObject<'_>> {
+        let mut objects: Vec<ClipObject<'_>> = self
+            .notes
+            .iter()
+            .map(ClipObject::Note)
+            .chain(self.pictures.iter().map(ClipObject::Picture))
+            .collect();
+        objects.sort_by_key(ClipObject::at);
+        objects
+    }
+}
+
+/// The bytes of a `data:` URI's base64 payload, and its type.
+fn decode_data_uri(uri: &str) -> Option<(String, Vec<u8>)> {
+    let rest = uri.strip_prefix("data:")?;
+    let (header, payload) = rest.split_once(',')?;
+    let mime = header.strip_suffix(";base64")?.to_string();
+    let mut bytes = Vec::with_capacity(payload.len() * 3 / 4);
+    let (mut buffer, mut bits) = (0u32, 0u32);
+    for byte in payload.bytes() {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b'=' | b'\n' | b'\r' | b' ' => continue,
+            _ => return None,
+        };
+        buffer = (buffer << 6) | u32::from(value);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            bytes.push((buffer >> bits) as u8);
+            buffer &= (1 << bits) - 1;
+        }
+    }
+    Some((mime, bytes))
 }
 
 impl RichClip {
@@ -318,6 +400,7 @@ impl RichClip {
         RichClip {
             paragraphs,
             notes: self.notes.clone(),
+            pictures: self.pictures.clone(),
         }
     }
 
@@ -340,6 +423,7 @@ impl RichClip {
                 })
                 .collect(),
             notes: Vec::new(),
+            pictures: Vec::new(),
         }
     }
 }
@@ -362,6 +446,7 @@ pub trait WordClipboard: WordSession {
         let footnotes = document.footnote_infos();
         let endnotes = document.endnote_infos();
         let mut notes = Vec::new();
+        let mut pictures = Vec::new();
         let mut paragraphs = Vec::new();
         for index in start.paragraph..=end.paragraph {
             let Some(HeadlessQueryResult::Paragraph {
@@ -412,6 +497,7 @@ pub trait WordClipboard: WordSession {
                 notes.push(ClipNote {
                     paragraph: paragraphs.len(),
                     offset: span.model_offset.saturating_sub(from),
+                    shown: at,
                     footnote: span.is_footnote,
                     text: infos
                         .iter()
@@ -419,6 +505,42 @@ pub trait WordClipboard: WordSession {
                         .map(|note| note.text.clone())
                         .unwrap_or_default(),
                 });
+            }
+            // The pictures in line drawn inside it, with their bytes.
+            if let Some(model) = document.paragraph(index) {
+                for (target, model_offset, at) in document.inline_object_rendered_starts(index) {
+                    if at < shown_from || at + '\u{fffc}'.len_utf8() > shown_to {
+                        continue;
+                    }
+                    let Some(image) = model
+                        .runs
+                        .get(target.run_index)
+                        .and_then(|run| run.image.as_ref())
+                        .filter(|image| {
+                            image.chart.is_none()
+                                && image.shape_group.is_none()
+                                && image.ink.is_none()
+                                && image.ole_relationship_id.is_none()
+                        })
+                    else {
+                        continue;
+                    };
+                    let Some((mime, bytes)) = image.data_uri.as_deref().and_then(decode_data_uri)
+                    else {
+                        continue;
+                    };
+                    pictures.push(ClipPicture {
+                        paragraph: paragraphs.len(),
+                        offset: model_offset.saturating_sub(from),
+                        bytes,
+                        mime,
+                        width: image.width_px.unwrap_or(96.0),
+                        height: image.height_px.unwrap_or(96.0),
+                        title: image.title.clone(),
+                        description: image.description.clone(),
+                        shown: at,
+                    });
+                }
             }
             let mut runs: Vec<ClipRun> = snapshot
                 .runs
@@ -451,7 +573,11 @@ pub trait WordClipboard: WordSession {
                 runs,
             });
         }
-        Some(RichClip { paragraphs, notes })
+        Some(RichClip {
+            paragraphs,
+            notes,
+            pictures,
+        })
     }
 
     /// Pastes `clip` the way `mode` says — 元の書式を保持, 書式を結合 or
@@ -487,50 +613,135 @@ pub trait WordClipboard: WordSession {
             .run_style_at((start.paragraph, start.offset.saturating_sub(1)))
             .unwrap_or_default();
         let model_start = self.model_position((start.paragraph, start.offset));
-        let at = push_paste_commands(
+        let (at, starts) = push_paste_commands(
             clip,
             (start.paragraph, start.offset),
             &inherited,
             &mut commands,
         );
-        if commands.is_empty() {
+        if commands.is_empty() && clip.notes.is_empty() && clip.pictures.is_empty() {
             return Ok(at);
         }
-        self.apply_commands(commands, false)?;
-        Ok(self.after_pasted_notes(clip, model_start, at))
+        self.paste_commands_and_objects(clip, commands, &starts)?;
+        Ok(self.after_pasted_objects(clip, model_start, at))
+    }
+
+    /// Applies a paste's text `commands`, then puts in the copy's notes and
+    /// pictures where the text alone put them (`starts`: where each copied
+    /// paragraph went), all as one undo step. They go in last first, so
+    /// each lands where the text left it: one moves only what follows it.
+    fn paste_commands_and_objects(
+        &mut self,
+        clip: &RichClip,
+        commands: Vec<HeadlessCommand>,
+        starts: &[Position],
+    ) -> Result<(), String> {
+        let objects = clip.objects();
+        if objects.is_empty() {
+            return self.apply_commands(commands, false);
+        }
+        self.begin_edit_group();
+        let result = (|| {
+            self.apply_commands(commands, false)?;
+            for object in objects.iter().rev() {
+                let (paragraph, offset, _) = object.at();
+                let Some(&(at_paragraph, at_offset)) = starts.get(paragraph) else {
+                    continue;
+                };
+                let (paragraph, offset) = (at_paragraph, at_offset + offset);
+                match object {
+                    ClipObject::Note(note) => {
+                        let text = note.text.clone();
+                        self.apply_command(
+                            if note.footnote {
+                                HeadlessCommand::InsertFootnote {
+                                    paragraph,
+                                    offset,
+                                    text,
+                                }
+                            } else {
+                                HeadlessCommand::InsertEndnote {
+                                    paragraph,
+                                    offset,
+                                    text,
+                                }
+                            },
+                            false,
+                        )?;
+                    }
+                    ClipObject::Picture(picture) => {
+                        let caret = SelectionRange::collapsed(TextPosition::new(paragraph, offset));
+                        self.set_selection_range(Some(caret));
+                        self.execute_command(
+                            Box::new(InsertImageCommand::new(
+                                caret,
+                                picture.bytes.clone(),
+                                picture.mime.clone(),
+                                picture.width,
+                                picture.height,
+                                picture.title.clone(),
+                                picture.description.clone(),
+                            )),
+                            false,
+                        )?;
+                    }
+                }
+            }
+            Ok(())
+        })();
+        self.end_edit_group();
+        result
     }
 
     /// Where the caret goes after a paste of `clip` that started at model
     /// position `model_start` and ends at `at` as the text alone would put
-    /// it: past the numbers of the notes it brought into that paragraph too.
-    /// Notes add no text to the model, so the end is found there.
-    fn after_pasted_notes(&self, clip: &RichClip, model_start: Position, at: Position) -> Position {
+    /// it: past the notes' numbers and the pictures it brought into that
+    /// paragraph too. Neither adds text to the model, so the end is found
+    /// there. The caret is left there.
+    fn after_pasted_objects(
+        &mut self,
+        clip: &RichClip,
+        model_start: Position,
+        at: Position,
+    ) -> Position {
         let last = clip.paragraphs.len().saturating_sub(1);
-        let ours_at_end = |end: usize| {
-            clip.notes
-                .iter()
-                .filter(|note| note.paragraph == last && note.offset == end)
-                .count()
-        };
-        if !clip.notes.iter().any(|note| note.paragraph == last) {
+        if !clip.objects().iter().any(|object| object.at().0 == last) {
             return at;
         }
         let pasted: usize = clip.paragraphs.last().map_or(0, |paragraph| {
             paragraph.runs.iter().map(|run| run.text.len()).sum()
         });
+        let at_end = |object: &ClipObject<'_>| {
+            let (paragraph, offset, _) = object.at();
+            paragraph == last && offset == pasted
+        };
+        let notes_at_end = clip
+            .notes
+            .iter()
+            .filter(|note| at_end(&ClipObject::Note(note)))
+            .count();
+        let pictures_at_end = clip
+            .pictures
+            .iter()
+            .filter(|picture| at_end(&ClipObject::Picture(picture)))
+            .count();
         let model_end = if last == 0 { model_start.1 } else { 0 } + pasted;
         let document = self.word_document();
         let mut caret = document
             .model_to_rendered_text_position(TextPosition::new(at.0, model_end))
             .offset;
-        // A mark at the end itself is drawn before the caret.
-        let at_end: Vec<usize> = document
+        // Objects at the end itself are drawn before the caret.
+        let marks: Vec<usize> = document
             .reference_marker_spans(at.0)
             .into_iter()
             .filter(|span| span.model_offset == model_end)
             .map(|span| span.rendered_len)
             .collect();
-        caret += at_end.iter().rev().take(ours_at_end(pasted)).sum::<usize>();
+        caret += marks.iter().rev().take(notes_at_end).sum::<usize>();
+        caret += pictures_at_end * '\u{fffc}'.len_utf8();
+        self.set_selection_range(Some(SelectionRange::collapsed(TextPosition::new(
+            at.0, caret,
+        ))));
         (at.0, caret)
     }
 
@@ -581,9 +792,9 @@ pub trait WordClipboard: WordSession {
                 self.model_position(end),
             );
         }
-        let end = push_paste_commands(clip, at, &inherited, &mut commands);
-        self.apply_commands(commands, false)?;
-        Ok(self.after_pasted_notes(clip, model_at, end))
+        let (end, starts) = push_paste_commands(clip, at, &inherited, &mut commands);
+        self.paste_commands_and_objects(clip, commands, &starts)?;
+        Ok(self.after_pasted_objects(clip, model_at, end))
     }
 }
 
@@ -598,14 +809,15 @@ pub fn position_after_removal(target: Position, start: Position, end: Position) 
     }
 }
 
-/// The commands that put `clip` in at `start`, appended to `commands`;
-/// answers where the pasted text ends.
+/// The commands that put `clip`'s text in at `start`, appended to
+/// `commands`; answers where the pasted text ends and where each of the
+/// copy's paragraphs starts.
 fn push_paste_commands(
     clip: &RichClip,
     start: Position,
     inherited: &HeadlessRunStyle,
     commands: &mut Vec<HeadlessCommand>,
-) -> Position {
+) -> (Position, Vec<Position>) {
     let inherited = inherited.clone();
     let mut at = start;
     let mut formats = Vec::new();
@@ -654,29 +866,7 @@ fn push_paste_commands(
     // Formats after all the text: a split carries a paragraph's direct
     // formatting into the next, so formatting first would be undone.
     commands.extend(formats);
-    // Then the notes, last first, so each goes in where the text alone put
-    // its mark: a note's number moves only what comes after it.
-    for note in clip.notes.iter().rev() {
-        let Some(&(paragraph, offset)) = starts.get(note.paragraph) else {
-            continue;
-        };
-        let offset = offset + note.offset;
-        let text = note.text.clone();
-        commands.push(if note.footnote {
-            HeadlessCommand::InsertFootnote {
-                paragraph,
-                offset,
-                text,
-            }
-        } else {
-            HeadlessCommand::InsertEndnote {
-                paragraph,
-                offset,
-                text,
-            }
-        });
-    }
-    at
+    (at, starts)
 }
 
 impl<T: WordSession + ?Sized> WordClipboard for T {}
@@ -693,6 +883,7 @@ mod tests {
         };
         let clip = RichClip {
             notes: Vec::new(),
+            pictures: Vec::new(),
             paragraphs: vec![
                 ClipParagraph {
                     runs: vec![run("Bold"), run(" plain")],
@@ -713,6 +904,7 @@ mod tests {
     fn merging_keeps_emphasis_and_text_only_keeps_nothing() {
         let clip = RichClip {
             notes: Vec::new(),
+            pictures: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 style_id: Some("Heading1".into()),
                 alignment: Some("center".into()),
