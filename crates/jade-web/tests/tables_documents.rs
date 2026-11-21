@@ -1097,3 +1097,61 @@ fn a_pasted_table_keeps_its_column_widths_and_shading() {
     document.undo().unwrap();
     assert!(document.word_document().table_by_order(1).is_none());
 }
+
+#[test]
+fn a_pasted_table_keeps_its_merged_cells() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::{HeadlessCommand, HeadlessTableCellSelection};
+    let mut document = with_table(2, 3);
+    fill(&mut document, 0, &[&["a", "b", "c"], &["d", "e", ""]]);
+    let cell = |row, column| HeadlessTableCellSelection {
+        row,
+        column,
+        column_span: 1,
+    };
+    document
+        .apply_command(
+            HeadlessCommand::MergeTableCells {
+                table_order_index: 0,
+                selected_cells: vec![cell(0, 0), cell(0, 1)],
+            },
+            false,
+        )
+        .unwrap();
+    document
+        .apply_command(
+            HeadlessCommand::MergeTableCells {
+                table_order_index: 0,
+                selected_cells: vec![cell(0, 2), cell(1, 2)],
+            },
+            false,
+        )
+        .unwrap();
+    let shape = |document: &EditableDocument, order: usize| {
+        let table = document.word_document().table_by_order(order).unwrap();
+        table
+            .rows
+            .iter()
+            .map(|row| {
+                row.cells
+                    .iter()
+                    .map(|cell| (cell.span.unwrap_or(1), cell.vertical_merge.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    };
+    let source = shape(&document, 0);
+    let texts = cell_texts(&document, 0);
+    assert_eq!(texts, [vec!["a\nb", "c"], vec!["d", "e", ""]]);
+
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.tables.len(), 1);
+    document.place_caret(after, 0);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(shape(&document, 1), source);
+    assert_eq!(cell_texts(&document, 1), texts);
+    document.undo().unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+}
