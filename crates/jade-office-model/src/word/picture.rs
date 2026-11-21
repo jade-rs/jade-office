@@ -186,16 +186,31 @@ pub trait WordPicture: WordSession + WordPage {
     fn insert_picture(&mut self, bytes: Vec<u8>) -> Result<(), String> {
         let picture = prepare_picture(bytes)?;
         let (mime, width, height) = (picture.mime, picture.width, picture.height);
+        let range = self.selection_range().ok_or("no caret")?;
+        let (start, _) = range.normalized();
         let page = self.page_setup();
-        let text_width =
-            f64::from(page.width - page.margins.left - page.margins.right).max(1.0) * PX_PER_PT;
+        // In a text box, the box's width inside its margins, as Word fits it.
+        let document = self.word_document();
+        let text_width = document
+            .text_box_host_for_surface(start.paragraph)
+            .and_then(|host| {
+                let text_box = document
+                    .paragraph(host.paragraph_index)?
+                    .runs
+                    .get(host.run_index)?
+                    .text_box
+                    .as_ref()?;
+                Some(text_box.width_px? - text_box.insets.left_px - text_box.insets.right_px)
+            })
+            .unwrap_or_else(|| {
+                f64::from(page.width - page.margins.left - page.margins.right) * PX_PER_PT
+            })
+            .max(1.0);
         let (mut width, mut height) = (f64::from(width.max(1)), f64::from(height.max(1)));
         if width > text_width {
             height *= text_width / width;
             width = text_width;
         }
-        let range = self.selection_range().ok_or("no caret")?;
-        let (start, _) = range.normalized();
         let caret = SelectionRange::collapsed(TextPosition::new(start.paragraph, start.offset));
         self.set_selection_range(Some(caret));
         let insert = InsertImageCommand::new(
