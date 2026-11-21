@@ -1155,3 +1155,47 @@ fn a_pasted_table_keeps_its_merged_cells() {
     document.undo().unwrap();
     assert!(document.word_document().table_by_order(1).is_none());
 }
+
+/// Copied rows pasted with the caret in a table go in as new rows above
+/// the caret's, as Word inserts them, not as text in one cell; one undo
+/// takes them back.
+#[test]
+fn copied_rows_pasted_in_a_table_go_in_as_rows() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = with_table(2, 2);
+    fill(&mut document, 0, &[&["a", "b"], &["c", "d"]]);
+    document
+        .apply_commands(
+            vec![
+                jade_web::word::headless::HeadlessCommand::SetTableCellShading {
+                    table_order_index: 0,
+                    row: 0,
+                    column: 0,
+                    color: Some("#FFFF00".into()),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+    let first = cell_paragraph(&document, 0, 0, 0);
+    let second_row = cell_paragraph(&document, 0, 1, 0);
+    document.select((first, 0), (second_row, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.tables.len(), 1);
+
+    let caret_cell = cell_paragraph(&document, 0, 1, 1);
+    document.place_caret(caret_cell, 0);
+    let caret = document.paste_rich(&clip).unwrap();
+    assert_eq!(
+        cell_texts(&document, 0),
+        [["a", "b"], ["a", "b"], ["c", "d"]]
+    );
+    assert!(document.word_document().table_by_order(1).is_none());
+    // The pasted row keeps its shading.
+    let xml = document_xml(&document.export_docx().unwrap());
+    assert_eq!(xml.matches("FFFF00").count(), 2, "{xml}");
+    // The caret stays in its cell, now a row down.
+    assert_eq!(caret, (cell_paragraph(&document, 0, 2, 1), 0));
+    document.undo().unwrap();
+    assert_eq!(cell_texts(&document, 0), [["a", "b"], ["c", "d"]]);
+}

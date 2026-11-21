@@ -16,7 +16,9 @@ use jade_docx_headless_api::{
 use jade_docx_editor::commands::hyperlink::InsertHyperlinkCommand;
 use jade_docx_editor::commands::insert_field::InsertFieldCommand;
 use jade_docx_editor::commands::insert_image::InsertImageCommand;
-use jade_docx_editor::document::RunFieldKind;
+use jade_docx_editor::commands::{Command, CommandContext, CommandError, CommandResult};
+use jade_docx_editor::document::{RunFieldKind, RunImageKind, RunImageLayout};
+use jade_docx_editor::word_document::WordDocumentSnapshot;
 use jade_selection::{SelectionRange, TextPosition};
 
 use super::asian::ruby_alignment;
@@ -73,6 +75,9 @@ pub struct ClipPicture {
     pub description: Option<String>,
     /// Where the page drew it.
     pub shown: usize,
+    /// How it floats — wrap, position, distances — when it is not in line
+    /// with the text: the pasted one floats the same way.
+    pub layout: Option<RunImageLayout>,
 }
 
 /// A field whose result a copy took whole: Word pastes it as a field of
@@ -177,6 +182,76 @@ impl ClipObject<'_> {
 }
 
 impl RichClip {
+    /// Copied paragraphs `first..first + count` as a copy of their own,
+    /// with what they hold: one cell of a copied table.
+    fn slice(&self, first: usize, count: usize) -> RichClip {
+        let range = first..first + count;
+        let inside = |paragraph: usize| range.contains(&paragraph);
+        RichClip {
+            paragraphs: self
+                .paragraphs
+                .get(range.clone())
+                .unwrap_or_default()
+                .to_vec(),
+            fields: self
+                .fields
+                .iter()
+                .filter(|field| inside(field.paragraph))
+                .map(|field| ClipField {
+                    paragraph: field.paragraph - first,
+                    ..field.clone()
+                })
+                .collect(),
+            links: self
+                .links
+                .iter()
+                .filter(|link| inside(link.paragraph))
+                .map(|link| ClipLink {
+                    paragraph: link.paragraph - first,
+                    ..link.clone()
+                })
+                .collect(),
+            rubies: self
+                .rubies
+                .iter()
+                .filter(|ruby| inside(ruby.paragraph))
+                .map(|ruby| ClipRuby {
+                    paragraph: ruby.paragraph - first,
+                    ..ruby.clone()
+                })
+                .collect(),
+            notes: self
+                .notes
+                .iter()
+                .filter(|note| inside(note.paragraph))
+                .map(|note| ClipNote {
+                    paragraph: note.paragraph - first,
+                    ..note.clone()
+                })
+                .collect(),
+            pictures: self
+                .pictures
+                .iter()
+                .filter(|picture| inside(picture.paragraph))
+                .map(|picture| ClipPicture {
+                    paragraph: picture.paragraph - first,
+                    ..picture.clone()
+                })
+                .collect(),
+            tables: Vec::new(),
+        }
+    }
+
+    /// Whether it holds nothing: no text and nothing in line.
+    fn is_blank(&self) -> bool {
+        self.paragraphs
+            .iter()
+            .all(|paragraph| paragraph.runs.iter().all(|run| run.text.is_empty()))
+            && self.notes.is_empty()
+            && self.pictures.is_empty()
+            && self.fields.is_empty()
+    }
+
     /// The notes and pictures, in the order the copy met them.
     fn objects(&self) -> Vec<ClipObject<'_>> {
         let mut objects: Vec<ClipObject<'_>> = self
@@ -194,6 +269,71 @@ impl RichClip {
 /// back as a link on its text instead.
 fn pastes_as_field(kind: &RunFieldKind) -> bool {
     !matches!(kind.base_kind(), RunFieldKind::Hyperlink { .. })
+}
+
+/// A copied picture put in, floating the way the copied one did when it
+/// did not sit in line: one undo step.
+struct PastePictureCommand {
+    insert: InsertImageCommand,
+    layout: Option<RunImageLayout>,
+    snapshot: Option<WordDocumentSnapshot>,
+    previous_selection: Option<SelectionRange>,
+}
+
+impl Command for PastePictureCommand {
+    fn name(&self) -> &'static str {
+        "paste_picture"
+    }
+
+    fn apply(&mut self, ctx: &mut CommandContext<'_>) -> CommandResult<()> {
+        let snapshot = ctx
+            .document
+            .snapshot_including_package()
+            .ok_or_else(|| CommandError::Custom("document is unavailable".to_string()))?;
+        let previous_selection = *ctx.selection;
+        let result = (|| -> CommandResult<()> {
+            self.insert.apply(ctx)?;
+            let Some(layout) = self.layout.clone() else {
+                return Ok(());
+            };
+            let target = self
+                .insert
+                .inserted_target()
+                .ok_or_else(|| CommandError::Custom("the picture went missing".to_string()))?;
+            if let Some(image) = ctx
+                .document
+                .paragraph_mut(target.paragraph_index)
+                .and_then(|paragraph| paragraph.runs.get_mut(target.run_index))
+                .and_then(|run| run.image.as_mut())
+            {
+                image.layout = layout;
+            }
+            ctx.document.sync_paragraph_text(target.paragraph_index);
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.snapshot = Some(snapshot);
+                self.previous_selection = previous_selection;
+                Ok(())
+            }
+            Err(error) => {
+                ctx.document.restore_snapshot(snapshot);
+                *ctx.selection = previous_selection;
+                Err(error)
+            }
+        }
+    }
+
+    fn undo(&mut self, ctx: &mut CommandContext<'_>) -> CommandResult<()> {
+        let snapshot = self
+            .snapshot
+            .take()
+            .ok_or_else(|| CommandError::Custom("paste_picture snapshot is missing".to_string()))?;
+        ctx.document.restore_snapshot(snapshot);
+        *ctx.selection = self.previous_selection;
+        Ok(())
+    }
 }
 
 /// Whether `text` can be a pasted field's result, as Word's field
@@ -1128,6 +1268,44 @@ pub trait WordClipboard: WordSession {
                         title: image.title.clone(),
                         description: image.description.clone(),
                         shown: at,
+                        layout: None,
+                    });
+                }
+                // The pictures floating from it: anchored in what it holds.
+                let len = model.runs.iter().map(|run| run.text.len()).sum::<usize>();
+                let mut run_start = 0;
+                for run in &model.runs {
+                    let at = run_start;
+                    run_start += run.text.len();
+                    let Some(image) = run.image.as_ref().filter(|image| {
+                        image.layout.kind == RunImageKind::Floating
+                            && image.chart.is_none()
+                            && image.shape_group.is_none()
+                            && image.ink.is_none()
+                            && image.ole_relationship_id.is_none()
+                    }) else {
+                        continue;
+                    };
+                    if at < from || (at >= to && to < len) {
+                        continue;
+                    }
+                    let Some((mime, bytes)) = image.data_uri.as_deref().and_then(decode_data_uri)
+                    else {
+                        continue;
+                    };
+                    pictures.push(ClipPicture {
+                        paragraph: paragraphs.len(),
+                        offset: at - from,
+                        bytes,
+                        mime,
+                        width: image.width_px.unwrap_or(96.0),
+                        height: image.height_px.unwrap_or(96.0),
+                        title: image.title.clone(),
+                        description: image.description.clone(),
+                        shown: document
+                            .model_to_rendered_text_position(TextPosition::new(index, at))
+                            .offset,
+                        layout: Some(image.layout.clone()),
                     });
                 }
             }
@@ -1255,6 +1433,11 @@ pub trait WordClipboard: WordSession {
     fn paste_rich(&mut self, clip: &RichClip) -> Result<Position, String> {
         let range = self.selection_range().ok_or("no caret")?;
         let (start, _) = range.normalized();
+        if range.is_collapsed() {
+            if let Some(at) = self.paste_rows_into_table(clip, (start.paragraph, start.offset))? {
+                return Ok(at);
+            }
+        }
         let mut commands = Vec::new();
         if !range.is_collapsed() {
             let (start, end) = range.normalized();
@@ -1285,6 +1468,118 @@ pub trait WordClipboard: WordSession {
         self.paste_commands_and_objects(clip, commands, &starts)?;
         let at = (at.0 + clip.split_count(), at.1);
         Ok(self.after_pasted_objects(clip, model_start, at))
+    }
+
+    /// Copied rows pasted with the caret in a table go in as new rows above
+    /// the caret's, as Word inserts them (行として挿入), each cell's content
+    /// pasted into its new cell, all one undo step. `None` when `clip` is
+    /// not whole rows alone or `at` is not in a table. The caret stays in
+    /// its cell.
+    fn paste_rows_into_table(
+        &mut self,
+        clip: &RichClip,
+        at: Position,
+    ) -> Result<Option<Position>, String> {
+        let [table] = clip.tables.as_slice() else {
+            return Ok(None);
+        };
+        if table.first != 0
+            || table.columns == 0
+            || !table.cell_spans.is_empty()
+            || !table.merges.is_empty()
+        {
+            return Ok(None);
+        }
+        let counts = if table.cell_paragraphs.is_empty() {
+            vec![1; table.cells]
+        } else {
+            table.cell_paragraphs.clone()
+        };
+        let held: usize = counts.iter().sum();
+        if counts.len() % table.columns != 0
+            || held > clip.paragraphs.len()
+            || !clip.slice(held, clip.paragraphs.len() - held).is_blank()
+        {
+            return Ok(None);
+        }
+        let Some((table_id, row, column)) = self
+            .cell_id_for_paragraph(at.0)
+            .and_then(|id| self.cell_layout(id))
+            .map(|cell| (cell.table_id, cell.row, cell.column))
+        else {
+            return Ok(None);
+        };
+        let Some(order) = self.table_order_for(table_id) else {
+            return Ok(None);
+        };
+        let rows = counts.len() / table.columns;
+        let mark = self.begin_edit_group();
+        let result: Result<(), String> = (|| {
+            self.apply_commands(
+                (0..rows)
+                    .map(|added| HeadlessCommand::InsertTableRow {
+                        table_order_index: order,
+                        row_index: row + added,
+                        template_row: Some(row + added),
+                    })
+                    .collect(),
+                false,
+            )?;
+            let mut first = 0;
+            for (index, count) in counts.iter().enumerate() {
+                let cell = clip.slice(first, *count);
+                first += count;
+                let (cell_row, cell_column) = (row + index / table.columns, index % table.columns);
+                let Some(paragraph) = self.cell_paragraph(order, cell_row, cell_column) else {
+                    continue;
+                };
+                if cell.is_blank() {
+                    continue;
+                }
+                self.set_selection_range(Some(SelectionRange::collapsed(TextPosition::new(
+                    paragraph, 0,
+                ))));
+                self.paste_rich(&cell)?;
+            }
+            let shading: Vec<HeadlessCommand> = table
+                .shading
+                .iter()
+                .map(
+                    |(shaded_row, shaded_column, color)| HeadlessCommand::SetTableCellShading {
+                        table_order_index: order,
+                        row: row + shaded_row,
+                        column: *shaded_column,
+                        color: Some(color.clone()),
+                    },
+                )
+                .collect();
+            if !shading.is_empty() {
+                self.apply_commands(shading, false)?;
+            }
+            Ok(())
+        })();
+        self.end_edit_group(mark);
+        result?;
+        let paragraph = self
+            .cell_paragraph(order, row + rows, column)
+            .unwrap_or(at.0);
+        let caret = (paragraph, at.1);
+        self.set_selection_range(Some(SelectionRange::collapsed(TextPosition::new(
+            caret.0, caret.1,
+        ))));
+        Ok(Some(caret))
+    }
+
+    /// The first paragraph of cell (`row`, `column`) of table `order`.
+    fn cell_paragraph(&self, order: usize, row: usize, column: usize) -> Option<usize> {
+        self.cell_layouts()
+            .iter()
+            .find(|cell| {
+                cell.row == row
+                    && cell.column == column
+                    && self.table_order_for(cell.table_id) == Some(order)
+            })
+            .and_then(|cell| cell.paragraphs.first().copied())
     }
 
     /// Applies a paste's text `commands`, then puts in the copy's notes and
@@ -1477,15 +1772,20 @@ pub trait WordClipboard: WordSession {
                         let caret = SelectionRange::collapsed(TextPosition::new(paragraph, offset));
                         self.set_selection_range(Some(caret));
                         self.execute_command(
-                            Box::new(InsertImageCommand::new(
-                                caret,
-                                picture.bytes.clone(),
-                                picture.mime.clone(),
-                                picture.width,
-                                picture.height,
-                                picture.title.clone(),
-                                picture.description.clone(),
-                            )),
+                            Box::new(PastePictureCommand {
+                                insert: InsertImageCommand::new(
+                                    caret,
+                                    picture.bytes.clone(),
+                                    picture.mime.clone(),
+                                    picture.width,
+                                    picture.height,
+                                    picture.title.clone(),
+                                    picture.description.clone(),
+                                ),
+                                layout: picture.layout.clone(),
+                                snapshot: None,
+                                previous_selection: None,
+                            }),
                             false,
                         )?;
                     }
@@ -1549,6 +1849,7 @@ pub trait WordClipboard: WordSession {
         let pictures_at_end = clip
             .pictures
             .iter()
+            .filter(|picture| picture.layout.is_none())
             .filter(|picture| at_end(&ClipObject::Picture(picture)))
             .count();
         let model_end = if last == 0 { model_start.1 } else { 0 } + pasted;
