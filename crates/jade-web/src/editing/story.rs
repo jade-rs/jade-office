@@ -167,6 +167,10 @@ impl WordSession for WordDoc {
         WordSession::word_document(&**self)
     }
 
+    fn is_main_story(&self) -> bool {
+        self.story.is_none()
+    }
+
     fn selection_range(&self) -> Option<SelectionRange> {
         WordSession::selection_range(&**self)
     }

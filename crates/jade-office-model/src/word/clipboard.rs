@@ -10,16 +10,22 @@
 
 use jade_docx_headless_api::{
     HeadlessCommand, HeadlessQuery, HeadlessQueryResult, HeadlessRuby, HeadlessRunStyle,
-    HeadlessTableCellSelection,
+    HeadlessSectionBreakType, HeadlessSectionLayout, HeadlessSectionLayoutPatch,
+    HeadlessSectionScope, HeadlessTableCellSelection,
 };
 
 use jade_docx_editor::commands::hyperlink::InsertHyperlinkCommand;
 use jade_docx_editor::commands::insert_field::InsertFieldCommand;
 use jade_docx_editor::commands::insert_image::InsertImageCommand;
+use jade_docx_editor::commands::paragraph_format::{ParagraphFormat, SetParagraphFormatCommand};
+use jade_docx_editor::commands::paste_object::PasteObjectCommand;
 use jade_docx_editor::commands::{Command, CommandContext, CommandError, CommandResult};
 use jade_docx_editor::document::{RunFieldKind, RunImageKind, RunImageLayout};
+use jade_docx_editor::word_document::objects::ObjectClip;
 use jade_docx_editor::word_document::WordDocumentSnapshot;
+use jade_docx_editor::word_document::{FloatingObjectKind, FloatingObjectTarget, WordDocument};
 use jade_selection::{SelectionRange, TextPosition};
+use std::rc::Rc;
 
 use super::asian::ruby_alignment;
 use super::references::edit_document;
@@ -38,6 +44,13 @@ pub struct ClipParagraph {
     pub style_id: Option<String>,
     pub alignment: Option<String>,
     pub runs: Vec<ClipRun>,
+    /// Everything else its mark carries — indents, spacing, numbering,
+    /// tabs, borders — which the paste gives the paragraph it ends, as
+    /// Word does; `None` for text from elsewhere.
+    pub format: Option<ParagraphFormat>,
+    /// The section it ends, when its mark carries a section break: the
+    /// paste puts a break of the same kind and page setup there.
+    pub section: Option<HeadlessSectionLayout>,
 }
 
 /// A footnote or endnote whose reference mark a copy took: Word pastes a
@@ -132,6 +145,8 @@ pub struct RichClip {
     pub notes: Vec<ClipNote>,
     /// Pictures in line the copy took, in document order.
     pub pictures: Vec<ClipPicture>,
+    /// The other drawings the copy took, in document order.
+    pub drawings: Vec<ClipDrawing>,
     /// Whole rows of tables the copy took, in document order.
     pub tables: Vec<ClipTable>,
 }
@@ -166,10 +181,45 @@ pub struct ClipTable {
     pub merges: Vec<(usize, usize, usize, usize)>,
 }
 
-/// One of the things a paste puts in after the text: a note or a picture.
+/// A drawing a copy took that is not a plain picture — a shape, a text
+/// box, a chart, a group, ink, an embedded object — whole, with what it
+/// needs from the package, so the paste puts in one of its own.
+#[derive(Clone)]
+pub struct ClipDrawing {
+    /// Which of the copy's paragraphs it is anchored in.
+    pub paragraph: usize,
+    /// Its byte offset in that paragraph's copied text.
+    pub offset: usize,
+    /// Where the page drew it.
+    pub shown: usize,
+    /// Whether it sits in line with the text, one character of the line.
+    pub inline: bool,
+    pub clip: Rc<ObjectClip>,
+}
+
+impl std::fmt::Debug for ClipDrawing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClipDrawing")
+            .field("paragraph", &self.paragraph)
+            .field("offset", &self.offset)
+            .field("inline", &self.inline)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for ClipDrawing {
+    fn eq(&self, other: &Self) -> bool {
+        (self.paragraph, self.offset, self.inline) == (other.paragraph, other.offset, other.inline)
+            && Rc::ptr_eq(&self.clip, &other.clip)
+    }
+}
+
+/// One of the things a paste puts in after the text: a note, a picture or
+/// another drawing.
 enum ClipObject<'a> {
     Note(&'a ClipNote),
     Picture(&'a ClipPicture),
+    Drawing(&'a ClipDrawing),
 }
 
 impl ClipObject<'_> {
@@ -177,11 +227,50 @@ impl ClipObject<'_> {
         match self {
             ClipObject::Note(note) => (note.paragraph, note.offset, note.shown),
             ClipObject::Picture(picture) => (picture.paragraph, picture.offset, picture.shown),
+            ClipObject::Drawing(drawing) => (drawing.paragraph, drawing.offset, drawing.shown),
         }
     }
 }
 
 impl RichClip {
+    /// Moves everything placed in the copy's text — notes, pictures,
+    /// drawings, fields, links, guides — to where `to` says its paragraph
+    /// and offset went.
+    fn remap(&mut self, to: impl Fn(usize, usize) -> (usize, usize)) {
+        let places = self
+            .notes
+            .iter_mut()
+            .map(|note| (&mut note.paragraph, &mut note.offset))
+            .chain(
+                self.pictures
+                    .iter_mut()
+                    .map(|picture| (&mut picture.paragraph, &mut picture.offset)),
+            )
+            .chain(
+                self.drawings
+                    .iter_mut()
+                    .map(|drawing| (&mut drawing.paragraph, &mut drawing.offset)),
+            )
+            .chain(
+                self.fields
+                    .iter_mut()
+                    .map(|field| (&mut field.paragraph, &mut field.offset)),
+            )
+            .chain(
+                self.links
+                    .iter_mut()
+                    .map(|link| (&mut link.paragraph, &mut link.offset)),
+            )
+            .chain(
+                self.rubies
+                    .iter_mut()
+                    .map(|ruby| (&mut ruby.paragraph, &mut ruby.offset)),
+            );
+        for (paragraph, offset) in places {
+            (*paragraph, *offset) = to(*paragraph, *offset);
+        }
+    }
+
     /// Copied paragraphs `first..first + count` as a copy of their own,
     /// with what they hold: one cell of a copied table.
     fn slice(&self, first: usize, count: usize) -> RichClip {
@@ -238,8 +327,28 @@ impl RichClip {
                     ..picture.clone()
                 })
                 .collect(),
+            drawings: self
+                .drawings
+                .iter()
+                .filter(|drawing| inside(drawing.paragraph))
+                .map(|drawing| ClipDrawing {
+                    paragraph: drawing.paragraph - first,
+                    ..drawing.clone()
+                })
+                .collect(),
             tables: Vec::new(),
         }
+    }
+
+    /// The copy as a header or footer takes it: without its notes and the
+    /// section breaks its paragraphs end.
+    fn outside_the_main_story(&self) -> Self {
+        let mut clip = self.clone();
+        clip.notes.clear();
+        for paragraph in &mut clip.paragraphs {
+            paragraph.section = None;
+        }
+        clip
     }
 
     /// Whether it holds nothing: no text and nothing in line.
@@ -249,6 +358,7 @@ impl RichClip {
             .all(|paragraph| paragraph.runs.iter().all(|run| run.text.is_empty()))
             && self.notes.is_empty()
             && self.pictures.is_empty()
+            && self.drawings.is_empty()
             && self.fields.is_empty()
     }
 
@@ -259,6 +369,7 @@ impl RichClip {
             .iter()
             .map(ClipObject::Note)
             .chain(self.pictures.iter().map(ClipObject::Picture))
+            .chain(self.drawings.iter().map(ClipObject::Drawing))
             .collect();
         objects.sort_by_key(ClipObject::at);
         objects
@@ -334,6 +445,34 @@ impl Command for PastePictureCommand {
         *ctx.selection = self.previous_selection;
         Ok(())
     }
+}
+
+/// Whether `image` is a picture a paste can put in from its bytes alone:
+/// not a chart, a group, ink or an embedded object.
+fn is_plain_picture(image: &jade_docx_editor::document::RunImage) -> bool {
+    image.chart.is_none()
+        && image.shape_group.is_none()
+        && image.ink.is_none()
+        && image.ole_relationship_id.is_none()
+}
+
+/// The drawing at `target`, taken whole for a copy, placed at `at` (a
+/// copied paragraph and an offset in its text).
+fn copied_drawing(
+    document: &WordDocument,
+    target: FloatingObjectTarget,
+    (paragraph, offset): (usize, usize),
+    shown: usize,
+    inline: bool,
+) -> Option<ClipDrawing> {
+    let clip = document.copy_object(target).ok()?;
+    Some(ClipDrawing {
+        paragraph,
+        offset,
+        shown,
+        inline,
+        clip: Rc::new(clip),
+    })
 }
 
 /// Whether `text` can be a pasted field's result, as Word's field
@@ -631,14 +770,10 @@ fn join_cell_paragraphs(clip: &mut RichClip) {
         joined.push(clip.paragraphs[source].clone());
         source += 1;
     }
-    for note in &mut clip.notes {
-        let (paragraph, offset) = map[note.paragraph];
-        (note.paragraph, note.offset) = (paragraph, offset + note.offset);
-    }
-    for picture in &mut clip.pictures {
-        let (paragraph, offset) = map[picture.paragraph];
-        (picture.paragraph, picture.offset) = (paragraph, offset + picture.offset);
-    }
+    clip.remap(|paragraph, offset| {
+        let (to, start) = map[paragraph];
+        (to, start + offset)
+    });
     clip.paragraphs = joined;
     clip.tables = tables;
 }
@@ -906,6 +1041,8 @@ impl RichClip {
             .map(|paragraph| ClipParagraph {
                 style_id: None,
                 alignment: None,
+                format: None,
+                section: None,
                 runs: paragraph
                     .runs
                     .iter()
@@ -955,6 +1092,7 @@ impl RichClip {
             },
             notes: self.notes.clone(),
             pictures: self.pictures.clone(),
+            drawings: self.drawings.clone(),
             tables: self.tables.clone(),
         }
     }
@@ -983,6 +1121,7 @@ impl RichClip {
             fields: Vec::new(),
             links: Vec::new(),
             rubies: Vec::new(),
+            drawings: Vec::new(),
         }
     }
 }
@@ -1007,6 +1146,7 @@ pub trait WordClipboard: WordSession {
         let mut notes = Vec::new();
         let mut pictures = Vec::new();
         let mut fields = Vec::new();
+        let mut drawings = Vec::new();
         let mut links: Vec<ClipLink> = Vec::new();
         let mut rubies: Vec<ClipRuby> = Vec::new();
         let mut paragraphs = Vec::new();
@@ -1241,21 +1381,27 @@ pub trait WordClipboard: WordSession {
                     if at < shown_from || at + '\u{fffc}'.len_utf8() > shown_to {
                         continue;
                     }
-                    let Some(image) = model
+                    let picture = model
                         .runs
                         .get(target.run_index)
                         .and_then(|run| run.image.as_ref())
-                        .filter(|image| {
-                            image.chart.is_none()
-                                && image.shape_group.is_none()
-                                && image.ink.is_none()
-                                && image.ole_relationship_id.is_none()
-                        })
-                    else {
-                        continue;
-                    };
-                    let Some((mime, bytes)) = image.data_uri.as_deref().and_then(decode_data_uri)
-                    else {
+                        .filter(|image| is_plain_picture(image))
+                        .and_then(|image| {
+                            image
+                                .data_uri
+                                .as_deref()
+                                .and_then(decode_data_uri)
+                                .map(|data| (image, data))
+                        });
+                    let Some((image, (mime, bytes))) = picture else {
+                        // Anything else in line goes whole.
+                        drawings.extend(copied_drawing(
+                            document,
+                            target,
+                            (paragraphs.len(), model_offset.saturating_sub(from)),
+                            at,
+                            true,
+                        ));
                         continue;
                     };
                     pictures.push(ClipPicture {
@@ -1274,23 +1420,53 @@ pub trait WordClipboard: WordSession {
                 // The pictures floating from it: anchored in what it holds.
                 let len = model.runs.iter().map(|run| run.text.len()).sum::<usize>();
                 let mut run_start = 0;
-                for run in &model.runs {
+                for (run_index, run) in model.runs.iter().enumerate() {
                     let at = run_start;
                     run_start += run.text.len();
-                    let Some(image) = run.image.as_ref().filter(|image| {
-                        image.layout.kind == RunImageKind::Floating
-                            && image.chart.is_none()
-                            && image.shape_group.is_none()
-                            && image.ink.is_none()
-                            && image.ole_relationship_id.is_none()
-                    }) else {
-                        continue;
-                    };
                     if at < from || (at >= to && to < len) {
                         continue;
                     }
-                    let Some((mime, bytes)) = image.data_uri.as_deref().and_then(decode_data_uri)
-                    else {
+                    let (kind, floating) = match (&run.image, &run.text_box) {
+                        (Some(image), _) => (
+                            FloatingObjectKind::Image,
+                            image.layout.kind == RunImageKind::Floating,
+                        ),
+                        (None, Some(text_box)) => (
+                            FloatingObjectKind::TextBox,
+                            text_box.layout.kind == RunImageKind::Floating,
+                        ),
+                        _ => continue,
+                    };
+                    if !floating {
+                        continue;
+                    }
+                    let picture = run
+                        .image
+                        .as_ref()
+                        .filter(|image| is_plain_picture(image))
+                        .and_then(|image| {
+                            image
+                                .data_uri
+                                .as_deref()
+                                .and_then(decode_data_uri)
+                                .map(|data| (image, data))
+                        });
+                    let Some((image, (mime, bytes))) = picture else {
+                        let target = FloatingObjectTarget {
+                            paragraph_index: index,
+                            run_index,
+                            kind,
+                        };
+                        let shown = document
+                            .model_to_rendered_text_position(TextPosition::new(index, at))
+                            .offset;
+                        drawings.extend(copied_drawing(
+                            document,
+                            target,
+                            (paragraphs.len(), at - from),
+                            shown,
+                            false,
+                        ));
                         continue;
                     };
                     pictures.push(ClipPicture {
@@ -1359,6 +1535,13 @@ pub trait WordClipboard: WordSession {
                 style_id: snapshot.style_id.clone(),
                 alignment: snapshot.alignment.clone(),
                 runs,
+                format: document.paragraph_format(index),
+                section: document
+                    .paragraph(index)
+                    .and_then(|paragraph| paragraph.properties.as_ref())
+                    .and_then(|properties| properties.section.as_ref())
+                    .and(document.section_index_for_paragraph(index))
+                    .map(|section| document.section_layout(Some(section))),
             });
         }
         let tables = self.copied_tables(start.paragraph, end.paragraph);
@@ -1367,6 +1550,7 @@ pub trait WordClipboard: WordSession {
             fields,
             links,
             rubies,
+            drawings,
             notes,
             pictures,
             tables,
@@ -1431,6 +1615,15 @@ pub trait WordClipboard: WordSession {
     /// Pastes `clip` in place of the selection, or at the caret, as one undo
     /// step. Returns where the caret goes: after what was pasted.
     fn paste_rich(&mut self, clip: &RichClip) -> Result<Position, String> {
+        // A header or footer holds neither notes nor section breaks: Word
+        // pastes the text without them.
+        let outside;
+        let clip = if self.is_main_story() {
+            clip
+        } else {
+            outside = clip.outside_the_main_story();
+            &outside
+        };
         let range = self.selection_range().ok_or("no caret")?;
         let (start, _) = range.normalized();
         if range.is_collapsed() {
@@ -1604,7 +1797,14 @@ pub trait WordClipboard: WordSession {
             .iter()
             .flat_map(|table| table.splits.iter().copied())
             .collect();
+        let formatted = clip
+            .paragraphs
+            .iter()
+            .rev()
+            .skip(1)
+            .any(|paragraph| paragraph.format.is_some() || paragraph.section.is_some());
         if objects.is_empty()
+            && !formatted
             && !styled
             && splits.is_empty()
             && clip.fields.is_empty()
@@ -1616,6 +1816,22 @@ pub trait WordClipboard: WordSession {
         let mark = self.begin_edit_group();
         let result = (|| {
             self.apply_commands(commands, false)?;
+            // Each paragraph whose mark came with the copy takes the
+            // formatting the mark carries; the last ends in the
+            // destination's own mark and keeps its formatting.
+            let count = clip.paragraphs.len();
+            for (index, paragraph) in clip
+                .paragraphs
+                .iter()
+                .enumerate()
+                .take(count.saturating_sub(1))
+            {
+                let (Some(format), Some(&(at, _))) = (paragraph.format.clone(), starts.get(index))
+                else {
+                    continue;
+                };
+                self.execute_command(Box::new(SetParagraphFormatCommand::new(at, format)), false)?;
+            }
             // Each pasted table takes the style, column widths and cell
             // shading the copied one had.
             for table in &clip.tables {
@@ -1768,6 +1984,14 @@ pub trait WordClipboard: WordSession {
                         )?;
                         self.format_pasted_note(note, (paragraph, offset))?;
                     }
+                    ClipObject::Drawing(drawing) => {
+                        let caret = SelectionRange::collapsed(TextPosition::new(paragraph, offset));
+                        self.set_selection_range(Some(caret));
+                        self.execute_command(
+                            Box::new(PasteObjectCommand::new(caret, (*drawing.clip).clone())),
+                            false,
+                        )?;
+                    }
                     ClipObject::Picture(picture) => {
                         let caret = SelectionRange::collapsed(TextPosition::new(paragraph, offset));
                         self.set_selection_range(Some(caret));
@@ -1790,6 +2014,26 @@ pub trait WordClipboard: WordSession {
                         )?;
                     }
                 }
+            }
+            // The section breaks the copied marks carried go in at the ends
+            // of their paragraphs, last first, each section set up as the
+            // copied one was.
+            let count = clip.paragraphs.len();
+            for (index, paragraph) in clip
+                .paragraphs
+                .iter()
+                .enumerate()
+                .take(count.saturating_sub(1))
+                .rev()
+            {
+                let (Some(section), Some(&(at, _))) = (&paragraph.section, starts.get(index))
+                else {
+                    continue;
+                };
+                if self.cell_id_for_paragraph(at).is_some() {
+                    continue;
+                }
+                self.paste_section_break(at, section)?;
             }
             // Last, the cells that held several paragraphs are split again,
             // last first so the ones before keep their places.
@@ -1865,7 +2109,13 @@ pub trait WordClipboard: WordSession {
             .map(|span| span.rendered_len)
             .collect();
         caret += marks.iter().rev().take(notes_at_end).sum::<usize>();
-        caret += pictures_at_end * '\u{fffc}'.len_utf8();
+        let drawings_at_end = clip
+            .drawings
+            .iter()
+            .filter(|drawing| drawing.inline)
+            .filter(|drawing| at_end(&ClipObject::Drawing(drawing)))
+            .count();
+        caret += (pictures_at_end + drawings_at_end) * '\u{fffc}'.len_utf8();
         self.set_selection_range(Some(SelectionRange::collapsed(TextPosition::new(
             at.0, caret,
         ))));
@@ -1950,12 +2200,7 @@ pub trait WordClipboard: WordSession {
             for table in &mut clip.tables {
                 table.first += 1;
             }
-            for note in &mut clip.notes {
-                note.paragraph += 1;
-            }
-            for picture in &mut clip.pictures {
-                picture.paragraph += 1;
-            }
+            clip.remap(|paragraph, offset| (paragraph + 1, offset));
         }
         let ends_in_table = clip
             .tables
@@ -1988,6 +2233,78 @@ pub trait WordClipboard: WordSession {
             document
                 .model_to_rendered_text_position(TextPosition::new(start.paragraph, from + len)),
         ))
+    }
+
+    /// A section break at the end of paragraph `at`, its section set up
+    /// as `section` is.
+    fn paste_section_break(
+        &mut self,
+        at: usize,
+        section: &HeadlessSectionLayout,
+    ) -> Result<(), String> {
+        // A break's kind is the start of the section after it: the part of
+        // the section the paste landed in keeps the start it had, and the
+        // new section takes the copied one's below.
+        let landed = {
+            let document = self.word_document();
+            document
+                .section_index_for_paragraph(at)
+                .map(|index| document.section_layout(Some(index)).start)
+                .unwrap_or_default()
+        };
+        let break_type = match landed.as_str() {
+            "continuous" => HeadlessSectionBreakType::Continuous,
+            "evenPage" => HeadlessSectionBreakType::EvenPage,
+            "oddPage" => HeadlessSectionBreakType::OddPage,
+            _ => HeadlessSectionBreakType::NextPage,
+        };
+        let offset = self.word_document().rendered_paragraph_len(at);
+        self.apply_command(
+            HeadlessCommand::InsertSectionBreak {
+                paragraph: at,
+                offset,
+                break_type,
+            },
+            false,
+        )?;
+        let Some(index) = self.word_document().section_index_for_paragraph(at) else {
+            return Ok(());
+        };
+        let patch = HeadlessSectionLayoutPatch {
+            width: Some(section.width),
+            height: Some(section.height),
+            landscape: Some(section.landscape),
+            margin_top: Some(section.margin_top),
+            margin_bottom: Some(section.margin_bottom),
+            margin_left: Some(section.margin_left),
+            margin_right: Some(section.margin_right),
+            header_distance: Some(section.header_distance),
+            footer_distance: Some(section.footer_distance),
+            gutter: Some(section.gutter),
+            gutter_at_top: Some(section.gutter_at_top),
+            rtl_gutter: Some(section.rtl_gutter),
+            mirror_margins: Some(section.mirror_margins),
+            book_fold: Some(section.book_fold),
+            print_two_on_one: Some(section.print_two_on_one),
+            start: Some(section.start.clone()),
+            vertical_alignment: Some(section.vertical_alignment.clone()),
+            different_first_page: Some(section.different_first_page),
+            different_odd_even: Some(section.different_odd_even),
+            columns: Some(section.columns.clone()),
+            line_numbering: Some(section.line_numbering.clone()),
+            doc_grid: Some(section.doc_grid.clone()),
+            text_direction: Some(section.text_direction.clone()),
+            bidi: Some(section.bidi),
+            page_numbering: Some(section.page_numbering.clone()),
+            page_borders: Some(section.page_borders.clone()),
+        };
+        self.apply_command(
+            HeadlessCommand::SetSectionLayout {
+                scope: HeadlessSectionScope::Index { index },
+                patch: Box::new(patch),
+            },
+            false,
+        )
     }
 
     /// Puts in a field that shows nothing (an XE, TA or RD) where the
@@ -2168,6 +2485,7 @@ mod tests {
             fields: Vec::new(),
             links: Vec::new(),
             rubies: Vec::new(),
+            drawings: Vec::new(),
             paragraphs: vec![
                 ClipParagraph {
                     runs: vec![run("Bold"), run(" plain")],
@@ -2193,9 +2511,12 @@ mod tests {
             fields: Vec::new(),
             links: Vec::new(),
             rubies: Vec::new(),
+            drawings: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 style_id: Some("Heading1".into()),
                 alignment: Some("center".into()),
+                format: None,
+                section: None,
                 runs: vec![ClipRun {
                     text: "Bold red".into(),
                     style: HeadlessRunStyle {

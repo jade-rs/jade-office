@@ -238,6 +238,13 @@ pub trait WordSession {
     fn paragraph_origin(&self, _paragraph: usize) -> Option<(usize, f64, f64)> {
         None
     }
+
+    /// Whether this is the document's main text, which takes notes and
+    /// section breaks; a header or footer open for editing does not, as
+    /// Word greys out 脚注の挿入 there and drops a pasted note's mark.
+    fn is_main_story(&self) -> bool {
+        true
+    }
 }
 
 pub(crate) fn query(document: &WordDocument, query: HeadlessQuery) -> Option<HeadlessQueryResult> {

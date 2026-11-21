@@ -272,6 +272,9 @@ pub trait WordPage: WordSession {
 
     /// 区切り → セクション区切り, at the caret.
     fn insert_section_break(&mut self, kind: SectionBreak) -> Result<(), String> {
+        if !self.is_main_story() {
+            return Err("section breaks go in the main text, not a header or footer".into());
+        }
         let range = self.selection_range().ok_or("no caret")?;
         let (start, _) = range.normalized();
         self.apply_command(

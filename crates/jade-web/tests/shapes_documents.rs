@@ -788,3 +788,39 @@ fn a_text_box_takes_its_text_anchor() {
     let xml = package_part(&mut document, "word/document.xml");
     assert!(xml.contains(r#"anchor="b""#), "one step back: {xml}");
 }
+
+/// A shape anchored in the copied text comes along whole, as Word pastes
+/// it: a second star of its own, saved, and one undo takes it back.
+#[test]
+fn a_copied_shape_pastes_as_a_shape_of_its_own() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = contract();
+    let paragraph = typed(&mut document, "shapes ");
+    document.place_caret(paragraph, 0);
+    document
+        .insert_shape(
+            TextBoxShape::FivePointStar,
+            drawn(200.0, 300.0, 120.0, 100.0),
+            false,
+        )
+        .unwrap();
+    assert_eq!(objects(&document, paragraph).len(), 1);
+    let stars = |document: &mut EditableDocument| {
+        let bytes = document.export_docx().unwrap();
+        let package = jade_opc::OpcPackage::open(&bytes).unwrap();
+        let xml = package.part_str("word/document.xml").unwrap().unwrap();
+        xml.matches("prst=\"star5\"").count()
+    };
+    let before = stars(&mut document);
+    assert!(before >= 1);
+
+    document.select((paragraph, 0), (paragraph, 6)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.drawings.len(), 1);
+    document.place_caret(paragraph, 7);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(objects(&document, paragraph).len(), 2);
+    assert_eq!(stars(&mut document), before * 2);
+    document.undo().unwrap();
+    assert_eq!(objects(&document, paragraph).len(), 1);
+}

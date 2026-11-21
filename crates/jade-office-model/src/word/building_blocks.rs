@@ -145,6 +145,8 @@ fn clip_of(body: &Element) -> RichClip {
             style_id: ppr.and_then(|ppr| ppr.child_val("w:pStyle")),
             alignment: ppr.and_then(|ppr| ppr.child_val("w:jc")),
             runs: Vec::new(),
+            format: None,
+            section: None,
         };
         for r in p.elements().filter(|element| element.name == "w:r") {
             let rpr = r.find("w:rPr");
@@ -199,6 +201,7 @@ fn clip_of(body: &Element) -> RichClip {
         fields: Vec::new(),
         links: Vec::new(),
         rubies: Vec::new(),
+        drawings: Vec::new(),
     }
 }
 
@@ -411,9 +414,12 @@ mod tests {
                 fields: Vec::new(),
                 links: Vec::new(),
                 rubies: Vec::new(),
+                drawings: Vec::new(),
                 paragraphs: vec![ClipParagraph {
                     style_id: Some("Signature".into()),
                     alignment: Some("right".into()),
+                    format: None,
+                    section: None,
                     runs: vec![
                         ClipRun {
                             text: "山田\t太郎".into(),
