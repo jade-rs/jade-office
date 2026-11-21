@@ -502,4 +502,22 @@ fn a_note_takes_a_pasted_notes_text_without_its_mark() {
     // One undo takes the paste back.
     document.undo().unwrap();
     assert_eq!(document.note_texts(NoteKind::Footnote), ["the note"]);
+
+    // A picture copied with text goes in with the text alone, which a
+    // note here does not take a drawing in.
+    use jade_web::word::picture::WordPicture;
+    let mut png = Vec::new();
+    image::RgbaImage::from_raw(1, 1, vec![255, 0, 0, 255])
+        .unwrap()
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    document.place_caret(paragraph, 1);
+    document.insert_picture(png).unwrap();
+    document.select((paragraph, 0), (paragraph, 5)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.pictures.len(), 1);
+    let end = document.word_document().rendered_paragraph_len(in_note);
+    document.place_caret(in_note, end);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(document.note_texts(NoteKind::Footnote), ["the noteno"]);
 }

@@ -19,6 +19,7 @@ use jade_docx_editor::commands::insert_field::InsertFieldCommand;
 use jade_docx_editor::commands::insert_image::InsertImageCommand;
 use jade_docx_editor::commands::paragraph_format::{ParagraphFormat, SetParagraphFormatCommand};
 use jade_docx_editor::commands::paste_object::PasteObjectCommand;
+use jade_docx_editor::commands::table_format::{SetTableFormatCommand, TableFormat};
 use jade_docx_editor::commands::{Command, CommandContext, CommandError, CommandResult};
 use jade_docx_editor::document::{RunFieldKind, RunImageKind, RunImageLayout};
 use jade_docx_editor::word_document::objects::ObjectClip;
@@ -202,6 +203,27 @@ pub struct ClipTable {
     /// The rows that set more than Word's defaults: a heading row repeated
     /// on each page, one kept on one page, a height of its own.
     pub rows: Vec<ClipRow>,
+    /// The table's, its rows' and its cells' own formatting whole —
+    /// alignment, indent, borders, margins, vertical alignment, text
+    /// direction — when the copy was made here.
+    pub format: Option<TableFormat>,
+}
+
+impl ClipTable {
+    /// How many rows it holds: its cells fill each row's grid columns.
+    fn rows_held(&self) -> usize {
+        let cells = if self.cell_paragraphs.is_empty() {
+            self.cells
+        } else {
+            self.cell_paragraphs.len()
+        };
+        let columns = if self.cell_spans.is_empty() {
+            cells
+        } else {
+            self.cell_spans.iter().sum()
+        };
+        columns / self.columns.max(1)
+    }
 }
 
 /// What a copied row of a table sets for itself (`w:trPr`), which the
@@ -755,6 +777,7 @@ fn copied_rows(
             },
             merges,
             rows: own_rows,
+            format: None,
         },
         taken,
     ))
@@ -1638,14 +1661,17 @@ pub trait WordClipboard: WordSession {
                 continue;
             };
             // The table from the row the copy starts in, if it starts there.
-            let source = self
-                .table_order_for(cell.table_id)
-                .and_then(|order| self.word_document().table_by_order(order));
+            let order = self.table_order_for(cell.table_id);
+            let source = order.and_then(|order| self.word_document().table_by_order(order));
             let starts_row = cell.column == 0 && cell.paragraphs.first() == Some(&index);
             match source.filter(|_| starts_row) {
                 Some(source) => match copied_rows(source, cell.row, last - index + 1) {
                     Some((mut table, paragraphs)) => {
                         table.first = index - first;
+                        let rows = table.rows_held();
+                        table.format = order
+                            .and_then(|order| self.word_document().table_format(order))
+                            .map(|format| format.rows(cell.row, rows));
                         index += paragraphs;
                         tables.push(table);
                     }
@@ -1684,15 +1710,20 @@ pub trait WordClipboard: WordSession {
         let (start, _) = range.normalized();
         // Only the main text holds notes and section breaks: in a header,
         // a footer, a note or a text box Word pastes the text without them.
+        // A note or a text box here takes no drawings either.
+        let body = self
+            .word_document()
+            .is_body_paragraph_surface(start.paragraph);
         let outside;
-        let clip = if self.is_main_story()
-            && self
-                .word_document()
-                .is_body_paragraph_surface(start.paragraph)
-        {
+        let clip = if self.is_main_story() && body {
             clip
         } else {
-            outside = clip.outside_the_main_story();
+            let mut stripped = clip.outside_the_main_story();
+            if !body {
+                stripped.pictures.clear();
+                stripped.drawings.clear();
+            }
+            outside = stripped;
             &outside
         };
         if range.is_collapsed() {
@@ -1904,6 +1935,7 @@ pub trait WordClipboard: WordSession {
                 || !table.shading.is_empty()
                 || !table.merges.is_empty()
                 || !table.rows.is_empty()
+                || table.format.is_some()
         });
         let splits: Vec<(usize, usize)> = clip
             .tables
@@ -2026,6 +2058,14 @@ pub trait WordClipboard: WordSession {
                 }
                 if !formats.is_empty() {
                     self.apply_commands(formats, false)?;
+                }
+                // Then everything else the copied table, its rows and its
+                // cells set for themselves.
+                if let Some(format) = table.format.clone() {
+                    self.execute_command(
+                        Box::new(SetTableFormatCommand::new(order, format)),
+                        false,
+                    )?;
                 }
             }
             // The links go back on their text, then the fields' results
