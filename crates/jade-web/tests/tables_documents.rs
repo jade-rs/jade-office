@@ -1053,3 +1053,105 @@ fn a_copied_cell_of_several_paragraphs_keeps_them() {
     assert!(document.word_document().table_by_order(1).is_none());
     assert_eq!(document.paragraph_count(), after + 1);
 }
+
+#[test]
+fn a_pasted_table_keeps_its_column_widths_and_shading() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::HeadlessCommand;
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["x", "y"]]);
+    document
+        .apply_commands(
+            vec![
+                HeadlessCommand::SetTableColumnWidths {
+                    table_order_index: 0,
+                    widths: vec![100.0, 200.0],
+                },
+                HeadlessCommand::SetTableCellShading {
+                    table_order_index: 0,
+                    row: 0,
+                    column: 1,
+                    color: Some("#FF0000".into()),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    document.place_caret(after, 0);
+    document.paste_rich(&clip).unwrap();
+
+    let table = document.word_document().table_by_order(1).unwrap();
+    let widths: Vec<_> = table.columns.iter().map(|column| column.width).collect();
+    assert_eq!(widths, [Some(100.0), Some(200.0)]);
+    let fill = |column: usize| {
+        table.rows[0].cells[column]
+            .style
+            .get("background-color")
+            .cloned()
+    };
+    assert_eq!(fill(1).as_deref(), Some("#FF0000"));
+    assert_ne!(fill(0).as_deref(), Some("#FF0000"));
+    document.undo().unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+}
+
+#[test]
+fn a_pasted_table_keeps_its_merged_cells() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::{HeadlessCommand, HeadlessTableCellSelection};
+    let mut document = with_table(2, 3);
+    fill(&mut document, 0, &[&["a", "b", "c"], &["d", "e", ""]]);
+    let cell = |row, column| HeadlessTableCellSelection {
+        row,
+        column,
+        column_span: 1,
+    };
+    document
+        .apply_command(
+            HeadlessCommand::MergeTableCells {
+                table_order_index: 0,
+                selected_cells: vec![cell(0, 0), cell(0, 1)],
+            },
+            false,
+        )
+        .unwrap();
+    document
+        .apply_command(
+            HeadlessCommand::MergeTableCells {
+                table_order_index: 0,
+                selected_cells: vec![cell(0, 2), cell(1, 2)],
+            },
+            false,
+        )
+        .unwrap();
+    let shape = |document: &EditableDocument, order: usize| {
+        let table = document.word_document().table_by_order(order).unwrap();
+        table
+            .rows
+            .iter()
+            .map(|row| {
+                row.cells
+                    .iter()
+                    .map(|cell| (cell.span.unwrap_or(1), cell.vertical_merge.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    };
+    let source = shape(&document, 0);
+    let texts = cell_texts(&document, 0);
+    assert_eq!(texts, [vec!["a\nb", "c"], vec!["d", "e", ""]]);
+
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.tables.len(), 1);
+    document.place_caret(after, 0);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(shape(&document, 1), source);
+    assert_eq!(cell_texts(&document, 1), texts);
+    document.undo().unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+}

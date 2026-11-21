@@ -410,3 +410,60 @@ fn a_pasted_reference_mark_brings_a_note_of_its_own() {
     assert!(text.ends_with("one"), "{text}");
     assert_eq!(marks(&document, paragraph).len(), 1);
 }
+
+#[test]
+fn a_pasted_note_keeps_its_formatting() {
+    use jade_docx_editor::word_document::ParagraphStory;
+    use jade_web::editing::{CharacterFormat, WordFormatting};
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "one two ");
+    note(
+        &mut document,
+        NoteKind::Footnote,
+        (paragraph, 3),
+        "bold plain",
+    );
+    let note_paragraph = |document: &EditableDocument, id: &str| {
+        document
+            .word_document()
+            .paragraph_story_surface(&ParagraphStory::Footnote {
+                note_id: id.to_string(),
+                paragraph: 0,
+            })
+            .unwrap()
+    };
+    let first = marks(&document, paragraph)[0].0.clone();
+    let surface = note_paragraph(&document, &first);
+    let text = document.caret_text(surface).unwrap();
+    let bold = text.find("bold").unwrap();
+    document
+        .select((surface, bold), (surface, bold + 4))
+        .unwrap();
+    document.toggle_format(CharacterFormat::Bold).unwrap();
+
+    document.select((paragraph, 0), (paragraph, 4)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert!(!clip.notes[0].runs.is_empty());
+    let end = document.word_document().rendered_paragraph_len(paragraph);
+    document.place_caret(paragraph, end);
+    document.paste_rich(&clip).unwrap();
+
+    let pasted = marks(&document, paragraph)[1].0.clone();
+    assert_ne!(pasted, first);
+    let surface = note_paragraph(&document, &pasted);
+    let text = document.caret_text(surface).unwrap();
+    let bold = text.find("bold").unwrap();
+    let plain = text.find("plain").unwrap();
+    assert_eq!(
+        document.run_style_at((surface, bold)).unwrap().bold,
+        Some(true)
+    );
+    assert_ne!(
+        document.run_style_at((surface, plain)).unwrap().bold,
+        Some(true)
+    );
+    // One undo takes the paste back, its note's formatting with it.
+    document.undo().unwrap();
+    assert_eq!(marks(&document, paragraph).len(), 1);
+}

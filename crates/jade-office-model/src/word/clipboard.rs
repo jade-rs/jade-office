@@ -10,12 +10,13 @@
 
 use jade_docx_headless_api::{
     HeadlessCommand, HeadlessQuery, HeadlessQueryResult, HeadlessRunStyle,
+    HeadlessTableCellSelection,
 };
 
 use jade_docx_editor::commands::insert_image::InsertImageCommand;
 use jade_selection::{SelectionRange, TextPosition};
 
-use super::{query, CellLayout, Position, WordFormatting, WordSession};
+use super::{query, Position, WordFormatting, WordSession};
 
 /// A run of copied text and its character formatting.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -45,6 +46,9 @@ pub struct ClipNote {
     /// Where the page drew it, which orders it among objects at the same
     /// offset.
     pub shown: usize,
+    /// The note's text with its formatting, when it is one paragraph; the
+    /// paste gives the new note that formatting.
+    pub runs: Vec<ClipRun>,
 }
 
 /// A picture in line with the text that a copy took, with its bytes, so
@@ -96,6 +100,16 @@ pub struct ClipTable {
     /// Where a paste splits the joined cells again: a copy's paragraph and a
     /// byte offset in its text, in order.
     pub splits: Vec<(usize, usize)>,
+    /// Its grid columns' widths in points; empty when the table names none.
+    pub widths: Vec<f32>,
+    /// The cells' own shading (`#RRGGBB`): row (from the table's first
+    /// copied row), grid column, colour.
+    pub shading: Vec<(usize, usize, String)>,
+    /// How many grid columns each cell spans, in order; empty when each
+    /// spans one.
+    pub cell_spans: Vec<usize>,
+    /// The merged cells: row, grid column, columns and rows they cover.
+    pub merges: Vec<(usize, usize, usize, usize)>,
 }
 
 /// One of the things a paste puts in after the text: a note or a picture.
@@ -127,6 +141,163 @@ impl RichClip {
     }
 }
 
+/// The surface of paragraph `paragraph` of a footnote (or endnote) `id`.
+fn note_surface(
+    document: &jade_docx_editor::word_document::WordDocument,
+    footnote: bool,
+    id: &str,
+    paragraph: usize,
+) -> Option<usize> {
+    use jade_docx_editor::word_document::ParagraphStory;
+    let note_id = id.to_string();
+    document.paragraph_story_surface(&if footnote {
+        ParagraphStory::Footnote { note_id, paragraph }
+    } else {
+        ParagraphStory::Endnote { note_id, paragraph }
+    })
+}
+
+/// A note's text with its formatting, when the note is one paragraph.
+fn note_runs(
+    document: &jade_docx_editor::word_document::WordDocument,
+    footnote: bool,
+    id: &str,
+) -> Vec<ClipRun> {
+    if note_surface(document, footnote, id, 1).is_some() {
+        return Vec::new();
+    }
+    let Some(surface) = note_surface(document, footnote, id, 0) else {
+        return Vec::new();
+    };
+    let Some(HeadlessQueryResult::Paragraph {
+        value: Some(snapshot),
+        ..
+    }) = query(document, HeadlessQuery::Paragraph { paragraph: surface })
+    else {
+        return Vec::new();
+    };
+    snapshot
+        .runs
+        .iter()
+        .filter_map(|run| {
+            let text = snapshot.text.get(run.start_offset..run.end_offset)?;
+            (!text.is_empty()).then(|| ClipRun {
+                text: text.to_string(),
+                style: run.style.clone(),
+            })
+        })
+        .collect()
+}
+
+/// The whole rows of `table` from `first_row` that `available` paragraphs
+/// hold, as a copy takes them, and how many paragraphs they are. A row is
+/// taken when its cells hold only paragraphs and cover its grid; vertically
+/// merged cells continue in the rows below.
+fn copied_rows(
+    table: &jade_docx_reader::document::Table,
+    first_row: usize,
+    available: usize,
+) -> Option<(ClipTable, usize)> {
+    use jade_docx_reader::document::BodyElement;
+    let columns = table.columns.len();
+    if columns == 0 {
+        return None;
+    }
+    let mut taken = 0;
+    let mut rows: Vec<Vec<(usize, &jade_docx_reader::document::TableCell)>> = Vec::new();
+    for row in table.rows.iter().skip(first_row) {
+        if row.grid_before.unwrap_or(0) > 0 || row.grid_after.unwrap_or(0) > 0 {
+            break;
+        }
+        let mut column = 0;
+        let mut cells = Vec::new();
+        let mut paragraphs = 0;
+        for cell in &row.cells {
+            if !cell
+                .blocks
+                .iter()
+                .all(|block| matches!(block, BodyElement::Paragraph(_)))
+            {
+                return None;
+            }
+            paragraphs += cell.blocks.len().max(1);
+            cells.push((column, cell));
+            column += cell.span.unwrap_or(1).max(1) as usize;
+        }
+        if column != columns || taken + paragraphs > available {
+            break;
+        }
+        taken += paragraphs;
+        rows.push(cells);
+    }
+    if rows.is_empty() {
+        return None;
+    }
+    let mut counts = Vec::new();
+    let mut spans = Vec::new();
+    let mut shading = Vec::new();
+    let mut merges = Vec::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        for &(column, cell) in row {
+            counts.push(cell.blocks.len().max(1));
+            let span = cell.span.unwrap_or(1).max(1) as usize;
+            spans.push(span);
+            if let Some(color) = cell
+                .style
+                .get("background-color")
+                .filter(|color| color.starts_with('#') && color.len() == 7)
+            {
+                shading.push((row_index, column, color.clone()));
+            }
+            let mut row_span = 1;
+            if cell.vertical_merge.as_deref() == Some("restart") {
+                for below in &rows[row_index + 1..] {
+                    let continues = below.iter().any(|&(other_column, other)| {
+                        other_column == column
+                            && other.vertical_merge.as_deref() == Some("continue")
+                    });
+                    if !continues {
+                        break;
+                    }
+                    row_span += 1;
+                }
+            }
+            if span > 1 || row_span > 1 {
+                merges.push((row_index, column, span, row_span));
+            }
+        }
+    }
+    let widths = table
+        .columns
+        .iter()
+        .map(|column| column.width)
+        .collect::<Option<Vec<f32>>>()
+        .unwrap_or_default();
+    Some((
+        ClipTable {
+            first: 0,
+            cells: taken,
+            columns,
+            style_id: table.style_name.clone(),
+            cell_paragraphs: if counts.iter().all(|&count| count == 1) {
+                Vec::new()
+            } else {
+                counts
+            },
+            splits: Vec::new(),
+            widths,
+            shading,
+            cell_spans: if spans.iter().all(|&span| span == 1) {
+                Vec::new()
+            } else {
+                spans
+            },
+            merges,
+        },
+        taken,
+    ))
+}
+
 impl RichClip {
     /// How many paragraphs a paste adds back by splitting joined cells.
     fn split_count(&self) -> usize {
@@ -156,24 +327,34 @@ fn join_cell_paragraphs(clip: &mut RichClip) {
         } else {
             table.cell_paragraphs.clone()
         };
-        for count in &counts {
+        let mut grid_cells = 0;
+        for (cell, count) in counts.iter().enumerate() {
             let index = joined.len();
-            let mut cell = clip.paragraphs[source].clone();
+            let mut joined_cell = clip.paragraphs[source].clone();
             map[source] = (index, 0);
             source += 1;
             for _ in 1..*count {
-                let offset: usize = cell.runs.iter().map(|run| run.text.len()).sum();
+                let offset: usize = joined_cell.runs.iter().map(|run| run.text.len()).sum();
                 table.splits.push((index, offset));
                 map[source] = (index, offset);
-                cell.runs
+                joined_cell
+                    .runs
                     .extend(clip.paragraphs[source].runs.iter().cloned());
                 source += 1;
             }
-            joined.push(cell);
+            joined.push(joined_cell);
+            // A cell spanning columns takes empty ones beside it, which the
+            // merge leaves out again.
+            let span = table.cell_spans.get(cell).copied().unwrap_or(1);
+            for _ in 1..span {
+                joined.push(ClipParagraph::default());
+            }
+            grid_cells += span;
         }
         table.first = first;
-        table.cells = counts.len();
+        table.cells = grid_cells;
         table.cell_paragraphs.clear();
+        table.cell_spans.clear();
     }
     while source < clip.paragraphs.len() {
         map[source] = (joined.len(), 0);
@@ -593,6 +774,7 @@ pub trait WordClipboard: WordSession {
                         .find(|note| note.id == span.note_id)
                         .map(|note| note.text.clone())
                         .unwrap_or_default(),
+                    runs: note_runs(document, span.is_footnote, &span.note_id),
                 });
             }
             // The pictures in line drawn inside it, with their bytes.
@@ -676,75 +858,41 @@ pub trait WordClipboard: WordSession {
     /// of it is one paragraph and spans one column, so the cells come back
     /// a paragraph a cell; anything else is copied as its paragraphs.
     fn copied_tables(&self, first: usize, last: usize) -> Vec<ClipTable> {
-        let cell_of = |paragraph: usize| {
-            self.cell_id_for_paragraph(paragraph)
-                .and_then(|id| self.cell_layout(id))
-        };
         let mut tables = Vec::new();
         let mut index = first;
         while index <= last {
-            let Some(cell) = cell_of(index) else {
+            let Some(cell) = self
+                .cell_id_for_paragraph(index)
+                .and_then(|id| self.cell_layout(id))
+            else {
                 index += 1;
                 continue;
             };
-            let table_id = cell.table_id;
-            let mut end = index;
-            while end < last && cell_of(end + 1).is_some_and(|next| next.table_id == table_id) {
-                end += 1;
-            }
-            let columns = self
-                .cell_layouts()
-                .iter()
-                .filter(|other| other.table_id == table_id && other.row == cell.row)
-                .count();
-            // The cells, each once, with how many of its paragraphs the run
-            // holds.
-            let mut cells: Vec<(&CellLayout, usize)> = Vec::new();
-            for paragraph in index..=end {
-                let Some(cell) = cell_of(paragraph) else {
-                    continue;
-                };
-                match cells.last_mut() {
-                    Some((last, count))
-                        if (last.table_id, last.row, last.column)
-                            == (cell.table_id, cell.row, cell.column) =>
-                    {
-                        *count += 1
+            // The table from the row the copy starts in, if it starts there.
+            let source = self
+                .table_order_for(cell.table_id)
+                .and_then(|order| self.word_document().table_by_order(order));
+            let starts_row = cell.column == 0 && cell.paragraphs.first() == Some(&index);
+            match source.filter(|_| starts_row) {
+                Some(source) => match copied_rows(source, cell.row, last - index + 1) {
+                    Some((mut table, paragraphs)) => {
+                        table.first = index - first;
+                        index += paragraphs;
+                        tables.push(table);
                     }
-                    _ => cells.push((cell, 1)),
-                }
+                    None => index += 1,
+                },
+                None => index += 1,
             }
-            let whole_rows = columns > 0
-                && cells.iter().map(|(_, count)| count).sum::<usize>() == end - index + 1
-                && cells.len().is_multiple_of(columns)
-                && cells.iter().enumerate().all(|(at, (cell, count))| {
-                    cell.column == at % columns
-                        && cell.column_span <= 1
-                        && cell.paragraphs.len() == *count
-                })
-                && cells
-                    .chunks(columns)
-                    .all(|row| row.iter().all(|(cell, _)| cell.row == row[0].0.row));
-            if whole_rows {
-                let style_id = self
-                    .table_order_for(table_id)
-                    .and_then(|order| self.word_document().table_by_order(order))
-                    .and_then(|table| table.style_name.clone());
-                let counts: Vec<usize> = cells.iter().map(|(_, count)| *count).collect();
-                tables.push(ClipTable {
-                    first: index - first,
-                    cells: end - index + 1,
-                    columns,
-                    style_id,
-                    cell_paragraphs: if counts.iter().all(|&count| count == 1) {
-                        Vec::new()
-                    } else {
-                        counts
-                    },
-                    splits: Vec::new(),
-                });
+            // Past the rest of this table's paragraphs in the copy.
+            while index <= last
+                && self
+                    .cell_id_for_paragraph(index)
+                    .and_then(|id| self.cell_layout(id))
+                    .is_some_and(|other| other.table_id == cell.table_id)
+            {
+                index += 1;
             }
-            index = end + 1;
         }
         tables
     }
@@ -808,7 +956,12 @@ pub trait WordClipboard: WordSession {
         starts: &[Position],
     ) -> Result<(), String> {
         let objects = clip.objects();
-        let styled = clip.tables.iter().any(|table| table.style_id.is_some());
+        let styled = clip.tables.iter().any(|table| {
+            table.style_id.is_some()
+                || !table.widths.is_empty()
+                || !table.shading.is_empty()
+                || !table.merges.is_empty()
+        });
         let splits: Vec<(usize, usize)> = clip
             .tables
             .iter()
@@ -820,11 +973,9 @@ pub trait WordClipboard: WordSession {
         let mark = self.begin_edit_group();
         let result = (|| {
             self.apply_commands(commands, false)?;
-            // Each pasted table takes the style the copied one had.
+            // Each pasted table takes the style, column widths and cell
+            // shading the copied one had.
             for table in &clip.tables {
-                let Some(style_id) = table.style_id.clone() else {
-                    continue;
-                };
                 let Some(&(paragraph, _)) = starts.get(table.first) else {
                     continue;
                 };
@@ -835,13 +986,57 @@ pub trait WordClipboard: WordSession {
                 else {
                     continue;
                 };
-                self.apply_command(
-                    HeadlessCommand::ApplyTableNamedStyle {
+                let mut formats = Vec::new();
+                if let Some(style_id) = table.style_id.clone() {
+                    formats.push(HeadlessCommand::ApplyTableNamedStyle {
                         table_order_index: order,
                         style_id: Some(style_id),
-                    },
-                    false,
-                )?;
+                    });
+                }
+                // Widths fix the layout, so only when the new table's differ.
+                let made: Vec<Option<f32>> = self
+                    .word_document()
+                    .table_by_order(order)
+                    .map(|made| made.columns.iter().map(|column| column.width).collect())
+                    .unwrap_or_default();
+                let same = made.len() == table.widths.len()
+                    && made
+                        .iter()
+                        .zip(&table.widths)
+                        .all(|(made, width)| made.is_some_and(|made| (made - width).abs() < 0.5));
+                if !table.widths.is_empty() && !same {
+                    formats.push(HeadlessCommand::SetTableColumnWidths {
+                        table_order_index: order,
+                        widths: table.widths.clone(),
+                    });
+                }
+                for &(row, column, columns, rows) in &table.merges {
+                    formats.push(HeadlessCommand::MergeTableCells {
+                        table_order_index: order,
+                        selected_cells: (row..row + rows)
+                            .flat_map(|row| {
+                                (column..column + columns).map(move |column| {
+                                    HeadlessTableCellSelection {
+                                        row,
+                                        column,
+                                        column_span: 1,
+                                    }
+                                })
+                            })
+                            .collect(),
+                    });
+                }
+                for (row, column, color) in &table.shading {
+                    formats.push(HeadlessCommand::SetTableCellShading {
+                        table_order_index: order,
+                        row: *row,
+                        column: *column,
+                        color: Some(color.clone()),
+                    });
+                }
+                if !formats.is_empty() {
+                    self.apply_commands(formats, false)?;
+                }
             }
             for object in objects.iter().rev() {
                 let (paragraph, offset, _) = object.at();
@@ -868,6 +1063,7 @@ pub trait WordClipboard: WordSession {
                             },
                             false,
                         )?;
+                        self.format_pasted_note(note, (paragraph, offset))?;
                     }
                     ClipObject::Picture(picture) => {
                         let caret = SelectionRange::collapsed(TextPosition::new(paragraph, offset));
@@ -962,6 +1158,65 @@ pub trait WordClipboard: WordSession {
             at.0, caret,
         ))));
         (at.0, caret)
+    }
+
+    /// Gives the note just pasted with its mark at `at` the formatting the
+    /// copied one had.
+    fn format_pasted_note(&mut self, note: &ClipNote, at: Position) -> Result<(), String> {
+        if note.runs.is_empty() {
+            return Ok(());
+        }
+        let document = self.word_document();
+        let mut shown = 0;
+        let Some(id) = document
+            .reference_marker_spans(at.0)
+            .into_iter()
+            .find_map(|span| {
+                let start = span.model_offset + shown;
+                shown += span.rendered_len;
+                (start == at.1).then_some(span.note_id)
+            })
+        else {
+            return Ok(());
+        };
+        let Some(surface) = note_surface(document, note.footnote, &id, 0) else {
+            return Ok(());
+        };
+        let Some(HeadlessQueryResult::Paragraph {
+            value: Some(snapshot),
+            ..
+        }) = query(document, HeadlessQuery::Paragraph { paragraph: surface })
+        else {
+            return Ok(());
+        };
+        let joined: String = note.runs.iter().map(|run| run.text.as_str()).collect();
+        let Some(mut model) = snapshot.text.find(&joined) else {
+            return Ok(());
+        };
+        let mut commands = Vec::new();
+        for run in &note.runs {
+            let rendered = |offset: usize| {
+                document
+                    .model_to_rendered_text_position(TextPosition::new(surface, offset))
+                    .offset
+            };
+            let (start, end) = (rendered(model), rendered(model + run.text.len()));
+            model += run.text.len();
+            if start == end {
+                continue;
+            }
+            let inherited = self.run_style_at((surface, start)).unwrap_or_default();
+            commands.extend(format_commands(
+                surface,
+                (start, end),
+                &run.style,
+                &inherited,
+            ));
+        }
+        if commands.is_empty() {
+            return Ok(());
+        }
+        self.apply_commands(commands, false)
     }
 
     /// `clip` as it can be pasted at `at`: a table that would share its
