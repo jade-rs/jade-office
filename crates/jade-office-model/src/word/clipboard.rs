@@ -74,6 +74,19 @@ pub struct RichClip {
     pub notes: Vec<ClipNote>,
     /// Pictures in line the copy took, in document order.
     pub pictures: Vec<ClipPicture>,
+    /// Whole rows of tables the copy took, in document order.
+    pub tables: Vec<ClipTable>,
+}
+
+/// Whole rows of a table a copy took, a paragraph a cell: the paste makes
+/// them a table again, as Word pastes a table as a table.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ClipTable {
+    /// The copy's paragraph the first cell is.
+    pub first: usize,
+    /// How many of the copy's paragraphs — cells — it takes.
+    pub cells: usize,
+    pub columns: usize,
 }
 
 /// One of the things a paste puts in after the text: a note or a picture.
@@ -401,6 +414,7 @@ impl RichClip {
             paragraphs,
             notes: self.notes.clone(),
             pictures: self.pictures.clone(),
+            tables: self.tables.clone(),
         }
     }
 
@@ -424,6 +438,7 @@ impl RichClip {
                 .collect(),
             notes: Vec::new(),
             pictures: Vec::new(),
+            tables: Vec::new(),
         }
     }
 }
@@ -573,11 +588,63 @@ pub trait WordClipboard: WordSession {
                 runs,
             });
         }
+        let tables = self.copied_tables(start.paragraph, end.paragraph);
         Some(RichClip {
             paragraphs,
             notes,
             pictures,
+            tables,
         })
+    }
+
+    /// The runs of whole table rows among paragraphs `first..=last` — what
+    /// a copy of them takes as tables. A row is taken only when every cell
+    /// of it is one paragraph and spans one column, so the cells come back
+    /// a paragraph a cell; anything else is copied as its paragraphs.
+    fn copied_tables(&self, first: usize, last: usize) -> Vec<ClipTable> {
+        let cell_of = |paragraph: usize| {
+            self.cell_id_for_paragraph(paragraph)
+                .and_then(|id| self.cell_layout(id))
+        };
+        let mut tables = Vec::new();
+        let mut index = first;
+        while index <= last {
+            let Some(cell) = cell_of(index) else {
+                index += 1;
+                continue;
+            };
+            let table_id = cell.table_id;
+            let mut end = index;
+            while end < last && cell_of(end + 1).is_some_and(|next| next.table_id == table_id) {
+                end += 1;
+            }
+            let columns = self
+                .cell_layouts()
+                .iter()
+                .filter(|other| other.table_id == table_id && other.row == cell.row)
+                .count();
+            let cells: Vec<_> = (index..=end).filter_map(cell_of).collect();
+            let whole_rows = columns > 0
+                && cells.len() == end - index + 1
+                && cells.len() % columns == 0
+                && cells.iter().enumerate().all(|(at, cell)| {
+                    cell.column == at % columns
+                        && cell.column_span <= 1
+                        && cell.paragraphs.len() == 1
+                })
+                && cells
+                    .chunks(columns)
+                    .all(|row| row.iter().all(|cell| cell.row == row[0].row));
+            if whole_rows {
+                tables.push(ClipTable {
+                    first: index - first,
+                    cells: cells.len(),
+                    columns,
+                });
+            }
+            index = end + 1;
+        }
+        tables
     }
 
     /// Pastes `clip` the way `mode` says — 元の書式を保持, 書式を結合 or
@@ -613,6 +680,7 @@ pub trait WordClipboard: WordSession {
             .run_style_at((start.paragraph, start.offset.saturating_sub(1)))
             .unwrap_or_default();
         let model_start = self.model_position((start.paragraph, start.offset));
+        let clip = &self.with_room_for_tables(clip, (start.paragraph, start.offset));
         let (at, starts) = push_paste_commands(
             clip,
             (start.paragraph, start.offset),
@@ -745,6 +813,42 @@ pub trait WordClipboard: WordSession {
         (at.0, caret)
     }
 
+    /// `clip` as it can be pasted at `at`: a table that would share its
+    /// first cell with the text before the caret, or its last with the text
+    /// after it, gets a paragraph of its own there, as Word puts a pasted
+    /// table on lines of its own. In a table cell, where Word would nest
+    /// it, the cells come in as paragraphs.
+    fn with_room_for_tables(&self, clip: &RichClip, at: Position) -> RichClip {
+        let mut clip = clip.clone();
+        if clip.tables.is_empty() {
+            return clip;
+        }
+        if self.cell_id_for_paragraph(at.0).is_some() {
+            clip.tables.clear();
+            return clip;
+        }
+        if clip.tables[0].first == 0 && at.1 > 0 {
+            clip.paragraphs.insert(0, ClipParagraph::default());
+            for table in &mut clip.tables {
+                table.first += 1;
+            }
+            for note in &mut clip.notes {
+                note.paragraph += 1;
+            }
+            for picture in &mut clip.pictures {
+                picture.paragraph += 1;
+            }
+        }
+        let ends_in_table = clip
+            .tables
+            .last()
+            .is_some_and(|table| table.first + table.cells == clip.paragraphs.len());
+        if ends_in_table {
+            clip.paragraphs.push(ClipParagraph::default());
+        }
+        clip
+    }
+
     /// `position` in model offsets, which pasted notes do not move.
     fn model_position(&self, position: Position) -> Position {
         let model = self
@@ -792,6 +896,7 @@ pub trait WordClipboard: WordSession {
                 self.model_position(end),
             );
         }
+        let clip = &self.with_room_for_tables(clip, target);
         let (end, starts) = push_paste_commands(clip, at, &inherited, &mut commands);
         self.paste_commands_and_objects(clip, commands, &starts)?;
         Ok(self.after_pasted_objects(clip, model_at, end))
@@ -866,6 +971,22 @@ fn push_paste_commands(
     // Formats after all the text: a split carries a paragraph's direct
     // formatting into the next, so formatting first would be undone.
     commands.extend(formats);
+    // Then the tables, from their cells' paragraphs; that keeps the
+    // paragraphs where they are, so what follows still finds them.
+    for table in &clip.tables {
+        let (Some(first), Some(last)) = (
+            starts.get(table.first),
+            starts.get(table.first + table.cells - 1),
+        ) else {
+            continue;
+        };
+        commands.push(HeadlessCommand::ConvertTextToTable {
+            start_paragraph: first.0,
+            end_paragraph: last.0,
+            separator: "paragraph".to_string(),
+            columns: Some(table.columns),
+        });
+    }
     (at, starts)
 }
 
@@ -884,6 +1005,7 @@ mod tests {
         let clip = RichClip {
             notes: Vec::new(),
             pictures: Vec::new(),
+            tables: Vec::new(),
             paragraphs: vec![
                 ClipParagraph {
                     runs: vec![run("Bold"), run(" plain")],
@@ -905,6 +1027,7 @@ mod tests {
         let clip = RichClip {
             notes: Vec::new(),
             pictures: Vec::new(),
+            tables: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 style_id: Some("Heading1".into()),
                 alignment: Some("center".into()),
