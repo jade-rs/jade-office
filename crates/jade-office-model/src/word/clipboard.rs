@@ -13,7 +13,9 @@ use jade_docx_headless_api::{
     HeadlessTableCellSelection,
 };
 
+use jade_docx_editor::commands::insert_field::InsertFieldCommand;
 use jade_docx_editor::commands::insert_image::InsertImageCommand;
+use jade_docx_editor::document::RunFieldKind;
 use jade_selection::{SelectionRange, TextPosition};
 
 use super::{query, Position, WordFormatting, WordSession};
@@ -70,10 +72,25 @@ pub struct ClipPicture {
     pub shown: usize,
 }
 
+/// A field whose result a copy took whole: Word pastes it as a field of
+/// the same kind, which then shows its own value where it lands.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipField {
+    /// Which of the copy's paragraphs it is in.
+    pub paragraph: usize,
+    /// Its result's byte offset in that paragraph's copied text.
+    pub offset: usize,
+    /// Its saved result, as the copied text holds it.
+    pub text: String,
+    pub kind: RunFieldKind,
+}
+
 /// What a copy took.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RichClip {
     pub paragraphs: Vec<ClipParagraph>,
+    /// Fields the copy took whole, in document order.
+    pub fields: Vec<ClipField>,
     /// Reference marks the copy took, in document order.
     pub notes: Vec<ClipNote>,
     /// Pictures in line the copy took, in document order.
@@ -139,6 +156,20 @@ impl RichClip {
         objects.sort_by_key(ClipObject::at);
         objects
     }
+}
+
+/// Whether a copied field of `kind` pastes as a field: a hyperlink keeps
+/// its link on the text, and an EQ structure or a field that shows
+/// nothing has no result text to make one of.
+fn pastes_as_field(kind: &RunFieldKind) -> bool {
+    !matches!(
+        kind.base_kind(),
+        RunFieldKind::Hyperlink { .. }
+            | RunFieldKind::EqDistributed { .. }
+            | RunFieldKind::EqEnclosed { .. }
+            | RunFieldKind::EqRuby { .. }
+            | RunFieldKind::NonDisplay { .. }
+    )
 }
 
 /// The surface of paragraph `paragraph` of a footnote (or endnote) `id`.
@@ -667,6 +698,12 @@ impl RichClip {
             .collect();
         RichClip {
             paragraphs,
+            // テキストのみ保持 takes a field's result as text.
+            fields: if mode == PasteMode::TextOnly {
+                Vec::new()
+            } else {
+                self.fields.clone()
+            },
             notes: self.notes.clone(),
             pictures: self.pictures.clone(),
             tables: self.tables.clone(),
@@ -694,6 +731,7 @@ impl RichClip {
             notes: Vec::new(),
             pictures: Vec::new(),
             tables: Vec::new(),
+            fields: Vec::new(),
         }
     }
 }
@@ -717,6 +755,7 @@ pub trait WordClipboard: WordSession {
         let endnotes = document.endnote_infos();
         let mut notes = Vec::new();
         let mut pictures = Vec::new();
+        let mut fields = Vec::new();
         let mut paragraphs = Vec::new();
         for index in start.paragraph..=end.paragraph {
             let Some(HeadlessQueryResult::Paragraph {
@@ -776,6 +815,29 @@ pub trait WordClipboard: WordSession {
                         .unwrap_or_default(),
                     runs: note_runs(document, span.is_footnote, &span.note_id),
                 });
+            }
+            // The fields whose results it holds whole.
+            if let Some(model) = document.paragraph(index) {
+                let mut run_start = 0;
+                for run in &model.runs {
+                    let run_end = run_start + run.text.len();
+                    if let Some(field) = run.field.as_ref().filter(|field| {
+                        pastes_as_field(&field.kind)
+                            && from <= run_start
+                            && run_end <= to
+                            && !run.text.is_empty()
+                            && run.text.chars().count() <= 1024
+                            && !run.text.chars().any(char::is_control)
+                    }) {
+                        fields.push(ClipField {
+                            paragraph: paragraphs.len(),
+                            offset: run_start - from,
+                            text: run.text.clone(),
+                            kind: field.kind.clone(),
+                        });
+                    }
+                    run_start = run_end;
+                }
             }
             // The pictures in line drawn inside it, with their bytes.
             if let Some(model) = document.paragraph(index) {
@@ -847,6 +909,7 @@ pub trait WordClipboard: WordSession {
         let tables = self.copied_tables(start.paragraph, end.paragraph);
         Some(RichClip {
             paragraphs,
+            fields,
             notes,
             pictures,
             tables,
@@ -967,7 +1030,7 @@ pub trait WordClipboard: WordSession {
             .iter()
             .flat_map(|table| table.splits.iter().copied())
             .collect();
-        if objects.is_empty() && !styled && splits.is_empty() {
+        if objects.is_empty() && !styled && splits.is_empty() && clip.fields.is_empty() {
             return self.apply_commands(commands, false);
         }
         let mark = self.begin_edit_group();
@@ -1037,6 +1100,39 @@ pub trait WordClipboard: WordSession {
                 if !formats.is_empty() {
                     self.apply_commands(formats, false)?;
                 }
+            }
+            // The fields' results become fields again, last first so the
+            // ones before keep their places. Where a field cannot go (a
+            // story other than the body) its result stays as text.
+            let caret = self.selection_range();
+            for field in clip.fields.iter().rev() {
+                let Some(&(at_paragraph, at_offset)) = starts.get(field.paragraph) else {
+                    continue;
+                };
+                let document = self.word_document();
+                let start = document
+                    .rendered_to_model_text_position(TextPosition::new(at_paragraph, at_offset));
+                let from = start.offset + field.offset;
+                let range = SelectionRange::new(
+                    document
+                        .model_to_rendered_text_position(TextPosition::new(start.paragraph, from)),
+                    document.model_to_rendered_text_position(TextPosition::new(
+                        start.paragraph,
+                        from + field.text.len(),
+                    )),
+                );
+                self.set_selection_range(Some(range));
+                let _ = self.execute_command(
+                    Box::new(InsertFieldCommand::of_kind(
+                        range,
+                        field.kind.clone(),
+                        field.text.clone(),
+                    )),
+                    false,
+                );
+            }
+            if !clip.fields.is_empty() {
+                self.set_selection_range(caret);
             }
             for object in objects.iter().rev() {
                 let (paragraph, offset, _) = object.at();
@@ -1111,8 +1207,9 @@ pub trait WordClipboard: WordSession {
     /// Where the caret goes after a paste of `clip` that started at model
     /// position `model_start` and ends at `at` as the text alone would put
     /// it: past the notes' numbers and the pictures it brought into that
-    /// paragraph too. Neither adds text to the model, so the end is found
-    /// there. The caret is left there.
+    /// paragraph too, and the fields there shown at their own values.
+    /// Neither changes the model's text, so the end is found there. The
+    /// caret is left there.
     fn after_pasted_objects(
         &mut self,
         clip: &RichClip,
@@ -1120,7 +1217,9 @@ pub trait WordClipboard: WordSession {
         at: Position,
     ) -> Position {
         let last = clip.paragraphs.len().saturating_sub(1);
-        if !clip.objects().iter().any(|object| object.at().0 == last) {
+        if !clip.objects().iter().any(|object| object.at().0 == last)
+            && !clip.fields.iter().any(|field| field.paragraph == last)
+        {
             return at;
         }
         let pasted: usize = clip.paragraphs.last().map_or(0, |paragraph| {
@@ -1414,6 +1513,7 @@ mod tests {
             notes: Vec::new(),
             pictures: Vec::new(),
             tables: Vec::new(),
+            fields: Vec::new(),
             paragraphs: vec![
                 ClipParagraph {
                     runs: vec![run("Bold"), run(" plain")],
@@ -1436,6 +1536,7 @@ mod tests {
             notes: Vec::new(),
             pictures: Vec::new(),
             tables: Vec::new(),
+            fields: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 style_id: Some("Heading1".into()),
                 alignment: Some("center".into()),

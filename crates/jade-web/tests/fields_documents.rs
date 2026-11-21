@@ -143,3 +143,65 @@ fn arrows_walk_a_field_at_the_value_it_shows() {
         .collect();
     assert_eq!(stops, expected);
 }
+
+/// A copied field pastes as a field of the same kind, as Word does: the
+/// PAGE field saved as "999" goes on showing the page, not "999", and one
+/// undo takes the paste back. テキストのみ保持 takes the result as text.
+#[test]
+fn a_copied_field_pastes_as_a_field() {
+    use jade_docx_editor::document::RunFieldKind;
+    use jade_web::editing::{EditableDocument, WordSession};
+    use jade_web::word::clipboard::{PasteMode, WordClipboard};
+    use jade_web::word::headless::{HeadlessCommand, HeadlessFieldKind};
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "ab");
+    document
+        .apply_commands(
+            vec![HeadlessCommand::InsertField {
+                start_paragraph: paragraph,
+                start_offset: 1,
+                end_paragraph: paragraph,
+                end_offset: 1,
+                kind: HeadlessFieldKind::Page,
+                cached_text: "999".into(),
+            }],
+            false,
+        )
+        .unwrap();
+    let shown = document.caret_text(paragraph).unwrap();
+    let page_fields = |document: &EditableDocument| {
+        document
+            .word_document()
+            .paragraph(paragraph)
+            .unwrap()
+            .runs
+            .iter()
+            .filter(|run| {
+                run.field
+                    .as_ref()
+                    .is_some_and(|field| matches!(field.kind, RunFieldKind::PageNumber))
+            })
+            .count()
+    };
+    assert_eq!(page_fields(&document), 1);
+
+    let end = document.word_document().rendered_paragraph_len(paragraph);
+    document.select((paragraph, 0), (paragraph, end)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.fields.len(), 1);
+    document.place_caret(paragraph, end);
+    let caret = document.paste_rich(&clip).unwrap();
+
+    let text = document.caret_text(paragraph).unwrap();
+    assert_eq!(text, format!("{shown}{shown}"));
+    assert_eq!(page_fields(&document), 2);
+    assert_eq!(caret, (paragraph, text.len()));
+    document.undo().unwrap();
+    assert_eq!(document.caret_text(paragraph).unwrap(), shown);
+
+    let end = document.word_document().rendered_paragraph_len(paragraph);
+    document.place_caret(paragraph, end);
+    document.paste_as(&clip, PasteMode::TextOnly).unwrap();
+    assert_eq!(page_fields(&document), 1);
+    assert!(document.caret_text(paragraph).unwrap().contains("a999b"));
+}
