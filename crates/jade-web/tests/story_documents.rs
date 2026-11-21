@@ -556,3 +556,117 @@ fn text_after_a_page_number_stays_outside_the_field() {
         "{saved}"
     );
 }
+
+/// The text of the open story's first paragraph.
+fn story_text(document: &WordDoc) -> String {
+    document.paragraph_text(0).unwrap_or_default()
+}
+
+#[test]
+fn a_new_section_links_its_header_until_it_is_unlinked() {
+    use jade_web::word::page::{SectionBreak, WordPage};
+    let mut document = WordDoc::new(contract());
+    document.open_story(0, Story::Header).unwrap();
+    document.insert_text("head").unwrap();
+    document.close_story().unwrap();
+    let last = document.paragraph_count() - 1;
+    let end = document.paragraph_text(last).unwrap().len();
+    document.place_caret(last, end);
+    document
+        .main_mut()
+        .insert_section_break(SectionBreak::NextPage)
+        .unwrap();
+    let page = document.page_count() - 1;
+    document.open_story(page, Story::Header).unwrap();
+    // The new section shows the same header, 前と同じ.
+    let story = document.story().unwrap();
+    assert_eq!(story.section, 1);
+    assert!(story.linked);
+    assert_eq!(story_text(&document), "head");
+
+    // Unlinked, it changes on its own, from a copy of what it showed.
+    document
+        .change_story(StoryChange::LinkToPrevious(false))
+        .unwrap();
+    assert!(!document.story().unwrap().linked);
+    assert_eq!(story_text(&document), "head");
+    document.insert_text("own ").unwrap();
+    document.close_story().unwrap();
+    document.open_story(0, Story::Header).unwrap();
+    assert_eq!(story_text(&document), "head");
+    document.close_story().unwrap();
+    document.open_story(page, Story::Header).unwrap();
+    assert_eq!(story_text(&document), "own head");
+
+    // Linked again, it shows the previous section's header once more.
+    document
+        .change_story(StoryChange::LinkToPrevious(true))
+        .unwrap();
+    assert!(document.story().unwrap().linked);
+    assert_eq!(story_text(&document), "head");
+    document.close_story().unwrap();
+}
+
+#[test]
+fn odd_and_even_pages_get_an_even_header_of_their_own() {
+    let mut document = WordDoc::new(contract());
+    document.open_story(0, Story::Header).unwrap();
+    document.insert_text("odd").unwrap();
+    document
+        .change_story(StoryChange::DifferentOddEven(true))
+        .unwrap();
+    document.close_story().unwrap();
+    assert!(parts(&mut document, "word/settings").contains("evenAndOddHeaders"));
+    document.open_story(1, Story::Header).unwrap();
+    assert_eq!(document.story().unwrap().variant, "even");
+    assert_eq!(story_text(&document), "");
+    document.insert_text("even").unwrap();
+    document.close_story().unwrap();
+    document.open_story(0, Story::Header).unwrap();
+    assert_eq!(document.story().unwrap().variant, "default");
+    assert_eq!(story_text(&document), "odd");
+    document.close_story().unwrap();
+    assert!(parts(&mut document, "word/document").contains(r#"w:type="even""#));
+}
+
+#[test]
+fn deleting_a_break_keeps_the_header_the_linked_section_showed() {
+    use jade_web::word::page::{SectionBreak, WordPage};
+    for backwards in [false, true] {
+        let mut document = WordDoc::new(contract());
+        document.open_story(0, Story::Header).unwrap();
+        document.insert_text("head").unwrap();
+        document.close_story().unwrap();
+        let last = document.paragraph_count() - 1;
+        let end = document.paragraph_text(last).unwrap().len();
+        document.place_caret(last, end);
+        document
+            .main_mut()
+            .insert_section_break(SectionBreak::NextPage)
+            .unwrap();
+        // Linked again explicitly, the new section names no header at all.
+        let page = document.page_count() - 1;
+        document.open_story(page, Story::Header).unwrap();
+        document
+            .change_story(StoryChange::LinkToPrevious(false))
+            .unwrap();
+        document
+            .change_story(StoryChange::LinkToPrevious(true))
+            .unwrap();
+        document.close_story().unwrap();
+
+        if backwards {
+            document.place_caret(last + 1, 0);
+        } else {
+            document.place_caret(last, end);
+        }
+        document.delete(backwards).unwrap();
+        assert_eq!(document.page_count(), page, "backwards {backwards}");
+        let xml = parts(&mut document, "word/document");
+        assert_eq!(xml.matches("<w:sectPr").count(), 1, "{xml}");
+        assert_eq!(xml.matches("<w:headerReference").count(), 1, "{xml}");
+        document.open_story(0, Story::Header).unwrap();
+        assert_eq!(story_text(&document), "head", "backwards {backwards}");
+        document.close_story().unwrap();
+    }
+}
