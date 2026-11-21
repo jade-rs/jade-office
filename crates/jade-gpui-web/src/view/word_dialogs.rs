@@ -183,8 +183,8 @@ impl DocView {
         let Document::Pages { document, .. } = &self.document else {
             return;
         };
-        // Greyed out in a header or footer, as in Word.
-        if !jade_web::word::WordSession::is_main_story(document.as_ref()) {
+        // Greyed out in a header, a footer, a note or a text box, as in Word.
+        if !jade_web::word::WordReferences::can_insert_note(document.as_ref()) {
             return;
         }
         let form = NoteForm::new(document.as_ref(), kind);

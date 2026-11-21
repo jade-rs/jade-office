@@ -467,3 +467,39 @@ fn a_pasted_note_keeps_its_formatting() {
     document.undo().unwrap();
     assert_eq!(marks(&document, paragraph).len(), 1);
 }
+
+#[test]
+fn a_note_takes_a_pasted_notes_text_without_its_mark() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "noted text ");
+    note(
+        &mut document,
+        NoteKind::Footnote,
+        (paragraph, 5),
+        "the note",
+    );
+    document.select((paragraph, 0), (paragraph, 11)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.notes.len(), 1);
+    assert!(document.can_insert_note());
+    let in_note = (0..document.paragraph_count())
+        .find(|&index| document.word_document().is_note_paragraph_surface(index))
+        .unwrap();
+
+    // Word greys out 脚注の挿入 in a note, and pastes the text alone.
+    let end = document.word_document().rendered_paragraph_len(in_note);
+    document.place_caret(in_note, end);
+    assert!(!document.can_insert_note());
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(
+        document.note_texts(NoteKind::Footnote),
+        ["the notenoted text"]
+    );
+    assert!(document
+        .insert_note(NoteKind::Footnote, (in_note, 1), "nested")
+        .is_err());
+    // One undo takes the paste back.
+    document.undo().unwrap();
+    assert_eq!(document.note_texts(NoteKind::Footnote), ["the note"]);
+}
