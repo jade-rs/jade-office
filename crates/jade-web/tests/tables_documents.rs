@@ -1229,3 +1229,66 @@ fn a_link_in_a_copied_cell_lands_in_its_cell() {
         .hyperlink_at((cell_paragraph(&document, 1, 0, 0), 2))
         .is_none());
 }
+
+#[test]
+fn a_pasted_table_keeps_its_heading_row_and_row_heights() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::HeadlessCommand;
+    let mut document = with_table(3, 2);
+    fill(&mut document, 0, &[&["h", "h"], &["a", "b"], &["c", "d"]]);
+    document
+        .apply_command(
+            HeadlessCommand::SetTableRowProperties {
+                table_order_index: 0,
+                row: 0,
+                repeat_header: Some(true),
+                cant_split: Some(true),
+            },
+            true,
+        )
+        .unwrap();
+    document
+        .apply_command(
+            HeadlessCommand::SetTableRowHeightProperties {
+                table_order_index: 0,
+                row: 1,
+                mode: "exact".into(),
+                height: Some(40.0),
+            },
+            true,
+        )
+        .unwrap();
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    document.place_caret(after, 0);
+    document.paste_rich(&clip).unwrap();
+
+    // Each pasted row sets what the copied one did.
+    let rows = |order: usize| {
+        document
+            .word_document()
+            .table_by_order(order)
+            .unwrap()
+            .rows
+            .iter()
+            .map(|row| {
+                (
+                    row.is_header,
+                    row.cant_split,
+                    row.height.map(|height| height.round()),
+                    row.height_rule,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(rows(1), rows(0));
+    assert!(rows(0)[0].0 && rows(0)[0].1);
+    assert_eq!(rows(0)[1].2, Some(40.0));
+    let xml = document_xml(&document.export_docx().unwrap());
+    assert_eq!(xml.matches("<w:tblHeader").count(), 2, "{xml}");
+    assert_eq!(xml.matches("w:hRule=\"exact\"").count(), 2, "{xml}");
+    // One undo takes the whole table back.
+    document.undo().unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+}
