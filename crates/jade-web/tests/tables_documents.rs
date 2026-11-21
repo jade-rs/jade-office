@@ -955,3 +955,62 @@ fn backspace_and_delete_on_selected_cells_act_as_word_does() {
     WordFormatting::table_command(&mut document, TableCommand::DeleteColumn).unwrap();
     assert!(document.word_document().table_by_order(0).is_none());
 }
+
+#[test]
+fn a_copied_table_pastes_as_a_table() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = with_table(2, 2);
+    fill(&mut document, 0, &[&["a", "b"], &["c", "d"]]);
+    let after = document.paragraph_count() - 1;
+    // The whole table, from its first cell to the paragraph after it.
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.tables.len(), 1);
+    assert_eq!(clip.tables[0].columns, 2);
+
+    document.place_caret(after, 0);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(cell_texts(&document, 1), [["a", "b"], ["c", "d"]]);
+    let xml = document_xml(&document.export_docx().unwrap());
+    assert_eq!(xml.matches("<w:tbl>").count(), 2, "{xml}");
+    // One undo takes the whole table back.
+    document.undo().unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+    assert_eq!(document.paragraph_count(), after + 1);
+}
+
+#[test]
+fn a_table_pasted_inside_a_line_gets_lines_of_its_own() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["x", "y"]]);
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    document.place_caret(after, 0);
+    document.insert_text("left right").unwrap();
+    document.place_caret(after, "left".len());
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(cell_texts(&document, 1), [["x", "y"]]);
+    let texts: Vec<String> = (0..document.paragraph_count())
+        .filter(|&index| document.cell_id_for_paragraph(index).is_none())
+        .filter_map(|index| document.paragraph_text(index))
+        .collect();
+    assert_eq!(texts, ["left", " right"]);
+}
+
+#[test]
+fn text_copied_from_one_cell_pastes_as_text() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["xyz", "w"]]);
+    let cell = cell_paragraph(&document, 0, 0, 0);
+    document.select((cell, 0), (cell, 2)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert!(clip.tables.is_empty());
+    let after = document.paragraph_count() - 1;
+    document.place_caret(after, 0);
+    document.paste_rich(&clip).unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+    assert_eq!(document.paragraph_text(after).as_deref(), Some("xy"));
+}

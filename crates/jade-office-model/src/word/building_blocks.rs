@@ -195,6 +195,7 @@ fn clip_of(body: &Element) -> RichClip {
         paragraphs,
         notes: Vec::new(),
         pictures: Vec::new(),
+        tables: Vec::new(),
     }
 }
 
@@ -403,6 +404,7 @@ mod tests {
             content: RichClip {
                 notes: Vec::new(),
                 pictures: Vec::new(),
+                tables: Vec::new(),
                 paragraphs: vec![ClipParagraph {
                     style_id: Some("Signature".into()),
                     alignment: Some("right".into()),
