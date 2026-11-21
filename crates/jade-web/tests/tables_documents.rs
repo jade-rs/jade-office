@@ -960,6 +960,9 @@ fn backspace_and_delete_on_selected_cells_act_as_word_does() {
 fn a_copied_table_pastes_as_a_table() {
     use jade_web::word::clipboard::WordClipboard;
     let mut document = with_table(2, 2);
+    document
+        .apply_table_style(Some("GridTable4-Accent1"))
+        .unwrap();
     fill(&mut document, 0, &[&["a", "b"], &["c", "d"]]);
     let after = document.paragraph_count() - 1;
     // The whole table, from its first cell to the paragraph after it.
@@ -971,6 +974,15 @@ fn a_copied_table_pastes_as_a_table() {
     document.place_caret(after, 0);
     document.paste_rich(&clip).unwrap();
     assert_eq!(cell_texts(&document, 1), [["a", "b"], ["c", "d"]]);
+    // It takes the copied table's style.
+    let style = |order: usize| {
+        document
+            .word_document()
+            .table_by_order(order)
+            .and_then(|table| table.style_name.clone())
+    };
+    assert_eq!(style(0).as_deref(), Some("GridTable4-Accent1"));
+    assert_eq!(style(1), style(0));
     let xml = document_xml(&document.export_docx().unwrap());
     assert_eq!(xml.matches("<w:tbl>").count(), 2, "{xml}");
     // One undo takes the whole table back.

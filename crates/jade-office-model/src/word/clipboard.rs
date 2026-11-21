@@ -87,6 +87,8 @@ pub struct ClipTable {
     /// How many of the copy's paragraphs — cells — it takes.
     pub cells: usize,
     pub columns: usize,
+    /// The table style it had, which the pasted table takes too.
+    pub style_id: Option<String>,
 }
 
 /// One of the things a paste puts in after the text: a note or a picture.
@@ -636,10 +638,15 @@ pub trait WordClipboard: WordSession {
                     .chunks(columns)
                     .all(|row| row.iter().all(|cell| cell.row == row[0].row));
             if whole_rows {
+                let style_id = self
+                    .table_order_for(table_id)
+                    .and_then(|order| self.word_document().table_by_order(order))
+                    .and_then(|table| table.style_name.clone());
                 tables.push(ClipTable {
                     first: index - first,
                     cells: cells.len(),
                     columns,
+                    style_id,
                 });
             }
             index = end + 1;
@@ -705,12 +712,36 @@ pub trait WordClipboard: WordSession {
         starts: &[Position],
     ) -> Result<(), String> {
         let objects = clip.objects();
-        if objects.is_empty() {
+        let styled = clip.tables.iter().any(|table| table.style_id.is_some());
+        if objects.is_empty() && !styled {
             return self.apply_commands(commands, false);
         }
         self.begin_edit_group();
         let result = (|| {
             self.apply_commands(commands, false)?;
+            // Each pasted table takes the style the copied one had.
+            for table in &clip.tables {
+                let Some(style_id) = table.style_id.clone() else {
+                    continue;
+                };
+                let Some(&(paragraph, _)) = starts.get(table.first) else {
+                    continue;
+                };
+                let Some(order) = self
+                    .cell_id_for_paragraph(paragraph)
+                    .and_then(|id| self.cell_layout(id))
+                    .and_then(|cell| self.table_order_for(cell.table_id))
+                else {
+                    continue;
+                };
+                self.apply_command(
+                    HeadlessCommand::ApplyTableNamedStyle {
+                        table_order_index: order,
+                        style_id: Some(style_id),
+                    },
+                    false,
+                )?;
+            }
             for object in objects.iter().rev() {
                 let (paragraph, offset, _) = object.at();
                 let Some(&(at_paragraph, at_offset)) = starts.get(paragraph) else {
