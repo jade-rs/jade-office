@@ -324,6 +324,63 @@ class VersionCaptureTests(unittest.TestCase):
         self.write(self.source/'emf-comparison.json', comparison)
         return reference, comparison
 
+    def add_xps(self):
+        data = b'independent original XPS bytes; geometry is checked in jade-core'
+        (self.source/'probe.xps').write_bytes(data)
+        self.capture['documents'][0].update(xps='probe.xps', xps_sha256=hashlib.sha256(data).hexdigest())
+        self.write(self.manifest, self.capture)
+        return data
+
+    def test_original_xps_is_preserved_with_version_and_manifest(self):
+        data = self.add_xps()
+        before = self.manifest.read_bytes()
+        with patch.object(archiver.subprocess, 'check_output', return_value='engine\n'):
+            target = archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertEqual((target/'probe.xps').read_bytes(), data)
+        self.assertEqual((target/'capture.json').read_bytes(), before)
+        self.assertEqual(target.parent.name, 'word-16.0.19127.20860')
+        context = json.loads((target/'font-context.json').read_bytes())
+        self.assertEqual(context['capture_sha256'], hashlib.sha256(before).hexdigest())
+        with self.assertRaises(FileExistsError):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertEqual((target/'probe.xps').read_bytes(), data)
+
+    def test_changed_or_missing_xps_cannot_be_registered(self):
+        self.add_xps()
+        (self.source/'probe.xps').write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError, 'XPS changed'):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+        (self.source/'probe.xps').unlink()
+        with self.assertRaises(FileNotFoundError):
+            archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse(self.evidence.exists())
+
+    def test_partial_or_unsafe_xps_metadata_cannot_be_registered(self):
+        self.add_xps()
+        for fields in [dict(xps='probe.xps'), dict(xps_sha256='a'*64),
+                       dict(xps='../probe.xps', xps_sha256='a'*64),
+                       dict(xps='other:probe.xps', xps_sha256='a'*64),
+                       dict(xps='probe.xps', xps_sha256='short')]:
+            with self.subTest(fields=fields):
+                item = self.capture['documents'][0]
+                item.pop('xps', None); item.pop('xps_sha256', None); item.update(fields)
+                self.write(self.manifest, self.capture)
+                with self.assertRaisesRegex(ValueError, 'XPS requires'):
+                    archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse(self.evidence.exists())
+
+    def test_xps_changed_during_copy_cannot_register_a_stale_capture(self):
+        self.add_xps()
+        copyfile = archiver.shutil.copyfile
+        def replace_xps(source, target):
+            if Path(source).suffix == '.xps':
+                Path(source).write_bytes(b'replaced after verification')
+            return copyfile(source, target)
+        with patch.object(archiver.shutil, 'copyfile', side_effect=replace_xps):
+            with self.assertRaisesRegex(ValueError, 'XPS changed while archiving'):
+                archiver.archive(self.manifest, self.evidence, ['probe'])
+        self.assertFalse((self.evidence/'index.json').exists())
+
     def test_metafiles_and_separate_strict_reference_are_preserved(self):
         reference, _ = self.add_metafile()
         with patch.object(archiver, 'extract_emf_capture', return_value=reference), \

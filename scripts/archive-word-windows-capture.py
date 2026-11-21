@@ -134,6 +134,14 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
             raise ValueError(f'Captured PDF changed: {pdf_name}')
         if hashlib.sha256(Path(item['source']).read_bytes()).hexdigest() != item['sha256']:
             raise ValueError(f'Source DOCX changed: {item["name"]}')
+        if 'xps' in item or 'xps_sha256' in item:
+            xps_name, xps_hash = item.get('xps'), item.get('xps_sha256')
+            if (not isinstance(xps_name, str) or not xps_name.lower().endswith('.xps')
+                    or any(c in xps_name for c in '/\\:')
+                    or not isinstance(xps_hash, str) or not re.fullmatch(r'[a-f0-9]{64}', xps_hash)):
+                raise ValueError('XPS requires a capture-local filename and complete SHA256')
+            if hashlib.sha256((source/xps_name).read_bytes()).hexdigest() != xps_hash:
+                raise ValueError('Captured XPS changed')
         for page in item.get('metafiles', []):
             name = page['file']
             if '/' in name or '\\' in name or name in ('', '.', '..'):
@@ -161,6 +169,10 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
         shutil.copyfile(source/item['pdf'], target/item['pdf'])
         if hashlib.sha256((target/item['pdf']).read_bytes()).hexdigest() != item['pdf_sha256']:
             raise ValueError('Captured PDF changed while archiving')
+        if 'xps' in item:
+            shutil.copyfile(source/item['xps'], target/item['xps'])
+            if hashlib.sha256((target/item['xps']).read_bytes()).hexdigest() != item['xps_sha256']:
+                raise ValueError('Captured XPS changed while archiving')
         for page in item.get('metafiles', []):
             shutil.copyfile(source/page['file'], target/page['file'])
             if hashlib.sha256((target/page['file']).read_bytes()).hexdigest() != page['sha256']:
