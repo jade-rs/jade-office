@@ -337,3 +337,67 @@ fn a_landscape_section_has_pages_of_its_own_size() {
     );
     assert_eq!(document.caret().map(|(paragraph, _)| paragraph), Some(text));
 }
+
+/// A paragraph's mark carries the section break it ends: a copy of it
+/// pastes a section set up as the copied one (landscape here), and the
+/// section it lands in goes on starting as it did, as Word pastes it. One
+/// undo takes it back.
+#[test]
+fn a_copied_section_break_pastes_with_its_page_setup() {
+    use jade_web::editing::WordSession;
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::{
+        HeadlessCommand, HeadlessSectionLayoutPatch, HeadlessSectionScope,
+    };
+    use jade_web::word::page::{SectionBreak, WordPage};
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "landscape");
+    document.place_caret(paragraph, "landscape".len());
+    document
+        .insert_section_break(SectionBreak::Continuous)
+        .unwrap();
+    document
+        .apply_commands(
+            vec![HeadlessCommand::SetSectionLayout {
+                scope: HeadlessSectionScope::Index { index: 0 },
+                patch: Box::new(HeadlessSectionLayoutPatch {
+                    landscape: Some(true),
+                    ..Default::default()
+                }),
+            }],
+            false,
+        )
+        .unwrap();
+    let sections = |document: &jade_web::editing::EditableDocument| {
+        let word = document.word_document();
+        (0..word.section_count())
+            .map(|index| {
+                let layout = word.section_layout(Some(index));
+                (layout.landscape, layout.start)
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = sections(&document);
+    assert_eq!(before.len(), 2);
+    assert!(before[0].0 && !before[1].0);
+
+    document.select((paragraph, 0), (paragraph + 1, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    let last = document.paragraph_count() - 1;
+    let end = document.word_document().rendered_paragraph_len(last);
+    document.place_caret(last, end);
+    document.insert_paragraph_break().unwrap();
+    let landing = document.paragraph_count() - 1;
+    document.place_caret(landing, 0);
+    document.paste_rich(&clip).unwrap();
+    let after = sections(&document);
+    // The copied section again, and the rest of the one it landed in
+    // starting as it did.
+    assert_eq!(
+        after,
+        [before[0].clone(), before[0].clone(), before[1].clone()]
+    );
+    assert_eq!(after[2].1, "continuous");
+    document.undo().unwrap();
+    assert_eq!(sections(&document).len(), 2);
+}

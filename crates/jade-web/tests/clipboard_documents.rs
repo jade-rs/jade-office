@@ -276,3 +276,55 @@ fn a_paste_keeps_a_guide_and_an_enclosed_character() {
     document.undo().unwrap();
     assert_eq!(count(&document), (1, 1));
 }
+
+/// A paragraph's mark carries its formatting: pasted list items stay
+/// numbered at their levels with their indents, and the paste does not
+/// take on the indent of the paragraph it lands in. One undo takes it back.
+#[test]
+fn a_paste_keeps_the_paragraphs_numbering_and_indents() {
+    use jade_web::editing::{EditableDocument, WordSession};
+    use jade_web::word::lists::WordLists;
+    let mut document = contract();
+    let first = typed(&mut document, "one");
+    document.place_caret(first, 3);
+    document.insert_paragraph_break().unwrap();
+    document.insert_text("two").unwrap();
+    document.select((first, 0), (first + 1, 3)).unwrap();
+    document.apply_list_format("decimal", "%1.", None).unwrap();
+    document.place_caret(first + 1, 0);
+    document.step_indent(true).unwrap();
+    let format = |document: &EditableDocument, index: usize| {
+        let properties = document
+            .word_document()
+            .paragraph(index)
+            .unwrap()
+            .properties
+            .clone()
+            .unwrap_or_default();
+        (
+            properties
+                .numbering
+                .map(|numbering| (numbering.id, numbering.level)),
+            properties.indent.and_then(|indent| indent.left),
+        )
+    };
+    let copied = [format(&document, first), format(&document, first + 1)];
+    assert!(copied[0].0.is_some() && copied[1].0.is_some());
+    let landing = first + 2;
+    assert_ne!(format(&document, landing), copied[0]);
+
+    // Both items with their marks.
+    document.select((first, 0), (landing, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    let count = document.paragraph_count();
+    document.place_caret(landing, 0);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(document.paragraph_count(), count + 2);
+    assert_eq!(
+        [format(&document, landing), format(&document, landing + 1)],
+        copied
+    );
+    document.undo().unwrap();
+    assert_eq!(document.paragraph_count(), count);
+    assert_ne!(format(&document, landing), copied[0]);
+}

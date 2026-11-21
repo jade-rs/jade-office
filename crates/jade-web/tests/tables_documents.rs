@@ -1199,3 +1199,33 @@ fn copied_rows_pasted_in_a_table_go_in_as_rows() {
     document.undo().unwrap();
     assert_eq!(cell_texts(&document, 0), [["a", "b"], ["c", "d"]]);
 }
+
+/// What a copied cell holds lands in that cell of the pasted table: a
+/// link in the second cell is on the second cell's text again.
+#[test]
+fn a_link_in_a_copied_cell_lands_in_its_cell() {
+    use jade_web::editing::WordLinks;
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["plain", "linked"]]);
+    let linked = cell_paragraph(&document, 0, 0, 1);
+    document.select((linked, 0), (linked, 6)).unwrap();
+    let draft = document.link_draft();
+    document
+        .apply_link(&draft, &draft.display, "www.example.com")
+        .unwrap();
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    document.place_caret(after, 0);
+    document.insert_text("x").unwrap();
+    // In the middle of a line, so the table takes lines of its own.
+    document.place_caret(after, 1);
+    document.paste_rich(&clip).unwrap();
+    let pasted = cell_paragraph(&document, 1, 0, 1);
+    let link = document.hyperlink_at((pasted, 2)).expect("the pasted link");
+    assert_eq!((link.start, link.end), (0, 6));
+    assert!(document
+        .hyperlink_at((cell_paragraph(&document, 1, 0, 0), 2))
+        .is_none());
+}
