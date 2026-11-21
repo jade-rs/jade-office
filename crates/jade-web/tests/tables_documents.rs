@@ -1292,3 +1292,56 @@ fn a_pasted_table_keeps_its_heading_row_and_row_heights() {
     document.undo().unwrap();
     assert!(document.word_document().table_by_order(1).is_none());
 }
+
+#[test]
+fn rows_pasted_in_a_table_keep_their_own_heights() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::HeadlessCommand;
+    let mut document = with_table(2, 2);
+    fill(&mut document, 0, &[&["a", "b"], &["c", "d"]]);
+    // The first row is exactly 40pt; the second is as tall as its text.
+    document
+        .apply_command(
+            HeadlessCommand::SetTableRowHeightProperties {
+                table_order_index: 0,
+                row: 0,
+                mode: "exact".into(),
+                height: Some(40.0),
+            },
+            true,
+        )
+        .unwrap();
+    let first = cell_paragraph(&document, 0, 0, 0);
+    let second_row = cell_paragraph(&document, 0, 1, 0);
+    document.select((first, 0), (second_row, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    let heights = |document: &EditableDocument| {
+        document
+            .word_document()
+            .table_by_order(0)
+            .unwrap()
+            .rows
+            .iter()
+            .map(|row| {
+                (row.height_rule != Some(jade_docx_editor::document::TableRowHeightRule::Auto))
+                    .then_some(row.height.map(f32::round))
+                    .flatten()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    // Pasted above the second row, the new row is 40pt as the copied one
+    // was, not as tall as its text like the row it went in above.
+    document.place_caret(cell_paragraph(&document, 0, 1, 0), 0);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(heights(&document), [Some(40.0), Some(40.0), None]);
+    // And pasted above the 40pt row, the copy of the second row is not.
+    let lower = cell_paragraph(&document, 0, 2, 0);
+    document
+        .select((lower, 0), (document.paragraph_count() - 1, 0))
+        .unwrap();
+    let clip = document.copy_rich().unwrap();
+    document.place_caret(cell_paragraph(&document, 0, 0, 0), 0);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(heights(&document), [None, Some(40.0), Some(40.0), None]);
+}

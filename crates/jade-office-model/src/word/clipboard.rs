@@ -1818,6 +1818,49 @@ pub trait WordClipboard: WordSession {
             if !shading.is_empty() {
                 self.apply_commands(shading, false)?;
             }
+            // Each new row sets what the copied one did, not what the row
+            // it was made from does.
+            let mut own = Vec::new();
+            if let Some(made) = self.word_document().table_by_order(order) {
+                use jade_docx_reader::document::TableRowHeightRule;
+                for added in 0..rows {
+                    let Some(model) = made.rows.get(row + added) else {
+                        continue;
+                    };
+                    let copied = table.rows.iter().find(|copied| copied.row == added);
+                    let header = copied.is_some_and(|copied| copied.header);
+                    let cant_split = copied.is_some_and(|copied| copied.cant_split);
+                    if model.is_header != header || model.cant_split != cant_split {
+                        own.push(HeadlessCommand::SetTableRowProperties {
+                            table_order_index: order,
+                            row: row + added,
+                            repeat_header: (model.is_header != header).then_some(header),
+                            cant_split: (model.cant_split != cant_split).then_some(cant_split),
+                        });
+                    }
+                    let height = copied.and_then(|copied| copied.height);
+                    let made_height = model.height.and_then(|value| match model.height_rule {
+                        Some(TableRowHeightRule::Auto) => None,
+                        rule => Some((value, rule == Some(TableRowHeightRule::Exact))),
+                    });
+                    if height != made_height {
+                        own.push(HeadlessCommand::SetTableRowHeightProperties {
+                            table_order_index: order,
+                            row: row + added,
+                            mode: match height {
+                                None => "auto",
+                                Some((_, true)) => "exact",
+                                Some((_, false)) => "atLeast",
+                            }
+                            .to_string(),
+                            height: height.map(|(value, _)| value),
+                        });
+                    }
+                }
+            }
+            if !own.is_empty() {
+                self.apply_commands(own, false)?;
+            }
             Ok(())
         })();
         self.end_edit_group(mark);
