@@ -437,3 +437,59 @@ fn a_picture_at_the_end_of_a_copy_leaves_the_caret_after_it() {
     assert_eq!(after, (paragraph, '\u{fffc}'.len_utf8()));
     assert_eq!(image_runs(&document, paragraph).len(), 2);
 }
+
+/// A picture floating from the copied text comes along floating the same
+/// way, as Word pastes it, in one undo step with the text.
+#[test]
+fn a_copied_floating_picture_floats_the_same_way() {
+    use jade_docx_editor::document::{RunImageKind, WrapMode};
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = contract();
+    let paragraph = typed(&mut document, "ab ");
+    document.place_caret(paragraph, 1);
+    document.insert_picture(png()).unwrap();
+    let target = FloatingObjectTarget {
+        paragraph_index: paragraph,
+        run_index: image_runs(&document, paragraph)[0],
+        kind: FloatingObjectKind::Image,
+    };
+    let object = document.object_region(target).unwrap();
+    document.set_picture_wrap(object, Wrap::Square).unwrap();
+    let floating = |document: &jade_web::editing::EditableDocument| {
+        let model = document.word_document().paragraph(paragraph).unwrap();
+        image_runs(document, paragraph)
+            .into_iter()
+            .map(|run| model.runs[run].image.as_ref().unwrap().layout.clone())
+            .collect::<Vec<_>>()
+    };
+    let before = floating(&document);
+    assert_eq!(before[0].kind, RunImageKind::Floating);
+
+    // "ab": the floating picture draws no character of the line.
+    document.select((paragraph, 0), (paragraph, 2)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.pictures.len(), 1);
+    let end = document.word_document().rendered_paragraph_len(paragraph);
+    document.place_caret(paragraph, end);
+    let caret = document.paste_rich(&clip).unwrap();
+    let after = floating(&document);
+    assert_eq!(after.len(), 2);
+    assert_eq!(after[1], before[0]);
+    assert_eq!(after[1].wrap, WrapMode::Square);
+    assert_eq!(
+        caret,
+        (
+            paragraph,
+            document.word_document().rendered_paragraph_len(paragraph)
+        )
+    );
+    let saved = document.export_docx().unwrap();
+    let xml = jade_opc::OpcPackage::open(&saved)
+        .unwrap()
+        .part_str("word/document.xml")
+        .unwrap()
+        .unwrap();
+    assert_eq!(xml.matches("<wp:anchor").count(), 2, "{xml}");
+    document.undo().unwrap();
+    assert_eq!(floating(&document).len(), 1);
+}
