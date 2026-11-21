@@ -166,9 +166,12 @@ pub trait WordSession {
     /// [`Self::end_edit_group`] all go into — an edit made of headless
     /// commands and commands the shell built, like a paste with pictures.
     /// A session without such history takes each as a step of its own.
-    fn begin_edit_group(&mut self) {}
-    /// Closes the step [`Self::begin_edit_group`] opened.
-    fn end_edit_group(&mut self) {}
+    /// Returns the mark [`Self::end_edit_group`] takes.
+    fn begin_edit_group(&mut self) -> usize {
+        0
+    }
+    /// Closes the step [`Self::begin_edit_group`] opened at `mark`.
+    fn end_edit_group(&mut self, _mark: usize) {}
     /// The table cell a paragraph was laid out in at the last paint, by its
     /// id in the renderer's cell registry.
     fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize>;

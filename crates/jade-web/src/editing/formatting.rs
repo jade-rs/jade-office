@@ -105,11 +105,12 @@ impl WordSession for EditableDocument {
         self.finish_command(before, selection, keep_selection)
     }
 
-    fn begin_edit_group(&mut self) {
+    fn begin_edit_group(&mut self) -> usize {
         self.executor.begin_group();
+        0
     }
 
-    fn end_edit_group(&mut self) {
+    fn end_edit_group(&mut self, _mark: usize) {
         self.executor.end_group();
     }
 

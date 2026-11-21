@@ -1026,3 +1026,30 @@ fn text_copied_from_one_cell_pastes_as_text() {
     assert!(document.word_document().table_by_order(1).is_none());
     assert_eq!(document.paragraph_text(after).as_deref(), Some("xy"));
 }
+
+#[test]
+fn a_copied_cell_of_several_paragraphs_keeps_them() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["x", "w"]]);
+    let cell = cell_paragraph(&document, 0, 0, 0);
+    document.place_caret(cell, 1);
+    document.insert_paragraph_break().unwrap();
+    document.insert_text("y").unwrap();
+    assert_eq!(cell_texts(&document, 0), [["x\ny", "w"]]);
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.tables.len(), 1);
+    assert_eq!(clip.tables[0].cell_paragraphs, [2, 1]);
+
+    document.place_caret(after, 0);
+    let caret = document.paste_rich(&clip).unwrap();
+    assert_eq!(cell_texts(&document, 1), [["x\ny", "w"]]);
+    // The caret is in the paragraph after the pasted table.
+    assert_eq!(caret, (document.paragraph_count() - 1, 0));
+    assert!(document.cell_id_for_paragraph(caret.0).is_none());
+    document.undo().unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+    assert_eq!(document.paragraph_count(), after + 1);
+}

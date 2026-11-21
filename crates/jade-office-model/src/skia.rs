@@ -170,6 +170,14 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
         NativeDocument::execute_command(self, command, keep_selection)
     }
 
+    fn begin_edit_group(&mut self) -> usize {
+        NativeDocument::history_len(self)
+    }
+
+    fn end_edit_group(&mut self, mark: usize) {
+        NativeDocument::merge_history_since(self, mark)
+    }
+
     fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize> {
         self.renderer().cell_id_for_paragraph(paragraph)
     }

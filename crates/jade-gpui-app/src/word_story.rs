@@ -119,12 +119,12 @@ impl WordSession for WordDoc {
         WordSession::execute_command(&mut **self, command, keep_selection)
     }
 
-    fn begin_edit_group(&mut self) {
+    fn begin_edit_group(&mut self) -> usize {
         WordSession::begin_edit_group(&mut **self)
     }
 
-    fn end_edit_group(&mut self) {
-        WordSession::end_edit_group(&mut **self)
+    fn end_edit_group(&mut self, mark: usize) {
+        WordSession::end_edit_group(&mut **self, mark)
     }
 
     fn cell_id_for_paragraph(&self, paragraph: usize) -> Option<usize> {
