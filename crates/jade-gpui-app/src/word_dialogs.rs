@@ -160,6 +160,10 @@ impl DocumentView {
     /// ⌥⌘F / ⌥⌘D: the bar the note's text is typed into; its reference goes
     /// at the caret, or after the selection, when the text is put in.
     pub(crate) fn open_note_dialog(&mut self, kind: NoteKind, cx: &mut Context<Self>) {
+        // Greyed out in a header or footer, as in Word.
+        if !jade_office_model::word::WordSession::is_main_story(&self.document) {
+            return;
+        }
         self.sync_selection();
         let form = NoteForm::new(&self.document, kind);
         self.open_dialog(Dialog::Note(form), cx);
