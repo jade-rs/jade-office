@@ -70,6 +70,18 @@ captures where the same Word build uses different cloud fonts or substitutes
 Calibri for an unavailable Aptos face. Existing original manifests and
 coordinate references are retained as captured.
 
+Use `-CaptureXps` together with `-CaptureMetafiles` to retain Word's XPS export
+as an independent output context alongside PDF and page drawings. The capture
+manifest records its filename and SHA256, and the archiver copies the original
+XPS into the same version/capture directory. Missing, changed or incomplete XPS
+evidence fails archiving before a strict reference can be registered.
+Archiving also requires an initialized `jade-core` Git checkout, so an empty
+submodule directory cannot silently record the parent repository's revision
+as the renderer version.
+When the renderer was built in another worktree, pass its actual checkout with
+`archive-word-windows-capture.py --renderer-root <checkout>`; the same Git-root
+check applies to that path.
+
 New captures additionally record Word's file version, the OS architecture and
 each document's actual `Document.CompatibilityMode` reported by Word. This
 distinguishes old document layout modes from the installed Word product build.

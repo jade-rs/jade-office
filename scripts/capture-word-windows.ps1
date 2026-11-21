@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory=$true)][string[]]$Documents,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [switch]$CaptureMetafiles,
+    [switch]$CaptureXps,
     [switch]$UnclippedTableGlyphs,
     [switch]$HideComments,
     [hashtable]$DocumentPasswordsBySha256=@{}
@@ -67,6 +68,11 @@ try {
             $document.Repaginate()
             $target = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($path)+'.pdf')
             $document.ExportAsFixedFormat($target, 17)
+            $xps = $null
+            if ($CaptureXps) {
+                $xps = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($path)+'.xps')
+                $document.ExportAsFixedFormat($xps, 18, $false, 0)
+            }
             $pages=$document.ComputeStatistics(2)
             $metafiles=@()
             if ($CaptureMetafiles) {
@@ -86,6 +92,10 @@ try {
             $item=[ordered]@{ name=[IO.Path]::GetFileNameWithoutExtension($path); source=[IO.Path]::GetRelativePath((Get-Location).Path,$path); sha256=$sourceHash; pdf=[IO.Path]::GetFileName($target); pdf_sha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); pages=$pages; compatibility_mode=[int]$document.CompatibilityMode }
             $item['password_provided']=$DocumentPasswordsBySha256.ContainsKey($sourceHash)
             $item['open_mode']='normal-read-only'
+            if ($CaptureXps) {
+                $item['xps']=[IO.Path]::GetFileName($xps)
+                $item['xps_sha256']=(Get-FileHash -LiteralPath $xps -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
             $item['word_view']=[ordered]@{
                 hide_comments_requested=[bool]$HideComments
                 show_comments=[bool]$document.ActiveWindow.View.ShowComments
