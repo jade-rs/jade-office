@@ -1053,3 +1053,47 @@ fn a_copied_cell_of_several_paragraphs_keeps_them() {
     assert!(document.word_document().table_by_order(1).is_none());
     assert_eq!(document.paragraph_count(), after + 1);
 }
+
+#[test]
+fn a_pasted_table_keeps_its_column_widths_and_shading() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::HeadlessCommand;
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["x", "y"]]);
+    document
+        .apply_commands(
+            vec![
+                HeadlessCommand::SetTableColumnWidths {
+                    table_order_index: 0,
+                    widths: vec![100.0, 200.0],
+                },
+                HeadlessCommand::SetTableCellShading {
+                    table_order_index: 0,
+                    row: 0,
+                    column: 1,
+                    color: Some("#FF0000".into()),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    document.place_caret(after, 0);
+    document.paste_rich(&clip).unwrap();
+
+    let table = document.word_document().table_by_order(1).unwrap();
+    let widths: Vec<_> = table.columns.iter().map(|column| column.width).collect();
+    assert_eq!(widths, [Some(100.0), Some(200.0)]);
+    let fill = |column: usize| {
+        table.rows[0].cells[column]
+            .style
+            .get("background-color")
+            .cloned()
+    };
+    assert_eq!(fill(1).as_deref(), Some("#FF0000"));
+    assert_ne!(fill(0).as_deref(), Some("#FF0000"));
+    document.undo().unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+}

@@ -96,6 +96,11 @@ pub struct ClipTable {
     /// Where a paste splits the joined cells again: a copy's paragraph and a
     /// byte offset in its text, in order.
     pub splits: Vec<(usize, usize)>,
+    /// Its grid columns' widths in points; empty when the table names none.
+    pub widths: Vec<f32>,
+    /// Each cell's own shading (`#RRGGBB`), row by row; empty when none has
+    /// one.
+    pub shading: Vec<Option<String>>,
 }
 
 /// One of the things a paste puts in after the text: a note or a picture.
@@ -726,10 +731,36 @@ pub trait WordClipboard: WordSession {
                     .chunks(columns)
                     .all(|row| row.iter().all(|(cell, _)| cell.row == row[0].0.row));
             if whole_rows {
-                let style_id = self
+                let source = self
                     .table_order_for(table_id)
-                    .and_then(|order| self.word_document().table_by_order(order))
-                    .and_then(|table| table.style_name.clone());
+                    .and_then(|order| self.word_document().table_by_order(order));
+                let style_id = source.and_then(|table| table.style_name.clone());
+                let widths = source
+                    .and_then(|table| {
+                        table
+                            .columns
+                            .iter()
+                            .map(|column| column.width)
+                            .collect::<Option<Vec<f32>>>()
+                    })
+                    .filter(|widths| widths.len() == columns)
+                    .unwrap_or_default();
+                let shading: Vec<Option<String>> = cells
+                    .iter()
+                    .map(|(cell, _)| {
+                        source
+                            .and_then(|table| table.rows.get(cell.row))
+                            .and_then(|row| row.cells.get(cell.column))
+                            .and_then(|cell| cell.style.get("background-color"))
+                            .filter(|color| color.starts_with('#') && color.len() == 7)
+                            .cloned()
+                    })
+                    .collect();
+                let shading = if shading.iter().any(Option::is_some) {
+                    shading
+                } else {
+                    Vec::new()
+                };
                 let counts: Vec<usize> = cells.iter().map(|(_, count)| *count).collect();
                 tables.push(ClipTable {
                     first: index - first,
@@ -742,6 +773,8 @@ pub trait WordClipboard: WordSession {
                         counts
                     },
                     splits: Vec::new(),
+                    widths,
+                    shading,
                 });
             }
             index = end + 1;
@@ -808,7 +841,9 @@ pub trait WordClipboard: WordSession {
         starts: &[Position],
     ) -> Result<(), String> {
         let objects = clip.objects();
-        let styled = clip.tables.iter().any(|table| table.style_id.is_some());
+        let styled = clip.tables.iter().any(|table| {
+            table.style_id.is_some() || !table.widths.is_empty() || !table.shading.is_empty()
+        });
         let splits: Vec<(usize, usize)> = clip
             .tables
             .iter()
@@ -820,11 +855,9 @@ pub trait WordClipboard: WordSession {
         let mark = self.begin_edit_group();
         let result = (|| {
             self.apply_commands(commands, false)?;
-            // Each pasted table takes the style the copied one had.
+            // Each pasted table takes the style, column widths and cell
+            // shading the copied one had.
             for table in &clip.tables {
-                let Some(style_id) = table.style_id.clone() else {
-                    continue;
-                };
                 let Some(&(paragraph, _)) = starts.get(table.first) else {
                     continue;
                 };
@@ -835,13 +868,43 @@ pub trait WordClipboard: WordSession {
                 else {
                     continue;
                 };
-                self.apply_command(
-                    HeadlessCommand::ApplyTableNamedStyle {
+                let mut formats = Vec::new();
+                if let Some(style_id) = table.style_id.clone() {
+                    formats.push(HeadlessCommand::ApplyTableNamedStyle {
                         table_order_index: order,
                         style_id: Some(style_id),
-                    },
-                    false,
-                )?;
+                    });
+                }
+                // Widths fix the layout, so only when the new table's differ.
+                let made: Vec<Option<f32>> = self
+                    .word_document()
+                    .table_by_order(order)
+                    .map(|made| made.columns.iter().map(|column| column.width).collect())
+                    .unwrap_or_default();
+                let same = made.len() == table.widths.len()
+                    && made
+                        .iter()
+                        .zip(&table.widths)
+                        .all(|(made, width)| made.is_some_and(|made| (made - width).abs() < 0.5));
+                if !table.widths.is_empty() && !same {
+                    formats.push(HeadlessCommand::SetTableColumnWidths {
+                        table_order_index: order,
+                        widths: table.widths.clone(),
+                    });
+                }
+                for (index, color) in table.shading.iter().enumerate() {
+                    if let Some(color) = color {
+                        formats.push(HeadlessCommand::SetTableCellShading {
+                            table_order_index: order,
+                            row: index / table.columns,
+                            column: index % table.columns,
+                            color: Some(color.clone()),
+                        });
+                    }
+                }
+                if !formats.is_empty() {
+                    self.apply_commands(formats, false)?;
+                }
             }
             for object in objects.iter().rev() {
                 let (paragraph, offset, _) = object.at();
