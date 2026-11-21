@@ -8,6 +8,8 @@ import re
 import shutil
 import subprocess
 
+from word_font_context import capture_font_context
+
 
 def extract_emf_capture(manifest):
     script = Path(__file__).resolve().parents[1]/'jade-core/scripts/word-oracle/extract_windows_emf.py'
@@ -34,7 +36,8 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
     # Resolve before appending long fixture names: Win32 still caps relative
     # paths containing parent segments even when their absolute path is valid.
     manifest, evidence_root = Path(manifest).resolve(), Path(evidence_root).resolve()
-    capture = json.loads(manifest.read_text(encoding='utf-8-sig'))
+    capture_bytes = manifest.read_bytes()
+    capture = json.loads(capture_bytes.decode('utf-8-sig'))
     if capture.get('status') != 'complete' or capture.get('schema') != 2:
         raise ValueError('Capture must be complete')
     projection = capture.get('table_glyph_projection', 'visible')
@@ -143,16 +146,25 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
     target = evidence_root/relative
     if target.exists():
         raise FileExistsError(f'Refusing to overwrite archived evidence: {target}')
+    font_context = capture_font_context(manifest)
+    if font_context['capture_sha256'] != hashlib.sha256(capture_bytes).hexdigest():
+        raise ValueError('Capture metadata changed before font identification')
     target.mkdir(parents=True)
     for name in ['capture.json', reference_name, comparison_name]:
         shutil.copyfile(source/name, target/name)
+    if hashlib.sha256((target/'capture.json').read_bytes()).hexdigest() != font_context['capture_sha256']:
+        raise ValueError('Capture metadata changed while archiving')
     for name in ['word-reference.json', 'comparison.json', 'word-emf-reference.json', 'emf-comparison.json', 'word-visible-reference.json', 'visible-comparison.json', 'painted-comparison.json']:
         if name not in (reference_name, comparison_name) and (source/name).exists():
             shutil.copyfile(source/name, target/name)
     for item in capture['documents']:
         shutil.copyfile(source/item['pdf'], target/item['pdf'])
+        if hashlib.sha256((target/item['pdf']).read_bytes()).hexdigest() != item['pdf_sha256']:
+            raise ValueError('Captured PDF changed while archiving')
         for page in item.get('metafiles', []):
             shutil.copyfile(source/page['file'], target/page['file'])
+            if hashlib.sha256((target/page['file']).read_bytes()).hexdigest() != page['sha256']:
+                raise ValueError('Captured metafile changed while archiving')
     for item in capture['documents']:
         for suffix in ('.json', '.png', '.visible.json', '.visible.png', '.native.pdf'):
             native = source/(item['name']+suffix)
@@ -172,10 +184,14 @@ def archive(manifest, evidence_root, strict, reference_kind='pdf'):
             raise ValueError(f'Source DOCX changed while archiving: {item["name"]}')
         inputs.append(dict(name=item['name'], file='inputs/'+filename, sha256=item['sha256']))
     (target/'inputs.json').write_bytes((json.dumps(dict(schema=1, documents=inputs), indent=2)+'\n').encode('utf-8'))
+    # The same Word executable can use different cloud-font/fallback programs.
+    # Keep these facts beside the original bytes, separately from coordinates.
+    (target/'font-context.json').write_bytes((json.dumps(font_context, ensure_ascii=False, indent=2)+'\n').encode('utf-8'))
     core = Path(__file__).resolve().parents[1]/'jade-core'
     engine = subprocess.check_output(['git', '-C', str(core), 'rev-parse', 'HEAD'], text=True).strip()
     engine_dirty = bool(subprocess.check_output(['git', '-C', str(core), 'status', '--porcelain', '--', 'crates'], text=True).strip())
     verification = dict(engine_commit=engine, word_product_version=version, capture_id=capture_id,
+                        font_context_sha256=font_context['context_sha256'],
                         reference_kind=reference_kind,
                         engine_source_worktree_dirty=engine_dirty,
                         strict_fixtures=list(strict), matching_fixtures=sorted(passed),
