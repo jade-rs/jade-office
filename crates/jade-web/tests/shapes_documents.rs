@@ -824,3 +824,105 @@ fn a_copied_shape_pastes_as_a_shape_of_its_own() {
     document.undo().unwrap();
     assert_eq!(objects(&document, paragraph).len(), 1);
 }
+
+#[test]
+fn a_text_box_takes_a_picture_in_line_with_its_text() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::picture::WordPicture;
+    let mut document = contract();
+    let paragraph = typed(&mut document, "boxed ");
+    document.place_caret(paragraph, 0);
+    document
+        .insert_shape(
+            TextBoxShape::Rectangle,
+            drawn(200.0, 300.0, 200.0, 150.0),
+            true,
+        )
+        .unwrap();
+    let in_box = (0..document.paragraph_count())
+        .find(|&index| {
+            document
+                .word_document()
+                .is_text_box_paragraph_surface(index)
+        })
+        .expect("the box's paragraph");
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(40, 40, image::Rgba([255, 0, 0, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    document.place_caret(in_box, 0);
+    document.insert_picture(png.clone()).unwrap();
+    let pictures = |document: &EditableDocument| {
+        document
+            .word_document()
+            .paragraph(in_box)
+            .unwrap()
+            .runs
+            .iter()
+            .filter(|run| run.image.is_some())
+            .count()
+    };
+    assert_eq!(pictures(&document), 1);
+
+    // Drawn inside the box, which sits 300px down the page.
+    let saved = document.word_document().export_docx().unwrap();
+    let reopened = common::open_bytes(&saved);
+    let red_in = |document: &EditableDocument| {
+        let page = document.page(0).expect("first page");
+        let (width, height) = (page.width() as usize, page.height() as usize);
+        let pixels = page.rgba_premultiplied();
+        (0..height).any(|y| {
+            (0..width).any(|x| {
+                let at = (y * width + x) * 4;
+                pixels[at] > 200 && pixels[at + 1] < 60 && pixels[at + 2] < 60
+            })
+        })
+    };
+    assert!(red_in(&document) && red_in(&reopened));
+    let page = document.page(0).expect("first page");
+    let (width, height) = (page.width() as usize, page.height() as usize);
+    let pixels = page.rgba_premultiplied();
+    let red = (0..height).find(|y| {
+        (0..width).any(|x| {
+            let at = (y * width + x) * 4;
+            pixels[at] > 200 && pixels[at + 1] < 60 && pixels[at + 2] < 60
+        })
+    });
+    use jade_web::word::page::WordPage;
+    let page_px = f64::from(document.page_setup().height) * 96.0 / 72.0;
+    let top = red.expect("the picture is drawn") as f64 * page_px / height as f64;
+    assert!((300.0..450.0).contains(&top), "{top}");
+
+    // One wider than the box is fitted to the box's width, as Word fits it.
+    let mut wide = Vec::new();
+    image::RgbaImage::from_pixel(600, 300, image::Rgba([0, 0, 255, 255]))
+        .write_to(
+            &mut std::io::Cursor::new(&mut wide),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    document.place_caret(in_box, 0);
+    document.insert_picture(wide).unwrap();
+    let fitted = document
+        .word_document()
+        .paragraph(in_box)
+        .unwrap()
+        .runs
+        .iter()
+        .filter_map(|run| run.image.as_ref())
+        .find_map(|image| image.width_px.filter(|&width| width > 40.0))
+        .unwrap();
+    assert!(fitted < 200.0, "{fitted}");
+    document.undo().unwrap();
+
+    // A picture copied from the body goes into the box with its text.
+    document.place_caret(paragraph, 0);
+    document.insert_picture(png).unwrap();
+    document.select((paragraph, 0), (paragraph, 3)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.pictures.len(), 1);
+    let end = document.word_document().rendered_paragraph_len(in_box);
+    document.place_caret(in_box, end);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(pictures(&document), 2);
+}
