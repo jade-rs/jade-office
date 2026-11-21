@@ -18,8 +18,8 @@ use jade_docx_editor::commands::hyperlink::InsertHyperlinkCommand;
 use jade_docx_editor::commands::insert_field::InsertFieldCommand;
 use jade_docx_editor::commands::insert_image::InsertImageCommand;
 use jade_docx_editor::commands::paragraph_format::{ParagraphFormat, SetParagraphFormatCommand};
-use jade_docx_editor::commands::table_format::{SetTableFormatCommand, TableFormat};
 use jade_docx_editor::commands::paste_object::PasteObjectCommand;
+use jade_docx_editor::commands::table_format::{SetTableFormatCommand, TableFormat};
 use jade_docx_editor::commands::{Command, CommandContext, CommandError, CommandResult};
 use jade_docx_editor::document::{RunFieldKind, RunImageKind, RunImageLayout};
 use jade_docx_editor::word_document::objects::ObjectClip;
@@ -2062,7 +2062,10 @@ pub trait WordClipboard: WordSession {
                 // Then everything else the copied table, its rows and its
                 // cells set for themselves.
                 if let Some(format) = table.format.clone() {
-                    self.execute_command(Box::new(SetTableFormatCommand::new(order, format)), false)?;
+                    self.execute_command(
+                        Box::new(SetTableFormatCommand::new(order, format)),
+                        false,
+                    )?;
                 }
             }
             // The links go back on their text, then the fields' results
