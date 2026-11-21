@@ -83,6 +83,19 @@ pub trait WordReferences: WordSession {
         }
     }
 
+    /// Whether paragraph `paragraph` takes a note: one of the main text's,
+    /// not a header's, a footer's, a note's or a text box's, where Word
+    /// greys out 脚注の挿入.
+    fn takes_notes_at(&self, paragraph: usize) -> bool {
+        self.is_main_story() && self.word_document().is_body_paragraph_surface(paragraph)
+    }
+
+    /// Whether the caret's paragraph takes a note.
+    fn can_insert_note(&self) -> bool {
+        self.selection_range()
+            .is_some_and(|range| self.takes_notes_at(range.normalized().0.paragraph))
+    }
+
     /// Puts a note's reference mark at `at` and the note, holding `text`, in
     /// `footnotes.xml` or `endnotes.xml` (ECMA-376 Part 1 §17.11), one undo
     /// step. Returns where the caret goes: where the reference went.
@@ -92,8 +105,8 @@ pub trait WordReferences: WordSession {
         at: Position,
         text: &str,
     ) -> Result<Position, String> {
-        if !self.is_main_story() {
-            return Err("notes go in the main text, not a header or footer".into());
+        if !self.takes_notes_at(at.0) {
+            return Err("notes go in the main text, not a header, footer, note or text box".into());
         }
         let (paragraph, offset) = at;
         let text = text.to_string();
