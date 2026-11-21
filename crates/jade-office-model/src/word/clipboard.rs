@@ -1684,15 +1684,20 @@ pub trait WordClipboard: WordSession {
         let (start, _) = range.normalized();
         // Only the main text holds notes and section breaks: in a header,
         // a footer, a note or a text box Word pastes the text without them.
+        // A note or a text box here takes no drawings either.
+        let body = self
+            .word_document()
+            .is_body_paragraph_surface(start.paragraph);
         let outside;
-        let clip = if self.is_main_story()
-            && self
-                .word_document()
-                .is_body_paragraph_surface(start.paragraph)
-        {
+        let clip = if self.is_main_story() && body {
             clip
         } else {
-            outside = clip.outside_the_main_story();
+            let mut stripped = clip.outside_the_main_story();
+            if !body {
+                stripped.pictures.clear();
+                stripped.drawings.clear();
+            }
+            outside = stripped;
             &outside
         };
         if range.is_collapsed() {
