@@ -12,6 +12,8 @@ use jade_docx_headless_api::{
     HeadlessCommand, HeadlessQuery, HeadlessQueryResult, HeadlessRunStyle,
 };
 
+use jade_selection::TextPosition;
+
 use super::{query, Position, WordFormatting, WordSession};
 
 /// A run of copied text and its character formatting.
@@ -29,10 +31,24 @@ pub struct ClipParagraph {
     pub runs: Vec<ClipRun>,
 }
 
+/// A footnote or endnote whose reference mark a copy took: Word pastes a
+/// new note of the same kind and text where the mark lands.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ClipNote {
+    /// Which of the copy's paragraphs the mark is in.
+    pub paragraph: usize,
+    /// The mark's byte offset in that paragraph's copied text.
+    pub offset: usize,
+    pub footnote: bool,
+    pub text: String,
+}
+
 /// What a copy took.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RichClip {
     pub paragraphs: Vec<ClipParagraph>,
+    /// Reference marks the copy took, in document order.
+    pub notes: Vec<ClipNote>,
 }
 
 impl RichClip {
@@ -299,7 +315,10 @@ impl RichClip {
                     .collect(),
             })
             .collect();
-        RichClip { paragraphs }
+        RichClip {
+            paragraphs,
+            notes: self.notes.clone(),
+        }
     }
 
     /// Plain text from elsewhere as a copy: one paragraph per line.
@@ -320,6 +339,7 @@ impl RichClip {
                     ..Default::default()
                 })
                 .collect(),
+            notes: Vec::new(),
         }
     }
 }
@@ -331,7 +351,17 @@ pub trait WordClipboard: WordSession {
         let range = self
             .selection_range()
             .filter(|range| !range.is_collapsed())?;
-        let (start, end) = range.normalized();
+        // The selection counts what the page draws — note numbers, fields
+        // as they show — and the paragraph's text does not.
+        let document = self.word_document();
+        let (rendered_start, rendered_end) = range.normalized();
+        let (start, end) = (
+            document.rendered_to_model_text_position(rendered_start),
+            document.rendered_to_model_text_position(rendered_end),
+        );
+        let footnotes = document.footnote_infos();
+        let endnotes = document.endnote_infos();
+        let mut notes = Vec::new();
         let mut paragraphs = Vec::new();
         for index in start.paragraph..=end.paragraph {
             let Some(HeadlessQueryResult::Paragraph {
@@ -354,6 +384,42 @@ pub trait WordClipboard: WordSession {
             } else {
                 snapshot.text.len()
             };
+            // The reference marks drawn wholly inside the selection.
+            let (shown_from, shown_to) = (
+                if index == rendered_start.paragraph {
+                    rendered_start.offset
+                } else {
+                    0
+                },
+                if index == rendered_end.paragraph {
+                    rendered_end.offset
+                } else {
+                    usize::MAX
+                },
+            );
+            let mut shown = 0;
+            for span in document.reference_marker_spans(index) {
+                let at = span.model_offset + shown;
+                shown += span.rendered_len;
+                if at < shown_from || at + span.rendered_len > shown_to {
+                    continue;
+                }
+                let infos = if span.is_footnote {
+                    &footnotes
+                } else {
+                    &endnotes
+                };
+                notes.push(ClipNote {
+                    paragraph: paragraphs.len(),
+                    offset: span.model_offset.saturating_sub(from),
+                    footnote: span.is_footnote,
+                    text: infos
+                        .iter()
+                        .find(|note| note.id == span.note_id)
+                        .map(|note| note.text.clone())
+                        .unwrap_or_default(),
+                });
+            }
             let mut runs: Vec<ClipRun> = snapshot
                 .runs
                 .iter()
@@ -385,7 +451,7 @@ pub trait WordClipboard: WordSession {
                 runs,
             });
         }
-        Some(RichClip { paragraphs })
+        Some(RichClip { paragraphs, notes })
     }
 
     /// Pastes `clip` the way `mode` says — 元の書式を保持, 書式を結合 or
@@ -420,6 +486,7 @@ pub trait WordClipboard: WordSession {
         let inherited = self
             .run_style_at((start.paragraph, start.offset.saturating_sub(1)))
             .unwrap_or_default();
+        let model_start = self.model_position((start.paragraph, start.offset));
         let at = push_paste_commands(
             clip,
             (start.paragraph, start.offset),
@@ -430,7 +497,49 @@ pub trait WordClipboard: WordSession {
             return Ok(at);
         }
         self.apply_commands(commands, false)?;
-        Ok(at)
+        Ok(self.after_pasted_notes(clip, model_start, at))
+    }
+
+    /// Where the caret goes after a paste of `clip` that started at model
+    /// position `model_start` and ends at `at` as the text alone would put
+    /// it: past the numbers of the notes it brought into that paragraph too.
+    /// Notes add no text to the model, so the end is found there.
+    fn after_pasted_notes(&self, clip: &RichClip, model_start: Position, at: Position) -> Position {
+        let last = clip.paragraphs.len().saturating_sub(1);
+        let ours_at_end = |end: usize| {
+            clip.notes
+                .iter()
+                .filter(|note| note.paragraph == last && note.offset == end)
+                .count()
+        };
+        if !clip.notes.iter().any(|note| note.paragraph == last) {
+            return at;
+        }
+        let pasted: usize = clip.paragraphs.last().map_or(0, |paragraph| {
+            paragraph.runs.iter().map(|run| run.text.len()).sum()
+        });
+        let model_end = if last == 0 { model_start.1 } else { 0 } + pasted;
+        let document = self.word_document();
+        let mut caret = document
+            .model_to_rendered_text_position(TextPosition::new(at.0, model_end))
+            .offset;
+        // A mark at the end itself is drawn before the caret.
+        let at_end: Vec<usize> = document
+            .reference_marker_spans(at.0)
+            .into_iter()
+            .filter(|span| span.model_offset == model_end)
+            .map(|span| span.rendered_len)
+            .collect();
+        caret += at_end.iter().rev().take(ours_at_end(pasted)).sum::<usize>();
+        (at.0, caret)
+    }
+
+    /// `position` in model offsets, which pasted notes do not move.
+    fn model_position(&self, position: Position) -> Position {
+        let model = self
+            .word_document()
+            .rendered_to_model_text_position(TextPosition::new(position.0, position.1));
+        (model.paragraph, model.offset)
     }
 
     /// Drag and drop: `clip` dropped at `target`, and — for a move — the
@@ -448,6 +557,7 @@ pub trait WordClipboard: WordSession {
             .unwrap_or_default();
         let mut commands = Vec::new();
         let mut at = target;
+        let mut model_at = self.model_position(target);
         if let Some((start, end)) = moved_from {
             let (start, end) = if start <= end {
                 (start, end)
@@ -465,10 +575,15 @@ pub trait WordClipboard: WordSession {
                 text: String::new(),
             });
             at = position_after_removal(target, start, end);
+            model_at = position_after_removal(
+                model_at,
+                self.model_position(start),
+                self.model_position(end),
+            );
         }
         let end = push_paste_commands(clip, at, &inherited, &mut commands);
         self.apply_commands(commands, false)?;
-        Ok(end)
+        Ok(self.after_pasted_notes(clip, model_at, end))
     }
 }
 
@@ -494,6 +609,7 @@ fn push_paste_commands(
     let inherited = inherited.clone();
     let mut at = start;
     let mut formats = Vec::new();
+    let mut starts = Vec::new();
     let count = clip.paragraphs.len();
     for (index, paragraph) in clip.paragraphs.iter().enumerate() {
         if index > 0 {
@@ -504,6 +620,7 @@ fn push_paste_commands(
             });
             at = (at.0 + 1, 0);
         }
+        starts.push(at);
         // Every copied paragraph but the last came with its mark, and the
         // mark carries the paragraph's style to the paragraph it ends
         // here; the last ends in the destination's own mark.
@@ -537,6 +654,28 @@ fn push_paste_commands(
     // Formats after all the text: a split carries a paragraph's direct
     // formatting into the next, so formatting first would be undone.
     commands.extend(formats);
+    // Then the notes, last first, so each goes in where the text alone put
+    // its mark: a note's number moves only what comes after it.
+    for note in clip.notes.iter().rev() {
+        let Some(&(paragraph, offset)) = starts.get(note.paragraph) else {
+            continue;
+        };
+        let offset = offset + note.offset;
+        let text = note.text.clone();
+        commands.push(if note.footnote {
+            HeadlessCommand::InsertFootnote {
+                paragraph,
+                offset,
+                text,
+            }
+        } else {
+            HeadlessCommand::InsertEndnote {
+                paragraph,
+                offset,
+                text,
+            }
+        });
+    }
     at
 }
 
@@ -553,6 +692,7 @@ mod tests {
             style: HeadlessRunStyle::default(),
         };
         let clip = RichClip {
+            notes: Vec::new(),
             paragraphs: vec![
                 ClipParagraph {
                     runs: vec![run("Bold"), run(" plain")],
@@ -572,6 +712,7 @@ mod tests {
     #[test]
     fn merging_keeps_emphasis_and_text_only_keeps_nothing() {
         let clip = RichClip {
+            notes: Vec::new(),
             paragraphs: vec![ClipParagraph {
                 style_id: Some("Heading1".into()),
                 alignment: Some("center".into()),

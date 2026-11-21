@@ -191,7 +191,10 @@ fn clip_of(body: &Element) -> RichClip {
         }
         paragraphs.push(paragraph);
     }
-    RichClip { paragraphs }
+    RichClip {
+        paragraphs,
+        notes: Vec::new(),
+    }
 }
 
 /// The entries of a glossary part.
@@ -397,6 +400,7 @@ mod tests {
             gallery: Gallery::AutoText,
             category: "全般".into(),
             content: RichClip {
+                notes: Vec::new(),
                 paragraphs: vec![ClipParagraph {
                     style_id: Some("Signature".into()),
                     alignment: Some("right".into()),
