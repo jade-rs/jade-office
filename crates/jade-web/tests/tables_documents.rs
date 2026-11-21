@@ -1345,3 +1345,106 @@ fn rows_pasted_in_a_table_keep_their_own_heights() {
     document.paste_rich(&clip).unwrap();
     assert_eq!(heights(&document), [None, Some(40.0), Some(40.0), None]);
 }
+
+#[test]
+fn a_pasted_table_keeps_its_borders_alignment_and_cell_formatting() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::{HeadlessBorderEdge, HeadlessCommand};
+    let mut document = with_table(2, 2);
+    fill(&mut document, 0, &[&["a", "b"], &["c", "d"]]);
+    let edge = || {
+        Some(HeadlessBorderEdge {
+            style: Some("double".into()),
+            width: Some(1.5),
+            color: Some("#FF0000".into()),
+        })
+    };
+    document
+        .apply_commands(
+            vec![
+                HeadlessCommand::SetTableAlignment {
+                    table_order_index: 0,
+                    alignment: "center".into(),
+                },
+                HeadlessCommand::SetTableCellVerticalAlignment {
+                    table_order_index: 0,
+                    row: 0,
+                    column: 0,
+                    alignment: "center".into(),
+                },
+                HeadlessCommand::SetTableCellTextDirection {
+                    table_order_index: 0,
+                    row: 0,
+                    column: 1,
+                    direction: Some("tbRl".into()),
+                },
+                HeadlessCommand::SetTableCellBorders {
+                    table_order_index: 0,
+                    row: 1,
+                    column: 0,
+                    top: edge(),
+                    bottom: None,
+                    left: None,
+                    right: None,
+                    tl2br: edge(),
+                    tr2bl: None,
+                },
+                HeadlessCommand::SetTableBorders {
+                    table_order_index: 0,
+                    top: edge(),
+                    bottom: edge(),
+                    left: None,
+                    right: None,
+                    inside_h: None,
+                    inside_v: None,
+                },
+            ],
+            true,
+        )
+        .unwrap();
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    let tables = |xml: &str| {
+        xml.match_indices("<w:tbl>")
+            .map(|(at, _)| {
+                let table = &xml[at..];
+                table[..table.find("</w:tbl>").unwrap()].to_string()
+            })
+            .collect::<Vec<_>>()
+    };
+    let formatting = [
+        "<w:jc w:val=\"center\"",
+        "<w:vAlign w:val=\"center\"",
+        "<w:textDirection",
+        "<w:tl2br",
+        "<w:tblBorders",
+    ];
+
+    // Pasted in the same document and in another, the copy is formatted as
+    // the table was, cell by cell, and holds its own text.
+    document.place_caret(after, 0);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(cell_texts(&document, 1), [["a", "b"], ["c", "d"]]);
+    let cell = |document: &EditableDocument, order: usize| {
+        document.word_document().table_by_order(order).unwrap().rows[0].cells[0]
+            .vertical_align
+            .clone()
+    };
+    assert_eq!(cell(&document, 1).as_deref(), Some("center"));
+    let saved = tables(&document_xml(&document.export_docx().unwrap()));
+    for mark in formatting {
+        assert!(saved[1].contains(mark), "{mark}: {}", saved[1]);
+    }
+    let mut other = blank();
+    other.place_caret(0, 0);
+    other.paste_rich(&clip).unwrap();
+    assert_eq!(cell(&other, 0).as_deref(), Some("center"));
+    let reopened = open_bytes(&other.export_docx().unwrap());
+    assert_eq!(cell(&reopened, 0).as_deref(), Some("center"));
+    assert_eq!(cell_texts(&reopened, 0), [["a", "b"], ["c", "d"]]);
+
+    // One undo takes the whole table back.
+    document.undo().unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+}
