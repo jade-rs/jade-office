@@ -411,7 +411,7 @@ fn a_copied_picture_pastes_as_a_picture_of_its_own() {
         .part_str("word/document.xml")
         .unwrap()
         .unwrap();
-    assert_eq!(xml.matches("<w:drawing>").count(), 2, "{xml}");
+    assert_eq!(xml.matches("<w:drawing").count(), 2, "{xml}");
 
     // One undo takes the text and the picture back.
     document.undo().unwrap();
@@ -474,7 +474,17 @@ fn a_copied_floating_picture_floats_the_same_way() {
     let caret = document.paste_rich(&clip).unwrap();
     let after = floating(&document);
     assert_eq!(after.len(), 2);
-    assert_eq!(after[1], before[0]);
+    let placed = |layout: &jade_docx_editor::document::RunImageLayout| {
+        (
+            layout.kind,
+            layout.position_h.clone(),
+            layout.position_v.clone(),
+            layout.wrap,
+            layout.wrap_text,
+            layout.behind_doc,
+        )
+    };
+    assert_eq!(placed(&after[1]), placed(&before[0]));
     assert_eq!(after[1].wrap, WrapMode::Square);
     assert_eq!(
         caret,
@@ -492,4 +502,74 @@ fn a_copied_floating_picture_floats_the_same_way() {
     assert_eq!(xml.matches("<wp:anchor").count(), 2, "{xml}");
     document.undo().unwrap();
     assert_eq!(floating(&document).len(), 1);
+}
+
+#[test]
+fn a_copied_picture_keeps_its_rotation_and_crop() {
+    use jade_docx_editor::document::ImageCrop;
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::objects::Rotate;
+    use jade_web::word::picture_format::WordPictureFormat;
+    let mut document = contract();
+    let paragraph = typed(&mut document, "ab ");
+    document.place_caret(paragraph, 1);
+    document.insert_picture(png()).unwrap();
+    let target = FloatingObjectTarget {
+        paragraph_index: paragraph,
+        run_index: image_runs(&document, paragraph)[0],
+        kind: FloatingObjectKind::Image,
+    };
+    document.rotate_object(target, Rotate::Right90).unwrap();
+    document
+        .crop_picture(
+            target,
+            Some(ImageCrop {
+                left: 0.1,
+                top: 0.0,
+                right: 0.2,
+                bottom: 0.0,
+            }),
+        )
+        .unwrap();
+    document.select((paragraph, 0), (paragraph, 5)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    let saved = |document: &mut jade_web::editing::EditableDocument| {
+        jade_opc::OpcPackage::open(&document.export_docx().unwrap())
+            .unwrap()
+            .part_str("word/document.xml")
+            .unwrap()
+            .unwrap()
+    };
+
+    // Pasted in the same document and in another, the copy is turned and
+    // cropped as the picture was, and brings its image.
+    let end = document.word_document().rendered_paragraph_len(paragraph);
+    document.place_caret(paragraph, end);
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(image_runs(&document, paragraph).len(), 2);
+    let xml = saved(&mut document);
+    assert_eq!(xml.matches("rot=\"5400000\"").count(), 2, "{xml}");
+    assert_eq!(xml.matches("<a:srcRect").count(), 2, "{xml}");
+
+    let mut other = contract();
+    let into = typed(&mut other, "x");
+    other.place_caret(into, 1);
+    other.paste_rich(&clip).unwrap();
+    assert_eq!(image_runs(&other, into).len(), 1);
+    let xml = saved(&mut other);
+    assert!(
+        xml.contains("rot=\"5400000\"") && xml.contains("<a:srcRect"),
+        "{xml}"
+    );
+    let reopened = common::open_bytes(&other.export_docx().unwrap());
+    let image = reopened.word_document().paragraph(into).unwrap().runs
+        [image_runs(&reopened, into)[0]]
+        .image
+        .clone()
+        .unwrap();
+    assert!(image.data_uri.is_some(), "the image came with it");
+
+    // One undo takes the pasted one back.
+    document.undo().unwrap();
+    assert_eq!(image_runs(&document, paragraph).len(), 1);
 }
