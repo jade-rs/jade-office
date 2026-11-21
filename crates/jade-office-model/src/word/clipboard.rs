@@ -91,6 +91,26 @@ pub struct ClipPicture {
     /// How it floats — wrap, position, distances — when it is not in line
     /// with the text: the pasted one floats the same way.
     pub layout: Option<RunImageLayout>,
+    /// The picture's whole drawing, when the copy was made here: a paste
+    /// here keeps its rotation, crop, effects, border and the rest of its
+    /// formatting; one from elsewhere has the bytes alone.
+    pub drawing: Option<CopiedDrawing>,
+}
+
+/// A drawing a copy took whole, shared by the copies of a clip.
+#[derive(Clone)]
+pub struct CopiedDrawing(Rc<ObjectClip>);
+
+impl std::fmt::Debug for CopiedDrawing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CopiedDrawing")
+    }
+}
+
+impl PartialEq for CopiedDrawing {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 /// A field whose result a copy took whole: Word pastes it as a field of
@@ -1415,6 +1435,10 @@ pub trait WordClipboard: WordSession {
                         description: image.description.clone(),
                         shown: at,
                         layout: None,
+                        drawing: document
+                            .copy_object(target)
+                            .ok()
+                            .map(|clip| CopiedDrawing(Rc::new(clip))),
                     });
                 }
                 // The pictures floating from it: anchored in what it holds.
@@ -1482,6 +1506,14 @@ pub trait WordClipboard: WordSession {
                             .model_to_rendered_text_position(TextPosition::new(index, at))
                             .offset,
                         layout: Some(image.layout.clone()),
+                        drawing: document
+                            .copy_object(FloatingObjectTarget {
+                                paragraph_index: index,
+                                run_index,
+                                kind,
+                            })
+                            .ok()
+                            .map(|clip| CopiedDrawing(Rc::new(clip))),
                     });
                 }
             }
@@ -1989,6 +2021,17 @@ pub trait WordClipboard: WordSession {
                         self.set_selection_range(Some(caret));
                         self.execute_command(
                             Box::new(PasteObjectCommand::new(caret, (*drawing.clip).clone())),
+                            false,
+                        )?;
+                    }
+                    ClipObject::Picture(ClipPicture {
+                        drawing: Some(drawing),
+                        ..
+                    }) => {
+                        let caret = SelectionRange::collapsed(TextPosition::new(paragraph, offset));
+                        self.set_selection_range(Some(caret));
+                        self.execute_command(
+                            Box::new(PasteObjectCommand::new(caret, (*drawing.0).clone())),
                             false,
                         )?;
                     }
