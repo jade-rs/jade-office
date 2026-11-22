@@ -524,7 +524,13 @@ struct ObjectGrab {
     keep_ratio: bool,
     /// Whether the button is still down.
     dragging: bool,
+    /// Turning by the handle above the box: the angle so far, clockwise in
+    /// degrees.
+    rotating: Option<f64>,
 }
+
+/// How far above the box Word's rotation handle sits, in CSS px.
+const ROTATE_REACH: f64 = 22.0;
 
 thread_local! {
     /// The last copy's formatting and identity, shared across document tabs.
@@ -1788,6 +1794,32 @@ impl DocView {
             };
             // The selected object's handles stand half outside its box: a
             // press on their outer half takes them too.
+            // Word's rotation handle, on its stem above the top edge.
+            let rotate_at = |found: &jade_web::word::picture::PlacedObject| {
+                (x - (found.x + found.width / 2.0)).abs() <= HANDLE
+                    && (page_y - (found.y - ROTATE_REACH)).abs() <= HANDLE
+            };
+            let rotating = object
+                .map(|grab| grab.object)
+                .filter(|found| found.page == index && rotate_at(found));
+            if let Some(found) = rotating {
+                *object = Some(ObjectGrab {
+                    object: found,
+                    from: (x, page_y),
+                    rect: (found.x, found.y, found.width, found.height),
+                    handle: None,
+                    keep_ratio: false,
+                    dragging: true,
+                    rotating: Some(
+                        jade_web::word::objects::WordObjects::object_format(
+                            &**document,
+                            found.target,
+                        )
+                        .map_or(0.0, |format| format.rotation),
+                    ),
+                });
+                return cx.notify();
+            }
             let selected = object
                 .map(|grab| grab.object)
                 .filter(|found| found.page == index && handle_at(found).is_some());
@@ -1819,6 +1851,7 @@ impl DocView {
                     keep_ratio: shift
                         || handle.is_some_and(|handle| handle.is_corner() && found.is_picture()),
                     dragging: true,
+                    rotating: None,
                 }
             });
             if object.is_some() {
@@ -2032,6 +2065,19 @@ impl DocView {
         let y = f64::from((event.position.y - bounds.origin.y) / zoom);
         let (dx, dy) = (x - grab.from.0, y - grab.from.1);
         let start = grab.object;
+        if grab.rotating.is_some() {
+            let center = (start.x + start.width / 2.0, start.y + start.height / 2.0);
+            let angle = (y - center.1).atan2(x - center.0).to_degrees() + 90.0;
+            // ⇧ snaps to 15° as Word does.
+            let angle = if event.modifiers.shift {
+                (angle / 15.0).round() * 15.0
+            } else {
+                angle.round()
+            };
+            grab.rotating = Some(angle.rem_euclid(360.0));
+            cx.notify();
+            return true;
+        }
         grab.rect = if let Some(handle) = grab.handle {
             jade_web::word::handles::resize(
                 (start.x, start.y, start.width, start.height),
@@ -2059,10 +2105,21 @@ impl DocView {
         }
         let start = grab.object;
         let rect = grab.rect;
-        if rect == (start.x, start.y, start.width, start.height) {
+        if let Some(angle) = grab.rotating.take() {
+            use jade_web::word::objects::WordObjects;
+            self.word_edit(cx, move |document| {
+                let now = WordObjects::object_format(&**document, start.target)
+                    .map_or(0.0, |format| format.rotation);
+                if (now - angle).abs() < 0.5 {
+                    return Ok(());
+                }
+                WordObjects::set_object_rotation(&mut **document, start.target, angle)
+            });
+        } else if rect == (start.x, start.y, start.width, start.height) {
             return;
+        } else {
+            self.word_edit(cx, move |document| document.place_object(start, rect));
         }
-        self.word_edit(cx, move |document| document.place_object(start, rect));
         // Where the picture is now, for the outline and the next drag.
         if let Document::Pages {
             document, object, ..
@@ -3146,8 +3203,10 @@ impl DocView {
                 y as f32 * zoom,
                 width as f32 * zoom,
                 height as f32 * zoom,
+                grab.rotating,
             )
         });
+        let reach = ROTATE_REACH as f32 * zoom;
         // The line under an IME's composition, or down its column.
         let composition = document.composition_marks();
         // The caret, as a page and a rectangle on it.
@@ -3274,7 +3333,7 @@ impl DocView {
                                 }),
                         )
                         .children(object_outline.filter(|(page, ..)| *page == index).map(
-                            |(_, x, y, width, height)| {
+                            |(_, x, y, width, height, rotating)| {
                                 div()
                                     .absolute()
                                     .left(px(x))
@@ -3294,6 +3353,41 @@ impl DocView {
                                             .border_1()
                                             .border_color(palette::accent())
                                             .bg(gpui::white())
+                                    }))
+                                    // Word's rotation handle, on a stem above
+                                    // the top edge.
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .left(px(width / 2.0 - 0.5))
+                                            .top(px(-reach))
+                                            .w(px(1.0))
+                                            .h(px(reach))
+                                            .bg(palette::accent()),
+                                    )
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .left(px(width / 2.0 - 5.0))
+                                            .top(px(-reach - 5.0))
+                                            .size(px(10.0))
+                                            .rounded_full()
+                                            .border_1()
+                                            .border_color(palette::accent())
+                                            .bg(gpui::white()),
+                                    )
+                                    // While turning, the angle it will take.
+                                    .children(rotating.map(|angle| {
+                                        div()
+                                            .absolute()
+                                            .left(px(width / 2.0 + 8.0))
+                                            .top(px(-reach - 8.0))
+                                            .px_1()
+                                            .rounded_sm()
+                                            .bg(palette::accent())
+                                            .text_color(gpui::white())
+                                            .text_xs()
+                                            .child(format!("{angle:.0}°"))
                                     }))
                             },
                         ))
