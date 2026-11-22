@@ -5440,6 +5440,7 @@ impl Render for DocumentView {
                                         .children(self.table_overlay(index))
                                         .children(self.story_label(index))
                                         .children(self.object_overlay(index))
+                                        .children(self.layout_options(index, cx))
                                         .children(self.wrap_point_overlay(index))
                                         .children(self.controls_overlay(index, cx))
                                         .children(self.mailings_overlay(index))

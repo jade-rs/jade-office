@@ -828,6 +828,7 @@ picture.group	図
 picture.insert	画像
 picture.insert_title	画像をこのデバイスから挿入
 picture.wrap	文字列の折り返し
+objects.layout_options	レイアウト オプション
 picture.wrap.inline	行内
 picture.wrap.square	四角形
 picture.wrap.tight	外周

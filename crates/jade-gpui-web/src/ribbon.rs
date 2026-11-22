@@ -174,6 +174,8 @@ pub enum Popup {
     Equation(crate::view::word_equation::EquationPopup),
     /// レイアウト's ハイフネーション (`view::word_hyphenation`).
     Hyphenation,
+    /// レイアウト オプション, the button beside a selected picture or shape.
+    LayoutOptions,
     /// ページの背景's 透かし (`view::word_watermark`).
     Watermark,
     /// 描画's lists (`view::word_draw`).

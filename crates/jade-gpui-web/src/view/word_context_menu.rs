@@ -102,6 +102,7 @@ impl DocView {
                 handle: None,
                 keep_ratio: false,
                 dragging: false,
+                rotating: None,
             });
             return ContextTarget {
                 picture: found.is_picture(),

@@ -828,6 +828,7 @@ picture.group	Illustrations
 picture.insert	Picture
 picture.insert_title	Insert a picture from this device
 picture.wrap	Wrap Text
+objects.layout_options	Layout Options
 picture.wrap.inline	In Line
 picture.wrap.square	Square
 picture.wrap.tight	Tight

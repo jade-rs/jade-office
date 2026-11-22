@@ -248,7 +248,7 @@ fn percent(value: f64) -> String {
     format!("{:+.0}%", value * 100.0)
 }
 
-fn wrap_label(wrap: Wrap) -> &'static str {
+pub(crate) fn wrap_label(wrap: Wrap) -> &'static str {
     t(match wrap {
         Wrap::Inline => "picture.wrap.inline",
         Wrap::Square => "picture.wrap.square",
