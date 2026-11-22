@@ -221,6 +221,19 @@ impl Arrangement {
     pub fn size(&self, index: usize, fallback: (f32, f32)) -> (f32, f32) {
         self.sizes.get(index).copied().unwrap_or(fallback)
     }
+
+    /// The widest page as shown, zoomed: a landscape section's among
+    /// portrait ones.
+    /// A view that cuts the pages shows them at the first one's band.
+    pub fn widest(&self) -> f32 {
+        if self.crops.iter().any(Option::is_some) {
+            return self.grid.page.0;
+        }
+        self.sizes
+            .iter()
+            .map(|size| size.0)
+            .fold(self.grid.page.0, f32::max)
+    }
 }
 
 impl DocumentView {
@@ -868,6 +881,25 @@ pub(crate) fn lay_out_pages(
             .flex_wrap()
             .justify_center()
             .content_start()
+    } else if arrangement.widest() > grid.page.0 {
+        // A landscape section's page wider than the rest: the pages centre
+        // on it, as Word sets them, in a column as wide as it, which scrolls
+        // sideways when the window is narrower.
+        let column = div()
+            .flex_none()
+            .w(px(arrangement.widest()))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(grid.gap))
+            .children(surfaces);
+        let container = container.flex_col();
+        return if arrangement.from_left {
+            container.items_start()
+        } else {
+            container.items_center()
+        }
+        .child(column);
     } else if arrangement.from_left {
         container.flex_col().items_start()
     } else {

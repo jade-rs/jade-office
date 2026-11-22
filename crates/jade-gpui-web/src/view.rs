@@ -3068,7 +3068,7 @@ impl DocView {
         // Center only when the page fits; negative overflow hides its start.
         let available_width =
             f32::from(viewport.width) - if chrome { PAGES_SIDEBAR_WIDTH } else { 0.0 };
-        if arrangement.grid.page.0 + arrangement.grid.padding * 2.0 > available_width {
+        if arrangement.widest() + arrangement.grid.padding * 2.0 > available_width {
             arrangement.from_left = true;
         }
         // The rulers measure pages: not Web レイアウト's or アウトライン's
