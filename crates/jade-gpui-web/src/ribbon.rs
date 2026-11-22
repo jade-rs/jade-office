@@ -1051,7 +1051,7 @@ pub fn ribbon(
             crate::view::word_references::ribbon_groups(ribbon.popup, shown.references.as_ref(), cx)
         }
         Tab::HeaderFooter => match &shown.story {
-            Some(state) => crate::view::word_story::story_groups(state, cx),
+            Some(state) => crate::view::word_story::story_groups(ribbon.popup, state, cx),
             None => Vec::new(),
         },
         Tab::Equation => match shown.equation.clone() {

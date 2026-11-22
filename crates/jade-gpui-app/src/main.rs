@@ -3430,12 +3430,8 @@ impl DocumentView {
         if matches!(action, Action::Align("distribute")) && self.open_fit_text_dialog(cx) {
             return;
         }
-        // Page setup acts on the body's sections: an open header or footer
-        // is written back first.
-        if matches!(action, Action::Page(_)) {
-            if let Err(error) = self.close_story_editing() {
-                self.table_status = Some(SharedString::from(error));
-            }
+        if let Action::Page(command) = action {
+            return self.page_action(command, cx);
         }
         // ホーム's size, colour and bold format the equation being edited.
         if self.equation.editor.is_some() {
@@ -6715,11 +6711,56 @@ mod tests {
                 )),
                 cx,
             );
+            // As in Word, the footer the number went into opens.
+            assert_eq!(
+                view.document.story().map(|story| story.role),
+                Some(Story::Footer)
+            );
+            view.run_ribbon(Action::Story(super::word_story::StoryAction::Close), cx);
         });
         for _ in 0..4 {
             cx.dispatch_action(Undo);
         }
         view.read_with(cx, |view, _| assert_eq!(view.document.page_setup(), before));
+    }
+
+    /// ページ番号 from the ヘッダーとフッター tab, with the header open:
+    /// the header is written back, the number goes into the footer and the
+    /// footer opens; ページ番号の削除 there leaves the story open.
+    #[gpui::test]
+    fn a_page_number_put_in_from_an_open_header_opens_the_footer(cx: &mut gpui::TestAppContext) {
+        use super::ribbon::Action;
+        use super::word_story::StoryAction;
+        use super::WordPage;
+        use jade_office_model::word::page::{NumberAlignment, PageCommand, Story};
+        let (view, cx) = open_contract(cx);
+        view.update(cx, |view, cx| {
+            view.run_ribbon(Action::EditStory(Story::Header), cx);
+        });
+        cx.simulate_input("kept");
+        view.update(cx, |view, cx| {
+            view.run_ribbon(
+                Action::Page(PageCommand::PageNumber(
+                    Story::Footer,
+                    NumberAlignment::Right,
+                )),
+                cx,
+            );
+            assert_eq!(
+                view.document.story().map(|story| story.role),
+                Some(Story::Footer)
+            );
+            view.run_ribbon(Action::Story(StoryAction::Close), cx);
+            assert!(view.document.story_text(Story::Header).starts_with("kept"));
+            let footer = view.document.story_text(Story::Footer);
+            assert_eq!(footer.trim(), "{PAGE}");
+            view.run_ribbon(Action::EditStory(Story::Footer), cx);
+            view.run_ribbon(Action::Page(PageCommand::RemovePageNumbers), cx);
+            assert_eq!(
+                view.document.story().map(|story| story.role),
+                Some(Story::Footer)
+            );
+        });
     }
 
     /// ⌘M opens the comment bar; Enter puts the comment on the selection,

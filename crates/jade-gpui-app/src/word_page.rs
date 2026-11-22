@@ -271,68 +271,84 @@ pub fn page_setup(
     )
 }
 
+/// ページ番号's list — the top and the bottom of the page, each left,
+/// centred or right, ページ番号の削除 and ページ番号の書式設定 — with 現在の位置
+/// when `here` is what puts a number at the caret.
+pub fn page_number_menu(here: Option<Action>, cx: &mut Context<DocumentView>) -> AnyElement {
+    let spots = [
+        (Story::Header, NumberAlignment::Left, "page.number.top_left"),
+        (
+            Story::Header,
+            NumberAlignment::Center,
+            "page.number.top_center",
+        ),
+        (
+            Story::Header,
+            NumberAlignment::Right,
+            "page.number.top_right",
+        ),
+        (
+            Story::Footer,
+            NumberAlignment::Left,
+            "page.number.bottom_left",
+        ),
+        (
+            Story::Footer,
+            NumberAlignment::Center,
+            "page.number.bottom_center",
+        ),
+        (
+            Story::Footer,
+            NumberAlignment::Right,
+            "page.number.bottom_right",
+        ),
+    ];
+    menu_panel("page-number-menu")
+        .w(px(200.0))
+        .children(
+            spots
+                .into_iter()
+                .enumerate()
+                .map(|(index, (story, alignment, label))| {
+                    menu_row(
+                        ("page-number", index),
+                        i18n::text(label),
+                        false,
+                        Action::Page(PageCommand::PageNumber(story, alignment)),
+                        cx,
+                    )
+                }),
+        )
+        .when_some(here, |menu, here| {
+            menu.child(menu_row(
+                "page-number-here",
+                i18n::text("page.number.here"),
+                false,
+                here,
+                cx,
+            ))
+        })
+        .child(menu_row(
+            "page-number-remove",
+            i18n::text("page.number.remove"),
+            false,
+            Action::Page(PageCommand::RemovePageNumbers),
+            cx,
+        ))
+        .child(menu_row(
+            "page-number-format",
+            i18n::text("setup.numbers.open"),
+            false,
+            Action::Setup(SetupAction::OpenPageNumbers),
+            cx,
+        ))
+        .into_any_element()
+}
+
 /// 挿入 → ヘッダーとフッター.
 pub fn header_footer(ribbon: &Ribbon, cx: &mut Context<DocumentView>) -> AnyElement {
     let open = ribbon.popup;
-    let numbers_menu =
-        (open == Some(Popup::PageNumbers)).then(|| {
-            let spots = [
-                (Story::Header, NumberAlignment::Left, "page.number.top_left"),
-                (
-                    Story::Header,
-                    NumberAlignment::Center,
-                    "page.number.top_center",
-                ),
-                (
-                    Story::Header,
-                    NumberAlignment::Right,
-                    "page.number.top_right",
-                ),
-                (
-                    Story::Footer,
-                    NumberAlignment::Left,
-                    "page.number.bottom_left",
-                ),
-                (
-                    Story::Footer,
-                    NumberAlignment::Center,
-                    "page.number.bottom_center",
-                ),
-                (
-                    Story::Footer,
-                    NumberAlignment::Right,
-                    "page.number.bottom_right",
-                ),
-            ];
-            menu_panel("page-number-menu")
-                .w(px(200.0))
-                .children(spots.into_iter().enumerate().map(
-                    |(index, (story, alignment, label))| {
-                        menu_row(
-                            ("page-number", index),
-                            i18n::text(label),
-                            false,
-                            Action::Page(PageCommand::PageNumber(story, alignment)),
-                            cx,
-                        )
-                    },
-                ))
-                .child(menu_row(
-                    "page-number-remove",
-                    i18n::text("page.number.remove"),
-                    false,
-                    Action::Page(PageCommand::RemovePageNumbers),
-                    cx,
-                ))
-                .child(menu_row(
-                    "page-number-format",
-                    i18n::text("setup.numbers.open"),
-                    false,
-                    Action::Setup(SetupAction::OpenPageNumbers),
-                    cx,
-                ))
-                .into_any_element()
-        });
+    let numbers_menu = (open == Some(Popup::PageNumbers)).then(|| page_number_menu(None, cx));
     group(
         i18n::text("page.group.header_footer"),
         vec![row(vec![

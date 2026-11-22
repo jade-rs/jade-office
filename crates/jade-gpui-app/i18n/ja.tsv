@@ -800,6 +800,7 @@ page.number.top_right	ページの上部 (右)
 page.number.bottom_left	ページの下部 (左)
 page.number.bottom_center	ページの下部 (中央)
 page.number.bottom_right	ページの下部 (右)
+page.number.here	現在の位置
 page.number.remove	ページ番号の削除
 page.header_editing	ヘッダー
 page.footer_editing	フッター

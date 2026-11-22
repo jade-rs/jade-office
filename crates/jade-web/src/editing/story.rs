@@ -852,6 +852,24 @@ impl WordDoc {
         }
     }
 
+    /// The first page from `page` on that shows its section's default
+    /// header and footer — not a different first page or an even one —
+    /// which is where ページ番号's top and bottom of the page put the number.
+    /// A section with no such page (a one-page title section) hands on to
+    /// the next.
+    pub fn default_story_page(&self, page: usize) -> Option<usize> {
+        let renderer = &self.main.renderer;
+        let pages = self.main.page_count();
+        let section_of = |candidate: usize| renderer.section_index_for_zero_based_page(candidate);
+        (page..pages).find(|&candidate| {
+            let section = section_of(candidate);
+            let layout = self.main.word_document.section_layout(Some(section));
+            let first = candidate == 0 || section_of(candidate - 1) != section;
+            let even = (candidate + 1).is_multiple_of(2);
+            !(first && layout.different_first_page || layout.different_odd_even && even)
+        })
+    }
+
     /// The open story's section, as its layout stands.
     pub fn story_layout(&self) -> Option<jade_docx_headless_api::HeadlessSectionLayout> {
         let story = self.story.as_deref()?;

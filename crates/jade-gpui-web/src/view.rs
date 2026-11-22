@@ -2449,6 +2449,9 @@ impl DocView {
         if let Action::Story(action) = action {
             return self.story_action(action, cx);
         }
+        if let Action::Page(command) = action {
+            return self.page_action(command, cx);
+        }
         if let Action::Review(review) = action {
             return self.review_action(review, window, cx);
         }
