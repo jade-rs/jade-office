@@ -1785,6 +1785,7 @@ impl DocView {
             // selects a word or a paragraph and is done.
             *dragging = extend || clicks <= 1;
         }
+        let mut jumped = false;
         self.word_move(cx, |document| {
             // Mid-composition the text under the pointer is the IME's.
             if document.composition().is_some() {
@@ -1794,7 +1795,18 @@ impl DocView {
                 (true, Some((anchor, _)), _) | (true, None, Some(anchor)) => {
                     document.select(anchor, target)
                 }
-                _ if clicks == 2 => document.select_word(target),
+                // On a note's mark, Word goes to the other end of the note.
+                _ if clicks == 2 => {
+                    use jade_web::word::references::notes::WordNotes;
+                    match WordNotes::note_mark_jump(&**document, target, (x, y)) {
+                        Some((paragraph, offset)) => {
+                            document.place_caret(paragraph, offset);
+                            jumped = true;
+                            Ok(())
+                        }
+                        None => document.select_word(target),
+                    }
+                }
                 _ if clicks >= 3 => document.select_paragraph(target.0),
                 // On the line clicked, at a wrap too.
                 _ => {
@@ -1803,6 +1815,10 @@ impl DocView {
                 }
             }
         });
+        // A note's other end may be off screen.
+        if jumped {
+            self.reveal_caret();
+        }
         // A press on a content control or a form field: a box ticked, a
         // list or a calendar dropped, a placeholder selected.
         if !extend && clicks == 1 {

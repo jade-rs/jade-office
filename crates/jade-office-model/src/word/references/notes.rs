@@ -324,6 +324,38 @@ pub trait WordNotes: WordSession {
         self.note_text_position(mark.kind, &mark.id)
     }
 
+    /// Word's double-click on a note's mark: on its reference in the text it
+    /// goes to the note's text, and on the number in front of the note back
+    /// to the reference. `at` is the position the press found and `point`
+    /// where it landed, in the document's coordinates; a press beside the
+    /// mark rather than on it is no jump.
+    fn note_mark_jump(&self, at: Position, point: (f64, f64)) -> Option<Position> {
+        let (x, y) = point;
+        let on = |from: Position, to: Position| {
+            self.text_regions(from, to).iter().any(|region| {
+                x >= region.x - 1.0
+                    && x <= region.x + region.width + 1.0
+                    && y >= region.y
+                    && y <= region.y + region.height
+            })
+        };
+        if let Some((kind, id)) = self.note_story_at(at.0) {
+            let text = self.note_text_position(kind, &id)?;
+            let number = (text.0, 0);
+            return (text.0 == at.0 && at.1 <= text.1 && on(number, text))
+                .then(|| self.show_note(at))
+                .flatten();
+        }
+        let mark = self
+            .note_marks()
+            .into_iter()
+            .find(|mark| mark.at.0 == at.0 && mark.at.1 <= at.1 && at.1 <= mark.after().1)?;
+        if !on(mark.at, mark.after()) {
+            return None;
+        }
+        self.note_text_position(mark.kind, &mark.id)
+    }
+
     /// 脚注に変換 / 文末脚注に変換 on one note, one undo step.
     fn convert_note(&mut self, kind: NoteKind, id: &str) -> Result<(), String> {
         let id = id.to_string();

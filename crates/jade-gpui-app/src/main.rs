@@ -3669,6 +3669,35 @@ impl DocumentView {
     /// Selects the word around the caret, as a double-click does: a run of
     /// one script in Japanese (漢字, ひらがな, カタカナ), a word and the
     /// spaces after it in English (`word::selection::word_at`).
+    /// A double-click on a note's mark: on its reference, the caret goes to
+    /// the note's text; on the number in front of a note, back to its
+    /// reference. Returns whether it went.
+    fn note_mark_jump(
+        &mut self,
+        page_index: usize,
+        event: &MouseDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        use jade_office_model::word::references::notes::WordNotes;
+        let Some(Some(bounds)) = self.page_bounds.borrow().get(page_index).copied() else {
+            return false;
+        };
+        let zoom = f64::from(self.zoom);
+        let local_x = f64::from(event.position.x - bounds.origin.x) / zoom;
+        let local_y = f64::from(event.position.y - bounds.origin.y) / zoom;
+        let document_y = self.document.document_y(page_index, local_y);
+        let Some(target) = self
+            .document
+            .note_mark_jump(self.insert_at, (local_x, document_y))
+        else {
+            return false;
+        };
+        self.selection_anchor = None;
+        // Scrolled to: the note's other end may be off screen.
+        self.reveal(target, target, cx);
+        true
+    }
+
     fn select_word_at_caret(&mut self, cx: &mut Context<Self>) {
         let (paragraph, offset) = self.insert_at;
         let Some(text) = self.document.caret_text(paragraph) else {
@@ -5286,7 +5315,11 @@ impl Render for DocumentView {
                                                 || view.objects.sketch.is_some();
                                             if on_object {
                                             } else if event.click_count == 2 {
-                                                view.select_word_at_caret(cx);
+                                                // On a note's mark, Word goes
+                                                // to the other end of the note.
+                                                if !view.note_mark_jump(index, event, cx) {
+                                                    view.select_word_at_caret(cx);
+                                                }
                                             } else if event.click_count >= 3 {
                                                 view.select_paragraph(cx);
                                             }
