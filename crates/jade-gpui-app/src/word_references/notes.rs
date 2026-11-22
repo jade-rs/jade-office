@@ -525,6 +525,47 @@ mod tests {
         });
     }
 
+    /// A double-click on a footnote's mark goes to its text, and one on the
+    /// number in front of the text back to the mark; one beside the mark is
+    /// not a jump. Over the mark, the tip is the note's text.
+    #[gpui::test]
+    fn a_double_click_on_a_notes_mark_goes_to_the_other_end(cx: &mut gpui::TestAppContext) {
+        use jade_office_model::word::WordSession;
+        let (view, cx) = open_path(cx, &fixture("footnote.docx"));
+        view.update(cx, |view, _| {
+            let document = &view.document;
+            let mark = document.note_marks()[0].clone();
+            let text = document
+                .note_text_position(NoteKind::Footnote, &mark.id)
+                .unwrap();
+            let middle = |from, to| {
+                let region = document.text_regions(from, to)[0];
+                (
+                    region.x + region.width / 2.0,
+                    region.y + region.height / 2.0,
+                )
+            };
+            assert_eq!(
+                document.note_mark_jump(mark.after(), middle(mark.at, mark.after())),
+                Some(text)
+            );
+            assert_eq!(
+                document.note_mark_jump((text.0, 0), middle((text.0, 0), text)),
+                Some(mark.after())
+            );
+            let word = middle((mark.at.0, 0), (mark.at.0, 1));
+            assert_eq!(document.note_mark_jump((mark.at.0, 0), word), None);
+            // Over the mark, Word's ScreenTip reads the note's text.
+            assert_eq!(
+                document
+                    .note_tip(mark.after(), middle(mark.at, mark.after()))
+                    .as_deref(),
+                Some("Hello World")
+            );
+            assert_eq!(document.note_tip((mark.at.0, 0), word), None);
+        });
+    }
+
     /// 次の脚注 selects the next mark; 注の表示 goes to its note's text and
     /// back.
     #[gpui::test]

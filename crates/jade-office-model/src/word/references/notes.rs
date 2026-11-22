@@ -324,6 +324,81 @@ pub trait WordNotes: WordSession {
         self.note_text_position(mark.kind, &mark.id)
     }
 
+    /// Whether `point`, in the document's coordinates, is on the text from
+    /// `from` to `to` as the last paint drew it.
+    fn point_on_text(&self, from: Position, to: Position, point: (f64, f64)) -> bool {
+        let (x, y) = point;
+        self.text_regions(from, to).iter().any(|region| {
+            x >= region.x - 1.0
+                && x <= region.x + region.width + 1.0
+                && y >= region.y
+                && y <= region.y + region.height
+        })
+    }
+
+    /// The reference mark in the text that `point` is on, `at` being the
+    /// position found there; one beside it is not.
+    fn note_mark_under(&self, at: Position, point: (f64, f64)) -> Option<NoteMark> {
+        // Only the paragraph under the pointer: this runs as it moves.
+        let mut rendered = 0;
+        self.word_document()
+            .reference_marker_spans(at.0)
+            .into_iter()
+            .map(|span| {
+                let start = span.model_offset + rendered;
+                rendered += span.rendered_len;
+                NoteMark {
+                    kind: if span.is_footnote {
+                        NoteKind::Footnote
+                    } else {
+                        NoteKind::Endnote
+                    },
+                    id: span.note_id,
+                    at: (at.0, start),
+                    len: span.rendered_len,
+                }
+            })
+            .find(|mark| mark.at.1 <= at.1 && at.1 <= mark.after().1)
+            .filter(|mark| self.point_on_text(mark.at, mark.after(), point))
+    }
+
+    /// Word's double-click on a note's mark: on its reference in the text it
+    /// goes to the note's text, and on the number in front of the note back
+    /// to the reference. `at` is the position the press found and `point`
+    /// where it landed, in the document's coordinates; a press beside the
+    /// mark rather than on it is no jump.
+    fn note_mark_jump(&self, at: Position, point: (f64, f64)) -> Option<Position> {
+        if let Some((kind, id)) = self.note_story_at(at.0) {
+            let text = self.note_text_position(kind, &id)?;
+            let number = (text.0, 0);
+            return (text.0 == at.0 && at.1 <= text.1 && self.point_on_text(number, text, point))
+                .then(|| self.show_note(at))
+                .flatten();
+        }
+        let mark = self.note_mark_under(at, point)?;
+        self.note_text_position(mark.kind, &mark.id)
+    }
+
+    /// Word's ScreenTip over a note's reference: the note's text, its
+    /// paragraphs one to a line, without the number in front.
+    fn note_tip(&self, at: Position, point: (f64, f64)) -> Option<String> {
+        let mark = self.note_mark_under(at, point)?;
+        let start = self.note_text_position(mark.kind, &mark.id)?;
+        let document = self.word_document();
+        let mut lines = Vec::new();
+        let mut paragraph = start.0;
+        while paragraph < document.paragraph_count()
+            && self.note_story_at(paragraph) == Some((mark.kind, mark.id.clone()))
+        {
+            let text = document.rendered_paragraph_text(paragraph);
+            let from = if paragraph == start.0 { start.1 } else { 0 };
+            lines.push(text.get(from..).unwrap_or_default().trim().to_string());
+            paragraph += 1;
+        }
+        let tip = lines.join("\n").trim().to_string();
+        (!tip.is_empty()).then_some(tip)
+    }
+
     /// 脚注に変換 / 文末脚注に変換 on one note, one undo step.
     fn convert_note(&mut self, kind: NoteKind, id: &str) -> Result<(), String> {
         let id = id.to_string();

@@ -19,7 +19,7 @@ use gpui::{div, prelude::*, px, AnyElement, Context, SharedString};
 use jade_docx_editor::commands::snapshot_edit::SnapshotEditCommand;
 use jade_docx_native_render::{CaretAffinity, CaretRect, NativeDocument, ObjectHit};
 use jade_office_model::word::headless::{HeadlessCommand, HeadlessFieldKind};
-use jade_office_model::word::page::Story;
+use jade_office_model::word::page::{PageCommand, Story, WordPage};
 use jade_office_model::word::WordSession;
 
 use crate::ribbon::{group, listener, row, Action};
@@ -260,6 +260,24 @@ impl WordDoc {
 
     pub fn page_count(&self) -> usize {
         self.main.page_count()
+    }
+
+    /// The first page from `page` on that shows its section's default
+    /// header and footer — not a different first page or an even one —
+    /// which is where ページ番号's top and bottom of the page put the number.
+    /// A section with no such page (a one-page title section) hands on to
+    /// the next.
+    pub fn default_story_page(&self, page: usize) -> Option<usize> {
+        let renderer = self.main.renderer();
+        let pages = self.main.page_count();
+        let section_of = |candidate: usize| renderer.section_index_for_zero_based_page(candidate);
+        (page..pages).find(|&candidate| {
+            let section = section_of(candidate);
+            let layout = self.main.word_document().section_layout(Some(section));
+            let first = candidate == 0 || section_of(candidate - 1) != section;
+            let even = (candidate + 1).is_multiple_of(2);
+            !(first && layout.different_first_page || layout.different_odd_even && even)
+        })
     }
 
     pub fn layout_page_size(&self) -> (f64, f64) {
@@ -734,6 +752,48 @@ impl DocumentView {
     }
 
     /// Insert's ヘッダー / フッター: the story of the page the caret is on.
+    /// Runs a レイアウト or ページ番号 command. Page setup acts on the body's
+    /// sections, so an open header or footer is written back first; a page
+    /// number put at the top or the bottom of the page then opens the
+    /// header or footer it went into, as Word does.
+    pub(crate) fn page_action(&mut self, command: PageCommand, cx: &mut Context<Self>) {
+        let page = match self.document.story() {
+            Some(story) => story.page,
+            None => self.caret_page_1idx().saturating_sub(1),
+        };
+        let open = self.document.story().map(|story| story.role);
+        if let Err(error) = self.close_story_editing() {
+            self.table_status = Some(SharedString::from(error));
+        }
+        let japanese = i18n::language() == i18n::Language::Japanese;
+        let done = WordPage::page_command(&mut self.document, command, japanese);
+        match &done {
+            Ok(()) => {
+                self.dirty = true;
+                self.table_status = None;
+                if self.document.selection().is_none() {
+                    self.caret = self
+                        .document
+                        .place_caret(self.insert_at.0, self.insert_at.1);
+                }
+                self.rebuild_all_images();
+            }
+            Err(error) => self.table_status = Some(SharedString::from(error.clone())),
+        }
+        match (done.is_ok(), command, open) {
+            (true, PageCommand::PageNumber(role, _), _) => {
+                if let Some(page) = self.document.default_story_page(page) {
+                    self.open_story(page, role, cx);
+                }
+            }
+            // ページ番号の削除 from the ヘッダーとフッター tab leaves the
+            // story open.
+            (_, PageCommand::RemovePageNumbers, Some(role)) => self.open_story(page, role, cx),
+            _ => {}
+        }
+        cx.notify();
+    }
+
     pub(crate) fn edit_story_in_place(&mut self, role: Story, cx: &mut Context<Self>) {
         let page = self.caret_page_1idx().saturating_sub(1);
         self.open_story(page, role, cx);
@@ -992,20 +1052,31 @@ impl DocumentView {
                 .child(label)
                 .into_any_element()
         };
+        let numbers_open = self.ribbon.popup == Some(crate::ribbon::Popup::PageNumbers);
         let t = i18n::text;
         vec![
             group(
                 t("story.group.insert"),
                 vec![
                     row(vec![
-                        button(
-                            "story-page",
-                            t("story.field.page"),
-                            t("story.field.page_title"),
-                            false,
-                            true,
-                            StoryAction::Field(HeadlessFieldKind::Page),
-                            cx,
+                        // ページ番号: Word's list, with 現在の位置 for a
+                        // number at the caret.
+                        crate::ribbon::dropdown(
+                            crate::word_page::list_button(
+                                "story-page",
+                                t("story.field.page"),
+                                numbers_open,
+                                crate::ribbon::Popup::PageNumbers,
+                                cx,
+                            ),
+                            numbers_open.then(|| {
+                                crate::word_page::page_number_menu(
+                                    Some(Action::Story(StoryAction::Field(
+                                        HeadlessFieldKind::Page,
+                                    ))),
+                                    cx,
+                                )
+                            }),
                         ),
                         button(
                             "story-pages",
@@ -1016,6 +1087,28 @@ impl DocumentView {
                             StoryAction::Field(HeadlessFieldKind::NumPages),
                             cx,
                         ),
+                        // 画像: a picture from the device, into the story.
+                        div()
+                            .id("story-picture")
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .h(px(26.0))
+                            .px_2()
+                            .rounded_md()
+                            .text_xs()
+                            .whitespace_nowrap()
+                            .text_color(theme::text())
+                            .cursor_pointer()
+                            .hover(|button| button.bg(theme::hovered()))
+                            .tooltip(Tooltip::text(t("picture.insert_title")))
+                            .on_click(
+                                cx.listener(|view, _event, _window, cx| {
+                                    view.prompt_for_picture(cx)
+                                }),
+                            )
+                            .child(t("picture.insert"))
+                            .into_any_element(),
                     ]),
                     row(vec![
                         button(

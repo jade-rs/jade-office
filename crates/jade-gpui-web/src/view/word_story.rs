@@ -11,7 +11,7 @@
 
 use jade_web::editing::StoryChange;
 use jade_web::word::headless::HeadlessFieldKind;
-use jade_web::word::page::Story;
+use jade_web::word::page::{PageCommand, Story, WordPage};
 
 use super::*;
 use crate::ribbon::{group, listener, row};
@@ -192,6 +192,50 @@ impl DocView {
         true
     }
 
+    /// Runs a レイアウト or ページ番号 command. Page setup acts on the body's
+    /// sections, so an open header or footer is written back first; a page
+    /// number put at the top or the bottom of the page then opens the
+    /// header or footer it went into, as Word does.
+    pub(super) fn page_action(&mut self, command: PageCommand, cx: &mut Context<Self>) {
+        let Document::Pages {
+            document, current, ..
+        } = &mut self.document
+        else {
+            return;
+        };
+        let page = match document.story() {
+            Some(story) => story.page,
+            None => document
+                .caret()
+                .and_then(|(paragraph, _)| document.paragraph_start_page(paragraph))
+                .unwrap_or(*current),
+        };
+        let open = document.story().map(|story| story.role);
+        if open.is_some() {
+            self.close_story(cx);
+        }
+        let mut done = false;
+        self.word_edit(cx, |document| {
+            WordPage::page_command(document, command, !i18n::is_english())?;
+            done = true;
+            Ok(())
+        });
+        let Document::Pages { document, .. } = &self.document else {
+            return;
+        };
+        match (done, command, open) {
+            (true, PageCommand::PageNumber(role, _), _) => {
+                if let Some(page) = document.default_story_page(page) {
+                    self.open_story_on(page, role, cx);
+                }
+            }
+            // ページ番号の削除 from the ヘッダーとフッター tab leaves the
+            // story open.
+            (_, PageCommand::RemovePageNumbers, Some(role)) => self.open_story_on(page, role, cx),
+            _ => {}
+        }
+    }
+
     /// Runs a ヘッダーとフッター tab command.
     pub(super) fn story_action(&mut self, action: StoryAction, cx: &mut Context<Self>) {
         let name = self.name.to_string();
@@ -286,7 +330,11 @@ impl DocView {
 }
 
 /// The ヘッダーとフッター tab, while a story is open.
-pub fn story_groups(state: &StoryTabState, cx: &mut Context<DocView>) -> Vec<gpui::AnyElement> {
+pub fn story_groups(
+    popup: Option<crate::ribbon::Popup>,
+    state: &StoryTabState,
+    cx: &mut Context<DocView>,
+) -> Vec<gpui::AnyElement> {
     let button = |id: &'static str,
                   label: &'static str,
                   tooltip: &'static str,
@@ -327,15 +375,27 @@ pub fn story_groups(state: &StoryTabState, cx: &mut Context<DocView>) -> Vec<gpu
             t("story.group.insert"),
             vec![
                 row(vec![
-                    button(
-                        "story-page",
-                        t("story.field.page"),
-                        t("story.field.page_title"),
-                        false,
-                        true,
-                        StoryAction::Field(HeadlessFieldKind::Page),
-                        cx,
-                    ),
+                    // ページ番号: Word's list, with 現在の位置 for a number at
+                    // the caret.
+                    {
+                        let open = popup == Some(crate::ribbon::Popup::PageNumbers);
+                        let menu = open.then(|| {
+                            crate::word_page::page_number_menu(
+                                Some(Action::Story(StoryAction::Field(HeadlessFieldKind::Page))),
+                                cx,
+                            )
+                        });
+                        crate::ribbon::dropdown(
+                            crate::word_page::list_button(
+                                "story-page",
+                                t("story.field.page"),
+                                open,
+                                crate::ribbon::Popup::PageNumbers,
+                                cx,
+                            ),
+                            menu,
+                        )
+                    },
                     button(
                         "story-pages",
                         t("story.field.pages"),
@@ -343,6 +403,15 @@ pub fn story_groups(state: &StoryTabState, cx: &mut Context<DocView>) -> Vec<gpu
                         false,
                         true,
                         StoryAction::Field(HeadlessFieldKind::NumPages),
+                        cx,
+                    ),
+                    // 画像: a picture from the device, into the story.
+                    crate::word_page::text_button(
+                        "story-picture",
+                        t("picture.insert"),
+                        t("picture.insert_title"),
+                        false,
+                        Action::InsertPicture,
                         cx,
                     ),
                 ]),
