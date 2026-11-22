@@ -1481,6 +1481,9 @@ struct DocumentView {
     /// Where a shift-extended selection is anchored. Separate from
     /// `drag_anchor`: a keyboard selection outlives the mouse being down.
     selection_anchor: Option<(usize, usize)>,
+    /// Word's ScreenTip over a note's reference: its text, and where the
+    /// pointer is.
+    note_tip: Option<(String, gpui::Point<Pixels>)>,
     /// Where a drag started, while the mouse is down. Selection is anchored
     /// here and extended to wherever the pointer is.
     drag_anchor: Option<(usize, usize)>,
@@ -3669,6 +3672,56 @@ impl DocumentView {
     /// Selects the word around the caret, as a double-click does: a run of
     /// one script in Japanese (漢字, ひらがな, カタカナ), a word and the
     /// spaces after it in English (`word::selection::word_at`).
+    /// Over a note's reference mark, Word shows the note's text beside the
+    /// pointer; anywhere else the tip goes.
+    fn hover_note(&mut self, page_index: usize, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        use jade_office_model::word::references::notes::WordNotes;
+        let Some(Some(bounds)) = self.page_bounds.borrow().get(page_index).copied() else {
+            return;
+        };
+        let zoom = f64::from(self.zoom);
+        let local_x = f64::from(event.position.x - bounds.origin.x) / zoom;
+        let local_y = f64::from(event.position.y - bounds.origin.y) / zoom;
+        let document_y = self.document.document_y(page_index, local_y);
+        let tip = self
+            .document
+            .position_at(local_x, document_y)
+            .and_then(|at| self.document.note_tip(at, (local_x, document_y)))
+            .map(|text| (text, event.position));
+        if tip.as_ref().map(|(text, _)| text) != self.note_tip.as_ref().map(|(text, _)| text) {
+            self.note_tip = tip;
+            cx.notify();
+        }
+    }
+
+    /// The note's text by the pointer, as Word's ScreenTip shows it.
+    fn note_tip_overlay(&self) -> Option<AnyElement> {
+        let (text, position) = self.note_tip.clone()?;
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(position + point(px(12.0), px(16.0)))
+                    .snap_to_window_with_margin(px(8.0))
+                    .child(
+                        div()
+                            .max_w(px(360.0))
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(theme::border())
+                            .bg(theme::panel())
+                            .text_color(theme::text())
+                            .text_xs()
+                            .shadow_md()
+                            .children(text.lines().map(|line| div().child(line.to_string()))),
+                    ),
+            )
+            .with_priority(3)
+            .into_any_element(),
+        )
+    }
+
     /// A double-click on a note's mark: on its reference, the caret goes to
     /// the note's text; on the number in front of a note, back to its
     /// reference. Returns whether it went.
@@ -5340,6 +5393,7 @@ impl Render for DocumentView {
                                             view.drag_to(index, event, cx);
                                         } else {
                                             view.table_hover(index, event, cx);
+                                            view.hover_note(index, event, cx);
                                         }
                                     },
                                 ))
@@ -5466,6 +5520,7 @@ impl Render for DocumentView {
             .children(print_panel)
             .children(views_dialog)
             .children(mini_toolbar)
+            .children(self.note_tip_overlay())
             .children(context_menu)
             .children(immersive)
             // ---- right panel: what is actually known about the document ----
@@ -5719,6 +5774,7 @@ fn document_view(
         selected_object: None,
         draw: Default::default(),
         selection_anchor: None,
+        note_tip: None,
         zoom: 1.0,
         raster_scale: 1.0,
         dark_pages: false,

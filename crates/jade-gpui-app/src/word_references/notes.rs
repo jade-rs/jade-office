@@ -527,7 +527,7 @@ mod tests {
 
     /// A double-click on a footnote's mark goes to its text, and one on the
     /// number in front of the text back to the mark; one beside the mark is
-    /// not a jump.
+    /// not a jump. Over the mark, the tip is the note's text.
     #[gpui::test]
     fn a_double_click_on_a_notes_mark_goes_to_the_other_end(cx: &mut gpui::TestAppContext) {
         use jade_office_model::word::WordSession;
@@ -555,6 +555,14 @@ mod tests {
             );
             let word = middle((mark.at.0, 0), (mark.at.0, 1));
             assert_eq!(document.note_mark_jump((mark.at.0, 0), word), None);
+            // Over the mark, Word's ScreenTip reads the note's text.
+            assert_eq!(
+                document
+                    .note_tip(mark.after(), middle(mark.at, mark.after()))
+                    .as_deref(),
+                Some("Hello World")
+            );
+            assert_eq!(document.note_tip((mark.at.0, 0), word), None);
         });
     }
 

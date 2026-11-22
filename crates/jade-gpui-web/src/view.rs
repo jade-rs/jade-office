@@ -565,6 +565,9 @@ pub struct DocView {
     /// The zoom on show, a fitted one included.
     shown_zoom: f32,
     show_notes: bool,
+    /// Word's ScreenTip over a note's reference: its text, and where the
+    /// pointer is.
+    note_tip: Option<(String, gpui::Point<Pixels>)>,
     slideshow: bool,
     /// The slide show's animations and transitions.
     show: deck_show::WebShow,
@@ -851,6 +854,7 @@ impl DocView {
             zoom,
             shown_zoom: 1.0,
             show_notes: true,
+            note_tip: None,
             slideshow: false,
             show: Default::default(),
             paste_arrived: false,
@@ -1611,6 +1615,63 @@ impl DocView {
         cx.notify();
     }
 
+    /// Over a note's reference mark, Word shows the note's text beside the
+    /// pointer; anywhere else the tip goes.
+    fn hover_note(&mut self, position: gpui::Point<Pixels>, cx: &mut Context<Self>) {
+        use jade_web::word::references::notes::WordNotes;
+        let tip = match &self.document {
+            Document::Pages {
+                document,
+                page_bounds,
+                pages,
+                ..
+            } => page_bounds
+                .borrow()
+                .iter()
+                .take(pages.len())
+                .position(|bounds| bounds.is_some_and(|bounds| bounds.contains(&position)))
+                .and_then(|index| self.page_point(index, position))
+                .and_then(|(x, y)| {
+                    let at = document.position_at(x, y)?;
+                    WordNotes::note_tip(&**document, at, (x, y))
+                }),
+            _ => None,
+        };
+        let tip = tip.map(|text| (text, position));
+        if tip.as_ref().map(|(text, _)| text) != self.note_tip.as_ref().map(|(text, _)| text) {
+            self.note_tip = tip;
+            cx.notify();
+        }
+    }
+
+    /// The note's text by the pointer, as Word's ScreenTip shows it.
+    fn note_tip_overlay(&self) -> Option<gpui::AnyElement> {
+        let (text, position) = self.note_tip.clone()?;
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(position + point(px(12.0), px(16.0)))
+                    .snap_to_window_with_margin(px(8.0))
+                    .child(
+                        div()
+                            .max_w(px(360.0))
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(palette::border())
+                            .bg(palette::panel())
+                            .text_color(palette::text())
+                            .text_xs()
+                            .shadow_md()
+                            .children(text.lines().map(|line| div().child(line.to_string()))),
+                    ),
+            )
+            .with_priority(3)
+            .into_any_element(),
+        )
+    }
+
     /// A point on page `index` in the document's coordinates.
     fn page_point(&self, index: usize, position: gpui::Point<Pixels>) -> Option<(f64, f64)> {
         let Document::Pages {
@@ -1878,6 +1939,9 @@ impl DocView {
     /// through the whole window, not only over a page, and past the top or
     /// the bottom of the view the pages scroll to meet the pointer.
     fn page_drag(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if event.pressed_button.is_none() {
+            self.hover_note(event.position, cx);
+        }
         if self.ink_drag(event.position, cx) {
             return;
         }
@@ -2955,6 +3019,7 @@ impl DocView {
         let rulers = chrome && self.views.kind.keeps_pages();
         let split_pane = self.split_pane(zoom, &arrangement, cx);
         let mini_toolbar = self.mini_toolbar(zoom, cx);
+        let note_tip = self.note_tip_overlay();
         let read_bar = match &self.document {
             Document::Pages { current, pages, .. }
                 if self.views.kind == jade_web::word::view::ViewKind::Read =>
@@ -3350,6 +3415,7 @@ impl DocView {
             .bg(palette::window())
             .children(word_menu)
             .children(mini_toolbar)
+            .children(note_tip)
             .children(navigation.filter(|_| chrome))
             .when(chrome, |body| {
                 body.child(
