@@ -1087,6 +1087,28 @@ impl DocumentView {
                             StoryAction::Field(HeadlessFieldKind::NumPages),
                             cx,
                         ),
+                        // 画像: a picture from the device, into the story.
+                        div()
+                            .id("story-picture")
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .h(px(26.0))
+                            .px_2()
+                            .rounded_md()
+                            .text_xs()
+                            .whitespace_nowrap()
+                            .text_color(theme::text())
+                            .cursor_pointer()
+                            .hover(|button| button.bg(theme::hovered()))
+                            .tooltip(Tooltip::text(t("picture.insert_title")))
+                            .on_click(
+                                cx.listener(|view, _event, _window, cx| {
+                                    view.prompt_for_picture(cx)
+                                }),
+                            )
+                            .child(t("picture.insert"))
+                            .into_any_element(),
                     ]),
                     row(vec![
                         button(

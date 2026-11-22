@@ -405,6 +405,15 @@ pub fn story_groups(
                         StoryAction::Field(HeadlessFieldKind::NumPages),
                         cx,
                     ),
+                    // 画像: a picture from the device, into the story.
+                    crate::word_page::text_button(
+                        "story-picture",
+                        t("picture.insert"),
+                        t("picture.insert_title"),
+                        false,
+                        Action::InsertPicture,
+                        cx,
+                    ),
                 ]),
                 row(vec![
                     button(
