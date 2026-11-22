@@ -704,6 +704,91 @@ impl DocumentView {
         }
     }
 
+    /// Word's レイアウト オプション button beside the selected object, and
+    /// its list of wraps.
+    pub(crate) fn layout_options(
+        &self,
+        page_index: usize,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        use jade_office_model::word::picture::WRAPS;
+        let object = self
+            .selected_object
+            .filter(|object| object.page.saturating_sub(1) == page_index)?;
+        if self.objects.drag.is_some() {
+            return None;
+        }
+        let zoom = f64::from(self.zoom);
+        let open = self.ribbon.popup == Some(crate::ribbon::Popup::LayoutOptions);
+        let current = self.selected_format().map(|format| format.wrap);
+        let menu = open.then(|| {
+            crate::ribbon::menu_panel("layout-options-menu")
+                .debug_selector(|| "layout-options-menu".into())
+                .w(px(200.0))
+                .child(crate::ribbon::menu_caption(crate::i18n::text(
+                    "picture.wrap",
+                )))
+                .children(WRAPS.into_iter().enumerate().map(|(index, wrap)| {
+                    crate::ribbon::menu_row(
+                        ("layout-option", index),
+                        crate::i18n::text(crate::wrap_label(wrap)),
+                        current == Some(wrap),
+                        crate::ribbon::Action::Object(
+                            crate::word_objects_ribbon::ObjectAction::Wrap(wrap),
+                        ),
+                        cx,
+                    )
+                }))
+        });
+        let button = div()
+            .id("layout-options")
+            .debug_selector(|| "layout-options".into())
+            .occlude()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(px(22.0))
+            .rounded_sm()
+            .border_1()
+            .border_color(theme::border())
+            .bg(theme::panel())
+            .cursor_pointer()
+            .hover(|button| button.bg(theme::hovered()))
+            .when(open, |button| button.bg(theme::selected()))
+            .tooltip(crate::tooltip::Tooltip::text(crate::i18n::text(
+                "objects.layout_options",
+            )))
+            .on_click(crate::ribbon::listener(
+                crate::ribbon::Action::Popup(crate::ribbon::Popup::LayoutOptions),
+                cx,
+            ))
+            .child(
+                gpui::svg()
+                    .path("icons/wrap-text.svg")
+                    .size_3p5()
+                    .text_color(theme::text()),
+            );
+        Some(
+            div()
+                .absolute()
+                .left(px(((object.x + object.width) * zoom) as f32 + 8.0))
+                .top(px((object.y * zoom) as f32))
+                .flex()
+                .flex_col()
+                .child(button)
+                // Over the ribbon's backdrop, as its own lists are.
+                .children(menu.map(|menu| {
+                    gpui::deferred(
+                        gpui::anchored()
+                            .snap_to_window_with_margin(px(8.0))
+                            .child(menu),
+                    )
+                    .with_priority(2)
+                }))
+                .into_any_element(),
+        )
+    }
+
     /// The selection, its handles and the shape being drawn, over a page.
     pub(crate) fn object_overlay(&self, page_index: usize) -> Vec<AnyElement> {
         let zoom = f64::from(self.zoom);
@@ -1149,6 +1234,45 @@ mod scenarios {
             cx.debug_bounds("ribbon-bring-forward").is_some(),
             "前面へ移動 is on レイアウト"
         );
+    }
+
+    /// A selected picture has Word's レイアウト オプション button beside it;
+    /// its list sets the wrap and closes.
+    #[gpui::test]
+    fn the_layout_options_button_wraps_a_selected_picture(cx: &mut gpui::TestAppContext) {
+        let (view, cx) = open_contract(cx);
+        let object = picture(&view, cx);
+        let center = (
+            object.x + object.width / 2.0,
+            object.y + object.height / 2.0,
+        );
+        let point = on_page(&view, cx, 0, center);
+        cx.simulate_click(point, Modifiers::none());
+        cx.run_until_parked();
+        let button = cx
+            .debug_bounds("layout-options")
+            .expect("the button is beside the picture");
+        cx.simulate_click(button.center(), Modifiers::none());
+        cx.run_until_parked();
+        assert!(
+            cx.debug_bounds("layout-options-menu").is_some(),
+            "the list is open"
+        );
+        view.update(cx, |view, cx| {
+            use jade_office_model::word::picture::Wrap;
+            assert_eq!(view.ribbon.popup, Some(crate::ribbon::Popup::LayoutOptions));
+            view.run_ribbon(
+                crate::ribbon::Action::Object(crate::word_objects_ribbon::ObjectAction::Wrap(
+                    Wrap::InFrontOfText,
+                )),
+                cx,
+            );
+            assert_eq!(view.ribbon.popup, None);
+            assert_eq!(
+                view.selected_format().map(|format| format.wrap),
+                Some(Wrap::InFrontOfText)
+            );
+        });
     }
 
     /// 挿入 → 図形: dragging on the page draws the shape there, styled as a

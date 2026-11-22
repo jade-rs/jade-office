@@ -3175,12 +3175,84 @@ impl DocView {
             page_bounds,
             highlight,
             object,
+            ribbon,
             ..
         } = &mut self.document
         else {
             unreachable!()
         };
         let object = *object;
+        // Word's レイアウト オプション button beside the selected object, and
+        // its list of wraps.
+        let mut layout_options = object.filter(|grab| !grab.dragging).map(|grab| {
+            use jade_web::word::objects::WordObjects;
+            use jade_web::word::picture::WRAPS;
+            let open = ribbon.popup == Some(ribbon::Popup::LayoutOptions);
+            let current = WordObjects::object_format(&**document, grab.object.target)
+                .map(|format| format.wrap);
+            let (x, y, w, _) = grab.rect;
+            let menu = open.then(|| {
+                ribbon::menu_panel("layout-options-menu")
+                    .w(px(200.0))
+                    .child(ribbon::menu_caption(i18n::text("picture.wrap")))
+                    .children(WRAPS.into_iter().enumerate().map(|(index, wrap)| {
+                        ribbon::menu_row(
+                            ("layout-option", index),
+                            i18n::text(word_object_tab::wrap_label(wrap)),
+                            current == Some(wrap),
+                            Action::Wrap(wrap),
+                            cx,
+                        )
+                    }))
+            });
+            let button = div()
+                .id("layout-options")
+                .occlude()
+                .flex()
+                .items_center()
+                .justify_center()
+                .size(px(22.0))
+                .rounded_sm()
+                .border_1()
+                .border_color(palette::border())
+                .bg(palette::panel())
+                .cursor_pointer()
+                .hover(|button| button.bg(palette::hovered()))
+                .when(open, |button| button.bg(palette::selected()))
+                .tooltip(crate::tooltip::Tooltip::text(i18n::text(
+                    "objects.layout_options",
+                )))
+                .on_click(ribbon::listener(
+                    Action::Popup(ribbon::Popup::LayoutOptions),
+                    cx,
+                ))
+                .child(
+                    svg()
+                        .path("icons/wrap-text.svg")
+                        .size_3p5()
+                        .text_color(palette::text()),
+                );
+            (
+                grab.object.page,
+                div()
+                    .absolute()
+                    .left(px((x + w) as f32 * zoom + 8.0))
+                    .top(px(y as f32 * zoom))
+                    .flex()
+                    .flex_col()
+                    .child(button)
+                    // Over the ribbon's backdrop, as its own lists are.
+                    .children(menu.map(|menu| {
+                        gpui::deferred(
+                            gpui::anchored()
+                                .snap_to_window_with_margin(px(8.0))
+                                .child(menu),
+                        )
+                        .with_priority(2)
+                    }))
+                    .into_any_element(),
+            )
+        });
         let (width, height) = (page_size.0 * zoom, page_size.1 * zoom);
         // The selection's highlight, read again only when the selection or
         // the text changed.
@@ -3391,6 +3463,11 @@ impl DocView {
                                     }))
                             },
                         ))
+                        .children(
+                            layout_options
+                                .take_if(|(page, _)| *page == index)
+                                .map(|(_, element)| element),
+                        )
                         .children(table_overlay)
                         .children(ink_overlay)
                         .children(story_label)
