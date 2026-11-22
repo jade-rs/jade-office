@@ -102,7 +102,9 @@ struct Measure {
 impl DocumentView {
     fn measure(&self) -> Measure {
         let setup = self.doc().page_setup();
-        let (width, _) = self.doc().page_size();
+        // The caret's page: a landscape section's ruler is as wide as its
+        // pages.
+        let (width, _) = self.doc().page_size_of(self.caret_page());
         Measure {
             // The layout's page box is in CSS px; the rulers measure in
             // points, as the margins, indents and tab stops are.

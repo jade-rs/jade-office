@@ -4962,6 +4962,11 @@ impl Render for DocumentView {
             (w as f32, h as f32)
         };
         let zoom = self.zoom;
+        // The pages centre on the widest: a landscape section's.
+        let centre_pages = word_views::centres_on_widest(&self.views);
+        let widest_page = (0..self.images.len())
+            .map(|index| self.document.page_box(index).0 as f32 * zoom)
+            .fold(page_width * zoom, f32::max);
         let comments_pane = self.show_comments.then(|| self.comments_pane(cx));
         word_proofing::start_once(self, cx);
         let proofing_pane = word_proofing::pane(self, cx);
@@ -5344,7 +5349,7 @@ impl Render for DocumentView {
                                 let bounds_store = Rc::clone(&self.page_bounds);
                                 let entity = cx.entity();
                                 let crop = word_views::page_crop(self, index);
-                                word_views::frame_page(
+                                let surface = word_views::frame_page(
                                     div().id(("page-surface", index)).relative().flex_none(),
                                     &self.views,
                                     crop,
@@ -5486,7 +5491,8 @@ impl Render for DocumentView {
                                             .left_0()
                                             .size_full(),
                                         ),
-                                )
+                                );
+                                word_views::centre_page(surface, centre_pages, widest_page)
                             })),
                     ),
             )
@@ -7025,6 +7031,66 @@ mod tests {
                 .count();
             assert_eq!(images, 1);
         });
+    }
+
+    /// A landscape section among portrait ones: the pages centre on the
+    /// widest, as Word sets them, and a landscape page wider than the
+    /// window starts at its left edge, where scrolling reaches it, rather
+    /// than hanging off to the left.
+    #[gpui::test]
+    fn the_pages_centre_on_a_landscape_sections_wider_page(cx: &mut gpui::TestAppContext) {
+        use super::ribbon::Action;
+        use crate::editor::Editor;
+        use gpui::Focusable;
+        use jade_office_model::word::page::PageCommand;
+        let path = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../jade-core/public/fixtures/section-break-types.docx"
+        ));
+        let (view, cx) =
+            cx.add_window_view(|_window, cx| super::open_document_view(&path, cx).unwrap());
+        cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        cx.run_until_parked();
+        // The caret's section turns landscape; the others stay portrait.
+        let (wide, narrow) = view.update(cx, |view, cx| {
+            view.run_ribbon(Action::Page(PageCommand::Landscape(true)), cx);
+            view.set_zoom(1.0, cx);
+            let widths: Vec<f64> = (0..view.document.page_count())
+                .map(|index| view.document.page_box(index).0)
+                .collect();
+            let wide =
+                (0..widths.len()).find(|&i| widths[i] > widths[0].min(widths[widths.len() - 1]));
+            let narrow =
+                (0..widths.len()).find(|&i| widths[i] < widths[0].max(widths[widths.len() - 1]));
+            (
+                wide.expect("a landscape page"),
+                narrow.expect("a portrait page"),
+            )
+        });
+        cx.run_until_parked();
+        let bounds = |view: &gpui::Entity<super::DocumentView>,
+                      cx: &mut gpui::VisualTestContext| {
+            view.read_with(cx, |view, _| {
+                let store = view.page_bounds.borrow();
+                (store[wide].unwrap(), store[narrow].unwrap())
+            })
+        };
+        let (wide, narrow) = bounds(&view, cx);
+        let centre =
+            |b: gpui::Bounds<gpui::Pixels>| f32::from(b.origin.x) + f32::from(b.size.width) / 2.0;
+        assert!(
+            (centre(wide) - centre(narrow)).abs() < 1.0,
+            "{wide:?} {narrow:?}"
+        );
+        // Zoomed past the window: the wide page starts in view.
+        view.update(cx, |view, cx| view.set_zoom(4.0, cx));
+        cx.run_until_parked();
+        let (wide, narrow) = bounds(&view, cx);
+        assert!(f32::from(wide.origin.x) >= 0.0, "{wide:?}");
+        assert!(
+            (centre(wide) - centre(narrow)).abs() < 1.0,
+            "{wide:?} {narrow:?}"
+        );
     }
 
     /// A page turned to landscape is laid out and painted as the same

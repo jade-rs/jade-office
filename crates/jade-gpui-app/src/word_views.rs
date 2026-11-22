@@ -410,12 +410,52 @@ pub fn page_crop(view: &DocumentView, index: usize) -> Option<PageCrop> {
     Some(page_band(view, index)?.crop(view.views.kind, (width as f32, height as f32)))
 }
 
+/// Whether the pages stand one under another, each on a slot as wide as
+/// the widest ([`centre_page`]): 印刷レイアウト's column, where a landscape
+/// section's pages are wider than the rest.
+pub fn centres_on_widest(views: &Views) -> bool {
+    !views.focus
+        && views.kind == ViewKind::Print
+        && views.movement == PageMovement::Vertical
+        && !matches!(views.fit, ZoomFit::MultiplePages(_))
+        && !views.crops_pages()
+}
+
+/// Page `surface` on a slot `widest` across, centred on it as Word centres
+/// pages on the widest: the slots fill the window while they fit, and
+/// start at its left edge once they are wider, so a wide page scrolls into
+/// view rather than hanging off the left where no scrolling reaches.
+pub fn centre_page(surface: gpui::Stateful<gpui::Div>, centre: bool, widest: f32) -> AnyElement {
+    if !centre {
+        return surface.into_any_element();
+    }
+    // At least the window's width, so a page centres in it; as wide as the
+    // widest page past that, so the slots line up from the left edge.
+    div()
+        .flex_none()
+        .min_w_full()
+        .w(px(widest))
+        .flex()
+        .justify_center()
+        .child(surface)
+        .into_any_element()
+}
+
 /// Lays the pages container out for the view: one page under another,
 /// several across (複数ページ), or a row turned sideways (横).
 pub fn arrange_pages(pages: gpui::Stateful<gpui::Div>, views: &Views) -> gpui::Stateful<gpui::Div> {
     let pages = pages.flex().size_full().overflow_scroll();
     if !views.focus && layout::arranges(views.kind) {
         return layout::arrange(pages, views.kind);
+    }
+    if centres_on_widest(views) {
+        // Each page on its own centred slot (`centre_page`).
+        return pages
+            .flex_col()
+            .items_start()
+            .gap_6()
+            .p_8()
+            .bg(theme::canvas());
     }
     let pages = match (views.movement, views.fit) {
         (PageMovement::SideToSide, _) => pages.flex_row().items_center().gap_6().p_8(),
