@@ -577,3 +577,35 @@ fn a_picture_in_a_footnote_is_drawn_at_the_foot_of_the_page() {
     // In the lower half of the page, where the footnotes are.
     assert!(red_rows[0] > height / 2, "{} of {height}", red_rows[0]);
 }
+
+#[test]
+fn a_custom_mark_stands_in_for_the_notes_number() {
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "starred then numbered");
+    // 脚注と文末脚注 › 任意の記号 › 挿入: the bar puts the note in with the mark.
+    document.place_caret(paragraph, 7);
+    let mut form = NoteForm::new(&document, NoteKind::Footnote).with_mark(" † ");
+    assert_eq!(form.mark.as_deref(), Some("†"));
+    form.text.insert("the dagger");
+    let caret = form.submit(&mut document).unwrap();
+    // The caret stands after the mark, as Word leaves it.
+    assert_eq!(caret, (paragraph, 7 + "†".len()));
+    let text = document.word_document().rendered_paragraph_text(paragraph);
+    assert!(text.starts_with("starred† then"), "{text}");
+
+    // A numbered note after it is still the first.
+    let end = text.find(" numbered").unwrap() + " numbered".len();
+    note(
+        &mut document,
+        NoteKind::Footnote,
+        (paragraph, end),
+        "numbered",
+    );
+    let text = document.word_document().rendered_paragraph_text(paragraph);
+    assert!(text.starts_with("starred† then numbered1"), "{text}");
+    assert_eq!(document.note_texts(NoteKind::Footnote).len(), 2);
+    // One undo each.
+    document.undo().unwrap();
+    document.undo().unwrap();
+    assert!(document.note_texts(NoteKind::Footnote).is_empty());
+}

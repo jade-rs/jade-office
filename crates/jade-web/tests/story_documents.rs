@@ -701,3 +701,60 @@ fn a_header_takes_a_pasted_notes_text_without_its_mark() {
     assert!(!headers.contains("footnoteReference"), "{headers}");
     assert_eq!(parts(&mut document, "word/footnotes"), notes);
 }
+
+#[test]
+fn a_header_keeps_a_picture_put_in_it() {
+    use jade_web::word::picture::WordPicture;
+    let mut document = WordDoc::new(contract());
+    document.open_story(0, Story::Header).unwrap();
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(40, 40, image::Rgba([255, 0, 0, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    document.insert_picture(png).unwrap();
+    assert!(document.close_story().unwrap());
+
+    let bytes = document.export_docx().unwrap();
+    let package = jade_opc::OpcPackage::open(&bytes).unwrap();
+    let names = package.part_names();
+    let header = names
+        .iter()
+        .filter(|name| name.starts_with("word/header") && name.ends_with(".xml"))
+        .find(|name| {
+            package
+                .part_str(name)
+                .ok()
+                .flatten()
+                .is_some_and(|xml| xml.contains("pic:pic"))
+        })
+        .expect("a header holds the picture");
+    let xml = package.part_str(header).unwrap().unwrap();
+    let embed = xml
+        .split("r:embed=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .unwrap()
+        .to_string();
+    let (dir, file) = header.rsplit_once('/').unwrap();
+    let rels = package
+        .part_str(&format!("{dir}/_rels/{file}.rels"))
+        .unwrap()
+        .unwrap_or_default();
+    assert!(
+        rels.contains(&format!("Id=\"{embed}\"")) && rels.contains("relationships/image"),
+        "{header} relates its picture: {rels}"
+    );
+
+    // Reopened, the header still draws it at the top of the page.
+    let reopened = common::open_bytes(&bytes);
+    let page = reopened.page(0).unwrap();
+    let (width, height) = (page.width() as usize, page.height() as usize);
+    let pixels = page.rgba_premultiplied();
+    let red = (0..height / 4).any(|y| {
+        (0..width).any(|x| {
+            let at = (y * width + x) * 4;
+            pixels[at] > 200 && pixels[at + 1] < 60 && pixels[at + 2] < 60
+        })
+    });
+    assert!(red, "the header's picture is drawn");
+}

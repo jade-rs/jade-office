@@ -50,6 +50,9 @@ pub struct NoteForm {
     pub kind: NoteKind,
     pub at: Position,
     pub text: TextEdit,
+    /// 任意の記号: the mark that stands in for the note's number, if one was
+    /// typed into the 脚注と文末脚注 dialog.
+    pub mark: Option<String>,
 }
 
 impl NoteForm {
@@ -60,13 +63,26 @@ impl NoteForm {
             kind,
             at: session.note_anchor(),
             text: TextEdit::new(String::new()),
+            mark: None,
         }
+    }
+
+    /// The bar for a note whose reference is `mark` rather than a number.
+    pub fn with_mark(mut self, mark: &str) -> Self {
+        let mark = mark.trim();
+        self.mark = (!mark.is_empty()).then(|| mark.to_string());
+        self
     }
 
     /// OK: the reference and the note, one undo step. Returns where the caret
     /// goes: where the reference went.
     pub fn submit<S: WordSession + ?Sized>(&self, session: &mut S) -> Result<Position, String> {
-        session.insert_note(self.kind, self.at, self.text.text.trim())
+        session.insert_note_marked(
+            self.kind,
+            self.at,
+            self.text.text.trim(),
+            self.mark.as_deref(),
+        )
     }
 }
 
@@ -130,6 +146,48 @@ pub trait WordReferences: WordSession {
             .into_iter()
             .find(|mark| mark.at == at)
             .map_or(at, |mark| mark.after());
+        self.set_selection_range(Some(jade_selection::SelectionRange::collapsed(
+            jade_selection::TextPosition::new(caret.0, caret.1),
+        )));
+        Ok(caret)
+    }
+
+    /// [`Self::insert_note`], with `mark` (Word's 任意の記号) as the reference
+    /// in place of a number when there is one. The caret goes after the mark.
+    fn insert_note_marked(
+        &mut self,
+        kind: NoteKind,
+        at: Position,
+        text: &str,
+        mark: Option<&str>,
+    ) -> Result<Position, String> {
+        let Some(mark) = mark.filter(|mark| !mark.is_empty()) else {
+            return self.insert_note(kind, at, text);
+        };
+        if !self.takes_notes_at(at.0) {
+            return Err("notes go in the main text, not a header, footer, note or text box".into());
+        }
+        let range = jade_selection::SelectionRange::collapsed(jade_selection::TextPosition::new(
+            at.0, at.1,
+        ));
+        let command: Box<dyn jade_docx_editor::commands::Command> = match kind {
+            NoteKind::Footnote => Box::new(
+                jade_docx_editor::commands::insert_footnote::InsertFootnoteCommand::new(
+                    range,
+                    text.to_string(),
+                )
+                .with_custom_mark(mark.to_string()),
+            ),
+            NoteKind::Endnote => Box::new(
+                jade_docx_editor::commands::insert_endnote::InsertEndnoteCommand::new(
+                    range,
+                    text.to_string(),
+                )
+                .with_custom_mark(mark.to_string()),
+            ),
+        };
+        self.execute_command(command, false)?;
+        let caret = (at.0, at.1 + mark.len());
         self.set_selection_range(Some(jade_selection::SelectionRange::collapsed(
             jade_selection::TextPosition::new(caret.0, caret.1),
         )));

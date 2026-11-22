@@ -2186,6 +2186,7 @@ notes.scope.whole	Whole document
 notes.section_end	End of section
 notes.show	Show Notes
 notes.show_title	Moves between a note's mark and its text
+notes.custom_mark	Custom mark
 notes.start	Start at
 notes.title	Footnote and Endnote
 sources.author	Author

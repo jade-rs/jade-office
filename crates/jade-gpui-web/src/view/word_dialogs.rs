@@ -180,6 +180,17 @@ impl DocView {
     /// ⌥⌘F / ⌥⌘D: the bar the note's text is typed into; its reference goes
     /// at the caret, or after the selection, when the text is put in.
     pub(super) fn open_note_dialog(&mut self, kind: NoteKind, cx: &mut Context<Self>) {
+        self.open_marked_note_dialog(kind, "", cx);
+    }
+
+    /// The note's bar, its reference `mark` (脚注と文末脚注's 任意の記号)
+    /// rather than a number when one was typed.
+    pub(super) fn open_marked_note_dialog(
+        &mut self,
+        kind: NoteKind,
+        mark: &str,
+        cx: &mut Context<Self>,
+    ) {
         let Document::Pages { document, .. } = &self.document else {
             return;
         };
@@ -187,7 +198,7 @@ impl DocView {
         if !jade_web::word::WordReferences::can_insert_note(document.as_ref()) {
             return;
         }
-        let form = NoteForm::new(document.as_ref(), kind);
+        let form = NoteForm::new(document.as_ref(), kind).with_mark(mark);
         self.open_dialog(Dialog::Note(form), cx);
     }
 
