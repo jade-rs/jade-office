@@ -748,23 +748,13 @@ impl EditableDocument {
         self.renderer
             .get_selection_rects()
             .into_iter()
-            .map(|rect| {
-                // Text rectangles are in page px; whole-cell ones in
-                // document px, gaps included. A page-px top is never as far
-                // down as the top of its page in document px.
-                let page_top = self.renderer.page_top_y(rect.page);
-                let y = if rect.page > 0 && rect.y >= page_top {
-                    rect.y - page_top
-                } else {
-                    rect.y
-                };
-                HighlightRect {
-                    page: rect.page,
-                    x: rect.x,
-                    y,
-                    width: rect.width,
-                    height: rect.height,
-                }
+            // Text and whole-cell rectangles are both in page px.
+            .map(|rect| HighlightRect {
+                page: rect.page,
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
             })
             .collect()
     }

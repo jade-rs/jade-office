@@ -641,6 +641,8 @@ pub(crate) const UI_FONT_FAMILY: &str = "Hiragino Sans";
 /// The page box to open with. The document's own section properties win — this
 /// is only what `open` starts from before it finds out what the document wants,
 /// so nothing else in the shell should use it.
+/// Pages drawn before a document is shown; the rest are painted later.
+const INITIAL_PAINT_PAGES: usize = 3;
 const INITIAL_PAGE_WIDTH_PX: f64 = 816.0;
 const INITIAL_PAGE_HEIGHT_PX: f64 = 1056.0;
 
@@ -770,11 +772,14 @@ fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
     if installed {
         faces = jade_docx_native_render::system_fonts::word_document_faces(bytes, &faces);
     }
-    NativeDocument::open_with_font_faces(
+    // Lay every page out but draw only the first screenful; the rest are
+    // painted as they come into view or when the shell is idle.
+    NativeDocument::open_with_font_faces_and_paint_window(
         bytes,
         INITIAL_PAGE_WIDTH_PX,
         INITIAL_PAGE_HEIGHT_PX,
         &faces,
+        0..INITIAL_PAINT_PAGES,
     )
 }
 
