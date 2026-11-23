@@ -23,8 +23,8 @@ use jade_docx_editor::commands::table_format::{SetTableFormatCommand, TableForma
 use jade_docx_editor::commands::{Command, CommandContext, CommandError, CommandResult};
 use jade_docx_editor::document::{RunFieldKind, RunImageKind, RunImageLayout};
 use jade_docx_editor::word_document::objects::ObjectClip;
-use jade_docx_editor::word_document::WordDocumentSnapshot;
 use jade_docx_editor::word_document::{FloatingObjectKind, FloatingObjectTarget, WordDocument};
+use jade_docx_editor::word_document::{ParagraphStory, WordDocumentSnapshot};
 use jade_selection::{SelectionRange, TextPosition};
 use std::rc::Rc;
 
@@ -172,6 +172,52 @@ pub struct RichClip {
     pub tables: Vec<ClipTable>,
 }
 
+/// A browser copy keeps the exact exported plain text separately from its
+/// rich model payload (which excludes note numbers and inline objects).
+/// The caller supplies a unique identity marker for each copy.
+#[derive(Clone)]
+pub struct RichClipboardCopy {
+    pub clip: RichClip,
+    marker: String,
+    text: String,
+    html: String,
+}
+
+impl RichClipboardCopy {
+    pub fn new(clip: RichClip, text: String, marker: String) -> Self {
+        let html =
+            clip.to_html()
+                .replacen("<p ", &format!("<p data-jade-clipboard=\"{marker}\" "), 1);
+        Self {
+            clip,
+            marker,
+            text,
+            html,
+        }
+    }
+
+    pub fn html(&self) -> &str {
+        &self.html
+    }
+
+    pub fn matches(&self, text: &str, html: Option<&str>) -> bool {
+        let Some(html) = html else { return false };
+        let marker_present = ['"', '\''].into_iter().any(|quote| {
+            html.contains(&format!(
+                "data-jade-clipboard={quote}{}{quote}",
+                self.marker
+            ))
+        });
+        // An external editor may retain the identity attribute while changing
+        // the formatting. Compare the exported representation as well, retaining
+        // richer in-process properties only for an unchanged copy.
+        text.replace("\r\n", "\n").replace('\r', "\n")
+            == self.text.replace("\r\n", "\n").replace('\r', "\n")
+            && marker_present
+            && RichClip::from_html(html) == RichClip::from_html(&self.html)
+    }
+}
+
 /// Whole rows of a table a copy took, a paragraph a cell: the paste makes
 /// them a table again, as Word pastes a table as a table.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -190,6 +236,8 @@ pub struct ClipTable {
     /// Where a paste splits the joined cells again: a copy's paragraph and a
     /// byte offset in its text, in order.
     pub splits: Vec<(usize, usize)>,
+    /// Individual paragraph marks restored after each corresponding split.
+    pub split_formats: Vec<Option<ParagraphFormat>>,
     /// Its grid columns' widths in points; empty when the table names none.
     pub widths: Vec<f32>,
     /// The cells' own shading (`#RRGGBB`): row (from the table's first
@@ -768,6 +816,7 @@ fn copied_rows(
                 counts
             },
             splits: Vec::new(),
+            split_formats: Vec::new(),
             widths,
             shading,
             cell_spans: if spans.iter().all(|&span| span == 1) {
@@ -781,13 +830,6 @@ fn copied_rows(
         },
         taken,
     ))
-}
-
-impl RichClip {
-    /// How many paragraphs a paste adds back by splitting joined cells.
-    fn split_count(&self) -> usize {
-        self.tables.iter().map(|table| table.splits.len()).sum()
-    }
 }
 
 /// Joins the paragraphs of each of `clip`'s table cells that holds several
@@ -821,6 +863,9 @@ fn join_cell_paragraphs(clip: &mut RichClip) {
             for _ in 1..*count {
                 let offset: usize = joined_cell.runs.iter().map(|run| run.text.len()).sum();
                 table.splits.push((index, offset));
+                table
+                    .split_formats
+                    .push(clip.paragraphs[source].format.clone());
                 map[source] = (index, offset);
                 joined_cell
                     .runs
@@ -1169,7 +1214,11 @@ impl RichClip {
             notes: self.notes.clone(),
             pictures: self.pictures.clone(),
             drawings: self.drawings.clone(),
-            tables: self.tables.clone(),
+            tables: if mode == PasteMode::TextOnly {
+                Vec::new()
+            } else {
+                self.tables.clone()
+            },
         }
     }
 
@@ -1202,6 +1251,28 @@ impl RichClip {
     }
 }
 
+/// The selected paragraphs in one story. Footnote/text-box surfaces are
+/// interleaved after their anchors, but are not body text selected with them.
+pub fn clipboard_paragraphs(document: &WordDocument, first: usize, last: usize) -> Vec<usize> {
+    let story = |surface| {
+        document.paragraph_story(surface).map(|mut story| {
+            match &mut story {
+                ParagraphStory::Body { index } => *index = 0,
+                ParagraphStory::TextBox { paragraph, .. }
+                | ParagraphStory::Footnote { paragraph, .. }
+                | ParagraphStory::Endnote { paragraph, .. } => *paragraph = 0,
+            }
+            story
+        })
+    };
+    let Some(selected) = story(first) else {
+        return Vec::new();
+    };
+    (first..=last)
+        .filter(|&surface| story(surface).as_ref() == Some(&selected))
+        .collect()
+}
+
 /// Formatted copy and paste for every session.
 pub trait WordClipboard: WordSession {
     /// The selection's text with its formatting; `None` for a caret.
@@ -1226,7 +1297,8 @@ pub trait WordClipboard: WordSession {
         let mut links: Vec<ClipLink> = Vec::new();
         let mut rubies: Vec<ClipRuby> = Vec::new();
         let mut paragraphs = Vec::new();
-        for index in start.paragraph..=end.paragraph {
+        let selected = clipboard_paragraphs(document, start.paragraph, end.paragraph);
+        for &index in &selected {
             let Some(HeadlessQueryResult::Paragraph {
                 value: Some(snapshot),
                 ..
@@ -1632,7 +1704,7 @@ pub trait WordClipboard: WordSession {
                     .map(|section| document.section_layout(Some(section))),
             });
         }
-        let tables = self.copied_tables(start.paragraph, end.paragraph);
+        let tables = self.copied_tables(&selected);
         Some(RichClip {
             paragraphs,
             fields,
@@ -1645,16 +1717,14 @@ pub trait WordClipboard: WordSession {
         })
     }
 
-    /// The runs of whole table rows among paragraphs `first..=last` — what
-    /// a copy of them takes as tables. A row is taken only when every cell
-    /// of it is one paragraph and spans one column, so the cells come back
-    /// a paragraph a cell; anything else is copied as its paragraphs.
-    fn copied_tables(&self, first: usize, last: usize) -> Vec<ClipTable> {
+    /// Whole table rows among the selected story's paragraphs. `first`
+    /// indexes the copied paragraphs, not the interleaved editor surfaces.
+    fn copied_tables(&self, paragraphs: &[usize]) -> Vec<ClipTable> {
         let mut tables = Vec::new();
-        let mut index = first;
-        while index <= last {
+        let mut index = 0;
+        while index < paragraphs.len() {
             let Some(cell) = self
-                .cell_id_for_paragraph(index)
+                .cell_id_for_paragraph(paragraphs[index])
                 .and_then(|id| self.cell_layout(id))
             else {
                 index += 1;
@@ -1663,11 +1733,12 @@ pub trait WordClipboard: WordSession {
             // The table from the row the copy starts in, if it starts there.
             let order = self.table_order_for(cell.table_id);
             let source = order.and_then(|order| self.word_document().table_by_order(order));
-            let starts_row = cell.column == 0 && cell.paragraphs.first() == Some(&index);
+            let starts_row =
+                cell.column == 0 && cell.paragraphs.first() == Some(&paragraphs[index]);
             match source.filter(|_| starts_row) {
-                Some(source) => match copied_rows(source, cell.row, last - index + 1) {
+                Some(source) => match copied_rows(source, cell.row, paragraphs.len() - index) {
                     Some((mut table, paragraphs)) => {
-                        table.first = index - first;
+                        table.first = index;
                         let rows = table.rows_held();
                         table.format = order
                             .and_then(|order| self.word_document().table_format(order))
@@ -1680,9 +1751,9 @@ pub trait WordClipboard: WordSession {
                 None => index += 1,
             }
             // Past the rest of this table's paragraphs in the copy.
-            while index <= last
+            while index < paragraphs.len()
                 && self
-                    .cell_id_for_paragraph(index)
+                    .cell_id_for_paragraph(paragraphs[index])
                     .and_then(|id| self.cell_layout(id))
                     .is_some_and(|other| other.table_id == cell.table_id)
             {
@@ -1759,11 +1830,17 @@ pub trait WordClipboard: WordSession {
             &inherited,
             &mut commands,
         );
-        if commands.is_empty() && clip.notes.is_empty() && clip.pictures.is_empty() {
+        if commands.is_empty()
+            && clip.notes.is_empty()
+            && clip.pictures.is_empty()
+            && clip.drawings.is_empty()
+            && clip.fields.is_empty()
+            && clip.links.is_empty()
+            && clip.rubies.is_empty()
+        {
             return Ok(at);
         }
-        self.paste_commands_and_objects(clip, commands, &starts)?;
-        let at = (at.0 + clip.split_count(), at.1);
+        let at = self.paste_commands_and_objects(clip, commands, &starts, at)?;
         Ok(self.after_pasted_objects(clip, model_start, at))
     }
 
@@ -1931,7 +2008,8 @@ pub trait WordClipboard: WordSession {
         clip: &RichClip,
         commands: Vec<HeadlessCommand>,
         starts: &[Position],
-    ) -> Result<(), String> {
+        end: Position,
+    ) -> Result<Position, String> {
         let objects = clip.objects();
         let styled = clip.tables.iter().any(|table| {
             table.style_id.is_some()
@@ -1941,10 +2019,16 @@ pub trait WordClipboard: WordSession {
                 || !table.rows.is_empty()
                 || table.format.is_some()
         });
-        let splits: Vec<(usize, usize)> = clip
+        let splits: Vec<((usize, usize), Option<ParagraphFormat>)> = clip
             .tables
             .iter()
-            .flat_map(|table| table.splits.iter().copied())
+            .flat_map(|table| {
+                table
+                    .splits
+                    .iter()
+                    .enumerate()
+                    .map(|(index, &at)| (at, table.split_formats.get(index).cloned().flatten()))
+            })
             .collect();
         let formatted = clip
             .paragraphs
@@ -1960,11 +2044,26 @@ pub trait WordClipboard: WordSession {
             && clip.links.is_empty()
             && clip.rubies.is_empty()
         {
-            return self.apply_commands(commands, false);
+            self.apply_commands(commands, false)?;
+            return Ok(end);
         }
         let mark = self.begin_edit_group();
         let result = (|| {
             self.apply_commands(commands, false)?;
+            let end_id = self
+                .word_document()
+                .paragraph(end.0)
+                .and_then(|p| p.node_id);
+            let paragraph_ids: Vec<_> = starts
+                .iter()
+                .map(|&(paragraph, _)| {
+                    self.word_document()
+                        .paragraph(paragraph)
+                        .and_then(|p| p.node_id)
+                })
+                .collect();
+            let mut merges = Vec::new();
+            let mut table_formats = Vec::new();
             // Each paragraph whose mark came with the copy takes the
             // formatting the mark carries; the last ends in the
             // destination's own mark and keeps its formatting.
@@ -2019,7 +2118,7 @@ pub trait WordClipboard: WordSession {
                     });
                 }
                 for &(row, column, columns, rows) in &table.merges {
-                    formats.push(HeadlessCommand::MergeTableCells {
+                    merges.push(HeadlessCommand::MergeTableCells {
                         table_order_index: order,
                         selected_cells: (row..row + rows)
                             .flat_map(|row| {
@@ -2063,13 +2162,8 @@ pub trait WordClipboard: WordSession {
                 if !formats.is_empty() {
                     self.apply_commands(formats, false)?;
                 }
-                // Then everything else the copied table, its rows and its
-                // cells set for themselves.
                 if let Some(format) = table.format.clone() {
-                    self.execute_command(
-                        Box::new(SetTableFormatCommand::new(order, format)),
-                        false,
-                    )?;
+                    table_formats.push((order, format));
                 }
             }
             // The links go back on their text, then the fields' results
@@ -2134,10 +2228,11 @@ pub trait WordClipboard: WordSession {
             }
             for object in objects.iter().rev() {
                 let (paragraph, offset, _) = object.at();
-                let Some(&(at_paragraph, at_offset)) = starts.get(paragraph) else {
+                let Some(range) = self.pasted_range(starts, paragraph, offset, 0) else {
                     continue;
                 };
-                let (paragraph, offset) = (at_paragraph, at_offset + offset);
+                let at = range.normalized().0;
+                let (paragraph, offset) = (at.paragraph, at.offset);
                 match object {
                     ClipObject::Note(note) => {
                         let text = note.text.clone();
@@ -2212,10 +2307,19 @@ pub trait WordClipboard: WordSession {
                 .take(count.saturating_sub(1))
                 .rev()
             {
-                let (Some(section), Some(&(at, _))) = (&paragraph.section, starts.get(index))
+                let (Some(section), Some(&(_at, _))) = (&paragraph.section, starts.get(index))
                 else {
                     continue;
                 };
+                let at = paragraph_ids[index]
+                    .and_then(|id| {
+                        (0..self.word_document().paragraph_count()).find(|&i| {
+                            self.word_document()
+                                .paragraph(i)
+                                .is_some_and(|p| p.node_id == Some(id))
+                        })
+                    })
+                    .ok_or("paste lost a section paragraph")?;
                 if self.cell_id_for_paragraph(at).is_some() {
                     continue;
                 }
@@ -2223,24 +2327,71 @@ pub trait WordClipboard: WordSession {
             }
             // Last, the cells that held several paragraphs are split again,
             // last first so the ones before keep their places.
-            let mut breaks = Vec::new();
-            for &(paragraph, offset) in splits.iter().rev() {
-                let Some(&(at_paragraph, _)) = starts.get(paragraph) else {
+            for ((paragraph, offset), format) in splits.iter().rev() {
+                let (paragraph, offset) = (*paragraph, *offset);
+                let Some(&(mut at_paragraph, _)) = starts.get(paragraph) else {
                     continue;
                 };
+                if let Some(id) = paragraph_ids[paragraph] {
+                    at_paragraph = (0..self.word_document().paragraph_count())
+                        .find(|&index| {
+                            self.word_document()
+                                .paragraph(index)
+                                .is_some_and(|p| p.node_id == Some(id))
+                        })
+                        .ok_or("paste lost a cell paragraph")?;
+                }
                 let at = self
                     .word_document()
                     .model_to_rendered_text_position(TextPosition::new(at_paragraph, offset));
-                breaks.push(HeadlessCommand::InsertParagraphBreak {
-                    paragraph: at.paragraph,
-                    offset: at.offset,
-                    count: 1,
-                });
+                self.apply_command(
+                    HeadlessCommand::InsertParagraphBreak {
+                        paragraph: at.paragraph,
+                        offset: at.offset,
+                        count: 1,
+                    },
+                    false,
+                )?;
+                if let Some(format) = format {
+                    let next = clipboard_paragraphs(
+                        self.word_document(),
+                        at.paragraph,
+                        self.word_document().paragraph_count() - 1,
+                    )
+                    .get(1)
+                    .copied()
+                    .ok_or("paste lost a split paragraph")?;
+                    self.execute_command(
+                        Box::new(SetParagraphFormatCommand::new(next, format.clone())),
+                        false,
+                    )?;
+                }
             }
-            if !breaks.is_empty() {
-                self.apply_commands(breaks, false)?;
+            // Only after all metadata and cell paragraph breaks are restored
+            // may merging discard empty padding or reorder vertical followers.
+            // Table order is stable even when paragraph indices change.
+            if !merges.is_empty() {
+                self.apply_commands(merges, false)?;
             }
-            Ok(())
+            // Full table formatting requires the copied physical cell shape.
+            // Restore it only after padding is removed and merged cells exist.
+            for (order, format) in table_formats {
+                self.execute_command(Box::new(SetTableFormatCommand::new(order, format)), false)?;
+            }
+            let paragraph = if let Some(id) = end_id {
+                (0..self.word_document().paragraph_count())
+                    .find(|&index| {
+                        self.word_document()
+                            .paragraph(index)
+                            .is_some_and(|p| p.node_id == Some(id))
+                    })
+                    .ok_or("paste lost its trailing paragraph")?
+            } else if splits.is_empty() && clip.tables.iter().all(|t| t.merges.is_empty()) {
+                end.0
+            } else {
+                return Err("table paste requires a persistent trailing paragraph".into());
+            };
+            Ok((paragraph, end.1))
         })();
         self.end_edit_group(mark);
         result
@@ -2262,6 +2413,9 @@ pub trait WordClipboard: WordSession {
         if !clip.objects().iter().any(|object| object.at().0 == last)
             && !clip.fields.iter().any(|field| field.paragraph == last)
         {
+            self.set_selection_range(Some(SelectionRange::collapsed(TextPosition::new(
+                at.0, at.1,
+            ))));
             return at;
         }
         let pasted: usize = clip.paragraphs.last().map_or(0, |paragraph| {
@@ -2559,8 +2713,7 @@ pub trait WordClipboard: WordSession {
         }
         let clip = &self.with_room_for_tables(clip, target);
         let (end, starts) = push_paste_commands(clip, at, &inherited, &mut commands);
-        self.paste_commands_and_objects(clip, commands, &starts)?;
-        let end = (end.0 + clip.split_count(), end.1);
+        let end = self.paste_commands_and_objects(clip, commands, &starts, end)?;
         Ok(self.after_pasted_objects(clip, model_at, end))
     }
 }

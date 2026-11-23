@@ -189,6 +189,14 @@ fn a_copied_field_pastes_as_a_field() {
     document.select((paragraph, 0), (paragraph, end)).unwrap();
     let clip = document.copy_rich().unwrap();
     assert_eq!(clip.fields.len(), 1);
+    let external = document.selected_text().unwrap();
+    let remembered = jade_web::word::clipboard::RichClipboardCopy::new(
+        clip.clone(),
+        external.clone(),
+        "field-copy".into(),
+    );
+    assert!(remembered.matches(&external, Some(remembered.html())));
+
     document.place_caret(paragraph, end);
     let caret = document.paste_rich(&clip).unwrap();
 
