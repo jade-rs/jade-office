@@ -1127,6 +1127,8 @@ pub trait WordFields: WordSession {
                 .and_then(|file| std::fs::metadata(file).ok())
                 .map(|metadata| metadata.len()),
             page_count: self.page_count(),
+            // This host has no layout page-label API; keep story-based numbering.
+            page_labels: Vec::new(),
             paragraph_pages,
             prompt_answers: answers,
             read_file,
