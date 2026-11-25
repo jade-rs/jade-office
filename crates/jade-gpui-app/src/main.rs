@@ -1553,6 +1553,11 @@ struct DocumentView {
     /// Whether the round-trip tree has been asked for after the first frame
     /// ([`Self::prepare_for_editing`]).
     prepare_scheduled: bool,
+    /// Whether [`Self::prepare_for_editing`] has read again what the open
+    /// read without the tree: once, however the tree came to be built.
+    prepared: bool,
+    /// Whether building the tree failed and was reported; it is not again.
+    prepare_failed: bool,
 }
 
 /// Pages drawn at once around the ones in view: the view's own, two before
@@ -4204,33 +4209,49 @@ impl DocumentView {
     /// After the first frame, and at the top of key, mouse and ribbon
     /// dispatch for anything that comes sooner; nothing once built.
     pub(crate) fn prepare_for_editing(&mut self, cx: &mut Context<Self>) {
-        match self.document.ensure_main_roundtrip_xml() {
-            Ok(true) => {}
-            Ok(false) => return,
-            Err(error) => {
-                eprintln!("preparing the document for editing: {error}");
-                return;
-            }
+        // Once, whatever built the tree: an edit from the menu bar or a
+        // dropped file may have built it before any of this ran.
+        if self.prepared {
+            return;
         }
+        if let Err(error) = self.document.ensure_main_roundtrip_xml() {
+            if !self.prepare_failed {
+                self.prepare_failed = true;
+                eprintln!("preparing the document for editing: {error}");
+            }
+            return;
+        }
+        // The headings are the main document's; a story open over it waits.
+        if self.document.is_story_open() {
+            return;
+        }
+        self.prepared = true;
+        self.controls.forget();
         // Headings saved 既定で折りたたみ: read from the tree, so the open
         // found none. Unless the reader has collapsed some since.
-        if self.references.collapsed.is_empty() && !self.document.is_story_open() {
-            use jade_office_model::word::references::navigation::WordNavigation;
-            let collapsed = self.document.collapsed_by_default();
-            if !collapsed.is_empty() {
-                let blocks = self.document.hidden_by_collapse(&collapsed);
-                if let Err(error) = self.document.set_collapsed_blocks(blocks) {
-                    eprintln!("collapsing headings saved collapsed: {error}");
+        use jade_office_model::word::references::navigation::WordNavigation;
+        let collapsed = if self.references.collapsed.is_empty() {
+            self.document.collapsed_by_default()
+        } else {
+            Default::default()
+        };
+        if collapsed.is_empty() {
+            // Laid out again with the tree, the pages in the window drawn
+            // again.
+            for index in 0..self.images.len() {
+                if !self.document.is_page_stale(index) {
+                    self.set_page_image(index);
                 }
-                self.references.collapsed = collapsed;
             }
-        }
-        self.controls.forget();
-        // Laid out again with the tree, the pages in the window drawn again.
-        for index in 0..self.images.len() {
-            if !self.document.is_page_stale(index) {
-                self.set_page_image(index);
+        } else {
+            let blocks = self.document.hidden_by_collapse(&collapsed);
+            if let Err(error) = self.document.set_collapsed_blocks(blocks) {
+                eprintln!("collapsing headings saved collapsed: {error}");
             }
+            self.references.collapsed = collapsed;
+            // Collapsed, the document has fewer pages: every image again,
+            // and none for the pages it no longer has.
+            self.rebuild_all_images();
         }
         self.paint_stale_pages_later(cx);
         cx.notify();
@@ -5911,6 +5932,8 @@ fn document_view(
         focus: cx.focus_handle(),
         stale_painter: None,
         prepare_scheduled: false,
+        prepared: false,
+        prepare_failed: false,
     }
 }
 
@@ -6161,6 +6184,54 @@ mod tests {
             view.prepare_for_editing(cx);
             assert!(view.document.word_document().raw_document.is_some());
             assert!(!view.document.ensure_main_roundtrip_xml().unwrap());
+        });
+    }
+
+    /// A heading saved 既定で折りたたみ is found once the tree is built, and
+    /// the view shows the pages the collapsed document has, not the pages it
+    /// opened with.
+    #[gpui::test]
+    fn a_heading_saved_collapsed_leaves_no_pages_behind(cx: &mut gpui::TestAppContext) {
+        use jade_opc::OpcPackage;
+        let blank = jade_office_model::word::new::blank_document(
+            jade_office_model::word::new::Blank::English,
+        );
+        let mut package = OpcPackage::open(&blank).unwrap();
+        let document = package.part_str("word/document.xml").unwrap().unwrap();
+        let page = |text: &str| {
+            format!(r#"<w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>"#)
+        };
+        let body = format!(
+            r#"<w:body><w:p><w:pPr><w:outlineLvl w:val="0"/><w15:collapsed/></w:pPr><w:r><w:t>Heading</w:t></w:r></w:p>{}{}{}<w:p/>"#,
+            page("One"),
+            page("Two"),
+            page("Three")
+        );
+        package.replace(
+            "word/document.xml",
+            document
+                .replace(
+                    "<w:document ",
+                    r#"<w:document xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" "#,
+                )
+                .replacen("<w:body><w:p/>", &body, 1)
+                .into_bytes(),
+        );
+        let bytes = package.write().unwrap();
+        let (view, cx) = cx.add_window_view(|_window, cx| {
+            super::untitled_view(&bytes, "collapsed.docx", cx).unwrap()
+        });
+        view.update(cx, |view, cx| {
+            let opened = view.images.len();
+            assert!(opened >= 4, "every page shows before the tree: {opened}");
+            assert!(view.references.collapsed.is_empty());
+            view.prepare_for_editing(cx);
+            assert!(
+                !view.references.collapsed.is_empty(),
+                "the heading is collapsed"
+            );
+            assert_eq!(view.images.len(), view.document.page_count());
+            assert!(view.images.len() < opened, "the hidden pages are gone");
         });
     }
 
