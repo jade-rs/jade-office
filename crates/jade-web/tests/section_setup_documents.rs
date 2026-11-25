@@ -114,20 +114,26 @@ fn vertical_text_turns_the_page() {
 }
 
 #[test]
-fn breaks_go_in_at_the_caret() {
+fn a_page_break_at_the_caret_splits_the_paragraph_ahead_of_the_next_page() {
     let mut document = contract();
     let paragraph = typed(&mut document, "ab");
     let paragraphs = document.paragraph_count();
     document.place_caret(paragraph, 1);
     document.insert_page_break(PageBreak::Page).unwrap();
-    assert_eq!(document.paragraph_count(), paragraphs);
+    assert_eq!(document.paragraph_count(), paragraphs + 2);
+    assert_eq!(document.paragraph_text(paragraph).as_deref(), Some("a"));
+    assert_eq!(
+        document.paragraph_text(paragraph + 1).as_deref(),
+        Some("\u{000C}")
+    );
     assert!(document
-        .paragraph_text(paragraph)
+        .paragraph_text(paragraph + 2)
         .unwrap()
-        .starts_with("a\u{000C}b"));
+        .starts_with('b'));
     let xml = part(&document.export_docx().unwrap(), "word/document.xml");
     assert!(xml.contains(r#"<w:br w:type="page"/>"#));
     document.undo().unwrap();
+    assert_eq!(document.paragraph_count(), paragraphs);
     assert!(document
         .paragraph_text(paragraph)
         .unwrap()
