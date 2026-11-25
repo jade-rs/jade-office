@@ -726,8 +726,20 @@ pub(crate) fn use_installed_fonts() -> bool {
     !cfg!(test) && std::env::var("JADE_FONTS").map_or(true, |value| value != "bundled")
 }
 
-/// `.docx` bytes, painted and ready to be edited.
+/// `.docx` bytes, painted and ready to be edited — and to be read: the
+/// round-trip tree the engine leaves out of the first paint is built, so
+/// content controls, fields, cross-references and the rest read as saved.
+/// Every open but a document view's own uses this; that one builds the tree
+/// after its first frame ([`DocumentView::prepare_for_editing`]).
 fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
+    let mut document = open_document_bytes_for_first_paint(bytes)?;
+    document.ensure_roundtrip_xml()?;
+    Ok(document)
+}
+
+/// [`open_document_bytes`] without the round-trip tree, for a document view
+/// whose first frame should not wait for it.
+fn open_document_bytes_for_first_paint(bytes: &[u8]) -> Result<NativeDocument, String> {
     let regular = bundled_font("NotoSansJP-Regular.ttf");
     let bold = bundled_font("NotoSansJP-Bold.ttf");
     let face = |family: &str, weight: u16, path: &PathBuf| FontFace {
@@ -1538,6 +1550,9 @@ struct DocumentView {
     /// Draws the pages a whole-document repaint left stale, once editing
     /// pauses: see [`Self::paint_pages_in_view`].
     stale_painter: Option<gpui::Task<()>>,
+    /// Whether the round-trip tree has been asked for after the first frame
+    /// ([`Self::prepare_for_editing`]).
+    prepare_scheduled: bool,
 }
 
 /// Pages drawn at once around the ones in view: the view's own, two before
@@ -1708,6 +1723,7 @@ impl DocumentView {
     /// lets a composition exist — so this only handles the keys an IME never
     /// sees.
     fn handle_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        self.prepare_for_editing(cx);
         // The mini toolbar goes at the first key, as Word's does, and with
         // it any ranges selected beside the selection.
         self.views.mini = false;
@@ -3402,6 +3418,7 @@ impl DocumentView {
 
     /// A ribbon control was clicked.
     fn ribbon_action(&mut self, action: Action, _window: &mut Window, cx: &mut Context<Self>) {
+        self.prepare_for_editing(cx);
         self.run_ribbon(action, cx);
     }
 
@@ -4181,6 +4198,44 @@ impl DocumentView {
         self.paint_stale_pages_later(cx);
     }
 
+    /// Builds the round-trip tree the open left out of the first paint, and
+    /// reads again what the open read without it: the headings saved
+    /// collapsed, whether there are any content controls, the pages shown.
+    /// After the first frame, and at the top of key, mouse and ribbon
+    /// dispatch for anything that comes sooner; nothing once built.
+    pub(crate) fn prepare_for_editing(&mut self, cx: &mut Context<Self>) {
+        match self.document.ensure_main_roundtrip_xml() {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(error) => {
+                eprintln!("preparing the document for editing: {error}");
+                return;
+            }
+        }
+        // Headings saved 既定で折りたたみ: read from the tree, so the open
+        // found none. Unless the reader has collapsed some since.
+        if self.references.collapsed.is_empty() && !self.document.is_story_open() {
+            use jade_office_model::word::references::navigation::WordNavigation;
+            let collapsed = self.document.collapsed_by_default();
+            if !collapsed.is_empty() {
+                let blocks = self.document.hidden_by_collapse(&collapsed);
+                if let Err(error) = self.document.set_collapsed_blocks(blocks) {
+                    eprintln!("collapsing headings saved collapsed: {error}");
+                }
+                self.references.collapsed = collapsed;
+            }
+        }
+        self.controls.forget();
+        // Laid out again with the tree, the pages in the window drawn again.
+        for index in 0..self.images.len() {
+            if !self.document.is_page_stale(index) {
+                self.set_page_image(index);
+            }
+        }
+        self.paint_stale_pages_later(cx);
+        cx.notify();
+    }
+
     /// Once editing has paused, draws the stale pages a pass at a time.
     fn paint_stale_pages_later(&mut self, cx: &mut Context<Self>) {
         if self.stale_painter.is_some() || !self.document.has_stale_pages() {
@@ -4691,6 +4746,7 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.prepare_for_editing(cx);
         // A dialog is modal: only its spin box takes typing.
         if self.page_dialog.is_some() && self.spin_text().is_none() {
             return;
@@ -4747,6 +4803,7 @@ impl EntityInputHandler for DocumentView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.prepare_for_editing(cx);
         if self.page_dialog.is_some() && self.spin_text().is_none() {
             return;
         }
@@ -4931,6 +4988,12 @@ impl Render for DocumentView {
         for image in self.retired_images.drain(..) {
             window.drop_image(image).ok();
         }
+        // The open drew the first pages without the round-trip tree; it is
+        // built once this frame is up, whatever is left to paint.
+        if !self.prepare_scheduled {
+            self.prepare_scheduled = true;
+            cx.on_next_frame(window, |view, _window, cx| view.prepare_for_editing(cx));
+        }
         // Checked per frame because a window can move to a screen of another
         // density at any time. Only a change costs anything: a full repaint at
         // the new density, whose old textures are retired on the next frame.
@@ -5011,6 +5074,14 @@ impl Render for DocumentView {
         let file_dialog = word_files::overlay(self, window, cx);
         let print_panel = word_print::overlay(self, window, cx);
         word_views::on_actions(word_references::on_actions(div().id("root"), cx), cx)
+            // Before any key, click or shortcut reaches the document: the
+            // round-trip tree, should the first frame not have been enough.
+            .capture_key_down(
+                cx.listener(|view, _: &KeyDownEvent, _window, cx| view.prepare_for_editing(cx)),
+            )
+            .capture_any_mouse_down(
+                cx.listener(|view, _: &MouseDownEvent, _window, cx| view.prepare_for_editing(cx)),
+            )
             .relative()
             .track_focus(&self.focus)
             // What the shortcuts in `key_bindings` are scoped to, so they fire
@@ -5717,7 +5788,7 @@ pub(crate) fn untitled_document_view(
 }
 
 fn untitled_view(bytes: &[u8], name: &str, cx: &mut App) -> Result<DocumentView, String> {
-    let document = open_document_bytes(bytes)?;
+    let document = open_document_bytes_for_first_paint(bytes)?;
     let mut view = document_view(document, name.to_string(), bytes.len() as u64, cx);
     view.untitled = true;
     Ok(view)
@@ -5728,7 +5799,7 @@ fn open_document_view(path: &std::path::Path, cx: &mut App) -> Result<DocumentVi
     let path_text = path.to_string_lossy().into_owned();
     // Any format Word opens: converted to a .docx for the editor.
     let (opened, source) = word_files::read(path)?;
-    let document = open_document_bytes(&opened.docx)?;
+    let document = open_document_bytes_for_first_paint(&opened.docx)?;
     let file_size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
     let mut view = document_view(document, path_text, file_size, cx);
     view.opened_as(&opened, source);
@@ -5839,6 +5910,7 @@ fn document_view(
         scroll: ScrollHandle::new(),
         focus: cx.focus_handle(),
         stale_painter: None,
+        prepare_scheduled: false,
     }
 }
 
@@ -6068,6 +6140,30 @@ mod tests {
         assert!(xml.contains("jadesaved"));
     }
 
+    /// A document view opens without the round-trip tree and builds it once
+    /// its first frame is up, and only once; every other open builds it.
+    #[gpui::test]
+    fn a_view_builds_the_roundtrip_tree_after_its_first_frame(cx: &mut gpui::TestAppContext) {
+        let path = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../jade-core/contract.docx"
+        ));
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(super::open_document_bytes(&bytes)
+            .unwrap()
+            .word_document()
+            .raw_document
+            .is_some());
+        let (view, cx) =
+            cx.add_window_view(|_window, cx| super::open_document_view(&path, cx).unwrap());
+        view.update(cx, |view, cx| {
+            assert!(view.document.word_document().raw_document.is_none());
+            view.prepare_for_editing(cx);
+            assert!(view.document.word_document().raw_document.is_some());
+            assert!(!view.document.ensure_main_roundtrip_xml().unwrap());
+        });
+    }
+
     /// The contract fixture, open in a window with the keyboard on it.
     fn open_contract(
         cx: &mut gpui::TestAppContext,
@@ -6084,6 +6180,9 @@ mod tests {
         let (view, cx) = cx.add_window_view(|_window, cx| open_document_view(&path, cx).unwrap());
         cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
         cx.run_until_parked();
+        // As after the first frame, which a test window does not draw: the
+        // round-trip tree the open left out, for what reads it.
+        view.update(cx, |view, cx| view.prepare_for_editing(cx));
         (view, cx)
     }
 
