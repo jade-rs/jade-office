@@ -774,13 +774,18 @@ fn open_document_bytes(bytes: &[u8]) -> Result<NativeDocument, String> {
     }
     // Lay every page out but draw only the first screenful; the rest are
     // painted as they come into view or when the shell is idle.
-    NativeDocument::open_with_font_faces_and_paint_window(
+    let mut document = NativeDocument::open_with_font_faces_and_paint_window(
         bytes,
         INITIAL_PAGE_WIDTH_PX,
         INITIAL_PAGE_HEIGHT_PX,
         &faces,
         0..INITIAL_PAINT_PAGES,
-    )
+    )?;
+    // The shell reads fields, subdocuments and story metadata immediately.
+    // Native open defers their XML tree, so prepare it before exposing the
+    // document to those readers and caching the first page images.
+    document.ensure_roundtrip_xml()?;
+    Ok(document)
 }
 
 /// Reports what the text system resolves the shell's labels to.
