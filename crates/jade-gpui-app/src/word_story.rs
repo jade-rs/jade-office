@@ -60,6 +60,20 @@ pub struct WordDoc {
     story: Option<StoryEdit>,
 }
 
+impl WordDoc {
+    /// Builds the main document's round-trip tree (see
+    /// [`NativeDocument::ensure_roundtrip_xml`]); an open story was built
+    /// with its own. Whether it did anything.
+    pub fn ensure_main_roundtrip_xml(&mut self) -> Result<bool, String> {
+        self.main.ensure_roundtrip_xml()
+    }
+
+    /// Whether a header or footer is open over the main document.
+    pub fn is_story_open(&self) -> bool {
+        self.story.is_some()
+    }
+}
+
 impl Deref for WordDoc {
     type Target = NativeDocument;
 

@@ -1565,6 +1565,9 @@ pub(crate) mod tests {
         cx.update(|_, cx| cx.bind_keys(crate::key_bindings()));
         cx.update(|_, cx| cx.bind_keys(super::key_bindings()));
         cx.run_until_parked();
+        // As after the first frame, which a test window does not draw: the
+        // round-trip tree the open left out, for what reads it.
+        view.update(cx, |view, cx| view.prepare_for_editing(cx));
         (view, cx)
     }
 

@@ -630,6 +630,9 @@ mod tests {
         let (view, cx) =
             cx.add_window_view(move |_window, cx| crate::open_document_view(&path, cx).unwrap());
         cx.update(|window, cx| window.focus(&view.focus_handle(cx)));
+        // As after the first frame, which a test window does not draw: the
+        // round-trip tree the open left out, for what reads it.
+        view.update(cx, |view, cx| view.prepare_for_editing(cx));
         (view, cx)
     }
 

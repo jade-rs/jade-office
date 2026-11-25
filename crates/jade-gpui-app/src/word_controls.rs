@@ -82,6 +82,14 @@ pub struct ControlsUi {
 }
 
 impl ControlsUi {
+    /// Forgets what was read about the document's controls, for a document
+    /// whose model changed without an edit: its round-trip tree, built after
+    /// the first frame, is where the controls are found.
+    pub fn forget(&self) {
+        self.any.replace(None);
+        self.chrome.replace(None);
+    }
+
     pub fn is_open(&self) -> bool {
         self.dialog.is_some()
     }
