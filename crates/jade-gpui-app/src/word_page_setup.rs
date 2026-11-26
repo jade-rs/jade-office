@@ -1879,10 +1879,14 @@ mod tests {
         });
     }
 
-    /// ⌘↩ puts a page break at the caret, as in Word for Mac, rather than a
-    /// new paragraph.
+    /// In Mac mode, ⌘↩ puts a page break inside the current paragraph.
     #[gpui::test]
     fn command_return_breaks_the_page(cx: &mut gpui::TestAppContext) {
+        use jade_docx_reader::word_platform::{
+            set_word_layout_platform, word_layout_platform, WordLayoutPlatform,
+        };
+        let previous_platform = word_layout_platform();
+        set_word_layout_platform(WordLayoutPlatform::Mac);
         let (view, cx) = open_contract(cx);
         let (paragraph, paragraphs) = view.update(cx, |view, _| {
             let (paragraph, _) = view.insert_at;
@@ -1896,5 +1900,6 @@ mod tests {
             let text = view.document.paragraph_text(view.insert_at.0).unwrap();
             assert!(text.contains('\u{000C}'), "{text:?}");
         });
+        set_word_layout_platform(previous_platform);
     }
 }

@@ -8,6 +8,7 @@
 //! paper, columns and grid, as Word's does. Lengths are points; the shells
 //! show them in millimetres, as Japanese Word does.
 
+use jade_docx_editor::commands::insert_manual_page_break::InsertManualPageBreakCommand;
 use jade_docx_headless_api::{
     HeadlessBorderEdge, HeadlessCommand, HeadlessCoverParagraph, HeadlessDocGrid,
     HeadlessLineNumbering, HeadlessPageBorderSet, HeadlessPageNumbering, HeadlessSectionBreakType,
@@ -1555,6 +1556,11 @@ pub trait WordPageSetup: WordSession {
     /// selection.
     fn insert_page_break(&mut self, kind: PageBreak) -> Result<(), String> {
         let range = self.selection_range().ok_or("no caret")?;
+        if kind == PageBreak::Page
+            && InsertManualPageBreakCommand::supports(self.word_document(), range)
+        {
+            return self.execute_command(Box::new(InsertManualPageBreakCommand::new(range)), false);
+        }
         let (start, end) = range.normalized();
         let text = match kind {
             PageBreak::Page => "\u{000C}",
