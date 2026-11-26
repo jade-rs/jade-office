@@ -155,6 +155,9 @@ fn pages_added_by_typing_are_counted_on_the_first_page() {
             typed += 1;
             assert!(typed < 400, "three pages never came");
         }
+        // The footers catch up when the shell is idle.
+        document.settle_pending().unwrap();
+        assert!(!document.has_pending_settle());
         document.take_repainted_pages();
         let reference = docx(
             &(0..=typed)
@@ -243,7 +246,15 @@ fn a_retyped_or_moved_heading_is_drawn_in_the_headers_that_show_it() {
     assert!(page > 0, "chapter 1 starts after the first page");
     document.place_caret(heading(1), "Chapter".len());
     document.take_repainted_pages();
+    let passes = document.settling_passes();
     document.insert_text("X").unwrap();
+    // The keystroke draws its own page's band, and leaves the headers
+    // showing the heading for the shell's idle settle: no whole-document
+    // pass on the key.
+    assert_eq!(document.settling_passes(), passes, "the key settled");
+    assert!(document.has_pending_settle());
+    assert!(document.settle_pending().unwrap());
+    assert!(!document.has_pending_settle());
     let repainted = document.take_repainted_pages();
     assert!(repainted.contains(&page), "{repainted:?}");
     assert!(repainted.contains(&(page + 1)), "{repainted:?}");
@@ -258,6 +269,7 @@ fn a_retyped_or_moved_heading_is_drawn_in_the_headers_that_show_it() {
     while document.paragraph_start_page(document.caret().unwrap().0) == Some(page) {
         document.insert_paragraph_break().unwrap();
     }
+    document.settle_pending().unwrap();
     let fresh = common::open_bytes(&document.export_docx().unwrap());
     assert_same_pages("moved", &document, &fresh);
 }
@@ -289,6 +301,12 @@ fn a_styleref_that_moves_its_own_heading_stops_repainting() {
             // An edit starts the count again, and ends the same way.
             document.place_caret(1, 0);
             document.insert_text("z").unwrap();
+            assert_eq!(document.settling_passes(), passes, "the key settled");
+            let mut idles = 0;
+            while document.settle_pending().unwrap() {
+                idles += 1;
+                assert!(idles <= 2, "filler {filler}, edit {edit}: settles forever");
+            }
             let after = document.settling_passes();
             assert!(
                 after - passes <= 2,
@@ -322,6 +340,8 @@ fn typing_on_a_page_drawn_right_runs_no_extra_pass() {
         document.insert_text(&character.to_string()).unwrap();
     }
     document.delete(true).unwrap();
+    assert!(!document.has_pending_settle());
+    assert!(!document.settle_pending().unwrap());
     assert_eq!(document.settling_passes(), before);
     let fresh = common::open_bytes(&document.export_docx().unwrap());
     assert_same_pages("typed", &document, &fresh);
@@ -333,5 +353,66 @@ fn typing_on_a_page_drawn_right_runs_no_extra_pass() {
     for character in "and more".chars() {
         contract.insert_text(&character.to_string()).unwrap();
     }
+    assert!(!contract.has_pending_settle());
     assert_eq!(contract.settling_passes(), before);
+}
+
+/// Page 1 of `document` against a fresh render of it saved, once its
+/// footers have settled.
+fn assert_first_page_settled(label: &str, document: &mut EditableDocument) {
+    document.settle_pending().unwrap();
+    assert!(!document.has_pending_settle(), "{label}");
+    let fresh = common::open_bytes(&document.export_docx().unwrap());
+    assert_eq!(document.page_count(), fresh.page_count(), "{label}");
+    assert!(
+        pixels(document, 0) == pixels(&fresh, 0),
+        "{label}: page 1 differs from a fresh render"
+    );
+}
+
+/// The total comes down again: a document typed out to four pages with
+/// Enter and taken back to one, by Backspace and by undo, reads its page
+/// count on page 1 at every step.
+#[test]
+fn the_total_follows_the_page_count_down() {
+    for (name, resident) in [("all resident", 0..usize::MAX), ("page 1 resident", 0..1)] {
+        for by_undo in [false, true] {
+            let label = format!("{name}, {}", if by_undo { "undo" } else { "backspace" });
+            let bytes = docx(
+                "<w:p><w:r><w:t>Start</w:t></w:r></w:p>",
+                LETTER,
+                None,
+                Some(PAGE_OF_NUMPAGES),
+            );
+            let mut document = open_resident(&bytes, resident.clone());
+            document.place_caret(0, "Start".len());
+            let mut count = document.page_count();
+            let mut typed = 0;
+            while document.page_count() < 4 {
+                document.insert_paragraph_break().unwrap();
+                document.insert_text("Line").unwrap();
+                typed += 1;
+                assert!(typed < 600, "{label}: four pages never came");
+                if document.page_count() != count {
+                    count = document.page_count();
+                    assert_first_page_settled(&format!("{label}, up to {count}"), &mut document);
+                }
+            }
+            let mut steps = 0;
+            while document.page_count() > 1 {
+                if by_undo {
+                    assert!(document.undo().unwrap(), "{label}: nothing to undo");
+                } else {
+                    document.delete(true).unwrap();
+                }
+                steps += 1;
+                assert!(steps < 6000, "{label}: one page never came back");
+                if document.page_count() != count {
+                    count = document.page_count();
+                    assert_first_page_settled(&format!("{label}, down to {count}"), &mut document);
+                }
+            }
+            assert_first_page_settled(&format!("{label}, back to one"), &mut document);
+        }
+    }
 }

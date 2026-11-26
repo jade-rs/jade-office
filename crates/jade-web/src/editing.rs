@@ -158,10 +158,9 @@ pub struct EditableDocument {
     /// The pages repainted since the shell last asked, from the renderer's
     /// dirty regions.
     repainted_pages: std::collections::BTreeSet<usize>,
-    /// Pages a pass drew with a NUMPAGES total or a STYLEREF its own end
-    /// proved wrong while they were not resident: drawn again when they
-    /// come back (see [`Self::settle_page_chrome`]).
-    stale_pages: std::collections::BTreeSet<usize>,
+    /// What an edit's passes left for [`Self::settle_pending`] to draw
+    /// again, off the keystroke.
+    deferred_settle: DeferredSettle,
     /// The passes [`Self::settle_page_chrome`] has run, for tests: a
     /// keystroke on a page drawn right runs none.
     settling_passes: u64,
@@ -177,6 +176,16 @@ pub struct EditableDocument {
     /// A view's page box and アウトライン's indents: see
     /// [`Self::set_view_geometry`].
     view: ViewLayout,
+}
+
+/// What [`EditableDocument::settle_pending`] has left to draw.
+#[derive(Clone, Copy, Default)]
+struct DeferredSettle {
+    /// A pass drew a NUMPAGES or SECTIONPAGES total its end proved wrong.
+    totals: bool,
+    /// The first page (0-based) of those showing an edited heading's
+    /// STYLEREF.
+    from: Option<usize>,
 }
 
 /// What a view other than 印刷レイアウト lays the document out with.
@@ -302,7 +311,7 @@ impl EditableDocument {
             repainted_from: None,
             deferred_repaint: None,
             repainted_pages: std::collections::BTreeSet::new(),
-            stale_pages: std::collections::BTreeSet::new(),
+            deferred_settle: DeferredSettle::default(),
             settling_passes: 0,
             field_codes: Default::default(),
             field_shading: Default::default(),
@@ -311,7 +320,7 @@ impl EditableDocument {
         };
         // The first pass drew page 1's footer before it reached the last
         // page, and each header before the headings below it.
-        document.settle_page_chrome(None)?;
+        document.settle_page_chrome(false, None)?;
         // Opening draws every resident page: nothing waits on the shell.
         document.repainted_pages.clear();
         document.repainted_from = None;
@@ -443,24 +452,15 @@ impl EditableDocument {
                 *page = replacement;
             }
         }
-        // And the resident pages a pass left wrong while they were away.
-        let count = self.page_count();
-        let stale = std::mem::take(&mut self.stale_pages);
-        let (returning, away): (std::collections::BTreeSet<usize>, _) = stale
-            .into_iter()
-            .filter(|&page| page < count)
-            .partition(|page| pages.contains(page));
-        self.stale_pages = away;
-        arriving.extend(returning);
-        arriving.sort_unstable();
-        arriving.dedup();
         let (Some(&first), Some(&last)) = (arriving.first(), arriving.last()) else {
             return Ok(false);
         };
         // Those pages only, from the layout the last pass left.
         self.paint_pages(first, last)?;
         self.repainted_pages.extend(arriving);
-        self.settle_page_chrome(None)?;
+        // What it drew wrong waits for the shell's idle settle, as an edit's
+        // does: a page that comes in is drawn from the layout as it stands.
+        self.defer_settle(None);
         Ok(true)
     }
 
@@ -498,49 +498,47 @@ impl EditableDocument {
     /// NUMPAGES or SECTIONPAGES total other than the one it ended with (a
     /// footer on page 1 is drawn before the last page is reached), or a
     /// header's STYLEREF other than the headings its page ended with (a
-    /// header is drawn before the body below it) — and the pages in
-    /// `also` (0-based, from `also` on), which show a STYLEREF of an edited
-    /// heading the pass did not draw again. The pages that are not resident
-    /// are drawn when they come back ([`Self::set_resident_pages`]).
+    /// header is drawn before the body below it) — every page when `totals`
+    /// (a total an earlier pass drew wrong), and the pages from `also`
+    /// (0-based) on, which show a STYLEREF of an edited heading the pass did
+    /// not draw again. A page that is not resident is a placeholder, drawn
+    /// afresh when it comes in.
     ///
     /// The renderer stops flagging a total or a STYLEREF that moves what it
     /// counts after a few passes; at most [`MAX_SETTLING_PASSES`] are run
     /// here all the same. With nothing flagged, it costs nothing.
-    fn settle_page_chrome(&mut self, also: Option<usize>) -> Result<(), String> {
-        let mut also = also;
+    fn settle_page_chrome(&mut self, totals: bool, also: Option<usize>) -> Result<(), String> {
+        let (mut totals, mut also) = (totals, also);
         for _ in 0..MAX_SETTLING_PASSES {
-            let totals = self.renderer.take_page_totals_changed();
+            totals |= self.renderer.take_page_totals_changed();
             let mut wrong = if self.renderer.has_style_reference_wrong_pages() {
                 self.renderer.take_style_reference_wrong_pages()
             } else {
                 std::collections::BTreeSet::new()
             };
             let count = self.page_count();
-            if totals {
+            if std::mem::take(&mut totals) {
                 wrong.extend(0..count);
             }
             if let Some(from) = also.take() {
                 wrong.extend(from.min(count)..count);
             }
-            if wrong.is_empty() {
-                return Ok(());
-            }
-            let resident = self.resident.borrow().clone();
-            let mut drawn = Vec::new();
-            for page in wrong.into_iter().filter(|&page| page < count) {
-                if resident.contains(&page) {
-                    drawn.push(page);
-                } else {
-                    self.stale_pages.insert(page);
-                }
-            }
-            let (Some(&first), Some(&last)) = (drawn.first(), drawn.last()) else {
+            wrong.retain(|&page| page < count);
+            let Some(&lowest) = wrong.first() else {
                 return Ok(());
             };
+            // Every page whose chrome changed, resident or not: a shell's
+            // thumbnail of one is out of date.
+            self.repainted_from = Some(self.repainted_from.map_or(lowest, |page| page.min(lowest)));
+            let resident = self.resident.borrow().clone();
+            let mut drawn = wrong.into_iter().filter(|page| resident.contains(page));
+            let Some(first) = drawn.next() else {
+                return Ok(());
+            };
+            let last = drawn.next_back().unwrap_or(first);
             self.settling_passes += 1;
             self.paint_pages(first, last)?;
             self.repainted_pages.extend(first..=last);
-            self.repainted_from = Some(self.repainted_from.map_or(first, |page| page.min(first)));
         }
         // Past the cap, what is still flagged has no right value.
         self.renderer.take_page_totals_changed();
@@ -548,6 +546,42 @@ impl EditableDocument {
             self.renderer.take_style_reference_wrong_pages();
         }
         Ok(())
+    }
+
+    /// Keeps what the pass just run drew wrong, and the pages from `also`
+    /// on, for [`Self::settle_pending`]: drawing them again lays the whole
+    /// document out, which an edit's keystroke must not wait on.
+    fn defer_settle(&mut self, also: Option<usize>) {
+        let deferred = &mut self.deferred_settle;
+        deferred.totals |= self.renderer.take_page_totals_changed();
+        deferred.from = match (deferred.from, also) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+
+    /// Whether an edit left headers or footers for [`Self::settle_pending`]
+    /// to draw again: a NUMPAGES total or a STYLEREF drawn wrong, or the
+    /// pages that show a heading that changed.
+    pub fn has_pending_settle(&self) -> bool {
+        self.deferred_settle.totals
+            || self.deferred_settle.from.is_some()
+            || self.renderer.has_style_reference_wrong_pages()
+    }
+
+    /// Draws again the resident pages an edit left with a header or footer
+    /// wrong (see [`Self::has_pending_settle`]), as jade-core's native host
+    /// paints its stale pages after the key: a shell calls it when idle,
+    /// then re-reads [`Self::take_repainted_pages`]. Whether any page was
+    /// drawn.
+    pub fn settle_pending(&mut self) -> Result<bool, String> {
+        if !self.has_pending_settle() {
+            return Ok(false);
+        }
+        let before = self.settling_passes;
+        let DeferredSettle { totals, from } = std::mem::take(&mut self.deferred_settle);
+        self.settle_page_chrome(totals, from)?;
+        Ok(self.settling_passes > before)
     }
 
     /// How many passes [`Self::settle_page_chrome`] has run since the
@@ -1747,7 +1781,10 @@ impl EditableDocument {
             (Some(before), Some(after)) => Some(before.min(after)),
             (before, after) => before.or(after),
         };
-        self.settle_page_chrome(shown)
+        // Drawn again when the shell is idle: the pages from the heading on
+        // are a whole-document pass, a thousand body keystrokes.
+        self.defer_settle(shown);
+        Ok(())
     }
 
     /// The renderer's incremental sequence, through every page: an edit can
@@ -1756,7 +1793,8 @@ impl EditableDocument {
     /// old one (a paste of many lines, or one long line, adds several).
     fn repaint_from(&mut self, paragraph: usize) -> Result<(), String> {
         self.repaint_through(paragraph, None, usize::MAX)?;
-        self.settle_page_chrome(None)
+        self.defer_settle(None);
+        Ok(())
     }
 
     /// The incremental sequence from `paragraph` through page `last_page`
@@ -2175,7 +2213,10 @@ impl EditableDocument {
             return Err(error);
         }
         self.follow_page_box()?;
-        self.settle_page_chrome(None)
+        // This pass drew every resident page from the document as it is:
+        // what an edit left for later is drawn by now, or flagged again.
+        self.deferred_settle = DeferredSettle::default();
+        self.settle_page_chrome(false, None)
     }
 
     /// When an edit has changed the page box — the page turned, another

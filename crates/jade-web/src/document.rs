@@ -394,7 +394,10 @@ impl CanvasRenderHost for TinySkiaRenderHost {
     }
 
     fn page_count(&self) -> usize {
-        self.pages.borrow().len()
+        // The pages laid out, as jade-core's native host counts them, not
+        // the surfaces kept: the pool never shrinks, and a NUMPAGES total
+        // the renderer raises to this count never came back down.
+        self.rendered_pages.get()
     }
 
     fn page_dimensions(&self, page_index: usize) -> Option<(f64, f64)> {
