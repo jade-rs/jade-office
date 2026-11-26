@@ -223,6 +223,26 @@ impl crate::word::WordSession for jade_docx_native_render::document::NativeDocum
             .or_else(|| self.renderer().cached_paragraph_start_page(paragraph))
     }
 
+    fn page_label(&self, page: usize) -> Option<jade_docx_editor::fields::PageLabel> {
+        let index = page
+            .checked_sub(1)
+            .filter(|&index| index < NativeDocument::page_count(self))?;
+        self.renderer().displayed_page_labels().get(index).cloned()
+    }
+
+    fn has_page_labels(&self) -> bool {
+        self.renderer().has_page_labels()
+    }
+
+    /// A bounded pass can leave the layout short of the document's end:
+    /// one full pass then gives every page its number.
+    fn complete_layout(&mut self) -> bool {
+        if self.renderer().last_layout_complete() {
+            return true;
+        }
+        self.repaint_all().is_ok() && self.renderer().last_layout_complete()
+    }
+
     fn text_regions(
         &self,
         start: crate::word::Position,

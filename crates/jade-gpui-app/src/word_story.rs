@@ -185,6 +185,26 @@ impl WordSession for WordDoc {
         WordSession::paragraph_page(&**self, paragraph)
     }
 
+    /// The body's labels while no story is open: a story's pages are its
+    /// own layout's, which numbers none.
+    fn page_label(&self, page: usize) -> Option<jade_docx_editor::fields::PageLabel> {
+        match &self.story {
+            Some(_) => None,
+            None => WordSession::page_label(&self.main, page),
+        }
+    }
+
+    fn has_page_labels(&self) -> bool {
+        self.story.is_none() && WordSession::has_page_labels(&self.main)
+    }
+
+    fn complete_layout(&mut self) -> bool {
+        match &self.story {
+            Some(_) => true,
+            None => WordSession::complete_layout(&mut self.main),
+        }
+    }
+
     fn position_metrics(&self, at: jade_office_model::word::Position) -> Option<(f64, f64, f64)> {
         WordSession::position_metrics(&**self, at)
     }

@@ -255,6 +255,24 @@ impl WordSession for WordDoc {
         }
     }
 
+    /// The body's labels: a story's text is on the body page it is open
+    /// over (`paragraph_page`).
+    fn page_label(&self, page: usize) -> Option<jade_docx_editor::fields::PageLabel> {
+        WordSession::page_label(&self.main, page)
+    }
+
+    fn has_page_labels(&self) -> bool {
+        WordSession::has_page_labels(&self.main)
+    }
+
+    /// The body is laid out again only while no story is open over it.
+    fn complete_layout(&mut self) -> bool {
+        match &self.story {
+            Some(_) => true,
+            None => WordSession::complete_layout(&mut self.main),
+        }
+    }
+
     fn position_metrics(&self, at: Position) -> Option<(f64, f64, f64)> {
         WordSession::position_metrics(&**self, at)
     }

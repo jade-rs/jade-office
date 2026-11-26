@@ -1090,6 +1090,16 @@ pub trait WordFields: WordSession {
                 paragraph_pages.insert(paragraph, page);
             }
         }
+        // The labels of the pages the last layout finished, page 1 first.
+        // Evaluation leaves a PAGE or PAGEREF on a later page as it is.
+        let page_labels = self
+            .page_count()
+            .map(|count| {
+                (1..=count)
+                    .map_while(|page| self.page_label(page))
+                    .collect()
+            })
+            .unwrap_or_default();
         let folder = host
             .file
             .as_ref()
@@ -1127,9 +1137,9 @@ pub trait WordFields: WordSession {
                 .and_then(|file| std::fs::metadata(file).ok())
                 .map(|metadata| metadata.len()),
             page_count: self.page_count(),
-            // This host has no layout page-label API; keep story-based numbering.
-            page_labels: Vec::new(),
             paragraph_pages,
+            page_labels,
+            page_labels_from_layout: self.has_page_labels(),
             prompt_answers: answers,
             read_file,
             japanese: host.japanese,
@@ -1158,6 +1168,9 @@ pub trait WordFields: WordSession {
         host: &FieldHost,
         answers: HashMap<String, String>,
     ) -> Result<(), String> {
+        // Every page's number first; a page the session cannot lay out
+        // keeps its fields' results.
+        self.complete_layout();
         let environment = self.field_environment(host, answers);
         self.execute_command(Box::new(FieldCommand::update(scope, environment)), true)
     }
