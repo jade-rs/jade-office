@@ -7,8 +7,8 @@
 use std::time::Duration;
 
 use gpui::Context;
+use wasm_bindgen::{JsCast, JsValue};
 
-use super::word_recover::now;
 use super::DocView;
 
 /// How long the edits must stop for before the headers and footers are
@@ -23,11 +23,39 @@ const SETTLE_QUIET: Duration = Duration::from_millis(300);
 const SETTLE_MAX_WAIT: Duration = Duration::from_millis(1500);
 
 /// How long is left to wait at `now` (ms) for a settle pending since
-/// `first_pending` whose edits last moved at `last_edit`: see
+/// `first_pending` whose edits last moved at `last_edit`, or `None` while
+/// the last try failed and no edit has come since: see
 /// [`jade_web::editing::settle_wait`], which is tested natively (this crate
 /// builds for wasm32 only).
-fn settle_wait(first_pending: f64, last_edit: f64, now: f64) -> Duration {
-    jade_web::editing::settle_wait(first_pending, last_edit, now, SETTLE_QUIET, SETTLE_MAX_WAIT)
+fn settle_wait(first_pending: f64, last_edit: f64, now: f64, failed: bool) -> Option<Duration> {
+    jade_web::editing::settle_wait(
+        first_pending,
+        last_edit,
+        now,
+        failed,
+        SETTLE_QUIET,
+        SETTLE_MAX_WAIT,
+    )
+}
+
+/// Milliseconds on the page's monotonic clock (`performance.now()`): the
+/// waits above are measured on it, which the wall clock going back (a
+/// sync, a time zone change) cannot stretch. `Date.now()` where there is no
+/// `performance`.
+fn now() -> f64 {
+    let global = js_sys::global();
+    js_sys::Reflect::get(&global, &JsValue::from_str("performance"))
+        .ok()
+        .filter(|performance| performance.is_object())
+        .and_then(|performance| {
+            let now = js_sys::Reflect::get(&performance, &JsValue::from_str("now")).ok()?;
+            now.dyn_into::<js_sys::Function>()
+                .ok()?
+                .call0(&performance)
+                .ok()?
+                .as_f64()
+        })
+        .unwrap_or_else(js_sys::Date::now)
 }
 
 /// When the headers and footers an edit left wrong are to be drawn again.
@@ -41,6 +69,16 @@ pub(crate) struct SettleClock {
     edits_seen: u64,
     /// Whether a timer is waiting to settle.
     waiting: bool,
+    /// The edit count a settle failed at (a render error): no other is
+    /// tried, each a whole-document pass, until the count moves.
+    failed_at: Option<u64>,
+}
+
+impl SettleClock {
+    /// Whether the last settle failed and no edit has come since.
+    fn latched(&self) -> bool {
+        self.failed_at == Some(self.edits_seen)
+    }
 }
 
 impl DocView {
@@ -55,7 +93,11 @@ impl DocView {
             return;
         };
         let clock = &mut self.settle;
-        if !pending {
+        if clock.failed_at.is_some_and(|failed| failed != edits) {
+            // An edit since the failure: a settle may be tried again.
+            clock.failed_at = None;
+        }
+        if !pending || clock.failed_at == Some(edits) {
             clock.first_pending = None;
             clock.edits_seen = edits;
             return;
@@ -94,12 +136,17 @@ impl DocView {
             clock.waiting = false;
             return None;
         };
-        let wait = settle_wait(first_pending, clock.last_edit, now());
+        let Some(wait) = settle_wait(first_pending, clock.last_edit, now(), clock.latched()) else {
+            clock.waiting = false;
+            clock.first_pending = None;
+            return None;
+        };
         if !wait.is_zero() {
             return Some(wait);
         }
         clock.waiting = false;
         clock.first_pending = None;
+        let edits = clock.edits_seen;
         let document = self.word_mut()?;
         match document.settle_pending() {
             Ok(true) => {
@@ -108,6 +155,8 @@ impl DocView {
             }
             Ok(false) => {}
             Err(error) => {
+                // Not tried again until the next edit: see `failed_at`.
+                self.settle.failed_at = Some(edits);
                 self.status = error.into();
                 cx.notify();
             }

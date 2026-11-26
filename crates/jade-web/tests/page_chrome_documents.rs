@@ -426,8 +426,19 @@ mod settle_timing {
     const MAX_WAIT: Duration = Duration::from_millis(1500);
 
     fn wait(first_pending: f64, last_edit: f64, now: f64) -> f64 {
-        let left = settle_wait(first_pending, last_edit, now, QUIET, MAX_WAIT);
+        let left = settle_wait(first_pending, last_edit, now, false, QUIET, MAX_WAIT).unwrap();
         (left.as_secs_f64() * 1000.0).round()
+    }
+
+    #[test]
+    fn a_failed_settle_waits_for_the_next_edit() {
+        // Latched, it is never due, however long ago the edit was.
+        for now in [0.0, 300.0, 1500.0, 60_000.0] {
+            assert_eq!(settle_wait(0.0, 0.0, now, true, QUIET, MAX_WAIT), None);
+        }
+        // Once an edit has cleared the latch, the wait runs from it again.
+        let left = settle_wait(5000.0, 5000.0, 5100.0, false, QUIET, MAX_WAIT).unwrap();
+        assert_eq!((left.as_secs_f64() * 1000.0).round(), 200.0);
     }
 
     #[test]

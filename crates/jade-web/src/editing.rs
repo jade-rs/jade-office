@@ -186,21 +186,29 @@ pub struct EditableDocument {
 /// `max_wait` after the first frame that found one pending (edits that never
 /// pause cannot put it off for good). Times are in ms; returns how long is
 /// left to wait at `now`, zero when due.
+///
+/// `None` while `failed_since_last_edit`: a settle that failed with a render
+/// error would fail again, and each try is a whole-document pass, so the
+/// next one waits for the next edit.
 pub fn settle_wait(
     first_pending: f64,
     last_edit: f64,
     now: f64,
+    failed_since_last_edit: bool,
     quiet: std::time::Duration,
     max_wait: std::time::Duration,
-) -> std::time::Duration {
+) -> Option<std::time::Duration> {
+    if failed_since_last_edit {
+        return None;
+    }
     let due = (last_edit + quiet.as_secs_f64() * 1000.0)
         .min(first_pending + max_wait.as_secs_f64() * 1000.0);
     let left = due - now;
-    if left.is_finite() && left > 0.0 {
+    Some(if left.is_finite() && left > 0.0 {
         std::time::Duration::from_secs_f64(left / 1000.0)
     } else {
         std::time::Duration::ZERO
-    }
+    })
 }
 
 /// What [`EditableDocument::settle_pending`] has left to draw.
@@ -614,7 +622,16 @@ impl EditableDocument {
         }
         let before = self.settling_passes;
         let DeferredSettle { totals, from } = std::mem::take(&mut self.deferred_settle);
-        self.settle_page_chrome(totals, from)?;
+        if let Err(error) = self.settle_page_chrome(totals, from) {
+            // Still owed: the next try, after the next edit, draws them.
+            let deferred = &mut self.deferred_settle;
+            deferred.totals |= totals;
+            deferred.from = match (deferred.from, from) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+            return Err(error);
+        }
         Ok(self.settling_passes > before)
     }
 

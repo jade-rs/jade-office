@@ -4819,7 +4819,6 @@ impl Render for DocView {
                 Err(error) => self.status = error.into(),
             }
         }
-        self.schedule_page_chrome_settle(cx);
         let body = if self.slideshow {
             self.slideshow_body(window, cx)
         } else {
@@ -4832,6 +4831,9 @@ impl Render for DocView {
                 Document::Workbook(_) => self.workbook_body(window, cx),
             }
         };
+        // After the body: building it follows the scroll, and a page that
+        // came in may have raised a settle this frame.
+        self.schedule_page_chrome_settle(cx);
         let dialog = word_characters::overlay(self, window, cx);
         let reference_dialog = word_references::overlay(self, window, cx);
         let controls_dialog = word_controls::dialog(self, window, cx);
