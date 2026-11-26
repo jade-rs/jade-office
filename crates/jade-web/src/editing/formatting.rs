@@ -185,6 +185,13 @@ impl WordSession for EditableDocument {
         self.renderer.displayed_page_labels().get(index).cloned()
     }
 
+    /// One pass over the renderer: `page_label` rebuilds the list each call.
+    fn displayed_page_labels(&self) -> Vec<jade_docx_editor::fields::PageLabel> {
+        let mut labels = self.renderer.displayed_page_labels();
+        labels.truncate(self.page_count());
+        labels
+    }
+
     fn has_page_labels(&self) -> bool {
         self.renderer.has_page_labels()
     }

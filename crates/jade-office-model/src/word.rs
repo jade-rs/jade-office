@@ -211,6 +211,24 @@ pub trait WordSession {
         None
     }
 
+    /// Every page's [`Self::page_label`], page 1 first, up to the first
+    /// page without one (the end of what the last layout finished): what
+    /// a table of contents' update and F9 read, once per command.
+    ///
+    /// Not in jade-core's trait, whose commands ask [`Self::page_label`]
+    /// page by page. A session that builds its labels in one pass (a
+    /// renderer's `displayed_page_labels`) overrides this, so a long
+    /// document's update builds the list once rather than once a page.
+    fn displayed_page_labels(&self) -> Vec<jade_docx_editor::fields::PageLabel> {
+        self.page_count()
+            .map(|count| {
+                (1..=count)
+                    .map_while(|page| self.page_label(page))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Whether [`Self::page_label`] reflects a layout: a page without a
     /// label is then one the layout has not finished, not a session
     /// without labels.

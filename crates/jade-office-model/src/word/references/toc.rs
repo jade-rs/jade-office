@@ -367,12 +367,14 @@ pub trait WordToc: WordSession {
         // the layout did not reach is left as it is.
         let document = self.word_document();
         let block = document.tables_of_contents()[index].clone();
+        // Built once: a long table asks for a label per entry.
+        let labels = self.displayed_page_labels();
         let mut skipped = 0;
         let mut pages = HashMap::new();
         for (name, paragraph) in toc_page_references(document, &block) {
             let label = match self.paragraph_page(paragraph) {
-                Some(page) => match self.page_label(page) {
-                    Some(label) => Some(label.text),
+                Some(page) => match page.checked_sub(1).and_then(|index| labels.get(index)) {
+                    Some(label) => Some(label.text.clone()),
                     None if labelled => None,
                     None => Some(page.to_string()),
                 },
@@ -393,17 +395,15 @@ pub trait WordToc: WordSession {
     }
 
     /// The label of the page each laid-out paragraph starts on, by
-    /// paragraph index, for the paragraphs on labelled pages.
+    /// paragraph index, for the paragraphs on labelled pages. The labels
+    /// are read once ([`WordSession::displayed_page_labels`]).
     fn paragraph_page_labels(&self) -> HashMap<usize, String> {
-        let mut by_page: HashMap<usize, Option<String>> = HashMap::new();
+        let labels = self.displayed_page_labels();
         (0..self.word_document().paragraph_count())
             .filter_map(|paragraph| {
                 let page = self.paragraph_page(paragraph)?;
-                let label = by_page
-                    .entry(page)
-                    .or_insert_with(|| self.page_label(page).map(|label| label.text))
-                    .clone()?;
-                Some((paragraph, label))
+                let label = labels.get(page.checked_sub(1)?)?;
+                Some((paragraph, label.text.clone()))
             })
             .collect()
     }

@@ -1092,14 +1092,7 @@ pub trait WordFields: WordSession {
         }
         // The labels of the pages the last layout finished, page 1 first.
         // Evaluation leaves a PAGE or PAGEREF on a later page as it is.
-        let page_labels = self
-            .page_count()
-            .map(|count| {
-                (1..=count)
-                    .map_while(|page| self.page_label(page))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let page_labels = self.displayed_page_labels();
         let folder = host
             .file
             .as_ref()

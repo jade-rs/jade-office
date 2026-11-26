@@ -194,6 +194,13 @@ impl WordSession for WordDoc {
         }
     }
 
+    fn displayed_page_labels(&self) -> Vec<jade_docx_editor::fields::PageLabel> {
+        match &self.story {
+            Some(_) => Vec::new(),
+            None => WordSession::displayed_page_labels(&self.main),
+        }
+    }
+
     fn has_page_labels(&self) -> bool {
         self.story.is_none() && WordSession::has_page_labels(&self.main)
     }
