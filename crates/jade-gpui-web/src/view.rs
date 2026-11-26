@@ -580,9 +580,9 @@ pub struct DocView {
     show: deck_show::WebShow,
     /// Whether the browser's paste event came after the last ⌘V.
     paste_arrived: bool,
-    /// Whether the headers and footers an edit left wrong are due to be
-    /// drawn again (`word_settle`).
-    settle_scheduled: bool,
+    /// When the headers and footers an edit left wrong are drawn again
+    /// (`word_settle`).
+    settle: word_settle::SettleClock,
     /// The status bar's 文字カウント and the caret, selection and edit it
     /// was counted for: counting reads every paragraph.
     word_count: RefCell<Option<(FormatKey, SharedString)>>,
@@ -868,7 +868,7 @@ impl DocView {
             slideshow: false,
             show: Default::default(),
             paste_arrived: false,
-            settle_scheduled: false,
+            settle: Default::default(),
             word_count: RefCell::new(None),
             characters: word_characters::Characters::default(),
             spin: None,

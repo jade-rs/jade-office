@@ -8,38 +8,99 @@ use std::time::Duration;
 
 use gpui::Context;
 
+use super::word_recover::now;
 use super::DocView;
 
-/// How long after an edit the headers and footers are drawn again: long
-/// enough that a run of keys is one settle.
-const SETTLE_AFTER: Duration = Duration::from_millis(300);
+/// How long the edits must stop for before the headers and footers are
+/// drawn again: each key starts the wait afresh, so a run of keys in a
+/// heading is not held up halfway by the whole-document pass, and is one
+/// settle at its end.
+const SETTLE_QUIET: Duration = Duration::from_millis(300);
+
+/// The longest a header or footer stays wrong, from the first frame that
+/// found it so: a stream of edits that never pauses for [`SETTLE_QUIET`]
+/// cannot put the settle off for good.
+const SETTLE_MAX_WAIT: Duration = Duration::from_millis(1500);
+
+/// How long is left to wait at `now` (ms) for a settle pending since
+/// `first_pending` whose edits last moved at `last_edit`: see
+/// [`jade_web::editing::settle_wait`], which is tested natively (this crate
+/// builds for wasm32 only).
+fn settle_wait(first_pending: f64, last_edit: f64, now: f64) -> Duration {
+    jade_web::editing::settle_wait(first_pending, last_edit, now, SETTLE_QUIET, SETTLE_MAX_WAIT)
+}
+
+/// When the headers and footers an edit left wrong are to be drawn again.
+#[derive(Default)]
+pub(crate) struct SettleClock {
+    /// The first frame (ms) that found a settle pending, while one is.
+    first_pending: Option<f64>,
+    /// When the document's edit count last moved (ms).
+    last_edit: f64,
+    /// [`jade_web::editing::WordDoc::deferred_settles`] as last seen.
+    edits_seen: u64,
+    /// Whether a timer is waiting to settle.
+    waiting: bool,
+}
 
 impl DocView {
-    /// Schedules [`Self::settle_page_chrome`] when an edit left a header or
-    /// footer to draw again and none is scheduled yet. Checked per frame.
+    /// Notes, per frame, whether an edit left a header or footer to draw
+    /// again and when the edits last moved, and starts the timer that
+    /// draws them once they are due ([`settle_wait`]).
     pub(crate) fn schedule_page_chrome_settle(&mut self, cx: &mut Context<Self>) {
-        if self.settle_scheduled
-            || !self
-                .word_ref()
-                .is_some_and(|document| document.has_pending_settle())
-        {
+        let Some((pending, edits)) = self
+            .word_ref()
+            .map(|document| (document.has_pending_settle(), document.deferred_settles()))
+        else {
+            return;
+        };
+        let clock = &mut self.settle;
+        if !pending {
+            clock.first_pending = None;
+            clock.edits_seen = edits;
             return;
         }
-        self.settle_scheduled = true;
+        let at = now();
+        if clock.first_pending.is_none() {
+            clock.first_pending = Some(at);
+            clock.last_edit = at;
+        } else if clock.edits_seen != edits {
+            clock.last_edit = at;
+        }
+        clock.edits_seen = edits;
+        if clock.waiting {
+            return;
+        }
+        clock.waiting = true;
         let executor = cx.background_executor().clone();
         cx.spawn(async move |view, cx| {
-            executor.timer(SETTLE_AFTER).await;
-            view.update(cx, |view, cx| view.settle_page_chrome(cx)).ok();
+            let mut wait = SETTLE_QUIET;
+            loop {
+                executor.timer(wait).await;
+                match view.update(cx, |view, cx| view.settle_when_due(cx)) {
+                    Ok(Some(more)) => wait = more,
+                    Ok(None) | Err(_) => break,
+                }
+            }
         })
         .detach();
     }
 
-    /// Draws them, and shows the pages it drew.
-    fn settle_page_chrome(&mut self, cx: &mut Context<Self>) {
-        self.settle_scheduled = false;
-        let Some(document) = self.word_mut() else {
-            return;
+    /// Draws them when due; otherwise how much longer to wait.
+    fn settle_when_due(&mut self, cx: &mut Context<Self>) -> Option<Duration> {
+        let clock = &mut self.settle;
+        let Some(first_pending) = clock.first_pending else {
+            // Settled meanwhile, by a whole-document repaint.
+            clock.waiting = false;
+            return None;
         };
+        let wait = settle_wait(first_pending, clock.last_edit, now());
+        if !wait.is_zero() {
+            return Some(wait);
+        }
+        clock.waiting = false;
+        clock.first_pending = None;
+        let document = self.word_mut()?;
         match document.settle_pending() {
             Ok(true) => {
                 self.refresh_repainted();
@@ -51,5 +112,6 @@ impl DocView {
                 cx.notify();
             }
         }
+        None
     }
 }

@@ -382,6 +382,16 @@ impl WordDoc {
                 .is_some_and(|story| story.document.has_pending_settle())
     }
 
+    /// Moves with every edit, the story's among them: see
+    /// [`EditableDocument::deferred_settles`].
+    pub fn deferred_settles(&self) -> u64 {
+        let story = self
+            .story
+            .as_ref()
+            .map_or(0, |story| story.document.deferred_settles());
+        self.main.deferred_settles().wrapping_add(story)
+    }
+
     /// Draws them: see [`EditableDocument::settle_pending`]. Whether any
     /// page was drawn.
     pub fn settle_pending(&mut self) -> Result<bool, String> {

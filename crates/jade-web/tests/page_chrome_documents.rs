@@ -416,3 +416,44 @@ fn the_total_follows_the_page_count_down() {
         }
     }
 }
+
+mod settle_timing {
+    use std::time::Duration;
+
+    use jade_web::editing::settle_wait;
+
+    const QUIET: Duration = Duration::from_millis(300);
+    const MAX_WAIT: Duration = Duration::from_millis(1500);
+
+    fn wait(first_pending: f64, last_edit: f64, now: f64) -> f64 {
+        let left = settle_wait(first_pending, last_edit, now, QUIET, MAX_WAIT);
+        (left.as_secs_f64() * 1000.0).round()
+    }
+
+    #[test]
+    fn a_pause_after_the_last_edit_settles() {
+        // One edit at 0: due 300 ms on.
+        assert_eq!(wait(0.0, 0.0, 0.0), 300.0);
+        assert_eq!(wait(0.0, 0.0, 200.0), 100.0);
+        assert_eq!(wait(0.0, 0.0, 300.0), 0.0);
+        assert_eq!(wait(0.0, 0.0, 5000.0), 0.0);
+    }
+
+    #[test]
+    fn each_edit_starts_the_wait_again() {
+        // Keys at 0, 250 and 500: due 300 ms after the last.
+        assert_eq!(wait(0.0, 250.0, 300.0), 250.0);
+        assert_eq!(wait(0.0, 500.0, 600.0), 200.0);
+        assert_eq!(wait(0.0, 500.0, 800.0), 0.0);
+    }
+
+    #[test]
+    fn edits_that_never_pause_wait_no_longer_than_the_cap() {
+        // A key every 100 ms from 0: due 1.5 s after the first pending
+        // frame all the same.
+        assert_eq!(wait(0.0, 1300.0, 1300.0), 200.0);
+        assert_eq!(wait(0.0, 1400.0, 1450.0), 50.0);
+        assert_eq!(wait(0.0, 1500.0, 1500.0), 0.0);
+        assert_eq!(wait(0.0, 9000.0, 9000.0), 0.0);
+    }
+}

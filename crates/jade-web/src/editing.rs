@@ -161,6 +161,8 @@ pub struct EditableDocument {
     /// What an edit's passes left for [`Self::settle_pending`] to draw
     /// again, off the keystroke.
     deferred_settle: DeferredSettle,
+    /// See [`Self::deferred_settles`].
+    deferred_settles: u64,
     /// The passes [`Self::settle_page_chrome`] has run, for tests: a
     /// keystroke on a page drawn right runs none.
     settling_passes: u64,
@@ -176,6 +178,29 @@ pub struct EditableDocument {
     /// A view's page box and アウトライン's indents: see
     /// [`Self::set_view_geometry`].
     view: ViewLayout,
+}
+
+/// When a shell's idle [`EditableDocument::settle_pending`] is due — a
+/// debounce with a cap: `quiet` after the last edit (each key starts the
+/// wait again, so a run of keys is one settle at its end), but no later than
+/// `max_wait` after the first frame that found one pending (edits that never
+/// pause cannot put it off for good). Times are in ms; returns how long is
+/// left to wait at `now`, zero when due.
+pub fn settle_wait(
+    first_pending: f64,
+    last_edit: f64,
+    now: f64,
+    quiet: std::time::Duration,
+    max_wait: std::time::Duration,
+) -> std::time::Duration {
+    let due = (last_edit + quiet.as_secs_f64() * 1000.0)
+        .min(first_pending + max_wait.as_secs_f64() * 1000.0);
+    let left = due - now;
+    if left.is_finite() && left > 0.0 {
+        std::time::Duration::from_secs_f64(left / 1000.0)
+    } else {
+        std::time::Duration::ZERO
+    }
 }
 
 /// What [`EditableDocument::settle_pending`] has left to draw.
@@ -312,6 +337,7 @@ impl EditableDocument {
             deferred_repaint: None,
             repainted_pages: std::collections::BTreeSet::new(),
             deferred_settle: DeferredSettle::default(),
+            deferred_settles: 0,
             settling_passes: 0,
             field_codes: Default::default(),
             field_shading: Default::default(),
@@ -552,12 +578,20 @@ impl EditableDocument {
     /// on, for [`Self::settle_pending`]: drawing them again lays the whole
     /// document out, which an edit's keystroke must not wait on.
     fn defer_settle(&mut self, also: Option<usize>) {
+        self.deferred_settles = self.deferred_settles.wrapping_add(1);
         let deferred = &mut self.deferred_settle;
         deferred.totals |= self.renderer.take_page_totals_changed();
         deferred.from = match (deferred.from, also) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         };
+    }
+
+    /// A count that moves with every edit pass that leaves its settle for
+    /// later: a shell that waits for the edits to stop before calling
+    /// [`Self::settle_pending`] knows from it that another came.
+    pub fn deferred_settles(&self) -> u64 {
+        self.deferred_settles
     }
 
     /// Whether an edit left headers or footers for [`Self::settle_pending`]
