@@ -431,6 +431,18 @@ mod settle_timing {
     }
 
     #[test]
+    fn the_wait_is_never_longer_than_the_cap() {
+        // Readings from clocks that disagree — an edit stamped far ahead of
+        // now, a now from before the first pending frame — wait the cap at
+        // most.
+        assert_eq!(wait(1_000_000.0, 1_000_000.0, 0.0), 1500.0);
+        assert_eq!(wait(0.0, 1e12, 0.0), 1500.0);
+        assert_eq!(wait(10_000.0, 10_000.0, -50_000.0), 1500.0);
+        // And still the debounce when the readings agree.
+        assert_eq!(wait(0.0, 0.0, 0.0), 300.0);
+    }
+
+    #[test]
     fn a_failed_settle_waits_for_the_next_edit() {
         // Latched, it is never due, however long ago the edit was.
         for now in [0.0, 300.0, 1500.0, 60_000.0] {

@@ -157,6 +157,8 @@ impl DocView {
             Err(error) => {
                 // Not tried again until the next edit: see `failed_at`.
                 self.settle.failed_at = Some(edits);
+                // What the pass drew before it failed is shown all the same.
+                self.refresh_repainted();
                 self.status = error.into();
                 cx.notify();
             }
