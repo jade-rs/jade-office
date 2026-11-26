@@ -1181,6 +1181,9 @@ pub trait WordFields: WordSession {
         if self.selection_range().is_none() {
             return Err("there is no insertion point".to_string());
         }
+        // A PAGE or PAGEREF inserted past where the last layout stopped
+        // would otherwise get no result, and be saved without one.
+        self.complete_layout();
         let environment = self.field_environment(host, HashMap::new());
         self.execute_command(
             Box::new(FieldCommand::insert(code.to_string(), environment)),
@@ -1193,6 +1196,8 @@ pub trait WordFields: WordSession {
         let range = self
             .selection_range()
             .ok_or_else(|| "there is no field at the selection".to_string())?;
+        // As for an insertion: the page the field is on needs its number.
+        self.complete_layout();
         let environment = self.field_environment(host, HashMap::new());
         self.execute_command(
             Box::new(FieldCommand::edit(range, code.to_string(), environment)),

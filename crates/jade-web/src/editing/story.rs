@@ -256,23 +256,32 @@ impl WordSession for WordDoc {
     }
 
     /// The body's labels: a story's text is on the body page it is open
-    /// over (`paragraph_page`).
+    /// over (`paragraph_page`). While a story is open the body is not laid
+    /// out again, so its labels count only once its layout is complete
+    /// ([`Self::open_story`] completes it): a partial list would leave a
+    /// PAGE on a later page without a result.
     fn page_label(&self, page: usize) -> Option<jade_docx_editor::fields::PageLabel> {
-        WordSession::page_label(&self.main, page)
+        self.body_labels_usable()
+            .then(|| WordSession::page_label(&self.main, page))
+            .flatten()
     }
 
     fn displayed_page_labels(&self) -> Vec<jade_docx_editor::fields::PageLabel> {
-        WordSession::displayed_page_labels(&self.main)
+        if self.body_labels_usable() {
+            WordSession::displayed_page_labels(&self.main)
+        } else {
+            Vec::new()
+        }
     }
 
     fn has_page_labels(&self) -> bool {
-        WordSession::has_page_labels(&self.main)
+        self.body_labels_usable() && WordSession::has_page_labels(&self.main)
     }
 
     /// The body is laid out again only while no story is open over it.
     fn complete_layout(&mut self) -> bool {
         match &self.story {
-            Some(_) => true,
+            Some(_) => self.main.renderer.last_layout_complete(),
             None => WordSession::complete_layout(&mut self.main),
         }
     }
@@ -308,6 +317,13 @@ impl WordDoc {
     /// being edited. Keep the open story and its independent undo history.
     pub fn update_fields_for_print(&mut self) -> Result<(), String> {
         jade_office_model::word::printing::update_fields(&mut self.main)
+    }
+
+    /// Whether the body's page labels can be handed out: always with no
+    /// story open (the body lays itself out first), and with one only when
+    /// the body's last layout reached its end.
+    fn body_labels_usable(&self) -> bool {
+        self.story.is_none() || self.main.renderer.last_layout_complete()
     }
 
     /// The header or footer open, if one is.
@@ -755,6 +771,10 @@ impl WordDoc {
             None => self.main.caret(),
         };
         self.close_story()?;
+        // Every body page numbered before the story is drawn over one: a
+        // PAGE inserted in it takes the body's label for its page, and the
+        // body is not laid out again while the story is open.
+        WordSession::complete_layout(&mut self.main);
         let renderer = &self.main.renderer;
         let page = page.min(self.main.page_count().saturating_sub(1));
         let section = renderer.section_index_for_zero_based_page(page);

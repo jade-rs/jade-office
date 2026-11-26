@@ -83,7 +83,8 @@ fn targets() -> String {
 
 /// A layout's facts without a renderer: target `k` (paragraph
 /// `first_target + k`) is on page `k + 2`, and page `n` displays "p-n",
-/// as a section with its own numbering would. Counts the reads.
+/// as a section with its own numbering would. Counts the reads. Pages
+/// past `laid_out` have no label until `complete_layout` lays them out.
 struct Session {
     document: WordDocument,
     selection: Option<SelectionRange>,
@@ -91,6 +92,7 @@ struct Session {
     first_target: usize,
     label_lists: Cell<usize>,
     label_lookups: Cell<usize>,
+    laid_out: usize,
 }
 
 impl Session {
@@ -104,6 +106,7 @@ impl Session {
             first_target,
             label_lists: Cell::new(0),
             label_lookups: Cell::new(0),
+            laid_out: TARGETS + 1,
         }
     }
 
@@ -191,13 +194,19 @@ impl WordSession for Session {
     }
     fn page_label(&self, page: usize) -> Option<PageLabel> {
         self.label_lookups.set(self.label_lookups.get() + 1);
-        (1..=TARGETS + 1).contains(&page).then(|| Self::label(page))
+        (1..=self.laid_out)
+            .contains(&page)
+            .then(|| Self::label(page))
     }
     fn displayed_page_labels(&self) -> Vec<PageLabel> {
         self.label_lists.set(self.label_lists.get() + 1);
-        (1..=TARGETS + 1).map(Self::label).collect()
+        (1..=self.laid_out).map(Self::label).collect()
     }
     fn has_page_labels(&self) -> bool {
+        true
+    }
+    fn complete_layout(&mut self) -> bool {
+        self.laid_out = TARGETS + 1;
         true
     }
 }
@@ -282,4 +291,44 @@ fn f9_over_many_page_references_reads_the_labels_once() {
     }
     assert_eq!(session.label_lists.get(), 1, "the labels are listed once");
     assert_eq!(session.label_lookups.get(), 0, "and not page by page");
+}
+
+/// 挿入 › フィールド and フィールドの編集 on a page past where the last
+/// layout stopped (a keystroke on page 1 lays out only page 1) lay the
+/// rest out first: the PAGE gets its page's label, not an empty result
+/// that would be saved.
+#[test]
+fn a_field_inserted_past_the_layout_gets_its_pages_label() {
+    // The result of the field in paragraph 2, target 2, on page 4.
+    fn result(session: &mut Session) -> Vec<(String, String)> {
+        let len = session
+            .word_document()
+            .paragraph_text_len_at(2)
+            .expect("paragraph");
+        session.selection = Some(SelectionRange::new(
+            TextPosition::new(2, 0),
+            TextPosition::new(2, len),
+        ));
+        session
+            .selected_fields()
+            .into_iter()
+            .map(|field| (field.name, field.result))
+            .collect()
+    }
+    let page_4 = vec![("PAGE".to_string(), "p-4".to_string())];
+
+    let mut session = Session::open(&targets(), 0);
+    session.laid_out = 1;
+    let end = session.text(2).len();
+    session.selection = Some(SelectionRange::collapsed(TextPosition::new(2, end)));
+    session
+        .insert_field_code("PAGE", &host())
+        .expect("insert PAGE");
+    assert_eq!(result(&mut session), page_4);
+
+    session.laid_out = 1;
+    session
+        .edit_field_code("PAGE \\* MERGEFORMAT", &host())
+        .expect("edit PAGE");
+    assert_eq!(result(&mut session), page_4);
 }

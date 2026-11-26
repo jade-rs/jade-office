@@ -758,3 +758,76 @@ fn a_header_keeps_a_picture_put_in_it() {
     });
     assert!(red, "the header's picture is drawn");
 }
+
+/// The result of the one field in the open story's first paragraph.
+fn story_field_result(document: &mut WordDoc) -> String {
+    use jade_web::word::fields::WordFields;
+    let len = document
+        .story()
+        .unwrap()
+        .document
+        .word_document()
+        .paragraph_text_len_at(0)
+        .unwrap();
+    document.select((0, 0), (0, len)).unwrap();
+    let fields = document.selected_fields();
+    assert_eq!(fields.len(), 1, "{fields:?}");
+    fields[0].result.clone()
+}
+
+/// Roman pages i–ii, then a section restarting at 1, with a keystroke on
+/// page 1 last: a keystroke lays the body out only as far as it moved.
+fn roman_then_restarted() -> WordDoc {
+    use jade_web::word::page::{SectionBreak, WordPage};
+    use jade_web::word::page_setup::{PageBreak, PageNumberDialog, WordPageSetup};
+    let mut main = contract();
+    main.place_caret(3, 0);
+    main.insert_page_break(PageBreak::Page).unwrap();
+    let second = (0..main.paragraph_count())
+        .find(|&paragraph| main.paragraph_start_page(paragraph) == Some(1))
+        .expect("a paragraph on page 2");
+    main.place_caret(second + 1, 0);
+    main.insert_section_break(SectionBreak::NextPage).unwrap();
+    main.place_caret(0, 0);
+    let mut roman = PageNumberDialog::open(main.section_layout().page_numbering);
+    roman.numbering.format = "lowerRoman".into();
+    main.apply_page_numbering(&roman).unwrap();
+    let restarted = (0..main.paragraph_count())
+        .find(|&paragraph| main.paragraph_start_page(paragraph) == Some(2))
+        .expect("a paragraph on page 3");
+    main.place_caret(restarted, 0);
+    let mut decimal = PageNumberDialog::open(main.section_layout().page_numbering);
+    decimal.numbering.format = "decimal".into();
+    decimal.set_start(1);
+    main.apply_page_numbering(&decimal).unwrap();
+    assert!(main.page_count() >= 3);
+    assert_eq!(main.page_labels()[..3], [(0, 1), (0, 2), (1, 1)]);
+    main.place_caret(0, 0);
+    main.insert_text("x").unwrap();
+    WordDoc::new(main)
+}
+
+#[test]
+fn a_page_field_in_a_later_pages_header_takes_that_pages_label() {
+    use jade_web::word::fields::{FieldHost, WordFields};
+    let mut document = roman_then_restarted();
+    document.open_story(2, Story::Header).unwrap();
+    document
+        .insert_field_code("PAGE", &FieldHost::default())
+        .unwrap();
+    assert_eq!(story_field_result(&mut document), "1");
+
+    // F9 in the story keeps it.
+    let scope = document.field_scope();
+    document
+        .update_fields(scope, &FieldHost::default(), Default::default())
+        .unwrap();
+    assert_eq!(story_field_result(&mut document), "1");
+
+    document.close_story().unwrap();
+    document.open_story(1, Story::Header).unwrap();
+    document
+        .insert_field_code("PAGE", &FieldHost::default())
+        .unwrap();
+    assert_eq!(story_field_result(&mut document), "ii");
+}
