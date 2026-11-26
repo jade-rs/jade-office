@@ -372,6 +372,36 @@ impl WordDoc {
         self.main.set_resident_pages(pages)
     }
 
+    /// Whether an edit left headers or footers to draw again when idle:
+    /// see [`EditableDocument::has_pending_settle`].
+    pub fn has_pending_settle(&self) -> bool {
+        self.main.has_pending_settle()
+            || self
+                .story
+                .as_ref()
+                .is_some_and(|story| story.document.has_pending_settle())
+    }
+
+    /// Moves with every edit, the story's among them: see
+    /// [`EditableDocument::deferred_settles`].
+    pub fn deferred_settles(&self) -> u64 {
+        let story = self
+            .story
+            .as_ref()
+            .map_or(0, |story| story.document.deferred_settles());
+        self.main.deferred_settles().wrapping_add(story)
+    }
+
+    /// Draws them: see [`EditableDocument::settle_pending`]. Whether any
+    /// page was drawn.
+    pub fn settle_pending(&mut self) -> Result<bool, String> {
+        let mut drawn = self.main.settle_pending()?;
+        if let Some(story) = self.story.as_mut() {
+            drawn |= story.document.settle_pending()?;
+        }
+        Ok(drawn)
+    }
+
     /// The first page repainted since the last call: the story's page when
     /// the story repainted.
     pub fn take_repainted_from(&mut self) -> Option<usize> {
