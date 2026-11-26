@@ -57,7 +57,7 @@ pub fn confirm_update(
         return view.update_table_of_contents(cx);
     }
     let done = view.document.update_toc(page_numbers_only);
-    view.after_reference_edit(done.map(|()| None), cx);
+    view.after_reference_edit(done.map(|_| None), cx);
 }
 
 /// 図表目次の更新: every table of figures made again.
@@ -78,7 +78,7 @@ pub fn update_figures(view: &mut DocumentView, cx: &mut Context<DocumentView>) {
     let start = contents[first].start;
     view.document.place_caret(start, 0);
     let done = view.document.update_toc(false);
-    view.after_reference_edit(done.map(|()| None), cx);
+    view.after_reference_edit(done.map(|_| None), cx);
 }
 
 pub fn confirm(
