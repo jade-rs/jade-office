@@ -683,6 +683,12 @@ fn thai_font() -> PathBuf {
         .join(jade_office_model::THAI_FONT)
 }
 
+fn korean_font() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fonts")
+        .join(jade_office_model::KOREAN_FONT)
+}
+
 /// The Skia backend the shared editing models (`jade-office-model`) paint
 /// with: the bundled faces under every alias, parsed once per process and
 /// shared by every workbook and deck view.
@@ -708,6 +714,10 @@ pub(crate) fn skia_backend() -> Result<jade_office_model::skia::SkiaBackend, Str
         let thai = thai_font();
         faces.push(jade_office_model::thai_face(Arc::new(
             std::fs::read(&thai).map_err(|error| format!("{}: {error}", thai.display()))?,
+        )));
+        let korean = korean_font();
+        faces.push(jade_office_model::korean_face(Arc::new(
+            std::fs::read(&korean).map_err(|error| format!("{}: {error}", korean.display()))?,
         )));
         let mut made = jade_office_model::skia::SkiaBackend::new(&faces)?;
         if use_installed_fonts() {
@@ -772,6 +782,11 @@ fn open_document_bytes_for_first_paint(bytes: &[u8]) -> Result<NativeDocument, S
         faces.push(face("Symbol Fallback", 400, &symbols));
     }
     faces.push(face("Noto Sans Thai", 400, &thai_font()));
+    faces.push(face(
+        jade_office_model::KOREAN_FONT_FAMILY,
+        400,
+        &korean_font(),
+    ));
     // Complex-script text (Hebrew, Arabic) falls back to a system face that
     // carries it, as Thai does to the bundled one; without it every letter
     // was a tofu box.

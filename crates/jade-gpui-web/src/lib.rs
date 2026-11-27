@@ -142,8 +142,9 @@ fn inbox() -> UnboundedReceiver<Incoming> {
 
 /// Starts the app in a gpui window on the page.
 ///
-/// `regular` and `bold` are the bundled Noto Sans JP faces, and `thai` the
-/// Noto Sans Thai that Thai text falls back to. `scale` is the page's `devicePixelRatio`; `time_zone` and `language` are
+/// `regular` and `bold` are the bundled Noto Sans JP faces. `thai` and
+/// `korean` are the Noto Sans fallback faces for Thai and Hangul.
+/// `scale` is the page's `devicePixelRatio`; `time_zone` and `language` are
 /// the browser's; `samples` are the files the explorer lists. `save(name,
 /// bytes)` offers a file as a download, `load(name)` fetches a sample and
 /// `pick()` lets the user choose a file; the last two answer through
@@ -161,16 +162,16 @@ pub fn run(
     save: js_sys::Function,
     load: js_sys::Function,
     pick: js_sys::Function,
+    korean: Option<Vec<u8>>,
 ) -> Result<(), JsError> {
     console_error_panic_hook::set_once();
     // Before any document is laid out: like Word for Mac on a Mac, or as the
     // page's `?word_platform=` says.
     jade_web::set_word_layout_platform_from_page();
     i18n::init(&language);
-    let backend = jade_web::backend_with(regular.clone(), Some(bold.clone()), Some(thai.clone()))
-        .map_err(|e| JsError::new(&e))?;
-    let measurer = jade_web::document::measurer_with(&regular, Some(&bold), Some(&thai))
-        .map_err(|e| JsError::new(&e))?;
+    let (backend, measurer) =
+        jade_web::bundled_fonts(regular.clone(), Some(bold), Some(thai), korean)
+            .map_err(|e| JsError::new(&e))?;
     let fonts = Rc::new(Fonts {
         backend,
         measurer,

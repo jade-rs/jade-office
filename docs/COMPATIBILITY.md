@@ -75,10 +75,10 @@ painter) and edits through the same cores.
    page without clipboard access), ⌘V pastes the workbook's own copy, as
    its menu's Paste does — but a clipboard still holding something older
    pastes that, as the browser hands it over.
-4. **Japanese, Latin and Thai text only are drawn**: both shells lay out
-   and paint documents, sheets and slides with the bundled Noto Sans JP
-   and Noto Sans Thai, each character falling back to a face that has it,
-   so Korean, Arabic, Hebrew, Devanagari and other scripts show as boxes.
+4. **Bundled fonts cover Japanese, Latin, Thai and Hangul**: both shells
+   lay out and paint documents, sheets and slides with Noto Sans JP,
+   Noto Sans Thai and a Hangul subset of Noto Sans KR. Scripts outside
+   the bundled or available system fonts can still show as boxes.
    The values are right, and save and copy as they are. A Thai tone
    mark over an upper vowel (the ่ of ยี่) is drawn on the vowel rather
    than above it: the painters place glyphs without OpenType mark

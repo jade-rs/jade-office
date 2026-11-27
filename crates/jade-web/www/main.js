@@ -23,13 +23,19 @@ let cleanup = () => {};
 
 async function boot() {
   const started = performance.now();
-  await init();
-  const [regular, bold] = await Promise.all(
-    ["fonts/NotoSansJP-Regular.ttf", "fonts/NotoSansJP-Bold.ttf"].map((url) =>
-      fetch(url).then((response) => response.arrayBuffer()),
-    ),
-  );
-  fonts = new WebFonts(new Uint8Array(regular), new Uint8Array(bold));
+  const fontUrls = [
+    "fonts/NotoSansJP-Regular.ttf",
+    "fonts/NotoSansJP-Bold.ttf",
+    "fonts/NotoSansThai.ttf",
+    "fonts/NotoSansKR-Hangul-Regular.ttf",
+  ];
+  const fontBytes = fontUrls.map(async (url) => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  });
+  const [, regular, bold, thai, korean] = await Promise.all([init(), ...fontBytes]);
+  fonts = WebFonts.withFallbacks(regular, bold, thai, korean);
   status.textContent = `準備完了 (${Math.round(performance.now() - started)} ms)`;
 }
 

@@ -537,6 +537,14 @@ pub fn measurer_with(
     bold: Option<&[u8]>,
     thai: Option<&[u8]>,
 ) -> Result<Rc<ShapingMeasurer>, String> {
+    measurer_with_fallbacks(regular, bold, thai.map(|data| ("Noto Sans Thai", data)))
+}
+
+pub(crate) fn measurer_with_fallbacks<'a>(
+    regular: &[u8],
+    bold: Option<&[u8]>,
+    fallbacks: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+) -> Result<Rc<ShapingMeasurer>, String> {
     let mut measurer = ShapingMeasurer::with_options(12.0, ShapingOptions::CHROMIUM_PARITY);
     measurer
         .register_font_bytes("Noto Sans JP", 400, RegisteredFontStyle::Normal, regular)
@@ -546,10 +554,10 @@ pub fn measurer_with(
             .register_font_bytes("Noto Sans JP", 700, RegisteredFontStyle::Normal, bold)
             .map_err(|error| format!("the bold face: {error}"))?;
     }
-    if let Some(thai) = thai {
+    for (family, data) in fallbacks {
         measurer
-            .register_font_bytes("Noto Sans Thai", 400, RegisteredFontStyle::Normal, thai)
-            .map_err(|error| format!("the Thai face: {error}"))?;
+            .register_font_bytes(family, 400, RegisteredFontStyle::Normal, data)
+            .map_err(|error| format!("{family}: {error}"))?;
     }
     Ok(Rc::new(measurer))
 }
