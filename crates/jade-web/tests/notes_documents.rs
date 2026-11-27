@@ -615,12 +615,7 @@ fn an_endnote_takes_a_pasted_notes_text_without_its_mark() {
     use jade_web::word::clipboard::WordClipboard;
     let mut document = common::contract();
     let paragraph = common::typed(&mut document, "noted text ");
-    note(
-        &mut document,
-        NoteKind::Endnote,
-        (paragraph, 5),
-        "the note",
-    );
+    note(&mut document, NoteKind::Endnote, (paragraph, 5), "the note");
     document.select((paragraph, 0), (paragraph, 11)).unwrap();
     let clip = document.copy_rich().unwrap();
     assert_eq!(clip.notes.len(), 1);
