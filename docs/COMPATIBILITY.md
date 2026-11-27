@@ -79,10 +79,8 @@ painter) and edits through the same cores.
    lay out and paint documents, sheets and slides with Noto Sans JP,
    Noto Sans Thai and a Hangul subset of Noto Sans KR. Scripts outside
    the bundled or available system fonts can still show as boxes.
-   The values are right, and save and copy as they are. A Thai tone
-   mark over an upper vowel (the ่ of ยี่) is drawn on the vowel rather
-   than above it: the painters place glyphs without OpenType mark
-   positioning.
+   Both painters use OpenType positioning for Thai glyphs, including tone
+   marks above upper vowels.
 5. **Formula entry is refused as Excel refuses it** — a trailing operator,
    an open string, an unmatched parenthesis, or a function given the wrong
    number of arguments — with the editor kept open; `TODAY(1)` is accepted,

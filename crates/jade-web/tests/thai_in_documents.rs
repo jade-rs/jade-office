@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use jade_docx_layout::layout_cache::TextMeasurer;
-use jade_web::document::ShapingMeasurer;
+use jade_web::document::{Document, ShapingMeasurer};
 use jade_web::editing::EditableDocument;
 
 fn core() -> PathBuf {
@@ -53,4 +53,44 @@ fn thai_is_measured_in_the_thai_face() {
         "{drawn} / {boxes} vs {expected}"
     );
     assert!(expected < 0.9, "Thai measures as boxes: {expected}");
+}
+
+#[test]
+fn word_paints_a_thai_tone_mark_above_its_upper_vowel() {
+    let regular = font("Noto_Sans_JP/static/NotoSansJP-Regular.ttf");
+    let thai = font(jade_office_model::THAI_FONT);
+    let (backend, measurer) = jade_web::bundled_fonts(regular, None, Some(thai), None).unwrap();
+    let source = std::fs::read(core().join("contract.docx")).unwrap();
+    let top_of_ink = |text| {
+        let mut package = jade_opc::OpcPackage::open(&source).unwrap();
+        package.replace(
+            "word/document.xml",
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                    <w:body>
+                      <w:p><w:pPr><w:spacing w:line="1200" w:lineRule="exact"/></w:pPr></w:p>
+                      <w:p><w:r><w:rPr>
+                      <w:rFonts w:ascii="Noto Sans JP" w:hAnsi="Noto Sans JP" w:cs="Noto Sans JP"/>
+                      <w:sz w:val="90"/><w:szCs w:val="90"/>
+                    </w:rPr><w:t>{text}</w:t></w:r></w:p><w:sectPr/></w:body>
+                </w:document>"#
+            )
+            .into_bytes(),
+        );
+        let doc = Document::open(
+            &package.write().unwrap(),
+            1.0,
+            backend.fonts(),
+            measurer.clone(),
+        )
+        .unwrap();
+        let page = doc.page(0).unwrap();
+        page.rgba_premultiplied()
+            .chunks_exact(page.width() as usize * 4)
+            .position(|row| row.chunks_exact(4).any(|pixel| pixel[0] < 128))
+            .unwrap()
+    };
+    let bare = top_of_ink("ยี");
+    let marked = top_of_ink("ยี่");
+    assert!(marked + 4 < bare, "marked top {marked}, vowel top {bare}");
 }
