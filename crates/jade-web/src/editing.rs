@@ -281,48 +281,24 @@ impl EditableDocument {
             return Err("the document has no main part".to_string());
         }
         crate::document::show_changes_as_saved(&mut options, &word_document);
-        // The section properties decide the page box: a first pass finds it,
-        // and the renderer kept is the one built to it. The first pass only
-        // lays the document out — painting every page of it was most of what
-        // opening a document that is not Letter cost, thrown away — and when
-        // the box is Letter after all, its layout is painted as it stands.
-        // The first pass keeps no page as pixels: it lays out, and draws on
-        // nothing.
-        let mut opened = Self::render(
+        // The renderer configures the host's first page from the section
+        // properties before painting, then sizes each later page on arrival.
+        let Opened { renderer, host } = Self::render(
             &word_document,
             &options,
             &ViewLayout::default(),
             INITIAL_PAGE,
             scale,
             (&fonts, &measurer),
-            0..0,
+            resident,
             datetime,
         )?;
-        let size = opened.renderer.layout_page_size();
-        let mut built_for = INITIAL_PAGE;
-        if size != INITIAL_PAGE && size.0 > 1.0 && size.1 > 1.0 {
-            built_for = size;
-            opened = Self::render(
-                &word_document,
-                &options,
-                &ViewLayout::default(),
-                size,
-                scale,
-                (&fonts, &measurer),
-                resident,
-                datetime,
-            )?;
+        let size = renderer.layout_page_size();
+        let built_for = if size.0 > 1.0 && size.1 > 1.0 {
+            size
         } else {
-            // Letter after all: its layout, painted on the resident pages.
-            *opened.host.resident.borrow_mut() = resident;
-            Self::paint_every_page(
-                &mut opened.renderer,
-                &word_document,
-                &options,
-                &opened.host.resident.borrow(),
-            )?;
-        }
-        let Opened { renderer, host } = opened;
+            INITIAL_PAGE
+        };
         let mut document = Self {
             word_document,
             executor: CommandExecutor::default(),

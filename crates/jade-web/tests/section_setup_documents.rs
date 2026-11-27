@@ -368,6 +368,12 @@ fn a_landscape_section_has_pages_of_its_own_size() {
         document.caret_rect()
     );
     assert_eq!(document.caret().map(|(paragraph, _)| paragraph), Some(text));
+
+    let mut reopened = common::open_bytes(&document.export_docx().unwrap());
+    assert_eq!(reopened.page_count(), 2);
+    assert_eq!(reopened.page_size_of(0), first);
+    assert_eq!(reopened.page_size_of(1), second);
+    assert_eq!(reopened.place_caret(text, 0), Some(caret));
 }
 
 /// A paragraph's mark carries the section break it ends: a copy of it
