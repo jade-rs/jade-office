@@ -169,8 +169,9 @@ pub fn run(
     // page's `?word_platform=` says.
     jade_web::set_word_layout_platform_from_page();
     i18n::init(&language);
-    let (backend, measurer) = jade_web::bundled_fonts(regular, Some(bold), Some(thai), korean)
-        .map_err(|e| JsError::new(&e))?;
+    let (backend, measurer) =
+        jade_web::bundled_fonts(regular.clone(), Some(bold), Some(thai), korean)
+            .map_err(|e| JsError::new(&e))?;
     let fonts = Rc::new(Fonts {
         backend,
         measurer,
