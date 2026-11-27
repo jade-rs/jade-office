@@ -1856,7 +1856,7 @@ impl TinySkiaPainter {
         }
     }
 
-    /// `text` split at Thai shaping boundaries and where the face changes.
+    /// `text` split at shaping boundaries and where the face changes.
     /// Each character is drawn in
     /// the styled face, or the first face that has it — the Skia backend's
     /// rule, and a browser's.
@@ -1866,19 +1866,23 @@ impl TinySkiaPainter {
         let mut start = 0;
         let mut current = None;
         for (at, ch) in text.char_indices() {
+            if current.is_some_and(|(_, _, arabic)| arabic) && jade_painter::is_join_control(ch) {
+                continue;
+            }
             let segment = (
                 self.inner.fonts.covering(font, ch),
                 jade_painter::is_thai(ch),
+                jade_painter::is_arabic(ch),
             );
-            if let Some((face, thai)) = current {
-                if (face, thai) != segment {
+            if let Some((face, thai, arabic)) = current {
+                if (face, thai, arabic) != segment {
                     segments.push((face, &text[start..at]));
                     start = at;
                 }
             }
             current = Some(segment);
         }
-        if let Some((face, _)) = current {
+        if let Some((face, _, _)) = current {
             segments.push((face, &text[start..]));
         }
         segments
@@ -1886,15 +1890,16 @@ impl TinySkiaPainter {
 
     /// The width of `text` at `size` px, each segment in its face.
     fn text_width(&self, size: f32, text: &str) -> f32 {
-        self.segments(text)
-            .into_iter()
+        let text = jade_painter::bidi::VisualText::new(text);
+        text.iter()
+            .flat_map(|run| self.segments(run))
             .flat_map(|(font, run)| self.styled_glyphs(font, size, run))
             .map(|glyph| glyph.advance)
             .sum()
     }
 
-    fn thai_glyphs(&self, font: usize, size: f32, text: &str) -> Option<Vec<Glyph>> {
-        if !text.starts_with(jade_painter::is_thai) {
+    fn contextual_glyphs(&self, font: usize, size: f32, text: &str) -> Option<Vec<Glyph>> {
+        if !text.starts_with(|ch| jade_painter::is_thai(ch) || jade_painter::is_arabic(ch)) {
             return None;
         }
         let font = self.inner.fonts.faces.get(font)?;
@@ -1927,7 +1932,7 @@ impl TinySkiaPainter {
     /// Glyph positions and styles: a math letter the face
     /// lacks is its base letter, slanted or emboldened as its style says.
     fn styled_glyphs(&self, font: usize, size: f32, text: &str) -> Vec<Glyph> {
-        if let Some(glyphs) = self.thai_glyphs(font, size, text) {
+        if let Some(glyphs) = self.contextual_glyphs(font, size, text) {
             return glyphs;
         }
         let fonts = &self.inner.fonts;
@@ -2188,8 +2193,9 @@ impl TinySkiaPainter {
     }
 
     fn draw_text(&self, text: &str, x: f64, y: f64, stroke: bool) {
-        let segments = self.segments(text);
-        let Some(&(first, _)) = segments.first() else {
+        let text = jade_painter::bidi::VisualText::new(text);
+        let mut segments = text.iter().flat_map(|run| self.segments(run)).peekable();
+        let Some(&(first, _)) = segments.peek() else {
             return;
         };
         let (size, baseline, transform, color) = {
@@ -2319,14 +2325,26 @@ impl TinySkiaPainter {
                 state.fill,
             )
         };
+        let mut chars = text.chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+        let arabic = jade_painter::is_arabic(first);
         let features = jade_painter::font_features::parse(&descriptor);
-        if features.is_empty() || text.is_empty() || clusters.is_empty() {
+        if (!arabic && features.is_empty()) || clusters.is_empty() {
             return false;
         }
         let fonts = &self.inner.fonts;
+        let font = if arabic {
+            fonts.covering(font, first)
+        } else {
+            font
+        };
         // One face draws the whole stretch, or the caller draws it a
         // character at a time with fallback.
-        if text.chars().any(|ch| fonts.covering(font, ch) != font) {
+        if text.chars().any(|ch| {
+            !(arabic && jade_painter::is_join_control(ch)) && fonts.covering(font, ch) != font
+        }) {
             return false;
         }
         let Some(face) = fonts.faces.get(font) else {
@@ -2348,25 +2366,29 @@ impl TinySkiaPainter {
                 )
             })
             .collect();
+        if arabic {
+            buffer.set_flags(rustybuzz::BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE);
+        }
         let shaped = rustybuzz::shape(&shaper, &features, buffer);
+        if arabic && shaped.glyph_infos().iter().any(|glyph| glyph.glyph_id == 0) {
+            return false;
+        }
         let scale = size / face.units_per_em;
         let (ascent, descent) = self.font_extent(font, size);
         let baseline_y = y as f32 + baseline.offset(ascent, descent);
-        let cluster_x = |byte: usize| -> f32 {
-            let at = clusters.partition_point(|(start, _)| *start <= byte);
-            clusters[at.saturating_sub(1)].1 as f32
-        };
         let mut pen = 0.0_f32;
         let mut cluster_pen = 0.0_f32;
         let mut current_cluster = None;
         for (info, position) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
-            if current_cluster != Some(info.cluster) {
-                current_cluster = Some(info.cluster);
+            let cluster = clusters
+                .partition_point(|&(start, _)| start <= info.cluster as usize)
+                .saturating_sub(1);
+            if current_cluster != Some(cluster) {
+                current_cluster = Some(cluster);
                 cluster_pen = pen;
             }
-            let x = cluster_x(info.cluster as usize)
-                + (pen - cluster_pen)
-                + position.x_offset as f32 * scale;
+            let x =
+                clusters[cluster].1 as f32 + (pen - cluster_pen) + position.x_offset as f32 * scale;
             let glyph_y = baseline_y - position.y_offset as f32 * scale;
             pen += position.x_advance as f32 * scale;
             let glyph = ttf_parser::GlyphId(info.glyph_id as u16);
@@ -3487,9 +3509,9 @@ impl Painter for TinySkiaPainter {
     fn measure_text_metrics(&self, text: &str) -> Result<TextMetrics, Self::Error> {
         let host_metrics = self.host_measure(text, |host, text, font| host.metrics(text, font));
         // The Word host supplies layout metrics for the requested face.
-        // Thai stacks can use a fallback with a different shaped ink box.
+        // Contextual spans can use a fallback with a different ink box.
         if let Some(metrics) = host_metrics {
-            if !text.starts_with(jade_painter::is_thai) {
+            if !text.starts_with(|ch| jade_painter::is_thai(ch) || jade_painter::is_arabic(ch)) {
                 return Ok(metrics);
             }
         }
@@ -3503,7 +3525,8 @@ impl Painter for TinySkiaPainter {
         let (mut top, mut bottom, mut right) = (0.0_f32, 0.0_f32, 0.0_f32);
         let mut left = f32::INFINITY;
         let mut pen = 0.0_f32;
-        for (run_font, run) in self.segments(text) {
+        let text = jade_painter::bidi::VisualText::new(text);
+        for (run_font, run) in text.iter().flat_map(|run| self.segments(run)) {
             let glyphs = self.styled_glyphs(run_font, size, run);
             let units = self
                 .inner
@@ -3972,6 +3995,46 @@ mod tests {
             );
             assert!((marked_metrics.width - bare_metrics.width).abs() < 0.01);
         }
+    }
+
+    #[test]
+    fn mixed_arabic_paints_contextual_forms_in_visual_order() {
+        let arabic = Arc::new(
+            std::fs::read(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../jade-core/fonts/Noto_Sans_Arabic/NotoSansArabic-Regular.ttf"
+            ))
+            .unwrap(),
+        );
+        let mut book = FontBook::new();
+        book.register(
+            "Japanese",
+            400,
+            Arc::new(
+                std::fs::read(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../jade-core/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf"
+                ))
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+        book.register("Arabic", 400, arabic).unwrap();
+        let book = Rc::new(book);
+        let make = || {
+            let painter = TinySkiaPainter::new(250, 100, Rc::clone(&book)).unwrap();
+            painter.set_font("30px Japanese");
+            painter.set_fill_style_str("#000000");
+            painter
+        };
+        let mixed = make();
+        mixed.fill_text("abc عربي 123", 5.0, 60.0).unwrap();
+        let reference = make();
+        let prefix = "abc 123 ";
+        reference.fill_text(prefix, 5.0, 60.0).unwrap();
+        let x = 5.0 + reference.measure_text_width(prefix).unwrap();
+        reference.fill_text("عربي", x, 60.0).unwrap();
+        assert!(mixed.rgba_premultiplied() == reference.rgba_premultiplied());
     }
 
     /// A run whose descriptor carries OpenType features is drawn shaped:

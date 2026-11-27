@@ -62,9 +62,21 @@ pub fn bundled_fonts(
     thai: Option<Vec<u8>>,
     korean: Option<Vec<u8>>,
 ) -> Result<(TinySkiaBackend, std::rc::Rc<document::ShapingMeasurer>), String> {
+    bundled_fonts_with_arabic(regular, bold, thai, korean, None)
+}
+
+/// Adds the bundled Arabic face to the painter and the Word measurer.
+pub fn bundled_fonts_with_arabic(
+    regular: Vec<u8>,
+    bold: Option<Vec<u8>>,
+    thai: Option<Vec<u8>>,
+    korean: Option<Vec<u8>>,
+    arabic: Option<Vec<u8>>,
+) -> Result<(TinySkiaBackend, std::rc::Rc<document::ShapingMeasurer>), String> {
     let fallbacks = [
         thai.map(|data| jade_office_model::thai_face(Arc::new(data))),
         korean.map(|data| jade_office_model::korean_face(Arc::new(data))),
+        arabic.map(|data| jade_office_model::arabic_face(Arc::new(data))),
     ];
     let measurer = document::measurer_with_fallbacks(
         &regular,

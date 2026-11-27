@@ -75,12 +75,12 @@ painter) and edits through the same cores.
    page without clipboard access), ⌘V pastes the workbook's own copy, as
    its menu's Paste does — but a clipboard still holding something older
    pastes that, as the browser hands it over.
-4. **Bundled fonts cover Japanese, Latin, Thai and Hangul**: both shells
-   lay out and paint documents, sheets and slides with Noto Sans JP,
-   Noto Sans Thai and a Hangul subset of Noto Sans KR. Scripts outside
-   the bundled or available system fonts can still show as boxes.
-   Both painters use OpenType positioning for Thai glyphs, including tone
-   marks above upper vowels.
+4. **Bundled fonts cover Japanese, Latin, Thai, Hangul and Arabic.** Both
+   painters shape Thai tone marks and Arabic joining forms. They apply
+   bidirectional ordering to mixed Arabic, Latin and numeric text. Word
+   preserves the logical text in the DOCX and lays out right-to-left
+   paragraphs. Scripts outside the bundled or available system fonts can
+   still show as boxes. Excel's right-to-left worksheet layout is pending.
 5. **Formula entry is refused as Excel refuses it** — a trailing operator,
    an open string, an unmatched parenthesis, or a function given the wrong
    number of arguments — with the editor kept open; `TODAY(1)` is accepted,

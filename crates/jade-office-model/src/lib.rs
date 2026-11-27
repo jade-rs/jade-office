@@ -188,6 +188,17 @@ pub fn thai_face(data: Arc<Vec<u8>>) -> Face {
     }
 }
 
+pub const ARABIC_FONT_FAMILY: &str = "Noto Sans Arabic";
+pub const ARABIC_FONT: &str = "Noto_Sans_Arabic/NotoSansArabic-Regular.ttf";
+
+pub fn arabic_face(data: Arc<Vec<u8>>) -> Face {
+    Face {
+        family: ARABIC_FONT_FAMILY.to_string(),
+        weight: 400,
+        data,
+    }
+}
+
 pub const KOREAN_FONT_FAMILY: &str = "Noto Sans KR";
 pub const KOREAN_FONT: &str = "Noto_Sans_KR/NotoSansKR-Hangul-Regular.ttf";
 
