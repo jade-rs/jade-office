@@ -209,6 +209,7 @@ dependencies = [
  "jade-painter",
  "resvg",
  "rustybuzz",
+ "smallvec",
  "tiny-skia",
  "ttf-parser",
  "unicode-segmentation",

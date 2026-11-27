@@ -23,6 +23,7 @@ ttf-parser = "0.25.1"
 # Shapes runs that ask for OpenType features (Word's ligatures, figure styles).
 rustybuzz = "0.20"
 unicode-segmentation = "1.10"
+smallvec = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
 # SVG pictures — Word's own conversion of WMF/EMF (old equations among them) —
 # drawn as vectors onto the same tiny-skia surface. Pure Rust; no system fonts:

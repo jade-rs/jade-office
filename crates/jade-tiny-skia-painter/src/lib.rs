@@ -29,6 +29,7 @@
 //! as three box blurs), offset and tinted, under the drawing itself. Their
 //! offsets and radii are in user space, scaled by the transform.
 
+use smallvec::SmallVec;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -128,6 +129,9 @@ type ResolvedFont = (usize, f32, Rc<str>);
 type UprightGlyph = Option<(ttf_parser::GlyphId, Option<u16>)>;
 type UprightGlyphCache = FastMap<usize, FastMap<String, UprightGlyph>>;
 
+type SharedContextualGlyphs = Rc<[ContextualGlyph]>;
+type ContextualGlyphCache = FastMap<usize, FastMap<Box<str>, Option<SharedContextualGlyphs>>>;
+
 #[derive(Default)]
 pub struct FontBook {
     faces: Vec<Face>,
@@ -139,6 +143,9 @@ pub struct FontBook {
     /// table directory, which per character was a tenth of a repaint.
     characters: RefCell<FastMap<(usize, char), CharGlyph>>,
     covering: RefCell<FastMap<(usize, char), usize>>,
+    /// Short contextual runs in font units, shared by measurement and paint.
+    contextual: RefCell<ContextualGlyphCache>,
+    contextual_entries: Cell<usize>,
     /// Vertical substitutions and advances in design units, shared across sizes.
     upright: RefCell<UprightGlyphCache>,
     /// Each font shorthand set, parsed and resolved to a face once: a
@@ -344,6 +351,35 @@ impl FontBook {
             })
     }
 
+    fn contextual_glyphs(&self, font: usize, text: &str) -> Option<ContextualGlyphs> {
+        let face = self.faces.get(font)?;
+        if text.len() > CONTEXTUAL_CACHE_TEXT_BYTES {
+            return shape_glyphs(face, text, &[], true).map(ContextualGlyphs::Shaped);
+        }
+        if let Some(cached) = self
+            .contextual
+            .borrow()
+            .get(&font)
+            .and_then(|runs| runs.get(text))
+        {
+            return cached.clone().map(ContextualGlyphs::Shared);
+        }
+        let shaped = shape_glyphs(face, text, &[], true)
+            .map(|run| glyph_positions(&run).collect::<SharedContextualGlyphs>());
+        let mut cache = self.contextual.borrow_mut();
+        let mut entries = self.contextual_entries.get();
+        if entries >= CONTEXTUAL_CACHE_LIMIT {
+            cache.clear();
+            entries = 0;
+        }
+        cache
+            .entry(font)
+            .or_default()
+            .insert(text.into(), shaped.clone());
+        self.contextual_entries.set(entries + 1);
+        shaped.map(ContextualGlyphs::Shared)
+    }
+
     /// The glyph's outline in font units, y up, cached.
     fn outline(&self, font: usize, glyph: ttf_parser::GlyphId) -> Option<Path> {
         if let Some(cached) = self.outlines.borrow().get(&(font, glyph.0)) {
@@ -499,6 +535,9 @@ struct GlyphKey {
 /// The cache is dropped whole when it grows past this, which only a document
 /// at many sizes and zooms reaches.
 const GLYPH_CACHE_LIMIT: usize = 16_384;
+// Bound both the number of cached short runs and the size of an individual key.
+const CONTEXTUAL_CACHE_LIMIT: usize = 4_096;
+const CONTEXTUAL_CACHE_TEXT_BYTES: usize = 64;
 
 /// The decoded pictures are dropped whole past this many bytes: a
 /// dozen full-HD photos.
@@ -797,6 +836,62 @@ struct Glyph {
     offset: (f32, f32),
     bold: bool,
     italic: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ContextualGlyph {
+    id: ttf_parser::GlyphId,
+    cluster: usize,
+    advance: i32,
+    offset: (i32, i32),
+}
+
+enum ContextualGlyphs {
+    Shared(SharedContextualGlyphs),
+    Shaped(rustybuzz::GlyphBuffer),
+}
+
+impl ContextualGlyphs {
+    fn iter(&self) -> impl Iterator<Item = ContextualGlyph> + '_ {
+        let (shared, shaped) = match self {
+            Self::Shared(glyphs) => (&**glyphs, None),
+            Self::Shaped(run) => (&[][..], Some(run)),
+        };
+        shared
+            .iter()
+            .copied()
+            .chain(shaped.into_iter().flat_map(glyph_positions))
+    }
+}
+
+fn glyph_positions(run: &rustybuzz::GlyphBuffer) -> impl Iterator<Item = ContextualGlyph> + '_ {
+    run.glyph_infos()
+        .iter()
+        .zip(run.glyph_positions())
+        .map(|(info, position)| ContextualGlyph {
+            id: ttf_parser::GlyphId(info.glyph_id as u16),
+            cluster: info.cluster as usize,
+            advance: position.x_advance,
+            offset: (position.x_offset, position.y_offset),
+        })
+}
+
+/// Shapes one font run and retains font units so sizes can share the plan.
+fn shape_glyphs(
+    font: &Face,
+    text: &str,
+    features: &[rustybuzz::Feature],
+    contextual: bool,
+) -> Option<rustybuzz::GlyphBuffer> {
+    let face = rustybuzz::Face::from_slice(&font.data, 0)?;
+    let mut buffer = rustybuzz::UnicodeBuffer::new();
+    buffer.push_str(text);
+    buffer.guess_segment_properties();
+    if contextual {
+        buffer.set_flags(rustybuzz::BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE);
+    }
+    let shaped = rustybuzz::shape(&face, features, buffer);
+    (!contextual || shaped.glyph_infos().iter().all(|info| info.glyph_id != 0)).then_some(shaped)
 }
 
 /// A Mathematical Alphanumeric Symbol (U+1D400–U+1D7FF, and ℎ) as its base
@@ -1860,9 +1955,9 @@ impl TinySkiaPainter {
     /// Each character is drawn in
     /// the styled face, or the first face that has it — the Skia backend's
     /// rule, and a browser's.
-    fn segments<'t>(&self, text: &'t str) -> Vec<(usize, &'t str)> {
+    fn segments<'t>(&self, text: &'t str) -> SmallVec<[(usize, &'t str); 2]> {
         let font = self.inner.state.borrow().font;
-        let mut segments: Vec<(usize, &'t str)> = Vec::new();
+        let mut segments = SmallVec::new();
         let mut start = 0;
         let mut current = None;
         for (at, ch) in text.char_indices() {
@@ -1898,49 +1993,33 @@ impl TinySkiaPainter {
             .sum()
     }
 
-    fn contextual_glyphs(&self, font: usize, size: f32, text: &str) -> Option<Vec<Glyph>> {
-        if !text.starts_with(|ch| jade_painter::is_thai(ch) || jade_painter::is_arabic(ch)) {
-            return None;
-        }
-        let font = self.inner.fonts.faces.get(font)?;
-        let face = rustybuzz::Face::from_slice(&font.data, 0)?;
-        let mut buffer = rustybuzz::UnicodeBuffer::new();
-        buffer.push_str(text);
-        buffer.set_flags(rustybuzz::BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE);
-        buffer.guess_segment_properties();
-        let shaped = rustybuzz::shape(&face, &[], buffer);
-        let scale = size / font.units_per_em;
-        shaped
-            .glyph_infos()
-            .iter()
-            .zip(shaped.glyph_positions())
-            .map(|(info, position)| {
-                (info.glyph_id != 0).then(|| Glyph {
-                    id: ttf_parser::GlyphId(info.glyph_id as u16),
-                    advance: position.x_advance as f32 * scale,
-                    offset: (
-                        position.x_offset as f32 * scale,
-                        -(position.y_offset as f32) * scale,
-                    ),
-                    bold: false,
-                    italic: false,
-                })
-            })
-            .collect()
-    }
-
     /// Glyph positions and styles: a math letter the face
     /// lacks is its base letter, slanted or emboldened as its style says.
-    fn styled_glyphs(&self, font: usize, size: f32, text: &str) -> Vec<Glyph> {
-        if let Some(glyphs) = self.contextual_glyphs(font, size, text) {
-            return glyphs;
-        }
+    fn styled_glyphs(&self, font: usize, size: f32, text: &str) -> SmallVec<[Glyph; 4]> {
         let fonts = &self.inner.fonts;
         let units = fonts
             .faces
             .get(font)
             .map(|face| face.units_per_em)
             .unwrap_or(1000.0);
+        if text.starts_with(|ch| jade_painter::is_thai(ch) || jade_painter::is_arabic(ch)) {
+            if let Some(shaped) = fonts.contextual_glyphs(font, text) {
+                let scale = size / units;
+                return shaped
+                    .iter()
+                    .map(|glyph| Glyph {
+                        id: glyph.id,
+                        advance: glyph.advance as f32 * scale,
+                        offset: (
+                            glyph.offset.0 as f32 * scale,
+                            -(glyph.offset.1 as f32) * scale,
+                        ),
+                        bold: false,
+                        italic: false,
+                    })
+                    .collect();
+            }
+        }
         let missing = {
             let characters = fonts.characters.borrow();
             text.chars().any(|ch| !characters.contains_key(&(font, ch)))
@@ -1958,7 +2037,7 @@ impl TinySkiaPainter {
                 characters.insert((font, ch), glyph);
             }
         } else if missing {
-            let found: Vec<(char, CharGlyph)> = fonts
+            let found: SmallVec<[(char, CharGlyph); 4]> = fonts
                 .with_face(font, |face| {
                     text.chars()
                         .map(|ch| {
@@ -2350,12 +2429,6 @@ impl TinySkiaPainter {
         let Some(face) = fonts.faces.get(font) else {
             return false;
         };
-        let Some(shaper) = rustybuzz::Face::from_slice(&face.data, 0) else {
-            return false;
-        };
-        let mut buffer = rustybuzz::UnicodeBuffer::new();
-        buffer.push_str(text);
-        buffer.guess_segment_properties();
         let features: Vec<rustybuzz::Feature> = features
             .iter()
             .map(|feature| {
@@ -2366,32 +2439,33 @@ impl TinySkiaPainter {
                 )
             })
             .collect();
-        if arabic {
-            buffer.set_flags(rustybuzz::BufferFlags::DO_NOT_INSERT_DOTTED_CIRCLE);
-        }
-        let shaped = rustybuzz::shape(&shaper, &features, buffer);
-        if arabic && shaped.glyph_infos().iter().any(|glyph| glyph.glyph_id == 0) {
+        let glyphs = if arabic && features.is_empty() {
+            fonts.contextual_glyphs(font, text)
+        } else {
+            shape_glyphs(face, text, &features, arabic).map(ContextualGlyphs::Shaped)
+        };
+        let Some(glyphs) = glyphs else {
             return false;
-        }
+        };
         let scale = size / face.units_per_em;
         let (ascent, descent) = self.font_extent(font, size);
         let baseline_y = y as f32 + baseline.offset(ascent, descent);
         let mut pen = 0.0_f32;
         let mut cluster_pen = 0.0_f32;
         let mut current_cluster = None;
-        for (info, position) in shaped.glyph_infos().iter().zip(shaped.glyph_positions()) {
+        for glyph in glyphs.iter() {
             let cluster = clusters
-                .partition_point(|&(start, _)| start <= info.cluster as usize)
+                .partition_point(|&(start, _)| start <= glyph.cluster)
                 .saturating_sub(1);
             if current_cluster != Some(cluster) {
                 current_cluster = Some(cluster);
                 cluster_pen = pen;
             }
             let x =
-                clusters[cluster].1 as f32 + (pen - cluster_pen) + position.x_offset as f32 * scale;
-            let glyph_y = baseline_y - position.y_offset as f32 * scale;
-            pen += position.x_advance as f32 * scale;
-            let glyph = ttf_parser::GlyphId(info.glyph_id as u16);
+                clusters[cluster].1 as f32 + (pen - cluster_pen) + glyph.offset.0 as f32 * scale;
+            let glyph_y = baseline_y - glyph.offset.1 as f32 * scale;
+            pen += glyph.advance as f32 * scale;
+            let glyph = glyph.id;
             let glyph_transform =
                 transform.pre_concat(Transform::from_row(scale, 0.0, 0.0, -scale, x, glyph_y));
             if self.blit_glyph(font, glyph, glyph_transform, None, color) {
@@ -4035,6 +4109,37 @@ mod tests {
         let x = 5.0 + reference.measure_text_width(prefix).unwrap();
         reference.fill_text("عربي", x, 60.0).unwrap();
         assert!(mixed.rgba_premultiplied() == reference.rgba_premultiplied());
+    }
+
+    #[test]
+    fn contextual_glyph_cache_shares_font_units_between_measurement_and_paint() {
+        let arabic = Arc::new(
+            std::fs::read(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../jade-core/fonts/Noto_Sans_Arabic/NotoSansArabic-Regular.ttf"
+            ))
+            .unwrap(),
+        );
+        let make = || {
+            let mut book = FontBook::new();
+            book.register("Arabic", 400, Arc::clone(&arabic)).unwrap();
+            TinySkiaPainter::new(200, 100, Rc::new(book)).unwrap()
+        };
+        let text = "سلام";
+        let warm = make();
+        warm.set_font("10px Arabic");
+        assert!(warm.measure_text_width(text).unwrap() > 0.0);
+        warm.set_font("40px Arabic");
+        assert!(warm.try_fill_shaped_text(text, &[(0, 5.0)], 65.0).unwrap());
+
+        let fresh = make();
+        fresh.set_font("40px Arabic");
+        fresh.fill_text(text, 5.0, 65.0).unwrap();
+        assert!(warm.rgba_premultiplied() == fresh.rgba_premultiplied());
+        assert_eq!(
+            warm.measure_text_metrics(text).unwrap(),
+            fresh.measure_text_metrics(text).unwrap()
+        );
     }
 
     /// A run whose descriptor carries OpenType features is drawn shaped:
