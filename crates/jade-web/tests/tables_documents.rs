@@ -1551,12 +1551,11 @@ fn merged_padding_does_not_move_a_note_or_the_paste_caret() {
             );
             document.insert_picture(png).unwrap();
             let after = (0..document.paragraph_count())
-                .filter(|&p| {
+                .rfind(|&p| {
                     document
                         .word_document()
                         .is_top_level_body_paragraph_surface(p)
                 })
-                .next_back()
                 .unwrap();
             document.select((0, 0), (after, 0)).unwrap();
             let mut clip = document.copy_rich().unwrap();
