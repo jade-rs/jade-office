@@ -178,6 +178,34 @@ impl WordSession for EditableDocument {
             .or_else(|| self.renderer.cached_paragraph_start_page(paragraph))
     }
 
+    fn page_label(&self, page: usize) -> Option<jade_docx_editor::fields::PageLabel> {
+        let index = page
+            .checked_sub(1)
+            .filter(|&index| index < self.page_count())?;
+        self.renderer.displayed_page_labels().get(index).cloned()
+    }
+
+    /// One pass over the renderer: `page_label` rebuilds the list each call.
+    fn displayed_page_labels(&self) -> Vec<jade_docx_editor::fields::PageLabel> {
+        let mut labels = self.renderer.displayed_page_labels();
+        labels.truncate(self.page_count());
+        labels
+    }
+
+    fn has_page_labels(&self) -> bool {
+        self.renderer.has_page_labels()
+    }
+
+    /// A bounded pass (a keystroke's band redraw) can leave the layout
+    /// short of the document's end: one full pass then gives every page
+    /// its number.
+    fn complete_layout(&mut self) -> bool {
+        if self.renderer.last_layout_complete() {
+            return true;
+        }
+        self.repaint_all().is_ok() && self.renderer.last_layout_complete()
+    }
+
     fn math_zones(&self) -> Vec<jade_docx_editor::canvas_renderer::MathZone> {
         self.renderer.math_zones().to_vec()
     }

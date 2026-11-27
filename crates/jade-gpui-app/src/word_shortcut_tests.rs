@@ -74,6 +74,11 @@ fn word_for_mac_paragraph_and_character_keys(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn the_layout_page_break_and_the_column_break_key_insert_breaks(cx: &mut gpui::TestAppContext) {
+    use jade_docx_reader::word_platform::{
+        set_word_layout_platform, word_layout_platform, WordLayoutPlatform,
+    };
+    let previous_platform = word_layout_platform();
+    set_word_layout_platform(WordLayoutPlatform::Mac);
     let (view, cx) = with_text(cx);
     let paragraphs = view.update(cx, |view, _| view.document.paragraph_count());
     cx.simulate_keystrokes("cmd-shift-enter");
@@ -89,10 +94,12 @@ fn the_layout_page_break_and_the_column_break_key_insert_breaks(cx: &mut gpui::T
             )),
             cx,
         );
-        // A page break is one break in the text, not a blank page's two
-        // paragraphs.
-        assert!(view.document.paragraph_count() <= paragraphs + 1);
+        assert_eq!(view.document.paragraph_count(), paragraphs);
+        let text = view.current_paragraph_text();
+        assert!(text.contains(jade_office_model::word::page_setup::COLUMN_BREAK));
+        assert!(text.contains('\u{000C}'), "a page break: {text:?}");
     });
+    set_word_layout_platform(previous_platform);
 }
 
 /// ホーム as Word lays it out: フォントの色 and 蛍光ペンの色 put on the colour

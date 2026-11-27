@@ -32,6 +32,11 @@ use jade_tiny_skia_painter::{FontBook, TinySkiaPainter};
 
 use crate::document::{is_placeholder, placeholder, surface, TinySkiaRenderHost, INITIAL_PAGE};
 
+/// The passes a NUMPAGES total or a STYLEREF drawn wrong is drawn again in,
+/// at most, after the pass that drew it: as the renderer counts them, and
+/// as jade-core's native host does.
+const MAX_SETTLING_PASSES: usize = 2;
+
 mod autocorrect;
 mod formatting;
 mod objects;
@@ -153,6 +158,14 @@ pub struct EditableDocument {
     /// The pages repainted since the shell last asked, from the renderer's
     /// dirty regions.
     repainted_pages: std::collections::BTreeSet<usize>,
+    /// What an edit's passes left for [`Self::settle_pending`] to draw
+    /// again, off the keystroke.
+    deferred_settle: DeferredSettle,
+    /// See [`Self::deferred_settles`].
+    deferred_settles: u64,
+    /// The passes [`Self::settle_page_chrome`] has run, for tests: a
+    /// keystroke on a page drawn right runs none.
+    settling_passes: u64,
     /// While edits are batched (see [`Self::paste`]): the first paragraph
     /// any of them touched, repainted from once they are all in.
     deferred_repaint: Option<usize>,
@@ -165,6 +178,51 @@ pub struct EditableDocument {
     /// A view's page box and アウトライン's indents: see
     /// [`Self::set_view_geometry`].
     view: ViewLayout,
+}
+
+/// When a shell's idle [`EditableDocument::settle_pending`] is due — a
+/// debounce with a cap: `quiet` after the last edit (each key starts the
+/// wait again, so a run of keys is one settle at its end), but no later than
+/// `max_wait` after the first frame that found one pending (edits that never
+/// pause cannot put it off for good). Times are in ms; returns how long is
+/// left to wait at `now`, zero when due.
+///
+/// The wait is never longer than `max_wait`, whatever the readings.
+///
+/// `None` while `failed_since_last_edit`: a settle that failed with a render
+/// error would fail again, and each try is a whole-document pass, so the
+/// next one waits for the next edit.
+pub fn settle_wait(
+    first_pending: f64,
+    last_edit: f64,
+    now: f64,
+    failed_since_last_edit: bool,
+    quiet: std::time::Duration,
+    max_wait: std::time::Duration,
+) -> Option<std::time::Duration> {
+    if failed_since_last_edit {
+        return None;
+    }
+    let due = (last_edit + quiet.as_secs_f64() * 1000.0)
+        .min(first_pending + max_wait.as_secs_f64() * 1000.0);
+    let left = due - now;
+    Some(if left.is_finite() && left > 0.0 {
+        // Never more than the cap, whatever the clock readings say (a first
+        // reading from another clock, one that went back).
+        std::time::Duration::from_secs_f64(left / 1000.0).min(max_wait)
+    } else {
+        std::time::Duration::ZERO
+    })
+}
+
+/// What [`EditableDocument::settle_pending`] has left to draw.
+#[derive(Clone, Copy, Default)]
+struct DeferredSettle {
+    /// A pass drew a NUMPAGES or SECTIONPAGES total its end proved wrong.
+    totals: bool,
+    /// The first page (0-based) of those showing an edited heading's
+    /// STYLEREF.
+    from: Option<usize>,
 }
 
 /// What a view other than 印刷レイアウト lays the document out with.
@@ -265,7 +323,7 @@ impl EditableDocument {
             )?;
         }
         let Opened { renderer, host } = opened;
-        Ok(Self {
+        let mut document = Self {
             word_document,
             executor: CommandExecutor::default(),
             typing_run: None,
@@ -290,11 +348,21 @@ impl EditableDocument {
             repainted_from: None,
             deferred_repaint: None,
             repainted_pages: std::collections::BTreeSet::new(),
+            deferred_settle: DeferredSettle::default(),
+            deferred_settles: 0,
+            settling_passes: 0,
             field_codes: Default::default(),
             field_shading: Default::default(),
             field_datetime: datetime,
             view: ViewLayout::default(),
-        })
+        };
+        // The first pass drew page 1's footer before it reached the last
+        // page, and each header before the headings below it.
+        document.settle_page_chrome(false, None)?;
+        // Opening draws every resident page: nothing waits on the shell.
+        document.repainted_pages.clear();
+        document.repainted_from = None;
+        Ok(document)
     }
 
     /// Lays `word_document` out on pages of `width` × `height` and paints
@@ -426,6 +494,17 @@ impl EditableDocument {
             return Ok(false);
         };
         // Those pages only, from the layout the last pass left.
+        self.paint_pages(first, last)?;
+        self.repainted_pages.extend(arriving);
+        // What it drew wrong waits for the shell's idle settle, as an edit's
+        // does: a page that comes in is drawn from the layout as it stands.
+        self.defer_settle(None);
+        Ok(true)
+    }
+
+    /// Draws pages `first..=last` (0-based) from the layout the last pass
+    /// left: the cost of drawing those pages alone.
+    fn paint_pages(&mut self, first: usize, last: usize) -> Result<(), String> {
         let document = self
             .word_document
             .document
@@ -447,8 +526,126 @@ impl EditableDocument {
         self.renderer.clear_visible_page_range();
         self.renderer.clear_dirty_regions();
         rendered.map_err(|_| "repaint failed".to_string())?;
-        self.repainted_pages.extend(arriving);
-        Ok(true)
+        if let Some(error) = self.renderer.take_render_error() {
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Draws again the resident pages the pass just run drew wrong — a
+    /// NUMPAGES or SECTIONPAGES total other than the one it ended with (a
+    /// footer on page 1 is drawn before the last page is reached), or a
+    /// header's STYLEREF other than the headings its page ended with (a
+    /// header is drawn before the body below it) — every page when `totals`
+    /// (a total an earlier pass drew wrong), and the pages from `also`
+    /// (0-based) on, which show a STYLEREF of an edited heading the pass did
+    /// not draw again. A page that is not resident is a placeholder, drawn
+    /// afresh when it comes in.
+    ///
+    /// The renderer stops flagging a total or a STYLEREF that moves what it
+    /// counts after a few passes; at most [`MAX_SETTLING_PASSES`] are run
+    /// here all the same. With nothing flagged, it costs nothing.
+    fn settle_page_chrome(&mut self, totals: bool, also: Option<usize>) -> Result<(), String> {
+        let (mut totals, mut also) = (totals, also);
+        for _ in 0..MAX_SETTLING_PASSES {
+            totals |= self.renderer.take_page_totals_changed();
+            let mut wrong = if self.renderer.has_style_reference_wrong_pages() {
+                self.renderer.take_style_reference_wrong_pages()
+            } else {
+                std::collections::BTreeSet::new()
+            };
+            let count = self.page_count();
+            if std::mem::take(&mut totals) {
+                wrong.extend(0..count);
+            }
+            if let Some(from) = also.take() {
+                wrong.extend(from.min(count)..count);
+            }
+            wrong.retain(|&page| page < count);
+            let Some(&lowest) = wrong.first() else {
+                return Ok(());
+            };
+            // Every page whose chrome changed, resident or not: a shell's
+            // thumbnail of one is out of date.
+            self.repainted_from = Some(self.repainted_from.map_or(lowest, |page| page.min(lowest)));
+            let resident = self.resident.borrow().clone();
+            let mut drawn = wrong.into_iter().filter(|page| resident.contains(page));
+            let Some(first) = drawn.next() else {
+                return Ok(());
+            };
+            let last = drawn.next_back().unwrap_or(first);
+            self.settling_passes += 1;
+            self.paint_pages(first, last)?;
+            self.repainted_pages.extend(first..=last);
+        }
+        // Past the cap, what is still flagged has no right value.
+        self.renderer.take_page_totals_changed();
+        if self.renderer.has_style_reference_wrong_pages() {
+            self.renderer.take_style_reference_wrong_pages();
+        }
+        Ok(())
+    }
+
+    /// Keeps what the pass just run drew wrong, and the pages from `also`
+    /// on, for [`Self::settle_pending`]: drawing them again lays the whole
+    /// document out, which an edit's keystroke must not wait on.
+    fn defer_settle(&mut self, also: Option<usize>) {
+        self.deferred_settles = self.deferred_settles.wrapping_add(1);
+        let deferred = &mut self.deferred_settle;
+        deferred.totals |= self.renderer.take_page_totals_changed();
+        deferred.from = match (deferred.from, also) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+
+    /// A count that moves with every edit pass that leaves its settle for
+    /// later: a shell that waits for the edits to stop before calling
+    /// [`Self::settle_pending`] knows from it that another came.
+    pub fn deferred_settles(&self) -> u64 {
+        self.deferred_settles
+    }
+
+    /// Whether an edit left headers or footers for [`Self::settle_pending`]
+    /// to draw again: a NUMPAGES total or a STYLEREF drawn wrong, or the
+    /// pages that show a heading that changed.
+    pub fn has_pending_settle(&self) -> bool {
+        self.deferred_settle.totals
+            || self.deferred_settle.from.is_some()
+            || self.renderer.has_style_reference_wrong_pages()
+    }
+
+    /// Draws again the resident pages an edit left with a header or footer
+    /// wrong (see [`Self::has_pending_settle`]), as jade-core's native host
+    /// paints its stale pages after the key: a shell calls it when idle,
+    /// then re-reads [`Self::take_repainted_pages`]. Whether any page was
+    /// drawn.
+    pub fn settle_pending(&mut self) -> Result<bool, String> {
+        if !self.has_pending_settle() {
+            return Ok(false);
+        }
+        let before = self.settling_passes;
+        let DeferredSettle { totals, from } = std::mem::take(&mut self.deferred_settle);
+        if let Err(error) = self.settle_page_chrome(totals, from) {
+            // Still owed: the next try, after the next edit, draws them.
+            // The renderer's flags were taken by the failed pass, so every
+            // resident page is owed: a safe superset of what they named.
+            let deferred = &mut self.deferred_settle;
+            deferred.totals = true;
+            deferred.from = match (deferred.from, from) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+            return Err(error);
+        }
+        Ok(self.settling_passes > before)
+    }
+
+    /// How many passes [`Self::settle_page_chrome`] has run since the
+    /// document was opened: a NUMPAGES total or a STYLEREF drawn wrong and
+    /// drawn again. A keystroke on a page drawn right adds none.
+    pub fn settling_passes(&self) -> u64 {
+        self.settling_passes
     }
 
     // ---- pages --------------------------------------------------------------
@@ -1549,6 +1746,8 @@ impl EditableDocument {
     /// the paragraph hashes the renderer keys by address, which an edit in
     /// place would otherwise leave stale; the copy forgot them too.
     fn edit_in_place<R>(&mut self, edit: impl FnOnce(&mut Self) -> R) -> R {
+        // What its passes draw wrong is new: the renderer counts afresh.
+        self.renderer.note_style_reference_edit();
         self.renderer.drop_document_cache();
         let result = edit(self);
         if let Some(document) = &self.word_document.document {
@@ -1567,6 +1766,9 @@ impl EditableDocument {
     ) -> Result<(), String> {
         self.typing_run = None;
         let paragraphs = self.paragraph_count();
+        // A heading a header's STYLEREF shows is shown on pages the pass may
+        // not draw again: as it was, and as it is after the edit.
+        let shown_before = self.renderer.first_page_showing_style_ref_of(paragraph);
         let request = HeadlessEditRequest {
             commands: vec![command],
         };
@@ -1621,17 +1823,27 @@ impl EditableDocument {
         let held_still = before.1.is_some() && geometry(&self.renderer) == before;
         // A split or a join leaves its paragraph where it was but moves every
         // paragraph after it, so a changed count is never "held still".
-        if held_still && self.page_count() == pages && self.paragraph_count() == paragraphs {
-            return Ok(());
+        if !(held_still && self.page_count() == pages && self.paragraph_count() == paragraphs) {
+            // The rest, from the paragraph after it: the first pass cached
+            // the paragraph as it now is, so a pass from it would find it
+            // unmoved and stop at its page, leaving the pages below as they
+            // were.
+            let from = if paragraph + 1 < self.paragraph_count() {
+                paragraph + 1
+            } else {
+                paragraph
+            };
+            self.repaint_through(from, None, usize::MAX)?;
         }
-        // The rest, from the paragraph after it: the first pass cached the
-        // paragraph as it now is, so a pass from it would find it unmoved and
-        // stop at its page, leaving the pages below as they were.
-        if paragraph + 1 < self.paragraph_count() {
-            self.repaint_from(paragraph + 1)
-        } else {
-            self.repaint_from(paragraph)
-        }
+        let shown_after = self.renderer.first_page_showing_style_ref_of(paragraph);
+        let shown = match (shown_before, shown_after) {
+            (Some(before), Some(after)) => Some(before.min(after)),
+            (before, after) => before.or(after),
+        };
+        // Drawn again when the shell is idle: the pages from the heading on
+        // are a whole-document pass, a thousand body keystrokes.
+        self.defer_settle(shown);
+        Ok(())
     }
 
     /// The renderer's incremental sequence, through every page: an edit can
@@ -1639,7 +1851,9 @@ impl EditableDocument {
     /// takes, so the bound is the document's new end, not one page past its
     /// old one (a paste of many lines, or one long line, adds several).
     fn repaint_from(&mut self, paragraph: usize) -> Result<(), String> {
-        self.repaint_through(paragraph, None, usize::MAX)
+        self.repaint_through(paragraph, None, usize::MAX)?;
+        self.defer_settle(None);
+        Ok(())
     }
 
     /// The incremental sequence from `paragraph` through page `last_page`
@@ -1682,6 +1896,7 @@ impl EditableDocument {
             self.word_document.numbering_part.as_ref(),
             self.word_document.header_lines.as_deref(),
             self.word_document.footer_lines.as_deref(),
+            Some(&self.word_document.comments),
             last_page,
         );
         self.last_paintable_page.set(usize::MAX);
@@ -2025,6 +2240,9 @@ impl EditableDocument {
 
     /// Every page from scratch: undo can change content anywhere.
     fn repaint_all(&mut self) -> Result<(), String> {
+        // Whatever asked for it — an edit, an undo, a view that lays the
+        // document out otherwise — may leave STYLEREFs wrong afresh.
+        self.renderer.note_style_reference_edit();
         self.repainted_from = Some(0);
         let document = self
             .word_document
@@ -2053,7 +2271,11 @@ impl EditableDocument {
         if let Some(error) = self.renderer.take_render_error() {
             return Err(error);
         }
-        self.follow_page_box()
+        self.follow_page_box()?;
+        // This pass drew every resident page from the document as it is:
+        // what an edit left for later is drawn by now, or flagged again.
+        self.deferred_settle = DeferredSettle::default();
+        self.settle_page_chrome(false, None)
     }
 
     /// When an edit has changed the page box — the page turned, another

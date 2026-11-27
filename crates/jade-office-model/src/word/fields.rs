@@ -1090,6 +1090,9 @@ pub trait WordFields: WordSession {
                 paragraph_pages.insert(paragraph, page);
             }
         }
+        // The labels of the pages the last layout finished, page 1 first.
+        // Evaluation leaves a PAGE or PAGEREF on a later page as it is.
+        let page_labels = self.displayed_page_labels();
         let folder = host
             .file
             .as_ref()
@@ -1128,6 +1131,8 @@ pub trait WordFields: WordSession {
                 .map(|metadata| metadata.len()),
             page_count: self.page_count(),
             paragraph_pages,
+            page_labels,
+            page_labels_from_layout: self.has_page_labels(),
             prompt_answers: answers,
             read_file,
             japanese: host.japanese,
@@ -1156,6 +1161,9 @@ pub trait WordFields: WordSession {
         host: &FieldHost,
         answers: HashMap<String, String>,
     ) -> Result<(), String> {
+        // Every page's number first; a page the session cannot lay out
+        // keeps its fields' results.
+        self.complete_layout();
         let environment = self.field_environment(host, answers);
         self.execute_command(Box::new(FieldCommand::update(scope, environment)), true)
     }
@@ -1173,6 +1181,9 @@ pub trait WordFields: WordSession {
         if self.selection_range().is_none() {
             return Err("there is no insertion point".to_string());
         }
+        // A PAGE or PAGEREF inserted past where the last layout stopped
+        // would otherwise get no result, and be saved without one.
+        self.complete_layout();
         let environment = self.field_environment(host, HashMap::new());
         self.execute_command(
             Box::new(FieldCommand::insert(code.to_string(), environment)),
@@ -1185,6 +1196,8 @@ pub trait WordFields: WordSession {
         let range = self
             .selection_range()
             .ok_or_else(|| "there is no field at the selection".to_string())?;
+        // As for an insertion: the page the field is on needs its number.
+        self.complete_layout();
         let environment = self.field_environment(host, HashMap::new());
         self.execute_command(
             Box::new(FieldCommand::edit(range, code.to_string(), environment)),

@@ -255,6 +255,37 @@ impl WordSession for WordDoc {
         }
     }
 
+    /// The body's labels: a story's text is on the body page it is open
+    /// over (`paragraph_page`). While a story is open the body is not laid
+    /// out again, so its labels count only once its layout is complete
+    /// ([`Self::open_story`] completes it): a partial list would leave a
+    /// PAGE on a later page without a result.
+    fn page_label(&self, page: usize) -> Option<jade_docx_editor::fields::PageLabel> {
+        self.body_labels_usable()
+            .then(|| WordSession::page_label(&self.main, page))
+            .flatten()
+    }
+
+    fn displayed_page_labels(&self) -> Vec<jade_docx_editor::fields::PageLabel> {
+        if self.body_labels_usable() {
+            WordSession::displayed_page_labels(&self.main)
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn has_page_labels(&self) -> bool {
+        self.body_labels_usable() && WordSession::has_page_labels(&self.main)
+    }
+
+    /// The body is laid out again only while no story is open over it.
+    fn complete_layout(&mut self) -> bool {
+        match &self.story {
+            Some(_) => self.main.renderer.last_layout_complete(),
+            None => WordSession::complete_layout(&mut self.main),
+        }
+    }
+
     fn position_metrics(&self, at: Position) -> Option<(f64, f64, f64)> {
         WordSession::position_metrics(&**self, at)
     }
@@ -286,6 +317,13 @@ impl WordDoc {
     /// being edited. Keep the open story and its independent undo history.
     pub fn update_fields_for_print(&mut self) -> Result<(), String> {
         jade_office_model::word::printing::update_fields(&mut self.main)
+    }
+
+    /// Whether the body's page labels can be handed out: always with no
+    /// story open (the body lays itself out first), and with one only when
+    /// the body's last layout reached its end.
+    fn body_labels_usable(&self) -> bool {
+        self.story.is_none() || self.main.renderer.last_layout_complete()
     }
 
     /// The header or footer open, if one is.
@@ -332,6 +370,36 @@ impl WordDoc {
 
     pub fn set_resident_pages(&mut self, pages: std::ops::Range<usize>) -> Result<bool, String> {
         self.main.set_resident_pages(pages)
+    }
+
+    /// Whether an edit left headers or footers to draw again when idle:
+    /// see [`EditableDocument::has_pending_settle`].
+    pub fn has_pending_settle(&self) -> bool {
+        self.main.has_pending_settle()
+            || self
+                .story
+                .as_ref()
+                .is_some_and(|story| story.document.has_pending_settle())
+    }
+
+    /// Moves with every edit, the story's among them: see
+    /// [`EditableDocument::deferred_settles`].
+    pub fn deferred_settles(&self) -> u64 {
+        let story = self
+            .story
+            .as_ref()
+            .map_or(0, |story| story.document.deferred_settles());
+        self.main.deferred_settles().wrapping_add(story)
+    }
+
+    /// Draws them: see [`EditableDocument::settle_pending`]. Whether any
+    /// page was drawn.
+    pub fn settle_pending(&mut self) -> Result<bool, String> {
+        let mut drawn = self.main.settle_pending()?;
+        if let Some(story) = self.story.as_mut() {
+            drawn |= story.document.settle_pending()?;
+        }
+        Ok(drawn)
     }
 
     /// The first page repainted since the last call: the story's page when
@@ -733,6 +801,10 @@ impl WordDoc {
             None => self.main.caret(),
         };
         self.close_story()?;
+        // Every body page numbered before the story is drawn over one: a
+        // PAGE inserted in it takes the body's label for its page, and the
+        // body is not laid out again while the story is open.
+        WordSession::complete_layout(&mut self.main);
         let renderer = &self.main.renderer;
         let page = page.min(self.main.page_count().saturating_sub(1));
         let section = renderer.section_index_for_zero_based_page(page);

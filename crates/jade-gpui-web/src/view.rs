@@ -72,6 +72,7 @@ pub(crate) mod word_reveal;
 mod word_review;
 pub(crate) mod word_ruler;
 mod word_screen_reader;
+mod word_settle;
 pub(crate) mod word_setup;
 mod word_signatures;
 mod word_similar;
@@ -579,6 +580,9 @@ pub struct DocView {
     show: deck_show::WebShow,
     /// Whether the browser's paste event came after the last ⌘V.
     paste_arrived: bool,
+    /// When the headers and footers an edit left wrong are drawn again
+    /// (`word_settle`).
+    settle: word_settle::SettleClock,
     /// The status bar's 文字カウント and the caret, selection and edit it
     /// was counted for: counting reads every paragraph.
     word_count: RefCell<Option<(FormatKey, SharedString)>>,
@@ -864,6 +868,7 @@ impl DocView {
             slideshow: false,
             show: Default::default(),
             paste_arrived: false,
+            settle: Default::default(),
             word_count: RefCell::new(None),
             characters: word_characters::Characters::default(),
             spin: None,
@@ -4832,6 +4837,9 @@ impl Render for DocView {
                 Document::Workbook(_) => self.workbook_body(window, cx),
             }
         };
+        // After the body: building it follows the scroll, and a page that
+        // came in may have raised a settle this frame.
+        self.schedule_page_chrome_settle(cx);
         let dialog = word_characters::overlay(self, window, cx);
         let reference_dialog = word_references::overlay(self, window, cx);
         let controls_dialog = word_controls::dialog(self, window, cx);
