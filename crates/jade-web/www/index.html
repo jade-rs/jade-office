@@ -170,11 +170,12 @@
     });
 
     try {
-      await init();
-      const [regular, bold, thai] = await Promise.all([
+      const [, regular, bold, thai, korean] = await Promise.all([
+        init(),
         bytes("fonts/NotoSansJP-Regular.ttf"),
         bytes("fonts/NotoSansJP-Bold.ttf"),
         bytes("fonts/NotoSansThai.ttf"),
+        bytes("fonts/NotoSansKR-Hangul-Regular.ttf"),
       ]);
       run(
         regular, bold, thai,
@@ -182,7 +183,7 @@
         Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         navigator.language || "ja",
         SAMPLES,
-        save, load, pick,
+        save, load, pick, korean,
       );
       document.getElementById("loading").remove();
       const name = new URLSearchParams(location.search).get("open");

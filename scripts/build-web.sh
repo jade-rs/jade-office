@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the browser prototype into crates/jade-web/www:
 #   pkg/      the wasm module and its JS glue (wasm-bindgen --target web)
-#   fonts/    the bundled Noto Sans JP faces the page hands to the painter
+#   fonts/    the bundled faces the page hands to the painter
 #   samples/  a few fixtures to open without picking a file
 # Serve that directory over HTTP (wasm cannot be fetched from file://), e.g.
 #   python3 -m http.server 8765 --directory crates/jade-web/www
@@ -41,6 +41,8 @@ cp "$root/jade-core/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf" \
    "$root/jade-core/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf" "$www/fonts/"
 cp "$root/jade-core/fonts/Noto_Sans_Thai/NotoSansThai-VariableFont_wdth,wght.ttf" \
    "$www/fonts/NotoSansThai.ttf"
+cp "$root/fonts/Noto_Sans_KR/NotoSansKR-Hangul-Regular.ttf" "$www/fonts/"
+cp "$root/fonts/Noto_Sans_KR/OFL.txt" "$www/fonts/OFL-NotoSansKR.txt"
 for sample in sample-deck.pptx themed-deck.pptx charts-workbook.xlsx grid-operations-workbook.xlsx char-effects.docx; do
   cp "$root/jade-core/public/fixtures/$sample" "$www/samples/"
 done

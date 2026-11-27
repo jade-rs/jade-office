@@ -188,6 +188,17 @@ pub fn thai_face(data: Arc<Vec<u8>>) -> Face {
     }
 }
 
+pub const KOREAN_FONT_FAMILY: &str = "Noto Sans KR";
+pub const KOREAN_FONT: &str = "Noto_Sans_KR/NotoSansKR-Hangul-Regular.ttf";
+
+pub fn korean_face(data: Arc<Vec<u8>>) -> Face {
+    Face {
+        family: KOREAN_FONT_FAMILY.to_string(),
+        weight: 400,
+        data,
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::path::PathBuf;

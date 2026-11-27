@@ -54,3 +54,27 @@ pub fn backend_with(
     faces.extend(thai.map(|thai| jade_office_model::thai_face(Arc::new(thai))));
     TinySkiaBackend::new(&faces)
 }
+
+/// Builds the browser painter and Word measurer with the same fallback faces.
+pub fn bundled_fonts(
+    regular: Vec<u8>,
+    bold: Option<Vec<u8>>,
+    thai: Option<Vec<u8>>,
+    korean: Option<Vec<u8>>,
+) -> Result<(TinySkiaBackend, std::rc::Rc<document::ShapingMeasurer>), String> {
+    let fallbacks = [
+        thai.map(|data| jade_office_model::thai_face(Arc::new(data))),
+        korean.map(|data| jade_office_model::korean_face(Arc::new(data))),
+    ];
+    let measurer = document::measurer_with_fallbacks(
+        &regular,
+        bold.as_deref(),
+        fallbacks
+            .iter()
+            .flatten()
+            .map(|face| (face.family.as_str(), face.data.as_slice())),
+    )?;
+    let mut faces = jade_office_model::aliased_faces(Arc::new(regular), bold.map(Arc::new));
+    faces.extend(fallbacks.into_iter().flatten());
+    Ok((TinySkiaBackend::new(&faces)?, measurer))
+}
