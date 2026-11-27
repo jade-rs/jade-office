@@ -28,14 +28,15 @@ async function boot() {
     "fonts/NotoSansJP-Bold.ttf",
     "fonts/NotoSansThai.ttf",
     "fonts/NotoSansKR-Hangul-Regular.ttf",
+    "fonts/NotoSansArabic-Regular.ttf",
   ];
   const fontBytes = fontUrls.map(async (url) => {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`${url}: ${response.status}`);
     return new Uint8Array(await response.arrayBuffer());
   });
-  const [, regular, bold, thai, korean] = await Promise.all([init(), ...fontBytes]);
-  fonts = WebFonts.withFallbacks(regular, bold, thai, korean);
+  const [, regular, bold, thai, korean, arabic] = await Promise.all([init(), ...fontBytes]);
+  fonts = WebFonts.withFallbacks(regular, bold, thai, korean, arabic);
   status.textContent = `準備完了 (${Math.round(performance.now() - started)} ms)`;
 }
 

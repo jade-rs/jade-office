@@ -683,6 +683,12 @@ fn thai_font() -> PathBuf {
         .join(jade_office_model::THAI_FONT)
 }
 
+fn arabic_font() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../jade-core/fonts")
+        .join(jade_office_model::ARABIC_FONT)
+}
+
 fn korean_font() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fonts")
@@ -718,6 +724,10 @@ pub(crate) fn skia_backend() -> Result<jade_office_model::skia::SkiaBackend, Str
         let korean = korean_font();
         faces.push(jade_office_model::korean_face(Arc::new(
             std::fs::read(&korean).map_err(|error| format!("{}: {error}", korean.display()))?,
+        )));
+        let arabic = arabic_font();
+        faces.push(jade_office_model::arabic_face(Arc::new(
+            std::fs::read(&arabic).map_err(|error| format!("{}: {error}", arabic.display()))?,
         )));
         let mut made = jade_office_model::skia::SkiaBackend::new(&faces)?;
         if use_installed_fonts() {
@@ -793,6 +803,11 @@ fn open_document_bytes_for_first_paint(bytes: &[u8]) -> Result<NativeDocument, S
     if let Some(path) = word_characters::complex_script_fallback() {
         faces.push(face("Complex Script Fallback", 400, &path));
     }
+    faces.push(face(
+        jade_office_model::ARABIC_FONT_FAMILY,
+        400,
+        &arabic_font(),
+    ));
     // The fonts the document carries with it (TrueType フォントを埋め込む),
     // for the families nothing installed answers to.
     faces.extend(word_fonts::embedded_faces(bytes));

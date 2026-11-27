@@ -377,6 +377,15 @@ impl CanvasRenderHost for TinySkiaRenderHost {
         Ok(metrics)
     }
 
+    fn arabic_cluster_measurer(
+        &self,
+    ) -> Option<jade_docx_editor::render_host::ArabicClusterMeasurer> {
+        let measurer = Rc::clone(&self.measurer);
+        Some(Rc::new(move |text, font| {
+            measurer.measure_arabic_clusters(text, font)
+        }))
+    }
+
     fn device_pixel_ratio(&self) -> f64 {
         self.scale
     }

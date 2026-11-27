@@ -74,7 +74,7 @@ pub struct WebFonts {
 impl WebFonts {
     #[wasm_bindgen(constructor)]
     pub fn new(regular: Vec<u8>, bold: Option<Vec<u8>>) -> Result<WebFonts, JsError> {
-        Self::with_fallbacks(regular, bold, None, None)
+        Self::with_fallbacks(regular, bold, None, None, None)
     }
 
     #[wasm_bindgen(js_name = withFallbacks)]
@@ -83,9 +83,11 @@ impl WebFonts {
         bold: Option<Vec<u8>>,
         thai: Option<Vec<u8>>,
         korean: Option<Vec<u8>>,
+        arabic: Option<Vec<u8>>,
     ) -> Result<WebFonts, JsError> {
-        let (backend, measurer) = crate::bundled_fonts(regular, bold, thai, korean)
-            .map_err(|error| JsError::new(&error))?;
+        let (backend, measurer) =
+            crate::bundled_fonts_with_arabic(regular, bold, thai, korean, arabic)
+                .map_err(|error| JsError::new(&error))?;
         Ok(Self { backend, measurer })
     }
 }

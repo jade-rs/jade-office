@@ -43,6 +43,8 @@ cp "$root/jade-core/fonts/Noto_Sans_Thai/NotoSansThai-VariableFont_wdth,wght.ttf
    "$www/fonts/NotoSansThai.ttf"
 cp "$root/fonts/Noto_Sans_KR/NotoSansKR-Hangul-Regular.ttf" "$www/fonts/"
 cp "$root/fonts/Noto_Sans_KR/OFL.txt" "$www/fonts/OFL-NotoSansKR.txt"
+cp "$root/jade-core/fonts/Noto_Sans_Arabic/NotoSansArabic-Regular.ttf" "$www/fonts/"
+cp "$root/jade-core/fonts/Noto_Sans_Arabic/OFL.txt" "$www/fonts/OFL-NotoSansArabic.txt"
 for sample in sample-deck.pptx themed-deck.pptx charts-workbook.xlsx grid-operations-workbook.xlsx char-effects.docx; do
   cp "$root/jade-core/public/fixtures/$sample" "$www/samples/"
 done

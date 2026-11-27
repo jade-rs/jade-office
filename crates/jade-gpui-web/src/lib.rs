@@ -143,7 +143,7 @@ fn inbox() -> UnboundedReceiver<Incoming> {
 /// Starts the app in a gpui window on the page.
 ///
 /// `regular` and `bold` are the bundled Noto Sans JP faces. `thai` and
-/// `korean` are the Noto Sans fallback faces for Thai and Hangul.
+/// `korean` and `arabic` are the fallback faces for Thai, Hangul, and Arabic.
 /// `scale` is the page's `devicePixelRatio`; `time_zone` and `language` are
 /// the browser's; `samples` are the files the explorer lists. `save(name,
 /// bytes)` offers a file as a download, `load(name)` fetches a sample and
@@ -163,15 +163,21 @@ pub fn run(
     load: js_sys::Function,
     pick: js_sys::Function,
     korean: Option<Vec<u8>>,
+    arabic: Option<Vec<u8>>,
 ) -> Result<(), JsError> {
     console_error_panic_hook::set_once();
     // Before any document is laid out: like Word for Mac on a Mac, or as the
     // page's `?word_platform=` says.
     jade_web::set_word_layout_platform_from_page();
     i18n::init(&language);
-    let (backend, measurer) =
-        jade_web::bundled_fonts(regular.clone(), Some(bold), Some(thai), korean)
-            .map_err(|e| JsError::new(&e))?;
+    let (backend, measurer) = jade_web::bundled_fonts_with_arabic(
+        regular.clone(),
+        Some(bold),
+        Some(thai),
+        korean,
+        arabic,
+    )
+    .map_err(|e| JsError::new(&e))?;
     let fonts = Rc::new(Fonts {
         backend,
         measurer,
