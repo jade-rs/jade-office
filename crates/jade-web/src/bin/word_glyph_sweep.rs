@@ -16,6 +16,7 @@
 //! playground sweep's fields and rules, so the two numbers sit side by side:
 //! rows are aligned by text, and a row counts as exact when its page, glyphs,
 //! baseline and every glyph origin agree with Word's within 0.375pt.
+//! References with per-glyph baselines are compared at that precision.
 //!
 //! The documents are laid out as `jade-web`'s `Document` lays them out — the
 //! docx renderer on the tiny-skia host, measured by the shaping measurer with
@@ -470,6 +471,7 @@ struct Row {
     baseline_pt: f64,
     text: String,
     characters: Vec<Glyph>,
+    has_glyph_baselines: bool,
 }
 
 /// Whether JavaScript's `String.prototype.trim` leaves nothing of `text`.
@@ -531,6 +533,7 @@ fn jade_rows(snapshot: &FullLayoutDebugSnapshot) -> Vec<Row> {
                 baseline_pt: glyph.baseline_pt,
                 text: String::new(),
                 characters: vec![glyph],
+                has_glyph_baselines: true,
             }),
         }
     }
@@ -557,22 +560,29 @@ fn word_rows(reference: &serde_json::Value) -> Vec<Row> {
     for page in reference["pages"].as_array().into_iter().flatten() {
         let page_number = page["page"].as_u64().unwrap_or(0) as usize;
         for row in page["rows"].as_array().into_iter().flatten() {
+            let baseline_pt = number(&row["baseline_pt"]);
+            let mut has_glyph_baselines = false;
             let characters = row["characters"]
                 .as_array()
                 .into_iter()
                 .flatten()
-                .map(|glyph| Glyph {
-                    page: page_number,
-                    baseline_pt: number(&row["baseline_pt"]),
-                    text: glyph["text"].as_str().unwrap_or_default().to_string(),
-                    x_pt: number(&glyph["x_pt"]),
+                .map(|glyph| {
+                    let glyph_baseline = glyph.get("baseline_pt");
+                    has_glyph_baselines |= glyph_baseline.is_some();
+                    Glyph {
+                        page: page_number,
+                        baseline_pt: glyph_baseline.map_or(baseline_pt, number),
+                        text: glyph["text"].as_str().unwrap_or_default().to_string(),
+                        x_pt: number(&glyph["x_pt"]),
+                    }
                 })
                 .collect();
             rows.push(Row {
                 page: page_number,
-                baseline_pt: number(&row["baseline_pt"]),
+                baseline_pt,
                 text: row["text"].as_str().unwrap_or_default().to_string(),
                 characters,
+                has_glyph_baselines,
             });
         }
     }
@@ -580,7 +590,12 @@ fn word_rows(reference: &serde_json::Value) -> Vec<Row> {
 }
 
 fn finite_positions(row: &Row) -> bool {
-    row.baseline_pt.is_finite() && row.characters.iter().all(|glyph| glyph.x_pt.is_finite())
+    row.baseline_pt.is_finite()
+        && !row.characters.is_empty()
+        && row
+            .characters
+            .iter()
+            .all(|glyph| glyph.x_pt.is_finite() && glyph.baseline_pt.is_finite())
 }
 
 /// Longest common subsequence of two row lists by exact text.
@@ -678,7 +693,7 @@ fn compare(reference: &serde_json::Value, snapshot: &FullLayoutDebugSnapshot) ->
         if w.page != j.page {
             page_mismatches += 1;
         }
-        let dy = j.baseline_pt - w.baseline_pt;
+        let mut dy = j.baseline_pt - w.baseline_pt;
         let mut row_max_x = 0f64;
         let same_glyphs = w.characters.len() == j.characters.len()
             && w.characters
@@ -690,8 +705,15 @@ fn compare(reference: &serde_json::Value, snapshot: &FullLayoutDebugSnapshot) ->
             invalid += 1;
         }
         if same_glyphs && valid {
+            if w.has_glyph_baselines {
+                dy = 0.0;
+            }
             for (a, b) in w.characters.iter().zip(&j.characters) {
                 row_max_x = row_max_x.max((b.x_pt - a.x_pt).abs());
+                let glyph_dy = b.baseline_pt - a.baseline_pt;
+                if w.has_glyph_baselines && glyph_dy.abs() > dy.abs() {
+                    dy = glyph_dy;
+                }
             }
         } else if !same_glyphs {
             segmentation += 1;
@@ -703,7 +725,11 @@ fn compare(reference: &serde_json::Value, snapshot: &FullLayoutDebugSnapshot) ->
         deltas.push(Delta {
             page: w.page,
             dy: round(dy),
-            dx0: round(j.characters[0].x_pt - w.characters[0].x_pt),
+            dx0: w
+                .characters
+                .first()
+                .zip(j.characters.first())
+                .map_or(f64::NAN, |(a, b)| round(b.x_pt - a.x_pt)),
             dx: round(row_max_x),
             text: prefix(&w.text, 24),
         });
@@ -856,6 +882,26 @@ fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// The native Word tests use the same directional hash pairs to keep using
+/// captures made before schema repairs to the fixtures.
+fn source_hash_matches(
+    fixture: &str,
+    captured: &str,
+    current: &str,
+    manifest: &serde_json::Value,
+) -> bool {
+    captured == current
+        || manifest["fixtures"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|entry| {
+                entry["fixture"].as_str() == Some(fixture)
+                    && entry["schema_repair_source_sha256"].as_str() == Some(captured)
+                    && entry["docx_sha256"].as_str() == Some(current)
+            })
+}
+
 fn run() -> Result<(), String> {
     let arguments = arguments()?;
     // Before anything is laid out, as a host does.
@@ -883,13 +929,18 @@ fn run() -> Result<(), String> {
         .map(|fixture| std::fs::read(arguments.fixture_dir.join(format!("{fixture}.docx"))).ok())
         .collect();
 
-    let core = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../jade-core/fonts");
+    let core = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../jade-core");
     let read = |path: PathBuf| {
         std::fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))
     };
-    let regular = read(core.join("Noto_Sans_JP/static/NotoSansJP-Regular.ttf"))?;
-    let bold = read(core.join("Noto_Sans_JP/static/NotoSansJP-Bold.ttf"))?;
-    let thai = read(core.join(jade_office_model::THAI_FONT))?;
+    let manifest_path = core.join("tests/word-oracle/release-corpus.json");
+    let release_corpus: serde_json::Value =
+        serde_json::from_slice(&read(manifest_path.clone())?)
+            .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
+    let fonts = core.join("fonts");
+    let regular = read(fonts.join("Noto_Sans_JP/static/NotoSansJP-Regular.ttf"))?;
+    let bold = read(fonts.join("Noto_Sans_JP/static/NotoSansJP-Bold.ttf"))?;
+    let thai = read(fonts.join(jade_office_model::THAI_FONT))?;
     // The painter's faces only colour pixels; the measurer decides the layout.
     let painter_fonts = jade_web::backend(regular.clone(), Some(bold.clone()))?.fonts();
     let measurer = if arguments.fonts == "word" {
@@ -919,9 +970,12 @@ fn run() -> Result<(), String> {
             let bytes = document.as_ref().ok_or_else(|| {
                 format!("no {fixture}.docx in {}", arguments.fixture_dir.display())
             })?;
-            if reference["docx_sha256"].as_str() != Some(sha256_hex(bytes).as_str()) {
+            let current_hash = sha256_hex(bytes);
+            if !reference["docx_sha256"].as_str().is_some_and(|captured| {
+                source_hash_matches(fixture, captured, &current_hash, &release_corpus)
+            }) {
                 return Err(format!(
-                    "Word reference source hash does not match {fixture}.docx"
+                    "Word reference source hash does not match {fixture}.docx or its recorded schema repair"
                 ));
             }
             let snapshot = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1000,5 +1054,126 @@ fn main() -> ExitCode {
             eprintln!("{error}");
             ExitCode::from(2)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jade_docx_layout::selection::{LayoutFragmentDebug, LayoutGlyphDebug, LayoutLineDebug};
+    use serde_json::json;
+
+    #[test]
+    fn source_hash_requires_exact_bytes_or_a_named_directional_repair() {
+        let original = sha256_hex(b"original");
+        let repaired = sha256_hex(b"repaired");
+        let unrelated = sha256_hex(b"unrelated");
+        let manifest = json!({"fixtures": [{
+            "fixture": "example",
+            "docx_sha256": repaired,
+            "schema_repair_source_sha256": original
+        }]});
+        assert!(source_hash_matches(
+            "example", &original, &original, &manifest
+        ));
+        assert!(source_hash_matches(
+            "example", &original, &repaired, &manifest
+        ));
+        assert!(!source_hash_matches(
+            "example", &repaired, &original, &manifest
+        ));
+        assert!(!source_hash_matches(
+            "example", &original, &unrelated, &manifest
+        ));
+        assert!(!source_hash_matches(
+            "other", &original, &repaired, &manifest
+        ));
+    }
+
+    #[test]
+    fn sweep_compares_painted_baseline_per_glyph() {
+        let mut reference = json!({
+            "page_count": 1,
+            "pages": [{"page": 1, "rows": [{
+                "baseline_pt": 75.0,
+                "text": "AB",
+                "characters": [
+                    {"text": "A", "x_pt": 72.0},
+                    {"text": "B", "x_pt": 81.0, "baseline_pt": 75.6}
+                ]
+            }]}]
+        });
+        let fragment = |character: &str, start, x, baseline| LayoutFragmentDebug {
+            start,
+            end: start + 1,
+            x,
+            width: 12.0,
+            baseline,
+            glyphs: vec![LayoutGlyphDebug {
+                start,
+                end: start + 1,
+                text: character.to_string(),
+                x: 0.0,
+                width: 12.0,
+            }],
+        };
+        let mut snapshot = FullLayoutDebugSnapshot {
+            page_count: 1,
+            complete: true,
+            body_lines: vec![LayoutLineDebug {
+                paragraph: 0,
+                line: 0,
+                page: 0,
+                column_index: 0,
+                vertical: false,
+                start: 0,
+                end: 2,
+                text: "AB".into(),
+                top: 88.0,
+                absolute_top: 88.0,
+                height: 16.0,
+                baseline: 100.0,
+                absolute_baseline: 100.0,
+                report_x_offset: 0.0,
+                start_x: 96.0,
+                end_x: 120.0,
+                cursor_end_x: 120.0,
+                visual_end_x: 120.0,
+                allowed_trailing_overflow_width: 0.0,
+                fragments: vec![
+                    fragment("A", 0, 96.0, 100.0),
+                    fragment("B", 1, 108.0, 100.8),
+                ],
+                tab_leaders: Vec::new(),
+                tab_stops: Vec::new(),
+            }],
+            auxiliary_lines: Vec::new(),
+            objects: Vec::new(),
+            text_box_regions: Vec::new(),
+            grouped_shape_text_regions: Vec::new(),
+            source_text_stories: Vec::new(),
+            source_surface_indices_complete: true,
+            text_box_source_inventory_complete: true,
+            known_uncaptured_stories: Vec::new(),
+        };
+
+        let exact = compare(&reference, &snapshot);
+        assert_eq!(exact.matched_rows, 1);
+        assert_eq!(exact.rows_off, 0);
+        assert_eq!(exact.max_baseline_pt, 0.0);
+
+        snapshot.body_lines[0].fragments[1].baseline = 100.0;
+        let shifted = compare(&reference, &snapshot);
+        assert_eq!(shifted.matched_rows, 1);
+        assert_eq!(shifted.rows_off, 1);
+        assert_eq!(shifted.max_baseline_pt, 0.6);
+        assert_eq!(shifted.worst[0].dy, -0.6);
+
+        let glyph = &mut reference["pages"][0]["rows"][0]["characters"][1];
+        glyph.as_object_mut().unwrap().remove("baseline_pt");
+        let legacy = compare(&reference, &snapshot);
+        assert_eq!(legacy.matched_rows, 1);
+        assert_eq!(legacy.rows_off, 0);
+        assert_eq!(legacy.max_baseline_pt, 0.0);
     }
 }
