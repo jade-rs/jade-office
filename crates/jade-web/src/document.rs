@@ -666,55 +666,44 @@ fn lay_out(
         .ok_or_else(|| "the document has no main part".to_string())?
         .clone();
 
-    let render = |width: f64, height: f64| -> Result<LaidOut, String> {
-        let host = TinySkiaRenderHost::new(
-            width,
-            height,
-            scale,
-            Rc::clone(&fonts),
-            Rc::clone(&measurer),
+    // The renderer sizes each backing surface as it enters its section.
+    let host = TinySkiaRenderHost::new(
+        INITIAL_PAGE.0,
+        INITIAL_PAGE.1,
+        scale,
+        Rc::clone(&fonts),
+        Rc::clone(&measurer),
+    )
+    .ok_or_else(|| "cannot allocate a page surface".to_string())?;
+    let pages = Rc::clone(&host.pages);
+    let rendered = Rc::clone(&host.rendered_pages);
+    let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
+        .map_err(|_| "renderer setup failed".to_string())?;
+    renderer.sync_word_document(&word_document);
+    // There is no overlay to draw the selection on; and without a
+    // declared full repaint the first render leaves the first
+    // paragraph of later pages unpainted (see jade-docx-native-render).
+    renderer.set_use_selection_overlay(false);
+    renderer.mark_full_repaint();
+    renderer
+        .render_with_numbering(
+            &document,
+            &options,
+            word_document.numbering_part.as_ref(),
+            word_document.header_lines.as_deref(),
+            word_document.footer_lines.as_deref(),
+            Some(&word_document.comments),
         )
-        .ok_or_else(|| "cannot allocate a page surface".to_string())?;
-        let pages = Rc::clone(&host.pages);
-        let rendered = Rc::clone(&host.rendered_pages);
-        let mut renderer = CanvasRenderer::<TinySkiaPainter>::with_host(Box::new(host), false)
-            .map_err(|_| "renderer setup failed".to_string())?;
-        renderer.sync_word_document(&word_document);
-        // There is no overlay to draw the selection on; and without a
-        // declared full repaint the first render leaves the first
-        // paragraph of later pages unpainted (see jade-docx-native-render).
-        renderer.set_use_selection_overlay(false);
-        renderer.mark_full_repaint();
-        renderer
-            .render_with_numbering(
-                &document,
-                &options,
-                word_document.numbering_part.as_ref(),
-                word_document.header_lines.as_deref(),
-                word_document.footer_lines.as_deref(),
-                Some(&word_document.comments),
-            )
-            .map_err(|_| "render failed".to_string())?;
-        if let Some(error) = renderer.take_render_error() {
-            return Err(error);
-        }
-        Ok(LaidOut {
-            page_size: renderer.layout_page_size(),
-            renderer,
-            pages,
-            rendered,
-        })
-    };
-
-    // The section properties decide the page box; a first pass finds it,
-    // and a host sized to it paints the pages — as the native app does.
-    let first = render(INITIAL_PAGE.0, INITIAL_PAGE.1)?;
-    let (width, height) = first.page_size;
-    if (width, height) != INITIAL_PAGE && width > 1.0 && height > 1.0 {
-        render(width, height)
-    } else {
-        Ok(first)
+        .map_err(|_| "render failed".to_string())?;
+    if let Some(error) = renderer.take_render_error() {
+        return Err(error);
     }
+    Ok(LaidOut {
+        page_size: renderer.layout_page_size(),
+        renderer,
+        pages,
+        rendered,
+    })
 }
 
 #[cfg(test)]
