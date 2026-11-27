@@ -1018,25 +1018,27 @@ impl EditableDocument {
     pub fn selected_text(&self) -> Option<String> {
         let range = self.selection.filter(|range| !range.is_collapsed())?;
         let (start, end) = range.normalized();
-        // The objects' characters stand for no text.
-        let text_only = |text: &str| text.replace('\u{fffc}', "");
-        if start.paragraph == end.paragraph {
-            let text = self.caret_text(start.paragraph)?;
-            return Some(text_only(text.get(start.offset..end.offset)?));
+        let mut parts = Vec::new();
+        for paragraph in jade_office_model::word::clipboard::clipboard_paragraphs(
+            self.word_document(),
+            start.paragraph,
+            end.paragraph,
+        ) {
+            let text = self.caret_text(paragraph)?;
+            let from = if paragraph == start.paragraph {
+                start.offset
+            } else {
+                0
+            };
+            let to = if paragraph == end.paragraph {
+                end.offset
+            } else {
+                text.len()
+            };
+            // Inline objects contribute no text to the external clipboard.
+            parts.push(text.get(from..to)?.replace('\u{fffc}', ""));
         }
-        let mut parts = vec![self
-            .paragraph_text(start.paragraph)?
-            .get(start.offset..)?
-            .to_string()];
-        for paragraph in (start.paragraph + 1)..end.paragraph {
-            parts.push(self.caret_text(paragraph).unwrap_or_default());
-        }
-        parts.push(
-            self.caret_text(end.paragraph)?
-                .get(..end.offset)?
-                .to_string(),
-        );
-        Some(text_only(&parts.join("\n")))
+        Some(parts.join("\n"))
     }
 
     /// An arrow, Home or End; with `extend` (Shift) the selection's far end

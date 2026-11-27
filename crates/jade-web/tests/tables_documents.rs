@@ -1448,3 +1448,515 @@ fn a_pasted_table_keeps_its_borders_alignment_and_cell_formatting() {
     document.undo().unwrap();
     assert!(document.word_document().table_by_order(1).is_none());
 }
+
+#[test]
+fn merged_padding_does_not_move_a_note_or_the_paste_caret() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::HeadlessBorderEdge;
+    use jade_web::word::headless::{HeadlessCommand, HeadlessTableCellSelection};
+    use jade_web::word::picture::WordPicture;
+    for multi_paragraph in [false, true] {
+        for copies in [1, 2] {
+            let mut document = with_table(1, 3);
+            fill(&mut document, 0, &[&["L", "", "R"]]);
+            document
+                .apply_command(
+                    HeadlessCommand::MergeTableCells {
+                        table_order_index: 0,
+                        selected_cells: (0..2)
+                            .map(|column| HeadlessTableCellSelection {
+                                row: 0,
+                                column,
+                                column_span: 1,
+                            })
+                            .collect(),
+                    },
+                    false,
+                )
+                .unwrap();
+            if multi_paragraph {
+                document.place_caret(0, 1);
+                document.insert_paragraph_break().unwrap();
+                document.insert_text("B").unwrap();
+                WordFormatting::set_alignment(&mut document, "right").unwrap();
+            }
+            let extra = usize::from(multi_paragraph);
+            let right = cell_paragraph(&document, 0, 0, 2);
+            document
+                .apply_command(
+                    HeadlessCommand::InsertFootnote {
+                        paragraph: right,
+                        offset: 0,
+                        text: "note".into(),
+                    },
+                    false,
+                )
+                .unwrap();
+            let edge = Some(HeadlessBorderEdge {
+                style: Some("double".into()),
+                width: Some(1.5),
+                color: Some("#FF0000".into()),
+            });
+            document
+                .apply_commands(
+                    vec![
+                        HeadlessCommand::SetTableAlignment {
+                            table_order_index: 0,
+                            alignment: "center".into(),
+                        },
+                        HeadlessCommand::SetTableBorders {
+                            table_order_index: 0,
+                            top: edge.clone(),
+                            bottom: edge,
+                            left: None,
+                            right: None,
+                            inside_h: None,
+                            inside_v: None,
+                        },
+                        HeadlessCommand::SetTableCellShading {
+                            table_order_index: 0,
+                            row: 0,
+                            column: 2,
+                            color: Some("#00FF00".into()),
+                        },
+                        HeadlessCommand::SetTableCellVerticalAlignment {
+                            table_order_index: 0,
+                            row: 0,
+                            column: 2,
+                            alignment: "center".into(),
+                        },
+                        HeadlessCommand::SetTableRowProperties {
+                            table_order_index: 0,
+                            row: 0,
+                            repeat_header: Some(true),
+                            cant_split: Some(true),
+                        },
+                        HeadlessCommand::SetTableRowHeightProperties {
+                            table_order_index: 0,
+                            row: 0,
+                            mode: "atLeast".into(),
+                            height: Some(40.0),
+                        },
+                    ],
+                    false,
+                )
+                .unwrap();
+            let mut png = Vec::new();
+            image::RgbaImage::from_pixel(2, 1, image::Rgba([255, 0, 0, 255]))
+                .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .unwrap();
+            document.place_caret(
+                right,
+                document.word_document().rendered_paragraph_len(right),
+            );
+            document.insert_picture(png).unwrap();
+            let after = (0..document.paragraph_count())
+                .rfind(|&p| {
+                    document
+                        .word_document()
+                        .is_top_level_body_paragraph_surface(p)
+                })
+                .unwrap();
+            document.select((0, 0), (after, 0)).unwrap();
+            let mut clip = document.copy_rich().unwrap();
+            assert_eq!(clip.notes.len(), 1);
+            assert_eq!(clip.pictures.len(), 1);
+            assert!(clip.tables[0].format.is_some());
+            assert_eq!(
+                clip.plain_text(),
+                if multi_paragraph {
+                    "L\nB\nR\n"
+                } else {
+                    "L\nR\n"
+                }
+            );
+            assert!(!document.selected_text().unwrap().contains("note"));
+            let body_index = |document: &EditableDocument, surface| match document
+                .word_document()
+                .paragraph_story(surface)
+                .unwrap()
+            {
+                jade_docx_editor::word_document::ParagraphStory::Body { index } => index,
+                other => panic!("expected body paragraph, got {other:?}"),
+            };
+            let body_start = body_index(&document, after);
+            if copies == 2 {
+                let second = clip.clone();
+                let offset = clip.paragraphs.len();
+                clip.paragraphs.extend(second.paragraphs);
+                clip.tables
+                    .extend(second.tables.into_iter().map(|mut table| {
+                        table.first += offset;
+                        table
+                    }));
+                clip.pictures
+                    .extend(second.pictures.into_iter().map(|mut picture| {
+                        picture.paragraph += offset;
+                        picture
+                    }));
+                clip.notes.extend(second.notes.into_iter().map(|mut note| {
+                    note.paragraph += offset;
+                    note
+                }));
+            }
+
+            document.place_caret(after, 0);
+            let caret = document.paste_rich(&clip).unwrap();
+            assert_eq!(
+                body_index(&document, caret.0),
+                body_start + (3 + extra) * copies - 1
+            );
+            assert_eq!(caret.1, 0);
+            assert!(document.cell_id_for_paragraph(caret.0).is_none());
+            let right = cell_paragraph(&document, 1, 0, 2);
+            assert_eq!(right, after + 1 + extra);
+            assert_eq!(
+                document.word_document().reference_marker_spans(right).len(),
+                1
+            );
+            assert_eq!(document.paragraph_text(right).as_deref(), Some("R"));
+            if copies == 2 {
+                let later_right = cell_paragraph(&document, 2, 0, 2);
+                assert_eq!(
+                    body_index(&document, later_right),
+                    body_start + 4 + 2 * extra
+                );
+                assert_eq!(
+                    document
+                        .word_document()
+                        .reference_marker_spans(later_right)
+                        .len(),
+                    1
+                );
+                assert_eq!(document.paragraph_text(later_right).as_deref(), Some("R"));
+            }
+            let saved = document.export_docx().unwrap();
+            let reopened = open_bytes(&saved);
+            assert_eq!(
+                reopened.word_document().reference_marker_spans(right).len(),
+                1
+            );
+            for checked in [&document, &reopened] {
+                for order in 1..=copies {
+                    let table = checked.word_document().table_by_order(order).unwrap();
+                    assert_eq!(table.rows[0].cells.len(), 2);
+                    assert!(table.rows[0].is_header && table.rows[0].cant_split);
+                    assert_eq!(table.rows[0].height, Some(40.0));
+                    assert_eq!(
+                        table.rows[0].cells[1].vertical_align.as_deref(),
+                        Some("center")
+                    );
+                    let right = cell_paragraph(checked, order, 0, 2);
+                    assert_eq!(
+                        checked
+                            .word_document()
+                            .paragraph(right)
+                            .unwrap()
+                            .runs
+                            .iter()
+                            .filter(|r| r.image.is_some())
+                            .count(),
+                        1
+                    );
+                    if multi_paragraph {
+                        let left = cell_paragraph(checked, order, 0, 0);
+                        assert_eq!(
+                            checked
+                                .word_document()
+                                .paragraph(left + 1)
+                                .unwrap()
+                                .properties
+                                .as_ref()
+                                .unwrap()
+                                .alignment
+                                .as_deref(),
+                            Some("right")
+                        );
+                    }
+                }
+            }
+            let xml = document_xml(&saved);
+            assert_eq!(xml.matches("<w:tblBorders").count(), copies + 1);
+            assert_eq!(xml.matches("w:fill=\"00FF00\"").count(), copies + 1);
+            document.undo().unwrap();
+            assert!(document.word_document().table_by_order(1).is_none());
+        }
+    }
+}
+
+#[test]
+fn fields_in_a_second_cell_paragraph_never_replace_the_next_cell() {
+    use jade_web::word::clipboard::WordClipboard;
+    use jade_web::word::headless::{HeadlessCommand, HeadlessFieldKind};
+    for inside_text in [false, true] {
+        let mut document = with_table(1, 2);
+        fill(&mut document, 0, &[&["A", "XYZ"]]);
+        document
+            .apply_command(
+                HeadlessCommand::InsertParagraphBreak {
+                    paragraph: 0,
+                    offset: 1,
+                    count: 1,
+                },
+                false,
+            )
+            .unwrap();
+        document
+            .apply_command(
+                HeadlessCommand::InsertField {
+                    start_paragraph: 1,
+                    start_offset: 0,
+                    end_paragraph: 1,
+                    end_offset: 0,
+                    kind: HeadlessFieldKind::Page,
+                    cached_text: "999".into(),
+                },
+                false,
+            )
+            .unwrap();
+        let after = document.paragraph_count() - 1;
+        document.select((0, 0), (after, 0)).unwrap();
+        let clip = document.copy_rich().unwrap();
+        assert_eq!(clip.fields.len(), 1);
+        document.place_caret(after, 0);
+        if inside_text {
+            document.insert_text("leftRIGHT").unwrap();
+            document.place_caret(after, 4);
+        }
+        document.paste_rich(&clip).unwrap();
+        let left = cell_paragraph(&document, 1, 0, 0);
+        let right = cell_paragraph(&document, 1, 0, 1);
+        assert_eq!(document.paragraph_text(right).as_deref(), Some("XYZ"));
+        assert!(document
+            .word_document()
+            .paragraph(left + 1)
+            .unwrap()
+            .runs
+            .iter()
+            .any(|r| r.field.is_some()));
+        assert_eq!(document.paragraph_text(left).as_deref(), Some("A"));
+        if inside_text {
+            assert_eq!(document.paragraph_text(after).as_deref(), Some("left"));
+            assert_eq!(document.paragraph_text(right + 1).as_deref(), Some("RIGHT"));
+        }
+        let reopened = open_bytes(&document.export_docx().unwrap());
+        assert_eq!(reopened.paragraph_text(right).as_deref(), Some("XYZ"));
+        assert!(reopened
+            .word_document()
+            .paragraph(left + 1)
+            .unwrap()
+            .runs
+            .iter()
+            .any(|r| r.field.is_some()));
+    }
+}
+
+#[test]
+fn keep_text_only_turns_table_cells_into_ordinary_paragraphs() {
+    use jade_web::word::clipboard::{PasteMode, WordClipboard};
+    let mut document = with_table(1, 2);
+    fill(&mut document, 0, &[&["A", "B"]]);
+    let after = document.paragraph_count() - 1;
+    document.select((0, 0), (after, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.tables.len(), 1);
+    document.place_caret(after, 0);
+    document.paste_as(&clip, PasteMode::TextOnly).unwrap();
+    assert!(document.word_document().table_by_order(1).is_none());
+    assert_eq!(document.paragraph_text(after).as_deref(), Some("A"));
+    assert_eq!(document.paragraph_text(after + 1).as_deref(), Some("B"));
+}
+
+#[test]
+fn keep_text_only_in_a_table_does_not_insert_rows() {
+    use jade_web::word::clipboard::{PasteMode, WordClipboard};
+    let mut document = with_table(2, 2);
+    fill(&mut document, 0, &[&["A", "B"], &["C", "D"]]);
+    let second_row = cell_paragraph(&document, 0, 1, 0);
+    document.select((0, 0), (second_row, 0)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.tables.len(), 1);
+    let target = cell_paragraph(&document, 0, 1, 1);
+    document.place_caret(target, 0);
+    document.paste_as(&clip, PasteMode::TextOnly).unwrap();
+    assert_eq!(
+        document
+            .word_document()
+            .table_by_order(0)
+            .unwrap()
+            .rows
+            .len(),
+        2
+    );
+    assert!(document.word_document().table_by_order(1).is_none());
+    assert_eq!(cell_texts(&document, 0), [["A", "B"], ["C", "A\nB\nD"]]);
+    document.undo().unwrap();
+    assert_eq!(cell_texts(&document, 0), [["A", "B"], ["C", "D"]]);
+}
+
+#[test]
+fn links_and_ruby_follow_the_second_cell_paragraph_in_body_pastes() {
+    use jade_web::word::clipboard::{ClipLink, ClipRuby, ClipTable, RichClip, WordClipboard};
+    use jade_web::word::headless::HeadlessRuby;
+    for ruby in [false, true] {
+        for inside_text in [false, true] {
+            let mut document = blank();
+            document.place_caret(0, 0);
+            if inside_text {
+                document.insert_text("leftRIGHT").unwrap();
+                document.place_caret(0, 4);
+            }
+            let mut clip = RichClip::from_text("A\nB\nXYZ");
+            clip.tables.push(ClipTable {
+                first: 0,
+                cells: 3,
+                columns: 2,
+                cell_paragraphs: vec![2, 1],
+                ..Default::default()
+            });
+            if ruby {
+                clip.rubies.push(ClipRuby {
+                    paragraph: 1,
+                    offset: 0,
+                    len: 1,
+                    ruby: HeadlessRuby {
+                        text: "bee".into(),
+                        align: None,
+                        size: None,
+                        raise: None,
+                        font: None,
+                    },
+                });
+            } else {
+                clip.links.push(ClipLink {
+                    paragraph: 1,
+                    offset: 0,
+                    len: 1,
+                    address: "https://example.com/kept".into(),
+                    tooltip: None,
+                });
+            }
+            document.paste_rich(&clip).unwrap();
+            let left = cell_paragraph(&document, 0, 0, 0);
+            let right = cell_paragraph(&document, 0, 0, 1);
+            assert_eq!(document.paragraph_text(right).as_deref(), Some("XYZ"));
+            let runs = &document.word_document().paragraph(left + 1).unwrap().runs;
+            if ruby {
+                assert!(runs.iter().any(|r| r
+                    .properties
+                    .as_ref()
+                    .and_then(|p| p.ruby.as_ref())
+                    .is_some_and(|r| r.text == "bee")));
+            } else {
+                assert!(runs.iter().any(|r| r.hyperlink.is_some()));
+            }
+            let right = document.word_document().paragraph(right).unwrap();
+            assert!(right.runs.iter().all(|r| r.hyperlink.is_none()
+                && r.properties
+                    .as_ref()
+                    .and_then(|p| p.ruby.as_ref())
+                    .is_none()));
+        }
+    }
+}
+
+#[test]
+fn merged_clip_places_its_note_in_r_and_caret_in_the_following_body_paragraph() {
+    use jade_docx_editor::word_document::ParagraphStory;
+    use jade_web::word::clipboard::{ClipNote, ClipTable, RichClip, WordClipboard};
+    let mut document = blank();
+    document.place_caret(0, 0);
+    let mut clip = RichClip::from_text("L\nR");
+    clip.tables.push(ClipTable {
+        first: 0,
+        cells: 2,
+        columns: 3,
+        cell_spans: vec![2, 1],
+        merges: vec![(0, 0, 2, 1)],
+        ..Default::default()
+    });
+    clip.notes.push(ClipNote {
+        paragraph: 1,
+        offset: 0,
+        footnote: true,
+        text: "note".into(),
+        ..Default::default()
+    });
+    let caret = document.paste_rich(&clip).unwrap();
+    let right = cell_paragraph(&document, 0, 0, 2);
+    assert_eq!(right, 1);
+    assert_eq!(
+        document.word_document().reference_marker_spans(right).len(),
+        1
+    );
+    assert_eq!(document.paragraph_text(right).as_deref(), Some("R"));
+    // Paragraph surfaces also contain the new footnote's own story. The
+    // caret is the second body paragraph after P, not that footnote surface.
+    assert_eq!(
+        document.word_document().paragraph_story(caret.0),
+        Some(ParagraphStory::Body { index: 2 })
+    );
+    assert_eq!(caret.1, 0);
+}
+
+#[test]
+fn later_cell_paragraphs_keep_their_individual_formats() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut source = with_table(1, 2);
+    fill(&mut source, 0, &[&["A", "XYZ"]]);
+    let left = cell_paragraph(&source, 0, 0, 0);
+    source.place_caret(left, 1);
+    source.insert_paragraph_break().unwrap();
+    source.insert_text("B").unwrap();
+    WordFormatting::set_alignment(&mut source, "right").unwrap();
+    source.insert_paragraph_break().unwrap();
+    source.insert_text("C").unwrap();
+    WordFormatting::set_alignment(&mut source, "center").unwrap();
+    let original: Vec<_> = (1..=2)
+        .map(|i| {
+            source
+                .word_document()
+                .paragraph(left + i)
+                .unwrap()
+                .properties
+                .as_ref()
+                .and_then(|p| p.alignment.clone())
+        })
+        .collect();
+    source
+        .select((left, 0), (source.paragraph_count() - 1, 0))
+        .unwrap();
+    let clip = source.copy_rich().unwrap();
+    let mut target = blank();
+    target.place_caret(0, 0);
+    target.paste_rich(&clip).unwrap();
+    let pasted = cell_paragraph(&target, 0, 0, 0);
+    let formats: Vec<_> = (1..=2)
+        .map(|i| {
+            target
+                .word_document()
+                .paragraph(pasted + i)
+                .unwrap()
+                .properties
+                .as_ref()
+                .and_then(|p| p.alignment.clone())
+        })
+        .collect();
+    assert_eq!(formats, original);
+    assert_eq!(cell_texts(&target, 0), vec![vec!["A\nB\nC", "XYZ"]]);
+    let reopened = open_bytes(&target.export_docx().unwrap());
+    let formats: Vec<_> = (1..=2)
+        .map(|i| {
+            reopened
+                .word_document()
+                .paragraph(pasted + i)
+                .unwrap()
+                .properties
+                .as_ref()
+                .and_then(|p| p.alignment.clone())
+        })
+        .collect();
+    assert_eq!(formats, original);
+    target.undo().unwrap();
+    assert!(target.word_document().table_by_order(0).is_none());
+}

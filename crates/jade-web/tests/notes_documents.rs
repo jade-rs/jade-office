@@ -609,3 +609,110 @@ fn a_custom_mark_stands_in_for_the_notes_number() {
     document.undo().unwrap();
     assert!(document.note_texts(NoteKind::Footnote).is_empty());
 }
+
+#[test]
+fn an_endnote_takes_a_pasted_notes_text_without_its_mark() {
+    use jade_web::word::clipboard::WordClipboard;
+    let mut document = common::contract();
+    let paragraph = common::typed(&mut document, "noted text ");
+    note(&mut document, NoteKind::Endnote, (paragraph, 5), "the note");
+    document.select((paragraph, 0), (paragraph, 11)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.notes.len(), 1);
+    assert!(document.can_insert_note());
+    let in_note = (0..document.paragraph_count())
+        .find(|&index| document.word_document().is_note_paragraph_surface(index))
+        .unwrap();
+
+    // Word greys out 脚注の挿入 in a note, and pastes the text alone.
+    let end = document.word_document().rendered_paragraph_len(in_note);
+    document.place_caret(in_note, end);
+    assert!(!document.can_insert_note());
+    document.paste_rich(&clip).unwrap();
+    assert_eq!(
+        document.note_texts(NoteKind::Endnote),
+        ["the notenoted text"]
+    );
+    assert!(document
+        .insert_note(NoteKind::Endnote, (in_note, 1), "nested")
+        .is_err());
+    // One undo takes the paste back.
+    document.undo().unwrap();
+    assert_eq!(document.note_texts(NoteKind::Endnote), ["the note"]);
+
+    // A picture copied with text goes in with it, in line with the text, as
+    // Word puts a picture in a note.
+    use jade_web::word::picture::WordPicture;
+    let mut png = Vec::new();
+    image::RgbaImage::from_raw(1, 1, vec![255, 0, 0, 255])
+        .unwrap()
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    document.place_caret(paragraph, 1);
+    document.insert_picture(png.clone()).unwrap();
+    document.select((paragraph, 0), (paragraph, 5)).unwrap();
+    let clip = document.copy_rich().unwrap();
+    assert_eq!(clip.pictures.len(), 1);
+    let end = document.word_document().rendered_paragraph_len(in_note);
+    document.place_caret(in_note, end);
+    document.paste_rich(&clip).unwrap();
+    let pictures = |document: &jade_web::editing::EditableDocument| {
+        document
+            .word_document()
+            .paragraph(in_note)
+            .unwrap()
+            .runs
+            .iter()
+            .filter(|run| run.image.is_some())
+            .count()
+    };
+    assert_eq!(pictures(&document), 1);
+
+    // And one put in from the ribbon goes in too, saved with the note.
+    let end = document.word_document().rendered_paragraph_len(in_note);
+    document.place_caret(in_note, end);
+    document.insert_picture(png).unwrap();
+    assert_eq!(pictures(&document), 2);
+    let saved = document.word_document().export_docx().unwrap();
+    let rels = jade_opc::OpcPackage::open(&saved)
+        .unwrap()
+        .part_str("word/_rels/endnotes.xml.rels")
+        .unwrap()
+        .unwrap();
+    assert_eq!(rels.matches("relationships/image").count(), 2, "{rels}");
+}
+
+#[test]
+fn browser_clipboard_identity_keeps_notes_even_when_plain_text_differs() {
+    use jade_web::word::clipboard::{RichClipboardCopy, WordClipboard};
+    for note_only in [false, true] {
+        let mut document = common::contract();
+        let paragraph = common::typed(&mut document, "one ");
+        note(
+            &mut document,
+            NoteKind::Footnote,
+            (paragraph, 3),
+            "retained note",
+        );
+        document
+            .select((paragraph, if note_only { 3 } else { 0 }), (paragraph, 4))
+            .unwrap();
+        let text = document.selected_text().unwrap();
+        let clip = document.copy_rich().unwrap();
+        assert_ne!(text, clip.plain_text());
+        let copy = RichClipboardCopy::new(clip, text.clone(), "test-copy".into());
+        assert!(copy.matches(&text, Some(copy.html())));
+        assert!(!copy.matches(&format!("{text}changed"), Some(copy.html())));
+        assert!(!copy.matches(&text, None));
+        assert!(!copy.matches(
+            &text,
+            Some(&copy.html().replace("test-copy", "another-copy"))
+        ));
+        document.delete(true).unwrap();
+        document.paste_rich(&copy.clip).unwrap();
+        assert_eq!(marks(&document, paragraph).len(), 1);
+        assert!(saved_footnotes(&mut document)
+            .iter()
+            .any(|t| t.contains("retained note")));
+    }
+}

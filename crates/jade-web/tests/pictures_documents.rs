@@ -573,3 +573,29 @@ fn a_copied_picture_keeps_its_rotation_and_crop() {
     document.undo().unwrap();
     assert_eq!(image_runs(&document, paragraph).len(), 1);
 }
+
+#[test]
+fn copying_after_a_picture_across_paragraphs_uses_rendered_offsets() {
+    use jade_web::word::headless::HeadlessCommand;
+    let mut document = common::open_bytes(&jade_web::word::new::blank_document(
+        jade_web::word::new::Blank::Japanese,
+    ));
+    document.place_caret(0, 0);
+    document.insert_text("ABCDE").unwrap();
+    document.place_caret(0, 1);
+    document.insert_picture(png()).unwrap();
+    document
+        .apply_command(
+            HeadlessCommand::InsertParagraphBreak {
+                paragraph: 0,
+                offset: "A\u{fffc}BCDE".len(),
+                count: 1,
+            },
+            false,
+        )
+        .unwrap();
+    document.place_caret(1, 0);
+    document.insert_text("Z").unwrap();
+    document.select((0, "A\u{fffc}".len()), (1, 1)).unwrap();
+    assert_eq!(document.selected_text().as_deref(), Some("BCDE\nZ"));
+}

@@ -1585,8 +1585,14 @@ impl DocView {
         let Some(text) = document.selected_text() else {
             return;
         };
-        let clip = jade_web::word::clipboard::WordClipboard::copy_rich(document.as_ref())
-            .map(word_clipboard::RichCopy::new);
+        let clip =
+            jade_web::word::clipboard::WordClipboard::copy_rich(document.as_ref()).map(|clip| {
+                word_clipboard::RichCopy::new(
+                    clip,
+                    text.clone(),
+                    format!("{}-{}", js_sys::Date::now(), js_sys::Math::random()),
+                )
+            });
         let item = if let Some(clip) = &clip {
             gpui::ClipboardItem::new_string_with_json_metadata(
                 text,
