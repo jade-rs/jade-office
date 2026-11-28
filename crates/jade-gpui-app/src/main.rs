@@ -808,9 +808,6 @@ fn open_document_bytes_for_first_paint(bytes: &[u8]) -> Result<NativeDocument, S
         400,
         &arabic_font(),
     ));
-    // The fonts the document carries with it (TrueType フォントを埋め込む),
-    // for the families nothing installed answers to.
-    faces.extend(word_fonts::embedded_faces(bytes));
     if installed {
         faces = jade_docx_native_render::system_fonts::word_document_faces(bytes, &faces);
     }
