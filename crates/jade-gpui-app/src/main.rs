@@ -808,12 +808,14 @@ fn open_document_bytes_for_first_paint(bytes: &[u8]) -> Result<NativeDocument, S
         400,
         &arabic_font(),
     ));
-    if installed {
-        faces = jade_docx_native_render::system_fonts::word_document_faces(bytes, &faces);
-    }
     // Lay every page out but draw only the first screenful; the rest are
     // painted as they come into view or when the shell is idle.
-    NativeDocument::open_with_font_faces_and_paint_window(
+    let open = if installed {
+        NativeDocument::open_with_system_fonts_and_paint_window
+    } else {
+        NativeDocument::open_with_font_faces_and_paint_window
+    };
+    open(
         bytes,
         INITIAL_PAGE_WIDTH_PX,
         INITIAL_PAGE_HEIGHT_PX,
